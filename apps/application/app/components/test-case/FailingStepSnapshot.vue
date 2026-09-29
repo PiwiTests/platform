@@ -7,13 +7,18 @@
  * snapshots — it falls back to the run's failure screenshot (the page at the
  * moment it failed, which is this step) and the recovered failure-time ARIA
  * tree, so a failing step still shows its evidence on any Playwright version.
- * Every screenshot opens full-screen in the shared lightbox, matching the Screen
- * tab. With no screenshot it is the ARIA tree's disclosure alone; it renders
- * nothing when neither a screenshot nor an ARIA tree is available.
+ * Beside the screenshot sits the trace's DOM snapshot of the same moment,
+ * rendered as the page: the failing action's after-phase DOM next to its
+ * after-phase screenshot, the failure-time DOM next to the run's failure
+ * screenshot. Every screenshot opens full-screen in the shared lightbox,
+ * matching the Screen tab. With neither a screenshot nor a DOM snapshot it is
+ * the ARIA tree's disclosure alone; it renders nothing when none is available.
  */
 import type { AttachmentInfo } from '~~/types/api';
 import { isImageFile } from '~/utils/text-format';
 import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
+import { useDomSnapshot, type DomSnapshotMoment } from '~/composables/useDomSnapshot';
+import DomSnapshotFrame from './DomSnapshotFrame.vue';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -24,7 +29,12 @@ const props = defineProps<{
 }>();
 
 const config = useRuntimeConfig();
-const { failingStep, failingAriaText, snapshotUrl } = useTraceSnapshots(() => props.testRunsCaseId);
+const {
+  failingStep,
+  failingAriaText,
+  snapshotUrl,
+  pending: traceSnapshotsPending,
+} = useTraceSnapshots(() => props.testRunsCaseId);
 
 const beforeSrc = computed(() =>
   failingStep.value?.screen.before ? snapshotUrl(failingStep.value.callId, 'screen', 'before') : null,
@@ -55,10 +65,31 @@ const shots = computed<Array<{ src: string; name: string; failed: boolean }>>(()
   return fallbackShot.value ? [{ src: fallbackShot.value, name: 'At the failure', failed: true }] : [];
 });
 
+// The DOM of the same moment as the screenshot at the failure: the failing
+// action's after-phase (its before-phase when that is the only screenshot), or
+// the failure-time DOM beside the run's own failure screenshot. Asked for once
+// the trace's screenshots are known. Under a before/after pair it takes the
+// whole row.
+const domAt = computed<DomSnapshotMoment | null>(() => {
+  const step = failingStep.value;
+  if (!step || !hasTraceScreens.value) return null;
+  return { callId: step.callId, phase: afterSrc.value ? 'after' : 'before' };
+});
+const dom = useDomSnapshot(
+  () => props.testRunsCaseId,
+  () => domAt.value,
+  () => !traceSnapshotsPending.value,
+);
+const hasDom = computed(() => dom.hasDom.value);
+const domCaption = computed(() =>
+  domAt.value?.phase === 'before' ? 'DOM before the failing action' : 'DOM at the failure',
+);
+
 const ariaText = computed(() => failingAriaText.value ?? props.ariaSnapshot ?? null);
 const hasScreenshot = computed(() => shots.value.length > 0);
 const hasAria = computed(() => Boolean(ariaText.value));
-const render = computed(() => hasScreenshot.value || hasAria.value);
+const render = computed(() => hasScreenshot.value || hasDom.value || hasAria.value);
+const figureCount = computed(() => shots.value.length + (hasDom.value ? 1 : 0));
 
 const lightboxIndex = ref<number | null>(null);
 const ariaOpen = ref(false);
@@ -66,12 +97,12 @@ const ariaOpen = ref(false);
 
 <template>
   <div v-if="render" class="space-y-2.5 rounded-lg border border-default bg-elevated/40 p-3">
-    <p v-if="hasScreenshot" class="flex items-center gap-1.5 text-xs font-medium text-muted">
+    <p v-if="figureCount > 0" class="flex items-center gap-1.5 text-xs font-medium text-muted">
       <UIcon name="i-lucide-image" class="size-3.5 shrink-0" />
       Page at the failing step
     </p>
 
-    <div v-if="hasScreenshot" :class="shots.length > 1 ? 'grid gap-3 sm:grid-cols-2' : ''">
+    <div v-if="figureCount > 0" :class="figureCount > 1 ? 'grid gap-3 sm:grid-cols-2' : ''">
       <figure v-for="(shot, idx) in shots" :key="shot.src" class="min-w-0 space-y-1">
         <figcaption class="flex items-center gap-1 text-xs text-muted">
           <span v-if="shot.failed" class="inline-block size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
@@ -85,6 +116,23 @@ const ariaOpen = ref(false);
           frame-class="rounded-lg bg-default"
           img-class="max-h-72 w-auto max-w-full object-contain"
           @open="lightboxIndex = idx"
+        />
+      </figure>
+      <figure v-if="hasDom" class="min-w-0 space-y-1" :class="figureCount === 3 ? 'sm:col-span-2' : ''">
+        <figcaption class="flex items-center gap-1 text-xs text-muted">
+          <span
+            v-if="domAt?.phase !== 'before'"
+            class="inline-block size-1.5 shrink-0 rounded-full bg-red-500"
+            aria-hidden="true"
+          />
+          {{ domCaption }}
+        </figcaption>
+        <DomSnapshotFrame
+          :frame-src="dom.frameSrc.value"
+          :src-doc="dom.srcDoc.value"
+          :viewport="dom.viewport.value"
+          :title="domCaption"
+          stage-class="max-h-72"
         />
       </figure>
     </div>

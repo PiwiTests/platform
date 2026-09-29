@@ -2295,7 +2295,8 @@ const SCENES = [
   },
   {
     name: 'failing-step-evidence',
-    description: "Timeline tab: the failing step's before/at-failure screenshot and ARIA tree, tied to the step",
+    description:
+      "Timeline tab: the failing step's before/at-failure screenshot, the DOM of the same moment and the ARIA tree, in the step's block",
     viewport: { width: 1280, height: 1600 },
     of: 'table',
     pad: 12,
@@ -2341,7 +2342,8 @@ const SCENES = [
   },
   {
     name: 'failing-step-evidence-fallback',
-    description: "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step",
+    description:
+      "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step, beside the failure-time DOM",
     route: '/projects',
     viewport: { width: 1280, height: 2000 },
     of: 'table',

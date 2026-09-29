@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { files, testRunsCases } from '../../../database/schema';
 import { resolveCaseDomSnapshot } from '../../../utils/dom-snapshot';
+import { snapshotMomentFromQuery } from '../../../utils/dom-snapshot-render';
 import { resolveCasePayloadContents } from '../../../utils/case-payloads';
 import {
   requireResolvedProjectAccess,
@@ -22,6 +23,21 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string', enum: ['dom', 'aria'] },
         description: 'Which representation to render — trace-derived DOM (default) or the ARIA tree',
+      },
+      {
+        name: 'callId',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Render this trace action’s snapshot first (with `phase`; at most 200 characters), such as the one a trace screenshot was taken at; falls back to the failure-time snapshot when the trace holds none for it',
+      },
+      {
+        name: 'phase',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', enum: ['before', 'after'] },
+        description: 'Which snapshot of the `callId` action: before it ran or after it',
       },
       {
         name: 'inlineStyles',
@@ -70,5 +86,9 @@ export default eventHandler(async (event) => {
     caseRows[0]?.aria ??
     null;
 
-  return resolveCaseDomSnapshot(traceRows[0]?.path ?? null, aria, undefined, { source, inlineStyles });
+  return resolveCaseDomSnapshot(traceRows[0]?.path ?? null, aria, undefined, {
+    source,
+    inlineStyles,
+    at: snapshotMomentFromQuery(query),
+  });
 });

@@ -11,6 +11,7 @@ import {
   inlineImageSources,
   mediaMatchesViewport,
   maskCssText,
+  snapshotMomentFromQuery,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
@@ -752,5 +753,31 @@ describe('extractDomSnapshot — a runner action', () => {
     const res = extractDomSnapshot(data, 1_000_000);
     expect(res.snapshotName).toBe('after@call@3');
     expect(res.html).toContain('The body page, when it failed');
+  });
+
+  test('renders the moment a request names first — the DOM beside a screenshot of it', () => {
+    const data = parseTraceTexts(trace());
+    const before = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@3', phase: 'before' });
+    expect(before.snapshotName).toBe('before@call@3');
+    expect(before.html).toContain('The body page, before');
+    const teardown = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@7', phase: 'after' });
+    expect(teardown.html).toContain('The teardown page');
+    // A moment the trace holds no snapshot for falls back to the failure-time one.
+    const missing = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@7', phase: 'before' });
+    expect(missing.snapshotName).toBe('after@call@3');
+  });
+});
+
+describe('snapshotMomentFromQuery', () => {
+  test('reads a call id and a phase, and nothing malformed', () => {
+    expect(snapshotMomentFromQuery({ callId: 'call@17', phase: 'after' })).toEqual({
+      callId: 'call@17',
+      phase: 'after',
+    });
+    expect(snapshotMomentFromQuery({ callId: 'call@17' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({ callId: 'call@17', phase: 'during' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({ callId: ['a', 'b'], phase: 'after' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({ callId: 'x'.repeat(201), phase: 'after' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({})).toBeUndefined();
   });
 });

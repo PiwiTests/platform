@@ -1163,6 +1163,14 @@ function revealItem(item: TimelineItem) {
                           :project-name="projectName ?? undefined"
                           class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-all"
                         />
+                        <!-- The page at the failing step: screenshot, DOM and ARIA, in the step's own block. -->
+                        <FailingStepSnapshot
+                          v-if="entry.failing"
+                          :test-runs-case-id="testRunsCaseId"
+                          :attachments="attachments"
+                          :aria-snapshot="ariaSnapshot"
+                          class="mt-2.5"
+                        />
                       </div>
                     </td>
                     <td>
@@ -1190,16 +1198,6 @@ function revealItem(item: TimelineItem) {
                           />
                         </div>
                       </div>
-                    </td>
-                  </tr>
-                  <!-- The page at the failing step: screenshot + ARIA, tied to the step. -->
-                  <tr v-if="entry.failing">
-                    <td :colspan="showAxis ? 5 : 4" class="border-b border-default px-3 pb-3 pt-0">
-                      <FailingStepSnapshot
-                        :test-runs-case-id="testRunsCaseId"
-                        :attachments="attachments"
-                        :aria-snapshot="ariaSnapshot"
-                      />
                     </td>
                   </tr>
                 </template>

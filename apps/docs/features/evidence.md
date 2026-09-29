@@ -88,10 +88,10 @@ is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the but
 The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then
 the same branch. Green snapshots come from
 [sampling on pass](/guide/capture-fixtures#green-page-sampling-on-pass), about once a day per test; until one exists the
-toggle says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary also reaches the
+toggle says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
 `explain_failure` [MCP tool](/features/mcp).
 
-When the trace carries [aria snapshots](#aria-and-screen-snapshots), the toggle also shows an **in-execution** page diff
+When the trace carries [aria snapshots](#aria-and-screen-snapshots), the toggle shows an **in-execution** page diff
 that needs no green baseline: the structure at the failure against the last different page before the failing action.
 
 ## Trace-powered deep views
@@ -113,8 +113,8 @@ A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot**
 (`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria`
 on, `screen` stays [opt-in](/operate/storage#trace-snapshots)). Then the Screen tab shows the page **before the failing
 action**, the Timeline tab adds a **filmstrip** of the page before each step, and the failing step shows its
-before/at-failure screenshots and accessibility tree inline. The [in-execution page diff](#page-diff) reads the same
-snapshots.
+before/at-failure screenshots, their DOM and accessibility tree inline. The [in-execution page diff](#page-diff) reads
+the same snapshots.
 
 ### Recovered from the trace without the fixtures
 
