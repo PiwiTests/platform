@@ -35,6 +35,11 @@ COPY apps/application/ ./apps/application/
 # Copy integrations (imported by server/plugins/piwi-test-logs.ts via relative path)
 COPY integrations/ ./integrations/
 
+# The docs pages and the changelog, bundled into the server as assets for the
+# MCP describe_piwi and get_release_notes tools (.dockerignore keeps only these).
+COPY apps/docs/ ./apps/docs/
+COPY CHANGELOG.md ./
+
 # Build the application. The glibc-flavoured native packages are pruned from the
 # bundled output: this image is Alpine (musl), so only the *-musl* builds are ever
 # loaded. TARGETARCH is set by buildx; map it to the arch string npm packages use.

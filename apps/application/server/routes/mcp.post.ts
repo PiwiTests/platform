@@ -11,7 +11,8 @@ import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/setup-status';
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
-import { filterServeableTools, narrowToolsByModule } from '../utils/mcp/filter';
+import { narrowToolsByModule } from '../utils/mcp/filter';
+import { serveableTools } from '../utils/mcp/served';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
@@ -22,25 +23,6 @@ const TOOL_BY_NAME = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
 
 const KNOWN_MODULES = new Set<CapabilityModule>(CAPABILITY_MODULES);
-
-/** True when any capability carries a stored instance decline. */
-function hasDecline(decisions: Record<string, unknown>): boolean {
-  return Object.values(decisions).some((v) => v === 'declined');
-}
-
-/**
- * The tools this instance serves: the full active catalog minus every tool whose
- * capability is declined at instance level. Undecided, available and active
- * capabilities all keep their tools, so an upgrade never silently shrinks the
- * list — only an explicit decline drops one.
- *
- * A tool can only be dropped when a decline is stored, so the cheap settings
- * read comes first and the twelve evidence probes run only when one exists.
- */
-async function serveableTools(db: DbClient): Promise<McpTool[]> {
-  if (!hasDecline(await getInstanceDecisions(db))) return [...ACTIVE_TOOLS];
-  return filterServeableTools(ACTIVE_TOOLS, await resolveInstanceStates(db));
-}
 
 /**
  * The tool a `tools/call` may run, or null when the name is unknown or its
@@ -156,11 +138,12 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
         instructions:
           `${IS_DESKTOP ? 'Piwi desktop app' : 'Piwi Dashboard'} MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ` +
           'Start with list_projects to discover project IDs. ' +
-          'List tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
+          'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
           'Write/triage tools (set_cluster_status, run_cluster_diagnosis, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access. ' +
-          'Tools belong to four modules (core, workflow, healing, agents); an instance can decline a module and its tools then disappear from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
+          'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
+          'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
           'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here.' +
           (IS_DESKTOP
             ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file).'
@@ -175,7 +158,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
       const modules = parseModules(getRequestURL(event).searchParams.get('modules'));
-      const tools = narrowToolsByModule(await serveableTools(db), modules);
+      const tools = narrowToolsByModule(await serveableTools(db, ACTIVE_TOOLS), modules);
       return ok(id, {
         tools: tools.map((t) => ({
           name: t.name,

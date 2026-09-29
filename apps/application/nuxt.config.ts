@@ -24,6 +24,35 @@ const demoDescription =
 // config-eval time so the running app can report what it is.
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 
+// The documentation pages and the changelog ship inside the server build, read
+// by the MCP describe_piwi and get_release_notes tools so they answer for the
+// running version with no network. Generated docs pages are left out (the tools
+// render the same registries), and a checkout without either source simply
+// bundles nothing — the tools then point at the published copies.
+const docsDir = resolve(__dirname, '../docs');
+const changelogDir = resolve(__dirname, '../..');
+const serverAssets = [
+  ...(existsSync(resolve(docsDir, 'guide'))
+    ? [
+        {
+          baseName: 'piwi-docs',
+          dir: docsDir,
+          pattern:
+            '{index.md,guide/**/*.md,features/**/*.md,recipes/**/*.md,operate/**/*.md,reference/**/*.md,snippets/*}',
+          ignore: [
+            '**/node_modules/**',
+            'reference/configuration.md',
+            'reference/feature-map.md',
+            'reference/whats-new.md',
+          ],
+        },
+      ]
+    : []),
+  ...(existsSync(resolve(changelogDir, 'CHANGELOG.md'))
+    ? [{ baseName: 'piwi-changelog', dir: changelogDir, pattern: 'CHANGELOG.md', ignore: ['**/node_modules/**'] }]
+    : []),
+];
+
 // Read the demo seed version hash at build time so it can be injected into
 // runtimeConfig for staleness detection in the browser.
 let demoDataVersion = '';
@@ -262,6 +291,7 @@ export default defineNuxtConfig({
     // .output/public/_openapi.json, which the /docs page fetches at runtime.
     prerender: isDemo ? { failOnError: false, routes: ['/_openapi.json'] } : undefined,
     storage: isDemo ? { 'internal:nuxt:prerender': { driver: 'memory' } } : undefined,
+    serverAssets,
     publicAssets: [
       {
         // Serve the Playwright trace viewer static files at /trace-viewer/.

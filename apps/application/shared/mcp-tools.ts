@@ -13,6 +13,7 @@
  */
 import type { CapabilityId, CapabilityModule } from '#shared/capabilities';
 import { EXTRACT_SYSTEM_PROMPT } from './test-function-extract-prompt';
+import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -426,7 +427,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     capability: 'fixtures',
     description:
-      "A run's network requests aggregated by method + normalized route, sorted by average duration, with status codes and captured backend server logs. Use to pin a UI failure on a slow or failing endpoint.",
+      "A run's network requests aggregated by method + normalized route, sorted by average duration: request count, average, p90 and max duration, error rate, and the tests that made them. Use to pin a UI failure on a slow or failing endpoint; the backend logs of one failing test are in explain_failure and get_test_case_context.",
     inputSchema: {
       type: 'object',
       properties: { runId: { type: 'number', description: 'Test run ID' } },
@@ -840,6 +841,46 @@ export const MCP_TOOL_DEFS = [
         },
       },
       required: ['projectId', 'name', 'kind', 'module', 'params', 'steps'],
+    },
+  },
+  {
+    name: 'describe_piwi',
+    module: 'core',
+    description:
+      'Piwi itself, from its own documentation: what it is and is not, every piece of its ecosystem, how to set it up and configure it, which option fits which need, what this instance has switched on, and where to report a bug or suggest an improvement. Call it before answering a question about Piwi rather than about test results. With no arguments it returns an overview and the list of topics: `ecosystem` (the server, desktop app, reporter, `piwi` CLI, capture fixtures, AI steps, backend-log packages, browser extension, MCP server, agent skills, REST API — what each is, how to get it, when you need it), `choices` (the setup decisions and their options), `features`, `configuration` (every PIWI_* variable), `mcp`, `feedback` and `docs` (the page index). The documentation ships with this server, so it matches the running version: `page` reads a page or one section ("guide/ci", "operate/authentication#project-access"), and `query` searches every page and variable. What changed between versions is get_release_notes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: {
+          type: 'string',
+          enum: Object.keys(DESCRIBE_PIWI_TOPICS),
+          description: 'What to describe (default: overview)',
+        },
+        page: {
+          type: 'string',
+          description:
+            'A documentation page to read, e.g. "guide/reporter", or "page#anchor" for one section; paths come from the docs index, the search hits and the `page` fields of other topics',
+        },
+        query: {
+          type: 'string',
+          description:
+            'Search the documentation and the PIWI_* variables; with topic "configuration" it filters the variables instead',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_release_notes',
+    module: 'core',
+    description:
+      'What changed in each Piwi release, from the changelog shipped with this server — so it ends at the running version; newer releases are on GitHub. With no arguments: the running version\'s notes and the ten most recent releases. `version` ("0.36.0", or "0.36" for every release of a minor) returns releases in full: highlights, breaking changes, features and fixes. `since` summarizes every release after a version with its breaking changes listed first — the upgrade question. `query` finds the entries that mention every term (which release added share links?), within `version` or `since` when given.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        version: { type: 'string', description: 'A release such as "0.36.0", or a minor such as "0.36"' },
+        since: { type: 'string', description: 'List the releases after this version, e.g. "0.30.0"' },
+        query: { type: 'string', description: 'Only the entries that mention every term' },
+      },
     },
   },
 ] as const satisfies readonly McpToolDef[];

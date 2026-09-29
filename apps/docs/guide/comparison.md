@@ -31,7 +31,7 @@ Every tool below is good at what it targets. The honest differences:
 | Locator healing suggestions | ✅ from prior passing runs | ❌ | ❌ | ❌ | ❌ | ➖ |
 | Plain-English steps, compiled | ✅ [AI steps](./ai-steps) — resolved once, replayed with zero model calls | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Web vitals & network capture | ✅ | ➖ in traces | ❌ | ❌ | ✅ | ➖ |
-| MCP server for AI agents | ✅ 46 tools | ❌ | ❌ | ❌ | ✅ | ➖ |
+| MCP server for AI agents | ✅ 48 tools | ❌ | ❌ | ❌ | ✅ | ➖ |
 | Framework support | Playwright only (by design) | Playwright | Many | Many | Playwright, Cypress, Jest… | Playwright only |
 | Price | Free, MIT | Free | Free | Free (self-host) / paid SaaS | Paid | Free, OSS |
 
@@ -47,11 +47,11 @@ In the **Fault0** column, ➖ marks a capability we did not find in its public d
 
 ### Is my data safe? Does Piwi phone home?
 
-**Zero telemetry.** The full inventory is in [Privacy & data flow](./privacy). Piwi makes no outbound calls except the ones you explicitly configure: your AI provider (if you enable diagnosis), your SMTP server, your S3 endpoint, your Slack/webhook URLs, and your git host (if you connect a repository). No analytics, no update pings, no crash reporting. Your test results live in your SQLite file or PostgreSQL database, on your infrastructure.
+**Zero telemetry.** The full inventory is in [Privacy & data flow](./privacy). Most outbound calls are ones you configure: your AI provider (if you enable diagnosis), your SMTP server, your S3 endpoint, your Slack/webhook URLs, Jira, and your git host with a token. Two need no setting: anonymous public-API reads of the repository your runs report (its default branch and CODEOWNERS), and fetching the title of a link you attach. No analytics, no update pings, no crash reporting. Your test results live in your SQLite file or PostgreSQL database, on your infrastructure.
 
 ### Does AI diagnosis send my code to a third party?
 
-Only if you turn it on, and only to the provider *you* configure. The diagnosis context (error messages, failing steps, the relevant git diff, screenshots) is sent to your configured endpoint — Anthropic, OpenAI, or any OpenAI-compatible URL, including a fully local model via Ollama/vLLM. You can preview the exact context before it's sent, and cap its size in Settings. With no provider configured, the feature stays off and nothing leaves your server.
+Only if you turn it on, and only to the provider *you* configure. The diagnosis context (error messages, failing steps, test and related source files, console and network entries, page snapshots, the relevant git diff, screenshots) is sent to your configured endpoint — Anthropic, OpenAI, or any OpenAI-compatible URL, including a fully local model via Ollama/vLLM. You can preview the exact context before it's sent, and cap its size in Settings. With no provider configured, the feature stays off and nothing leaves your server.
 
 ### SQLite or PostgreSQL?
 
@@ -59,7 +59,7 @@ Start with SQLite — it's zero-config and easily handles a team's test volume. 
 
 ### Which Node version does the dashboard need?
 
-**Node 22 or newer**, and only for the `npx` / from-source paths — the Docker image and the desktop app bundle their own runtime. CI runs the E2E suite on Node 22 against the published build, so the floor is tested, not aspirational. The **reporter** that runs inside your test project is much less demanding — Node 20+, the version it is built for and declares in its `engines` — so your test suite's runtime almost certainly doesn't need to change.
+**Node 22 or newer** for `npx @piwitests/server`, and **Node 24 or newer** to run from source — the Docker image and the desktop app bundle their own runtime. CI runs one leg of the E2E suite on Node 22 against the prebuilt server output, so the npx floor is tested, not aspirational. The **reporter** that runs inside your test project is much less demanding — Node 20+, the version it is built for and declares in its `engines` — so your test suite's runtime almost certainly doesn't need to change.
 
 ### Can I use it with Cypress / Jest / other frameworks?
 

@@ -9,7 +9,7 @@ npm run docs:build    # production build (runs docs:gen first)
 npm run docs:gen      # regenerate the derived pages only
 ```
 
-## Two pages are generated — never edit them by hand
+## Generated pages — never edit them by hand
 
 ### `apps/docs/configuration.md`
 
@@ -37,6 +37,31 @@ When documenting a feature here, link to the live demo reference
 build. Endpoint documentation is
 authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
 [`../application/AGENTS.md`](../application/AGENTS.md#openapi-annotations).
+
+### The feature map and What's new
+
+`reference/feature-map.md` is built by `scripts/generate-features.mjs` from the feature catalog
+(`apps/application/shared/piwi-features.ts`) and, for its "The pieces" and "Choosing a setup" sections, from
+`apps/application/shared/piwi-ecosystem.ts`. `reference/whats-new.md` is built by `scripts/generate-whats-new.mjs`
+from the root `CHANGELOG.md`, read by `apps/application/shared/changelog.ts`. Both are gitignored build artifacts:
+change the registry or cut a release, never the page.
+
+## The docs ship inside the server
+
+The dashboard bundles these pages (and `snippets/`) into its build as Nitro server assets, and the MCP
+`describe_piwi` tool serves them to agents — the page index, one page or one `#anchor` section, and a search — so an
+instance answers with the docs of its own version, offline. `get_release_notes` does the same for `CHANGELOG.md`.
+What that means for a page:
+
+- **Its first paragraph is its summary** in the tool's page index (a page with none is summarized by its `##`
+  headings), so open a page with a sentence that says what it is for.
+- **Anchors are addresses agents use.** They are slugged exactly as VitePress slugs them
+  (`apps/application/shared/docs-corpus.ts`); renaming a heading breaks a stored `page#anchor` the same way it breaks a
+  link.
+- **Three lists on `guide/what-piwi-does.md` are quoted verbatim** by the tool's overview — the three jobs, the two
+  rules and "What it isn't" (`QUOTED_DOCS_SECTIONS` in `piwi-ecosystem.ts`). Keep them as Markdown lists.
+- Vue components render as text for agents: `<Needs …/>` becomes a "Needs:" line, and `<<< @/snippets/…` includes
+  become the snippet's code. A new component needs a text rendering in `docs-corpus.ts`.
 
 ## Site structure (MUST follow)
 

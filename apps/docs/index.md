@@ -36,7 +36,7 @@ features:
     details: The bundled Playwright trace viewer, screenshots, console, network calls, Web Vitals, and the failing call stack with real source — all served by your own instance.
   - icon: 🔒
     title: Yours to run
-    details: One Docker container, SQLite or PostgreSQL, local or S3 storage, optional role-based auth. Zero telemetry — the only outbound calls are the ones you configure.
+    details: One Docker container, SQLite or PostgreSQL, local or S3 storage, optional role-based auth. Zero telemetry — outbound calls are the ones you configure, plus public git-host lookups for the repository your runs report and the titles of links you attach.
 ---
 
 <div class="home-prose">
@@ -117,7 +117,7 @@ Start from what you came here to do.
   how to [block a merge](/guide/ci#blocking-a-merge) on the analysis rather than the exit code.
 - **Running it for a team** — [Deployment](/operate/deployment), [Configuration](/reference/configuration),
   [Authentication](/operate/authentication), and [Privacy & data flow](/guide/privacy).
-- **Letting an agent do the reading** — the [MCP server](/features/mcp) gives a coding agent 46 tools over your
+- **Letting an agent do the reading** — the [MCP server](/features/mcp) gives a coding agent 48 tools over your
   test history, and [AI diagnosis](/features/ai-diagnosis) explains a cluster against your actual git diff with
   a provider you configure. Both optional; a local model works.
 

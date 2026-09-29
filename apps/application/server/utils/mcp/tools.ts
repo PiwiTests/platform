@@ -90,18 +90,10 @@ import { importArchive } from '../import-archive';
 import { sanitizeFilename } from '../sanitize-filename';
 import { resolveMaxUploadBytes } from '../upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
+import { dropNulls } from './json';
+import { describePiwi, getReleaseNotes } from './about-piwi';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
-
-function dropNulls<T extends object>(obj: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => {
-      if (v == null || v === '') return false;
-      if (Array.isArray(v) && v.length === 0) return false;
-      return true;
-    }),
-  ) as Partial<T>;
-}
 
 function trunc(s: string | null | undefined, max = 300): string | null {
   if (!s) return null;
@@ -1992,6 +1984,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         message.toLowerCase().includes('unique') ? 'A function with this name already exists in this module' : message,
       );
     }
+  },
+
+  // ── describe_piwi ──────────────────────────────────────────────────────────
+  async describe_piwi(db, params, ctx) {
+    return describePiwi(db, params, ctx);
+  },
+
+  // ── get_release_notes ──────────────────────────────────────────────────────
+  async get_release_notes(_db, params) {
+    return getReleaseNotes(params);
   },
 };
 

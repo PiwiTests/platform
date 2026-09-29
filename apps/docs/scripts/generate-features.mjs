@@ -19,6 +19,11 @@ const jiti = createJiti(import.meta.url);
 const { PIWI_FEATURE_GROUPS, FEATURE_NEED_LABELS } = await jiti.import(
   join(repoRoot, 'application/shared/piwi-features.ts'),
 );
+// The pieces and the setup decisions — the same registry the MCP describe_piwi
+// tool answers from, so the tool never says anything this page does not.
+const { ECOSYSTEM_PIECES, SETUP_DECISIONS } = await jiti.import(
+  join(repoRoot, 'application/shared/piwi-ecosystem.ts'),
+);
 
 const cell = (text) => text.replace(/\|/g, '\\|');
 
@@ -43,6 +48,38 @@ function groupMarkdown({ title, intro, features }) {
 
 const total = PIWI_FEATURE_GROUPS.reduce((n, g) => n + g.features.length, 0);
 
+const pieceRow = ({ name, summary, get, when, doc }) =>
+  `| [${cell(name)}](/${doc}) | ${cell(summary)} | ${cell(get)} | ${cell(when)} |`;
+
+const piecesMarkdown = [
+  '## The pieces',
+  '',
+  'What you install or reach, how to get each piece, and when you need it.',
+  '',
+  '| Piece | What it is | How to get it | When you need it |',
+  '|-------|------------|---------------|------------------|',
+  ...ECOSYSTEM_PIECES.map(pieceRow),
+  '',
+].join('\n');
+
+const decisionMarkdown = ({ question, default: fallback, options, doc }) =>
+  [
+    `### ${question}`,
+    '',
+    `*Default:* ${fallback} [Details](/${doc})`,
+    '',
+    ...options.map(({ option, when }) => `- **${option}** — ${when}`),
+    '',
+  ].join('\n');
+
+const decisionsMarkdown = [
+  '## Choosing a setup',
+  '',
+  'The decisions a team makes once, what happens if you make none, and the page that settles each.',
+  '',
+  ...SETUP_DECISIONS.map(decisionMarkdown),
+].join('\n');
+
 const page = `---
 title: Feature map
 lang: en-US
@@ -60,10 +97,14 @@ page that explains it. Features are grouped by the three jobs the product serves
 **keep the history**, **explain the failures**, and **hand back a fix** — plus how
 you reach them from elsewhere and what an operator runs.
 
-New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this map is the "where next" once a first run has landed.
+New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this map is the "where next" once a first run has landed. The last two sections list the pieces you install and the decisions a setup involves.
 
-${PIWI_FEATURE_GROUPS.map(groupMarkdown).join('\n')}`;
+${PIWI_FEATURE_GROUPS.map(groupMarkdown).join('\n')}
+${piecesMarkdown}
+${decisionsMarkdown}`;
 
 mkdirSync(join(here, '..', 'reference'), { recursive: true });
 writeFileSync(join(here, '..', 'reference', 'feature-map.md'), page);
-console.log(`generated apps/docs/reference/feature-map.md from ${total} features`);
+console.log(
+  `generated apps/docs/reference/feature-map.md from ${total} features, ${ECOSYSTEM_PIECES.length} pieces and ${SETUP_DECISIONS.length} decisions`,
+);
