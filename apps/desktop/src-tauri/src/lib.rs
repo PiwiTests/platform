@@ -10,6 +10,7 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod ide_launcher;
 mod inspect;
 mod interrupt;
 mod mcp_clients;
@@ -828,9 +829,10 @@ fn ide_launcher_args(
     }
 }
 
-/// A launcher command the webview may spawn: a bare executable name resolved on
-/// the PATH. No path separators, whitespace or shell metacharacters, so a stray
-/// call can neither point at an arbitrary binary nor smuggle in extra arguments.
+/// A launcher command the webview may spawn: a bare executable name, looked up on
+/// the PATH and in the IDEs' install folders. No path separators, whitespace or
+/// shell metacharacters, so a stray call can neither point at an arbitrary binary
+/// nor smuggle in extra arguments.
 fn is_safe_launcher_command(command: &str) -> bool {
     !command.is_empty()
         && command.len() <= 64
@@ -849,10 +851,12 @@ fn is_safe_launcher_command(command: &str) -> bool {
 /// Toolbox, an open-project name to match or "allow unsigned requests" — the
 /// reasons the URL schemes are unreliable, on Rider especially.
 ///
-/// Resolves `true` when the launcher started, `false` when it is not on the PATH
-/// (so the webview can fall back to a URL scheme), and errors on a bad command,
-/// a non-absolute path or a file that does not exist. The command is restricted
-/// to a bare PATH-resolved name; the path must be an existing file.
+/// Resolves `true` when the launcher started, `false` when no IDE installed it
+/// where the shell looks (so the webview can fall back to a URL scheme), and
+/// errors on a bad command, a non-absolute path or a file that does not exist.
+/// The command is restricted to a bare name, found on the PATH or in the folders
+/// the IDEs install their launchers to (`ide_launcher`); the path must be an
+/// existing file.
 #[tauri::command]
 fn desktop_open_in_ide(
     app: tauri::AppHandle,
@@ -874,12 +878,18 @@ fn desktop_open_in_ide(
     }
     let args = ide_launcher_args(&family, &path, line, column)?;
 
-    // A missing launcher (not on the PATH) is reported as `false`, not raised, so
-    // the caller can still try a URL scheme. On a successful spawn the child is
-    // held on a background task until it exits: the launcher hands the file off
-    // to the running IDE and returns in well under a second, but dropping the
-    // handle immediately could cut that handoff short.
-    match app.shell().command(command.as_str()).args(args).spawn() {
+    // A missing launcher is reported as `false`, not raised, so the caller can
+    // still try a URL scheme. On a successful spawn the child is held on a
+    // background task until it exits: the launcher hands the file off to the
+    // running IDE and returns in well under a second, but dropping the handle
+    // immediately could cut that handoff short.
+    let roots = ide_launcher::SearchRoots::from_env(app.path().home_dir().ok());
+    let Some(launcher) =
+        ide_launcher::resolve_launcher(&roots, ide_launcher::Os::current(), &family, &command)
+    else {
+        return Ok(false);
+    };
+    match app.shell().command(launcher).args(args).spawn() {
         Ok((mut rx, child)) => {
             tauri::async_runtime::spawn(async move {
                 let _child = child;
