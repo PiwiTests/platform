@@ -43,7 +43,8 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
 [Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over every run; select two runs and
-  **Compare** to see [what changed](./run-changes) between them.
+  **Compare** to see [what changed](./run-changes) between them, or select any number and
+  [delete them](/operate/storage#storage-management).
 - **Tests**: every test case with its pass rate and last run, filterable by status, tag, lock, owner and priority, and
   groupable by spec file ([test metadata](/reference/test-metadata)).
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the

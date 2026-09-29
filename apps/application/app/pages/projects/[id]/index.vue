@@ -28,8 +28,6 @@ const { data: project, refresh } = await useFetch<ProjectWithTestRuns>(`/api/pro
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
 
 const toast = useToast();
-const deletingRunId = ref<number | null>(null);
-const confirmDeleteRunId = ref<number | null>(null);
 
 const { isAdmin, isReporter } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
@@ -69,22 +67,6 @@ async function handleDeleteProject() {
     const message =
       error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({ title: 'Delete failed', description: message || 'An error occurred', color: 'error' });
-  }
-}
-
-async function handleDeleteRun(runId: number) {
-  confirmDeleteRunId.value = null;
-  deletingRunId.value = runId;
-  try {
-    await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
-    toast.add({ title: 'Test run deleted', color: 'success' });
-    await Promise.all([refresh(), refreshKeptRuns()]);
-  } catch (error: unknown) {
-    const message =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Delete failed', description: message || 'An error occurred', color: 'error' });
-  } finally {
-    deletingRunId.value = null;
   }
 }
 
@@ -410,25 +392,49 @@ function goToTab(tab: TabValue, segment?: FailureSegment) {
   activeTab.value = tab;
 }
 
-// === RUNS TAB: selection → compare ===
+// === RUNS TAB: selection → compare or delete ===
 const selectedRunIds = ref<number[]>([]);
 const isRunSelected = (runId: number) => selectedRunIds.value.includes(runId);
+const allRunsSelected = computed(
+  () => tableRuns.value.length > 0 && tableRuns.value.every((r) => selectedRunIds.value.includes(r.id)),
+);
+const someRunsSelected = computed(() => selectedRunIds.value.length > 0 && !allRunsSelected.value);
 
 function toggleRunSelection(runId: number) {
   const idx = selectedRunIds.value.indexOf(runId);
-  if (idx >= 0) {
-    selectedRunIds.value.splice(idx, 1);
-  } else {
-    if (selectedRunIds.value.length >= 2) {
-      toast.add({
-        title: 'Maximum 2 runs',
-        description: 'Select at most 2 runs to compare. Deselect one first.',
-        color: 'warning',
-      });
-      return;
-    }
-    selectedRunIds.value.push(runId);
+  if (idx >= 0) selectedRunIds.value.splice(idx, 1);
+  else selectedRunIds.value.push(runId);
+}
+
+function toggleAllRuns() {
+  selectedRunIds.value = allRunsSelected.value ? [] : tableRuns.value.map((r) => r.id);
+}
+
+// A filter that hides a selected run drops it from the selection, so a bulk
+// delete only ever covers rows on screen.
+watch(tableRuns, (rows) => {
+  const visible = new Set(rows.map((r) => r.id));
+  if (selectedRunIds.value.some((id) => !visible.has(id))) {
+    selectedRunIds.value = selectedRunIds.value.filter((id) => visible.has(id));
   }
+});
+
+// === RUNS TAB: delete (one run from its menu, or the selection) ===
+const runsToDelete = ref<TestRunSummary[]>([]);
+const isDeleteRunsOpen = ref(false);
+
+function openDeleteRuns(runs: TestRunSummary[]) {
+  runsToDelete.value = runs;
+  isDeleteRunsOpen.value = true;
+}
+
+function deleteSelectedRuns() {
+  openDeleteRuns(tableRuns.value.filter((r) => selectedRunIds.value.includes(r.id)));
+}
+
+async function onRunsDeleted(runIds: number[]) {
+  selectedRunIds.value = selectedRunIds.value.filter((id) => !runIds.includes(id));
+  await Promise.all([refresh(), refreshKeptRuns()]);
 }
 
 // Compare opens the newer run's Changes tab with the older run as its baseline.
@@ -507,15 +513,15 @@ function runMenuItems(run: TestRunSummary) {
     });
   }
   // A kept run cannot be deleted until it is released.
-  items.push({
-    label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
-    icon: 'i-lucide-trash-2',
-    color: 'error',
-    disabled: !!run.keptAt,
-    onSelect: () => {
-      confirmDeleteRunId.value = run.id;
-    },
-  });
+  if (canManage.value) {
+    items.push({
+      label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
+      icon: 'i-lucide-trash-2',
+      color: 'error',
+      disabled: !!run.keptAt,
+      onSelect: () => openDeleteRuns([run]),
+    });
+  }
   return items;
 }
 
@@ -1061,7 +1067,7 @@ const moreMenuItems = computed(() => {
               v-if="selectedRunIds.length > 0"
               class="flex items-center gap-3 px-3 py-2 mb-3 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800"
             >
-              <span class="text-sm text-primary-700 dark:text-primary-300">
+              <span class="text-sm text-primary-700 dark:text-primary-300" aria-live="polite">
                 {{ selectedRunIds.length }} run{{ selectedRunIds.length > 1 ? 's' : '' }} selected
               </span>
               <UButton
@@ -1072,7 +1078,19 @@ const moreMenuItems = computed(() => {
                 label="Compare"
                 @click="compareSelectedRuns"
               />
-              <span v-else class="text-xs text-primary-500">Select another run to compare</span>
+              <span v-else-if="selectedRunIds.length === 1" class="text-xs text-primary-500">
+                Select another run to compare
+              </span>
+              <UButton
+                v-if="canManage"
+                icon="i-lucide-trash-2"
+                size="sm"
+                color="neutral"
+                variant="outline"
+                label="Delete"
+                :title="`Delete the ${selectedRunIds.length === 1 ? 'selected run' : `${selectedRunIds.length} selected runs`}`"
+                @click="deleteSelectedRuns"
+              />
               <UButton
                 size="xs"
                 variant="ghost"
@@ -1109,7 +1127,14 @@ const moreMenuItems = computed(() => {
                 }"
               >
                 <template #select-header>
-                  <span class="sr-only">Select</span>
+                  <input
+                    type="checkbox"
+                    :checked="allRunsSelected"
+                    :indeterminate.prop="someRunsSelected"
+                    class="cursor-pointer size-4 accent-primary"
+                    :aria-label="allRunsSelected ? 'Deselect all runs' : 'Select all runs'"
+                    @change="toggleAllRuns"
+                  />
                 </template>
                 <template #select-cell="{ row }">
                   <input
@@ -1225,7 +1250,6 @@ const moreMenuItems = computed(() => {
                         variant="ghost"
                         icon="i-lucide-ellipsis-vertical"
                         :aria-label="`Run #${row.original.id} actions`"
-                        :loading="deletingRunId === row.original.id"
                         @click.stop
                       />
                     </UDropdownMenu>
@@ -1278,7 +1302,6 @@ const moreMenuItems = computed(() => {
                       variant="ghost"
                       icon="i-lucide-ellipsis-vertical"
                       :aria-label="`Run #${run.id} actions`"
-                      :loading="deletingRunId === run.id"
                       @click.stop.prevent
                     />
                   </UDropdownMenu>
@@ -1673,33 +1696,7 @@ const moreMenuItems = computed(() => {
     </UModal>
   </ClientOnly>
 
-  <!-- Delete Run Confirm Dialog -->
   <ClientOnly>
-    <UModal
-      :open="confirmDeleteRunId !== null"
-      title="Delete test run"
-      @update:open="
-        (val) => {
-          if (!val) confirmDeleteRunId = null;
-        }
-      "
-    >
-      <template #body>
-        <p>
-          Are you sure you want to delete <strong>Run #{{ confirmDeleteRunId }}</strong
-          >? This will also remove all associated test results, reports, and traces. This action cannot be undone.
-        </p>
-      </template>
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="confirmDeleteRunId = null" />
-        <UButton
-          color="error"
-          label="Delete"
-          icon="i-lucide-trash-2"
-          :loading="deletingRunId === confirmDeleteRunId"
-          @click="handleDeleteRun(confirmDeleteRunId!)"
-        />
-      </template>
-    </UModal>
+    <RunsDeleteModal v-model:open="isDeleteRunsOpen" :runs="runsToDelete" @deleted="onRunsDeleted" />
   </ClientOnly>
 </template>

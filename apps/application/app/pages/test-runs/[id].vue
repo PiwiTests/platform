@@ -54,10 +54,8 @@ useHead(
   }),
 );
 
-const toast = useToast();
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
-const deleting = ref(false);
 const isKeepOpen = ref(false);
 const { release: releaseKeep, canRelease } = useRunKeep();
 
@@ -482,21 +480,7 @@ const displayProgress = computed(() => {
   };
 });
 
-async function handleDeleteRun() {
-  isDeleteConfirmOpen.value = false;
-  deleting.value = true;
-  try {
-    await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
-    toast.add({ title: 'Test run deleted', color: 'success' });
-    await navigateTo(`/projects/${testRun.value?.project?.id}`);
-  } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Delete failed', description: errorMessage || 'An error occurred', color: 'error' });
-  } finally {
-    deleting.value = false;
-  }
-}
+const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.keptAt ?? null }]);
 
 // A plain-text run summary for the navbar's Copy run summary action.
 function buildRunSummary(): string {
@@ -887,19 +871,11 @@ const moreMenuItems = computed(() => {
     <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
   </ClientOnly>
 
-  <!-- Delete Confirm Dialog -->
   <ClientOnly>
-    <UModal :open="isDeleteConfirmOpen" title="Delete test run" @update:open="isDeleteConfirmOpen = $event">
-      <template #body>
-        <p>
-          Are you sure you want to delete <strong>test run #{{ testRun?.id }}</strong
-          >? This will also remove all associated test results, reports, and traces. This action cannot be undone.
-        </p>
-      </template>
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteConfirmOpen = false" />
-        <UButton color="error" label="Delete" icon="i-lucide-trash-2" :loading="deleting" @click="handleDeleteRun" />
-      </template>
-    </UModal>
+    <RunsDeleteModal
+      v-model:open="isDeleteConfirmOpen"
+      :runs="runToDelete"
+      @deleted="navigateTo(`/projects/${testRun?.project?.id}`)"
+    />
   </ClientOnly>
 </template>

@@ -149,6 +149,7 @@ export const PROJECT = {
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
   RUN_COMPARE: 'run-compare',
+  RUN_DELETE_MANY: 'run-delete-many-test',
   RUN_KEEP_OTHER: 'run-keep-other-test',
   RUN_KEEP: 'run-keep-test',
   RUN_LABEL: 'run-label-test',
