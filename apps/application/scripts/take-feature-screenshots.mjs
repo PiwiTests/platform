@@ -1754,9 +1754,10 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     // Execution 37 carries an attachment, a trace and a visual diff, so the
-    // evidence cards are populated rather than empty.
+    // evidence cards are populated rather than empty. The height takes in the
+    // failing step's page views at the foot of the steps table.
     route: '/test-run-cases/37',
-    viewport: { width: 1560, height: 1400 },
+    viewport: { width: 1560, height: 1800 },
     colorScheme: 'dark',
   },
   {
