@@ -1,18 +1,21 @@
-// Reproducing a failure and driving a git bisect against a linked project folder,
-// without ever touching the user's checkout.
+// Reproducing a failure, running a Flake Lab session and driving a git bisect
+// against a linked project folder, without ever touching the user's checkout.
 //
-// A reproduction and a bisect both run in a throwaway `git worktree` of a commit,
+// A reproduction, a lab session and a bisect all run in a throwaway `git worktree` of a commit,
 // created under this app's data dir — never inside the linked folder — so the
 // user's HEAD, uncommitted changes and `node_modules` are left alone. The shell
 // drives every step itself (checkout · install · browser · test, and for a bisect
 // the good/bad loop) and streams progress into the Local runs tray on the same
 // `piwi:local-run` channel a normal local run uses.
 //
-// The webview only ever names a project and a commit window; `git` is invoked
-// through a fixed set of subcommands with validated arguments (SHAs match
-// `^[0-9a-f]{7,40}$`, worktree paths are canonicalized and must sit under the
-// worktrees dir), and the user's own start command — when the config has no
-// `webServer` — is read from the stored settings, never passed in at run time.
+// The webview only ever names a project and a commit window, or for a lab session
+// a test case id and bounded numbers; `git` is invoked through a fixed set of
+// subcommands with validated arguments (SHAs match `^[0-9a-f]{7,40}$`, worktree
+// paths are canonicalized and must sit under the worktrees dir), and the user's
+// own start command — when the config has no `webServer` — is read from the
+// stored settings, never passed in at run time. A lab session reads the commit
+// of the test's latest failure from the bundled server itself, and builds the
+// `piwi flake` arguments and environment here.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -24,7 +27,9 @@ use tauri::{AppHandle, Emitter as _, Manager as _};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt as _;
 
+use crate::mcp_clients::ServerInfo;
 use crate::node_path;
+use crate::repro::local_get_json;
 use crate::runner::{
     linked_folder, resolve_playwright_cli, validate_args, Job, JobChild, LinkRecord, LocalRuns,
     RunEventPayload, RUN_EVENT,
@@ -192,6 +197,125 @@ pub(crate) fn parse_first_bad(output: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// What a lab session runs, as the webview asks for it: one suspect's arm, or
+/// every arm (and every condition at once with `all`), the runs of each arm and
+/// the budget. Bounded here, so only whole numbers reach the command line.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct FlakeLabOptions {
+    pub suspect: Option<u32>,
+    pub all: bool,
+    pub runs: Option<u32>,
+    pub budget_minutes: Option<u32>,
+}
+
+impl FlakeLabOptions {
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.suspect.is_some() && self.all {
+            return Err("run one suspect or all of them, not both".into());
+        }
+        if self.suspect.is_some_and(|n| !(1..=50).contains(&n)) {
+            return Err("the suspect must be a rank from 1 to 50".into());
+        }
+        if self.runs.is_some_and(|n| !(1..=100).contains(&n)) {
+            return Err("runs must be from 1 to 100".into());
+        }
+        if self.budget_minutes.is_some_and(|n| !(1..=240).contains(&n)) {
+            return Err("the budget must be from 1 to 240 minutes".into());
+        }
+        Ok(())
+    }
+}
+
+/// The reporter's `piwi` entry, relative to a `node_modules`.
+const REPORTER_CLI: &str = "@piwitests/reporter/dist/cli/index.js";
+
+/// The sidecar arguments of a lab session: `piwi flake <id>` and its options,
+/// recorded as run from the desktop app. The id and the numbers are the only
+/// values that come from the webview.
+pub(crate) fn flake_lab_args(
+    cli: &Path,
+    test_case_id: u64,
+    options: &FlakeLabOptions,
+) -> Vec<String> {
+    let mut args = vec![node_path(cli), "flake".into(), test_case_id.to_string()];
+    if let Some(n) = options.suspect {
+        args.extend(["--suspect".into(), n.to_string()]);
+    } else if options.all {
+        args.push("--all".into());
+    }
+    if let Some(n) = options.runs {
+        args.extend(["--runs".into(), n.to_string()]);
+    }
+    if let Some(n) = options.budget_minutes {
+        args.extend(["--budget".into(), format!("{n}m")]);
+    }
+    args.extend(["--source".into(), "desktop".into()]);
+    args
+}
+
+/// The sidecar arguments of a flake-aware bisect step: the test's reproducing
+/// arm alone, nothing saved, answered in `git bisect run` exit codes.
+pub(crate) fn flake_bisect_args(cli: &Path, test_case_id: u64) -> Vec<String> {
+    vec![
+        node_path(cli),
+        "flake".into(),
+        "verify".into(),
+        test_case_id.to_string(),
+        "--bisect".into(),
+        "--source".into(),
+        "desktop".into(),
+    ]
+}
+
+/// The environment `piwi flake` runs with: this app's server and token, which
+/// win over a dashboard named in the user's environment or a `.env` in the
+/// worktree, and plain output for the tray.
+pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "PIWI_DASHBOARD_URL",
+            format!("http://127.0.0.1:{}", server.port),
+        ),
+        ("PIWI_API_KEY", server.token.clone()),
+        ("NO_COLOR", "1".into()),
+        ("FORCE_COLOR", "0".into()),
+    ]
+}
+
+/// The `git bisect` subcommand for a flake-aware step's exit code: 0 good, 1
+/// bad, 125 skip. Anything else means the step could not ask the dashboard,
+/// which stops the bisect rather than guessing.
+pub(crate) fn flake_step_verdict(code: Option<i32>) -> Result<&'static str, String> {
+    match code {
+        Some(0) => Ok("good"),
+        Some(1) => Ok("bad"),
+        Some(125) => Ok("skip"),
+        Some(code) => Err(format!("piwi flake could not run this step (exit {code})")),
+        None => Err("piwi flake stopped without an exit code".into()),
+    }
+}
+
+/// The project and the commit of the test's latest failure, read from the
+/// flake-plan response (`projectId`, `failureCommit`).
+pub(crate) fn parse_flake_target(
+    plan: &serde_json::Value,
+) -> Result<(String, Option<String>), String> {
+    let project = plan
+        .get("projectId")
+        .and_then(|v| v.as_u64())
+        .ok_or("the local server sent no project for this test")?;
+    let commit = plan
+        .get("failureCommit")
+        .and_then(|v| v.as_str())
+        .map(|c| c.to_lowercase());
+    Ok((project.to_string(), commit))
+}
+
+/// Whether `git status --porcelain` output lists any change.
+pub(crate) fn is_dirty(porcelain: &str) -> bool {
+    porcelain.lines().any(|l| !l.trim().is_empty())
 }
 
 /// The executable candidate names for a tool on this platform (Windows resolves
@@ -474,7 +598,7 @@ async fn ensure_browser(
     }
     emit_line(app, id, "stdout", format!("Installing {browser}…"));
     let args = vec![node_path(cli), "install".into(), browser.to_string()];
-    run_sidecar_streaming(app, id, None, worktree, args)
+    run_sidecar_streaming(app, id, None, worktree, args, &[])
         .await
         .map(|code| code == 0)
         .unwrap_or(false)
@@ -572,6 +696,7 @@ async fn run_sidecar_streaming(
     cli: Option<&Path>,
     worktree: &Path,
     node_args: Vec<String>,
+    env: &[(&'static str, String)],
 ) -> Option<i32> {
     let _ = cli; // node_args already carry the resolved CLI path
     let command = match app.shell().sidecar("node") {
@@ -579,7 +704,8 @@ async fn run_sidecar_streaming(
             .args(node_args)
             .current_dir(worktree)
             .env("NO_COLOR", "1")
-            .env("FORCE_COLOR", "0"),
+            .env("FORCE_COLOR", "0")
+            .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
         Err(e) => {
             emit_line(app, id, "error", e.to_string());
             return None;
@@ -663,15 +789,30 @@ fn add_worktree(
     project_id: &str,
     commit: &str,
 ) -> Result<PathBuf, String> {
+    add_worktree_in(&worktrees_root(app)?, git, folder, project_id, "", commit)
+}
+
+/// Prepare a worktree of `commit` at `<root>/<project>/<prefix><short sha>`,
+/// detached, from the repository at `folder`. The folder's HEAD, index and
+/// working files are left as they are. A lab session uses its own prefix so
+/// it never removes a reproduction's worktree of the same commit.
+pub(crate) fn add_worktree_in(
+    root: &Path,
+    git: &Path,
+    folder: &Path,
+    project_id: &str,
+    prefix: &str,
+    commit: &str,
+) -> Result<PathBuf, String> {
     if !commit_exists(git, folder, commit) {
         return Err(format!(
             "commit {} is unknown to the linked repository — run `git fetch` in it first.",
             &commit[..commit.len().min(12)]
         ));
     }
-    let worktree = worktrees_root(app)?
+    let worktree = root
         .join(project_id)
-        .join(&commit[..commit.len().min(12)]);
+        .join(format!("{prefix}{}", &commit[..commit.len().min(12)]));
     // A stale worktree from a previous run at the same commit blocks `add`.
     if worktree.exists() {
         let _ = Command::new(git)
@@ -806,7 +947,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args).await
+    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &[]).await
 }
 
 /// Drive a git bisect over the window `good..bad` in a throwaway worktree, step by
@@ -820,11 +961,15 @@ pub async fn desktop_bisect_here(
     bad: String,
     args: Vec<String>,
     browser: Option<String>,
+    flake_test_case_id: Option<u64>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&good) || !valid_sha(&bad) {
         return Err("invalid commit".into());
     }
+    // A flake-aware bisect asks `piwi flake verify --bisect` at each step, with
+    // this app's server and token.
+    let flake = flake_test_case_id.map(|id| (id, server_info(&app)));
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
     if !commit_exists(&git, &folder, &good) || !commit_exists(&git, &folder, &bad) {
         return Err(format!(
@@ -875,6 +1020,7 @@ pub async fn desktop_bisect_here(
             &bad,
             &args,
             browser.as_deref(),
+            flake.as_ref(),
             &stop,
         )
         .await;
@@ -894,9 +1040,18 @@ async fn bisect_driver(
     bad: &str,
     args: &[String],
     browser: Option<&str>,
+    flake: Option<&(u64, ServerInfo)>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
+    if let Some((test_case_id, _)) = flake {
+        emit_line(
+            app,
+            id,
+            "stdout",
+            format!("Each step runs the Flake Lab arm that reproduced test {test_case_id}: bad on a failure with the same error as in CI, good after enough clean runs."),
+        );
+    }
     let start = git_capture(git, worktree, &["bisect", "start", bad, good]);
     let mut output = match start {
         Ok(text) => text,
@@ -960,6 +1115,18 @@ async fn bisect_driver(
         // output the loop reads next.
         let verdict = if !installed || !browser_ok {
             "skip"
+        } else if let Some((test_case_id, server)) = flake {
+            let code = run_flake_step(app, id, folder, worktree, *test_case_id, server, stop).await;
+            if stop.load(Ordering::SeqCst) {
+                return None;
+            }
+            match flake_step_verdict(code) {
+                Ok(verdict) => verdict,
+                Err(e) => {
+                    emit_line(app, id, "error", e);
+                    return None;
+                }
+            }
         } else {
             let code = run_test_phase(app, id, worktree, args, browser, stop).await;
             if stop.load(Ordering::SeqCst) {
@@ -998,6 +1165,201 @@ async fn bisect_driver(
             ),
         );
     }
+}
+
+/// This app's server address and token, for the `piwi flake` runs it starts.
+fn server_info(app: &AppHandle) -> ServerInfo {
+    let server = app.state::<ServerInfo>();
+    ServerInfo {
+        port: server.port,
+        token: server.token.clone(),
+    }
+}
+
+/// The reporter's `piwi` entry for a lab run in `worktree`: the linked
+/// folder's, the newest the user has installed, else the worktree's own. The
+/// test, its fixtures and Playwright always come from the worktree.
+fn resolve_reporter_cli(folder: &Path, worktree: &Path) -> Option<PathBuf> {
+    crate::runner::resolve_node_module(folder, &[REPORTER_CLI])
+        .or_else(|| crate::runner::resolve_node_module(worktree, &[REPORTER_CLI]))
+}
+
+/// One flake-aware bisect step: `piwi flake verify <id> --bisect` in the
+/// worktree. Returns its exit code.
+async fn run_flake_step(
+    app: &AppHandle,
+    id: u32,
+    folder: &Path,
+    worktree: &Path,
+    test_case_id: u64,
+    server: &ServerInfo,
+    stop: &AtomicBool,
+) -> Option<i32> {
+    if stop.load(Ordering::SeqCst) {
+        return None;
+    }
+    let Some(cli) = resolve_reporter_cli(folder, worktree) else {
+        emit_line(app, id, "error", "@piwitests/reporter is not installed in the linked folder or at this commit — install it to run the lab.");
+        return None;
+    };
+    let args = flake_bisect_args(&cli, test_case_id);
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &flake_lab_env(server)).await
+}
+
+/// Run a Flake Lab session on one test at the commit of its latest failure, in
+/// a throwaway worktree of the project's linked folder: checkout · install ·
+/// `piwi flake`. The webview names the test and the options only; the project
+/// and the commit come from the bundled server, and the arguments and the
+/// environment are built here. Returns a run id; output streams as
+/// `piwi:local-run` events, and the exit code is `piwi flake`'s (0 reproduced,
+/// 1 not reproduced, 2 could not run).
+#[tauri::command]
+pub async fn desktop_flake_lab_here(
+    app: AppHandle,
+    test_case_id: u64,
+    suspect: Option<u32>,
+    all: Option<bool>,
+    runs: Option<u32>,
+    budget_minutes: Option<u32>,
+) -> Result<u32, String> {
+    let options = FlakeLabOptions {
+        suspect,
+        all: all.unwrap_or(false),
+        runs,
+        budget_minutes,
+    };
+    options.validate()?;
+    if test_case_id == 0 {
+        return Err("invalid test case".into());
+    }
+    let server = server_info(&app);
+    let plan_server = ServerInfo {
+        port: server.port,
+        token: server.token.clone(),
+    };
+    let plan = tauri::async_runtime::spawn_blocking(move || {
+        local_get_json(
+            &plan_server,
+            &format!("/api/test-cases/{test_case_id}/flake-plan?kind=reproduce&record=false"),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let (project_id, commit) = parse_flake_target(&plan)?;
+    let commit = commit.ok_or(
+        "the test's latest failure has no commit on record, so there is nothing to check out — run `piwi flake` in your checkout instead",
+    )?;
+    if !valid_sha(&commit) {
+        return Err("the latest failure's commit is not a commit id".into());
+    }
+    let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
+        .map(|out| is_dirty(&out))
+        .unwrap_or(false);
+
+    let state = app.state::<LocalRuns>();
+    let id = state.allocate_id();
+    let stop = Arc::new(AtomicBool::new(false));
+    let cleaned = Arc::new(AtomicBool::new(false));
+    let worktree = add_worktree_in(
+        &worktrees_root(&app)?,
+        &git,
+        &folder,
+        &project_id,
+        "flake-",
+        &commit,
+    )?;
+    state.register_job(
+        id,
+        Job {
+            stop: stop.clone(),
+            child: Arc::new(Mutex::new(None)),
+            cleanup: Cleanup {
+                git: git.clone(),
+                folder: folder.clone(),
+                worktree: worktree.clone(),
+                bisect: false,
+            },
+            cleaned: cleaned.clone(),
+        },
+    );
+
+    tauri::async_runtime::spawn(async move {
+        let code = flake_lab_driver(
+            &app,
+            id,
+            &folder,
+            &worktree,
+            &commit,
+            dirty,
+            test_case_id,
+            &options,
+            &server,
+            &stop,
+        )
+        .await;
+        // A session that could not start reads as an error, never as "not reproduced".
+        finish_job(
+            &app,
+            id,
+            &git,
+            &folder,
+            &worktree,
+            false,
+            &cleaned,
+            Some(code.unwrap_or(2)),
+        );
+    });
+    Ok(id)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn flake_lab_driver(
+    app: &AppHandle,
+    id: u32,
+    folder: &Path,
+    worktree: &Path,
+    commit: &str,
+    dirty: bool,
+    test_case_id: u64,
+    options: &FlakeLabOptions,
+    server: &ServerInfo,
+    stop: &AtomicBool,
+) -> Option<i32> {
+    emit(app, RunEventPayload::phase(id, "checkout"));
+    emit_line(
+        app,
+        id,
+        "stdout",
+        format!(
+            "Worktree of {} (the latest failure) ready — your checkout is untouched.",
+            &commit[..commit.len().min(12)]
+        ),
+    );
+    if dirty {
+        emit_line(
+            app,
+            id,
+            "stdout",
+            "Your checkout has uncommitted changes; they stay as they are, and the lab does not see them.",
+        );
+    }
+
+    emit(app, RunEventPayload::phase(id, "install"));
+    if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
+        return None;
+    }
+
+    emit(app, RunEventPayload::phase(id, "lab"));
+    if stop.load(Ordering::SeqCst) {
+        return None;
+    }
+    let Some(cli) = resolve_reporter_cli(folder, worktree) else {
+        emit_line(app, id, "error", "@piwitests/reporter is not installed in the linked folder or at this commit — install it to run the lab.");
+        return None;
+    };
+    let args = flake_lab_args(&cli, test_case_id, options);
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &flake_lab_env(server)).await
 }
 
 /// The browser phase for a bisect step, without emitting the "browser" phase
@@ -1180,6 +1542,283 @@ mod tests {
             Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
         );
         assert_eq!(parse_first_bad("still bisecting"), None);
+    }
+
+    fn cli() -> PathBuf {
+        PathBuf::from("/repo/node_modules/@piwitests/reporter/dist/cli/index.js")
+    }
+
+    fn strings(args: &[String]) -> Vec<&str> {
+        args.iter().map(String::as_str).collect()
+    }
+
+    #[test]
+    fn a_lab_session_runs_piwi_flake_on_the_test_from_the_desktop_app() {
+        let args = flake_lab_args(&cli(), 1842, &FlakeLabOptions::default());
+        assert_eq!(
+            strings(&args[1..]),
+            ["flake", "1842", "--source", "desktop"]
+        );
+        assert_eq!(args[0], node_path(&cli()));
+    }
+
+    #[test]
+    fn a_lab_session_passes_only_the_bounded_options() {
+        let one = FlakeLabOptions {
+            suspect: Some(2),
+            all: false,
+            runs: Some(6),
+            budget_minutes: Some(20),
+        };
+        assert_eq!(
+            strings(&flake_lab_args(&cli(), 7, &one)[1..]),
+            [
+                "flake",
+                "7",
+                "--suspect",
+                "2",
+                "--runs",
+                "6",
+                "--budget",
+                "20m",
+                "--source",
+                "desktop"
+            ]
+        );
+        let all = FlakeLabOptions {
+            all: true,
+            ..FlakeLabOptions::default()
+        };
+        assert_eq!(
+            strings(&flake_lab_args(&cli(), 7, &all)[1..]),
+            ["flake", "7", "--all", "--source", "desktop"]
+        );
+    }
+
+    #[test]
+    fn lab_options_out_of_bounds_are_refused() {
+        assert!(FlakeLabOptions::default().validate().is_ok());
+        let both = FlakeLabOptions {
+            suspect: Some(1),
+            all: true,
+            ..FlakeLabOptions::default()
+        };
+        assert!(both.validate().is_err());
+        for bad in [
+            FlakeLabOptions {
+                suspect: Some(0),
+                ..FlakeLabOptions::default()
+            },
+            FlakeLabOptions {
+                suspect: Some(51),
+                ..FlakeLabOptions::default()
+            },
+            FlakeLabOptions {
+                runs: Some(0),
+                ..FlakeLabOptions::default()
+            },
+            FlakeLabOptions {
+                runs: Some(101),
+                ..FlakeLabOptions::default()
+            },
+            FlakeLabOptions {
+                budget_minutes: Some(241),
+                ..FlakeLabOptions::default()
+            },
+        ] {
+            assert!(bad.validate().is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_flake_bisect_step_asks_verify_for_one_step_and_saves_nothing() {
+        assert_eq!(
+            strings(&flake_bisect_args(&cli(), 1842)[1..]),
+            ["flake", "verify", "1842", "--bisect", "--source", "desktop"]
+        );
+    }
+
+    #[test]
+    fn piwi_flake_reaches_this_app_with_its_token() {
+        let env = flake_lab_env(&ServerInfo {
+            port: 43210,
+            token: "pd_secret".into(),
+        });
+        let get = |key: &str| env.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str());
+        assert_eq!(get("PIWI_DASHBOARD_URL"), Some("http://127.0.0.1:43210"));
+        assert_eq!(get("PIWI_API_KEY"), Some("pd_secret"));
+        assert_eq!(get("NO_COLOR"), Some("1"));
+        // Nothing else: the webview cannot add a variable.
+        assert_eq!(env.len(), 4);
+    }
+
+    #[test]
+    fn a_flake_step_exit_code_is_a_bisect_verdict() {
+        assert_eq!(flake_step_verdict(Some(0)), Ok("good"));
+        assert_eq!(flake_step_verdict(Some(1)), Ok("bad"));
+        assert_eq!(flake_step_verdict(Some(125)), Ok("skip"));
+        assert!(flake_step_verdict(Some(2)).is_err());
+        assert!(flake_step_verdict(None).is_err());
+    }
+
+    #[test]
+    fn reads_the_project_and_the_failure_commit_from_the_plan() {
+        let plan = serde_json::json!({ "projectId": 3, "failureCommit": "ABCDEF1234567" });
+        assert_eq!(
+            parse_flake_target(&plan),
+            Ok(("3".to_string(), Some("abcdef1234567".to_string())))
+        );
+        let no_commit = serde_json::json!({ "projectId": 3, "failureCommit": null });
+        assert_eq!(parse_flake_target(&no_commit), Ok(("3".to_string(), None)));
+        assert!(parse_flake_target(&serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn reads_a_dirty_checkout_from_git_status() {
+        assert!(!is_dirty(""));
+        assert!(!is_dirty("\n"));
+        assert!(is_dirty(" M tests/a.spec.ts\n"));
+        assert!(is_dirty("?? notes.txt\n"));
+    }
+
+    /// A git repository with one commit, removed when the test ends.
+    struct Repo {
+        dir: PathBuf,
+        git: PathBuf,
+    }
+
+    impl Repo {
+        fn new(label: &str) -> Option<Self> {
+            let git = resolve_tool_in(
+                &std::env::var_os("PATH")
+                    .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+                &tool_candidates("git"),
+            )?;
+            let dir = std::env::temp_dir().join(format!("piwi-wt-{label}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join("repo")).unwrap();
+            let repo = Self { dir, git };
+            repo.run(&["init", "-q"]);
+            std::fs::write(repo.folder().join("a.spec.ts"), "committed\n").unwrap();
+            repo.run(&["add", "."]);
+            repo.run(&[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "-m",
+                "one",
+            ]);
+            Some(repo)
+        }
+        fn folder(&self) -> PathBuf {
+            self.dir.join("repo")
+        }
+        fn run(&self, args: &[&str]) -> String {
+            let out = Command::new(&self.git)
+                .arg("-C")
+                .arg(self.folder())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8_lossy(&out.stdout).to_string()
+        }
+    }
+
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn a_lab_worktree_leaves_a_dirty_checkout_as_it_is() {
+        let Some(repo) = Repo::new("dirty") else {
+            return; // no git on this machine
+        };
+        let head = repo.run(&["rev-parse", "HEAD"]).trim().to_string();
+        std::fs::write(repo.folder().join("a.spec.ts"), "edited, not committed\n").unwrap();
+        std::fs::write(repo.folder().join("notes.txt"), "untracked\n").unwrap();
+        let status = repo.run(&["status", "--porcelain"]);
+        assert!(is_dirty(&status));
+
+        let root = repo.dir.join("worktrees");
+        let worktree =
+            add_worktree_in(&root, &repo.git, &repo.folder(), "3", "flake-", &head).unwrap();
+
+        assert_eq!(
+            worktree,
+            root.join("3").join(format!("flake-{}", &head[..12]))
+        );
+        assert_eq!(
+            std::fs::read_to_string(worktree.join("a.spec.ts")).unwrap(),
+            "committed\n"
+        );
+        assert!(!worktree.join("notes.txt").exists());
+        // The checkout keeps its HEAD, its edit and its untracked file.
+        assert_eq!(repo.run(&["rev-parse", "HEAD"]).trim(), head);
+        assert_eq!(repo.run(&["status", "--porcelain"]), status);
+        assert_eq!(
+            std::fs::read_to_string(repo.folder().join("a.spec.ts")).unwrap(),
+            "edited, not committed\n"
+        );
+
+        perform_cleanup(
+            &Cleanup {
+                git: repo.git.clone(),
+                folder: repo.folder(),
+                worktree: worktree.clone(),
+                bisect: false,
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(!worktree.exists());
+        assert_eq!(repo.run(&["status", "--porcelain"]), status);
+    }
+
+    #[test]
+    fn a_commit_the_checkout_does_not_have_asks_for_a_fetch() {
+        let Some(repo) = Repo::new("missing") else {
+            return;
+        };
+        let err = add_worktree_in(
+            &repo.dir.join("worktrees"),
+            &repo.git,
+            &repo.folder(),
+            "3",
+            "flake-",
+            "0123456789abcdef0123456789abcdef01234567",
+        )
+        .unwrap_err();
+        assert!(err.contains("git fetch"), "{err}");
+    }
+
+    #[test]
+    fn the_reporter_cli_comes_from_the_linked_folder_first() {
+        let dir = std::env::temp_dir().join(format!("piwi-cli-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let folder = dir.join("folder");
+        let worktree = dir.join("worktree");
+        let install = |at: &Path| {
+            let cli = at.join("node_modules").join(REPORTER_CLI);
+            std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+            std::fs::write(&cli, "").unwrap();
+            cli
+        };
+        std::fs::create_dir_all(&folder).unwrap();
+        let in_worktree = install(&worktree);
+        assert_eq!(resolve_reporter_cli(&folder, &worktree), Some(in_worktree));
+        let in_folder = install(&folder);
+        assert_eq!(resolve_reporter_cli(&folder, &worktree), Some(in_folder));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

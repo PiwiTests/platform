@@ -209,7 +209,12 @@ const activeTabIcon = computed(() => TABS.find((t) => t.value === activeTab.valu
           :markers="historyMarkers"
         />
 
-        <FlakinessTab v-else-if="activeTab === 'flakiness'" :test-case-id="Number(testCaseId)" />
+        <FlakinessTab
+          v-else-if="activeTab === 'flakiness'"
+          :test-case-id="Number(testCaseId)"
+          :project-id="testCase.project?.id ?? null"
+          :project-label="testCase.project?.label ?? testCase.project?.name ?? null"
+        />
 
         <template v-else>
           <!-- Duration trend, with the execution strip as its footer row -->
