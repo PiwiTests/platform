@@ -698,12 +698,30 @@ describe('parseTraceTexts — v9 frame snapshots (callId + phase)', () => {
     expect(data.failingAction?.afterSnapshot).toBe('after@call@12');
   });
 
-  test('extractDomSnapshot renders the failing action’s before-snapshot from a v9 trace', () => {
+  test('extractDomSnapshot falls back to the failing action’s before-snapshot when it recorded no after-snapshot', () => {
     const res = extractDomSnapshot(parseTraceTexts(v9Trace()), 1_000_000);
     expect(res.status).toBe('ok');
     expect(res.snapshotName).toBe('before@call@12');
     expect(res.html).toContain('<button id="go">Go</button>');
     expect(res.frameUrl).toBe('http://127.0.0.1:42103/');
+  });
+
+  test('extractDomSnapshot renders the failing action’s after-snapshot, the page when it failed', () => {
+    const [text] = v9Trace();
+    const after = {
+      type: 'frame-snapshot',
+      snapshot: {
+        callId: 'call@12',
+        phase: 'after',
+        frameId: 'f1',
+        isMainFrame: true,
+        frameUrl: 'http://127.0.0.1:42103/',
+        html: ['HTML', {}, ['BODY', {}, ['BUTTON', { id: 'go', disabled: '' }, 'Go']]],
+      },
+    };
+    const res = extractDomSnapshot(parseTraceTexts([`${text}\n${JSON.stringify(after)}`]), 1_000_000);
+    expect(res.snapshotName).toBe('after@call@12');
+    expect(res.html).toContain('<button id="go" disabled="">Go</button>');
   });
 });
 

@@ -510,10 +510,11 @@ export function snapshotMomentFromQuery(query: Record<string, unknown>): Snapsho
 
 /**
  * Pick and render the failure-time DOM from parsed trace data: the failing
- * action's before-snapshot, falling back to its after-snapshot. A runner action
- * (`Test.*`) records none, so the page-side action it drove stands in: its
- * after-snapshot (the page when the error was raised), then its before-snapshot.
- * Finally the frame's last recorded snapshot (final page state). `at` names one
+ * action's after-snapshot (the page when the error was raised, the moment the
+ * failure screenshot and the failing aria tree show), falling back to its
+ * action snapshot, then its before-snapshot. A runner action (`Test.*`) records
+ * none, so the page-side action it drove stands in, in the same order. Finally
+ * the frame's last recorded snapshot (final page state). `at` names one
  * action's snapshot to render first — the DOM beside a screenshot of the same
  * moment.
  */
@@ -530,9 +531,9 @@ export function extractDomSnapshot(
   const named = at ? data.actions.find((a) => a.callId === at.callId) : undefined;
   const candidates = [
     at?.phase === 'before' ? named?.beforeSnapshot : (named?.afterSnapshot ?? named?.snapshotName),
-    fa?.beforeSnapshot,
-    fa?.snapshotName,
     fa?.afterSnapshot,
+    fa?.snapshotName,
+    fa?.beforeSnapshot,
     pageAction?.afterSnapshot,
     pageAction?.snapshotName,
     pageAction?.beforeSnapshot,
