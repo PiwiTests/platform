@@ -2,7 +2,8 @@
 /**
  * The project's URL patterns: the addresses its application is served at,
  * which Piwi Picker resolves the project of a page from. Suggests one pattern
- * per origin the suite already visited.
+ * per origin the suite already visited, grouped by the environment its runs
+ * were reported with.
  */
 import { parsePathPrefix } from '@piwitests/core/page-key';
 import type { UrlPatternItem, UrlPatternSuggestion } from '#shared/handlers/url-patterns';
@@ -85,6 +86,26 @@ const shownSuggestions = computed(() =>
   suggestions.value.filter((s) => !rows.value.some((r) => r.pattern.trim() === s.pattern)),
 );
 
+interface SuggestionGroup {
+  environment: string | null;
+  items: UrlPatternSuggestion[];
+}
+
+/** Suggestions by environment, in the order of each one's most visited site; those without one last. */
+const suggestionGroups = computed<SuggestionGroup[]>(() => {
+  const groups = new Map<string | null, UrlPatternSuggestion[]>();
+  for (const suggestion of shownSuggestions.value) {
+    const items = groups.get(suggestion.environment);
+    if (items) items.push(suggestion);
+    else groups.set(suggestion.environment, [suggestion]);
+  }
+  return [...groups]
+    .map(([environment, items]) => ({ environment, items }))
+    .sort((a, b) => Number(a.environment === null) - Number(b.environment === null));
+});
+
+const byEnvironment = computed(() => suggestionGroups.value.some((g) => g.environment !== null));
+
 async function load() {
   loading.value = true;
   try {
@@ -102,8 +123,19 @@ async function load() {
   }
 }
 
-function addRow(pattern = '') {
-  rows.value.push({ key: nextKey++, pattern, environment: '', branch: '', pathPrefix: '', testPathPrefix: '' });
+function addRow(pattern = '', environment: string | null = null) {
+  rows.value.push({
+    key: nextKey++,
+    pattern,
+    environment: environment ?? '',
+    branch: '',
+    pathPrefix: '',
+    testPathPrefix: '',
+  });
+}
+
+function addSuggestions(items: UrlPatternSuggestion[]) {
+  for (const item of items) addRow(item.pattern, item.environment);
 }
 
 function removeRow(key: number) {
@@ -235,28 +267,48 @@ watch(() => props.projectId, load, { immediate: true });
 
       <div v-if="shownSuggestions.length > 0" class="space-y-2" data-testid="url-pattern-suggestions">
         <p class="text-sm font-semibold text-highlighted">Visited by the suite</p>
-        <ul class="space-y-2">
-          <li
-            v-for="suggestion in shownSuggestions"
-            :key="suggestion.origin"
-            class="flex flex-wrap items-center justify-between gap-2"
-          >
-            <div class="min-w-0">
-              <div class="font-mono text-sm text-highlighted break-all">{{ suggestion.pattern }}</div>
-              <div class="text-xs text-muted">
-                From {{ suggestion.sources.map((s) => SOURCE_LABELS[s]).join(', ') }}
-              </div>
-            </div>
+        <section
+          v-for="group in suggestionGroups"
+          :key="group.environment ?? ''"
+          :class="byEnvironment ? 'space-y-2 rounded-lg border border-default p-3' : 'space-y-2'"
+          data-testid="url-pattern-suggestion-group"
+        >
+          <div v-if="byEnvironment" class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm font-semibold text-highlighted">{{ group.environment ?? 'No environment' }}</p>
             <UButton
-              label="Add"
+              v-if="group.environment !== null && group.items.length > 1"
+              label="Add all"
               color="neutral"
               variant="outline"
               size="sm"
-              :aria-label="`Add ${suggestion.pattern}`"
-              @click="addRow(suggestion.pattern)"
+              :aria-label="`Add all ${group.environment} suggestions`"
+              :title="`Add the ${group.items.length} ${group.environment} suggestions`"
+              @click="addSuggestions(group.items)"
             />
-          </li>
-        </ul>
+          </div>
+          <ul class="space-y-2">
+            <li
+              v-for="suggestion in group.items"
+              :key="suggestion.origin"
+              class="flex flex-wrap items-center justify-between gap-2"
+            >
+              <div class="min-w-0">
+                <div class="font-mono text-sm text-highlighted break-all">{{ suggestion.pattern }}</div>
+                <div class="text-xs text-muted">
+                  From {{ suggestion.sources.map((s) => SOURCE_LABELS[s]).join(', ') }}
+                </div>
+              </div>
+              <UButton
+                label="Add"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :aria-label="`Add ${suggestion.pattern}`"
+                @click="addSuggestions([suggestion])"
+              />
+            </li>
+          </ul>
+        </section>
       </div>
 
       <div class="flex flex-wrap justify-between gap-2">
