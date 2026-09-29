@@ -37,8 +37,6 @@ import DomSnapshotFrame from './DomSnapshotFrame.vue';
 
 const props = defineProps<{
   testRunsCaseId: number;
-  /** The execution's run, which the locator picker works in; no picker without it. */
-  runId?: number | null;
   /** The execution's attachments — the run's failure screenshot when the trace has no 1.63 `screen` snapshot. */
   attachments?: AttachmentInfo[] | null;
   /** The execution's failure-time ARIA tree, shown when the trace carries no per-action aria. */
@@ -189,7 +187,7 @@ const copyAction = computed(() => {
 // from the ARIA tree when there is no trace DOM). It opens on the failing
 // locator the healing data names — the same request the Locator fix section
 // makes, shared by key — or as an inspector when the failure named none.
-const canPick = computed(() => props.runId != null && dom.hasSnapshot.value);
+const canPick = computed(() => dom.hasSnapshot.value);
 const pickerOpen = ref(false);
 const { data: healing, execute: loadHealing } = useFetch<LocatorHealingResult>(
   () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
@@ -336,9 +334,8 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
 
     <ScreenshotLightbox v-model="lightboxIndex" :images="shots" />
     <SnapshotLocatorPicker
-      v-if="pickerOpen && canPick && runId != null"
+      v-if="pickerOpen && canPick"
       v-model:open="pickerOpen"
-      :run-id="runId"
       :test-runs-case-id="testRunsCaseId"
       :failing-locator="healing?.failingLocator ?? null"
       :healing="healing"

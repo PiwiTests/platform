@@ -70,8 +70,6 @@ const props = defineProps<{
   /** Piwi project id/name — passed to the open-in-IDE links for call sites. */
   projectKey?: string | number | null;
   projectName?: string | null;
-  /** The execution's run — the failing step's page opens the locator picker in it. */
-  runId?: number | null;
   /** The execution's attachments — a failure screenshot binds to the failing step for pre-1.63 traces. */
   attachments?: AttachmentInfo[] | null;
   /** The execution's recovered failure-time ARIA tree — shown on the failing step when the trace has no per-action aria. */
@@ -1000,7 +998,6 @@ function revealItem(item: TimelineItem) {
                 v-if="entry.failing"
                 data-shot="failing-step-evidence"
                 :test-runs-case-id="testRunsCaseId"
-                :run-id="runId"
                 :attachments="attachments"
                 :aria-snapshot="ariaSnapshot"
                 class="mt-2.5"
@@ -1170,7 +1167,6 @@ function revealItem(item: TimelineItem) {
                         <FailingStepSnapshot
                           v-if="entry.failing"
                           :test-runs-case-id="testRunsCaseId"
-                          :run-id="runId"
                           :attachments="attachments"
                           :aria-snapshot="ariaSnapshot"
                           class="mt-2.5"

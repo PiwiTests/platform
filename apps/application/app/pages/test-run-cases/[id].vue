@@ -841,9 +841,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <!-- Ranked replacement locators for a broken locator -->
             <template #locator-fix>
               <LocatorHealingPanel
-                v-if="testCase?.testRun?.id"
+                v-if="testCase"
                 ref="locatorPanel"
-                :run-id="testCase.testRun.id"
                 :test-runs-case-id="Number(testCaseId)"
                 :ai-intents="aiIntents"
                 :chrome="false"

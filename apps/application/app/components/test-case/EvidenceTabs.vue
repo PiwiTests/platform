@@ -451,7 +451,6 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :test-file-path="testCase?.filePath ?? null"
           :project-key="projectKey"
           :project-name="projectName"
-          :run-id="runId"
           :attachments="attachments"
           :aria-snapshot="ariaSnapshot"
         />
@@ -471,7 +470,6 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             v-model:view="screenView"
             full
             :test-runs-case-id="testRunsCaseId"
-            :run-id="runId"
             :attachments="attachments"
             :aria-snapshot="ariaSnapshot"
             :aria-state="ariaState"

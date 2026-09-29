@@ -23,7 +23,6 @@ import type { DomSnapshotMoment } from '~/composables/useDomSnapshot';
 import LocatorAlternativeRow from './LocatorAlternativeRow.vue';
 
 const props = defineProps<{
-  runId: number;
   testRunsCaseId: number;
   /** The locator that failed; null opens the picker as an inspector. */
   failingLocator: { method: string; args: Record<string, unknown> } | null;
