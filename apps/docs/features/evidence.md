@@ -33,11 +33,11 @@ Below the block, one **evidence card** holds tabs, each with a count or a dot wh
 is strong or medium), else on **Timeline** when it can place two or more items, else on **Screen** when a screenshot or
 video exists, else on **Source**; never on **State**.
 
-- **Timeline**: one time axis for the steps, console entries, network requests, their backend logs and (Playwright
-  1.63+) open browser dialogs, with the moment of failure marked, over one steps table with each step's offset from
-  the failure (`t-1.1s`) and duration. **Around the failure** / **Whole test** and one chip per item type filter both.
-  Hooks and fixtures fold into **Setup** and **Teardown** rows, open when the failure is in one; a `test.step` holds
-  its steps; the innermost failing step shows its error and page.
+- **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
+  browser dialogs, with the failure marked, over a steps table giving each step's offset (`t-1.1s`) and duration.
+  **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
+  **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the step that raised
+  the test's error shows its error and page; a caught error is greyed out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the failure screenshot with the **visual diff** and [page diff](#page-diff) toggles, the video, the trace
   and attachments, and under **Page structure ▸** the failure-time ARIA tree and the reconstructed DOM.
@@ -88,16 +88,16 @@ is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the but
 The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then
 the same branch. Green snapshots come from
 [sampling on pass](/guide/capture-fixtures#green-page-sampling-on-pass), about once a day per test; until one exists the
-toggle says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary also reaches the
+toggle says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
 `explain_failure` [MCP tool](/features/mcp).
 
-When the trace carries [aria snapshots](#aria-and-screen-snapshots), the toggle also shows an **in-execution** page diff
+When the trace carries [aria snapshots](#aria-and-screen-snapshots), the toggle shows an **in-execution** page diff
 that needs no green baseline: the structure at the failure against the last different page before the failing action.
 
 ## Trace-powered deep views
 
 ::: tip Screenshots are Playwright's to record
-Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`, so with the option unset the evidence shows video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
+Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`: with the option unset, the evidence has video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
 :::
 
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
@@ -113,8 +113,8 @@ A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot**
 (`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria`
 on, `screen` stays [opt-in](/operate/storage#trace-snapshots)). Then the Screen tab shows the page **before the failing
 action**, the Timeline tab adds a **filmstrip** of the page before each step, and the failing step shows its
-before/at-failure screenshots and accessibility tree inline. The [in-execution page diff](#page-diff) reads the same
-snapshots.
+before/at-failure screenshots, their DOM and accessibility tree inline. The [in-execution page diff](#page-diff) reads
+the same snapshots.
 
 ### Recovered from the trace without the fixtures
 

@@ -430,7 +430,7 @@ export class PiwiDashboardReporter {
     }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
-      testCase.performanceMetrics = collectStepMetrics(result.steps);
+      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
       const waitEvents = extractWaitEvents(result.steps);
       const allEvents = [...stepEvents, ...waitEvents];

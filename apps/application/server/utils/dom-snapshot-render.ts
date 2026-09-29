@@ -16,7 +16,7 @@
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
-import type { ParsedTraceData, TraceFrameSnapshot } from './trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceFrameSnapshot } from './trace-events';
 
 /**
  * Cap for the rendered snapshot HTML. Generous so a fully-styled snapshot
@@ -489,20 +489,54 @@ export interface DomSnapshotResult {
   availableSources?: DomSnapshotSource[];
 }
 
+/** One action's snapshot moment: the page before it ran, or after it. */
+export interface SnapshotMoment {
+  callId: string;
+  phase: 'before' | 'after';
+}
+
+/** Longest `callId` a snapshot request may name. */
+const MAX_CALL_ID_CHARS = 200;
+
+/**
+ * The snapshot moment a request names with `callId` and `phase` query
+ * parameters, or undefined when it names none (or a malformed one).
+ */
+export function snapshotMomentFromQuery(query: Record<string, unknown>): SnapshotMoment | undefined {
+  const { callId, phase } = query;
+  if (typeof callId !== 'string' || !callId || callId.length > MAX_CALL_ID_CHARS) return undefined;
+  return phase === 'before' || phase === 'after' ? { callId, phase } : undefined;
+}
+
 /**
  * Pick and render the failure-time DOM from parsed trace data: the failing
- * action's before-snapshot, falling back to its after-snapshot and finally the
- * frame's last recorded snapshot (final page state).
+ * action's before-snapshot, falling back to its after-snapshot. A runner action
+ * (`Test.*`) records none, so the page-side action it drove stands in: its
+ * after-snapshot (the page when the error was raised), then its before-snapshot.
+ * Finally the frame's last recorded snapshot (final page state). `at` names one
+ * action's snapshot to render first — the DOM beside a screenshot of the same
+ * moment.
  */
 export function extractDomSnapshot(
   data: ParsedTraceData,
   capChars: number,
   options: SanitizeOptions = {},
+  at?: SnapshotMoment,
 ): DomSnapshotResult {
   if (data.frameSnapshots.length === 0) return { status: 'no-snapshot' };
 
   const fa = data.failingAction;
-  const candidates = [fa?.beforeSnapshot, fa?.snapshotName, fa?.afterSnapshot].filter((name): name is string => !!name);
+  const pageAction = pageActionOf(data, fa);
+  const named = at ? data.actions.find((a) => a.callId === at.callId) : undefined;
+  const candidates = [
+    at?.phase === 'before' ? named?.beforeSnapshot : (named?.afterSnapshot ?? named?.snapshotName),
+    fa?.beforeSnapshot,
+    fa?.snapshotName,
+    fa?.afterSnapshot,
+    pageAction?.afterSnapshot,
+    pageAction?.snapshotName,
+    pageAction?.beforeSnapshot,
+  ].filter((name): name is string => !!name);
   // Final fallback: the last main-frame snapshot in the trace.
   const mains = data.frameSnapshots.filter((s) => s.isMainFrame !== false && s.snapshotName);
   const last = mains[mains.length - 1];

@@ -1,0 +1,401 @@
+/**
+ * The events of real Playwright 1.63 traces (paths rewritten under
+ * `/work/shop/`), each run holding several errored actions: the runner's
+ * `test.trace` (its `Test.*` actions with their call site and parent, and the
+ * test-level `error` events) and the page's `1-trace.trace` (the `Frame.*`
+ * calls). Kept to the events that decide the failing action, each error to its
+ * first line.
+ */
+export interface TraceFixture {
+  'test.trace': Array<Record<string, unknown>>;
+  '1-trace.trace': Array<Record<string, unknown>>;
+}
+
+/** An optional dialog probed in a `try`/`catch`, then a strict mode violation inside a `test.step`. */
+export const caughtProbeTrace: TraceFixture = {
+  'test.trace': [
+    {
+      type: 'before',
+      callId: 'pw:api@44',
+      class: 'Test',
+      method: 'pw:api',
+      title: 'Set content',
+      startTime: 1415,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 4, column: 14 }],
+    },
+    { type: 'after', callId: 'pw:api@44', endTime: 1438 },
+    {
+      type: 'before',
+      callId: 'expect@45',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 1443,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 15, column: 27 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@45',
+      endTime: 1953,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'before',
+      callId: 'pw:api@46',
+      class: 'Test',
+      method: 'pw:api',
+      title: 'Click',
+      startTime: 1954,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 22, column: 52 }],
+    },
+    { type: 'after', callId: 'pw:api@46', endTime: 1985 },
+    {
+      type: 'before',
+      callId: 'test.step@47',
+      class: 'Test',
+      method: 'test.step',
+      title: 'Check the download link',
+      startTime: 1986,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 24, column: 3 }],
+    },
+    {
+      type: 'before',
+      callId: 'expect@48',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeEnabled"',
+      startTime: 1989,
+      parentId: 'test.step@47',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 26, column: 77 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@48',
+      endTime: 2005,
+      error: { message: 'Error: expect(locator).toBeEnabled() failed' },
+    },
+    {
+      type: 'after',
+      callId: 'test.step@47',
+      endTime: 2005,
+      error: { message: 'Error: expect(locator).toBeEnabled() failed' },
+    },
+    {
+      type: 'error',
+      message: 'Error: expect(locator).toBeEnabled() failed',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 26, column: 77 }],
+    },
+    { type: 'before', callId: 'hook@49', class: 'Test', method: 'hook', title: 'After Hooks', startTime: 2006 },
+    { type: 'after', callId: 'hook@49', endTime: 2059 },
+  ],
+  '1-trace.trace': [
+    { type: 'before', callId: 'call@11', class: 'Frame', method: 'setContent', startTime: 1415 },
+    { type: 'after', callId: 'call@11', endTime: 1435 },
+    {
+      type: 'before',
+      callId: 'call@13',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 1446,
+    },
+    { type: 'after', callId: 'call@13', endTime: 1948, error: { message: 'Expect failed' } },
+    { type: 'before', callId: 'call@15', class: 'Frame', method: 'click', startTime: 1954 },
+    { type: 'after', callId: 'call@15', endTime: 1984 },
+    {
+      type: 'before',
+      callId: 'call@17',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeEnabled"',
+      startTime: 1990,
+    },
+    { type: 'after', callId: 'call@17', endTime: 2003, error: { message: 'Expect failed' } },
+  ],
+};
+
+/** Two caught `toBeVisible` probes, then a third `toBeVisible` that fails the test inside a `test.step`. */
+export const sameMessageProbeTrace: TraceFixture = {
+  'test.trace': [
+    {
+      type: 'before',
+      callId: 'pw:api@44',
+      class: 'Test',
+      method: 'pw:api',
+      title: 'Set content',
+      startTime: 2757,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 31, column: 14 }],
+    },
+    { type: 'after', callId: 'pw:api@44', endTime: 2778 },
+    {
+      type: 'before',
+      callId: 'expect@45',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 2784,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 33, column: 65 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@45',
+      endTime: 3089,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'before',
+      callId: 'test.step@46',
+      class: 'Test',
+      method: 'test.step',
+      title: 'Check',
+      startTime: 3090,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 35, column: 3 }],
+    },
+    {
+      type: 'before',
+      callId: 'expect@47',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 3091,
+      parentId: 'test.step@46',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 37, column: 65 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@47',
+      endTime: 3395,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'before',
+      callId: 'expect@48',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 3395,
+      parentId: 'test.step@46',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 39, column: 65 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@48',
+      endTime: 3701,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'after',
+      callId: 'test.step@46',
+      endTime: 3701,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'error',
+      message: 'Error: expect(locator).toBeVisible() failed',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 39, column: 65 }],
+    },
+    { type: 'before', callId: 'hook@49', class: 'Test', method: 'hook', title: 'After Hooks', startTime: 3701 },
+    { type: 'after', callId: 'hook@49', endTime: 3742 },
+  ],
+  '1-trace.trace': [
+    { type: 'before', callId: 'call@11', class: 'Frame', method: 'setContent', startTime: 2758 },
+    { type: 'after', callId: 'call@11', endTime: 2776 },
+    {
+      type: 'before',
+      callId: 'call@13',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 2785,
+    },
+    { type: 'after', callId: 'call@13', endTime: 3086, error: { message: 'Expect failed' } },
+    {
+      type: 'before',
+      callId: 'call@15',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 3092,
+    },
+    { type: 'after', callId: 'call@15', endTime: 3392, error: { message: 'Expect failed' } },
+    {
+      type: 'before',
+      callId: 'call@17',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 3396,
+    },
+    { type: 'after', callId: 'call@17', endTime: 3697, error: { message: 'Expect failed' } },
+  ],
+};
+
+/** A body assertion fails, then the `afterEach` hook fails too. */
+export const teardownAfterBodyTrace: TraceFixture = {
+  'test.trace': [
+    {
+      type: 'before',
+      callId: 'pw:api@44',
+      class: 'Test',
+      method: 'pw:api',
+      title: 'Set content',
+      startTime: 5733,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 55, column: 16 }],
+    },
+    { type: 'after', callId: 'pw:api@44', endTime: 5749 },
+    {
+      type: 'before',
+      callId: 'expect@45',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 5756,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 56, column: 62 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@45',
+      endTime: 5965,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'error',
+      message: 'Error: expect(locator).toBeVisible() failed',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 56, column: 62 }],
+    },
+    { type: 'before', callId: 'hook@46', class: 'Test', method: 'hook', title: 'After Hooks', startTime: 5966 },
+    {
+      type: 'before',
+      callId: 'hook@47',
+      class: 'Test',
+      method: 'hook',
+      title: 'afterEach hook',
+      startTime: 5966,
+      parentId: 'hook@46',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 51, column: 8 }],
+    },
+    {
+      type: 'before',
+      callId: 'expect@48',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 5968,
+      parentId: 'hook@47',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 52, column: 62 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@48',
+      endTime: 6172,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'error',
+      message: 'Error: expect(locator).toBeVisible() failed',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 52, column: 62 }],
+    },
+    {
+      type: 'after',
+      callId: 'hook@47',
+      endTime: 6172,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'after',
+      callId: 'hook@46',
+      endTime: 6220,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+  ],
+  '1-trace.trace': [
+    { type: 'before', callId: 'call@11', class: 'Frame', method: 'setContent', startTime: 5734 },
+    { type: 'after', callId: 'call@11', endTime: 5747 },
+    {
+      type: 'before',
+      callId: 'call@13',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 5759,
+    },
+    { type: 'after', callId: 'call@13', endTime: 5961, error: { message: 'Expect failed' } },
+    {
+      type: 'before',
+      callId: 'call@15',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 5969,
+    },
+    { type: 'after', callId: 'call@15', endTime: 6169, error: { message: 'Expect failed' } },
+  ],
+};
+
+/** A caught probe, then a click interrupted by the test timeout. */
+export const caughtProbeTimeoutTrace: TraceFixture = {
+  'test.trace': [
+    {
+      type: 'before',
+      callId: 'pw:api@44',
+      class: 'Test',
+      method: 'pw:api',
+      title: 'Set content',
+      startTime: 8267,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 71, column: 14 }],
+    },
+    { type: 'after', callId: 'pw:api@44', endTime: 8296 },
+    {
+      type: 'before',
+      callId: 'expect@45',
+      class: 'Test',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 8301,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 73, column: 65 }],
+    },
+    {
+      type: 'after',
+      callId: 'expect@45',
+      endTime: 8508,
+      error: { message: 'Error: expect(locator).toBeVisible() failed' },
+    },
+    {
+      type: 'before',
+      callId: 'pw:api@46',
+      class: 'Test',
+      method: 'pw:api',
+      title: 'Click',
+      startTime: 8510,
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 75, column: 52 }],
+    },
+    { type: 'error', message: 'Test timeout of 1500ms exceeded.', stack: [] },
+    { type: 'before', callId: 'hook@47', class: 'Test', method: 'hook', title: 'After Hooks', startTime: 9711 },
+    {
+      type: 'after',
+      callId: 'pw:api@46',
+      endTime: 9761,
+      error: { message: 'Error: locator.click: Test timeout of 1500ms exceeded.' },
+    },
+    {
+      type: 'error',
+      message: 'Error: locator.click: Test timeout of 1500ms exceeded.',
+      stack: [{ file: '/work/shop/tests/downloads.spec.ts', line: 75, column: 52 }],
+    },
+    { type: 'after', callId: 'hook@47', endTime: 9776 },
+  ],
+  '1-trace.trace': [
+    { type: 'before', callId: 'call@11', class: 'Frame', method: 'setContent', startTime: 8267 },
+    { type: 'after', callId: 'call@11', endTime: 8291 },
+    {
+      type: 'before',
+      callId: 'call@13',
+      class: 'Frame',
+      method: 'expect',
+      title: 'Expect "toBeVisible"',
+      startTime: 8302,
+    },
+    { type: 'after', callId: 'call@13', endTime: 8505, error: { message: 'Expect failed' } },
+    { type: 'before', callId: 'call@15', class: 'Frame', method: 'click', startTime: 8511 },
+  ],
+};

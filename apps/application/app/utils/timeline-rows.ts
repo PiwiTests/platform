@@ -1,17 +1,19 @@
 /**
  * The execution timeline's step table, read as Playwright's step tree: which
- * steps it lists, how deep each one sits, which step failed, and the setup and
- * teardown sections (hooks and fixtures) that fold around the test body.
+ * steps it lists, how deep each one sits, which step failed (and which errors
+ * the test caught), and the setup and teardown sections (hooks and fixtures)
+ * that fold around the test body.
  */
 import type { PerformanceStep } from '~~/types/api';
 import {
   failingStepIndex,
   isCaptureStep,
-  isFailedStep,
   isPhaseContainer,
+  stepFailureRoles,
   stepHookName,
   stepParents,
   stepPhases,
+  type StepFailureRole,
   type StepPhase,
 } from '#shared/step-tree';
 
@@ -23,7 +25,7 @@ export interface StepSectionSummary {
   hooks: string[];
   /** The fixtures it set up or tore down, by name, in order. */
   fixtures: string[];
-  /** Whether a step in it failed. */
+  /** Whether a step in it failed; an error the test caught does not count. */
   failed: boolean;
 }
 
@@ -31,6 +33,8 @@ export interface StepTreeView {
   phases: StepPhase[];
   /** The step that failed — the innermost of the failing chain — or null. */
   failingIndex: number | null;
+  /** Each step's part in the failure (null for a step that passed), see `stepFailureRoles`. */
+  roles: Array<StepFailureRole | null>;
   /** Steps the table never lists: the capture's own and the phase containers. */
   hidden: Set<number>;
   /** How deep each step sits, not counting the phase containers. */
@@ -45,10 +49,16 @@ function fixtureName(hookName: string): string {
   return /^fixture "(.+)"$/.exec(hookName)?.[1] ?? hookName;
 }
 
-/** Read a stored step list as a tree: phases, levels, the failing step and the folded sections. */
-export function buildStepTreeView(steps: PerformanceStep[]): StepTreeView {
+/**
+ * Read a stored step list as a tree: phases, levels, the failing step and the
+ * folded sections. `error` is the execution's error text, which tells the step
+ * that failed the test from an error the test caught.
+ */
+export function buildStepTreeView(steps: PerformanceStep[], error?: string | null): StepTreeView {
   const parents = stepParents(steps);
   const phases = stepPhases(steps, parents);
+  const failingIndex = failingStepIndex(steps, parents, error);
+  const roles = stepFailureRoles(steps, error, parents, failingIndex);
   const hidden = new Set<number>();
   const groups = new Set<number>();
   steps.forEach((step, i) => {
@@ -73,7 +83,7 @@ export function buildStepTreeView(steps: PerformanceStep[]): StepTreeView {
       const step = steps[i]!;
       if (isPhaseContainer(step) && parents[i] === -1) durationMs += step.duration || 0;
       if (hidden.has(i)) continue;
-      if (isFailedStep(step)) failed = true;
+      if (roles[i] && roles[i] !== 'recovered') failed = true;
       const name = stepHookName(step);
       if (!name) continue;
       if (step.category === 'fixture') {
@@ -88,7 +98,8 @@ export function buildStepTreeView(steps: PerformanceStep[]): StepTreeView {
 
   return {
     phases,
-    failingIndex: failingStepIndex(steps, parents),
+    failingIndex,
+    roles,
     hidden,
     level,
     groups,

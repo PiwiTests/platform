@@ -15,9 +15,12 @@
  * The table reads the steps as Playwright's tree: a `test.step`'s steps sit
  * indented under it, and the hooks and fixtures that ran before and after the
  * test body fold into a Setup and a Teardown section — open when the failure
- * happened there. The step that failed is the innermost of the failing chain;
- * every step around it carries the failed mark too. The capture's own steps
- * are never listed, and locations read relative to the project.
+ * happened there. The step that failed is the innermost of the failing chain
+ * that carries the execution's error; every step around it carries the failed
+ * mark too. An error the test caught and went on from (a probe in a
+ * `try`/`catch`, a retried `toPass` attempt) is shown muted, never as the
+ * failure. The capture's own steps are never listed, and locations read
+ * relative to the project.
  *
  * A passing execution has no failure moment: the axis is hidden and the table
  * lists every step without offsets.
@@ -43,10 +46,11 @@ import ChartTooltip from '../shared/ChartTooltip.vue';
 import ChartLegend from '../shared/ChartLegend.vue';
 import OpenInIdeLink from '../shared/OpenInIdeLink.vue';
 import StepLabel from './StepLabel.vue';
+import StepStatusMark from './StepStatusMark.vue';
 import StepParamsDisclosure from './StepParamsDisclosure.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
 import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
-import { isFailedStep, type StepPhase } from '#shared/step-tree';
+import type { StepFailureRole, StepPhase } from '#shared/step-tree';
 import { buildStepTreeView, groupRowsBySection, sectionSummaryText } from '~/utils/timeline-rows';
 
 const props = defineProps<{
@@ -57,6 +61,8 @@ const props = defineProps<{
   durationMs: number | null;
   /** Whether this execution failed — a passing one hides the axis and offsets. */
   hasError?: boolean;
+  /** The execution's error text — tells the step that failed the test from an error it caught. */
+  error?: string | null;
   /** Execution status — a did-not-run row shows a neutral step marker. */
   status?: string | null;
   /** The test's project-relative file — step locations read relative to the project it shows. */
@@ -358,17 +364,19 @@ function bandTitle(span: { label: string; origin: TimelineItem['origin'] }): str
 // the failure; a passing one lists every step off the prop, without offsets.
 // The rows then fold into sections: the setup and teardown hooks around the
 // test body.
-const tree = computed(() => buildStepTreeView(props.steps));
+const tree = computed(() => buildStepTreeView(props.steps, props.error));
 
 type StepRow = {
   kind: 'step';
   item: TimelineItem | null;
   step: PerformanceStep;
   index: number;
-  /** The step failed — the failing step itself or a step around it. */
-  failed: boolean;
+  /** The step's part in the failure; null for a step that passed. */
+  role: StepFailureRole | null;
   /** The step that failed: its row carries the error and the page at that moment. */
   failing: boolean;
+  /** The test caught the step's error and went on: the row is muted and carries the error on one line. */
+  recovered: boolean;
   level: number;
 };
 type EventRow = { kind: 'event'; item: TimelineItem };
@@ -380,8 +388,9 @@ function stepRow(step: PerformanceStep, index: number, item: TimelineItem | null
     item,
     step,
     index,
-    failed: isFailedStep(step),
+    role: tree.value.roles[index] ?? null,
     failing: index === tree.value.failingIndex,
+    recovered: tree.value.roles[index] === 'recovered',
     level: tree.value.level[index] ?? 0,
   };
 }
@@ -402,10 +411,13 @@ const mergedRows = computed<MergedRow[]>(() => {
 // ── Setup and teardown sections ──────────────────────────────────────────────
 // The hooks and fixtures before and after the test body fold into one header
 // row each; a section opens by itself when the failure happened in it.
+const failingPhase = computed<StepPhase | null>(() => {
+  const failing = tree.value.failingIndex;
+  return failing === null ? null : (tree.value.phases[failing] ?? null);
+});
 const openSections = ref<Set<StepPhase>>(new Set());
 function resetOpenSections() {
-  const failing = tree.value.failingIndex;
-  const phase = failing === null ? null : tree.value.phases[failing];
+  const phase = failingPhase.value;
   openSections.value = new Set(phase && phase !== 'body' ? [phase] : []);
 }
 watch(() => props.testRunsCaseId, resetOpenSections, { immediate: true });
@@ -426,6 +438,8 @@ type SectionEntry = {
   summary: string;
   durationMs: number;
   failed: boolean;
+  /** The failing step sits in this section, not only another failure. */
+  holdsFailure: boolean;
   open: boolean;
   /** The offset of the section's first row, for the Time column. */
   at: number | null;
@@ -454,6 +468,7 @@ const renderList = computed<RenderEntry[]>(() => {
       summary: summary ? sectionSummaryText(summary) : '',
       durationMs: summary?.durationMs ?? 0,
       failed: Boolean(summary?.failed),
+      holdsFailure: failingPhase.value === block.section,
       open,
       at: first.kind === 'step' ? (first.item?.at ?? null) : first.item.at,
     });
@@ -911,24 +926,7 @@ function revealItem(item: TimelineItem) {
               :style="{ marginInlineStart: `${Math.min(entry.level + (entry.nested ? 1 : 0), 4) * 0.75}rem` }"
             >
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span
-                  v-if="status === 'didnotrun'"
-                  class="inline-flex items-center justify-center size-5 shrink-0 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
-                  title="Not run"
-                  >–</span
-                >
-                <span
-                  v-else-if="entry.failed"
-                  class="inline-flex items-center justify-center size-5 shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                  :title="entry.failing ? 'Step failed' : 'The failure happened inside this step'"
-                  >✗</span
-                >
-                <span
-                  v-else
-                  class="inline-flex items-center justify-center size-5 shrink-0 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
-                  title="Step passed"
-                  >✓</span
-                >
+                <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
                 <UBadge :color="stepCategoryColor[entry.step.category] || 'neutral'" variant="soft" size="xs">
                   {{ entry.step.category }}
                 </UBadge>
@@ -950,7 +948,9 @@ function revealItem(item: TimelineItem) {
               </div>
               <p
                 class="mt-1.5 text-sm break-words"
-                :class="entry.failing ? 'text-red-600 dark:text-red-400 font-medium' : ''"
+                :class="
+                  entry.failing ? 'text-red-600 dark:text-red-400 font-medium' : entry.recovered ? 'text-muted' : ''
+                "
               >
                 <StepLabel :step="entry.step" />
               </p>
@@ -961,6 +961,10 @@ function revealItem(item: TimelineItem) {
                 :text="entry.step.error.message"
                 class="mt-1"
               />
+              <div v-else-if="entry.recovered" class="mt-1">
+                <p class="text-xs text-muted">Error caught, the test continued</p>
+                <ErrorText v-if="entry.step.error?.message" :text="entry.step.error.message" />
+              </div>
               <OpenInIdeLink
                 v-if="entry.step.location"
                 :location="displayLocation(entry.step.location)"
@@ -1069,7 +1073,7 @@ function revealItem(item: TimelineItem) {
                     <span
                       v-if="entry.failed"
                       class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                      title="The failure happened here"
+                      :title="entry.holdsFailure ? 'The failure happened here' : 'A step failed here too'"
                       >✗</span
                     >
                   </td>
@@ -1107,24 +1111,7 @@ function revealItem(item: TimelineItem) {
                       {{ entry.item ? formatRel(entry.item.at) : '' }}
                     </td>
                     <td>
-                      <span
-                        v-if="status === 'didnotrun'"
-                        class="inline-flex items-center justify-center size-5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs leading-none"
-                        title="Not run"
-                        >–</span
-                      >
-                      <span
-                        v-else-if="entry.failed"
-                        class="inline-flex items-center justify-center size-5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs leading-none"
-                        :title="entry.failing ? 'Step failed' : 'The failure happened inside this step'"
-                        >✗</span
-                      >
-                      <span
-                        v-else
-                        class="inline-flex items-center justify-center size-5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-xs leading-none"
-                        title="Step passed"
-                        >✓</span
-                      >
+                      <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
                     </td>
                     <td>
                       <UBadge :color="stepCategoryColor[entry.step.category] || 'neutral'" variant="soft" size="xs">
@@ -1136,7 +1123,13 @@ function revealItem(item: TimelineItem) {
                         <div class="flex items-center gap-2">
                           <span
                             class="min-w-0 break-words"
-                            :class="entry.failing ? 'text-red-600 dark:text-red-400 font-medium' : ''"
+                            :class="
+                              entry.failing
+                                ? 'text-red-600 dark:text-red-400 font-medium'
+                                : entry.recovered
+                                  ? 'text-muted'
+                                  : ''
+                            "
                           >
                             <StepLabel :step="entry.step" />
                           </span>
@@ -1158,12 +1151,25 @@ function revealItem(item: TimelineItem) {
                           :text="entry.step.error.message"
                           class="mt-1"
                         />
+                        <!-- Contained: the one-line error must not widen the column to its full length. -->
+                        <div v-else-if="entry.recovered" class="mt-1 [contain:inline-size]">
+                          <p class="text-xs text-muted">Error caught, the test continued</p>
+                          <ErrorText v-if="entry.step.error?.message" :text="entry.step.error.message" />
+                        </div>
                         <OpenInIdeLink
                           v-if="entry.step.location"
                           :location="displayLocation(entry.step.location)"
                           :project-key="projectKey ?? undefined"
                           :project-name="projectName ?? undefined"
                           class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 break-all"
+                        />
+                        <!-- The page at the failing step: screenshot, DOM and ARIA, in the step's own block. -->
+                        <FailingStepSnapshot
+                          v-if="entry.failing"
+                          :test-runs-case-id="testRunsCaseId"
+                          :attachments="attachments"
+                          :aria-snapshot="ariaSnapshot"
+                          class="mt-2.5"
                         />
                       </div>
                     </td>
@@ -1192,16 +1198,6 @@ function revealItem(item: TimelineItem) {
                           />
                         </div>
                       </div>
-                    </td>
-                  </tr>
-                  <!-- The page at the failing step: screenshot + ARIA, tied to the step. -->
-                  <tr v-if="entry.failing">
-                    <td :colspan="showAxis ? 5 : 4" class="border-b border-default px-3 pb-3 pt-0">
-                      <FailingStepSnapshot
-                        :test-runs-case-id="testRunsCaseId"
-                        :attachments="attachments"
-                        :aria-snapshot="ariaSnapshot"
-                      />
                     </td>
                   </tr>
                 </template>

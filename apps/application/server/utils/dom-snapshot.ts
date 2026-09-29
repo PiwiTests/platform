@@ -24,6 +24,7 @@ import {
   maskCssText,
   type DomSnapshotResult,
   type DomSnapshotSource,
+  type SnapshotMoment,
 } from './dom-snapshot-render';
 // The ARIA-snapshot fallback renderer lives in its own node-free module so the
 // browser demo can reuse it (the trace path above pulls in node-only zlib).
@@ -204,6 +205,8 @@ async function inlineTraceAssets(
 export interface TraceDomSnapshotOptions {
   /** Inline external stylesheets and images from the trace's resources (the rendered page only). */
   inlineStyles?: boolean;
+  /** One action's snapshot to render first, see `extractDomSnapshot`. */
+  at?: SnapshotMoment;
 }
 
 /** `extractDomSnapshot` over a stored (slim) trace blob, optionally inlining its stylesheets and images. */
@@ -226,7 +229,12 @@ export async function getTraceDomSnapshot(
   if (traceTexts.length === 0) return { status: 'no-trace' };
 
   // The rendered page views keep the page's inline images; text consumers get them masked.
-  const result = extractDomSnapshot(parseTraceTexts(traceTexts), capChars, { keepInlineImages: options.inlineStyles });
+  const result = extractDomSnapshot(
+    parseTraceTexts(traceTexts),
+    capChars,
+    { keepInlineImages: options.inlineStyles },
+    options.at,
+  );
   if (!options.inlineStyles) return result;
   try {
     return await inlineTraceAssets(blobPath, entries, result);
@@ -251,6 +259,8 @@ export interface ResolveCaseDomSnapshotOptions {
    * be noise.
    */
   inlineStyles?: boolean;
+  /** One action's snapshot to render first — the DOM beside a screenshot of the same moment. */
+  at?: SnapshotMoment;
 }
 
 /**
@@ -292,7 +302,10 @@ export async function resolveCaseDomSnapshot(
   if (options.source === 'aria' && ariaHtml) return asAria();
 
   if (traceBlobPath) {
-    const result = await getTraceDomSnapshot(traceBlobPath, capChars, { inlineStyles: options.inlineStyles });
+    const result = await getTraceDomSnapshot(traceBlobPath, capChars, {
+      inlineStyles: options.inlineStyles,
+      at: options.at,
+    });
     if (result.status === 'ok' && result.html) {
       return { ...result, source: 'dom', availableSources: sources() };
     }

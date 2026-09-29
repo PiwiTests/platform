@@ -15,7 +15,12 @@
  * a reported one wherever the data exists.
  */
 
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '#shared/step-analysis';
+import {
+  collectStepMetrics,
+  extractTestStepEvents,
+  extractWaitEvents,
+  type TestErrorLike,
+} from '#shared/step-analysis';
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
@@ -88,7 +93,7 @@ interface StepNode {
   startTime: number;
   duration: number;
   location?: { file: string; line: number; column: number };
-  error?: { message?: string };
+  error?: { message?: string; location?: { file: string; line: number; column: number } };
   steps: StepNode[];
 }
 
@@ -271,13 +276,40 @@ function applyStepBegin(acc: ResultAccumulator, step: Record<string, unknown>, r
   else acc.rootSteps.push(node);
 }
 
-function applyStepEnd(acc: ResultAccumulator, step: Record<string, unknown>): void {
+function applyStepEnd(acc: ResultAccumulator, step: Record<string, unknown>, resolver: PathResolver): void {
   const id = typeof step.id === 'string' ? step.id : null;
   const node = id ? acc.stepsById.get(id) : undefined;
   if (!node) return;
   if (typeof step.duration === 'number') node.duration = step.duration;
   const error = step.error as Record<string, unknown> | undefined;
-  if (typeof error?.message === 'string') node.error = { message: error.message };
+  if (typeof error?.message === 'string') {
+    node.error = { message: error.message };
+    const location = errorLocation(error, resolver);
+    if (location) node.error.location = location;
+  }
+}
+
+/** Where a recorded error was thrown, its path resolved the way the error text's frame is. */
+function errorLocation(
+  error: Record<string, unknown> | undefined,
+  resolver: PathResolver,
+): { file: string; line: number; column: number } | undefined {
+  const location = error?.location as Record<string, unknown> | undefined;
+  if (typeof location?.file !== 'string') return undefined;
+  return {
+    file: resolver.fromAbsolute(location.file),
+    line: typeof location.line === 'number' ? location.line : 0,
+    column: typeof location.column === 'number' ? location.column : 0,
+  };
+}
+
+/** A result's errors, their locations resolved like the steps' own errors. */
+function resultErrors(errors: unknown, resolver: PathResolver): TestErrorLike[] {
+  if (!Array.isArray(errors)) return [];
+  return (errors as Array<Record<string, unknown>>).map((error) => ({
+    message: typeof error?.message === 'string' ? error.message : undefined,
+    location: errorLocation(error, resolver),
+  }));
 }
 
 /** Split an execution's attachments into traces and everything else. */
@@ -302,14 +334,8 @@ function buildErrorText(errors: unknown, resolver: PathResolver): string | null 
   const text = joinErrorMessages(errors as Array<{ message?: string }>);
   if (!text) return null;
 
-  const location = (errors[0] as Record<string, unknown> | undefined)?.location as Record<string, unknown> | undefined;
-  if (typeof location?.file !== 'string') return text;
-
-  return appendErrorLocation(text, {
-    file: resolver.fromAbsolute(location.file),
-    line: typeof location.line === 'number' ? location.line : 0,
-    column: typeof location.column === 'number' ? location.column : 0,
-  });
+  const location = errorLocation(errors[0] as Record<string, unknown> | undefined, resolver);
+  return location ? appendErrorLocation(text, location) : text;
 }
 
 /**
@@ -380,7 +406,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       const step = params.step as Record<string, unknown> | undefined;
       if (!acc || !step) continue;
       if (method === 'onStepBegin') applyStepBegin(acc, step, resolver);
-      else applyStepEnd(acc, step);
+      else applyStepEnd(acc, step, resolver);
       // A step's own attachments ride its end event in newer archives.
       if (method === 'onStepEnd') applyAttachments(acc, step.attachments);
       continue;
@@ -408,7 +434,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       const rawStatus = String(result.status ?? 'failed');
       const status = classifyStatus(rawStatus, annotations);
 
-      const metrics = collectStepMetrics(acc?.rootSteps ?? []);
+      const metrics = collectStepMetrics(acc?.rootSteps ?? [], resultErrors(result.errors, resolver));
       const stepEvents = [
         ...extractTestStepEvents(acc?.rootSteps ?? [], new Date(acc?.startedAt ?? 0)),
         ...extractWaitEvents(acc?.rootSteps ?? []),

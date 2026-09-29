@@ -429,6 +429,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :steps="steps"
           :duration-ms="testCase?.duration ?? null"
           :has-error="hasError"
+          :error="testCase?.error ?? null"
           :status="status"
           :test-file-path="testCase?.filePath ?? null"
           :project-key="projectKey"

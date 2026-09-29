@@ -272,6 +272,104 @@ function reportHookFailure(request, base) {
 }
 
 /**
+ * A test that probes an optional dialog inside a `try`/`catch`, then fails on a
+ * strict mode violation inside a `test.step`, as the reporter records it from
+ * Playwright 1.63 (taken from a real run): the caught probe carries its error
+ * and the reporter's `recovered` mark. Start times are offsets from the test's
+ * start, in ms.
+ */
+const CAUGHT_ERROR_CASE = {
+  title: 'saves the report and checks the download link',
+  location: 'tests/downloads.spec.ts:3:5',
+  retries: 0,
+};
+const CAUGHT_ERROR_PROBE = {
+  message:
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('dialog').getByRole('button', { name: 'Confirm' })\nExpected: visible\nTimeout: 500ms\nError: element(s) not found",
+  location: '/work/shop/tests/downloads.spec.ts:15:27',
+};
+const CAUGHT_ERROR_FATAL = {
+  message:
+    "Error: expect(locator).toBeEnabled() failed\n\nLocator: locator('.carousel').getByRole('link', { name: '' })\nExpected: enabled\nError: strict mode violation: locator('.carousel').getByRole('link', { name: '' }) resolved to 2 elements:\n    1) <a href=\"/files/1\"></a> aka getByRole('link').first()\n    2) <a href=\"/files/2\"></a> aka getByRole('link').nth(1)",
+  location: '/work/shop/tests/downloads.spec.ts:26:77',
+};
+const CAUGHT_ERROR_STEPS = [
+  {
+    title: 'Set content',
+    category: 'other',
+    depth: 0,
+    at: 0,
+    duration: 23,
+    location: '/work/shop/tests/downloads.spec.ts:4:14',
+  },
+  {
+    title: 'Expect "toBeVisible"',
+    subtitle: "getByRole('dialog').getByRole('button', { name: 'Confirm' })",
+    category: 'assertion',
+    depth: 0,
+    at: 29,
+    duration: 509,
+    failed: true,
+    recovered: true,
+    error: CAUGHT_ERROR_PROBE,
+    location: '/work/shop/tests/downloads.spec.ts:15:27',
+  },
+  {
+    title: 'Click',
+    subtitle: "getByRole('button', { name: 'Save' })",
+    category: 'action',
+    depth: 0,
+    at: 539,
+    duration: 32,
+    location: '/work/shop/tests/downloads.spec.ts:22:52',
+  },
+  {
+    title: 'Check the download link',
+    category: 'test.step',
+    depth: 0,
+    at: 572,
+    duration: 19,
+    failed: true,
+    error: CAUGHT_ERROR_FATAL,
+    location: '/work/shop/tests/downloads.spec.ts:24:3',
+  },
+  {
+    title: 'Expect "toBeEnabled"',
+    subtitle: "locator('.carousel').getByRole('link', { name: '' })",
+    category: 'assertion',
+    depth: 1,
+    at: 574,
+    duration: 17,
+    failed: true,
+    error: CAUGHT_ERROR_FATAL,
+    location: '/work/shop/tests/downloads.spec.ts:26:77',
+  },
+];
+
+/** The caught-error execution both widths of its scene open, reported once per session. */
+let caughtErrorExecution;
+
+function reportCaughtError(request, base) {
+  caughtErrorExecution ??= (async () => {
+    const startTime = Date.now() - 5_000;
+    const { executionId } = await ingestRun(request, base, {
+      projectName: 'downloads-e2e',
+      testCase: {
+        ...CAUGHT_ERROR_CASE,
+        status: 'failed',
+        duration: 640,
+        error: `${CAUGHT_ERROR_FATAL.message}\n\n    at tests/downloads.spec.ts:26:77`,
+        steps: CAUGHT_ERROR_STEPS.map(({ at, ...step }) => ({ ...step, startTime: startTime + at })),
+      },
+      startTime,
+    });
+    if (!executionId) throw new Error('the caught-error run has no execution');
+    return executionId;
+  })();
+  return caughtErrorExecution;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -2216,7 +2314,8 @@ const SCENES = [
   },
   {
     name: 'failing-step-evidence',
-    description: "Timeline tab: the failing step's before/at-failure screenshot and ARIA tree, tied to the step",
+    description:
+      "Timeline tab: the failing step's before/at-failure screenshot, the DOM of the same moment and the ARIA tree, in the step's block",
     viewport: { width: 1280, height: 1600 },
     of: 'table',
     pad: 12,
@@ -2262,7 +2361,8 @@ const SCENES = [
   },
   {
     name: 'failing-step-evidence-fallback',
-    description: "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step",
+    description:
+      "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step, beside the failure-time DOM",
     route: '/projects',
     viewport: { width: 1280, height: 2000 },
     of: 'table',
@@ -2328,6 +2428,34 @@ const SCENES = [
         .click();
       await page
         .locator('[data-shot="evidence-card"] button[aria-expanded="true"]:visible', { hasText: 'Setup' })
+        .first()
+        .waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `caught-error-timeline${suffix}`,
+    description: suffix
+      ? 'The timeline at phone width: a probe the test caught greyed out, the failing assertion in red'
+      : 'Timeline tab of a test that caught a probe then failed: the probe greyed out as caught, the failing assertion red',
+    route: '/projects',
+    viewport: suffix ? { width: 375, height: 2400 } : { width: 1280, height: 1400 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async prepare({ request, base }) {
+      this.executionId = await reportCaughtError(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page
+        .locator('[data-shot="evidence-card"]')
+        .getByText('Error caught, the test continued')
+        .filter({ visible: true })
         .first()
         .waitFor({ timeout: 30_000 });
       await settle();

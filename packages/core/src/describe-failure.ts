@@ -633,13 +633,17 @@ export interface HeadlineStepLike extends TreeStepLike {
 
 /**
  * The step a headline speaks for: the step that failed (the innermost of the
- * failing chain), else the last step of the test body, else the last step. The
- * capture's own steps and the hook containers are never picked.
+ * failing chain that carries `error`, the execution's error text), else the
+ * last step of the test body, else the last step. The capture's own steps and
+ * the hook containers are never picked.
  */
-function headlineStep<T extends HeadlineStepLike>(steps: readonly T[] | null | undefined): T | null {
+function headlineStep<T extends HeadlineStepLike>(
+  steps: readonly T[] | null | undefined,
+  error?: string | null,
+): T | null {
   if (!steps || steps.length === 0) return null;
   const parents = stepParents(steps);
-  const failed = failingStepIndex(steps, parents);
+  const failed = failingStepIndex(steps, parents, error);
   if (failed !== null) return steps[failed]!;
   const phases = stepPhases(steps, parents);
   for (let i = steps.length - 1; i >= 0; i--) {
@@ -651,10 +655,14 @@ function headlineStep<T extends HeadlineStepLike>(steps: readonly T[] | null | u
 
 /**
  * The failed step's title, else the last step's, from a recorded step list —
- * the `lastStepTitle` a test-timeout headline names.
+ * the `lastStepTitle` a test-timeout headline names. `error` is the
+ * execution's error text, which tells the failing step from a caught one.
  */
-export function lastStepTitle(steps: readonly HeadlineStepLike[] | null | undefined): string | null {
-  const title = headlineStep(steps)?.title;
+export function lastStepTitle(
+  steps: readonly HeadlineStepLike[] | null | undefined,
+  error?: string | null,
+): string | null {
+  const title = headlineStep(steps, error)?.title;
   return typeof title === 'string' ? title : null;
 }
 
@@ -665,8 +673,9 @@ export function lastStepTitle(steps: readonly HeadlineStepLike[] | null | undefi
  */
 export function failingStepParams(
   steps: readonly HeadlineStepLike[] | null | undefined,
+  error?: string | null,
 ): Record<string, string | number | boolean> | null {
-  return headlineStep(steps)?.params ?? null;
+  return headlineStep(steps, error)?.params ?? null;
 }
 
 /**
@@ -679,8 +688,8 @@ export function stepHeadlineContext(
   error: string | null | undefined,
 ): DescribeFailureContext {
   return {
-    lastStepTitle: lastStepTitle(steps),
-    stepParams: failingStepParams(steps),
+    lastStepTitle: lastStepTitle(steps, error),
+    stepParams: failingStepParams(steps, error),
     failedIn: steps && steps.length > 0 ? failureHookContext(steps, error ?? null) : null,
   };
 }

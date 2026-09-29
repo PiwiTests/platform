@@ -6,21 +6,30 @@
  * Playwright reports steps as a tree: `Before Hooks` holds the `beforeAll` /
  * `beforeEach` hooks and the fixtures they set up, the test body follows, and
  * `After Hooks` (then `Worker Cleanup`) holds the teardown. A failing step marks
- * every step around it failed too, so the step that failed is the innermost one
- * of the first failing chain. Stored steps are flat: the tree is rebuilt from
- * each step's `depth` when every step records one, else from start times and
- * durations (a step contains the steps that run inside its span), else every
- * step is top level.
+ * every step around it failed too, so one error makes a failing chain, and the
+ * step that failed is the innermost step of the chain that carries the test's
+ * own error. A run can hold other errored steps: an error the test caught and
+ * went on from (`try`/`catch`, a retried `toPass` attempt), which the reporter
+ * marks `recovered`, a second soft assertion, or a teardown that failed after
+ * the body. Stored steps are flat: the tree is rebuilt from each step's `depth`
+ * when every step records one, else from start times and durations (a step
+ * contains the steps that run inside its span), else every step is top level.
  */
-import { stripAnsi } from './error-parse';
+import { extractTopFrame, stripAnsi } from './error-parse';
+import { sameFilePath } from './locator-break';
 
 /** The fields of a stored step the structure reads. */
 export interface TreeStepLike {
   title?: unknown;
   category?: unknown;
   failed?: boolean | null;
-  /** `{ message }` as the reporter records it; a bare string on some older rows. */
-  error?: { message?: unknown } | string | null;
+  /**
+   * `{ message, location }` as the reporter records it (`location` is where the
+   * error was thrown, `file:line:col`); a bare string on some older rows.
+   */
+  error?: { message?: unknown; location?: unknown } | string | null;
+  /** The step's error is none of the test's errors: the test caught it and went on. */
+  recovered?: boolean | null;
   depth?: unknown;
   startTime?: unknown;
   duration?: unknown;
@@ -67,9 +76,37 @@ function errorMessage(step: TreeStepLike): string {
   return str(error?.message);
 }
 
+/** Where a stored step's error was thrown, `file:line:col`; empty when the row records none. */
+function errorLocation(step: TreeStepLike): string {
+  const error = step.error;
+  return typeof error === 'string' ? '' : str(error?.location);
+}
+
+/** A `file:line:col` location, parsed. */
+function parseLocation(location: string): { file: string; line: number; column: number } | null {
+  const m = /^(.+):(\d+):(\d+)$/.exec(location.trim());
+  return m ? { file: m[1]!, line: Number(m[2]), column: Number(m[3]) } : null;
+}
+
+/** Whether two locations point at the same line and column of the same file (one path may be relative). */
+export function sameCodeLocation(
+  a: { file: string; line: number; column: number } | string | null | undefined,
+  b: { file: string; line: number; column: number } | string | null | undefined,
+): boolean {
+  const x = typeof a === 'string' ? parseLocation(a) : a;
+  const y = typeof b === 'string' ? parseLocation(b) : b;
+  if (!x || !y) return false;
+  return x.line === y.line && x.column === y.column && sameFilePath(x.file, y.file);
+}
+
 /** Whether a stored step failed: marked failed, or carrying an error. */
 export function isFailedStep(step: TreeStepLike): boolean {
   return step.failed === true || errorMessage(step).trim().length > 0;
+}
+
+/** Whether the reporter marked a step's error as caught: the test went on after it. */
+export function isRecoveredStep(step: TreeStepLike): boolean {
+  return step.recovered === true;
 }
 
 /**
@@ -156,22 +193,163 @@ export function stepPhases(steps: readonly TreeStepLike[], parents = stepParents
   });
 }
 
+/** The first line of an error message, without ANSI codes. */
+function firstLine(message: unknown): string {
+  return stripAnsi(str(message)).split('\n')[0]!.trim();
+}
+
+/** The first line of each error in an execution's error text (the reporter joins several with `---`). */
+function errorHeads(error: string): string[] {
+  return error
+    .split(/\n---\n/)
+    .map(firstLine)
+    .filter((head) => head.length > 0);
+}
+
 /**
- * The step that failed: the innermost step of the first failing chain, skipping
- * the capture's own steps. Null when no step failed.
+ * Whether an inner step carries the same error as a failing step around it —
+ * the error propagating out, rather than one caught inside. A step whose error
+ * text is missing is taken to carry it.
  */
-export function failingStepIndex(steps: readonly TreeStepLike[], parents = stepParents(steps)): number | null {
+function sameError(inner: TreeStepLike, outer: TreeStepLike): boolean {
+  const a = firstLine(errorMessage(inner));
+  const b = firstLine(errorMessage(outer));
+  if (!a || !b) return true;
+  if (a !== b) return false;
+  const at = errorLocation(inner);
+  const bt = errorLocation(outer);
+  return !at || !bt || sameCodeLocation(at, bt);
+}
+
+/**
+ * The last of `indices` in the test body, else in setup, else in teardown. A
+ * fatal error ends its phase, and the teardown runs after a failed body.
+ */
+function lastByPhase(indices: readonly number[], phases: readonly StepPhase[]): number | null {
+  for (const phase of ['body', 'setup', 'teardown'] as const) {
+    const inPhase = indices.filter((i) => phases[i] === phase);
+    if (inPhase.length > 0) return inPhase[inPhase.length - 1]!;
+  }
+  return null;
+}
+
+/**
+ * The innermost step of every failing chain, in order. A chain starts at a
+ * failed step with no failed step around it and walks down through the steps
+ * that carry its error, so a caught error inside it is never its end. The
+ * capture's own steps and the steps the reporter marked recovered take no part.
+ */
+function failingChainEnds(steps: readonly TreeStepLike[], parents: readonly number[]): number[] {
   const candidates: number[] = [];
   steps.forEach((step, i) => {
-    if (isFailedStep(step) && !isCaptureStep(step)) candidates.push(i);
+    if (isFailedStep(step) && !isCaptureStep(step) && !isRecoveredStep(step)) candidates.push(i);
   });
-  if (candidates.length === 0) return null;
-  let current = candidates[0]!;
-  for (;;) {
-    const inner = candidates.find((c) => c > current && isDescendant(c, current, parents));
-    if (inner === undefined) return current;
-    current = inner;
+  const isCandidate = new Set(candidates);
+  const hasFailedAncestor = (i: number) => {
+    for (let p = parents[i] ?? -1; p !== -1; p = parents[p] ?? -1) if (isCandidate.has(p)) return true;
+    return false;
+  };
+  return candidates
+    .filter((root) => !hasFailedAncestor(root))
+    .map((root) => {
+      let current = root;
+      for (;;) {
+        const inner = candidates.filter((c) => c > current && isDescendant(c, current, parents));
+        const carrying = inner.filter((c) => sameError(steps[c]!, steps[current]!));
+        if (carrying.length === 0) return current;
+        current = carrying[carrying.length - 1]!;
+      }
+    });
+}
+
+/**
+ * The step that failed: the innermost step of the failing chain that carries
+ * the test's own error, skipping the capture's own steps and the errors the
+ * test caught. `error` is the execution's error text: the chain whose error
+ * matches it, thrown where the text points, wins; then the one whose error only
+ * matches its first line. Without a match, the last failing chain of the test
+ * body, else of setup, else of teardown. Null when no step failed.
+ */
+export function failingStepIndex(
+  steps: readonly TreeStepLike[],
+  parents = stepParents(steps),
+  error?: string | null,
+): number | null {
+  const ends = failingChainEnds(steps, parents);
+  if (ends.length === 0) return null;
+  const phases = stepPhases(steps, parents);
+  if (error) {
+    const heads = errorHeads(error);
+    const headOf = (i: number) => firstLine(errorMessage(steps[i]!));
+    const frame = extractTopFrame(error);
+    if (frame) {
+      const thrownThere = ends.filter(
+        (i) =>
+          heads.includes(headOf(i)) && sameCodeLocation(errorLocation(steps[i]!) || str(steps[i]!.location), frame),
+      );
+      const located = lastByPhase(thrownThere, phases);
+      if (located !== null) return located;
+    }
+    for (const head of heads) {
+      const matching = lastByPhase(
+        ends.filter((i) => headOf(i) === head),
+        phases,
+      );
+      if (matching !== null) return matching;
+    }
   }
+  return lastByPhase(ends, phases) ?? ends[ends.length - 1]!;
+}
+
+/** How a step took part in its execution's failure. */
+export type StepFailureRole =
+  /** The step that failed. */
+  | 'failing'
+  /** A step around it: Playwright marks every enclosing step failed. */
+  | 'enclosing'
+  /** Another failure: a second soft assertion, a teardown that failed after the body. */
+  | 'failed'
+  /** An error the test caught and went on from. */
+  | 'recovered';
+
+/**
+ * Each step's part in the failure, null for a step that passed. A failed step
+ * outside the failing chain was caught when the reporter marked it recovered,
+ * when a step around it was, or when its error is none of the test's errors
+ * (`error`, the execution's error text). The capture's own steps are null.
+ */
+export function stepFailureRoles(
+  steps: readonly TreeStepLike[],
+  error?: string | null,
+  parents = stepParents(steps),
+  failing = failingStepIndex(steps, parents, error),
+): Array<StepFailureRole | null> {
+  const enclosing = new Set<number>();
+  if (failing !== null) for (let p = parents[failing] ?? -1; p !== -1; p = parents[p] ?? -1) enclosing.add(p);
+  const heads = error ? errorHeads(error) : [];
+  const roles: Array<StepFailureRole | null> = [];
+  steps.forEach((step, i) => {
+    if (!isFailedStep(step) || isCaptureStep(step)) {
+      roles.push(null);
+      return;
+    }
+    if (i === failing) {
+      roles.push('failing');
+      return;
+    }
+    if (enclosing.has(i)) {
+      roles.push('enclosing');
+      return;
+    }
+    const head = firstLine(errorMessage(step));
+    const parent = parents[i] ?? -1;
+    const caught =
+      isRecoveredStep(step) ||
+      (parent !== -1 && roles[parent] === 'recovered') ||
+      (heads.length > 0 && head.length > 0 && !heads.includes(head));
+    roles.push(caught ? 'recovered' : 'failed');
+  });
+  return roles;
 }
 
 /** The hook or fixture a step is, by its short name (`beforeAll`, `fixture "db"`); null for any other step. */
@@ -187,11 +365,6 @@ export function stepHookName(step: TreeStepLike): string | null {
   return null;
 }
 
-/** The first line of an error message, without ANSI codes. */
-function firstLine(message: unknown): string {
-  return stripAnsi(str(message)).split('\n')[0]!.trim();
-}
-
 /**
  * Where the failure happened when it happened in a hook or a fixture rather
  * than in the test body: the phase, and the innermost hook or fixture around
@@ -205,7 +378,7 @@ export function failureHookContext(
   error?: string | null,
   parents = stepParents(steps),
 ): FailureHookContext | null {
-  const index = failingStepIndex(steps, parents);
+  const index = failingStepIndex(steps, parents, error);
   if (index === null) return null;
   const phase = stepPhases(steps, parents)[index]!;
   if (phase === 'body') return null;

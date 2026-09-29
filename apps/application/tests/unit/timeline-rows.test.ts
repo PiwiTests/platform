@@ -7,6 +7,8 @@ import {
   beforeAllFailure,
   beforeEachFailure,
   bodyFailure,
+  caughtProbeFailure,
+  teardownAfterBodyFailure,
   type RecordedExecution,
 } from '../../../../packages/core/tests/fixtures/playwright-steps';
 
@@ -42,6 +44,35 @@ describe('buildStepTreeView', () => {
     expect(view.level[group]).toBe(0);
     expect(view.level[group + 1]).toBe(1);
     expect(view.groups.has(group)).toBe(true);
+  });
+
+  test('the failing row is the step that failed the test, and the probe it caught is recovered', () => {
+    const view = buildStepTreeView(stepsOf(caughtProbeFailure), caughtProbeFailure.error);
+    expect(titleOf(caughtProbeFailure, view.failingIndex)).toBe(
+      "Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' })",
+    );
+    const probe = caughtProbeFailure.steps.findIndex((s) => s.title === 'Expect "toBeVisible"');
+    expect(view.roles[probe]).toBe('recovered');
+    expect(view.roles[view.failingIndex!]).toBe('failing');
+  });
+
+  test('a caught error in a section does not mark it failed; a teardown failing after the body does', () => {
+    const probeInSetup: PerformanceStep[] = [
+      { title: 'Before Hooks', category: 'hook', duration: 20, depth: 0 } as PerformanceStep,
+      {
+        title: 'beforeEach hook',
+        category: 'hook',
+        duration: 10,
+        failed: true,
+        recovered: true,
+        error: { message: 'Error: expect(locator).toBeVisible() failed' },
+        depth: 1,
+      } as PerformanceStep,
+    ];
+    expect(buildStepTreeView(probeInSetup, null).sections.setup?.failed).toBe(false);
+    const view = buildStepTreeView(stepsOf(teardownAfterBodyFailure), teardownAfterBodyFailure.error);
+    expect(view.phases[view.failingIndex!]).toBe('body');
+    expect(view.sections.teardown?.failed).toBe(true);
   });
 
   test('marks the section a hook failure happened in', () => {
@@ -117,5 +148,36 @@ describe('buildFailureTimeline with hooks and fixtures', () => {
   test('a test.step groups the actions inside it', () => {
     const fill = timelineOf(bodyFailure).lanes.steps.find((s) => s.label.includes("getByLabel('Email address')"));
     expect(fill?.group).toBe('Fill contact details');
+  });
+});
+
+describe('buildFailureTimeline with an error the test caught', () => {
+  /** The reproduction, the failing step 30 s after the probe, as on a real suite. */
+  const later = (() => {
+    const probeEnd = caughtProbeFailure.steps.findIndex((s) => s.title === 'Expect "toBeVisible"');
+    return caughtProbeFailure.steps.map((step, i) =>
+      i > probeEnd ? { ...step, startTime: step.startTime + 30_000 } : step,
+    );
+  })();
+  const timeline = () =>
+    buildFailureTimeline({
+      startedAt: later[0]!.startTime,
+      duration: 31_000,
+      status: 'failed',
+      error: caughtProbeFailure.error,
+      steps: later,
+    });
+
+  test('anchors the failure and the window on the step that failed the test, not on the probe', () => {
+    const tl = timeline();
+    expect(tl.failedStep?.label).toBe("Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' })");
+    const fatal = tl.lanes.steps.find((s) => s.failed)!;
+    expect(fatal.label).toBe(tl.failedStep!.label);
+    expect(tl.failureAt).toBe(fatal.at + (fatal.duration ?? 0));
+    expect(tl.window.start).toBeLessThanOrEqual(fatal.at);
+    expect(tl.window.end).toBeGreaterThanOrEqual(fatal.at + (fatal.duration ?? 0));
+    const probe = tl.lanes.steps.find((s) => s.label.includes('toBeVisible'))!;
+    expect(probe.failed).toBeUndefined();
+    expect(probe.at).toBeLessThan(tl.window.start);
   });
 });

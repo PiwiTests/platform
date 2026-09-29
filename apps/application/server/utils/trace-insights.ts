@@ -8,7 +8,7 @@
  * same code over the committed demo trace — only ZIP inflation and resource
  * reads differ per runtime (see `TraceResourceReader`).
  */
-import type { ParsedTraceData, TraceAction } from './trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceAction } from './trace-events';
 import { maskSensitiveText } from './dom-snapshot-render';
 import { diffAriaSnapshots } from '#shared/page-diff';
 import type {
@@ -250,11 +250,20 @@ export function buildActionCallsites(
   return result;
 }
 
-/** The failing action's stack, else the nearest preceding action that has one. */
+/**
+ * The failing action's stack, else the stack of the page-side action it drove
+ * (a runner action records none), else the nearest preceding action that has one.
+ */
 function pickStackAction(
   parsed: ParsedTraceData,
   stacks: TraceStacksIndex,
 ): { action: TraceAction | null; frames: RawStackFrame[] | null } {
+  const failing = parsed.failingAction;
+  const ownFrames = failing ? stacks.byCallId.get(failing.callId) : undefined;
+  if (failing && ownFrames?.length) return { action: failing, frames: ownFrames };
+  const pageAction = pageActionOf(parsed, failing);
+  const pageFrames = pageAction ? stacks.byCallId.get(pageAction.callId) : undefined;
+  if (pageAction && pageFrames?.length) return { action: pageAction, frames: pageFrames };
   const fromIndex = parsed.failingActionIndex >= 0 ? parsed.failingActionIndex : parsed.actions.length - 1;
   for (let i = fromIndex; i >= 0; i--) {
     const action = parsed.actions[i];
@@ -573,15 +582,18 @@ export function resolveSnapshotFile(
 
 /**
  * The snapshotted action the failure belongs to: the failing action itself when
- * it carries a snapshot, otherwise the last snapshotted action (an assertion
+ * it carries a snapshot, else the page-side action it drove (an assertion
  * failure keys the error to a runner step that carries none, while the page
- * interactions that led there do). Its callId marks the failing step.
+ * call inside it does), otherwise the last snapshotted action. Its callId
+ * marks the failing step.
  */
 function failureSnapshotCallId(parsed: ParsedTraceData): string | null {
   const snapshotted = parsed.actions.filter(actionHasSnapshot);
   if (snapshotted.length === 0) return null;
   const failing = parsed.failingAction;
   if (failing && snapshotted.some((a) => a.callId === failing.callId)) return failing.callId;
+  const pageAction = pageActionOf(parsed, failing);
+  if (pageAction && actionHasSnapshot(pageAction)) return pageAction.callId;
   return snapshotted[snapshotted.length - 1]!.callId;
 }
 

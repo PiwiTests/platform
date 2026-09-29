@@ -17,8 +17,10 @@ import { parseTraceTexts, traceFileRank } from '~~/server/utils/trace-events';
 import {
   DOM_SNAPSHOT_CAP_CHARS,
   extractDomSnapshot,
+  snapshotMomentFromQuery,
   type DomSnapshotResult,
   type DomSnapshotSource,
+  type SnapshotMoment,
 } from '~~/server/utils/dom-snapshot-render';
 import { readZipEntries } from '../trace-zip.client';
 import { getDemoDb, getDemoDbBaseUrl } from '../db.client';
@@ -32,16 +34,17 @@ const ALLOWED_TRACE_PREFIX = 'demo/traces/';
 // recover on the next request.
 const traceSnapshotCache = new Map<string, Promise<DomSnapshotResult | null>>();
 
-function getTraceDomSnapshot(path: string): Promise<DomSnapshotResult | null> {
-  const cached = traceSnapshotCache.get(path);
+function getTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<DomSnapshotResult | null> {
+  const key = at ? `${path}#${at.phase}@${at.callId}` : path;
+  const cached = traceSnapshotCache.get(key);
   if (cached) return cached;
-  const promise = loadTraceDomSnapshot(path)
+  const promise = loadTraceDomSnapshot(path, at)
     .catch(() => null)
     .then((result) => {
-      if (!result) traceSnapshotCache.delete(path);
+      if (!result) traceSnapshotCache.delete(key);
       return result;
     });
-  traceSnapshotCache.set(path, promise);
+  traceSnapshotCache.set(key, promise);
   return promise;
 }
 
@@ -51,7 +54,7 @@ function getTraceDomSnapshot(path: string): Promise<DomSnapshotResult | null> {
  * (`parseZip` → `parseTraceTexts` → `extractDomSnapshot`). Returns null when
  * the trace is missing, unparsable, or holds no renderable snapshot.
  */
-async function loadTraceDomSnapshot(path: string): Promise<DomSnapshotResult | null> {
+async function loadTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<DomSnapshotResult | null> {
   if (!path.startsWith(ALLOWED_TRACE_PREFIX)) return null;
 
   const base = getDemoDbBaseUrl().replace(/\/$/, '');
@@ -66,7 +69,7 @@ async function loadTraceDomSnapshot(path: string): Promise<DomSnapshotResult | n
 
   const decoder = new TextDecoder();
   const data = parseTraceTexts(traceEntries.map((entry) => decoder.decode(entry.data)));
-  const result = extractDomSnapshot(data, DOM_SNAPSHOT_CAP_CHARS);
+  const result = extractDomSnapshot(data, DOM_SNAPSHOT_CAP_CHARS, {}, at);
   return result.status === 'ok' && result.html ? result : null;
 }
 
@@ -141,7 +144,7 @@ export async function apiGetDemoDomSnapshot(testRunsCaseId: number, query?: URLS
   }
 
   if (tracePath) {
-    const result = await getTraceDomSnapshot(tracePath);
+    const result = await getTraceDomSnapshot(tracePath, snapshotMomentFromQuery(Object.fromEntries(query ?? [])));
     if (result) return { ...result, source: 'dom', availableSources: sources() };
     // The trace produced no usable DOM — drop it as an option and fall back.
     domAvailable = false;

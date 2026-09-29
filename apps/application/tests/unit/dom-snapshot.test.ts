@@ -11,6 +11,7 @@ import {
   inlineImageSources,
   mediaMatchesViewport,
   maskCssText,
+  snapshotMomentFromQuery,
 } from '~~/server/utils/dom-snapshot-render';
 import { resolveCaseDomSnapshot } from '~~/server/utils/dom-snapshot';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
@@ -703,5 +704,80 @@ describe('parseTraceTexts — v9 frame snapshots (callId + phase)', () => {
     expect(res.snapshotName).toBe('before@call@12');
     expect(res.html).toContain('<button id="go">Go</button>');
     expect(res.frameUrl).toBe('http://127.0.0.1:42103/');
+  });
+});
+
+describe('extractDomSnapshot — a runner action', () => {
+  /**
+   * A body assertion that failed (`Test.expect`, which records no snapshot)
+   * around its page call, then a teardown assertion that failed on another page.
+   */
+  const trace = () => {
+    const page = (callId: string, phase: string, text: string) => ({
+      type: 'frame-snapshot',
+      snapshot: { callId, phase, frameId: 'f1', isMainFrame: true, html: ['HTML', {}, ['BODY', {}, ['P', {}, text]]] },
+    });
+    const events = [
+      { type: 'before', callId: 'expect@5', class: 'Test', method: 'expect', startTime: 100 },
+      {
+        type: 'after',
+        callId: 'expect@5',
+        endTime: 400,
+        error: { message: 'Error: expect(locator).toBeVisible() failed' },
+      },
+      { type: 'error', message: 'Error: expect(locator).toBeVisible() failed' },
+      { type: 'before', callId: 'expect@9', class: 'Test', method: 'expect', startTime: 500 },
+      {
+        type: 'after',
+        callId: 'expect@9',
+        endTime: 700,
+        error: { message: 'Error: expect(locator).toHaveURL() failed' },
+      },
+      { type: 'error', message: 'Error: expect(locator).toHaveURL() failed' },
+    ];
+    const pageEvents = [
+      { type: 'before', callId: 'call@3', class: 'Frame', method: 'expect', startTime: 101 },
+      page('call@3', 'before', 'The body page, before'),
+      page('call@3', 'after', 'The body page, when it failed'),
+      { type: 'after', callId: 'call@3', endTime: 399, error: { message: 'Expect failed' } },
+      { type: 'before', callId: 'call@7', class: 'Frame', method: 'expect', startTime: 501 },
+      page('call@7', 'after', 'The teardown page'),
+      { type: 'after', callId: 'call@7', endTime: 699, error: { message: 'Expect failed' } },
+    ];
+    return [events, pageEvents].map((list) => list.map((e) => JSON.stringify(e)).join('\n'));
+  };
+
+  test('renders the page call the failing runner action drove, when the error was raised', () => {
+    const data = parseTraceTexts(trace());
+    expect(data.failingAction?.callId).toBe('expect@5');
+    const res = extractDomSnapshot(data, 1_000_000);
+    expect(res.snapshotName).toBe('after@call@3');
+    expect(res.html).toContain('The body page, when it failed');
+  });
+
+  test('renders the moment a request names first — the DOM beside a screenshot of it', () => {
+    const data = parseTraceTexts(trace());
+    const before = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@3', phase: 'before' });
+    expect(before.snapshotName).toBe('before@call@3');
+    expect(before.html).toContain('The body page, before');
+    const teardown = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@7', phase: 'after' });
+    expect(teardown.html).toContain('The teardown page');
+    // A moment the trace holds no snapshot for falls back to the failure-time one.
+    const missing = extractDomSnapshot(data, 1_000_000, {}, { callId: 'call@7', phase: 'before' });
+    expect(missing.snapshotName).toBe('after@call@3');
+  });
+});
+
+describe('snapshotMomentFromQuery', () => {
+  test('reads a call id and a phase, and nothing malformed', () => {
+    expect(snapshotMomentFromQuery({ callId: 'call@17', phase: 'after' })).toEqual({
+      callId: 'call@17',
+      phase: 'after',
+    });
+    expect(snapshotMomentFromQuery({ callId: 'call@17' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({ callId: 'call@17', phase: 'during' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({ callId: ['a', 'b'], phase: 'after' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({ callId: 'x'.repeat(201), phase: 'after' })).toBeUndefined();
+    expect(snapshotMomentFromQuery({})).toBeUndefined();
   });
 });

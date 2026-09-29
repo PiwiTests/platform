@@ -2,7 +2,10 @@
  * Step lists the reporter recorded from a real Playwright 1.63 run (paths
  * rewritten under `/work/shop/`): a failure in the test body inside a
  * `test.step`, and failures in a `beforeEach`, a `beforeAll` and an `afterAll`
- * hook. Every step carries its `depth`, start time and duration.
+ * hook. Every step carries its `depth`, start time and duration. The runs from
+ * `tests/downloads.spec.ts` hold several errored steps each (caught probes,
+ * soft assertions, a failing teardown, retried `toPass` attempts); their steps
+ * also carry where each error was thrown and the reporter's `recovered` mark.
  */
 export interface RecordedStep {
   title: string;
@@ -12,7 +15,8 @@ export interface RecordedStep {
   startTime: number;
   duration: number;
   failed?: boolean;
-  error?: { message: string };
+  error?: { message: string; location?: string };
+  recovered?: boolean;
   location?: string;
   params?: Record<string, string | number | boolean>;
 }
@@ -556,5 +560,529 @@ export const afterAllFailure: RecordedExecution = {
       location: '/work/shop/tests/fixtures.ts:3:26',
     },
     { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000791, duration: 78 },
+  ],
+};
+
+/** An optional dialog probed in a `try`/`catch`, then a strict mode violation inside a `test.step`. */
+export const caughtProbeFailure: RecordedExecution = {
+  status: 'failed',
+  error:
+    "Error: expect(locator).toBeEnabled() failed\n\nLocator: locator('.carousel').getByRole('link', { name: '' })\nExpected: enabled\nError: strict mode violation: locator('.carousel').getByRole('link', { name: '' }) resolved to 2 elements:\n    1) <a href=\"/files/1\"></a> aka getByRole('link').first()\n    2) <a href=\"/files/2\"></a> aka getByRole('link').nth(1)\n\nCall log:\n  - Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' }) with timeout 2000ms\n  - waiting for locator('.carousel').getByRole('link', { name: '' })\n\n    at tests/downloads.spec.ts:26:77",
+  steps: [
+    { title: 'Before Hooks', category: 'hook', depth: 0, startTime: 1790000000000, duration: 151 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000019, duration: 70 },
+    { title: 'Launch browser', category: 'other', depth: 2, startTime: 1790000000024, duration: 65 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000091, duration: 23 },
+    { title: 'Create context', category: 'other', depth: 2, startTime: 1790000000093, duration: 9 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000114, duration: 37 },
+    { title: 'Create page', category: 'other', depth: 2, startTime: 1790000000116, duration: 35 },
+    {
+      title: 'Set content',
+      category: 'other',
+      depth: 0,
+      startTime: 1790000000152,
+      duration: 23,
+      location: '/work/shop/tests/downloads.spec.ts:4:14',
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('dialog').getByRole('button', { name: 'Confirm' })",
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000181,
+      duration: 509,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('dialog').getByRole('button', { name: 'Confirm' })\nExpected: visible\nTimeout: 500ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('dialog').getByRole('button', { name: 'Confirm' }) with timeout 500ms\n  - waiting for getByRole('dialog').getByRole('button', { name: 'Confirm' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:15:27',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:15:27',
+      params: { locator: "getByRole('dialog').getByRole('button', { name: 'Confirm' })", expected: '{"timeout":500}' },
+    },
+    {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Save' })",
+      category: 'action',
+      depth: 0,
+      startTime: 1790000000691,
+      duration: 32,
+      location: '/work/shop/tests/downloads.spec.ts:22:52',
+      params: { locator: "getByRole('button', { name: 'Save' })" },
+    },
+    {
+      title: 'Check the download link',
+      category: 'test.step',
+      depth: 0,
+      startTime: 1790000000724,
+      duration: 19,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeEnabled() failed\n\nLocator: locator('.carousel').getByRole('link', { name: '' })\nExpected: enabled\nError: strict mode violation: locator('.carousel').getByRole('link', { name: '' }) resolved to 2 elements:\n    1) <a href=\"/files/1\"></a> aka getByRole('link').first()\n    2) <a href=\"/files/2\"></a> aka getByRole('link').nth(1)\n\nCall log:\n  - Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' }) with timeout 2000ms\n  - waiting for locator('.carousel').getByRole('link', { name: '' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:26:77',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:24:3',
+    },
+    {
+      title: 'Expect "toBeEnabled"',
+      subtitle: "locator('.carousel').getByRole('link', { name: '' })",
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000726,
+      duration: 17,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeEnabled() failed\n\nLocator: locator('.carousel').getByRole('link', { name: '' })\nExpected: enabled\nError: strict mode violation: locator('.carousel').getByRole('link', { name: '' }) resolved to 2 elements:\n    1) <a href=\"/files/1\"></a> aka getByRole('link').first()\n    2) <a href=\"/files/2\"></a> aka getByRole('link').nth(1)\n\nCall log:\n  - Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' }) with timeout 2000ms\n  - waiting for locator('.carousel').getByRole('link', { name: '' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:26:77',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:26:77',
+      params: { locator: "locator('.carousel').getByRole('link', { name: '' })", expected: '{"timeout":2000}' },
+    },
+    { title: 'After Hooks', category: 'hook', depth: 0, startTime: 1790000000744, duration: 52 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000745, duration: 0 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000746, duration: 40 },
+    { title: 'Close context', category: 'other', depth: 2, startTime: 1790000000781, duration: 5 },
+    { title: 'Worker Cleanup', category: 'hook', depth: 0, startTime: 1790000000796, duration: 50 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000797, duration: 48 },
+  ],
+};
+
+/** Two caught `toBeVisible` probes, one inside the `test.step` that then fails on a third `toBeVisible`: every error reads the same first line. */
+export const sameMessageProbeFailure: RecordedExecution = {
+  status: 'failed',
+  error:
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Missing' })\nExpected: visible\nTimeout: 300ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Missing' }) with timeout 300ms\n  - waiting for getByRole('button', { name: 'Missing' })\n\n    at tests/downloads.spec.ts:39:65",
+  steps: [
+    { title: 'Before Hooks', category: 'hook', depth: 0, startTime: 1790000000000, duration: 135 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000022, duration: 58 },
+    { title: 'Launch browser', category: 'other', depth: 2, startTime: 1790000000025, duration: 55 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000082, duration: 17 },
+    { title: 'Create context', category: 'other', depth: 2, startTime: 1790000000084, duration: 7 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000099, duration: 36 },
+    { title: 'Create page', category: 'other', depth: 2, startTime: 1790000000101, duration: 34 },
+    {
+      title: 'Set content',
+      category: 'other',
+      depth: 0,
+      startTime: 1790000000136,
+      duration: 21,
+      location: '/work/shop/tests/downloads.spec.ts:31:14',
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Confirm' })",
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000162,
+      duration: 306,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Confirm' })\nExpected: visible\nTimeout: 300ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Confirm' }) with timeout 300ms\n  - waiting for getByRole('button', { name: 'Confirm' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:33:65',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:33:65',
+      params: { locator: "getByRole('button', { name: 'Confirm' })", expected: '{"timeout":300}' },
+    },
+    {
+      title: 'Check',
+      category: 'test.step',
+      depth: 0,
+      startTime: 1790000000468,
+      duration: 611,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Missing' })\nExpected: visible\nTimeout: 300ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Missing' }) with timeout 300ms\n  - waiting for getByRole('button', { name: 'Missing' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:39:65',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:35:3',
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Other' })",
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000469,
+      duration: 304,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Other' })\nExpected: visible\nTimeout: 300ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Other' }) with timeout 300ms\n  - waiting for getByRole('button', { name: 'Other' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:37:65',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:37:65',
+      params: { locator: "getByRole('button', { name: 'Other' })", expected: '{"timeout":300}' },
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Missing' })",
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000774,
+      duration: 305,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Missing' })\nExpected: visible\nTimeout: 300ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Missing' }) with timeout 300ms\n  - waiting for getByRole('button', { name: 'Missing' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:39:65',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:39:65',
+      params: { locator: "getByRole('button', { name: 'Missing' })", expected: '{"timeout":300}' },
+    },
+    { title: 'After Hooks', category: 'hook', depth: 0, startTime: 1790000001080, duration: 41 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000001081, duration: 0 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000001081, duration: 33 },
+    { title: 'Close context', category: 'other', depth: 2, startTime: 1790000001109, duration: 5 },
+    { title: 'Worker Cleanup', category: 'hook', depth: 0, startTime: 1790000001121, duration: 40 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000001122, duration: 38 },
+  ],
+};
+
+/** Two failed `expect.soft` assertions: both are the test's errors. */
+export const softAssertionsFailure: RecordedExecution = {
+  status: 'failed',
+  error:
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Zed' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"soft toBeVisible\" getByRole('button', { name: 'Zed' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Zed' })\n\n---\nError: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Qux' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"soft toBeVisible\" getByRole('button', { name: 'Qux' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Qux' })\n\n    at tests/downloads.spec.ts:45:64",
+  steps: [
+    { title: 'Before Hooks', category: 'hook', depth: 0, startTime: 1790000000000, duration: 155 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000029, duration: 67 },
+    { title: 'Launch browser', category: 'other', depth: 2, startTime: 1790000000033, duration: 62 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000099, duration: 18 },
+    { title: 'Create context', category: 'other', depth: 2, startTime: 1790000000100, duration: 8 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000117, duration: 38 },
+    { title: 'Create page', category: 'other', depth: 2, startTime: 1790000000119, duration: 35 },
+    {
+      title: 'Set content',
+      category: 'other',
+      depth: 0,
+      startTime: 1790000000156,
+      duration: 20,
+      location: '/work/shop/tests/downloads.spec.ts:44:14',
+    },
+    {
+      title: 'Expect "soft toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Zed' })",
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000181,
+      duration: 207,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Zed' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"soft toBeVisible\" getByRole('button', { name: 'Zed' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Zed' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:45:64',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:45:64',
+      params: { locator: "getByRole('button', { name: 'Zed' })", expected: '{"timeout":200}' },
+    },
+    {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Save' })",
+      category: 'action',
+      depth: 0,
+      startTime: 1790000000390,
+      duration: 27,
+      location: '/work/shop/tests/downloads.spec.ts:46:52',
+      params: { locator: "getByRole('button', { name: 'Save' })" },
+    },
+    {
+      title: 'Expect "soft toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Qux' })",
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000417,
+      duration: 206,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Qux' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"soft toBeVisible\" getByRole('button', { name: 'Qux' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Qux' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:47:64',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:47:64',
+      params: { locator: "getByRole('button', { name: 'Qux' })", expected: '{"timeout":200}' },
+    },
+    { title: 'After Hooks', category: 'hook', depth: 0, startTime: 1790000000624, duration: 38 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000625, duration: 0 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000625, duration: 30 },
+    { title: 'Close context', category: 'other', depth: 2, startTime: 1790000000650, duration: 5 },
+    { title: 'Worker Cleanup', category: 'hook', depth: 0, startTime: 1790000000662, duration: 36 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000663, duration: 32 },
+  ],
+};
+
+/** A body assertion fails, then the `afterEach` hook fails too. */
+export const teardownAfterBodyFailure: RecordedExecution = {
+  status: 'failed',
+  error:
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Nope' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Nope' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Nope' })\n\n---\nError: expect(locator).toBeVisible() failed\n\nLocator: getByRole('heading', { name: 'Bye' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('heading', { name: 'Bye' }) with timeout 200ms\n  - waiting for getByRole('heading', { name: 'Bye' })\n\n    at tests/downloads.spec.ts:56:62",
+  steps: [
+    { title: 'Before Hooks', category: 'hook', depth: 0, startTime: 1790000000000, duration: 137 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000011, duration: 58 },
+    { title: 'Launch browser', category: 'other', depth: 2, startTime: 1790000000013, duration: 56 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000071, duration: 19 },
+    { title: 'Create context', category: 'other', depth: 2, startTime: 1790000000073, duration: 8 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000091, duration: 46 },
+    { title: 'Create page', category: 'other', depth: 2, startTime: 1790000000092, duration: 44 },
+    {
+      title: 'Set content',
+      category: 'other',
+      depth: 0,
+      startTime: 1790000000138,
+      duration: 17,
+      location: '/work/shop/tests/downloads.spec.ts:55:16',
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Nope' })",
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000162,
+      duration: 208,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Nope' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Nope' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Nope' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:56:62',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:56:62',
+      params: { locator: "getByRole('button', { name: 'Nope' })", expected: '{"timeout":200}' },
+    },
+    {
+      title: 'After Hooks',
+      category: 'hook',
+      depth: 0,
+      startTime: 1790000000371,
+      duration: 254,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('heading', { name: 'Bye' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('heading', { name: 'Bye' }) with timeout 200ms\n  - waiting for getByRole('heading', { name: 'Bye' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:52:62',
+      },
+    },
+    {
+      title: 'afterEach hook',
+      category: 'hook',
+      depth: 1,
+      startTime: 1790000000372,
+      duration: 205,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('heading', { name: 'Bye' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('heading', { name: 'Bye' }) with timeout 200ms\n  - waiting for getByRole('heading', { name: 'Bye' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:52:62',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:51:8',
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('heading', { name: 'Bye' })",
+      category: 'assertion',
+      depth: 2,
+      startTime: 1790000000373,
+      duration: 204,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('heading', { name: 'Bye' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('heading', { name: 'Bye' }) with timeout 200ms\n  - waiting for getByRole('heading', { name: 'Bye' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:52:62',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:52:62',
+      params: { locator: "getByRole('heading', { name: 'Bye' })", expected: '{"timeout":200}' },
+    },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000578, duration: 0 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000579, duration: 38 },
+    { title: 'Close context', category: 'other', depth: 2, startTime: 1790000000612, duration: 5 },
+    { title: 'Worker Cleanup', category: 'hook', depth: 0, startTime: 1790000000625, duration: 35 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000626, duration: 33 },
+  ],
+};
+
+/** A caught probe, then a click interrupted by the test timeout. */
+export const caughtProbeTimeout: RecordedExecution = {
+  status: 'timedOut',
+  error:
+    "Test timeout of 1500ms exceeded.\n---\nError: locator.click: Test timeout of 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Nope' })\n",
+  steps: [
+    { title: 'Before Hooks', category: 'hook', depth: 0, startTime: 1790000000000, duration: 141 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000013, duration: 69 },
+    { title: 'Launch browser', category: 'other', depth: 2, startTime: 1790000000016, duration: 65 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000085, duration: 19 },
+    { title: 'Create context', category: 'other', depth: 2, startTime: 1790000000087, duration: 8 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000105, duration: 36 },
+    { title: 'Create page', category: 'other', depth: 2, startTime: 1790000000106, duration: 34 },
+    {
+      title: 'Set content',
+      category: 'other',
+      depth: 0,
+      startTime: 1790000000142,
+      duration: 29,
+      location: '/work/shop/tests/downloads.spec.ts:71:14',
+    },
+    {
+      title: 'Expect "toBeVisible"',
+      subtitle: "getByRole('button', { name: 'Confirm' })",
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000176,
+      duration: 207,
+      failed: true,
+      error: {
+        message:
+          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Confirm' })\nExpected: visible\nTimeout: 200ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('button', { name: 'Confirm' }) with timeout 200ms\n  - waiting for getByRole('button', { name: 'Confirm' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:73:65',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:73:65',
+      params: { locator: "getByRole('button', { name: 'Confirm' })", expected: '{"timeout":200}' },
+    },
+    {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Nope' })",
+      category: 'action',
+      depth: 0,
+      startTime: 1790000000386,
+      duration: 1250,
+      failed: true,
+      error: {
+        message:
+          "Error: locator.click: Test timeout of 1500ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Nope' })\n",
+        location: '/work/shop/tests/downloads.spec.ts:75:52',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:75:52',
+      params: { locator: "getByRole('button', { name: 'Nope' })" },
+    },
+    { title: 'After Hooks', category: 'hook', depth: 0, startTime: 1790000001586, duration: 65 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000001588, duration: 0 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000001588, duration: 53 },
+    { title: 'Close context', category: 'other', depth: 2, startTime: 1790000001633, duration: 8 },
+    { title: 'Worker Cleanup', category: 'hook', depth: 0, startTime: 1790000001651, duration: 43 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000001652, duration: 40 },
+  ],
+};
+
+/** An `expect(…).toPass()` whose every attempt failed. */
+export const toPassFailure: RecordedExecution = {
+  status: 'failed',
+  error:
+    'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 5\n\nCall Log:\n- Timeout 500ms exceeded while waiting on the predicate\n    at tests/downloads.spec.ts:66:6',
+  steps: [
+    { title: 'Before Hooks', category: 'hook', depth: 0, startTime: 1790000000000, duration: 161 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000023, duration: 71 },
+    { title: 'Launch browser', category: 'other', depth: 2, startTime: 1790000000028, duration: 66 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000096, duration: 23 },
+    { title: 'Create context', category: 'other', depth: 2, startTime: 1790000000098, duration: 10 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000120, duration: 41 },
+    { title: 'Create page', category: 'other', depth: 2, startTime: 1790000000121, duration: 39 },
+    {
+      title: 'Set content',
+      category: 'other',
+      depth: 0,
+      startTime: 1790000000162,
+      duration: 20,
+      location: '/work/shop/tests/downloads.spec.ts:61:14',
+    },
+    {
+      title: 'Expect "toPass"',
+      category: 'assertion',
+      depth: 0,
+      startTime: 1790000000186,
+      duration: 412,
+      failed: true,
+      error: {
+        message:
+          'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 5\n\nCall Log:\n- Timeout 500ms exceeded while waiting on the predicate',
+        location: '/work/shop/tests/downloads.spec.ts:66:6',
+      },
+      location: '/work/shop/tests/downloads.spec.ts:66:6',
+      params: { expected: '{"timeout":500,"intervals":[100]}' },
+    },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000187,
+      duration: 3,
+      failed: true,
+      error: {
+        message: 'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 1',
+        location: '/work/shop/tests/downloads.spec.ts:65:15',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:65:15',
+      params: { expected: 100 },
+    },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000292,
+      duration: 1,
+      failed: true,
+      error: {
+        message: 'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 2',
+        location: '/work/shop/tests/downloads.spec.ts:65:15',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:65:15',
+      params: { expected: 100 },
+    },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000394,
+      duration: 1,
+      failed: true,
+      error: {
+        message: 'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 3',
+        location: '/work/shop/tests/downloads.spec.ts:65:15',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:65:15',
+      params: { expected: 100 },
+    },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000496,
+      duration: 0,
+      failed: true,
+      error: {
+        message: 'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 4',
+        location: '/work/shop/tests/downloads.spec.ts:65:15',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:65:15',
+      params: { expected: 100 },
+    },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      depth: 1,
+      startTime: 1790000000598,
+      duration: 0,
+      failed: true,
+      error: {
+        message: 'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 100\nReceived: 5',
+        location: '/work/shop/tests/downloads.spec.ts:65:15',
+      },
+      recovered: true,
+      location: '/work/shop/tests/downloads.spec.ts:65:15',
+      params: { expected: 100 },
+    },
+    { title: 'After Hooks', category: 'hook', depth: 0, startTime: 1790000000599, duration: 108 },
+    { title: 'Fixture "page"', category: 'fixture', depth: 1, startTime: 1790000000600, duration: 0 },
+    { title: 'Fixture "context"', category: 'fixture', depth: 1, startTime: 1790000000600, duration: 99 },
+    { title: 'Close context', category: 'other', depth: 2, startTime: 1790000000692, duration: 6 },
+    { title: 'Worker Cleanup', category: 'hook', depth: 0, startTime: 1790000000708, duration: 40 },
+    { title: 'Fixture "browser"', category: 'fixture', depth: 1, startTime: 1790000000709, duration: 37 },
   ],
 };

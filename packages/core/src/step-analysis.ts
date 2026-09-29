@@ -8,7 +8,7 @@
  */
 import { stripAnsi } from './error-parse';
 import { maskTokenLike } from './mask';
-import { isCaptureStep } from './step-tree';
+import { isCaptureStep, sameCodeLocation } from './step-tree';
 import type { TestStepEvent, TestStepEventHook } from './wire';
 
 /** Max param keys kept per step. */
@@ -145,10 +145,20 @@ export interface FlatStep {
    * are kept as-is; anything else is JSON-stringified. Capped and masked.
    */
   params?: Record<string, string | number | boolean>;
-  /** Error message when the step failed (undefined when the step passed). */
-  error?: { message: string };
+  /**
+   * The step's error when it failed (undefined when the step passed): its
+   * message, and where it was thrown as `file:line:col` when Playwright
+   * reports it.
+   */
+  error?: { message: string; location?: string };
   /** True when the step carried an error — the signal the server needs for inline failure markers. */
   failed?: boolean;
+  /**
+   * True when the step's error is none of the test's errors: the test caught it
+   * (`try`/`catch`, a retried `toPass` attempt) and went on. Set by
+   * {@link markRecoveredSteps}.
+   */
+  recovered?: boolean;
   /** Source pointer `file:line:col` (not a code snippet); present when Playwright reports one. */
   location?: string;
   /** Absolute start time in ms; enables per-step timing/waterfall on the case detail page. */
@@ -235,6 +245,47 @@ function normalizeStepParams(raw: unknown): Record<string, string | number | boo
 /** Step-event category restricted to the values `extractTestStepEvents` emits. */
 export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
 
+/** A Playwright `{ file, line, column }` location as `file:line:col`; undefined without a file. */
+function locationText(location: { file?: unknown; line?: unknown; column?: unknown } | null | undefined) {
+  if (!location || typeof location.file !== 'string' || !location.file) return undefined;
+  return `${location.file}:${location.line}:${location.column}`;
+}
+
+/** One of the errors a test ended with, as Playwright reports it in `TestResult.errors`. */
+export interface TestErrorLike {
+  message?: string;
+  location?: { file: string; line: number; column: number };
+}
+
+/**
+ * Mark every flattened step whose error is none of the test's `errors` as
+ * `recovered`: the test caught it and went on. A step error is one of the
+ * test's errors when its first line matches one and, when both record where
+ * they were thrown, at the same place. A passing test's `errors` is empty, so
+ * every step error it recorded is marked.
+ */
+export function markRecoveredSteps(steps: FlatStep[], errors: readonly TestErrorLike[]): void {
+  const fatal = errors.map((error) => ({
+    head: firstErrorLine(error.message),
+    location: locationText(error.location),
+  }));
+  for (const step of steps) {
+    if (!step.error) continue;
+    const head = firstErrorLine(step.error.message);
+    const thrownAt = step.error.location;
+    const isFatal = fatal.some(
+      (error) => error.head === head && (!error.location || !thrownAt || sameCodeLocation(error.location, thrownAt)),
+    );
+    if (!isFatal) step.recovered = true;
+  }
+}
+
+function firstErrorLine(message: unknown): string {
+  return stripAnsi(typeof message === 'string' ? message : '')
+    .split('\n')[0]!
+    .trim();
+}
+
 /**
  * Recursively flatten a nested step tree into a flat list, depth first, each
  * step recording its `depth` so the tree can be rebuilt. Uses Playwright's
@@ -254,9 +305,12 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
     if (params) flat.params = params;
     if (step.error?.message) {
       flat.error = { message: step.error.message };
+      const thrownAt = locationText(step.error.location);
+      if (thrownAt) flat.error.location = thrownAt;
       flat.failed = true;
     }
-    if (step.location) flat.location = `${step.location.file}:${step.location.line}:${step.location.column}`;
+    const location = locationText(step.location);
+    if (location) flat.location = location;
     if (step.startTime) flat.startTime = step.startTime instanceof Date ? step.startTime.getTime() : step.startTime;
     result.push(flat);
     if (step.steps?.length > 0) result.push(...flattenSteps(step.steps, depth + 1));
@@ -282,9 +336,14 @@ export interface StepMetrics {
   waitCount: number;
 }
 
-/** Collect step metrics (flat steps, slowest step, navigation stats) from a Playwright step array */
-export function collectStepMetrics(steps: any[]): StepMetrics {
+/**
+ * Collect step metrics (flat steps, slowest step, navigation stats) from a
+ * Playwright step array. With the test's `errors`, the step errors the test
+ * caught are marked `recovered`.
+ */
+export function collectStepMetrics(steps: any[], errors?: readonly TestErrorLike[] | null): StepMetrics {
   const flatSteps = flattenSteps(steps);
+  if (errors) markRecoveredSteps(flatSteps, errors);
   const totalStepDuration = steps.reduce((sum: number, s: any) => sum + (s.duration || 0), 0);
 
   let slowestStep: { title: string; duration: number } | null = null;
