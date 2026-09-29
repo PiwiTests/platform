@@ -32,7 +32,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 ### Root-cause classification
 
-Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the attempt diff. It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
+Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the [attempt diff](./evidence#attempts). It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
 
 | Category | Typical signals |
 |----------|-----------------|
@@ -42,7 +42,8 @@ Every flaky test is automatically tagged with one of five categories, using keyw
 | `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
 | `other` | No clear signal |
 
-It also counts the failed and 5xx requests of recent failing attempts, and weighs most a request that failed on the failing attempt only (the [attempt diff](./evidence#attempts)).
+Piwi classifies a test each time it passes on retry in a finished run (up to 20 tests per run), so the category follows
+new evidence. A listed test that still has no category is classified when the list is opened, ten at a time.
 
 Filter the flaky table by category to triage a class of failures at once.
 
@@ -132,7 +133,7 @@ A failing execution shows the same badges in its header (see [Test case detail](
 
 ## Spec health by file
 
-The project's **Tests** tab has a **Group by File** view that groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, test count and average time in the group header, so an unhealthy area of the suite jumps out.
+The project's **Tests** tab has a **Group by File** view that groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, execution count and average time in the group header, so an unhealthy area of the suite jumps out.
 
 ## Across every project
 
