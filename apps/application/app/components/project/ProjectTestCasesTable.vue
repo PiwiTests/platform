@@ -258,7 +258,7 @@ const fileGroups = computed(() => {
               value: String(health.failureCount),
               tone: health.failureCount > 0 ? ('poor' as const) : ('muted' as const),
             },
-            { label: 'Tests', value: String(health.testCount), tone: 'muted' as const },
+            { label: 'Executions', value: String(health.testCount), tone: 'muted' as const },
             { label: 'Avg', value: formatMs(health.avgDuration), tone: 'muted' as const },
           ]
         : null;
