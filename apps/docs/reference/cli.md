@@ -117,7 +117,7 @@ npx @piwitests/reporter run impact --base origin/main
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`) |
 | `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
-| `--format <fmt>` | `args` (`file:line`, default) · `grep` · `files` · `json` |
+| `--format <fmt>` | `args` (`file:line`, default) · `grep` · `files`. For the full resolution use `--json`; `run` rejects `--format json` |
 | `--budget <duration>` | Cap total time, e.g. `5m`, `90s`, `300000` (ms) |
 | `--shard <i/n>` | Keep only shard *i* of *n*, balanced by test duration and lock-aware (a lock's holders stay in one shard) |
 | `--fail-fast` | Order the least-reliable tests first |
@@ -138,14 +138,13 @@ Manage committed natural-language [AI-step](/guide/ai-steps) artifacts (`page.pi
 ```bash
 npx @piwitests/reporter ai check
 npx @piwitests/reporter ai resolve --grep "checkout"
-npx @piwitests/reporter ai prune
 ```
 
 | Subcommand | What it does |
 |---|---|
-| `check` | Scan committed entries for orphans, non-canonical files and duplicate templates. Read-only; exits `1` when issues are found |
-| `resolve` | Author missing entries by running the suite in resolve mode against the configured authoring server (forces `--workers=1`) |
-| `prune` | Delete orphaned/dormant entries |
+| `check` | Scan committed entries for orphans, non-canonical files and duplicate templates. Read-only; exits `1` on errors (orphans, non-canonical or invalid files) — duplicate templates are reported as warnings and do not fail it |
+| `resolve` | Author missing entries by running the suite in resolve mode against the configured authoring server (forces `--workers=1`). Needs `PIWI_DASHBOARD_URL` (plus `PIWI_API_KEY` when auth is on) and exits `2` without it |
+| `prune` | Reserved for cleaning up orphaned/dormant entries — not available in this build; it prints a notice and exits `2` |
 
 | Flag | Applies to | Description |
 |---|---|---|
@@ -155,9 +154,9 @@ npx @piwitests/reporter ai prune
 | `--grep <re>` | `resolve` | Only author entries for matching tests |
 | `--project <name>` | `resolve` | Author under one Playwright project (a resolve profile) |
 | `--env K=V` | `resolve` | Extra env for the run (repeatable — flags/viewport profiles) |
-| `--update-ai` | `resolve` | Re-author entries that already exist (needs `PIWI_DASHBOARD_URL` / `PIWI_API_KEY`) |
+| `--update-ai` | `resolve` | Re-author entries that already exist |
 
-**Exit codes:** `0` clean (or `--help`) · `1` hygiene issues found · `2` bad arguments / command unavailable.
+**Exit codes:** `0` clean (or `--help`) · `1` hygiene errors found · `2` bad arguments / command unavailable. `resolve` passes through the test run's exit code.
 
 ## Related
 

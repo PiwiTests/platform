@@ -59,9 +59,12 @@ e2e:
 
 ## Other systems
 
-Jenkins, CircleCI, Azure DevOps, Travis, Buildkite, TeamCity, Bitbucket, Semaphore, AppVeyor and Drone
-are recognized too — set the same two variables however your system exposes them. Nothing about the
-reporter is platform-specific; unrecognized CI just means less auto-filled metadata.
+Set the same two variables however your system exposes them. Nothing about the reporter is
+platform-specific; unrecognized CI just means less auto-filled metadata. Provider, job, build number and
+the build link are filled in on GitHub Actions, GitLab CI, Jenkins, CircleCI, Travis and Azure DevOps.
+Buildkite, TeamCity, Bitbucket, Semaphore, AppVeyor and Drone are recognized for [shard merging](#sharding)
+(Bitbucket also for branch and pull request); on those, and on any other system that sets `CI`, the
+provider is recorded as `Unknown CI`.
 
 ## What gets detected
 
@@ -75,12 +78,12 @@ Without any configuration, the reporter records:
   `CI_COMMIT_REF_NAME`, `CIRCLE_BRANCH`, and the equivalents for Travis, Azure, Jenkins and Bitbucket),
   then the local git checkout. On a pull-request build the target branch (`GITHUB_BASE_REF`,
   `CI_MERGE_REQUEST_TARGET_BRANCH_NAME`, `SYSTEM_PULLREQUEST_TARGETBRANCH`,
-  `BITBUCKET_PR_DESTINATION_BRANCH`, `CHANGE_TARGET`, or `PIWI_BASE_BRANCH` to name it yourself) is
-  recorded as the run's **base branch**, which [baselines](/guide/concepts#baseline-last-green-run) fall
-  back to when the branch has no history of its own.
+  `BITBUCKET_PR_DESTINATION_BRANCH`, `CHANGE_TARGET`, `TRAVIS_BRANCH` on a Travis pull-request build, or
+  `PIWI_BASE_BRANCH` to name it yourself) is recorded as the run's **base branch**, which
+  [baselines](/guide/concepts#baseline-last-green-run) fall back to when the branch has no history of its own.
 - **CI** — provider, workflow/job name, build number, and a link back to the CI build, from the
   provider's environment variables.
-- **Environment** — Node, Playwright and OS versions, plus each test's browser and viewport.
+- **Environment** — the Playwright version, plus each test's browser and viewport.
 - **Shard index** — from Playwright's own `--shard` config.
 
 Turn off either collector with `collectScmInfo: false` / `collectCiInfo: false` if you'd rather not
@@ -116,7 +119,8 @@ How the merge works:
 
 **All shards must use the same `projectName`.** That's the one requirement.
 
-If your CI isn't detected, set the label yourself to anything common to all shards:
+If your CI isn't detected, set the label yourself to anything common to all shards — with the `PIWI_RUN_LABEL`
+environment variable, or in the config:
 
 ```typescript
 ['@piwitests/reporter', {
@@ -126,7 +130,8 @@ If your CI isn't detected, set the label yourself to anything common to all shar
 }]
 ```
 
-Both the streaming and the batch (`submit` / `upload`) paths support sharding.
+Streaming (the default) merges shards. In batch mode (`streaming: false`) the reporter uploads through the multipart
+`upload` path first, which creates one run per shard; only its JSON `submit` fallback merges them.
 
 ## Watching a run while CI is still going
 
@@ -141,8 +146,8 @@ After results land, the reporter surfaces the dashboard run URL wherever a pipel
 a later step (a Slack post, a deploy gate, a PR comment) doesn't have to scrape stdout. All of it is
 best-effort — a failure in any channel is logged and never fails your run.
 
-**Always** — one line per failed test, printed the moment its final attempt fails, then a
-`View run: <url>` line once the run lands:
+**Always** — one line per failed test, printed the moment its final attempt fails (in batch mode, right
+after the upload), then a `View run: <url>` line once the run lands:
 
 ```
 [Piwi Dashboard] ✗ applies the discount code — getByRole('button', { name: 'Pay' }) never became enabled — click timed out after 30 s → https://piwi.example.com/test-runs/42/locate?file=tests%2Fcheckout.spec.ts&title=applies%20the%20discount%20code&retry=1&browser=chromium
@@ -153,7 +158,7 @@ The part between the title and the link is the failure **headline** — the one-
 
 The per-test link resolves to the failing execution's page (`/test-run-cases/:id`) and works in
 streaming and batch mode alike — it is built from what the reporter knows at that moment (run id,
-spec file, title, retry and Playwright project), so it prints while the run is still going. A link to a
+spec file, title, retry and Playwright project), so when streaming it prints while the run is still going. A link to a
 test the dashboard cannot find (results pruned by retention, an upload that never landed) renders a
 readable "not found" page instead of an error.
 
@@ -194,21 +199,21 @@ e2e:
 - run: cat piwi-run.json   # { runUrl, runId, projectId, projectName, status, ciBuildUrl, failedCount, failures }
 ```
 
-`failures` lists every test whose final attempt failed as `{ title, file, retry, browser, url }`, with
-`url` the same per-test link the log prints.
+`failures` lists every test whose final attempt failed as `{ title, file, retry, browser, headline, url }`,
+with `headline` the one-line failure explanation and `url` the same per-test link the log prints.
 
 ## Pull-request feedback
 
 The run URL above is a link somebody has to click. Piwi can instead post the result onto the pull request itself, which
 is where the person who broke the test already is.
 
-Turn it on in **Settings → Pull requests** (off by default). Two things get posted when a run finishes on a branch with
-an open pull request:
+Turn it on in **Settings → Pull requests** (off by default). Two things get posted when a run finishes:
 
-- **A summary comment** — one comment per pull request, edited on each later run rather than appended, so a busy branch
-  doesn't collect a comment per push.
-- **A commit status** — passed/failed against the run's commit, so the pull request shows the result in its checks list.
-  Required for a branch-protection rule.
+- **A summary comment** — on the branch's open pull request, one comment per pull request, edited on each later run
+  rather than appended, so a busy branch doesn't collect a comment per push. **Only comment on failures** skips it
+  for green runs (unless the run fixed a cluster).
+- **A commit status** — passed/failed against the run's commit, with or without an open pull request, so the pull
+  request shows the result in its checks list. Required for a branch-protection rule.
 
 What the comment says, in this order:
 
@@ -322,8 +327,10 @@ misconfigured pipeline fails loudly instead of waving every merge through.
 
 Three behaviors worth knowing:
 
-- **A quarantined test's failure does not count**, but the gate always reports how many it excluded — a green gate that
-  silently ignored failures would be worthless.
+- **A quarantined test's failure does not count** toward `--max-failed`, `--require-tag` or `--require-selection`, and
+  the gate reports how many failures it excluded (in the summary when there are any; always in the `--json` result) —
+  a green gate that silently ignored failures would be worthless. `--max-new-regressions`, `--fail-on-flaky` and
+  `--fail-on-new-cluster` still count quarantined tests.
 
 - **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
   for; treating a recovered test as a failure would make the rule unsatisfiable on any suite with retries.
@@ -345,21 +352,25 @@ for the full request trace. The usual causes are an unreachable `PIWI_DASHBOARD_
 network, or a missing API key against an instance with authentication enabled.
 
 **Shards create several runs instead of one.** The run label wasn't detected, or the shards disagree on
-`projectName`. Set `runLabel` explicitly.
+`projectName`. Set `runLabel` (or `PIWI_RUN_LABEL`) explicitly. In batch mode, see the note under
+[Sharding](#sharding).
 
-**Traces are missing.** Traces have to be recorded before they can be uploaded — set
-`use: { trace: 'retain-on-failure' }` (or `'on-first-retry'`) in your Playwright config.
+**Traces are missing.** Traces have to be recorded before they can be uploaded. A config wrapped in
+[`wrapConfig`](./reporter#installing-via-wrapconfig) defaults `trace` to `'retain-on-failure'` when the
+config leaves it unset; otherwise set `use: { trace: 'retain-on-failure' }` (or `'on-first-retry'`) in
+your Playwright config.
 
 **Screenshots are missing.** Same cause: Playwright's `screenshot` option defaults to `'off'`, so
-nothing is recorded for the reporter to upload. Set `use: { screenshot: 'only-on-failure' }` (or
-`'on'`) in your Playwright config; the reporter needs no option of its own.
+nothing is recorded for the reporter to upload. `wrapConfig` defaults it to `'only-on-failure'` when
+unset; otherwise set `use: { screenshot: 'only-on-failure' }` (or `'on'`) in your Playwright config.
 
 **A run is stuck as `interrupted`.** A live reporter heartbeats every ~15s; when a run goes quiet for
 two minutes — a cancelled job, an OOM-killed runner, a dropped network — the server marks it
 `interrupted` rather than leaving it `running` forever. If the reporter comes back (a long test, a
 transient blip) the next event revives the run automatically, so `interrupted` is only final when the
-job really died. Those runs are excluded by the **full runs only** filter in
-[Analytics](/features/analytics#scope).
+job really died. [Analytics](/features/analytics#scope) includes `interrupted` runs (they count toward
+a project's failing streak): its **full runs only** filter drops only runs that covered part of the
+suite, so an interrupted full-suite run stays in.
 
 ## See also
 

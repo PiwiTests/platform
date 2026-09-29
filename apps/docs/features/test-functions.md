@@ -7,7 +7,7 @@ lang: en-US
 
 <Needs reporter />
 
-The test functions catalog is a **per-project registry of your own page-object methods and helpers**, each stored with the DOM pattern its steps produce. It lets recordings and agents refer to *your* code instead of raw locators: the [browser extension](./extension) collapses matched steps in a recording into a call to your function, and an MCP agent can register the functions it writes. The catalog lives in the dashboard, and the extension and MCP tools read from it.
+The test functions catalog is a **per-project registry of your own page-object methods and helpers**, each stored with the DOM pattern its steps produce. It lets recordings and agents refer to *your* code instead of raw locators: the [browser extension](./extension) collapses matched steps in a recording into a call to your function, and an MCP agent can register the functions it writes. The catalog lives in the dashboard: the extension reads from it, and MCP agents add to it.
 
 ## Where it lives
 
@@ -15,14 +15,14 @@ A project's **Test functions** page in the dashboard (**Project → Test functio
 
 ## Registering a function
 
-Four ways in, all landing in the same reviewed entry:
+Four ways in, all producing the same kind of entry. The paste paths stop at a review form; the MCP tool saves directly, and its entries show an `ai-extracted` badge by default.
 
-- **By hand** — **Add function** and fill in the name, parameters and pattern yourself.
-- **Paste the source, let AI propose it** — paste a page-object method or helper's source and a model proposes the name, parameters, and DOM pattern into a **review form you edit before saving**. With [AI](/features/ai-diagnosis) configured on the instance, an **Extract** button calls it directly.
+- **By hand** — **Add function** and fill in the name, kind (page-object method, helper function or fixture), module (its import specifier), parameters and DOM pattern yourself — plus the receiver and class for a page-object method, and an optional URL-pattern glob limiting which pages it applies to.
+- **Paste the source, let AI propose it** — paste a page-object method or helper's source and a model proposes the name, parameters, and DOM pattern into a **review form you edit before saving**; the module and URL pattern are never inferred, so you fill those in. With [AI](/features/ai-diagnosis) configured on the instance, an **Extract** button calls it directly.
 - **Bring your own AI** — no instance AI, or you'd rather not use it? **Copy prompt for your own AI** copies the full extraction prompt (the rules, the JSON schema, and your pasted code) to paste into any AI chat (ChatGPT, Claude.ai, an IDE assistant). Paste the reply back and it is validated against the exact same schema — no Piwi AI credits spent either way.
 - **From a coding agent (MCP)** — an MCP-connected agent (Claude Code, Cursor, …) calls the `create_test_function` [MCP tool](./mcp) directly, reading the source with its own model. No AI call happens on the server side; the tool only validates and persists.
 
-Registered entries are edited in place from the same page — the pencil button reopens the form with everything filled in.
+Registered entries are edited in place from the same page — the pencil button reopens the form with everything filled in. Registering, editing, deleting and both paste paths need the reporter or administrator role; any project member can view the catalog.
 
 ## Object parameters
 
@@ -41,4 +41,4 @@ Extraction is deliberately conservative. A function that branches on its argumen
 
 - [Browser extension](./extension) — records against the catalog and consumes it
 - [MCP server](./mcp) — the `create_test_function` tool
-- [AI diagnosis](/features/ai-diagnosis) — the model the **Extract** button uses
+- [AI diagnosis](/features/ai-diagnosis) — **Extract** uses the research model when one is configured, otherwise the diagnosis model

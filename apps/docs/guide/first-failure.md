@@ -28,7 +28,7 @@ Under the headline, the **Most likely** line gives you the one explanation, not 
 
 > *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight (28 s); the console said so 1.5 s before the click gave up"*
 
-It carries a strength chip and how many clues **agree**; a **more** disclosure lists every clue, each with a **citation** to the evidence it came from — click it and the page jumps to the proof.
+It carries a strength (*Strong*, *Medium* or *Weak*) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from — click it and the page jumps to the proof.
 
 ## 3. The situation — what's going on
 
@@ -40,10 +40,10 @@ The **Next** line names the one thing to do, chosen for you rather than offered 
 
 ## 5. The evidence — see it
 
-One **evidence card** with tabs — **Timeline, Screen, Source, Network, Console, State, Performance** — opens on the tab the strongest clue points at. The one to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the last green run, and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper.
+One **evidence card** with tabs — **Timeline, Screen, Source, Network, Console, State, Performance**, plus **Attempts** when the test retried — opens on **Timeline** when it can place the failure among several steps, requests or console entries, and otherwise on the tab the strongest clue points at. The one to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the last green run, and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper.
 
 ::: tip Most of this needs one file
-The error, trace, headline and clustering work with the reporter alone. The console, network, Web Vitals, failure-time snapshot and locator healing come from the [capture fixtures](./capture-fixtures) — one file in your test setup. If a tab is dimmed, that's usually why; it opens to say so.
+The error, trace, headline and clustering work with the reporter alone, and with an uploaded trace the console, network and failure-time snapshot are recovered from it. Web Vitals, page state and locator healing come from the [capture fixtures](./capture-fixtures) — one file in your test setup. A tab for evidence that was never captured is hidden, and until you decide on the fixtures a line under the card says what they would add.
 :::
 
 ## 6. More ways to fix

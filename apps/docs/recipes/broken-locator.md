@@ -14,11 +14,11 @@ replacement is proposed from a page that worked rather than from the broken one 
 
 ## 1. Open the failing execution's alternative locators
 
-On a failing test case, the **Alternative locators** panel lists candidate replacements ranked by
-stability, with one marked as the recommended fix.
+On a failing execution, the **Locator fix** panel (under *More ways to fix*) lists candidate replacements
+ranked by stability, with one marked as the recommended fix.
 
 <figure>
-  <img src="/screenshots/locator-healing.png" alt="Alternative locators panel with ranked replacement locators and a recommended fix">
+  <img src="/screenshots/locator-healing.png" alt="Locator fix panel with ranked replacement locators and a recommended fix">
   <figcaption>Ranked replacements captured from the last passing run — the recommendation favours locators that match the conventions already in your suite.</figcaption>
 </figure>
 
@@ -41,7 +41,9 @@ Everything above assumes the failure is already in the dashboard. When you're ru
 a faster path — pause on the failing page and pick the replacement from the live DOM, while the app is
 still in the state that broke it.
 
-Two reporter options, both off by default:
+Two reporter options, both off by default. They act inside the [capture fixtures](/guide/capture-fixtures),
+so your specs must import `test` from your fixtures file, and the fixtures read them from the environment —
+set them through `wrapConfig` or as environment variables; a plain reporter entry ignores them:
 
 | Option | Env var | Opens |
 |---|---|---|
@@ -49,11 +51,12 @@ Two reporter options, both off by default:
 | `inspectOnFailure` | `PIWI_INSPECT_ON_FAIL` | the same overlay, but free to inspect any element on the page |
 
 ```typescript
-['@piwitests/reporter', {
-  serverUrl: 'http://localhost:3000',
-  projectName: 'my-project',
-  pickLocatorOnFailure: true,
-}]
+export default defineConfig(
+  wrapConfig(
+    { testDir: './tests' },
+    { serverUrl: 'http://localhost:3000', projectName: 'my-project', pickLocatorOnFailure: true },
+  ),
+)
 ```
 
 The run **pauses** with the failing page still open — the test timeout is lifted while the overlay is
@@ -126,7 +129,7 @@ dashboard. This one does still depend on captured snapshots — it reads the sam
 ## See also
 
 - [Capture fixtures](/guide/capture-fixtures) — everything else the fixtures unlock
-- [Reporter](/features/locator-healing) — configuration and how the scoring works
-- [Reporter → Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) — the
+- [Locator healing](/features/locator-healing) — configuration and how the scoring works
+- [Locator healing → Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) — the
   full reference for the pause-on-failure options
 - [Browser extension](/features/extension) — picking and recording locators against a live page

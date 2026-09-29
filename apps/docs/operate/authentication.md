@@ -13,11 +13,13 @@ The dashboard supports optional user authentication with role-based access contr
 |------|-------------|
 | **Administrator** | Full access to every project and feature — editing projects, managing users, and deleting runs. Never restricted by project access. |
 | **Reporter** | Submits results (`/api/test-runs/submit`, `/api/test-runs/upload`) and can triage, but only for the **projects it's assigned to**. |
-| **User** | Read-only access to the **projects it's assigned to**. |
+| **User** | Read-only access to the **projects it's assigned to** — its only writes are a run's label, feedback on AI diagnoses, and its own API keys, notification channels and subscriptions. |
 
 Administrators always see everything. **Reporter** and **User** accounts are additionally scoped by [project access](#project-access) — they only see and act on the projects assigned to them.
 
 ## Enabling authentication
+
+The steps below use `apps/application/.env`, which only a source checkout reads. With the Docker image or `npx @piwitests/server`, pass the same variables as environment variables instead (`docker run -e`, Compose `environment:`, or your host's settings) — the prebuilt server reads no `.env` file.
 
 1. Copy the example environment file:
 
@@ -55,13 +57,7 @@ For provisioning an instance from a script, the same step is available as an API
 ::: code-group
 
 ```bash [Linux / macOS]
-curl -X POST http://localhost:3000/api/auth/setup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "admin",
-    "password": "your-secure-password",
-    "name": "Administrator"
-  }'
+curl -X POST http://localhost:3000/api/auth/setup -H "Content-Type: application/json" -d '{"username": "admin", "password": "your-secure-password", "name": "Administrator"}'
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -81,9 +77,7 @@ Navigate to `/login` in your browser, or use the API:
 ::: code-group
 
 ```bash [Linux / macOS]
-curl -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your-secure-password"}'
+curl -X POST http://localhost:3000/api/auth/login -H "Content-Type: application/json" -d '{"username": "admin", "password": "your-secure-password"}'
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -94,7 +88,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/auth/login `
 
 :::
 
-Sessions are stored in encrypted cookies and last for 7 days.
+Sessions are stored in encrypted cookies and last for 7 days. The session cookie is marked `Secure`, so browser sign-in needs HTTPS — over plain `http://` it only works on `localhost`.
 
 ## OAuth (Google, GitHub)
 
@@ -107,7 +101,7 @@ The dashboard supports signing in with Google or GitHub as an alternative to use
    - **Google**: Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an OAuth 2.0 Client ID, and add `https://your-domain.com/api/auth/oauth/google/callback` to the authorized redirect URIs.
    - **GitHub**: Go to **Settings → Developer settings → OAuth Apps** on GitHub, create a new OAuth app, and set the callback URL to `https://your-domain.com/api/auth/oauth/github/callback`.
 
-2. **Add the credentials to your `.env` file:**
+2. **Add the credentials to your environment** (`.env` in a source checkout):
 
    ```bash
    PIWI_OAUTH_GOOGLE_CLIENT_ID=your-google-client-id
@@ -202,7 +196,7 @@ What scoping affects for a non-admin user:
 Assignments are administrator-only and can be edited from either direction:
 
 - **Per user** — **Settings → Users → Project access** (the action next to a user). Choose global access or tick specific projects.
-- **Per project** — a project's **Members** tab (`/projects/:id`, admins only). Add or remove users for that one project.
+- **Per project** — the **Members** section of a project's **Settings** tab (`/projects/:id`, admins only). Add or remove users for that one project.
 
 Both edit the same underlying assignments, so use whichever is more convenient.
 
@@ -212,7 +206,7 @@ Both edit the same underlying assignments, so use whichever is more convenient.
 
 When authentication is enabled:
 
-- Every endpoint requires an authenticated caller — a session cookie or an API key — with the role the endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are `GET /api/health`, `GET /api/version`, the auth flows themselves (login, initial setup, password reset, email verification, OAuth), and the live-run streaming endpoints, which authenticate with per-run stream tokens instead.
+- Every endpoint requires an authenticated caller — a session cookie or an API key — with the role the endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are `GET /api/health`, `GET /api/version`, `GET /api/settings/locale`, `GET /api/ai/status` (whether AI diagnosis is configured, with its provider and model), the auth flows themselves (login, logout, `GET /api/auth/me`, initial setup, password reset, email verification, OAuth), public [share links](/features/share-links) when they are enabled, and the live-run streaming endpoints, which authenticate with per-run stream tokens instead.
 - The reporter's submission endpoints (`/api/test-runs/submit` and `/api/test-runs/upload`) accept both session cookies and API keys.
 
 ## API keys
@@ -229,16 +223,15 @@ API keys are the recommended way to authenticate CI pipelines and the Playwright
 
 ### Creating an API key
 
-1. Navigate to **Settings → Users** in the dashboard.
-2. Click the key icon next to the user you want to generate a key for.
-3. Click **Create API key**, enter a descriptive name (e.g. "GitHub Actions"), and set an optional expiry.
-4. Copy the key **immediately** — it will never be shown again.
-5. Store it as a CI secret (e.g. `PIWI_API_KEY`).
+1. Open **Settings → Account → API keys** for a key of your own. Administrators can also open **Settings → Users** and click the key icon next to any user.
+2. Click **Create API key**, enter a descriptive name (e.g. "GitHub Actions"), set an optional expiry, and click **Generate key**.
+3. Copy the key **immediately** — it will never be shown again.
+4. Store it as a CI secret (e.g. `PIWI_API_KEY`).
 
 ### Revoking an API key
 
-1. Navigate to **Settings → Users** and click the key icon.
-2. Click the trash icon next to the key you want to revoke.
+1. Open the same list — **Settings → Account → API keys**, or **Settings → Users** and the key icon.
+2. Click the trash icon next to the key you want to revoke, then confirm with **Revoke**.
 3. The key stops working immediately.
 
 ### Using the API key in the reporter
@@ -262,16 +255,10 @@ export default defineConfig({
 
 ```bash [Linux / macOS]
 # Authorization: Bearer header (recommended)
-curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
-  -H "Authorization: Bearer pd_<your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
+curl -X POST https://your-dashboard.example.com/api/test-runs/submit -H "Authorization: Bearer pd_<your-key>" -H "Content-Type: application/json" -d '{ ... }'
 
 # X-API-Key header (alternative)
-curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
-  -H "X-API-Key: pd_<your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
+curl -X POST https://your-dashboard.example.com/api/test-runs/submit -H "X-API-Key: pd_<your-key>" -H "Content-Type: application/json" -d '{ ... }'
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -327,7 +314,7 @@ Everything to set before you expose an instance — HTTPS, `PIWI_SECRET_KEY`, `P
 
 To disable authentication:
 
-1. Set `PIWI_AUTH_ENABLED=false` in `.env`, or remove the variable entirely.
+1. Set `PIWI_AUTH_ENABLED=false` (in `.env` or the server's environment), or remove the variable entirely.
 2. Restart the application.
 
 When disabled, all endpoints are accessible without authentication.

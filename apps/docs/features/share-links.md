@@ -49,7 +49,7 @@ Two consequences of "live" worth knowing:
 ## Security properties
 
 - The token is a 256-bit random secret (`psl_` + 64 hex characters) — unguessable at any request rate. The server
-  stores only its SHA-256 hash.
+  stores its SHA-256 hash and the first 8 hex characters, which the dialog shows as the link's prefix.
 - Everything a link serves is data its creator could already see: minting requires project access, so a link is a
   narrower delegation of an existing member's read access, never an escalation.
 - The rendered page is sandboxed into a unique origin and served with `noindex` and `Referrer-Policy: no-referrer`,

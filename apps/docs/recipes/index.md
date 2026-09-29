@@ -30,12 +30,12 @@ know what exists and what it costs to switch on.
 |---|---|---|
 | **Dashboard** | Everything, by hand | The server. Always available. |
 | **[Capture fixtures](/guide/capture-fixtures)** | Locator healing, network timing, Web Vitals, console, ARIA snapshots | One file in your test setup, imported by your specs |
-| **[MCP server](/features/mcp)** | Asking your coding agent instead of clicking | Nothing — it's built into the server at `/mcp` |
-| **REST API** | Scripts, dashboards of your own, CI steps | Nothing; see the [API docs](https://piwitests.dev/demo/docs) |
+| **[MCP server](/features/mcp)** | Asking your coding agent instead of clicking | Nothing to install — it's built into the server at `/mcp`; an API key when authentication is on |
+| **REST API** | Scripts, dashboards of your own, CI steps | An API key when authentication is on; see the [API docs](https://piwitests.dev/demo/docs) |
 | **[AI diagnosis](/features/ai-diagnosis)** | An explanation of a cluster read against your git diff | An LLM you configure. Off by default; a local model works |
 | **[Open in IDE](/features/ide-integration)** | Jumping from a stack frame to the file | Per-browser config, no install |
 | **[Browser extension](/features/extension)** | Picking a locator against the live page | A one-click install from the [Chrome Web Store](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) (Edge included) |
-| **[Desktop app](/features/desktop)** | Running all of this without Docker | Windows x64 or Apple-silicon macOS; installers aren't signed yet |
+| **[Desktop app](/features/desktop)** | Running all of this without Docker | Windows x64, Apple-silicon macOS or Linux x86-64; installers aren't signed yet |
 | **[Notifications](/features/notifications)** | Being told instead of looking | An email, Slack, or webhook target |
 
 If you only ever add one thing beyond the reporter, add the [capture fixtures](/guide/capture-fixtures) —

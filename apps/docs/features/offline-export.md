@@ -33,7 +33,7 @@ Exports are bounded so one download cannot exhaust the server:
 | Variable | Default | Bounds |
 |---|---|---|
 | `PIWI_EXPORT_MAX_INLINE_BYTES` | 8 MB | What a single HTML file will embed as a `data:` URI. Larger files stay out of the one-file HTML; the ZIP still carries them at full size. |
-| `PIWI_EXPORT_MAX_BYTES` | 500 MB | The whole export. Evidence is added largest-last until the budget is reached. The archive is built in memory, so this also bounds what one export costs the server. |
+| `PIWI_EXPORT_MAX_BYTES` | 500 MB | The whole export. Evidence is added in order — each execution's attachments, then its trace archives — and a file that would pass the budget is left out. The archive is built in memory, so this also bounds what one export costs the server. |
 | `PIWI_EXPORT_MAX_CASES` | 25 | Member executions carrying full evidence in a cluster export. Remaining affected tests are listed by name. |
 
 Anything left out is listed in an **Omitted from this export** table in the report and in the ZIP's
@@ -55,7 +55,7 @@ Piwi instance. Bundling the viewer's assets into the export itself is on the
 
 ## Perfetto trace
 
-A run and an execution also export as a **Perfetto trace** — a [Trace Event Format](https://perfetto.dev/docs/reference/trace-config-proto) JSON file that opens the run on a timeline in
+A run and an execution also export as a **Perfetto trace** — a [Trace Event Format](https://perfetto.dev/docs/getting-started/other-formats) JSON file that opens the run on a timeline in
 [ui.perfetto.dev](https://ui.perfetto.dev) or Chrome's `chrome://tracing`, with no Piwi server needed.
 
 The file lays the run out the way it ran: **one process per shard, one thread per worker**. Each

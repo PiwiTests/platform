@@ -13,7 +13,7 @@ Failed test cases that share the same **error fingerprint** are grouped into a c
 
 - **Fingerprinting** normalizes error messages so that the same underlying failure clusters across tests, spec files, and runs. Volatile fragments are masked out: timeouts and other numbers, UUIDs and hashes, URLs and emails, and both the *expected* and *received* values of an assertion. Dynamic locator options (e.g. the `{ name: '…' }` of a table row) are masked too, so per-row failures collapse into one cluster — while the locator target itself (the test id / role) still distinguishes genuinely different failures.
 - Fingerprints are **call-site agnostic**: the failing stack frame is shown for context but doesn't split clusters, so one root cause reached from several spec files stays a single cluster.
-- The run detail page shows each failure cluster with **flaky** and **worker-correlation** heuristics, so you can tell "the app is broken" from "worker 3 is misbehaving."
+- The run detail page's **Tests** tab can group failures by cluster, each group with its triage status; the `get_failure_groups` [MCP tool](/features/mcp) adds a **worker-correlation** flag, so you can tell "the app is broken" from "worker 3 is misbehaving."
 - Every cluster has its own **detail page** with the affected tests, triage tools (status + notes), and the AI diagnosis panel.
 
 <figure>
@@ -22,11 +22,11 @@ Failed test cases that share the same **error fingerprint** are grouped into a c
 </figure>
 
 <figure>
-  <img src="/screenshots/failure-clusters.png" alt="Failure clusters tab grouping failures by normalized error signature">
-  <figcaption>The Failure clusters tab — failures sharing an error fingerprint collapse into one row, with error type, occurrence count, and triage status.</figcaption>
+  <img src="/screenshots/failure-clusters.png" alt="A red run's Tests tab grouped by cluster, one group per root cause">
+  <figcaption>A red run's <strong>Tests</strong> tab, grouped by <strong>Cluster</strong> — one group per error fingerprint, with its test count and triage status.</figcaption>
 </figure>
 
-Clustering is always on and requires no configuration. When the normalization algorithm is improved, existing clusters are migrated in place — re-fingerprinted from an **immutable sample** captured when the cluster was first created, so triage status, notes, and diagnoses survive the change. That frozen sample is deliberately separate from the sample error shown in the UI (below): the display sample can be refreshed to a better occurrence as the cluster recurs without ever moving which cluster a failure belongs to. AI diagnosis is opt-in.
+Clustering is always on and requires no configuration. When the normalization algorithm is improved, existing clusters are migrated in place — re-fingerprinted from an **immutable sample** captured when the cluster was first created, so triage status, notes, and diagnoses survive the change. AI diagnosis is opt-in.
 
 ### The sample error refreshes as a cluster recurs
 
@@ -36,9 +36,9 @@ An already-generated AI **title** is left untouched — cheap-model titles aren'
 
 ### Triage: owner and known issue
 
-The cluster page's triage rail names an **owner** — who answers for these tests. It comes from a `piwi:owner` annotation on the test when one exists, otherwise from the repository's [CODEOWNERS](/guide/concepts#tags-ownership) matched against the spec's file path (the source is labeled so you can tell which). The owner links to every test that owner is responsible for, and when it is derived from CODEOWNERS a one-line hint shows how to override it per test.
+The cluster page's **Details** popover, on the facts line, names an **owner** — who answers for these tests. It comes from a `piwi:owner` annotation on the test when one exists, otherwise from the repository's [CODEOWNERS](/guide/concepts#tags-ownership) matched against the spec's file path (the source is labeled so you can tell which). The owner links to every test that owner is responsible for, and when it is derived from CODEOWNERS a one-line hint shows how to override it per test.
 
-The same rail pins a **known issue** — the Jira ticket, GitHub issue or PR that tracks the cluster. It is an entity link (`failure_cluster` type), so the provider and key are detected from the URL and unfurled; the key travels with the cluster wherever it is listed, so a triaged cluster shows what is already being done about it. Reporter or admin role is required to pin or remove one. Read the same links over MCP with [`list_links`](/features/mcp) (`entityType: 'failure_cluster'`).
+The same popover pins a **known issue** — the Jira ticket, GitHub issue or PR that tracks the cluster. It is an entity link (`failure_cluster` type), so the provider and key are detected from the URL and unfurled; the key travels with the cluster wherever it is listed, so a triaged cluster shows what is already being done about it. Reporter or admin role is required to pin or remove one. Read the same links over MCP with [`list_links`](/features/mcp) (`entityType: 'failure_cluster'`).
 
 ### Semantic merging (optional)
 
@@ -48,7 +48,7 @@ The text fed to the embedder is cleaned first — ANSI color codes stripped, fra
 
 When auto-diagnose is enabled, new clusters are also given a short **human-readable title** (one cheap batched model call per run, using the research model when one is configured, otherwise the diagnosis model) shown in place of the raw normalized signature across the lists and the cluster page — the signature stays available on hover and below the title. Without a generated title, a cluster still gets a readable name built from what it knows — the error kind, the locator it targets, the route a navigation was heading for and the spec file it hit (`Timeout on getByLabel('Email address') in checkout.spec.ts`, `toHaveCount mismatch on getByRole('row') in users.spec.ts`, `Navigation timeout on /users`) — never the masked signature with its `<N>` placeholders. The signature stays as the line below the name.
 
-Pairs that fall in the **ambiguous band** (similarity between `PIWI_CLUSTER_SUGGEST_THRESHOLD`, default `0.80`, and the merge threshold) aren't merged automatically. Whenever AI is configured, a model adjudicates the pair ("same root cause?") — the **research** model when one is configured, the diagnosis model otherwise — and merges only on a high-confidence yes; when it's unsure (or no AI is configured at all), the pair becomes a **merge suggestion** on the project's Failure clusters tab, where a reporter or admin approves (merge) or dismisses it. The adjudicator sees more than the error text: each cluster's extracted locator, its most-affected tests, and how much the two clusters overlap (tests failing in both, runs where both fired) — signals that separate "one cause, reworded message" from "similar boilerplate, different problems". Adjudication is budget-capped per run to control cost.
+Pairs that fall in the **ambiguous band** (similarity between `PIWI_CLUSTER_SUGGEST_THRESHOLD`, default `0.80`, and the merge threshold) aren't merged automatically. Whenever AI is configured, a model adjudicates the pair ("same root cause?") — the **research** model when one is configured, the diagnosis model otherwise — and merges only on a high-confidence yes; a less confident yes becomes a **merge suggestion** on the project's Failure clusters tab, where a reporter or admin approves (merge) or dismisses it, and a no leaves the pair apart. The adjudicator sees more than the error text: each cluster's extracted locator, its most-affected tests, and how much the two clusters overlap (tests failing in both, runs where both fired) — signals that separate "one cause, reworded message" from "similar boilerplate, different problems". Adjudication is capped at five calls per run; pairs past the cap become suggestions directly.
 
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: new and backfilled clusters are embedded from cleaned error text, compared to open clusters by cosine similarity, and depending on the score are kept separate, adjudicated by a model that can merge or file a suggestion, or auto-merged with a fingerprint alias recorded">
@@ -71,9 +71,8 @@ long the cluster was open. Three verdicts, because they are not the same claim:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](#what-a-diagnosis-contains) named — the change Piwi pointed at is the change that fixed it. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. A fix that didn't hold is worth knowing about. |
 
-The verdict rides the cluster page's [state line](./failure-clusters#the-state-line) and the **Failure clusters** tab,
-beside the triage status as a second badge — the status is what a person declared, the verdict is what the runs showed,
-and when they disagree (a *resolved* cluster quietly failing again) both show.
+The verdict rides an open cluster's [state line](./failure-clusters#the-state-line) and, as a second badge beside the
+triage status, the **Failure clusters** tab — the status is what a person declared, the verdict is what the runs showed.
 
 Two rules keep the verdict honest:
 
@@ -95,15 +94,15 @@ still gets one even with *only comment on failures* set.
 
 ## Enabling AI diagnosis
 
-Configure a provider via **Settings → AI**, or with environment variables (env always takes precedence over values stored through the UI, and the UI shows env-managed fields read-only).
+Configure a provider via **Settings → AI**, or with environment variables. `PIWI_AI_PROVIDER` is the switch: when set, the whole AI configuration (every role, auto-diagnose) comes from the environment and the UI shows it read-only; when unset, the variables below except `PIWI_AI_AUTO_DIAGNOSE_MAX` are ignored.
 
 | Variable | Description |
 |----------|-------------|
 | `PIWI_AI_PROVIDER` | `anthropic`, `openai`, or `claude-cli` |
 | `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
-| `PIWI_AI_BASE_URL` | Base URL for OpenAI-compatible providers (e.g. Ollama, LM Studio, vLLM) |
-| `PIWI_AI_AUTO_DIAGNOSE` | `true` to automatically diagnose new clusters when a run finishes |
+| `PIWI_AI_BASE_URL` | Base URL, required for `openai` — OpenAI itself (`https://api.openai.com/v1`), Ollama, LM Studio, vLLM |
+| `PIWI_AI_AUTO_DIAGNOSE` | `true` to diagnose, when a run finishes, the clusters that failed in it and have no completed diagnosis |
 | `PIWI_AI_AUTO_DIAGNOSE_MAX` | Max clusters auto-diagnosed per finished run (budget cap; default `3`) |
 | `PIWI_AI_RESEARCH_MODEL` / `_PROVIDER` / `_BASE_URL` / `_API_KEY` | Optional **research** model for two-stage diagnosis; provider/base URL/key default to the main ones |
 | `PIWI_AI_EMBEDDING_PROVIDER` / `_MODEL` / `_BASE_URL` / `_API_KEY` | Optional **embedding** model for semantic failure clustering (OpenAI-compatible only — Anthropic has no embeddings API) |
@@ -119,7 +118,7 @@ Instead of waiting for a synchronous response, the diagnosis can be **streamed**
 - **`POST /api/failure-clusters/[id]/diagnose/stream`** — same request body as the synchronous endpoint, but the response is a `text/event-stream` with `event: thinking` chunks containing incremental text, then a final `event: result` with the complete diagnosis.
 - The client uses `fetch()` with `POST` (not `EventSource`) so it can send request body params (additional context, images, base commit, etc.). The response body is read as a `ReadableStream` and parsed for SSE messages.
 - See the [API docs](https://piwitests.dev/demo/docs) for the exact protocol (the in-app API reference at `/docs` shows the same spec).
-- In the UI, the live thinking panel shows the accumulating text with a stage indicator and auto-scroll. When the stream completes, the panel transitions to the full result card.
+- In the UI, the live thinking panel shows the accumulating text with auto-scroll. When the stream completes, the panel transitions to the full result card.
 
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications** — a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.
 
@@ -147,6 +146,7 @@ PIWI_AI_MODEL=claude-opus-4-8
 
 ```bash
 PIWI_AI_PROVIDER=openai
+PIWI_AI_BASE_URL=https://api.openai.com/v1
 PIWI_AI_API_KEY=sk-...
 PIWI_AI_MODEL=gpt-4o
 ```
@@ -157,12 +157,12 @@ PIWI_AI_MODEL=gpt-4o
 PIWI_AI_PROVIDER=openai
 PIWI_AI_BASE_URL=http://localhost:11434/v1
 PIWI_AI_MODEL=llama3.1
-PIWI_AI_API_KEY=ollama   # any non-empty value for local servers
+PIWI_AI_API_KEY=ollama   # optional; sent only when set
 ```
 
 **Claude Code CLI (local, no API key)** — in the [desktop app](/features/desktop), pick **Claude Code (local)**: it runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path.
 
-Use **Settings → AI → Test** to smoke-test the configured provider.
+Use a role's **Test connection** button in **Settings → AI** to smoke-test its provider.
 
 ## Response language
 
@@ -189,7 +189,7 @@ A diagnosis is grounded in your actual run — it is not a generic "ask AI" butt
 
 ## Diagnosing one execution
 
-The [failure cluster](./ui-overview#failure-cluster-detail) page diagnoses a *group* of failures that share a fingerprint. When you are looking at a single failing execution, the [test case detail](./evidence#one-execution-diagnosis-first) page's **More ways to fix** toolbox has a **Diagnosis** section that diagnoses *just that execution* — the same panel and model, scoped to the one run in front of you. This is handy when a failure hasn't clustered yet, or when you want a diagnosis grounded in this execution's evidence rather than the cluster aggregate.
+The [failure cluster](./ui-overview#failure-cluster-detail) page diagnoses a *group* of failures that share a fingerprint. When you are looking at a single failing execution, the [execution](./evidence#one-execution-diagnosis-first) page's **More ways to fix** toolbox has a **Diagnosis** section. When the execution's cluster already has a completed diagnosis, the section shows its summary with an **Open** link to the cluster; otherwise it diagnoses *just that execution* — the same panel and model, grounded in this execution's evidence rather than the cluster aggregate.
 
 A stored diagnosis stays on screen **whether or not a provider is configured** — removing the key never hides a result you already have; with no provider the header offers **Re-diagnose (configure AI)**. The *AI is not configured · Configure · Copy prompt* line shows **only when there is no result**, where **Copy prompt** copies the exact request the model would receive (error, steps — each with its target and, for a `test.step`, a **Parameters** line of its curated params — console, network, ARIA snapshot, source — plus, when a trace was uploaded, the full call stack with embedded source and the trace's complete network activity — all trimmed to the [context limits](#context-limits-and-token-cost)) so you can paste it into your own AI tool.
 
@@ -207,15 +207,15 @@ The real power is feeding the model the code that changed. On a cluster page you
 
 When you trigger a diagnosis, Piwi determines the commit range to diff using the following priority chain:
 
-1. **Manual override** — if you pinned a baseline commit (or the cluster has a `manualBaseCommit` saved), that commit is used as `fromSha`. This applies even in auto-diagnose and MCP-triggered diagnoses. The `Data Coverage` block in the AI context will show `baselineKind: manual`.
+1. **Manual override** — if you pinned a baseline commit (or the cluster has a `manualBaseCommit` saved), that commit is used as `fromSha`. This applies even in auto-diagnose and MCP-triggered diagnoses. `baselineKind: manual`.
 
-2. **Project-wide last-green run** — Piwi looks for the most recent test run (for the same project) that finished with `status = 'passed'` *before* the **first** run in which this cluster appeared (`firstSeenRunId`, not `lastSeenRunId`). Using `firstSeenRunId` gives the tightest possible causal window: the diff covers exactly the commits introduced between when the suite was last fully-green and when the failure was first observed. `baselineKind: run-green`.
+2. **Project-wide last-green run** — Piwi looks for the most recent run of the project that finished with `status = 'passed'` *before* the **first** run in which this cluster appeared (`firstSeenRunId`, not `lastSeenRunId`) — in the same environment first, and within it on the same branch, then the branch it forked from, then any branch. Anchoring on `firstSeenRunId` gives the tightest causal window: the commits between the last green run and the first failure. `baselineKind: run-green`.
 
-3. **Per-test last-passing fallback** — if no project-wide green run exists (e.g. the project is new, or CI has been failing for a long time), Piwi falls back to the last run where *this specific test case* passed. This is less precise than a project-green baseline but still vastly better than no diff. `baselineKind: test-green`.
+3. **Per-test last-passing fallback** — if no project-wide green run exists (e.g. the project is new, or CI has been failing for a long time), Piwi falls back to the last run where *this specific test case* passed. Less precise than a project-green baseline, but better than no diff. `baselineKind: test-green`.
 
 4. **No SCM data** — if none of the above yields both a baseline commit and a current commit (from the run's SCM metadata), no diff is fetched. The `Data Coverage` block marks `scmInvestigation` absent and explains why (missing repository URL, no SCM token, or a fetch error).
 
-The `coverage.scm.baselineKind` field is available on every diagnosis response and in the context-preview endpoint, so you can always tell which path was taken. If an SCM fetch fails, `coverage.scm.error` contains the first 300 characters of the error message.
+The context-preview endpoint returns `coverage.scm.baselineKind` (it is not stored on the diagnosis), so you can tell which path was taken. If an SCM fetch fails, `coverage.scm.error` contains the first 300 characters of the error message.
 
 #### Relevance scoring
 
@@ -238,7 +238,7 @@ Files scoring ≤ 2 are excluded from the "Top Suspected Change" callout (a low-
 
 A diff shows only the lines that changed. To write a patch the model needs the surrounding code too, so — when SCM is reachable — Piwi also fetches the **full current content** of the most-suspect changed files (top-ranked by the relevance score above) and the failing test's local imports (page objects, helpers, fixtures resolved one hop from the test's `import` statements), at the commit under test. These land in a `Source Files` context section with `NNNN | ` line numbers so the model can compute correct hunk headers.
 
-Capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4, set to 0 to disable) and `PIWI_AI_MAX_SOURCE_FILE_CHARS` (default 12000). Fetched over the same SCM provider API as the diff (GitHub/GitLab/Bitbucket), cached per commit SHA. The `coverage.sourceFiles` field on the context/diagnosis response lists which files were pulled in.
+Capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4, set to 0 to disable) and `PIWI_AI_MAX_SOURCE_FILE_CHARS` (default 12000). Fetched over the same SCM provider API as the diff (GitHub/GitLab/Bitbucket), cached per commit SHA. The context preview's `coverage.sourceFiles` lists which files were pulled in.
 
 ### Validated patches
 
@@ -276,7 +276,8 @@ reproduction — is on [Fix plans, reproduce & bisect](./fix-plans).
 
 ## Diagnosis history
 
-Every re-diagnose snapshots the previous result before overwriting it, so a cluster keeps up to 50 prior versions. The
+Every re-diagnose snapshots the previous result before overwriting it; a nightly sweep keeps the newest 20 per cluster
+(`PIWI_RETENTION_DIAGNOSIS_VERSIONS`, `0` keeps all). The
 **History** control in the diagnosis panel header opens a slide-over listing every version newest-first — when it ran,
 the model, category, confidence, feedback and token cost — with the current diagnosis on top. Selecting one renders it
 read-only, with a one-line summary of what changed since it (category, confidence, root cause, patch status). It is how

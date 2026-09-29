@@ -7,7 +7,7 @@ lang: en-US
 
 Piwi Dashboard can capture server-side Warning and Error log entries during a Playwright test run and surface them in the test-case detail view and the AI diagnosis context.
 
-The mechanism is straightforward: the backend integration adds a `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to every HTTP response. The Piwi Dashboard reporter reads this header from each captured network request and stores the entries as `serverLogs` on that request.
+The mechanism is straightforward: the backend integration adds a `X-Piwi-Logs` response header (gzip-compressed, Base64-encoded JSON) to HTTP responses — the Nitro/Nuxt integration to every response (an empty array when nothing was logged), the ASP.NET Core integration only to responses that captured at least one entry. The Piwi Dashboard reporter reads this header from each captured network request and stores the entries as `serverLogs` on that request.
 
 **Active only in non-production environments by default.** The ASP.NET Core integration emits the header only in Development/Test environments. The Nitro/Nuxt integration additionally honors `PIWI_TEST_LOGS_DISABLED`: set it to `true` to turn capture off anywhere, or to `false` to force capture on in a production-mode test deployment.
 
@@ -90,7 +90,7 @@ Each entry in the `X-Piwi-Logs` array has this shape:
 | `level` | `string` | `"Warning"` or `"Error"` (the ASP.NET Core integration also emits `"Critical"`) |
 | `category` | `string` | Logger category or tag (e.g. `MyApp.Services.OrderService`) |
 | `message` | `string` | Log message (truncated at 500 characters) |
-| `stack` | `string` | Optional. Shrunk stack trace — framework/internal frames removed, namespace parts shortened to first lowercase letter, max 5 frames |
+| `stack` | `string` | Optional. Shrunk stack trace, max 5 frames — framework/internal frames removed (`node:internal` and `node_modules` for Nitro); the ASP.NET Core integration also shortens namespace parts to their first lowercase letter |
 
 The ASP.NET Core integration additionally captures `exceptionMessage` when an exception was logged.
 

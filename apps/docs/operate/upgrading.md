@@ -13,14 +13,14 @@ what happens before you pull a new tag.
 
 1. Read the [changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) for the versions
    you're skipping, looking for **⚠ BREAKING CHANGES**.
-2. **Back up** the database and file storage ([how](./deployment#backups)).
+2. **Back up** the database and file storage ([how](./backup-restore)).
 3. Pull the new tag and restart.
 4. Check the logs for `migrations completed successfully`, then confirm the version at
    **Settings → About**.
 
 ## What happens when a new version starts
 
-On boot, before the server accepts a single request:
+On boot, before any request can touch the database (requests that need it wait for these steps):
 
 1. **Database migrations run automatically** — SQLite or PostgreSQL, whichever you're on. There is no
    separate migrate command and nothing to run by hand.
@@ -29,8 +29,9 @@ On boot, before the server accepts a single request:
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
    merged rather than dropped, so your triage statuses and notes survive.
 
-Steps 2 and 3 log an error and continue if they fail — they never block startup. **Step 1 does not.**
-If a migration fails, the server refuses to start rather than serving against a half-migrated schema.
+Steps 2 and 3 log an error and continue if they fail. **Step 1 does not.** If a migration fails, the
+process keeps running but every database call fails with the migration error and `GET /api/health`
+returns `503`, so the container reports unhealthy — nothing is served against a half-migrated schema.
 That's deliberate: a loud failure you can restore from beats silent corruption.
 
 ## Downgrading is not supported
@@ -65,9 +66,10 @@ The available tag patterns — and the GHCR mirror — are in
 
 Three ways, in increasing order of automation:
 
-- **Settings → About** shows the running version, the build SHA, the Node version, and which database
-  backend is active.
-- `GET /api/version` returns the same thing as JSON, with no authentication required:
+- **Settings → About** shows the running version, the build SHA, the Node.js version the server was
+  built with, and which database backend is active.
+- `GET /api/version` returns the version, build SHA and database backend as JSON, along with the
+  Node.js version actually running — no authentication required:
 
   ```bash
   curl -s http://localhost:3000/api/version
@@ -104,8 +106,8 @@ which means the same forward-only rule applies. Back up its data directory befor
 
 ## If an upgrade goes wrong
 
-**The container won't start after upgrading.** Check the logs for `Migration error`. The schema is
-mid-flight or incompatible; restore your backup and open an
+**The container is unhealthy after upgrading** (`/api/health` returns `503` and anything that reads data fails). Check
+the logs for `Migration error`. The schema is mid-flight or incompatible; restore your backup and open an
 [issue](https://github.com/PiwiTests/platform/issues) with the error.
 
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
@@ -116,6 +118,6 @@ share a root cause have merged. Triage state is carried across the merge.
 
 ## See also
 
-- [Deployment → Backups](./deployment#backups) — what to back up and how
+- [Backup & restore](./backup-restore) — what to back up and how
 - [Deployment → Available tags](./deployment#available-tags) — what to pin
 - [Changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md) — breaking changes per release

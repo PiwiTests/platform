@@ -44,7 +44,8 @@ All configuration is via environment variables (same as the Docker image). `PORT
 documented — with its default and whether the Settings UI can override it — in the
 [configuration reference](https://piwitests.dev/reference/configuration). Most deployments set at
 least `PIWI_SECRET_KEY`, the master key for encrypting secrets stored in the database
-(AI API keys, SCM tokens); recommended in any real deployment. Generate one with:
+(AI API keys, SCM tokens). Unset, saving any of those credentials fails, so set it in any
+real deployment. Generate one with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"

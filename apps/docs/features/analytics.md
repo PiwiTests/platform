@@ -21,10 +21,15 @@ A scope bar at the top sets:
 - **Environments** and **branches** — optional multi-select; restrict to runs labeled `production`,
   `staging`, … or reported on the chosen branches (see [Environment](/guide/concepts#environment)). These
   and the full-runs toggle are the same **filter bar** Home and each project page use.
-- **Full runs only** — exclude partial and interrupted runs, which otherwise skew pass rates.
+- **Full runs only** — exclude partial runs (a `--grep`, a file filter or a selection), which otherwise skew
+  pass rates. Interrupted runs still count.
 
 Every widget re-aggregates against that scope, and each period is compared against the *preceding*
-period of the same length, which is where the "vs previous" deltas come from.
+period of the same length, which is where the "vs previous" deltas come from. Three exceptions:
+**Flakiest tests** reads each project's last 50 runs whatever the period or full-runs toggle, and applies
+an environment or branch only when exactly one is picked; **Failure clusters** lists every open cluster,
+using the period only for the resolved count; and the reclaimable-timeout figure reads each project's
+last 50 runs.
 
 ## Widgets
 
@@ -36,7 +41,8 @@ test case behind it. Start here; the rest of the page is the evidence.
 **Portfolio health** — one sortable row per project: pass rate and its change vs the previous period,
 flaky volume, open failure clusters, average run duration, and latest run. Worst health sorts first.
 
-**Pass rate heatmap** — projects × time, colored by daily (or weekly, over longer periods) pass rate.
+**Pass rate heatmap** — projects × time, colored by pass rate per day, or per few days over longer
+periods (3-day cells for 90 days, 12-day cells for a year).
 This is the fastest way to answer *when* something started degrading.
 
 Every pass rate in the dashboard is colored on the same scale: green at 90% or more, amber from 50%, red
@@ -49,7 +55,7 @@ out. Because a timed-out test burns its entire (often oversized) budget, the wid
 much is reclaimable by tightening timeouts and removing stale `test.slow()` marks.
 
 **Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
-ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
+ranking](./flaky-tests#impact-ranking) as the Flaky view of each project's Failures tab.
 
 **Failure clusters** — open root causes across all projects by age, occurrences, and error-type mix,
 with the oldest unresolved cluster highlighted.
@@ -70,7 +76,8 @@ shows up here before it's obvious in any single suite. Requires the
 
 Trends are only actionable when you can line them up against events. [Timeline markers](./timeline-markers)
 let you record a deploy, a CI-runner migration, or a dependency bump against a project and see it drawn
-as a vertical line across the trend charts — so "the slowdown started the day we switched runners"
+as a vertical line across the project's **Run trend** and **Performance trend** charts and each test's
+duration history (the Analytics widgets don't draw markers) — so "the slowdown started the day we switched runners"
 becomes something you can see rather than remember.
 
 ## See also

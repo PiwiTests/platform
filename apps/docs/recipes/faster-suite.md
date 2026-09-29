@@ -35,17 +35,18 @@ Piwi classifies wait steps as **wasted time** and totals them per execution and 
 only explicit sleeps count — `waitForTimeout` and friends — because framework-injected waits
 (load-state, wait-for-function) are usually unavoidable and would drown the signal.
 
-- A failing execution's summary shows the wasted time spent in fixed waits, right next to its duration.
-- A run's **Timeline** tab draws a per-worker timeline with a **span-type filter** — setup, actual test,
-  wasted waits, teardown. Filter to wasted waits and the sleeps light up as bars you can click straight
-  through to the test.
+- A run's test list puts the time wasted in fixed waits next to each test's duration, and an
+  execution's **Details** popover repeats it as *Wasted in fixed waits*.
+- A run's **Timeline** tab draws one lane per worker. Turn on **Show hooks and waits** (off by default)
+  and setup, hooks, fixtures and wasted waits join the test bars — the sleeps light up as spans you can
+  click straight through to the test.
 - Tune what counts in **Settings → Performance** (or lock it with
   [`PIWI_WASTED_WAIT_PATTERNS`](/reference/configuration#wasted-time)). Classification happens *when a run is
   viewed*, so widening the patterns re-classifies your whole history immediately — no re-run needed.
 
 <figure>
-  <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker, tests as bars, with the fixed-wait sleeps highlighted as wasted-wait spans and a span-type filter above">
-  <figcaption>The Timeline tab — one lane per worker, with the fixed-wait sleeps highlighted as their own span so idle time and slow fixtures are obvious.</figcaption>
+  <img src="/screenshots/run-timeline.png" alt="A run's Timeline tab: one horizontal lane per worker with tests as bars colored by outcome, under a header counting workers, tests, hooks and waits beside the Show hooks and waits switch">
+  <figcaption>The Timeline tab — one lane per worker; <strong>Show hooks and waits</strong> overlays the setup, hook, fixture and fixed-wait spans so idle time and slow fixtures are obvious.</figcaption>
 </figure>
 
 Set the patterns to `*` once, look at the damage, then set them back. It is a fast way to see how much
@@ -76,7 +77,7 @@ a test that flakes constantly but finishes in 200ms costs nothing, and one that 
 four-minute timeout is what actually hurts.
 
 [Cutting the flakiness that costs the most](./flaky-cleanup) is the whole recipe for this. The short
-version: sort by impact, fix the red dots, and
+version: work down the impact order, fix the red dots, and
 [quarantine](/features/flaky-tests#quarantine-with-a-way-out) the rest so they stop blocking merges while
 still running.
 

@@ -12,8 +12,8 @@ the diagnosis, a validated patch, the failing locator, the verify command. **Cre
 issue in one click: the body is the fix plan, the issue is linked back as the cluster's *known issue*, and from then on
 the key travels wherever the failure appears.
 
-It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**; with no connection,
-none of the entry points appear.
+It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**; until then, no
+entry point appears.
 
 <div class="doc-screenshot">
   <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
@@ -33,14 +33,14 @@ none of the entry points appear.
   surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before* match) and
   leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down, and
-  recorded — `GET /api/integrations/actions` lists what Piwi wrote.
+  recorded — `GET /api/integrations/actions?projectId=<id>` lists what Piwi wrote.
 
 ## The key travels
 
 Once a cluster has a known issue, its key follows the failure everywhere:
 
 - the **cluster state line** and the **inbox row** show the key with its status color;
-- `cluster.new`, `cluster.fixed` and `cluster.regressed` **Slack and email** messages name it;
+- `cluster.new`, `cluster.fixed` and `cluster.regressed` **Slack** messages name it, as does the `cluster.new` email;
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.
 
@@ -50,7 +50,7 @@ Once a cluster has a known issue, its key follows the failure everywhere:
 
 ## Keep the ticket honest
 
-Once a cluster carries a known issue, Piwi keeps the two in step. A background sync
+Piwi keeps a cluster and its known issue in step. A background sync
 ([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked issue back and caches
 its status, title and assignee — so a closed ticket stops showing as open (open clusters refresh every sweep, resolved
 ones daily). On top of that, per-project **policies** — all **off by default**, each a durable deduped outbox action —
@@ -58,7 +58,7 @@ write back as the cluster evolves:
 
 | When Piwi observes | What Piwi does |
 |---|---|
-| A cluster's **fix is verified** | Comments *Fix landed in run #N …*, and — with *transition on fix* — moves the issue. |
+| A cluster's **fix lands** (stopped failing or diagnosis verified) | Comments *Fix landed in run #N …*, and — with *transition on fix* — moves the issue. |
 | A cluster **regresses** | Comments *Regressed in run #N …*, and optionally reopens the issue. |
 | **New occurrences** on an open ticket | At most one comment a day: *Still failing — +N occurrences in M runs …*. |
 | A cluster is **merged** | With *comment on merge*, notes it on both issues; the survivor inherits the links. |
@@ -76,8 +76,8 @@ An administrator binds a project under **Project → Settings → Issue tracker*
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route and fills the rest from the defaults, so a team's failures
-reach that team's destination. The **automatic-creation** fields are shown greyed out: stored, but inert — Piwi does not
-file tickets on its own in this release.
+reach that team's destination. The **automatic-creation** fields are greyed out: stored, but inert (see
+[Limits](#limits)).
 
 <div class="doc-screenshot">
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, sync-policy switches, an owner-routes table, and the greyed-out automatic-creation fields">
@@ -93,15 +93,16 @@ file tickets on its own in this release.
 
 There is nothing to switch on beyond the connection. The modal prefills the Jira project, issue type, labels and
 assignee from the [project binding](#the-project-binding) when one exists, else offers pickers over the connected site;
-toggles choose what the body carries (diagnosis and patch on, screenshot and [share link](/features/share-links) off).
-From an AI agent, the [`create_issue` MCP tool](/features/mcp) files the same ticket.
+toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off); the *Screenshot*
+toggle is stored, but no attachment is uploaded yet. From an AI agent, the [`create_issue` MCP tool](/features/mcp)
+files the same ticket once the binding names a Jira project and issue type.
 
 ## Language
 
 A ticket is written for a team, so its language is a property of its **destination**. It resolves from the **project
 binding**'s language, else the **connection**'s default (a French Atlassian site can default every ticket to French),
 else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
-`locale`. **English and French ship today**; another language is one catalog file in `shared/integrations/messages/`.
+`locale`. **English and French ship today**; another language is a catalog file in `shared/integrations/messages/` plus its entry in the locale lists.
 
 Only the copy **Piwi authors** is translated — headings, fact labels, policy comments, dates and counts (via `Intl`).
 Your data (test titles, error text, locators, paths, the verify command, the patch) is **never** translated. The model's
@@ -113,8 +114,7 @@ French-configured site works unchanged.
 
 - **Jira Cloud only** in this release (REST v3, email + API token); Server / Data Center, GitHub and GitLab Issues
   follow as provider files.
-- **Creation stays manual** — Piwi syncs a ticket and files it on a click, but never files one on its own yet.
+- **Creation stays manual** — Piwi files a ticket on a click, never on its own yet.
 - A ticket's body is a **snapshot** at creation; the policies add comments and status changes rather than editing it.
 - The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates** that quote
   locators and Playwright terms, so they stay English even in a French ticket.
-- Attachments honor the [export size budget](/features/offline-export); the trace is never attached.

@@ -42,6 +42,8 @@ export { expect } from '@playwright/test'
 | `page.piwiLocator(template)` | a real, synchronous `Locator` | locating one element by description |
 | `page.piwiRun(template)` | `Promise<void>` | replaying a compiled multi-step flow |
 
+While a missing entry is being authored (`resolve` mode), `piwiLocator` returns a stand-in that supports direct actions such as `.fill()` and `.click()`, but not chaining (`.first()`) or `expect(...)`; those work once the entry is committed.
+
 Placeholders are type-checked at compile time: a template with `{param}` **requires** a matching params object, and a misspelled or missing name is a TypeScript error.
 
 ```typescript
@@ -50,13 +52,13 @@ await page.piwiRun('add {qty} of {sku} to the cart', { qty: '2', sku: 'PIWI-1' }
 
 ## The lifecycle: author once, replay forever
 
-An AI step moves through three modes, set with the `ai.mode` option or `PIWI_AI`:
+An AI step moves through three modes, set with the `ai.mode` option or `PIWI_AI`. An `ai.mode` set in `wrapConfig` overrides `PIWI_AI`, including the one `piwi ai resolve` sets:
 
 | Mode | What it does |
 |------|--------------|
 | `replay` *(default)* | Executes the committed artifact read-only. **Never** calls the model. Fails closed on a missing entry. |
 | `resolve` | Authors any missing entry by driving the model, verifies it against the live page, and writes it to disk. |
-| `heal` | Repairs a committed entry that no longer replays (e.g. a renamed element), without re-authoring from scratch. |
+| `heal` | Not available yet: currently behaves exactly like `resolve` — committed entries are replayed as they are, and missing ones are authored. |
 
 The intended workflow:
 
@@ -120,27 +122,28 @@ Intent mappings are as private as everything else here: templates keep their `{p
 
 ## Privacy
 
-Parameter values are **masked out of everything sent to the model**. The page snapshot the agent sees has your `{param}` values replaced with markers, and placeholders survive compilation as markers that are substituted locally at replay. Secrets in parameters never leave your machine. See [Privacy & data flow](./privacy) for the full picture.
+Parameter values are **masked out of everything sent to the model**, with one exception: the opt-in `screenshotFallback` image is sent as-is. The page snapshot the agent sees has your `{param}` values replaced with markers, and placeholders survive compilation as markers that are substituted locally at replay. With `screenshotFallback` off (the default), secrets in parameters never leave your machine. See [Privacy & data flow](./privacy) for the full picture.
 
 ## The `piwi ai` CLI
 
 ```
 piwi ai check     Scan committed entries for orphans, non-canonical files and
-                  duplicate templates. Read-only; exits 1 when issues are found.
+                  duplicate templates. Read-only; exits 1 on orphaned, invalid or
+                  non-canonical entries (duplicate templates are warnings).
 piwi ai resolve   Author missing entries by running the suite in resolve mode.
-piwi ai prune     Delete orphaned/dormant entries.
+piwi ai prune     Not available yet (exits 2).
 ```
 
-`piwi ai check` is offline and CI-friendly — add it as a lint step to catch an entry whose prompt was deleted or renamed, a file that isn't in canonical form, or two prompts that collide:
+`piwi ai check` is offline and CI-friendly — add it as a lint step to catch an entry whose prompt was deleted or renamed, or a file that isn't in canonical form. Two prompts that collide are reported as a warning, which does not fail the check:
 
 ```bash
-npx piwi ai check          # exit 1 on any hygiene issue
+npx piwi ai check          # exit 1 on orphaned, invalid or non-canonical entries
 npx piwi ai check --json   # machine-readable findings
 ```
 
 ## Configuration
 
-Set these under the `ai` key of your reporter options (in `wrapConfig`'s second argument, or the reporter entry options). Every option has an environment-variable equivalent.
+Set these under the `ai` key of `wrapConfig`'s second argument, which copies them into the `PIWI_AI*` variables the test workers read. An `ai` key on a plain `['@piwitests/reporter', { … }]` entry is ignored; without `wrapConfig`, use the environment variables. Every option has an environment-variable equivalent.
 
 | Option | Env var | Default | Purpose |
 |--------|---------|---------|---------|

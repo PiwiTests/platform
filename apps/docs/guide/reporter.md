@@ -17,15 +17,12 @@ Or let `npx @piwitests/reporter init` do the install and wiring for you — see 
 
 ### Try it without editing your config
 
-On **Playwright 1.63 or later**, `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no install and no config edit. Every reporter option has a `PIWI_*` [environment variable](#environment-variables), so point it at your dashboard that way:
+On **Playwright 1.63 or later**, `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no config edit. The package still has to be installed in the project — Playwright resolves `@piwitests/reporter` from the working directory. The connection options have `PIWI_*` [environment variables](#environment-variables), so point it at your dashboard that way:
 
 ::: code-group
 
 ```bash [Linux / macOS]
-PIWI_DASHBOARD_URL=http://localhost:3000 \
-PIWI_API_KEY=your-api-key \
-PIWI_PROJECT_NAME=my-project \
-npx playwright test --add-reporter @piwitests/reporter
+PIWI_DASHBOARD_URL=http://localhost:3000 PIWI_API_KEY=your-api-key PIWI_PROJECT_NAME=my-project npx playwright test --add-reporter @piwitests/reporter
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -34,7 +31,7 @@ $env:PIWI_DASHBOARD_URL='http://localhost:3000'; $env:PIWI_API_KEY='your-api-key
 
 :::
 
-This is a trial path: you get results, traces and screenshots, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults. On Playwright before 1.63 the flag does not exist — configure the reporter normally instead. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
+This is a trial path: you get results, plus whatever traces and screenshots your config already records, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults (Playwright's own `trace` and `screenshot` defaults are both `'off'`). On Playwright before 1.63 the flag does not exist — configure the reporter normally instead. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
 
 ## Basic configuration
 
@@ -90,6 +87,7 @@ The first argument is your Playwright config; the second is the [Piwi options](#
 
 - Sets `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` on the **top-level** `use` block when each is unset. A value you set yourself is kept — including `'off'` — and per-project `use` blocks are left alone. These two options unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. On Playwright 1.63 or later `trace` becomes the object form `{ mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }`, adding the per-action aria tree; the object is version-gated because an older Playwright rejects it. The `screen` snapshot kind stays opt-in — see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
 - Forwards the CI-gate option `failOnFlakyTests` into Playwright's native config so a flaky-only run exits non-zero locally.
+- Copies the options that act inside the test workers and Piwi's global setup into `PIWI_*` environment variables, which is how the capture fixtures see them (see [worker-side options](#configuration-options)).
 
 <a id="performance-metrics-web-vitals"></a>
 
@@ -133,19 +131,19 @@ export { expect } from '@playwright/test'
 - **Test steps** — each step's title, category and timing, plus its **subtitle** and a curated **params** object. Playwright 1.63 moved the target of a `pw:api`/`expect` step out of the title into the subtitle — `Click` with the subtitle `getByRole('button', { name: 'Pay' })`, or `Navigate` with the page URL — and the dashboard shows the title with the subtitle as a muted second element wherever a step is displayed (composing the two into one string for plain-text uses such as copy actions and the AI context), so an upgrade keeps the target visible. `params` carries the rendered locator, a navigation's URL, an action's arguments, or a `test.step(title, body, { params })` author's own values, and the [step row](/features/evidence#one-execution-diagnosis-first) shows them in an on-demand **Parameters** disclosure (the locator first). It is capped at 20 keys and 200 characters per value, and token-shaped strings (JWTs, long hex blobs, base64 data URIs) are masked; page content, expressions and request bodies are never captured. On Playwright 1.61 the reporter reads the title only, exactly as before.
 - **Test locks** — The lock names a test or its `describe` declared (`test('…', { lock: 'database' }, …)`) — the shared resources Playwright serializes holders of. They drive the [Timeline tab's lock lanes](/features/ui-overview#test-run-detail), the lock filter and *Group by lock* on the Tests tabs, and two [clues](/features/evidence#clues). Captured **best effort**: Playwright exposes locks only to an in-process reporter, never through the public API or the blob report, so a run recorded live carries them and one rebuilt from a [blob import](./importing-runs) does not. Nothing to configure.
 
-These are only collected when `collectPerformanceMetrics` is `true` (the default). If fixture data does not appear in the dashboard, the most likely cause is that your test files import `test` from `@playwright/test` directly instead of from your fixtures file (see options A/B above).
+These are only collected when `collectPerformanceMetrics` is `true` (the default). Test steps and test locks need no fixtures: the reporter reads them from Playwright's own results, and it collects locks even with `collectPerformanceMetrics: false`. If fixture data does not appear in the dashboard, the most likely cause is that your test files import `test` from `@playwright/test` directly instead of from your fixtures file (see options A/B above).
 
-Any attachments Playwright records — including **screenshots** (`screenshot: 'only-on-failure'`) and **videos** (`video: 'retain-on-failure'`) — are uploaded automatically and shown as first-class evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and failure-cluster pages, alongside traces. That includes what a test attaches itself: both `testInfo.attach('payload', { path })` and the inline form `testInfo.attach('payload', { body: JSON.stringify(data), contentType: 'application/json' })` reach the dashboard (an inline body is staged as a temp file under the OS temp directory for the upload and removed when the run ends). One attachment above 500 MB — the dashboard's default upload ceiling — is skipped with a warning naming it rather than failing the upload. Screenshots are the evidence most pages on this site count on, and Playwright records none unless the option is set — which is why [`wrapConfig`](#installing-via-wrapconfig) defaults `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` for you. Videos can be large, so pair `retain-on-failure` with periodic [storage cleanup](/operate/storage#storage-management).
+Any attachments Playwright records — including **screenshots** (`screenshot: 'only-on-failure'`) and **videos** (`video: 'retain-on-failure'`) — are uploaded automatically and shown as first-class evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and failure-cluster pages, alongside traces. That includes what a test attaches itself: both `testInfo.attach('payload', { path })` and the inline form `testInfo.attach('payload', { body: JSON.stringify(data), contentType: 'application/json' })` reach the dashboard (an inline body is staged as a temp file under the OS temp directory for the upload and removed when the run ends). One attachment above 500 MB — the dashboard's default upload ceiling — is skipped with a warning naming it rather than failing the upload. In batch mode (`streaming: false`, or a stream that never opened) attachments travel with the multipart upload, which the reporter skips when both `uploadTraces` and `uploadReport` are `false`. Screenshots are the evidence most pages on this site count on, and Playwright records none unless the option is set — which is why [`wrapConfig`](#installing-via-wrapconfig) defaults `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` for you. Videos can be large, so pair `retain-on-failure` with periodic [storage cleanup](/operate/storage#storage-management).
 
 ### Green page sampling on pass
 
 To power the [page diff](/features/evidence#page-diff), the fixtures also sample the ARIA snapshot at the end of a *passing* test — a "last known good" of the page to diff a later failure against. It stays cheap by letting the server decide what to capture:
 
-- At the start of every run `globalSetup` makes **one extra request**, `GET /api/projects/:id/aria-sampling`, which returns the tests whose newest green snapshot is older than 24 hours (or missing). The reporter caches that set for the run's workers.
+- At the start of every run Piwi's global setup makes **two small requests** — `GET /api/projects/menu` to find the project, then `GET /api/projects/:id/aria-sampling` — which return the tests whose newest green snapshot is older than 24 hours (or missing). The reporter caches that set for the run's workers.
 - A passing test is sampled only when it is in that set, so in steady state — every test sampled within the last day — nothing is captured and the pages cost nothing.
 - The server keeps at most one green snapshot per test per day, so many runs a day stay bounded.
 
-The feature degrades safely: an older server without the endpoint, or any failure of that call, leaves the set empty and **nothing is sampled**. Turn it off entirely with `sampleAriaOnPass: false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`). It rides the capture fixtures — with the fixtures off, no snapshot is taken regardless.
+The feature degrades safely: an older server without the endpoint, or any failure of that call, leaves the set empty and **nothing is sampled**. Turn it off entirely with `sampleAriaOnPass: false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`). It rides the capture fixtures — with the fixtures off, no snapshot is taken regardless. It also needs Piwi's global setup (from [`wrapConfig`](#installing-via-wrapconfig) or [`createGlobalSetup`](#global-setup-phase)) and the project name in the workers' environment — `wrapConfig` sets it when you pass `projectName`; otherwise set `PIWI_PROJECT_NAME`. A plain reporter entry on its own samples nothing.
 
 ## Configuration options
 
@@ -158,10 +156,11 @@ The feature degrades safely: an older server without the endpoint, or any failur
 | `uploadReport`              | boolean  | `true`                    | Upload the Playwright HTML report                                                           |
 | `reports`                   | array    | —                         | Additional report types to upload (see [Multiple reports](#multiple-reports))               |
 | `streaming`                 | boolean  | `true`                    | Enable live streaming of results (falls back to batch if unsupported)                       |
-| `streamingBatchSize`        | number   | `5`                       | Number of test results to batch before sending                                              |
+| `streamingBatchSize`        | number   | `5`                       | Number of queued stream events (test begin/end and live step events) that triggers a send   |
 | `streamingBatchDelay`       | number   | `2000`                    | Max delay (ms) before flushing pending events                                               |
+| `maxStreamBufferBytes`      | number   | `104857600` (100 MB)      | Byte budget for the queue of stream events waiting to reach the dashboard (and the recovery file written when delivery fails). Over budget, live step progress is dropped first, then test-begin markers, and test results only as a last resort — the end-of-run submit still carries the full run. `0` disables the cap |
 | `liveFileUploads`           | boolean  | `true`                    | Upload each test's trace and attachments as soon as the test finishes (streaming mode only) |
-| `failOnFlakyTests`          | boolean  | `false`                   | Fail the run when any test was flaky (passed only after a retry). Forwarded to Playwright's native `failOnFlakyTests` option (Playwright 1.52+) when installed via `wrapConfig`, so a flaky-only run exits non-zero locally, with no server round-trip |
+| `failOnFlakyTests`          | boolean  | `false`                   | Fail the run when any test was flaky (passed only after a retry). Takes effect only when installed via `wrapConfig`, which forwards it to Playwright's native `failOnFlakyTests` option (Playwright 1.52+), so a flaky-only run exits non-zero locally, with no server round-trip. With a plain reporter entry, set Playwright's own `failOnFlakyTests: true` instead |
 | `projectDescription`        | string   | —                         | Description of the project                                                                  |
 | `environment`               | string   | —                         | Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"`      |
 | `label`                     | string   | —                         | Display label for this run, e.g. `"v2.3.1 release"`                                         |
@@ -173,22 +172,25 @@ The feature degrades safely: an older server without the endpoint, or any failur
 | `collectCiInfo`             | boolean  | `true`                    | Auto-collect CI environment info                                                            |
 | `collectPerformanceMetrics` | boolean  | `true`                    | Collect step timings, network requests and web vitals                                       |
 | `captureLocators`           | boolean  | `true`                    | Capture element snapshots from successful actions and passing assertions — these power [locator healing](#locator-healing). Auto-disabled when `collectPerformanceMetrics` is `false` |
-| `capturePageState`          | boolean  | `true`                    | Record the page's state at test end: URL, history state, storage **key names** and value *lengths*, cookie names and flags. Values are never captured. Auto-disabled when `collectPerformanceMetrics` is `false` |
+| `capturePageState`          | boolean  | `true`                    | Record the page's state at test end: URL, history state, storage **key names** and value *lengths*, cookie names and flags. Storage and cookie values are never captured; `history.state` is kept token-masked and capped at 2,048 characters. Auto-disabled when `collectPerformanceMetrics` is `false` |
 | `captureServerTraces`       | boolean  | `true`                    | Read server-side spans from the `X-Piwi-Trace` response header emitted by a Piwi [instrumentation plugin](./backend-logs), and show them next to the network request. Free when no instrumentation is present. Auto-disabled when `collectPerformanceMetrics` is `false` |
 | `sampleAriaOnPass`          | boolean  | `true`                    | Sample the ARIA snapshot at the end of a passing test so a later failure can be diffed against the [page as it last looked green](/features/evidence#page-diff). Rate-limited server-side (see [Green page sampling on pass](#green-page-sampling-on-pass)); rides the capture fixtures, so nothing is captured without them |
 | `defaultCapture`            | boolean  | `true`                    | When installed via [`wrapConfig`](#installing-via-wrapconfig), default the top-level `use.screenshot` to `'only-on-failure'` and `use.trace` to `'retain-on-failure'` when unset, so failure evidence is captured without the fixtures. On Playwright 1.63+ the trace default also turns on the per-action aria tree (`snapshots: { dom: true, aria: true }`); `screen` stays opt-in. Explicit values (including `'off'`) and per-project `use` blocks are untouched. Set `false` to opt out |
 | `inspectOnFailure`          | boolean  | `false`                   | Open Piwi's own inspector overlay on the failing page after a local headed failure — inspect any element and pick a locator for it (see [Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs)). Never activates under CI |
 | `pickLocatorOnFailure`      | boolean  | `false`                   | Open Piwi's locator picker on the failing page after a local headed locator failure (see [Pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs)). Never activates under CI |
+| `ai`                        | object   | —                         | Natural-language locators and flows (`page.piwiLocator(...)` / `page.piwiRun(...)`): `mode`, `dir`, `onMiss`, `maxSteps`, `maxSnapshotChars`, `optionalProbeTimeout`, `responseWaitTimeout`, `screenshotFallback`. See [AI steps → Configuration](./ai-steps#configuration) |
 | `username`                  | string   | —                         | Username for dashboard login (use `apiKey` instead when possible)                           |
 | `password`                  | string   | —                         | Password for dashboard login (used with `username`)                                         |
 | `apiKey`                    | string   | —                         | API key for authentication (preferred over `username`/`password` for CI)                    |
 | `runLabel`                  | string   | auto-detected from CI     | Stable label tying shards together (e.g. CI run ID). Auto-detected from CI env; override if needed |
-| `outputFile`                | string   | —                         | Write a JSON file with the submitted run's dashboard URL, id, project id and status, for a later CI step to consume (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci)) |
+| `outputFile`                | string   | —                         | Write a JSON file with the submitted run's dashboard URL, id, project id (`null` for a streamed run) and status, for a later CI step to consume (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci)) |
 | `verbose`                   | boolean  | `false`                   | Enable verbose logging for debugging                                                        |
+
+**Options read inside the test workers.** `captureLocators`, `capturePageState`, `captureServerTraces`, `inspectOnFailure`, `pickLocatorOnFailure` and `ai` are read by the fixtures in the test workers, which never see the reporter entry's options. They take effect through [`wrapConfig`](#installing-via-wrapconfig), which copies them into `PIWI_*` environment variables, or when you set those variables yourself. In a plain `['@piwitests/reporter', { … }]` entry they are ignored, except that `captureLocators: false` still makes the reporter discard the locator snapshots — as `collectPerformanceMetrics: false` does for all fixture data — while the workers keep paying the capture cost.
 
 ### Environment variables
 
-The options in the table below can also be set via a `PIWI_*` environment variable. Env vars are fallbacks — an option passed in the reporter config takes precedence. The one exception is `PIWI_VERBOSE`, which wins over both the default and an explicit option (useful for toggling debug output without editing the config). The mapping is centralized in `src/internal/config/env.ts` (`PIWI_ENV_KEYS`). The remaining options — `enabled`, `reports`, `projectDescription`, `relatedIssue`, `ciInfo`, `tags`, `customData`, `collectScmInfo`, `collectCiInfo` and `collectPerformanceMetrics` — are config-only:
+The options in the table below can also be set via a `PIWI_*` environment variable. Env vars are fallbacks — an option passed in the reporter config takes precedence. The one exception is `PIWI_VERBOSE`, which wins over both the default and an explicit option in the reporter entry (useful for toggling debug output without editing the config); under `wrapConfig`, an explicit `verbose` option is copied into `PIWI_VERBOSE` when the config loads, so there the option wins. Boolean variables recognize the exact strings `true` and `false`. The mapping is centralized in `src/internal/config/env.ts` (`PIWI_ENV_KEYS`). The remaining options — `enabled`, `reports`, `projectDescription`, `relatedIssue`, `ciInfo`, `tags`, `customData`, `collectScmInfo`, `collectCiInfo` and `collectPerformanceMetrics` — are config-only, and the `ai` options have their own `PIWI_AI*` variables, listed on [AI steps](./ai-steps#configuration):
 
 | Env var                         | Option                  | Format          |
 |---------------------------------|-------------------------|-----------------|
@@ -204,6 +206,7 @@ The options in the table below can also be set via a `PIWI_*` environment variab
 | `PIWI_STREAMING`                | `streaming`             | `true`/`false`  |
 | `PIWI_STREAMING_BATCH_SIZE`     | `streamingBatchSize`    | number          |
 | `PIWI_STREAMING_BATCH_DELAY`    | `streamingBatchDelay`   | number          |
+| `PIWI_MAX_STREAM_BUFFER_BYTES`  | `maxStreamBufferBytes`  | number          |
 | `PIWI_LIVE_FILE_UPLOADS`        | `liveFileUploads`       | `true`/`false`  |
 | `PIWI_FAIL_ON_FLAKY_TESTS`      | `failOnFlakyTests`      | `true`/`false`  |
 | `PIWI_UPLOAD_TRACES`            | `uploadTraces`          | `true`/`false`  |
@@ -217,7 +220,7 @@ The options in the table below can also be set via a `PIWI_*` environment variab
 | `PIWI_PICK_LOCATOR_ON_FAIL`     | `pickLocatorOnFailure`  | `true`/`false`  |
 | `PIWI_VERBOSE`                  | `verbose`               | `true`/`false`  |
 
-`wrapConfig` forwards the same `PIWI_*` vars into the isolated `global-setup` process so the run registration step shares the reporter's server/auth config.
+`wrapConfig` copies a subset of its options into these variables when the config loads — the server and auth settings, `projectName`, `environment`, `label`, `runLabel`, `verbose`, and the worker-side capture, inspector and `ai` options — so Piwi's global-setup module and the test workers, which never see the reporter entry's options, share the same config.
 
 ### Finding the desktop app automatically
 
@@ -276,7 +279,7 @@ Control how frequently results are sent during streaming:
 ['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
-  streamingBatchSize: 10,     // send every 10 tests
+  streamingBatchSize: 10,     // send every 10 queued events (test begin/end and live steps)
   streamingBatchDelay: 5000,  // or every 5 seconds
 }]
 ```
@@ -290,34 +293,43 @@ Control how frequently results are sent during streaming:
 
 By default a run appears on the dashboard as soon as the first test starts. If your Playwright config has a `globalSetup` step (seeding a database, authenticating, building the app under test, etc.), you can register the run *before* `globalSetup` runs so the dashboard shows an animated **initializing** state during setup.
 
-Wrap your config's `globalSetup` with `createGlobalSetup`, passing the same options you give the reporter:
+[`wrapConfig`](#installing-via-wrapconfig) does this for you. To wire it by hand, use `createGlobalSetup`. Playwright's `globalSetup` only accepts a file path, so export it from its own file, passing the same options you give the reporter:
+
+```typescript
+// global-setup.ts
+import { createGlobalSetup } from '@piwitests/reporter'
+
+export default createGlobalSetup({
+  serverUrl: 'http://localhost:3000',
+  projectName: 'my-project',
+  apiKey: process.env.PIWI_API_KEY,
+})
+```
 
 ```typescript
 // playwright.config.ts
 import { defineConfig } from '@playwright/test'
-import { createGlobalSetup } from '@piwitests/reporter'
-
-const dashboard = {
-  serverUrl: 'http://localhost:3000',
-  projectName: 'my-project',
-  apiKey: process.env.PIWI_API_KEY,
-}
 
 export default defineConfig({
-  globalSetup: createGlobalSetup(dashboard),
+  globalSetup: './global-setup.ts',
   reporter: [
     ['list'],
-    ['@piwitests/reporter', dashboard],
+    ['@piwitests/reporter', {
+      serverUrl: 'http://localhost:3000',
+      projectName: 'my-project',
+      apiKey: process.env.PIWI_API_KEY,
+    }],
   ],
 })
 ```
 
-To keep an existing `globalSetup`, pass it as the second argument — it runs after the run is registered:
+`createGlobalSetup` also reads the options set inline on the Piwi reporter entry, so `createGlobalSetup()` with no argument works when that entry carries them. To keep an existing global setup, pass it as the second argument — it runs after the run is registered:
 
 ```typescript
-globalSetup: createGlobalSetup(dashboard, async (config) => {
+// global-setup.ts
+export default createGlobalSetup({ /* same options as above */ }, async (config) => {
   // your existing setup logic
-}),
+})
 ```
 
 Registration is best-effort: if the server is unreachable the error is non-fatal and the reporter simply creates the run normally once tests begin.
@@ -332,7 +344,7 @@ Attach multiple report types to a single test run. Each report appears as a sepa
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@playwright/test/reporter-html', { outputFolder: 'playwright-report' }],
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
     ['blob'],
     ['@piwitests/reporter', {
@@ -355,8 +367,9 @@ Built-in report types with auto-detected directories:
 | `html`     | `playwright-report/` | Opens in new tab      |
 | `monocart` | `monocart-report/`   | Opens in new tab      |
 | `blob`     | `blob-report/`       | Downloaded as archive |
+| `allure`   | `allure-report/`     | Opens in new tab      |
 
-Any other type is also accepted; the directory must be provided via `dir`.
+Any other type is also accepted; without `dir` the reporter looks for `<type>-report/`.
 
 ## Locator healing
 
@@ -390,7 +403,7 @@ These six platforms get rich per-provider fields. The stable **run label** that 
 
 ### Playwright configuration
 
-The reporter also records browser project configs, worker count, test timeout, and parallel settings.
+The reporter also records browser project configs, worker count, the global timeout (`globalTimeout`), and parallel settings.
 
 ### Browser configuration per test case
 
@@ -625,6 +638,6 @@ export default defineConfig({
 })
 ```
 
-The reporter calls `/api/auth/login` automatically before each upload.
+The reporter calls `/api/auth/login` automatically once at the start of the run (and once in Piwi's global setup) and reuses the session for every upload.
 
 See [Authentication](/operate/authentication) for details on enabling auth, creating users, and managing API keys.

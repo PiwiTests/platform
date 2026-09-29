@@ -5,9 +5,9 @@ lang: en-US
 
 # Timeline markers
 
-<Needs reporter admin />
+<Needs reporter />
 
-Timeline markers let you record **dated events** against a project — a deploy, a config change, an infrastructure migration, a dependency bump, an incident — and see them overlaid as vertical lines on the analytics trend charts. When a pass-rate drop or a performance regression lines up with a marker, you have your prime suspect: "the slowdown started the day we switched CI runners".
+Timeline markers let you record **dated events** against a project — a deploy, a config change, an infrastructure migration, a dependency bump, an incident — and see them overlaid as vertical lines on the project's trend charts. When a pass-rate drop or a performance regression lines up with a marker, you have your prime suspect: "the slowdown started the day we switched CI runners".
 
 ## What a marker is
 
@@ -25,7 +25,6 @@ Each marker belongs to one project and carries:
 - **Markers panel** — a **Markers** button beside the **Run trend** chart (on the project's Runs tab) opens a panel listing the project's markers, with add / edit / delete controls.
 - **Test-case history** — a single test's duration history chart shows the same markers, so you can tell whether an event affected that specific test.
 - **Run detail** — a run shows an **"After: …"** chip for the nearest preceding marker, so a single run tells you which event it followed.
-- **Run compare** — comparing two runs surfaces any markers that fall between them ("something changed between these runs").
 
 ## Environment scoping
 
@@ -39,7 +38,7 @@ Reading markers is available to any signed-in user with access to the project. C
 
 ## Automatic markers
 
-Piwi can create markers for you when a run's tooling changes. On each finished run it compares the run against the previous run **in the same environment** and, when the **Playwright version** or **reporter version** changed, adds an `auto` marker (category `config`) at that run's time — for example _Playwright 1.49.0 → 1.50.0_. Auto markers are labeled with a small sparkle icon and can be edited or deleted like any other.
+Piwi can create markers for you when a run's tooling changes. On each run that finishes through the reporter's live stream (the default; runs sent without streaming, or imported, get none) it compares the run against the previous run **in the same environment** and, when the **Playwright version** or **reporter version** changed, adds an `auto` marker (category `config`) at that run's time — for example _Playwright 1.49.0 → 1.50.0_. Auto markers are labeled with a small sparkle icon and can be edited or deleted like any other.
 
 This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn it off. See the [configuration reference](/reference/configuration).
 

@@ -27,14 +27,16 @@ The dashboard is one Node process, and there are five ways to get one running:
 | Path | Best for | Notes |
 |---|---|---|
 | [Live demo](https://piwitests.dev/demo/) | Looking around before installing anything | Seeded data, runs in your browser, no backend |
-| [Desktop app](/features/desktop) | A single developer running Playwright locally | No Docker or Node needed; Windows x64 and Apple-silicon macOS only, and the installers are not yet signed |
+| [Desktop app](/features/desktop) | A single developer running Playwright locally | No Docker or Node needed; Windows x64, Apple-silicon macOS and Linux x86-64 (`.AppImage`, `.deb`, `.rpm`) — no Intel Mac build — and the installers are not yet signed |
 | Docker *(below)* | A shared instance for a team | The recommended path for anything long-lived |
 | [`npx @piwitests/server`](/operate/deployment#npm-npx-quick-local-run) | A quick local run with Node 22+ already installed | Same server, no container |
 | [One-click deploy](/operate/deployment#one-click-deploy) | A shared instance with no server of your own | Railway, Render, Fly.io, Koyeb, Coolify or Dokploy — a button, plus whatever the host charges |
 
 If you only want your own history, flaky scores and locator healing on a laptop, the
-[desktop app](/features/desktop) is the least setup: install it, copy its access token from **Settings →
-Storage**, and skip to [the reporter](#using-the-piwi-dashboard-reporter). Everything below about the
+[desktop app](/features/desktop) is the least setup: install it, keep it running, and skip to
+[the reporter](#using-the-piwi-dashboard-reporter) — the reporter finds a running desktop app by itself.
+The app's URL and access token, for the cases that needs them, are on its **Setup** page under **Send
+results to this app**. Everything below about the
 reporter, CI and fixtures applies identically whichever path you pick.
 
 ### Requirements
@@ -45,7 +47,8 @@ Only the dashboard side has requirements — and only for some paths:
 |---|---|
 | Desktop app | Nothing; the runtime is bundled |
 | Docker | Docker; ~300 MB RAM, 1 vCPU, `linux/amd64` or `linux/arm64` |
-| `npx` / from source | **Node.js 22+** and npm |
+| `npx @piwitests/server` | **Node.js 22+** and npm |
+| From source | **Node.js 24+** and npm |
 | PostgreSQL backend *(optional)* | PostgreSQL 14+ — otherwise SQLite is built in and needs no setup |
 
 Your **test project** is unaffected by all of this: it just needs a Node version Playwright supports.
@@ -108,15 +111,12 @@ Prefer to wire it up by hand? The manual steps are below.
 
 ### Try it without editing your config
 
-On **Playwright 1.63 or later** you can send one run to a dashboard without editing your config or installing anything. Playwright's `--add-reporter` _appends_ a reporter to the ones your config already lists (unlike `--reporter`, which replaces them), and every reporter option has a `PIWI_*` environment-variable equivalent — so point it at your dashboard with env vars and run:
+On **Playwright 1.63 or later** you can send one run to a dashboard without editing your config. Playwright's `--add-reporter` _appends_ a reporter to the ones your config already lists (unlike `--reporter`, which replaces them), and the connection options (`serverUrl`, `apiKey`, `projectName`, …) have `PIWI_*` environment-variable equivalents. Playwright resolves the reporter from your project, so install it first (`npm install --save-dev @piwitests/reporter`), then point it at your dashboard with env vars and run:
 
 ::: code-group
 
 ```bash [Linux / macOS]
-PIWI_DASHBOARD_URL=http://localhost:3000 \
-PIWI_API_KEY=your-api-key \
-PIWI_PROJECT_NAME=my-project \
-npx playwright test --add-reporter @piwitests/reporter
+PIWI_DASHBOARD_URL=http://localhost:3000 PIWI_API_KEY=your-api-key PIWI_PROJECT_NAME=my-project npx playwright test --add-reporter @piwitests/reporter
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -125,7 +125,7 @@ $env:PIWI_DASHBOARD_URL='http://localhost:3000'; $env:PIWI_API_KEY='your-api-key
 
 :::
 
-This is a trial path, not a full setup. You get the run with its results, traces and screenshots, but **not** the [capture fixtures](#recommended-capture-fixtures) (network timing, Web Vitals, console capture, locator healing) and **not** [`wrapConfig`](./reporter#installing-via-wrapconfig)'s failure-evidence capture defaults — for those, run the [fast path](#fast-path-one-command) or wire the reporter in by hand. On older Playwright (before 1.63) `--add-reporter` does not exist; use the manual setup below. `piwi run` makes the same append for you automatically when your config has no Piwi reporter — see the [CLI reference](/reference/cli#select-run).
+This is a trial path, not a full setup. You get the run with its results — plus traces and screenshots if your config already records them (`use.trace`, `use.screenshot`) — but **not** the [capture fixtures](#recommended-capture-fixtures) (network timing, Web Vitals, console capture, locator healing) and **not** [`wrapConfig`](./reporter#installing-via-wrapconfig)'s failure-evidence capture defaults — for those, run the [fast path](#fast-path-one-command) or wire the reporter in by hand. On older Playwright (before 1.63) `--add-reporter` does not exist; use the manual setup below. `piwi run` makes the same append for you automatically when your config has no Piwi reporter — see the [CLI reference](/reference/cli#select-run).
 
 ### Manual setup
 
@@ -188,9 +188,7 @@ Not using Playwright, or piping results in from another tool? Submit runs direct
 ::: code-group
 
 ```bash [Linux / macOS]
-curl -X POST http://localhost:3000/api/test-runs/submit \
-  -H "Content-Type: application/json" \
-  -d '{
+curl -X POST http://localhost:3000/api/test-runs/submit -H "Content-Type: application/json" -d '{
     "projectName": "my-project",
     "status": "passed",
     "startTime": "2024-01-01T12:00:00Z",
@@ -264,7 +262,7 @@ The **Setup** page (`/setup`, administrators only) is the permanent home for "ho
 
 ### Declining a capability
 
-Not every team uses every capability. Any optional one can be **declined** so the dashboard stops showing it everywhere — the evidence tabs, empty panels, settings page, sidebar entry, project actions and MCP tools it owns all go, rather than lingering half-visible. Decline instance-wide from the Setup ladder (*Not for this instance*) or the presets, or per project from the project's edit form and the places the capability appears (for example the execution page's evidence footer, *Not for this project*). A project override can also **enable** a capability the instance declined.
+Not every team uses every capability. Any optional one can be **declined** so the dashboard stops showing it everywhere — the evidence tabs, empty panels, settings page, sidebar entry, project actions and MCP tools it owns all go, rather than lingering half-visible. Decline instance-wide from the Setup ladder (*Not for this instance*) or the presets, or per project from the project's **Settings** tab and the places the capability appears (for example the execution page's evidence footer, *Not for this project*). A project override can also **enable** a capability the instance declined.
 
 Declining is administrator-only and never final: each declined capability keeps a *Reconsider* link on the Setup ladder that clears the decision, and because data always wins, a declined capability that starts receiving data reads as active again with the stored decision shown next to it. See [Why a card is empty](/features/evidence#why-a-card-is-empty) for how this reads on the execution page.
 
@@ -280,7 +278,7 @@ After submitting results, the dashboard provides:
 | **Test run** (`/test-runs/:id`) | Executions grouped by failure cluster, a changes tab against a baseline, and a worker timeline |
 | **Test history** (`/test-cases/:id`) | One test's behavior over time — pass rate, duration trend, and every execution |
 | **API Docs** (`/docs`) | Interactive API reference with endpoint documentation, schemas, and try-it console (auto-generated) |
-| **Settings** (`/settings`) | Account, users, storage, tags, wasted-time patterns, AI diagnosis, and notifications |
+| **Settings** (`/settings`) | Account, localization, users, notifications, tags, integrations, storage, performance (wasted-time patterns), pull requests, auto-heal, AI diagnosis, and about |
 
 See the [UI overview](/features/ui-overview) for a full map of every page and tab.
 

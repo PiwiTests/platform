@@ -62,17 +62,17 @@ Import `test` from this file in your specs instead of `@playwright/test`. A spec
 
 ## Configuration
 
-Every option can also be set via a `PIWI_*` environment variable (config wins over env). The full option and env-var reference lives in the [reporter documentation](https://piwitests.dev/guide/reporter); authentication for CI (API keys) is covered under [Authentication](https://piwitests.dev/operate/authentication).
+Most options can also be set via a `PIWI_*` environment variable (config wins over env, except for `PIWI_VERBOSE`). The full option and env-var reference lives in the [reporter documentation](https://piwitests.dev/guide/reporter); authentication for CI (API keys) is covered under [Authentication](https://piwitests.dev/operate/authentication).
 
 ## Requirements
 
 - Node.js 20 or higher (the reporter runs inside your test project — the dashboard *server* itself targets Node 22+, or use its Docker image)
-- Playwright Test 1.61 or higher
+- Playwright Test 1.61.1 or higher
 - A running Piwi Dashboard server
 
 ## Contributing
 
-Source layout, the collect-and-submit data flow and the public/internal split are documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md). Build with `npm run reporter:build` (or `reporter:dev` for watch mode) from the repository root.
+Source layout, the collect-and-submit data flow and the public/internal split are documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md). Build with `npm run reporter:build` (or `reporter:dev` for watch mode) from `packages/reporter/`, or add `-w packages/reporter` to run it from the repository root.
 
 ## License
 

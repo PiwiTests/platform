@@ -24,9 +24,11 @@ Jira Cloud authenticates with an account email and an API token (REST v3, HTTP B
 1. Create an API token at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)
    under **Security → API tokens**, signed in as the account whose permissions Piwi should act with.
 2. Open **Settings → Integrations** (administrator only) and connect Jira with:
+   - **Name** — a label for the connection (required).
    - **Base URL** — your site, e.g. `https://your-team.atlassian.net`.
    - **Account email** — the Atlassian account the token belongs to.
    - **API token** — the token from step 1.
+   - **Default language** (optional) — see [Language](/features/issue-tracking#language).
 3. Click **Test connection**. Piwi calls `GET /rest/api/3/myself` and shows the account it resolved to, so
    you can confirm the credentials before relying on them.
 
@@ -51,10 +53,9 @@ Jira project permission:
 | Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
 | Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
 | Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
-| Create Attachments | `CREATE_ATTACHMENTS` | Attach the failure screenshot when its toggle is on. |
 
-For the **full integration**, grant all six on each bound project. You can drop the ones whose feature you do not
-use: `CREATE_ATTACHMENTS` if you never attach a screenshot, `ASSIGN_ISSUES` if you never set an assignee,
+For the **full integration**, grant all five on each bound project. You can drop the ones whose feature you do not
+use: `ASSIGN_ISSUES` if you never set an assignee,
 `ADD_COMMENTS` and `TRANSITION_ISSUES` if the [write-back policies](/features/issue-tracking#keep-the-ticket-honest)
 stay off. `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
 
@@ -73,7 +74,7 @@ endpoint, and routes REST calls through the gateway from then on, with no extra 
 detection keep using the site URL). The resolved cloud id is stored on the connection when you **Test connection**.
 
 A scoped token must additionally carry the scopes **`read:jira-work`** (unfurl, sync, search, the pickers),
-**`write:jira-work`** (create, comment, transition, attach) and **`read:jira-user`** (the account check and the
+**`write:jira-work`** (create, comment, transition) and **`read:jira-user`** (the account check and the
 assignable-user picker), on top of the account permissions above.
 
 ## Environment-managed vs dashboard-managed
@@ -92,10 +93,10 @@ See the [configuration reference](/reference/configuration#integrations) for the
 
 ## Trusted base URLs and private hosts
 
-A connection base URL is supplied by an administrator, so Piwi trusts it: a self-hosted tracker on a
-private network — `https://jira.internal.example.com` or an RFC 1918 address — works without extra
-configuration. Every URL a non-administrator supplies (pinning a link, for instance) still goes through the
-SSRF guard that blocks private hosts.
+A connection base URL is supplied by an administrator, so Piwi trusts it: a host on a private network —
+`https://jira.internal.example.com` or an RFC 1918 address — is reachable without extra configuration. The client
+itself speaks Jira Cloud's REST v3 only. Every URL a non-administrator supplies (pinning a link, for instance) still
+goes through the SSRF guard that blocks private hosts.
 
 ## What unfurl gives today
 
@@ -119,9 +120,9 @@ to French); a project binding overrides it, and the create modal offers a per-is
 
 A background task reads every tracked issue back through its connection and caches the status, title and assignee, so a
 closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
-[`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence. Links on an open cluster
-refresh every sweep; links on a resolved or ignored cluster refresh at most once a day. A connection that fails to
-answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
+[`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence; a value of 60 or more is
+rounded to whole hours. Each sweep refreshes up to 100 links. Links on an open cluster refresh every sweep; links on
+a resolved or ignored cluster refresh at most once a day. A connection that fails to answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
 demand with `POST /api/integrations/sync`; the response counts the links it refreshed, failed and skipped.
 
 The two-way **policies** (comment on fix / regression, transition, resolve on close, reopen) are configured per project
@@ -133,10 +134,12 @@ Polling is the baseline because Atlassian Cloud usually cannot reach a self-host
 register a webhook so a close or reopen reflects immediately instead of within the sync interval:
 
 1. In **Settings → Integrations**, on the Jira connection, choose **Enable webhook**. Piwi generates a per-connection
-   secret and shows the full URL **once** — copy it now.
+   secret and shows the webhook URL **once** — copy it now. It is a full URL when `PIWI_SITE_URL` is set; otherwise
+   prefix the path it shows with your public address.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
 3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
-create or transition anything. Regenerating the token invalidates the old URL; *Disable webhook* clears it.
+create or transition anything. **Regenerate webhook** invalidates the old URL; to turn the webhook off, call
+`DELETE /api/integrations/connections/<id>/webhook-token` as an administrator.

@@ -52,8 +52,9 @@ pick, clicking a path first tries the launcher —
 This needs **no** `vscode://`/`jetbrains://` protocol handler, no JetBrains
 Toolbox, no open-project name to match and no "allow unsigned requests" — the
 reasons the URL schemes are unreliable, on Rider especially — and unlike a URL
-scheme it reports back whether the file actually opened. The only requirement is
-that the launcher is on your `PATH`:
+scheme it reports back whether the launcher started (and flags a missing file).
+It needs a workspace root or a linked project folder, and the launcher on your
+`PATH`:
 
 - **JetBrains:** Toolbox → **Settings** → **Generate shell scripts** (the script
   name is the product tag, e.g. `rider`).

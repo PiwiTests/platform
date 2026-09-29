@@ -74,8 +74,8 @@ Five ways in, depending on what you already have:
 | **[One-click deploy](https://piwitests.dev/operate/deployment#one-click-deploy)** | You want a shared instance and no server to run it on | A button, plus whatever your host charges |
 
 Two caveats worth knowing before you pick. The **desktop installers are not yet code-signed**, so the
-first launch needs a click-through, and they exist for Windows x64 and Apple-silicon macOS only — on
-Linux or an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
+first launch needs a click-through, and they exist for Windows x64, Apple-silicon macOS and Linux x86-64
+(`.AppImage`, `.deb`, `.rpm`) — on an Intel Mac, use Docker or `npx`. The **one-click templates** ([`render.yaml`](./render.yaml),
 [`fly.toml`](./fly.toml), [`deploy/`](./deploy), generated from the same variable registry as the
 configuration reference so they can't drift from what the app reads) each provision one container with a
 persistent volume and authentication on, but per-provider limits apply — Render needs a paid instance
@@ -90,7 +90,7 @@ Docker below; the desktop app replaces step 1 only, and everything after it is i
 
 ```bash
 # Linux / macOS
-mkdir -p .data && chown -R 1001:1001 .data # the container runs as non-root UID 1001
+mkdir -p .data && sudo chown -R 1001:1001 .data # the container runs as non-root UID 1001
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
@@ -170,8 +170,8 @@ and not fine on a network. Three things to set before anyone else can reach it:
 
 - `PIWI_AUTH_ENABLED=true` and `PIWI_AUTH_SECRET` — turn on accounts and roles
   ([guide](https://piwitests.dev/operate/authentication)).
-- `PIWI_SECRET_KEY` — without it, stored credentials (AI keys, SCM tokens) are encrypted with a
-  built-in development key rather than yours.
+- `PIWI_SECRET_KEY` — the key stored credentials (AI keys, SCM tokens) are encrypted with; without it,
+  the dashboard refuses to save them.
 - **HTTPS**, via a reverse proxy — see the
   [deployment guide](https://piwitests.dev/operate/deployment#reverse-proxy-https).
 
@@ -191,7 +191,7 @@ Found a vulnerability? Please report it privately via the [security policy](./SE
 | **Failure clusters** — forty red tests, three root causes | **AI diagnosis** — read against your actual git diff |
 | [![Flaky test detection](./apps/docs/public/screenshots/flaky-detection.png)](https://piwitests.dev/features/flaky-tests) | [![Test run detail with worker timeline](./apps/docs/public/screenshots/test-run.png)](https://piwitests.dev/features/ui-overview) |
 | **Flaky tests** — scored, classified, ranked by wasted CI time | **Run detail** — cases, worker timeline, traces, retry command |
-| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/guide/reporter#locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/flaky-tests#performance) |
+| [![Locator healing suggestions](./apps/docs/public/screenshots/locator-healing.png)](https://piwitests.dev/guide/reporter#locator-healing) | [![Performance trends](./apps/docs/public/screenshots/performance-trends.png)](https://piwitests.dev/features/slow-tests#duration-trends) |
 | **Locator healing** — replacements from the last passing run | **Performance** — P90 trends and slowest-test tracking |
 
 ## Where this fits
@@ -219,7 +219,7 @@ Everything below is built and published from this repository on each release.
 | [`ghcr.io/piwitests/platform`](https://github.com/PiwiTests/platform/pkgs/container/platform) | GHCR | The same container, mirrored — plus an `edge` tag built from `main` |
 | [`@piwitests/instrumentation-nitro`](https://www.npmjs.com/package/@piwitests/instrumentation-nitro) | npm | Optional: sends your Nitro/Nuxt backend's logs into a test run |
 | [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore) | NuGet | Optional: the same for an ASP.NET Core backend |
-| Desktop app (`.msi`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window — no Docker or Node |
+| Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window — no Docker or Node |
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension — ranked Playwright locators picked from the live page (Chrome, Edge, and other Chromium browsers) |
 
 The two instrumentation packages are optional and only needed for

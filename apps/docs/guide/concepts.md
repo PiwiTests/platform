@@ -33,8 +33,8 @@ A named container for one suite's results — usually one repository, or one sui
 are created automatically the first time results are submitted under a new `projectName`; you never
 have to pre-register one.
 
-A project carries its own tags, retention, access assignments, SCM connection, and AI-diagnosis
-instructions.
+A project carries its own tags, access assignments, SCM connection, default branch, capability
+decisions, and AI-diagnosis instructions. Retention is instance-wide.
 
 ## Test run
 
@@ -111,9 +111,10 @@ The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step
 
 ## Cluster state
 
-Where a **failure cluster** stands, said in one sentence with one verb next to a coloured dot: *still
-failing*, *fixed and verified — still open*, *stopped failing*, *regressed — the fix did not hold*, *resolved*,
-*ignored*, *snoozed* or *all tests quarantined*. It reconciles the human triage status with the
+Where a **failure cluster** stands, said in one sentence with one verb next to a colored dot: *still
+failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *stopped failing*,
+*regressed — the fix did not hold*, *its tracker issue is done*, *resolved*, *ignored*, *snoozed* or *all
+tests quarantined*. It reconciles the human triage status with the
 machine-observed verdict; when they disagree the state line offers the one action that closes the gap. See
 [Failure clusters](/features/failure-clusters#the-state-line).
 
@@ -154,8 +155,8 @@ Two derived flags are stored per execution:
 
 ## Flakiness score
 
-A test case's **composite score** from three independent signals — retry passes, status alternation
-across runs, and overall failure rate — plus a **root-cause class** (timing, network, assertion,
+A test case's **composite score** from two signals — retry passes (weighted 60%) and status alternation
+across runs (40%), shown next to its overall failure rate — plus a **root-cause class** (timing, network, assertion,
 environment, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
 computed over its execution history, which is why a test needs a few runs of history before it can be
 called flaky. See [Flaky tests](/features/flaky-tests).
@@ -201,7 +202,8 @@ runs inside your network with a token it already has. So ownership works on day 
 
 That derived owner is used in [pull-request comments](./ci#pull-request-feedback), on the flaky leaderboard, and by the
 `owners` [notification filter](/features/notifications#subscriptions), which routes a run only to the team whose tests broke.
-It needs an [SCM token](/features/ai-diagnosis#scm-grounded-context); without one, ownership falls back to annotations alone.
+A public repository's CODEOWNERS is read without a token; a private one needs an
+[SCM token](/features/ai-diagnosis#scm-grounded-context), and without it ownership falls back to annotations alone.
 
 ## Where each concept lives in the UI
 
@@ -209,8 +211,8 @@ It needs an [SCM token](/features/ai-diagnosis#scm-grounded-context); without on
 |---|---|---|
 | Project | `/projects/:id` | [UI overview](/features/ui-overview#project-detail) |
 | Test run | `/test-runs/:id` | [UI overview](/features/ui-overview#test-run-detail) |
-| Test case | `/test-cases/:id` | [UI overview](/features/evidence#the-test-case-page) |
-| Execution | `/test-run-cases/:id` | [UI overview](/features/evidence#one-execution-diagnosis-first) |
+| Test case | `/test-cases/:id` | [Failure evidence](/features/evidence#the-test-case-page) |
+| Execution | `/test-run-cases/:id` | [Failure evidence](/features/evidence#one-execution-diagnosis-first) |
 | Failure cluster | `/failure-clusters/:id` | [AI diagnosis & clustering](/features/ai-diagnosis) |
 | Cross-project view | `/analytics` | [Analytics](/features/analytics) |
 

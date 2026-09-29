@@ -17,7 +17,7 @@ By default the baseline is the last passing full run **in the same environment**
 
 Two ways to compare against something else:
 
-- **Base branch** — take the baseline from one branch only: its last passing run, same environment first. The list offers every branch with an earlier passing run, so it appears once the project has one to choose. Deep-linkable as `?baseBranch=<name>`.
+- **Base branch** — take the baseline from one branch only: its last passing run, same environment first. The list offers every branch with a passing run, so it appears once a branch other than this run's own has one. Deep-linkable as `?baseBranch=<name>`.
 - **Run** — compare against one specific run, whatever its branch or environment. Deep-linkable as `?baseline=<runId>`, so a link to a comparison reopens the same two runs. **Previous run** is the shortcut for the run just before this one.
 
 **Automatic** returns to the default choice. The same two options exist on the API (`GET /api/test-runs/{id}/insights?baseBranch=…` / `?baseline=…`) and on the MCP `get_run_insights` tool (`baseBranch`).

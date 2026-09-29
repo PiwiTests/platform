@@ -29,8 +29,9 @@ If your test is under **Newly flaky / passed on retry**, stop here: it isn't you
 ## 2. Check the test's own history
 
 A single run can lie — a flaky test lands in "new regressions" whenever the baseline happened to be
-green. Open the test case and read its **status history** and **stability trend**: pass rate, flaky
-rate, and duration bucketed over time.
+green. Open the test case and read its **Duration trend**: one bar per execution, colored by status, with
+the status strip beneath it. For pass and flaky rates bucketed over time, ask the MCP tool
+`get_test_stability_trend`.
 
 <figure>
   <img src="/screenshots/test-case-detail.png" alt="Test case detail page with summary stats, duration trend, status history, and recent executions">
@@ -43,15 +44,15 @@ Read it like this:
 |---|---|
 | Solid green, then red from one run onward | A regression. Find the commit in that gap. |
 | Red/green alternating for weeks | A flake that happened to fail on your run. |
-| Green, then red, and the failing execution **passed on retry** | A flake — the `passed on retry` chip is on the execution's Verdict card. |
+| Green, then red, and the failing execution **passed on retry** | A flake — the execution's header carries a *Passed on retry* badge. |
 | Newly red *and* the failure is shared with other tests | Probably neither — see [triaging a mass failure](./mass-failure). |
 
 ## 3. Find what changed around it
 
 Once you know it's a real regression, narrow the window:
 
-- The failing execution's **Verdict** card links back to the **last green run**, so you have two commits
-  to diff between.
+- The failing execution's **History** section links back to the **last green run** ("Last passed in run
+  #N"), so you have two commits to diff between.
 - If the drop lines up with a deploy or an infrastructure change, a
   [timeline marker](/features/timeline-markers) draws it as a vertical line on the trend chart — "it started
   the day we switched CI runners" is a much faster answer than a bisect.
@@ -69,12 +70,13 @@ through, and `get_test_stability_trend` answers "is this getting flakier?" for o
 
 **Wire it into CI.** The [CI gate](/guide/ci#blocking-a-merge) already knows the difference: a test in
 [quarantine](/features/flaky-tests#quarantine-with-a-way-out) keeps running and keeps reporting, but doesn't
-block the merge — and the gate always states how many failures it excluded.
+block the merge — and the gate reports how many failures it excluded.
 
 **Get told instead of looking.** [Notifications](/features/notifications) let you subscribe to
 `run.failed.default_branch` rather than `run.failed`, so you hear about main going red instead of every
 red branch build — the difference between an alert people read and one people mute. `flakiness.spike`
-fires separately when flakiness crosses your configured threshold.
+fires separately for any run with flaky tests; a subscription's flakiness threshold (set through the API)
+narrows it.
 
 ## See also
 

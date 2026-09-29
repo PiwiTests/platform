@@ -9,27 +9,32 @@ Test results are unusually revealing: they carry your source paths, error messag
 app, network calls, and sometimes your git history. That's a good reason to know exactly where the
 bytes go. This page is the inventory.
 
-The short version: **Piwi makes no outbound network call you didn't configure.** There is no telemetry,
-no usage analytics, no update check, no crash reporting, and no license or activation call. An instance
-running on an air-gapped network works the same as one on the internet.
+The short version: **there is no telemetry**, no usage analytics, no crash reporting, and no license or
+activation call. The server never checks for updates; the desktop app does only when you click **Check for
+updates** in **Settings → About**. Every outbound call is listed below, and all but two are something you
+switched on. An instance running on an air-gapped network works the same as one on the internet.
 
 ## What leaves your server
 
-Every outbound connection Piwi can make is something you switched on:
+Every outbound connection Piwi can make:
 
 | Destination | When | Carries |
 |---|---|---|
-| Your AI provider | Only if you configure [AI diagnosis](/features/ai-diagnosis) | The diagnosis context: error text, failing steps, the relevant git diff, and — if enabled — failure screenshots |
-| Your git host | Only if you connect a repository with a token | API reads: commits and diffs for the project's repo |
+| Your AI provider | Only if you configure [AI diagnosis](/features/ai-diagnosis) | The diagnosis context: error text, failing steps, test and related source files, console and network entries, page (ARIA/DOM) snapshots, server logs, the relevant git diff, and up to five failure screenshots by default (`PIWI_AI_MAX_IMAGES=0` sends none). [AI-step](./ai-steps) authoring sends masked page snapshots |
+| Your git host | Whenever runs report a GitHub, GitLab or Bitbucket remote (the reporter records `origin` by default) | Without a token: anonymous public-API reads of the repository's default branch and its CODEOWNERS. With a token: commits, diffs and files, plus the PR comments, commit statuses, heal branches and CI re-runs of the features you turn on |
+| A URL you attach as a link | When someone adds a link to a run, test or cluster | A request for its title (the git host's API for an issue or PR link) |
+| Your issue tracker (Jira) | Only if you [connect it](/features/issue-tracking) | Issue reads, and the issues and comments you file |
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
-| Your Slack / webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names) |
+| Your Slack / webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
-Nothing on that list has a default. With none of them configured, a Piwi instance talks to nobody.
+Two rows need no setting: the anonymous git-host reads happen whenever runs report a public-host remote,
+and a link's title is fetched when someone attaches it. Both fail quietly without network access.
+Everything else is off until you configure it.
 
-The **AI provider** is the one worth pausing on, because it's the only case where your code and error
-text can leave your network. It's opt-in, it goes only to the endpoint *you* set — including a local
+The **AI provider** is the one worth pausing on, because it's the only destination that receives your
+source code and the full failure context. It's opt-in, it goes only to the endpoint *you* set — including a local
 model over Ollama or vLLM, in which case nothing leaves the machine at all — you can preview the exact
 context before it's sent, and you can cap its size. See
 [AI diagnosis → Privacy](/features/ai-diagnosis#privacy).
@@ -54,22 +59,25 @@ context before it's sent, and you can cap its size. See
 
 Some data is skipped at the source, so it never exists to leak:
 
-- **Input values.** The [capture fixtures](./capture-fixtures) record what an element *is* — role,
-  accessible name, test id — never what was typed into it. A password field's value is never captured.
+- **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
+  element *is* — role, accessible name, test id — never what was typed into it. Playwright's own records
+  are different: step titles (`Fill "…"`), traces and the failure-time ARIA snapshot include the values
+  a test typed, password fields too, so don't fill real secrets in tests.
 - **Storage and cookie values.** Page state records the *names* of `localStorage` /`sessionStorage`
   keys and their value lengths, and cookie names with their flags. Never the values.
-- **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in the trace
-  network view, and token-shaped strings in URLs and bodies are masked too — so a bearer token that
-  appeared in a request doesn't end up readable in the dashboard.
+- **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
+  network view, and token-shaped strings in URLs and bodies are masked too. The trace file itself is
+  stored as uploaded, so the bundled trace viewer and a downloaded trace still show them.
 - **Backend logs, in production.** The [backend-log integrations](./backend-logs) emit their header only
-  in development and test environments by default.
+  outside production by default: the Nitro adapter whenever `NODE_ENV` isn't `production`, the ASP.NET
+  Core one in the Development and Test environments.
 
 ## Secrets at rest
 
 Credentials you store in the dashboard — AI API keys, SCM tokens, webhook signing secrets — are
-encrypted with AES-256-GCM using `PIWI_SECRET_KEY`. **Set it in production.** With the variable unset,
-Piwi falls back to a hardcoded default string that is published in this repository — the values are
-encrypted, but against a key anyone can look up, so treat that as no protection at all.
+encrypted with AES-256-GCM using `PIWI_SECRET_KEY`. **Set it before you save any.** With the variable
+unset, Piwi refuses to store credentials: saving an AI key, SCM token, webhook secret or integration
+credential fails until it is set.
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
@@ -99,7 +107,8 @@ by anything else. See [Storage → Data retention](/operate/storage#data-retenti
 You don't have to take the page's word for it. The source is MIT-licensed and the outbound surface is
 small enough to audit: watch the container's egress, or read
 [`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
-provider, SCM, SMTP, storage and notification clients are the only things there that open a socket.
+provider, SCM, SMTP, notification, OAuth, Jira and link-unfurl clients are the only things there that open
+a socket; the S3 client is in `server/storage/`.
 
 ## See also
 

@@ -22,12 +22,12 @@ Average and **P90** duration over time, so a few slow outliers don't hide a real
 
 Tests whose configured per-test timeout dwarfs their real p95 duration — so a hang or failure waits far longer than it needs to — plus tests still carrying a stale `test.slow()` mark they no longer need. Each row suggests a tighter timeout (or removing the mark) and the time reclaimable per failing run, ranked by impact.
 
-This reads the per-test timeout the [reporter captures](/guide/reporter#per-test-timeout); runs reported before that shipped still surface stale `test.slow()` marks from annotations and durations alone. The thresholds are tunable via `PUT /api/settings/timeout-hygiene`.
+This reads the per-test timeout the [reporter captures](/guide/reporter#per-test-timeout); runs reported before that shipped still surface stale `test.slow()` marks from annotations and durations alone. The thresholds are tunable under Settings → Performance → **Timeout hygiene** (administrator only) or via `PUT /api/settings/timeout-hygiene`.
 
 ## Network and Web Vitals
 
 - **Network analysis** — slow API calls grouped by method and normalized route (e.g. `/api/users/:id`), for a run picked from the tab.
-- **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more, with color-coded thresholds.
+- **Browser Web Vitals** — TTFB, DOMContentLoaded, FCP and more, with color-coded thresholds, shown per execution in the **Performance** tab of the execution page's evidence rather than on the project.
 
 Both require the [capture fixtures](/guide/capture-fixtures) in your test setup — without them the reporter has no network timings or Web Vitals to aggregate.
 

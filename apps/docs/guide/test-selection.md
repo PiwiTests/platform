@@ -22,20 +22,28 @@ npx @piwitests/reporter run smoke
 `piwi run <key>` resolves the selection and runs `playwright test` with exactly those tests. Point it at your dashboard
 the same way the reporter does — `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` (if auth is on), and `PIWI_PROJECT_NAME`:
 
-```bash
-PIWI_DASHBOARD_URL=https://piwi.example.com \
-PIWI_PROJECT_NAME=web \
-npx @piwitests/reporter run smoke -- --workers=4
+::: code-group
+
+```bash [Linux / macOS]
+PIWI_DASHBOARD_URL=https://piwi.example.com PIWI_PROJECT_NAME=web npx @piwitests/reporter run smoke -- --workers=4
 ```
 
+```powershell [Windows (PowerShell)]
+$env:PIWI_DASHBOARD_URL='https://piwi.example.com'; $env:PIWI_PROJECT_NAME='web'; npx @piwitests/reporter run smoke -- --workers=4
+```
+
+:::
+
 Anything after `--` is passed straight to Playwright. The run is **stamped** with the selection it came from, so the
-dashboard shows `smoke · 42 tests` instead of an anonymous filter, and a [gate](/guide/ci) can re-resolve the same definition
-to check nothing was silently dropped.
+[pull-request comment](/guide/ci#pull-request-feedback) names the subset (`smoke` — 42 tests), the Selections tab can
+spot [drift](#health-and-drift), and a [gate](/guide/ci) can re-resolve the same definition to check nothing was
+silently dropped.
 
 If the dashboard is unreachable, `piwi run` falls back to the full suite with a warning (and reuses the last good
 resolution from `.piwi/selection-cache.json` when it has one) — a reporting problem never breaks the test run. Pass
-`--strict` to invert that for CI, where an unresolvable selection should stop the pipeline. Resolving to **zero** tests
-is always an error: a smoke job that silently runs nothing is worse than one that fails loudly.
+`--strict` to invert that for CI, where an unresolvable selection should stop the pipeline. A named selection that
+resolves to **zero** tests is always an error: a smoke job that silently runs nothing is worse than one that fails
+loudly. ([Impact](#impact-from-diff) is the exception — a change that affects no test runs nothing and exits 0.)
 
 ### Print instead of run
 
@@ -46,18 +54,23 @@ npx @piwitests/reporter select smoke --format args > .piwi-selected
 npx playwright test $(cat .piwi-selected)
 ```
 
-`--format` picks the shape: `args` (`file:line` tokens, the default), `grep`, `files`, or `json` (the full resolution,
-including the matched tests, the estimate and any warnings). `--budget 5m` caps the total time for this resolution.
+`--format` picks the shape: `args` (`file:line` tokens, the default), `grep` or `files`. Pass `--json` instead to print
+the full resolution, including the matched tests, the estimate and any warnings. `--budget 5m` caps the total time for
+this resolution.
 
 ### Balanced shards
 
 `--shard i/n` keeps only shard _i_ of _n_, split so each shard's summed test duration is even — historically informed
-balancing that Playwright's file-count sharding can't do. Because Piwi merges a run's shards into one, the merged run
-still covers the whole selection (so a `--require-selection` gate sees all of it):
+balancing that Playwright's file-count sharding can't do:
 
 ```bash
-npx @piwitests/reporter run smoke --shard 2/4 -- --shard=2/4
+npx @piwitests/reporter run smoke --shard 2/4
 ```
+
+Don't also pass Playwright's own `--shard` after `--`: Playwright applies it to the list Piwi already sharded, so the job
+would run only part of its share. The reporter learns about sharding only from Playwright's `--shard`, so jobs split
+with `piwi run --shard` are not merged into one run on the dashboard — a `--require-selection` gate evaluates one job's
+run and reports the other shards' tests as not run.
 
 The split is **lock-aware**: every test that shares a [lock](./reporter#test-locks) is placed in the same shard, then
 the shards are balanced by duration. Playwright serializes lock holders inside one `npx playwright test` process only —
@@ -65,7 +78,7 @@ two `--shard` runs are separate processes and can hold the same lock at once —
 restores the guarantee across shards. A lock group larger than a shard's fair share still goes to one shard (the lock
 guarantee wins over even balancing); grouping is transitive, so a test declaring two locks binds both groups. The
 assignment is deterministic for the same catalog. When a selection's tests share a lock, resolving it (including
-`piwi select --format json`) carries a `split-lock` warning, a reminder to shard with `piwi run --shard` rather than
+`piwi select --json`) carries a `split-lock` warning, a reminder to shard with `piwi run --shard` rather than
 Playwright's own `playwright test --shard`, which would split the lock.
 
 ### Fail fast
@@ -114,6 +127,7 @@ absent `include` starts from the whole suite. The predicates, all optional:
 
 | Predicate | Matches when |
 |---|---|
+| `ids` | the test-case id is one of these |
 | `tags` / `anyTags` | the test carries all / any of these tags |
 | `owner`, `priority`, `feature` | the `piwi:` annotation is one of these |
 | `files` | the file path matches one of these globs (`**`, `*`, `?`) |
@@ -144,17 +158,21 @@ import { defineConfig } from '@playwright/test';
 import { wrapConfig, resolveSelection } from '@piwitests/reporter';
 
 const selection = await resolveSelection(); // reads PIWI_SELECTION; undefined when unset
-export default wrapConfig(defineConfig({ grep: selection?.grep }));
+export default wrapConfig(defineConfig({ grep: selection?.grep ? new RegExp(selection.grep) : undefined }));
 ```
 
-It stamps the run the same way `piwi run` does, and returns `undefined` (so the config runs everything) when no
-selection is named or the dashboard cannot be reached.
+`selection.grep` is the pattern source, so wrap it in `new RegExp(...)` — Playwright's `grep` option only accepts a
+regular expression. It stamps the run the same way `piwi run` does, and returns `undefined` (so the config runs
+everything) when no selection is named or the dashboard cannot be reached. A selection too large for one grep pattern
+comes back as `selection.files` with no `grep`, which a config cannot apply; run those with `piwi run`.
 
 ## Guard it in CI
 
 A tag convention can't tell you a smoke job silently shrank — a renamed file or an over-narrow grep quietly drops a
 test, and the job stays green. `piwi gate --require-selection <key>` closes that gap: the dashboard re-resolves the
-selection's current definition and fails the build if any test it now matches did not run, or ran and failed.
+selection's current definition and fails the build if any test it now matches did not run, or ran and failed. The gate
+reads the run id from the reporter's output file, so set `PIWI_OUTPUT_FILE=piwi-run.json` in the job's environment (as
+in [Blocking a merge](/guide/ci#blocking-a-merge)):
 
 ```bash
 npx @piwitests/reporter run smoke                 # run the subset, stamping the run
@@ -203,22 +221,24 @@ npx @piwitests/reporter run impact --base origin/main
 ```
 
 It fails safe. A changed _source_ file that maps to no test can't be proven irrelevant, so the run **widens to the full
-suite** with a warning rather than silently skipping it — impact never narrows away a test it's unsure about. A
-docs-only or config-only change impacts nothing and runs nothing. This is evidence-based impact, not static analysis:
-route- and page-level mapping (a changed server route → the tests that call it) needs a per-project config and is not
-attempted yet.
+suite** with a warning rather than silently skipping it — impact never narrows away a test it's unsure about. Source
+means a code extension (`.ts`, `.js`, `.vue`, `.py`, …), so a change to `playwright.config.ts` widens too, while a change
+only to docs or non-code config (`.md`, `.json`, `.yml`) impacts nothing and runs nothing. This is evidence-based
+impact, not static analysis: route- and page-level mapping (a changed server route → the tests that call it) needs a
+per-project config and is not attempted yet.
 
 ## Suggestions
 
 Piwi can _propose_ selections and tags from the history it keeps — suggest-only, with the evidence attached, never
 applied. The **Suggestions** panel on the Selections tab (and the `suggest_selections` MCP tool) surface three kinds:
 
-- **`@slow` tags** — tests whose average duration sits well past the suite's 95th percentile.
+- **`@slow` tags** — tests whose average duration is above the suite's 95th percentile, ranked by how far above.
 - **`@feature` tags** — the dominant route family a test hits (say `checkout`) when it carries no `feature` annotation,
   inferred from the routes it actually called.
-- **A mined smoke suite** — a greedy weighted set cover over _observed_ route coverage under a time budget: it keeps
-  picking the test that buys the most new routes per second until the budget is spent, producing the classic
-  diminishing-returns curve. "Save as selection" turns the picks into a selection pinned to exactly those tests.
+- **A mined smoke suite** — a greedy set cover over _observed_ route coverage under a time budget: it keeps picking the
+  test that adds the most routes not yet covered (ties go to the faster test) until the budget is spent or no test
+  adds a new route, producing the classic diminishing-returns curve. "Save as selection" turns the picks into a
+  selection pinned to exactly those tests.
 
 Honest about what it is: coverage here means the routes a test was _seen_ to hit on recent runs, not instrumented code
 coverage — an approximation, and a good one for smoke's job, which is breadth over entry points. A test must be stable

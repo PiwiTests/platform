@@ -17,14 +17,14 @@ For how clusters are formed (the error fingerprint) and diagnosed, see
 
 ## The failure inbox
 
-The **Failure inbox** on Home lists every open failure cluster across the projects you can see, newest
-first. Each row is one cluster:
+The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
+recently seen first. Each row is one cluster:
 
 - the **headline** — the failure in one line;
 - the **top clue** — a muted one-line hint at the likely cause (a timeout on a locator, a strict-mode
   match, a fix that regressed);
 - the **owner or assignee** — who the failure belongs to (see [Owners](#owners-and-assignees) below);
-- the **age** and the **affected-test count**;
+- the **affected-test count** and when it was **last seen**;
 - the exceptional **badges** only — a regression on the default branch, a fix that didn't hold, a
   quarantined cluster, a "snoozed, back" marker, a pending merge suggestion.
 
@@ -37,7 +37,7 @@ URL as `?queue=`.
 |---|---|
 | **All open** | Every open, non-snoozed cluster. |
 | **New** | Clusters first seen — or seen again — since you last opened the inbox (kept per browser). |
-| **Mine** | Clusters whose assignee, or derived owner, is you. |
+| **Mine** | Clusters whose assignee, or `piwi:owner` annotation, is you. |
 | **Needs ticket** | Untracked default-branch clusters older than the binding's age (default 2 days) — see [issue tracking](./issue-tracking). |
 | **Regressions** | Clusters that regressed on the default branch and are still failing there. |
 | **Fix didn't hold** | Clusters whose fix landed then regressed. |
@@ -61,7 +61,7 @@ Every row can be triaged in place, and the whole inbox is keyboard-driven. Selec
 | `x` | Select the row (`shift`+`j`/`k` extends the selection, `esc` clears it) |
 
 With one or more rows selected, a **bulk bar** applies resolve, ignore, assign, snooze, quarantine or
-*create issues* to all at once. Every action is optimistic and undoable for a few seconds.
+*create issues* to all at once. Resolve, ignore, snooze and assign on one row can be undone for a few seconds.
 
 Linking a known issue (`l`) pins a URL; with an [issue tracker
 connected](/operate/integrations), Jira links unfurl and stay in sync, and you can
@@ -69,10 +69,10 @@ connected](/operate/integrations), Jira links unfurl and stay in sync, and you c
 
 ## Owners and assignees
 
-A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation, or
-falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the cluster to a person —
-an assignee takes precedence over the derived owner, and the **Mine** queue matches either one against the
-signed-in user (by name or email, best effort).
+A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
+cluster page (not the inbox) falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the
+cluster to a person — an assignee takes precedence over the derived owner, and the **Mine** queue matches either one
+against the signed-in user (by name or username, best effort).
 
 ## The cluster page
 
@@ -90,11 +90,11 @@ Below the block, the **What changed** card — baseline picker, commits and diff
 ### The state line
 
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a coloured dot:
-*still failing*, *fixed and verified — still open*, *stopped failing*, *regressed — the fix did not hold*,
-*resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the machine-observed verdict and the human
-status disagree — a fix landed and was verified but nobody closed the cluster, or a resolved cluster started
-failing again — the line offers the **one action** that reconciles them (*Mark resolved*, *Reopen*,
-*Unsnooze*, *Release*). Fix verification is folded into that sentence rather than shown as a separate badge.
+*still failing*, *not seen for N runs*, *fixed and verified*, *stopped failing*, *ticket Done*, *regressed — the fix
+did not hold*, *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the runs or the tracker say an open
+cluster is done, the line offers the **one action** that reconciles them, *Mark resolved*; a snoozed cluster offers
+*Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its own. Fix verification
+is folded into that sentence rather than shown as a separate badge.
 
 Two menus sit beside it:
 
@@ -103,8 +103,7 @@ Two menus sit beside it:
 
 ## Snoozing
 
-Some failures are real but not now — a known flake you're waiting to reproduce, a break you'll get to next
-sprint. **Snoozing** hides a cluster from every inbox queue without touching its status: a snoozed cluster
+Some failures are real but not now. **Snoozing** hides a cluster from every inbox queue without touching its status: a snoozed cluster
 is still *open*, just out of sight.
 
 Three durations are offered:
@@ -113,12 +112,11 @@ Three durations are offered:
 - **Until it recurs** — the cluster stays hidden until a new run fails it again, then returns to the **New**
   queue with a **snoozed, back** badge so you know it woke on its own.
 
-Snooze never changes a cluster's triage status, and a snoozed cluster does not count as "failing now" in the
-project health and portfolio views. The cluster page shows the snooze state in its state line, with an
+A snoozed cluster does not count as "failing now" in the project health and portfolio views. The cluster page shows the snooze state in its state line, with an
 **Unsnooze** action to bring it back immediately.
 
 ## From an AI agent
 
 The [MCP server](/features/mcp) exposes the same queue: `list_open_clusters` takes an optional `queue` argument
-(`mine`, `regressions`, `fix-didnt-hold`, `quarantine-ready`, `merge-suggestions`) so an agent can pull the
+(`mine`, `needs-ticket`, `regressions`, `fix-didnt-hold`, `quarantine-ready`, `merge-suggestions`) so an agent can pull the
 same focused list the dashboard shows, then triage with `set_cluster_status`.

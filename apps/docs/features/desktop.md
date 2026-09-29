@@ -15,9 +15,8 @@ folder. It suits a single developer running Playwright locally.
 > Everything binds to `127.0.0.1` — the app is local-only and nothing is exposed
 > to the network.
 
-The window navigates like a browser without looking like one: **back/forward
-buttons** sit at the top of the sidebar, and the mouse side buttons and
-trackpad swipe gestures your OS uses for history work too.
+**Back/forward buttons** sit at the top of the sidebar, and your mouse side
+buttons and trackpad swipes navigate history too.
 
 ## Download
 
@@ -55,14 +54,16 @@ app-data directory:
 | **Linux** | `~/.local/share/io.piwitests.dashboard/.data` |
 
 That folder holds `piwi.db` (SQLite) and `storage/` (reports, traces,
-attachments). Back it up by copying the folder while the app is closed.
+attachments). Its parent, `io.piwitests.dashboard`, also holds `secret.key`,
+which decrypts the AI keys and SCM tokens stored in the database — back up the
+parent folder while the app is closed.
 
 ## Running in the background
 
 By default, closing the window quits the app. From the tray icon you can enable:
 
 - **Run in background** — closing the window keeps the server running in the
-  tray, so submitting more results is instant and reopening is immediate.
+  tray, so results keep arriving and reopening is immediate.
 - **Start on login** — launch the app (hidden, into the tray) when you log in.
 
 While the window is hidden or unfocused, subscribed
@@ -90,20 +91,20 @@ redirected here. See [Finding the desktop app automatically](/guide/reporter#fin
 
 Discovery needs the tests and the app to run as the same user on the same
 machine. When they don't — a container, a different account, or a config that
-already sets `serverUrl` — open **Settings → Storage → Send results to this app**
-to copy the token and a ready-made snippet:
+already sets `serverUrl` — open **Setup → Send results to this app** to copy the
+token and a ready-made snippet:
 
 ```typescript
 ['@piwitests/reporter', {
   serverUrl: 'http://localhost:3000',
   projectName: 'my-project',
-  apiKey: 'pd_…', // from Settings → Storage (or the PIWI_API_KEY env var)
+  apiKey: 'pd_…', // from Setup (or the PIWI_API_KEY env var)
 }]
 ```
 
 The token is a **local secret** — prefer the `PIWI_API_KEY` env var over
 committing it. The app uses port **3000** by default (another local port if
-3000 is taken — the address bar shows which).
+3000 is taken — the snippet on the Setup page shows which).
 
 > **Why a token?** Binding `127.0.0.1` blocks other machines, but not *other
 > local processes* or *browser pages* — so the token means only the app and the
@@ -152,35 +153,34 @@ the output streams into the **Local runs** tray.
   [**Edit → Local folder**](#projects-from-local-folders).
 - **The arrow next to the button** holds everything else: run headless, headed,
   under the Playwright inspector or in UI mode; select tests by `file:line`,
-  title or file; force trace recording; `--repeat-each` up to 1000× for flake
+  title or file; force trace recording; `--repeat-each` up to ×100 for flake
   reproduction. Whatever you pick becomes the new one-click default for that
-  project. **Run with options…** opens the full dialog with the exact command
-  preview.
-- **The button is also the run's status:** it shows progress while tests run
-  and the result when they finish; clicking it opens the tray. Runs keep going
-  while you browse other pages — closing the tray or navigating never kills
-  anything. Stopping is always explicit, from the tray; a toast reports the
-  result when a run ends, an OS notification does when the window is in the
-  background, and leaving the app while runs are active — closing the window,
+  project. **Run with options…** opens the full dialog, with the exact command
+  preview and repeats up to 1000×.
+- **The button is also the run's status:** it shows progress, then the result;
+  clicking it opens the tray. Runs keep going while you browse — closing the tray
+  or navigating never kills anything. Stopping is explicit, from the tray; a
+  toast (or an OS notification when the window is in the background) reports the
+  result, and leaving the app while runs are active — closing the window,
   quitting from the tray, or restarting for an update — asks first.
 - **More places to run from:** a test case's evolution page has **Reproduce
-  locally** (matched by title, ×20 with a trace — the flake-hunting preset,
-  without touching your saved defaults), and a failure cluster's test evidence
-  has **Run affected locally** for every test in the cluster.
+  locally** (matched by title, ×20 with a trace, leaving your saved defaults
+  alone), and a failure cluster's **Verify** step
+  has **Run locally** for every test in the cluster.
 - **Wrong folder?** If none of the tests exist in the linked folder (usually a
   project linked to a different checkout), the button opens the dialog instead
   of spawning a run that would die with a module-resolution error — fix the
   link there, or run anyway if your Playwright config resolves specs elsewhere.
 
-Results flow back automatically: the run executes your project's regular
-Playwright config, so the Piwi reporter in it reports to this app through the
-[discovery file](#sending-results-to-it), exactly like a run started from your
-terminal. As soon as the reporter checks in, the run's tray entry links
+Results flow back automatically: your project's regular Playwright config runs,
+so its Piwi reporter reports to this app through the
+[discovery file](#sending-results-to-it), like a terminal run. As soon as the
+reporter checks in, the run's tray entry links
 straight to the new run — **Live in Piwi** — and while anything is running a
 pill in the sidebar keeps the tray one click away from every page.
 
-Two prerequisites, both usually already true for a project that reports to
-Piwi: the linked folder has `@playwright/test` installed (`node_modules`
+Two prerequisites, usually already true for a project that reports to Piwi:
+the linked folder has `@playwright/test` installed (`node_modules`
 present — monorepos with a hoisted root install work too), and its Playwright
 config includes the Piwi reporter. Both show in the
 [**Local folder** checks](#projects-from-local-folders), and the run dialog
@@ -200,7 +200,8 @@ touching your checkout.**
 - **Reproduce here** checks out the failing commit in a throwaway
   [`git worktree`](https://git-scm.com/docs/git-worktree) under the app's data
   dir, installs (reusing your `node_modules` when the lockfile is unchanged,
-  otherwise `npm ci` / `pnpm install --frozen-lockfile` / `yarn install`),
+  otherwise `npm ci` / `pnpm install --frozen-lockfile` /
+  `yarn install --frozen-lockfile`),
   installs the browser if it is missing, and runs exactly the failing test — each
   phase a header in the **Local runs** tray. Your working tree, uncommitted
   changes and installed browsers are left alone. The commit's *own* Playwright
@@ -211,7 +212,7 @@ touching your checkout.**
   stops (it kills the test and any browsers or dev server it started, resets the
   bisect and removes the worktree), and a clean result: the first bad commit, with
   its subject, author and date, linked to your SCM host and recorded on the
-  cluster so it survives a reload and reaches the [fix plan](/features/mcp).
+  cluster so it survives a reload and reaches the [fix plan](/features/fix-plans).
 
 **The honest limits:** `git`, and your package manager, must be installed on this
 machine (the app ships only Node). Piwi reproduces and bisects **one** repository
@@ -219,8 +220,9 @@ machine (the app ships only Node). Piwi reproduces and bisects **one** repositor
 bisect. And a bisect only means something when the app is built from the same
 checkout: if your Playwright config has a `webServer`, Playwright starts the app
 at each commit and you are done; if it targets an external URL instead, set a
-**start command** (e.g. `npm run dev`) and a readiness URL under the linked
-folder's settings, and the app starts it in the worktree before each step.
+**start command** (e.g. `npm run dev`) and a readiness URL with **Set a start
+command…** in the Reproduce and bisect section, and the app starts it in the
+worktree before each step.
 
 ## Importing local files
 
@@ -248,8 +250,8 @@ source, not the failure-time snapshot) and `apply_locator_fix` (apply a
 recommended fix to the real file, preview by default). It registers as
 `piwi-desktop`, so it coexists with a hosted Piwi in one client. On this machine
 it can also do the wiring: the **MCP server** page detects installed clients —
-Claude Code, Claude Desktop, Cursor, VS Code, Windsurf and Gemini CLI — and
-connects each with one click:
+Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini
+CLI — and connects each with one click:
 
 - A `piwi-desktop` entry is written into the client's **own config file**, with
   the app's URL and access token filled in; a backup copy is kept next to the
@@ -270,8 +272,9 @@ startup.
 
 ## Updates
 
-**Settings → About → Updates** checks GitHub releases for a newer version,
-downloads it in the background, and applies it when you restart the app.
+**Settings → About → Updates**: **Check for updates** looks for a newer GitHub
+release, **Install update** downloads and installs it with a progress bar, and
+it applies on **Restart now** or the next launch.
 
 On Windows, the **`.exe`** updates without admin; the **`.msi`** prompts for it.
 

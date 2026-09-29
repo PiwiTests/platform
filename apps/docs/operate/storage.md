@@ -45,7 +45,8 @@ When the static credential variables are omitted, Piwi uses the AWS SDK default 
 task roles, EC2 instance roles, environment credentials and shared AWS configuration without storing access keys in
 Piwi. If either static credential variable is set, both are required.
 
-Minimum required IAM permissions:
+Minimum required IAM permissions — object reads, writes and deletes, plus listing the bucket (deleting a run
+removes its whole prefix, and without `s3:ListBucket` S3 answers a missing file with `403` instead of `404`):
 
 ```json
 {
@@ -53,8 +54,13 @@ Minimum required IAM permissions:
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:HeadObject"],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
       "Resource": "arn:aws:s3:::your-bucket-name/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::your-bucket-name"
     }
   ]
 }
@@ -108,8 +114,8 @@ The **Settings › Storage** page (`/settings/storage`) provides administrators 
 
 You can also delete individual test runs:
 
-- From the **test run detail page** — click the red **Delete** button in the page header.
-- From the **project detail page** — click the **Delete** button in the Actions column of the test runs table.
+- From the **test run detail page** — open the **⋮** menu in the page header and choose **Delete run** (administrators only).
+- From the **project detail page** — open a run's **⋮** menu in the test runs table and choose **Delete run**.
 
 ### Data retention
 
@@ -126,7 +132,7 @@ The manual **Settings › Storage** cleanup remains available for one-off bulk d
 
 Deleting runs removes rows and stored files, but giving the freed pages back to the filesystem depends on the backend:
 
-- **SQLite** — databases created by recent versions have `auto_vacuum=INCREMENTAL` enabled, so the cleanup endpoint reclaims space automatically. Databases created before that (where `PRAGMA auto_vacuum` reports `0`) need a one-off full rebuild: call the cleanup API with `{ "olderThanDays": ..., "vacuum": true }` to run a blocking `VACUUM` after the delete. Expect it to take a while on large databases.
+- **SQLite** — databases created by recent versions have `auto_vacuum=INCREMENTAL` enabled, so the cleanup endpoint reclaims space automatically. Databases created before that (where `PRAGMA auto_vacuum` reports `0`) need a one-off full rebuild: call the cleanup API, `DELETE /api/admin/cleanup` (administrator), with `{ "olderThanDays": ..., "vacuum": true }` to run a blocking `VACUUM` after the delete. Expect it to take a while on large databases.
 - **PostgreSQL** — freed space is reused by PostgreSQL's autovacuum; no manual action is needed.
 
 ## Storage architecture
@@ -175,5 +181,5 @@ Unlike the network resource pool, these entries are not deduplicated across exec
 
 - [Database](./database) — SQLite versus PostgreSQL, and what lives there instead
 - [Configuration reference](/reference/configuration#storage) — every `PIWI_STORAGE_*` and `PIWI_S3_*` variable
-- [Backups](./deployment#backups) — copying the storage directory alongside the database
+- [Backup & restore](./backup-restore) — copying the storage directory alongside the database
 - [Offline export](/features/offline-export) — taking one investigation out of storage entirely

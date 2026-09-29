@@ -45,12 +45,14 @@ That's the entire setup — there is nothing to start, wrap, or await inside you
 
 | Data | Captured | Powers |
 |------|----------|--------|
-| **Network requests** — method, URL, status, duration, start time, content type. Only API/document traffic (fetch, XHR, document); static assets are skipped | per request | *Slow API endpoints* table on the [run page](/features/ui-overview#test-run-detail) with `/api/users/:id`-style route normalization; [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) (start time places each request, backend logs by their own timestamp) |
+| **Network requests** — method, URL, status, duration, start time, content type. Only API/document traffic (fetch, XHR, document, and Playwright's `other` type); static assets and `data:`/`blob:` URLs are skipped | per request | *Slow API endpoints* table on the [run page](/features/ui-overview#test-run-detail) with `/api/users/:id`-style route normalization; [backend log correlation](./backend-logs) via the `X-Piwi-Logs` response header; the [failure timeline](/features/evidence#one-execution-diagnosis-first) (start time places each request, backend logs by their own timestamp) |
 | **Console entries** — `warning`, `error`, and `assert` messages with source location and a timestamp (`console.log` noise is not collected) | as they happen | Console card on the [execution page](/features/evidence#one-execution-diagnosis-first); the [failure timeline](/features/evidence#one-execution-diagnosis-first) (placed by their timestamp); [AI diagnosis](/features/ai-diagnosis) evidence |
 | **Web Vitals** — TTFB, DOM Interactive, DOMContentLoaded, Load Complete, First Paint, First Contentful Paint, plus LCP, CLS and INP (Chromium-only) | at test teardown | Web vitals card with color-coded thresholds; [performance trends](/features/slow-tests) |
-| **ARIA snapshot** of the final page state — the YAML dump, plus the JSON aria tree when the installed Playwright is 1.63 or later | on failure | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context. The JSON tree, when present, is the structured source for [locator healing](/features/locator-healing)'s rename matching and the page-structure diff; the YAML keeps feeding the ARIA card |
+| **ARIA snapshot** of the final page state — the YAML dump, plus the JSON aria tree when the installed Playwright is 1.63 or later | on failure, and at the end of a passing test the server marks as due a [green sample](./reporter#green-page-sampling-on-pass) | Failure evidence on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages; [AI diagnosis](/features/ai-diagnosis) context. The JSON tree, when present, is the structured source for [locator healing](/features/locator-healing)'s rename matching and the page-structure diff; the YAML keeps feeding the ARIA card |
 | **Browser dialogs** — an `alert`/`confirm`/`prompt`/`beforeunload` dialog's type, message and close time. Observed through Playwright 1.63's `dialogclosed` event only, which never suppresses Playwright's automatic dismissal (a `dialog` listener would, and could hang a test) | as each dialog closes | A *dialogs* lane on the [failure timeline](/features/evidence#one-execution-diagnosis-first) and a *a dialog was open when the action failed* [clue](/features/evidence#clues) |
 | **Locator snapshots** — element attributes, stable-ancestor anchors, and same-role position, plus ranked alternative locators (including rename-proof ancestor-scoped and name-free ones) for each element a test proves resolvable, stamped with the call site | after each successful action and each passing web-first assertion (`toBeVisible()`, `toHaveText()`, …) | [Locator healing](/features/locator-healing); when a failing name-based locator (`getByRole`, `getByText`, `getByLabel`, …) matches nothing, a fresh suggestion is attached to the test as a Playwright annotation |
+| **Page state** — URL, `history.state` (token-masked, capped), storage key names and value lengths, cookie names and flags; storage and cookie values are never read | at test end | The app-state view on the [execution page](/features/evidence#one-execution-diagnosis-first) |
+| **Server-side spans** — read from the `X-Piwi-Trace` response header a Piwi [instrumentation plugin](./backend-logs) emits | per request | Shown next to the network request; [AI diagnosis](/features/ai-diagnosis) evidence |
 
 ::: tip Test source is captured without any fixture
 On a failure the reporter also reads the **call stack's in-project source** — the line that actually threw plus the callers above it (helpers, page objects), each as a small line-numbered snippet with the failing line marked. It needs no fixture (it comes from the stack trace plus the local source files) and renders as the **Test source** call stack on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages. `node_modules`/Playwright frames are skipped.
@@ -73,6 +75,8 @@ The reporter degrades gracefully — nothing breaks without the fixtures. This i
 | Dialogs lane on the failure timeline (Playwright 1.63+) | — | ✅ |
 | Locator healing (ranked alternatives panel) | — | ✅ |
 | Backend log correlation | — | ✅ with a [backend integration](./backend-logs) |
+
+With an uploaded trace, the console, network and ARIA cards are filled from the trace even without the fixtures and marked *derived from the trace* (see [Troubleshooting](#troubleshooting)).
 
 ## Where capture works
 
@@ -123,11 +127,13 @@ Capture is designed to never fail or noticeably slow down a test:
 
 | Option | Effect |
 |--------|--------|
-| `collectPerformanceMetrics: false` | Master switch — disables all fixture capture |
+| `collectPerformanceMetrics: false` | Master switch — the reporter discards all fixture data. The fixtures still capture network, console, Web Vitals and ARIA in the worker (under `wrapConfig`, locator, page-state and server-trace capture stop too), so to avoid the capture cost, don't use the fixtures |
 | `captureLocators: false` (or `PIWI_CAPTURE_LOCATORS=false`) | Disables only the locator snapshots (action and assertion capture alike); network, console, and Web Vitals stay on |
-| `capturePageState: false` (or `PIWI_CAPTURE_PAGE_STATE=false`) | Disables only the test-end app-state capture (URL, storage key names, cookie flags — values are never captured) |
+| `capturePageState: false` (or `PIWI_CAPTURE_PAGE_STATE=false`) | Disables only the test-end app-state capture (URL, storage key names, cookie flags — storage and cookie values are never captured) |
 | `inspectOnFailure: true` (or `PIWI_INSPECT_ON_FAIL=true`) | Opt-in local debugging aid — a failing test opens Piwi's own inspector overlay (not Playwright's inspector) on its still-open page (headed browsers only, never in CI). See [Inspect the failing page live](/features/locator-healing#inspect-the-failing-page-live-local-runs) |
 | `pickLocatorOnFailure: true` (or `PIWI_PICK_LOCATOR_ON_FAIL=true`) | Opt-in local debugging aid — after a locator failure, click the intended element on the still-open page and confirm a ranked replacement locator; the choice is recorded for the healing panel (headed browsers only, never in CI). See [Pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs) |
+
+Apart from `collectPerformanceMetrics`, these options act inside the test workers, so they take effect through [`wrapConfig`](./reporter#installing-via-wrapconfig) or their `PIWI_*` variable. Set only on a plain `['@piwitests/reporter', { … }]` entry, `capturePageState`, `inspectOnFailure` and `pickLocatorOnFailure` are ignored, and `captureLocators: false` makes the reporter discard the snapshots while the workers keep probing (see [options read inside the test workers](./reporter#configuration-options)).
 
 ## Troubleshooting
 

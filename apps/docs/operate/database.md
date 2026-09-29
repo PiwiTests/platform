@@ -15,10 +15,11 @@ Test artifacts — HTML reports, traces, attachments — do **not** live here; t
 
 ## SQLite (default)
 
-Nothing to configure. The database file is created at `.data/piwi.db` on the first API call, inside the
+Nothing to configure. The database file is created at `.data/piwi.db` when the server starts, inside the
 directory you mounted as `/app/.data` (container) or the working directory you ran from (`npx`).
 
-Set `PIWI_DATABASE_PATH` to put it somewhere else:
+Set `PIWI_DATABASE_PATH` to put it somewhere else. Its directory must already exist — Piwi creates `.data/`
+itself only when `PIWI_DATABASE_PATH` is unset:
 
 ::: code-group
 
@@ -66,7 +67,7 @@ about, or accept starting fresh. Your file storage is unaffected either way.
 - **Retention** — the nightly sweep prunes runs older than `PIWI_RETENTION_DAYS`, off by default. See
   [Data retention](./storage#data-retention).
 - **Backups** — SQLite has an online-consistent backup recipe, PostgreSQL uses `pg_dump`. Both, plus
-  what to copy alongside the database, are in [Backups](./deployment#backups).
+  what to copy alongside the database, are in [Backup & restore](./backup-restore).
 - **Upgrades apply migrations automatically and they are forward-only.** Read
   [Upgrading](./upgrading) before bumping a version tag.
 
