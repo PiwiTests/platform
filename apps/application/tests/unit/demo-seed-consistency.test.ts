@@ -11,6 +11,7 @@ import { allDemoSourceFiles } from '~~/app/demo/demo-scm';
 import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#shared/demo/failure-stories.mjs';
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
 import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
+import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -637,5 +638,52 @@ describe('simulator ↔ seed fingerprint parity', () => {
 
     const renamedFp = await computeErrorFingerprint(SIMULATOR_ERRORS.emailLabelRenamed);
     expect(renamedFp.fingerprint).toBe(cluster2);
+  });
+});
+
+describe('flake lab experiments', () => {
+  test('every experiment has finished by load time, with its arms', () => {
+    const rows = q(`
+      select e.id, e.finished_at, (select count(*) from flake_arms a where a.experiment_id = e.id) as arms
+      from flake_experiments e
+    `);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(Number(r.finished_at), `experiment ${r.id} finishes in the future`).toBeLessThanOrEqual(Date.now());
+      expect(Number(r.arms), `experiment ${r.id} has a control and an arm`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  // The Flaky view lists a test under Verified fixed only while no run started
+  // after its verify experiment retry-passed; the demo keeps one such test.
+  test('a verified fix holds: the test retry-passed before it, and never after', () => {
+    const experiments = q(`select id, test_case_id, kind, verdict, commit_sha, finished_at from flake_experiments`).map(
+      (r) => ({
+        id: Number(r.id),
+        testCaseId: Number(r.test_case_id),
+        kind: String(r.kind),
+        verdict: (r.verdict as string | null) ?? null,
+        commit: (r.commit_sha as string | null) ?? null,
+        finishedAt: new Date(Number(r.finished_at)),
+      }),
+    );
+    const marks = markingExperiments(experiments);
+    expect(marks.size).toBeGreaterThan(0);
+
+    for (const [testCaseId, mark] of marks) {
+      const executions = q(`
+        select trc.test_run_id, trc.status, trc.browser_name, tr.start_time
+        from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
+        where trc.test_case_id = ${testCaseId}
+      `).map((r) => ({
+        testCaseId,
+        runId: Number(r.test_run_id),
+        runStartedAt: new Date(Number(r.start_time) * 1000),
+        browserKey: String(r.browser_name ?? ''),
+        status: String(r.status),
+      }));
+      expect(firstRetryPassAfter(executions, new Date(0)), `test ${testCaseId} never retry-passed`).not.toBeNull();
+      expect(firstRetryPassAfter(executions, mark.finishedAt), `test ${testCaseId} flaked after its fix`).toBeNull();
+    }
   });
 });

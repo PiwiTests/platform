@@ -12,8 +12,14 @@
  * suspect and scrolls to it.
  */
 import type { FlakeProfile, FlakeSuspect } from '#shared/handlers/flake-profile';
-import { latestSuspectResults, type FlakeExperimentRecord, type FlakeSuspectResult } from '#shared/flake-lab';
+import {
+  flakeCommand,
+  latestSuspectResults,
+  type FlakeExperimentRecord,
+  type FlakeSuspectResult,
+} from '#shared/flake-lab';
 import type { VerifiedFix } from '#shared/handlers/flake-verified';
+import { flakeVerdictWord } from '~/utils/flake-lab';
 
 const props = defineProps<{ testCaseId: number; projectId?: number | null; projectLabel?: string | null }>();
 
@@ -63,50 +69,17 @@ const reproduced = computed(() => experiments.value.some((e) => e.kind === 'repr
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
-const reproduceCommand = computed(() => `npx @piwitests/reporter flake ${props.testCaseId}`);
-const verifyCommand = computed(() => `npx @piwitests/reporter flake verify ${props.testCaseId}`);
+const reproduceCommand = computed(() => flakeCommand(props.testCaseId));
+const verifyCommand = computed(() => flakeCommand(props.testCaseId, 'verify'));
 async function copyCommand(command: string) {
   await copy(command, { toast: 'Command copied' });
   copiedCommand.value = command;
 }
 
-const VERDICT_WORDS: Record<string, string> = {
-  reproduced: 'reproduced',
-  amplified: 'amplified',
-  'not-reproduced': 'not reproduced',
-  verified: 'fix verified',
-  'still-fails': 'still fails',
-  inconclusive: 'inconclusive',
-};
-
-function verdictWord(verdict: string | null): string {
-  return verdict ? (VERDICT_WORDS[verdict] ?? verdict) : 'no verdict';
-}
-
 /** "reproduced 3/4 · 2 days ago". */
 function labLine(r: FlakeSuspectResult): string {
   const when = r.finishedAt ? ` · ${formatRelativeTime(r.finishedAt)}` : '';
-  return `${verdictWord(r.verdict)} ${r.matchingFailures}/${r.runs}${when}`;
-}
-
-function formatP(p: number | null): string {
-  if (p == null) return '';
-  return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
-}
-
-/** The experiment in one sentence: what reproduced it, or what the verify rerun found. */
-function experimentSentence(e: FlakeExperimentRecord): string {
-  const control = e.arms.find((a) => a.key === 'control');
-  const against = control ? ` against ${control.matchingFailures}/${control.runs}` : '';
-  if (e.kind === 'verify') {
-    const arm = e.arms.find((a) => a.key === 'verify');
-    if (!arm) return `Verify: ${verdictWord(e.verdict)}`;
-    return `Verify: ${verdictWord(e.verdict)} (${arm.matchingFailures}/${arm.runs} under ${arm.label}${against})`;
-  }
-  const arm = e.arms.find((a) => a.id === e.reproducingArmId);
-  if (arm) return `Reproduced by ${arm.label} (${arm.matchingFailures}/${arm.runs}${against}, ${formatP(arm.pValue)})`;
-  const tried = e.arms.filter((a) => a.key !== 'control').length;
-  return `${verdictWord(e.verdict).replace(/^./, (c) => c.toUpperCase())} (${tried} arm${tried === 1 ? '' : 's'}${against})`;
+  return `${flakeVerdictWord(r.verdict)} ${r.matchingFailures}/${r.runs}${when}`;
 }
 
 const summaryLine = computed(() => {
@@ -115,7 +88,7 @@ const summaryLine = computed(() => {
   const last = list[0]!;
   const count = list.length === 1 ? '1 experiment' : `${list.length} experiments`;
   const commit = last.commit ? ` on ${last.commit.slice(0, 7)}` : '';
-  return `${count} · last: ${verdictWord(last.verdict)}${commit}`;
+  return `${count} · last: ${flakeVerdictWord(last.verdict)}${commit}`;
 });
 
 const marked = computed(() => (typeof route.query.suspect === 'string' ? route.query.suspect : null));
@@ -275,32 +248,7 @@ function detailLine(s: FlakeSuspect): string | null {
           retries off, until the failure reproduces.
         </p>
         <ol v-else-if="experiments.length" class="rounded-lg border border-default divide-y divide-default">
-          <li
-            v-for="e in experiments"
-            :key="e.id"
-            class="px-3 py-2.5 space-y-1"
-            data-testid="flake-experiment"
-            :data-verdict="e.verdict ?? ''"
-          >
-            <p class="text-sm text-highlighted break-words">{{ experimentSentence(e) }}</p>
-            <p class="text-xs text-muted break-words">
-              <span v-if="e.commit" class="font-mono">{{ e.commit.slice(0, 7) }}</span>
-              <span v-if="e.commit"> · </span>
-              <span v-if="e.failureCommit && e.commit && !e.commit.startsWith(e.failureCommit.slice(0, 7))"
-                >failures on <span class="font-mono">{{ e.failureCommit.slice(0, 7) }}</span> ·
-              </span>
-              {{ e.source }}<span v-if="e.machine"> on {{ e.machine }}</span>
-              <span v-if="e.playwrightProject"> · {{ e.playwrightProject }}</span>
-              <span v-if="e.finishedAt"> · {{ formatRelativeTime(e.finishedAt) }}</span>
-            </p>
-            <ul class="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
-              <li v-for="a in e.arms" :key="a.id" class="tabular-nums">
-                {{ a.label }} {{ a.matchingFailures }}/{{ a.runs
-                }}<span v-if="a.otherFailures"> (+{{ a.otherFailures }} other)</span
-                ><span v-if="a.verdict && a.key !== 'control'"> · {{ verdictWord(a.verdict) }}</span>
-              </li>
-            </ul>
-          </li>
+          <FlakeExperimentRow v-for="e in experiments" :key="e.id" :experiment="e" />
         </ol>
         <div class="flex flex-wrap gap-2">
           <UButton

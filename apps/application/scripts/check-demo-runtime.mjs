@@ -302,6 +302,28 @@ async function main() {
       (await suspect.textContent().catch(() => '')) ?? '',
     );
 
+    // The seeded pagination flake's verify experiment held, so its tab reads verified fixed.
+    await page.goto(`${ORIGIN}${BASE}test-cases/35?tab=flakiness`, { waitUntil: 'domcontentloaded' });
+    const verifiedFix = page.getByTestId('flake-verified-fix');
+    await verifiedFix.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await verifiedFix.getAttribute('data-holding').catch(() => null)) === 'true',
+      'the seeded pagination flake reads verified fixed',
+    );
+
+    // The project's Flake Lab tab places it, and lists its three experiments.
+    await page.goto(`${ORIGIN}${BASE}projects/3?tab=flake-lab`, { waitUntil: 'domcontentloaded' });
+    const labRow = page.locator('[data-testid="flake-lab-test"][data-state="verified"]');
+    await labRow.waitFor({ timeout: 60000 }).catch(() => {});
+    check(
+      (await labRow.textContent().catch(() => ''))?.includes('Table pagination works correctly') === true,
+      'the project’s Flake Lab tab lists the pagination test as verified fixed',
+    );
+    check(
+      (await page.getByTestId('flake-lab-experiments').getByTestId('flake-experiment').count()) === 3,
+      'the project’s Flake Lab tab lists its experiments',
+    );
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -323,7 +345,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards and the flake profile all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix and the Flake Lab tab all work.',
   );
 }
 

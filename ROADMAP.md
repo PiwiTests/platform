@@ -137,6 +137,11 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Exploring
 
+- **Demo examples in the docs** — every feature page links to a concrete example in the live demo (a verified flake
+  fix, a stored AI diagnosis, a broken locator with its replacements), from one registry of examples the seed is
+  checked against, so a link never opens the wrong test when the demo data changes. The screenshot scenes and the
+  demo runtime check read the same registry. Design record in [proposals/demo-examples.md](proposals/demo-examples.md).
+
 - **Scenario gaps** — the tests that are missing, from one model of what the application exposes, what the suite
   touches, what the suite would actually notice (probe runs that mutate responses at the Playwright route boundary)
   and what is worth caring about (usage, churn, age, escape history). Delivered first as a per-ticket section in the

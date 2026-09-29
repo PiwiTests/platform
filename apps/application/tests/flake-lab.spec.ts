@@ -189,4 +189,18 @@ test.describe('Flake Lab', () => {
       'Reproduced by delay GET /api/cart 2 s',
     );
   });
+
+  test('the project’s Flake Lab tab lists the test with its verify command, and the experiment', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=flake-lab`);
+    await waitForHydration(page);
+    const row = page.getByTestId('flake-lab-test').filter({ hasText: TITLE });
+    await expect(row).toHaveAttribute('data-state', 'reproduced');
+    await expect(row.getByTestId('flake-lab-state')).toContainText('reproduced by delay GET /api/cart 2 s');
+    await expect(row.getByTestId('flake-lab-copy')).toHaveText('Copy verify command');
+    await expect(row).toContainText(`npx @piwitests/reporter flake verify ${testCaseId}`);
+    const experiment = page.getByTestId('flake-lab-experiments').getByTestId('flake-experiment');
+    await expect(experiment).toHaveCount(1);
+    await expect(experiment).toContainText(TITLE);
+    await expect(experiment).toContainText('Reproduced by delay GET /api/cart 2 s');
+  });
 });
