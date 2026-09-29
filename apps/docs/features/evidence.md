@@ -37,10 +37,12 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   browser dialogs, with the failure marked, over a steps table giving each step's offset (`t-1.1s`) and duration.
   **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
   **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the step that raised
-  the test's error shows its error and page; a caught error is greyed out.
+  the test's error shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed
+  out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
-- **Screen**: the failure screenshot with the **visual diff** and [page diff](#page-diff) toggles, the video, the trace
-  and attachments, and under **Page structure ▸** the failure-time ARIA tree and the reconstructed DOM.
+- **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
+  [**Page diff**](#page-diff), **Video**) over the trace and attachments. **Open in picker** finds a locator on that
+  DOM from any view.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
   [with a trace](#trace-powered-deep-views).
 - **Network**: the requests with inline [backend logs](/guide/backend-logs); one with no response shows the browser's
@@ -79,19 +81,19 @@ it. The comparison feeds the [root-cause classifier](./flaky-tests#root-cause-cl
 
 ## Page diff
 
-The **Screen** tab carries a **Screenshot · Page diff** toggle. Where the visual diff compares pixels, the page diff
-compares *structure*: it parses the failing page's [ARIA snapshot](/guide/capture-fixtures#what-gets-captured) and the
-same test's last passing snapshot into trees and reports nodes **added**, **removed**, **renamed**, **changed** (an
-attribute such as `[disabled]` flipped) or **moved**, with a `+3 −1 ~2` summary. The element the failing locator names
+Where the visual diff compares pixels, the Screen tab's **Page diff** view compares *structure*: it parses the failing
+page's [ARIA snapshot](/guide/capture-fixtures#what-gets-captured) and the same test's last passing snapshot into trees
+and reports nodes **added**, **removed**, **renamed**, **changed** (an attribute such as `[disabled]` flipped) or
+**moved**, with a `+3 −1 ~2` summary. The element the failing locator names
 is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the button renamed `"Pay now"`.
 
 The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then
 the same branch. Green snapshots come from
 [sampling on pass](/guide/capture-fixtures#green-page-sampling-on-pass), about once a day per test; until one exists the
-toggle says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
+view says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
 `explain_failure` [MCP tool](/features/mcp).
 
-When the trace carries [aria snapshots](#aria-and-screen-snapshots), the toggle shows an **in-execution** page diff
+When the trace carries [aria snapshots](#aria-and-screen-snapshots), the view adds an **in-execution** page diff
 that needs no green baseline: the structure at the failure against the last different page before the failing action.
 
 ## Trace-powered deep views
@@ -111,10 +113,9 @@ With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two
 
 A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot** before and after every action
 (`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria`
-on, `screen` stays [opt-in](/operate/storage#trace-snapshots)). Then the Screen tab shows the page **before the failing
-action**, the Timeline tab adds a **filmstrip** of the page before each step, and the failing step shows its
-before/at-failure screenshots, their DOM and accessibility tree inline. The [in-execution page diff](#page-diff) reads
-the same snapshots.
+on, `screen` stays [opt-in](/operate/storage#trace-snapshots)). Then the Screenshot view sets the page **before the
+failing action** beside the one at the failure, and the Timeline tab adds a **filmstrip** of the page before each
+step. The [in-execution page diff](#page-diff) reads the same snapshots.
 
 ### Recovered from the trace without the fixtures
 

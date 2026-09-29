@@ -151,7 +151,7 @@ test.describe('Test-run-case page', () => {
     const tablist = page.getByRole('tablist', { name: 'Evidence sections' });
     await expect(tablist).toBeVisible();
     for (const name of ['Timeline', 'Screen', 'Source', 'Network', 'Console', 'State', 'Performance']) {
-      await expect(page.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible();
+      await expect(tablist.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible();
     }
 
     // The Fix card gathers what to do (diagnosis, verify, …) below the evidence.
@@ -368,17 +368,25 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
   });
 
-  test('#37 folds the raw page structure behind a disclosure on the Screen tab', async ({ page }) => {
+  test('#37 shows the page at the failure as views on the Screen tab and picks from its DOM', async ({ page }) => {
     await page.goto('/test-run-cases/37');
     await waitForHydration(page);
-    await page.getByRole('tab', { name: /^Screen/ }).click();
-    // The ARIA tree and the DOM are folded away under Page structure, not open.
-    const disclosure = page.getByRole('button', { name: /Page structure/ });
-    await expect(disclosure).toBeVisible();
-    await disclosure.click();
-    // Opening it renders the failure-time page — an iframe, never escaped XML.
-    await expect(page.locator('iframe[title="Failure-time page"]')).toBeVisible();
-    // "Open in picker" loads the same snapshot into the locator picker.
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Screen', exact: true })
+      .click();
+    // One strip of views, opening on the screenshot.
+    const views = page.getByRole('tablist', { name: 'Screen view' });
+    await expect(views.getByRole('tab', { name: 'Screenshot', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(views.getByRole('tab', { name: 'Video', exact: true })).toBeVisible();
+    // The DOM view renders the page — an iframe, never escaped markup.
+    await views.getByRole('tab', { name: 'DOM', exact: true }).click();
+    await expect(page.locator('iframe[title="DOM at the failure"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy HTML' })).toBeVisible();
+    // The Accessibility tree view shows the tree as text.
+    await views.getByRole('tab', { name: 'Accessibility tree', exact: true }).click();
+    await expect(page.getByText('button "Pay now" [disabled]')).toBeVisible();
+    // "Open in picker" loads the same snapshot into the locator picker, from any view.
     await page.getByRole('button', { name: 'Open in picker' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.locator('iframe[title="DOM snapshot"]')).toBeVisible();

@@ -117,7 +117,9 @@ test.describe('Trace aria/screen snapshots', () => {
     await expect(page.getByRole('region', { name: 'Filmstrip of the page before each step' })).toBeVisible();
   });
 
-  test("the Timeline tab attaches the failing step's screenshot and ARIA to the failing step", async ({ page }) => {
+  test("the Timeline tab shows the failing step's page as views and picks from the DOM of that moment", async ({
+    page,
+  }) => {
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
 
@@ -126,14 +128,29 @@ test.describe('Trace aria/screen snapshots', () => {
       .getByRole('tab', { name: 'Timeline', exact: true })
       .click();
 
-    // The page captured at the failing step sits inline on that step. The table
-    // is the desktop layout; the phone card copy carries the same text.
-    await expect(page.locator('table').getByText('Page at the failing step')).toBeVisible();
+    // The page captured at the failing step sits inline on that step, one view
+    // at a time. The table is the desktop layout; the phone card copy carries
+    // the same views (role queries resolve the visible desktop copy).
+    const block = page.locator('table');
+    await expect(block.getByText('Page at the failing step')).toBeVisible();
+    const views = block.getByRole('tablist', { name: 'Page at the failing step' });
+    await expect(views.getByRole('tab', { name: 'Screenshot', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(block.getByText('Before the failing action')).toBeVisible();
 
-    // Its accessibility tree unfolds on demand (a role query resolves the visible
-    // desktop toggle, not the display:none phone copy).
-    const ariaToggle = page.getByRole('button', { name: 'Accessibility tree at the failure' });
-    await expect(ariaToggle).toBeVisible();
-    await ariaToggle.click();
+    await views.getByRole('tab', { name: 'Accessibility tree', exact: true }).click();
+    await expect(block.getByText('dialog "Confirm payment"')).toBeVisible();
+
+    await views.getByRole('tab', { name: 'DOM', exact: true }).click();
+    await expect(block.locator('iframe[title="DOM at the failure"]')).toBeVisible();
+
+    // The picker opens on the DOM the view renders: the failing action's
+    // after-phase snapshot, named by its call id.
+    const snapshotRequest = page.waitForRequest(
+      (req) =>
+        req.url().includes('/dom-snapshot?') && req.url().includes('callId=') && req.url().includes('phase=after'),
+    );
+    await block.getByRole('button', { name: 'Open in picker' }).click();
+    await snapshotRequest;
+    await expect(page.getByRole('dialog').locator('iframe[title="DOM snapshot"]')).toBeVisible();
   });
 });
