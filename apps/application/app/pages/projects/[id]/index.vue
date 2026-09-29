@@ -266,7 +266,7 @@ function refreshFailureCounts() {
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'gaps', 'performance', 'settings'] as const;
+const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'gaps', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
 // Old ?tab= values (and the retired sub-routes) still land on the right tab.
@@ -319,18 +319,27 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
-// The Gaps tab follows the `test-map` capability: a project that declined it
-// loses the tab, and a stale `?tab=gaps` link falls back to Runs.
+// The Gaps and Flake Lab tabs follow the `test-map` and `flake-lab`
+// capabilities: a project that declined one loses its tab, and a stale
+// `?tab=` link to it falls back to Runs.
+const TAB_CAPABILITY: Partial<Record<TabValue, Parameters<typeof projCapHidden>[0]>> = {
+  gaps: 'test-map',
+  'flake-lab': 'flake-lab',
+};
+const tabHidden = (tab: TabValue) => {
+  const capability = TAB_CAPABILITY[tab];
+  return capability ? projCapHidden(capability) : false;
+};
 watch(
-  () => projCapHidden('test-map'),
+  () => tabHidden(activeTab.value),
   (hidden) => {
-    if (hidden && activeTab.value === 'gaps') activeTab.value = 'runs';
+    if (hidden) activeTab.value = 'runs';
   },
   { immediate: true },
 );
 
 const initialTab = resolveTab(route.query.tab);
-if (initialTab && !(initialTab === 'gaps' && projCapHidden('test-map'))) {
+if (initialTab && !tabHidden(initialTab)) {
   activeTab.value = initialTab;
   if (typeof route.query.tab === 'string' && ALIAS_SEGMENT[route.query.tab])
     failureSegment.value = ALIAS_SEGMENT[route.query.tab]!;
@@ -364,10 +373,11 @@ const tabItems = computed(() =>
       icon: 'i-lucide-layers',
       value: 'failures' as const,
     },
+    { label: 'Flake Lab', icon: 'i-lucide-snowflake', value: 'flake-lab' as const },
     { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
     { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
     { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
-  ].filter((item) => item.value !== 'gaps' || !projCapHidden('test-map')),
+  ].filter((item) => !tabHidden(item.value)),
 );
 
 const tabNavItems = computed(() =>
@@ -1398,6 +1408,16 @@ const moreMenuItems = computed(() => {
             :project-name="project?.name"
             hide-candidates
             @count="quarantineCount = $event"
+          />
+        </div>
+
+        <!-- FLAKE LAB TAB -->
+        <div v-if="activeTab === 'flake-lab'">
+          <FlakeLabPanel
+            :project-id="Number(projectId)"
+            :environment="flakyEnvironment"
+            :branch="flakyBranch"
+            :project-name="project?.name"
           />
         </div>
 

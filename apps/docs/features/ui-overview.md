@@ -49,6 +49,8 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
   groupable by spec file ([test metadata](/reference/test-metadata)).
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
   [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
+- **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the
+  project's newest experiments. Hidden when the Flake Lab is switched off.
 - **Gaps**: the tests the suite does not have yet, proposed from the Test Map, with the feature map and the graph view
   ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints

@@ -23,6 +23,7 @@ import {
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
 import {
   FlakePlanUnavailable,
+  flakeCommand,
   getFlakeExperimentPlan,
   latestSuspectResults,
   listFlakeExperiments,
@@ -1502,9 +1503,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       filePath: plan.test.file,
       playwrightProject: plan.test.project,
       commands: {
-        reproduce: `npx @piwitests/reporter flake ${testCaseId}`,
-        oneSuspect: plan.arms.length ? `npx @piwitests/reporter flake ${testCaseId} --suspect 1` : null,
-        verify: `npx @piwitests/reporter flake verify ${testCaseId}`,
+        reproduce: flakeCommand(testCaseId),
+        oneSuspect: plan.arms.length ? `${flakeCommand(testCaseId)} --suspect 1` : null,
+        verify: flakeCommand(testCaseId, 'verify'),
       },
       exitCodes: {
         0: 'reproduced (verify: the fix held)',

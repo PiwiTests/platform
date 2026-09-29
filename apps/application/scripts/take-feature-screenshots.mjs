@@ -2468,6 +2468,24 @@ const SCENES = [
     route: '/test-cases/9?tab=flakiness',
     viewport: { width: 390, height: 2200 },
   },
+  // Project 3's pagination test ran the whole lab: a reproduction, a verify
+  // that still failed and one that held; its two modal tests are untested.
+  {
+    name: 'flake-lab-tab',
+    description: 'A project’s Flake Lab tab: each flaky test’s lab state and next command, and the newest experiments',
+    tags: ['desktop'],
+    route: '/projects/3?tab=flake-lab',
+    viewport: { width: 1280, height: 1400 },
+    of: '[data-shot="flake-lab"]',
+    pad: 12,
+  },
+  {
+    name: 'flake-lab-tab-mobile',
+    description: 'A project’s Flake Lab tab at phone width',
+    tags: ['desktop'],
+    route: '/projects/3?tab=flake-lab',
+    viewport: { width: 390, height: 2400 },
+  },
   {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',

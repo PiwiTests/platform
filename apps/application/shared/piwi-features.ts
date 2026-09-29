@@ -162,7 +162,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Make a flaky test fail on demand: `piwi flake` replays each suspect as a condition next to a control, and `piwi flake verify` proves the fix under the same condition.',
         needs: ['fixtures'],
-        where: 'Test case → Flakiness; reporter (`piwi flake`)',
+        where: 'Project → Flake Lab; Test case → Flakiness; reporter (`piwi flake`)',
         doc: 'features/flake-lab',
       },
       {

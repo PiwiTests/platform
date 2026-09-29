@@ -35,15 +35,21 @@ import {
   type FlakeProfile,
 } from './flake-profile';
 import { notLabRun } from './probes';
-import { TERMINAL_STATUSES } from './projects';
+import { getVerifiedFixes, type VerifiedFix } from './flake-verified';
+import { TERMINAL_STATUSES, getProjectFlakyTestsWithVerified } from './projects';
 import type { DrizzleDB } from './db';
 import {
+  FLAKE_LAB_STATE_ORDER,
+  flakeLabNextCommand,
+  flakeLabNextStep,
+  flakeLabTestState,
   latestSuspectResults,
   type FlakeArmRecord,
   type FlakeArmVerdictValue,
   type FlakeExperimentKind,
   type FlakeExperimentRecord,
   type FlakeExperimentSource,
+  type FlakeLabTestState,
   type FlakeReproduceVerdict,
   type FlakeSuspectResult,
   type FlakeVerifyVerdict,
@@ -904,4 +910,166 @@ export async function getFlakyListSuspects(
     ).map((l) => [l.testCaseId, l]),
   );
   return items.map((item) => ({ ...item, lab: lab.get(item.testCaseId) ?? null }));
+}
+
+// ─── The project's lab ────────────────────────────────────────────────────────
+
+/** A test the project's lab lists: flaky in the runs read, or run through the lab. */
+export interface FlakeLabTest {
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  state: FlakeLabTestState;
+  /** The command it needs next; null once its fix holds. */
+  nextCommand: string | null;
+  /** On the flaky ranking of the runs read. */
+  flaky: boolean;
+  /** Runs read in which it failed and then passed on a retry; null when it did not flake in them. */
+  retryPassRuns: number | null;
+  /** The condition that last reproduced it. */
+  reproducedBy: string | null;
+  /** When its newest experiment finished, ISO; null before any. */
+  lastExperimentAt: string | null;
+  experiments: number;
+  verifiedFix: VerifiedFix | null;
+}
+
+/** An experiment of the project, with the test it ran. */
+export interface ProjectFlakeExperiment extends FlakeExperimentRecord {
+  title: string;
+  filePath: string;
+}
+
+export interface ProjectFlakeLab {
+  /** The runs the flaky ranking read. */
+  runs: number;
+  /** Tests in lab order: a fix to verify first, a fix that held last. */
+  tests: FlakeLabTest[];
+  /** The newest finished experiments, newest first. */
+  experiments: ProjectFlakeExperiment[];
+  counts: {
+    /** Tests on the flaky ranking. */
+    flaky: number;
+    /** Flaky tests never run through the lab. */
+    untested: number;
+    /** Reproduced tests whose fix has not been verified. */
+    awaitingFix: number;
+    /** Tests whose verified fix holds. */
+    verified: number;
+    /** Every finished experiment of the project. */
+    experiments: number;
+  };
+}
+
+/**
+ * The project's lab: every test on the flaky ranking of the last `runs` runs
+ * (scoped like the Flaky view) or with a finished experiment, each with its lab
+ * state and the command it needs next, and the newest experiments. Throws
+ * `Project not found` like the ranking.
+ */
+export async function getProjectFlakeLab(
+  db: DrizzleDB,
+  projectId: number,
+  opts: { runs?: number; environment?: string | null; branch?: string | null; limit?: number } = {},
+): Promise<ProjectFlakeLab> {
+  const runs = Math.min(200, Math.max(1, opts.runs ?? 50));
+  const limit = Math.min(Math.max(1, opts.limit ?? 20), FLAKE_EXPERIMENTS_MAX);
+  const { items: ranked, verifiedFixed } = await getProjectFlakyTestsWithVerified(
+    db,
+    projectId,
+    runs,
+    opts.environment,
+    undefined,
+    opts.branch,
+  );
+
+  // Every finished experiment, light: enough to place each test.
+  const rows = await db
+    .select({
+      testCaseId: flakeExperiments.testCaseId,
+      kind: flakeExperiments.kind,
+      verdict: flakeExperiments.verdict,
+      finishedAt: flakeExperiments.finishedAt,
+      reproducedBy: flakeArms.label,
+    })
+    .from(flakeExperiments)
+    .leftJoin(flakeArms, eq(flakeArms.id, flakeExperiments.reproducingArmId))
+    .where(and(eq(flakeExperiments.projectId, projectId), isNotNull(flakeExperiments.finishedAt)))
+    .orderBy(desc(flakeExperiments.finishedAt), desc(flakeExperiments.id));
+  const experimentsByTest = new Map<number, typeof rows>();
+  for (const r of rows) {
+    const list = experimentsByTest.get(r.testCaseId);
+    if (list) list.push(r);
+    else experimentsByTest.set(r.testCaseId, [r]);
+  }
+  const fixes = await getVerifiedFixes(db, [...experimentsByTest.keys()]);
+
+  const known = new Map<number, { title: string; filePath: string; retryPassRuns: number }>();
+  for (const t of [...ranked, ...verifiedFixed]) {
+    known.set(t.testCaseId, { title: t.title, filePath: t.filePath, retryPassRuns: t.retryPassRuns });
+  }
+  const missing = [...experimentsByTest.keys()].filter((id) => !known.has(id));
+  const titled = missing.length
+    ? await db
+        .select({ id: testCases.id, title: testCases.title, filePath: testCases.filePath })
+        .from(testCases)
+        .where(inArray(testCases.id, missing))
+    : [];
+  const titles = new Map(titled.map((t) => [t.id, t]));
+
+  const rank = new Map(ranked.map((t, i) => [t.testCaseId, i]));
+  const tests: FlakeLabTest[] = [];
+  for (const testCaseId of new Set([...rank.keys(), ...known.keys(), ...experimentsByTest.keys()])) {
+    const own = experimentsByTest.get(testCaseId) ?? [];
+    const fix = fixes.get(testCaseId) ?? null;
+    const state = flakeLabTestState(own, fix);
+    const test = known.get(testCaseId);
+    tests.push({
+      testCaseId,
+      title: test?.title ?? titles.get(testCaseId)?.title ?? '',
+      filePath: test?.filePath ?? titles.get(testCaseId)?.filePath ?? '',
+      state,
+      nextCommand: flakeLabNextCommand(testCaseId, state),
+      flaky: rank.has(testCaseId),
+      retryPassRuns: test && test.retryPassRuns > 0 ? test.retryPassRuns : null,
+      reproducedBy: own.find((e) => e.kind === 'reproduce' && e.verdict === 'reproduced')?.reproducedBy ?? null,
+      lastExperimentAt: own[0] ? iso(own[0].finishedAt) : null,
+      experiments: own.length,
+      verifiedFix: fix,
+    });
+  }
+  const stateRank = (s: FlakeLabTestState) => FLAKE_LAB_STATE_ORDER.indexOf(s);
+  tests.sort(
+    (a, b) =>
+      stateRank(a.state) - stateRank(b.state) ||
+      (rank.get(a.testCaseId) ?? Infinity) - (rank.get(b.testCaseId) ?? Infinity) ||
+      (b.lastExperimentAt ?? '').localeCompare(a.lastExperimentAt ?? '') ||
+      a.testCaseId - b.testCaseId,
+  );
+
+  const newest = await db
+    .select()
+    .from(flakeExperiments)
+    .where(and(eq(flakeExperiments.projectId, projectId), isNotNull(flakeExperiments.finishedAt)))
+    .orderBy(desc(flakeExperiments.finishedAt), desc(flakeExperiments.id))
+    .limit(limit);
+  const byId = new Map(tests.map((t) => [t.testCaseId, t]));
+  const experiments = (await hydrateExperiments(db, newest)).map((e) => ({
+    ...e,
+    title: byId.get(e.testCaseId)?.title ?? '',
+    filePath: byId.get(e.testCaseId)?.filePath ?? '',
+  }));
+
+  return {
+    runs,
+    tests,
+    experiments,
+    counts: {
+      flaky: ranked.length,
+      untested: tests.filter((t) => t.state === 'untested').length,
+      awaitingFix: tests.filter((t) => flakeLabNextStep(t.state) === 'verify').length,
+      verified: tests.filter((t) => t.state === 'verified').length,
+      experiments: rows.length,
+    },
+  };
 }

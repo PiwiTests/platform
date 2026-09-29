@@ -24,8 +24,8 @@ npx @piwitests/reporter flake 1842
 npx @piwitests/reporter flake tests/checkout.spec.ts:42
 ```
 
-The command reads the test's plan from the dashboard, so it needs the dashboard URL and a reporter API key (the
-same `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` the reporter uses, or the project's `.env`). The specs must use the
+The command reads the test's plan from the dashboard, so it needs the reporter's `PIWI_DASHBOARD_URL` and
+`PIWI_API_KEY` (or the project's `.env`). The specs must use the
 [capture fixtures](/guide/capture-fixtures), which apply the conditions inside the page. In the
 [desktop app](./desktop#reproducing-a-flake), **Reproduce this flake** on the Flakiness tab runs it at the commit
 of the latest failure, and a bisect of a reproduced flake runs its arm at each step (`flake verify --bisect`).
@@ -108,8 +108,10 @@ still fails, or too few runs passed to say) · `2` error. Every flag is on the [
 
 ## Where results show
 
+- The project's **Flake Lab** tab lists every flaky or tested test with where it stands (not tested, reproduced, fix
+  verified) and the command it needs next, then the project's newest experiments.
 - The test's **Flakiness** tab lists its experiments and each suspect's latest result ("reproduced 3/4 · 2 days
-  ago"), with buttons that copy the `piwi flake` and `piwi flake verify` commands.
+  ago"), with buttons that copy both commands.
 - The **flaky list** marks a test whose latest experiment reproduced it.
 - The [clue](/reference/clues) `known-flake-suspect` turns strong on a failure showing a suspect an experiment
   reproduced.
@@ -122,13 +124,12 @@ the flaky score, regression signals, clusters, notifications, quarantine and the
 
 ## Try it in the demo
 
-The [live demo](https://piwitests.dev/demo/) cannot run the lab, but two of its tests carry experiments:
+The [live demo](https://piwitests.dev/demo/) cannot run the lab, but it holds experiments:
 
-- [should apply discount code](https://piwitests.dev/demo/test-cases/9?tab=flakiness): a delay on the cart reproduced it.
-- [Table pagination works correctly](https://piwitests.dev/demo/test-cases/35?tab=flakiness): one suspect
-  reproduced it and one did not, a first fix still failed, and the second is verified. Its project's
-  [Flaky view](https://piwitests.dev/demo/projects/3?tab=flaky-tests) lists it under **Verified fixed**, and its
-  quarantine is proposed for release.
+- [should apply discount code](https://piwitests.dev/demo/test-cases/9?tab=flakiness): a cart delay reproduced it.
+- [Table pagination works correctly](https://piwitests.dev/demo/test-cases/35?tab=flakiness): one suspect reproduced
+  it, one did not, a first fix still failed and the second is verified, so its quarantine is proposed for release.
+  Its project's [Flake Lab tab](https://piwitests.dev/demo/projects/3?tab=flake-lab) lists it as verified fixed.
 
 ## Run it in CI
 

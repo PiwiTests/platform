@@ -185,6 +185,7 @@ import {
   FlakeResultsRejected,
   getFlakeExperimentPlan,
   getFlakyListSuspects,
+  getProjectFlakeLab,
   listFlakeExperiments,
   recordFlakeResults,
   resolveTestCaseByLocation,
@@ -1301,6 +1302,23 @@ const routes: RouteEntry[] = [
         if (error instanceof FlakeResultsRejected) throw demoHttpError(error.statusCode, error.message);
         throw error;
       }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/flake-lab$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const int = (name: string) => {
+        const value = parseInt(q?.get(name) ?? '', 10);
+        return Number.isNaN(value) ? undefined : value;
+      };
+      return getProjectFlakeLab(await getDemoDb(), +m[1]!, {
+        runs: int('runs'),
+        environment: q?.get('environment')?.trim() || null,
+        branch: q?.get('branch')?.trim() || null,
+        limit: int('limit'),
+      });
     },
   },
   {
