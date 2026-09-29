@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FlakyTest } from '~~/types/api';
+import type { FlakyTest, VerifiedFixedFlakyTest } from '~~/types/api';
 import type { TopFlakeSuspect } from '#shared/handlers/flake-profile';
 import type { FlakeLabSummary } from '#shared/handlers/flake-lab';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
@@ -21,7 +21,7 @@ const quarantiningId = ref<number | null>(null);
 const runsWindow = ref(50);
 const rootCauseFilter = ref<string[]>([]);
 
-const { data: tests, status } = await useFetch(
+const { data: flaky, status } = await useFetch(
   () => {
     const params = new URLSearchParams({ runs: String(runsWindow.value) });
     if (props.environment) params.set('environment', props.environment);
@@ -32,9 +32,12 @@ const { data: tests, status } = await useFetch(
     lazy: true,
     server: false,
     watch: [runsWindow, () => props.environment, () => props.branch],
-    transform: (r: { items: FlakyTest[] }) => r.items,
+    transform: (r: { items: FlakyTest[]; verifiedFixed?: VerifiedFixedFlakyTest[] }) => r,
   },
 );
+const tests = computed(() => flaky.value?.items ?? null);
+/** Tests a verified fix took off the ranking; they return to it at their next retry-pass. */
+const verifiedFixed = computed(() => flaky.value?.verifiedFixed ?? []);
 // The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
 const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
@@ -264,5 +267,41 @@ function flakyBadges(test: FlakyTest) {
     <p v-if="!loading && filteredTests.length === 0" class="text-sm text-gray-500 py-4 text-center">
       No flaky tests detected in the last {{ runsWindow }} runs.
     </p>
+
+    <div v-if="verifiedFixed.length" class="mt-4 space-y-1.5" data-testid="flaky-verified-fixed">
+      <p class="text-xs text-muted inline-flex items-center gap-1">
+        <UIcon name="i-lucide-badge-check" class="size-3.5 text-success" />
+        Verified fixed: off the ranking until they retry-pass again
+      </p>
+      <ul class="rounded-lg border border-default divide-y divide-default">
+        <li
+          v-for="test in verifiedFixed"
+          :key="test.testCaseId"
+          class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
+          data-testid="flaky-verified-row"
+        >
+          <NuxtLink
+            :to="`/test-cases/${test.testCaseId}?tab=flakiness`"
+            class="min-w-0 text-sm font-medium text-highlighted hover:underline break-words"
+          >
+            {{ test.title }}
+          </NuxtLink>
+          <span class="min-w-0 text-xs text-muted font-mono truncate">{{ test.filePath }}</span>
+          <span class="flex-1" />
+          <UBadge
+            color="success"
+            variant="soft"
+            size="xs"
+            :title="`Flake Lab verified the fix ${formatRelativeTime(test.verifiedFix.verifiedAt)}`"
+            data-testid="flaky-verified-badge"
+          >
+            Verified fixed{{ test.verifiedFix.commit ? ` on ${test.verifiedFix.commit.slice(0, 7)}` : '' }}
+          </UBadge>
+          <span class="text-xs text-muted tabular-nums">
+            {{ test.retryPassRuns }} retry pass{{ test.retryPassRuns === 1 ? '' : 'es' }} before it
+          </span>
+        </li>
+      </ul>
+    </div>
   </UCard>
 </template>

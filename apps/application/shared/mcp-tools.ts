@@ -151,7 +151,8 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_flaky_tests',
     module: 'core',
-    description: 'List flaky tests for a project with flakiness scores.',
+    description:
+      'List flaky tests for a project with flakiness scores. A test whose Flake Lab verify experiment held is left out until it retry-passes again.',
     inputSchema: {
       type: 'object',
       properties: {

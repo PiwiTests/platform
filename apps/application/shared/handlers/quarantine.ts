@@ -9,11 +9,14 @@
  * from the [CI gate](./gate)'s verdict and nothing else. That one difference is
  * what makes the exit possible: consecutive passes accumulate, and once a test
  * has earned its way out the dashboard says so instead of waiting to be asked.
+ * A Flake Lab verified fix made after the quarantine, still holding, earns it
+ * at once. Release itself is always a person's action.
  */
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { notLabRun } from './probes';
+import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
 
 /** Consecutive passing runs after which release is proposed. */
 export const RELEASE_AFTER_CONSECUTIVE_PASSES = 5;
@@ -37,8 +40,12 @@ export interface QuarantineEntry {
   ageMs: number;
   /** Passing runs since quarantine, counted back from the newest. */
   consecutivePasses: number;
-  /** True once the streak clears the threshold — time to let it out. */
+  /** True once the streak clears the threshold, or a verified fix holds — time to let it out. */
   releaseProposed: boolean;
+  /** Why release is proposed: the passing streak, or a verified fix; null when it is not. */
+  releaseReason: 'streak' | 'verified-fix' | null;
+  /** The Flake Lab verified fix made since the quarantine, while it holds. */
+  verifiedFix: VerifiedFix | null;
   /** Runs seen since quarantine; zero means nothing has exercised it yet. */
   runsSinceQuarantine: number;
 }
@@ -157,11 +164,19 @@ export async function listQuarantine(
     .orderBy(asc(quarantinedTests.createdAt));
 
   const streaks = await computeStreaks(db, rows);
+  const fixes = await getHoldingVerifiedFixes(
+    db,
+    rows.map((row) => row.testCaseId),
+  );
   const now = Date.now();
 
   const entries: QuarantineEntry[] = rows.map((row) => {
     const streak = streaks.get(row.testCaseId) ?? { passes: 0, runs: 0 };
     const createdMs = row.createdAt instanceof Date ? row.createdAt.getTime() : new Date(row.createdAt).getTime();
+    const fix = fixes.get(row.testCaseId);
+    // Only a fix verified after the test was quarantined says it earned its way out.
+    const verifiedFix = fix && new Date(fix.verifiedAt).getTime() >= createdMs ? fix : null;
+    const earned = streak.passes >= RELEASE_AFTER_CONSECUTIVE_PASSES;
     return {
       id: row.id,
       testCaseId: row.testCaseId,
@@ -174,7 +189,9 @@ export async function listQuarantine(
       createdAt: row.createdAt,
       ageMs: Math.max(0, now - createdMs),
       consecutivePasses: streak.passes,
-      releaseProposed: streak.passes >= RELEASE_AFTER_CONSECUTIVE_PASSES,
+      releaseProposed: earned || verifiedFix != null,
+      releaseReason: verifiedFix ? 'verified-fix' : earned ? 'streak' : null,
+      verifiedFix,
       runsSinceQuarantine: streak.runs,
     };
   });

@@ -1,7 +1,7 @@
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { optionalIntQuery } from '../../../utils/query-params';
 import { getDatabase } from '../../../database';
-import { getProjectFlakyTests } from '#shared/handlers/projects';
+import { getProjectFlakyTestsWithVerified } from '#shared/handlers/projects';
 import { parseTagFilter } from '#shared/utils/tag-filter';
 import { withResolvedOwners } from '../../../utils/scm/ownership';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Flaky test analysis',
     description:
-      'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment or SCM branch.',
+      'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment or SCM branch. A test whose Flake Lab verify experiment held, and that has not retry-passed in a run started since, leaves `items` and is listed in `verifiedFixed` (`{ testCaseId, title, filePath, retryPassRuns, lastFlakeAt, verifiedFix }`) until it retry-passes again.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'runs', in: 'query', required: false, schema: { type: 'integer' } },
@@ -63,10 +63,17 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
 
   try {
-    const rows = await getProjectFlakyTests(db, projectId, runsLimit, environment, filter, branch);
+    const { items, verifiedFixed } = await getProjectFlakyTestsWithVerified(
+      db,
+      projectId,
+      runsLimit,
+      environment,
+      filter,
+      branch,
+    );
     // Fill in the owner from CODEOWNERS for tests that declare none, so the
     // leaderboard can be read per team without anyone annotating a test.
-    return { items: await withResolvedOwners(db, projectId, rows) };
+    return { items: await withResolvedOwners(db, projectId, items), verifiedFixed };
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw apiError({ statusCode: 404, message: 'Project not found' });

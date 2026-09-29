@@ -17,7 +17,8 @@ isolation of flake-lab runs. **PR 4 built 2026-09-28**: `piwi flake` and `piwi f
 `flake_experiments` and `flake_arms` tables, the plan, results and experiments endpoints, experiments on the
 Flakiness tab, the reproduced badge, the strong clue, `plan_flake_experiment`, the skill and a seeded demo experiment.
 **PR 5 built 2026-09-28**: `desktop_flake_lab_here` and Reproduce this flake, the flake-aware bisect and
-`piwi flake verify --bisect`. PR 6 is not started. What changed while building PR 1:
+`piwi flake verify --bisect`. **PR 6 built 2026-09-28**: verified fixed on the Flakiness tab and the flaky list,
+off the ranking until the next retry-pass, and the quarantine release proposal. What changed while building PR 1:
 
 - The server's filter did **not** keep status 0: it kept status ≥ 400 plus the 50 slowest others, so a quick reset
   could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
@@ -138,6 +139,25 @@ What changed while building PR 5:
 - The browser is not installed ahead of the lab, as it is for Reproduce here: the plan names the Playwright project,
   not the browser, and Playwright's own message names a missing one in the output.
 - The lab's worktree is `<project>/flake-<sha>`, apart from a reproduction's of the same commit.
+
+What changed while building PR 6:
+
+- "After" the verification is by time: a retry-pass counts in a run that started after the verify experiment
+  finished (`test_runs.start_time` against `flake_experiments.finished_at`, compared in code so SQLite and
+  PostgreSQL agree). A commit cannot order runs without the repository's history, and runs on a branch without the
+  fix keep flaking after it is verified elsewhere: those bring the test back, which is the honest reading until the
+  fix lands. Retry-passes are read from every branch and environment, not only the ones the list shows.
+- A later `still-fails` verify or `reproduced` reproduce takes the mark off; an `inconclusive` verify neither sets
+  nor clears it.
+- A verified test leaves `getProjectFlakyTests` itself, so every reader agrees without a filter of its own; the
+  Failures tab's endpoint returns it apart, in `verifiedFixed`. Scheduled reports read the analytics leaderboard,
+  which agrees. Notifications (their digests batch the same run events) and the gate read per-run flaky counts,
+  where a retry-pass is what brings a test back anyway; the flaky debt chart counts past retry-passes and is
+  unchanged.
+- In quarantine, only a fix verified after the test was quarantined proposes release (`releaseReason:
+  'verified-fix'`); no auto-release rule exists, so release stays a person's click.
+- The demo seed is unchanged: its one reproduced test is the flaky list's showcase (top suspect, Reproduced badge),
+  and a verified fix would take it off the ranking there.
 
 The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
 two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints

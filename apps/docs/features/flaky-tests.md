@@ -23,7 +23,7 @@ A test is flaky when its result isn't deterministic. Piwi computes a **composite
 
 The project's **Failures** tab has a **Flaky** view with a **configurable lookback window** so you can focus on recent behavior or a longer baseline. Each flaky test links to its history and carries a **Quarantine** action.
 
-**Per-environment scoping** — select a single environment in the project's filter bar and the flaky analysis is scoped to runs from that environment, so you can compare stability across `staging`, `production`, and `development` instead of blending them. (Set the environment via the reporter's `environment` option / `PIWI_ENVIRONMENT`; see the [reporter](/guide/reporter) docs.)
+**Per-environment scoping**: select one environment in the filter bar to score only its runs (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`).
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
@@ -42,7 +42,7 @@ Every flaky test is automatically tagged with one of five categories, using keyw
 | `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
 | `other` | No clear signal |
 
-The classifier also counts the requests that failed or returned 5xx across recent failing attempts, and weighs most each recent flake whose failing attempt made a request that failed while the passing attempt did not (see the [attempt diff](./evidence#attempts)): it counts for several keyword matches.
+It also counts the failed and 5xx requests of recent failing attempts, and weighs most a request that failed on the failing attempt only (the [attempt diff](./evidence#attempts)).
 
 Filter the flaky table by category to triage a class of failures at once.
 
@@ -69,6 +69,14 @@ without a condition. Nothing is stored.
 The flaky list names each test's top suspect, the [Attempts](./evidence#attempts) tab links a request to its suspect,
 the clue `known-flake-suspect` marks a failure showing one, and MCP's `get_flake_profile` returns the profile.
 The [Flake Lab](./flake-lab) tests each suspect against a control run.
+
+### Verified fixed
+
+When a [`piwi flake verify`](./flake-lab#verify-a-fix) experiment holds, the test reads **verified fixed on
+`<commit>`** on its Flakiness tab and leaves the ranking, and with it the MCP `list_flaky_tests` tool, quarantine
+candidates and the analytics leaderboard. The Flaky view lists it apart, under **Verified fixed**. The first
+retry-pass in a run that started after the verification brings it back. A `still-fails` verify, or a later
+reproduction, removes the mark; an `inconclusive` one changes nothing.
 
 ### Impact ranking
 
@@ -97,6 +105,8 @@ verdict and nothing else. That single difference is what makes the exit possible
 - Passing runs after quarantine accumulate as a **streak**, and one failure resets it.
 - After five consecutive passes the test is flagged **ready to release** — the dashboard tells you, rather than waiting
   to be asked.
+- A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to
+  click.
 - **Candidates** are proposed from the flaky analysis, ranked by *wasted CI minutes* rather than flakiness score. A test
   that flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is
   what actually hurts.
@@ -116,12 +126,9 @@ Individual test cases in a run carry at-a-glance badges:
 - **Newly flaky** (purple) — the first run in which the test was flaky
 - **Passed on retry** (purple) — failed at least once in this run, then passed
 
-Purple is the flaky color everywhere in the dashboard: the flaky segment of every run bar and trend chart, flaky
-counts, and the history cells of executions that passed on retry.
-
 Filters on the run's test-case list show only new regressions or new flaky tests.
 
-Opening a failing execution surfaces the same signals (see [Test case detail](./evidence#one-execution-diagnosis-first)): the new-regression / passed-on-retry / newly-flaky badges in the header, the *why* and *since when* facts on the headline, and the failing-streak sentence with a link back to the last green run in the history block.
+A failing execution shows the same badges in its header (see [Test case detail](./evidence#one-execution-diagnosis-first)).
 
 ## Spec health by file
 

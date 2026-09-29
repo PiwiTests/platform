@@ -13,22 +13,26 @@
  */
 import type { FlakeProfile, FlakeSuspect } from '#shared/handlers/flake-profile';
 import { latestSuspectResults, type FlakeExperimentRecord, type FlakeSuspectResult } from '#shared/flake-lab';
+import type { VerifiedFix } from '#shared/handlers/flake-verified';
 
 const props = defineProps<{ testCaseId: number; projectId?: number | null; projectLabel?: string | null }>();
 
 const route = useRoute();
 const profile = ref<FlakeProfile | null>(null);
 const experiments = ref<FlakeExperimentRecord[]>([]);
+/** The verify experiment that marks the test verified fixed, holding or not. */
+const verifiedFix = ref<VerifiedFix | null>(null);
 const loading = ref(true);
 const failed = ref(false);
 
 /** Re-read the experiments, when a lab session run from the desktop app ends. */
 async function reloadExperiments() {
   try {
-    const res = await $fetch<{ items: FlakeExperimentRecord[] }>(
+    const res = await $fetch<{ items: FlakeExperimentRecord[]; verifiedFix?: VerifiedFix | null }>(
       `/api/test-cases/${props.testCaseId}/flake-experiments`,
     );
     experiments.value = res.items;
+    verifiedFix.value = res.verifiedFix ?? null;
   } catch {
     // The list stays as it was; the next visit reads it again.
   }
@@ -41,11 +45,14 @@ watch(
     failed.value = false;
     const [p, e] = await Promise.allSettled([
       $fetch<FlakeProfile>(`/api/test-cases/${id}/flake-profile`),
-      $fetch<{ items: FlakeExperimentRecord[] }>(`/api/test-cases/${id}/flake-experiments`),
+      $fetch<{ items: FlakeExperimentRecord[]; verifiedFix?: VerifiedFix | null }>(
+        `/api/test-cases/${id}/flake-experiments`,
+      ),
     ]);
     if (p.status === 'fulfilled') profile.value = p.value;
     else failed.value = true;
     experiments.value = e.status === 'fulfilled' ? e.value.items : [];
+    verifiedFix.value = e.status === 'fulfilled' ? (e.value.verifiedFix ?? null) : null;
     loading.value = false;
   },
   { immediate: true },
@@ -232,6 +239,37 @@ function detailLine(s: FlakeSuspect): string | null {
       data-shot="flake-experiments"
     >
       <div class="space-y-3" data-testid="flake-experiments">
+        <p
+          v-if="verifiedFix"
+          class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+          data-testid="flake-verified-fix"
+          :data-holding="verifiedFix.flakedAgainAt ? 'false' : 'true'"
+        >
+          <UIcon
+            :name="verifiedFix.flakedAgainAt ? 'i-lucide-rotate-ccw' : 'i-lucide-badge-check'"
+            :class="verifiedFix.flakedAgainAt ? 'text-warning' : 'text-success'"
+            class="size-4 shrink-0"
+          />
+          <template v-if="!verifiedFix.flakedAgainAt">
+            <span class="font-medium text-highlighted"
+              >Verified fixed<template v-if="verifiedFix.commit">
+                on <span class="font-mono">{{ verifiedFix.commit.slice(0, 7) }}</span></template
+              ></span
+            >
+            <span class="text-muted"
+              >· {{ formatRelativeTime(verifiedFix.verifiedAt) }} · off the flaky ranking until it retry-passes
+              again</span
+            >
+          </template>
+          <template v-else>
+            <span class="text-highlighted"
+              >Verified fixed<template v-if="verifiedFix.commit">
+                on <span class="font-mono">{{ verifiedFix.commit.slice(0, 7) }}</span></template
+              >, then it retry-passed again {{ formatRelativeTime(verifiedFix.flakedAgainAt) }}</span
+            >
+            <span class="text-muted">· back on the flaky ranking</span>
+          </template>
+        </p>
         <p v-if="!loading && experiments.length === 0" class="text-sm text-highlighted leading-relaxed">
           None yet. Run the lab from the project root: it applies each suspect’s condition next to a control, with
           retries off, until the failure reproduces.
