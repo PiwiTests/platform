@@ -776,6 +776,25 @@ let footerExecId = 0;
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
+    name: 'sidebar-latest-run',
+    description:
+      "The sidebar's project status badges: one hovered (its title names the latest run it opens), then that run after a click",
+    route: '/',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      const badge = page.locator('[data-shot="sidebar-latest-run"]').first();
+      await badge.waitFor({ timeout: 60000 });
+      await settle();
+      await badge.hover();
+      await shoot('hover');
+      await badge.click();
+      await page.waitForURL(/\/test-runs\/\d+/, { timeout: 60000 });
+      await settle();
+      await shoot('run');
+    },
+    outputs: ['sidebar-latest-run-hover.png', 'sidebar-latest-run-run.png'],
+  },
+  {
     name: 'analytics-scope-bar',
     description:
       'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',
