@@ -9,6 +9,7 @@ import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { HELP_TOPICS } from '~/utils/help-content';
 import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
+import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -608,5 +609,56 @@ describe('docs site structure', () => {
       `no features/ page links /${recipe}`,
     ).toBe(true);
     expect(helpRecipes.has(recipe), `no help topic in app/utils/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
+  });
+});
+
+describe('demo examples', () => {
+  // A page renders its own examples (shared/demo/demo-examples.mjs) with
+  // <DemoExamples />, in its "Try it in the demo" section, the last one before
+  // Related, and a page that renders the list has entries to fill it.
+  const DEMO_HEADING = '## Try it in the demo';
+  const TAG = /^<DemoExamples\b[^>]*\/>\s*$/;
+  const linesOf = (page: string) =>
+    read(`apps/docs/${page}.md`).replace(FRONT_MATTER, '').replace(FENCED_CODE, '').split('\n');
+  const examplePages = [...new Set(DEMO_EXAMPLES.map((e) => e.doc))];
+
+  test.each(examplePages)(
+    '%s renders its demo examples in its "Try it in the demo" section, before Related',
+    (page) => {
+      expect(existsSync(join(repoRoot, `apps/docs/${page}.md`)), `apps/docs/${page}.md exists`).toBe(true);
+      const lines = linesOf(page);
+      const at = lines.findIndex((line) => TAG.test(line));
+      expect(at, `apps/docs/${page}.md renders <DemoExamples />`).toBeGreaterThanOrEqual(0);
+      const heading = lines
+        .slice(0, at)
+        .reverse()
+        .find((line) => /^#{1,6} /.test(line));
+      expect(heading, `the heading above <DemoExamples /> in apps/docs/${page}.md`).toBe(DEMO_HEADING);
+      const next = lines.slice(at + 1).find((line) => /^## /.test(line));
+      expect(next, `the section after "Try it in the demo" in apps/docs/${page}.md`).toBe('## Related');
+    },
+  );
+
+  test('every page that renders <DemoExamples /> has examples', () => {
+    const rendering = docsPages
+      .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
+      .filter((page) => linesOf(page).some((line) => TAG.test(line)));
+    expect(rendering.filter((page) => !examplePages.includes(page))).toEqual([]);
+  });
+
+  // A page links the demo's home or its API reference by hand; a concrete
+  // screen only through the registry, whose entries the seed is checked against.
+  test('no page links a demo screen by hand', () => {
+    const handLinks = docsPages.flatMap((page) =>
+      [...read(page).matchAll(/piwitests\.dev\/demo\/([^)\s"'`>]*)/g)]
+        .map((m) => m[1]!)
+        .filter((path) => path !== '' && path !== 'docs')
+        .map((path) => `${page}: /demo/${path}`),
+    );
+    expect(handLinks).toEqual([]);
+  });
+
+  test('every example route is a demo route, from the demo root', () => {
+    for (const example of DEMO_EXAMPLES) expect(example.route, example.id).toMatch(/^\/(?!demo\/)\S+$/);
   });
 });

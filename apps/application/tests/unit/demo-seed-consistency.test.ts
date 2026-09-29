@@ -12,6 +12,8 @@ import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#sha
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
 import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
+import { flakeLabTestState } from '#shared/flake-lab';
+import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -641,6 +643,37 @@ describe('simulator ↔ seed fingerprint parity', () => {
   });
 });
 
+/** Finished flake-lab experiments, newest first, in the shape the verified-fix rule reads. */
+function seededExperiments(testCaseId?: number) {
+  return q(`
+    select id, test_case_id, kind, verdict, commit_sha, finished_at from flake_experiments
+    where finished_at is not null ${testCaseId == null ? '' : `and test_case_id = ${testCaseId}`}
+    order by finished_at desc, id desc
+  `).map((r) => ({
+    id: Number(r.id),
+    testCaseId: Number(r.test_case_id),
+    kind: String(r.kind),
+    verdict: (r.verdict as string | null) ?? null,
+    commit: (r.commit_sha as string | null) ?? null,
+    finishedAt: new Date(Number(r.finished_at)),
+  }));
+}
+
+/** A test's executions, in the shape the retry-pass rule reads. */
+function seededExecutions(testCaseId: number) {
+  return q(`
+    select trc.test_run_id, trc.status, trc.browser_name, tr.start_time
+    from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
+    where trc.test_case_id = ${testCaseId}
+  `).map((r) => ({
+    testCaseId,
+    runId: Number(r.test_run_id),
+    runStartedAt: new Date(Number(r.start_time) * 1000),
+    browserKey: String(r.browser_name ?? ''),
+    status: String(r.status),
+  }));
+}
+
 describe('flake lab experiments', () => {
   test('every experiment has finished by load time, with its arms', () => {
     const rows = q(`
@@ -657,33 +690,87 @@ describe('flake lab experiments', () => {
   // The Flaky view lists a test under Verified fixed only while no run started
   // after its verify experiment retry-passed; the demo keeps one such test.
   test('a verified fix holds: the test retry-passed before it, and never after', () => {
-    const experiments = q(`select id, test_case_id, kind, verdict, commit_sha, finished_at from flake_experiments`).map(
-      (r) => ({
-        id: Number(r.id),
-        testCaseId: Number(r.test_case_id),
-        kind: String(r.kind),
-        verdict: (r.verdict as string | null) ?? null,
-        commit: (r.commit_sha as string | null) ?? null,
-        finishedAt: new Date(Number(r.finished_at)),
-      }),
-    );
-    const marks = markingExperiments(experiments);
+    const marks = markingExperiments(seededExperiments());
     expect(marks.size).toBeGreaterThan(0);
 
     for (const [testCaseId, mark] of marks) {
-      const executions = q(`
-        select trc.test_run_id, trc.status, trc.browser_name, tr.start_time
-        from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
-        where trc.test_case_id = ${testCaseId}
-      `).map((r) => ({
-        testCaseId,
-        runId: Number(r.test_run_id),
-        runStartedAt: new Date(Number(r.start_time) * 1000),
-        browserKey: String(r.browser_name ?? ''),
-        status: String(r.status),
-      }));
+      const executions = seededExecutions(testCaseId);
       expect(firstRetryPassAfter(executions, new Date(0)), `test ${testCaseId} never retry-passed`).not.toBeNull();
       expect(firstRetryPassAfter(executions, mark.finishedAt), `test ${testCaseId} flaked after its fix`).toBeNull();
+    }
+  });
+});
+
+// Every docs page's demo example opens the entity it names, in the state its
+// sentence promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
+describe('demo examples hold in the seed', () => {
+  const EXPECT_KEYS = new Set(['testCase', 'project', 'cluster', 'diagnosis', 'fixLanded', 'lab']);
+  const ROUTE_ENTITIES = [
+    { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
+    { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
+    { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
+  ] as const;
+
+  test('ids are unique', () => {
+    const ids = DEMO_EXAMPLES.map((e) => e.id);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+
+  test.each(DEMO_EXAMPLES.map((e) => [e.id, e] as const))('%s', (id, example) => {
+    const want = example.expect;
+    expect(
+      Object.keys(want).filter((k) => !EXPECT_KEYS.has(k)),
+      `${id}: expect keys outside the vocabulary`,
+    ).toEqual([]);
+
+    const opened = ROUTE_ENTITIES.map((r) => ({ key: r.key, match: r.pattern.exec(example.route) })).find(
+      (r) => r.match,
+    );
+    expect(opened, `${id}: route ${example.route} opens a test case, a project or a cluster`).toBeTruthy();
+    expect(want[opened!.key]?.id, `${id}: the route opens the ${opened!.key} it expects`).toBe(
+      Number(opened!.match![1]),
+    );
+
+    if (want.testCase) {
+      const [row] = q(`select title from test_cases where id = ${want.testCase.id}`);
+      expect(row?.title, `${id}: test case ${want.testCase.id}`).toBe(want.testCase.title);
+    }
+    if (want.project) {
+      const [row] = q(`select name from projects where id = ${want.project.id}`);
+      expect(row?.name, `${id}: project ${want.project.id}`).toBe(want.project.name);
+    }
+    if (want.cluster) {
+      expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(
+        1,
+      );
+      const story = FAILURE_STORIES.find((s) => s.clusterId === want.cluster!.id);
+      expect(story?.key, `${id}: cluster ${want.cluster.id}'s story`).toBe(want.cluster.story);
+    }
+    if (want.diagnosis) {
+      expect(want.cluster, `${id}: diagnosis needs a cluster`).toBeTruthy();
+      const [{ stored, withPatch }] = q(`
+        select count(*) as stored,
+          sum(case when status = 'completed' and json_extract(details, '$.suggestedFix.patch') is not null then 1 else 0 end) as withPatch
+        from failure_diagnoses where cluster_id = ${want.cluster!.id}
+      `) as Array<{ stored: number; withPatch: number | null }>;
+      if (want.diagnosis === 'with-patch')
+        expect(Number(withPatch), `${id}: a stored diagnosis with a patch`).toBeGreaterThan(0);
+      else expect(Number(stored), `${id}: no stored diagnosis`).toBe(0);
+    }
+    if (want.fixLanded) {
+      expect(want.cluster, `${id}: fixLanded needs a cluster`).toBeTruthy();
+      const [row] = q(`select fix_landed_at from failure_clusters where id = ${want.cluster!.id}`);
+      expect(row?.fix_landed_at, `${id}: the fix landed`).not.toBeNull();
+    }
+    if (want.lab) {
+      expect(want.testCase, `${id}: lab needs a test case`).toBeTruthy();
+      const testCaseId = want.testCase!.id;
+      const experiments = seededExperiments(testCaseId);
+      const mark = markingExperiments(experiments).get(testCaseId);
+      const fix = mark
+        ? { flakedAgainAt: firstRetryPassAfter(seededExecutions(testCaseId), mark.finishedAt) ? 'yes' : null }
+        : null;
+      expect(flakeLabTestState(experiments, fix), `${id}: the test's lab state`).toBe(want.lab);
     }
   });
 });

@@ -122,15 +122,6 @@ still fails, or too few runs passed to say) · `2` error. Every flag is on the [
 The lab's own runs are stamped as flake-lab runs: the reporter still sends them, and the dashboard keeps them out of
 the flaky score, regression signals, clusters, notifications, quarantine and the suspects.
 
-## Try it in the demo
-
-The [live demo](https://piwitests.dev/demo/) cannot run the lab, but it holds experiments:
-
-- [should apply discount code](https://piwitests.dev/demo/test-cases/9?tab=flakiness): a cart delay reproduced it.
-- [Table pagination works correctly](https://piwitests.dev/demo/test-cases/35?tab=flakiness): one suspect reproduced
-  it, one did not, a first fix still failed and the second is verified, so its quarantine is proposed for release.
-  Its project's [Flake Lab tab](https://piwitests.dev/demo/projects/3?tab=flake-lab) lists it as verified fixed.
-
 ## Run it in CI
 
 A local machine is not CI: a delay reproduces a race anywhere, but load and interference depend on the machine. To
@@ -180,6 +171,12 @@ reached, pass a plan saved earlier with `--plan <file>`: the response of the pla
   Flakiness tab.
 - Order across whole files is not controlled: an `after` arm counts only the rounds Playwright happened to run in
   the order it asked for.
+
+## Try it in the demo
+
+The [live demo](https://piwitests.dev/demo/) cannot run the lab, but it holds experiments:
+
+<DemoExamples />
 
 ## Related
 

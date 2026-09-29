@@ -589,6 +589,11 @@ stats, with suggested patches genuinely `validatePatch`-checked. Demo-only AI/SC
 so the canned SCM never enters the server bundle; the one shared piece is the version-snapshot row shape
 (`shared/handlers/diagnosis-versions.ts`). `tests/unit/demo-seed-consistency.test.ts` guards the whole chain.
 
+**The docs link concrete demo screens through `shared/demo/demo-examples.mjs`**, and the same test checks each
+example's `expect` against the generated seed (the entity its route opens, and the state its sentence promises). A
+seed change that moves or changes one fails there, naming the example: update the entry (route, `expect`, `shows`)
+in the same change, never the check.
+
 ## MCP tool conventions (MUST follow)
 
 MCP tools (`server/utils/mcp/tools.ts`, route `server/routes/mcp.post.ts`, definitions `shared/mcp-tools.ts`) return
