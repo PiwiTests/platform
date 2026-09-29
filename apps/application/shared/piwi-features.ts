@@ -223,16 +223,16 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Fix plans, reproduce & bisect',
         summary: 'A plan to reproduce a failure locally and bisect to the commit that introduced it.',
-        needs: ['desktop'],
+        needs: [],
         where: 'Cluster / execution → Fix plan',
         doc: 'features/fix-plans',
       },
       {
         title: 'Auto-heal PRs',
         summary:
-          'A pull request opened for you with a validated locator or patch — you review and merge, Piwi never does.',
-        needs: ['scm', 'llm'],
-        where: 'Settings → AI diagnosis',
+          'A pull request that swaps a broken locator for its healed replacement — you review and merge, Piwi never does.',
+        needs: ['fixtures', 'scm', 'admin'],
+        where: 'Settings → Auto-heal',
         doc: 'features/auto-heal',
       },
       {
@@ -346,7 +346,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Timeline markers',
         summary: 'Your deploys and infra changes overlaid on the trend charts, so a step change has a cause.',
-        needs: ['admin'],
+        needs: [],
         where: 'Project → Runs chart → Markers',
         doc: 'features/timeline-markers',
       },

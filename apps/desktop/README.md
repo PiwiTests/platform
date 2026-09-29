@@ -33,7 +33,7 @@ channel, so a per-user install pulls a per-user update.
    dashboard over IPC (`desktop_take_pending_open_files` + a `piwi:open-files`
    poke), which imports them by path through the desktop-only
    `/api/desktop/import-local` route.
-6. The dashboard's /mcp page can write the `piwi` MCP entry into detected
+6. The dashboard's /mcp page can write the `piwi-desktop` MCP entry into detected
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
    entries whose URL/token drifted after a port change.

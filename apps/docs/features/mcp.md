@@ -16,8 +16,11 @@ guide for this instance.
 ## What it provides
 
 The server exposes tools, mostly read-only, from listing projects to one failure's full evidence and a cluster's
-fix plan; [MCP tools](/reference/mcp-tools) lists every one. They return compact JSON, list tools page with
-`{ items, nextCursor }`, and a tool that fails returns a normal result with `isError: true` and a readable message.
+fix plan; [MCP tools](/reference/mcp-tools) lists every one. Two answer questions about Piwi itself:
+`describe_piwi` reads the documentation bundled with the server, and `get_release_notes` the changelog up to the
+running version. They return compact JSON, list tools page with `{ items, nextCursor }` (`get_project_test_catalog`
+with `offset`/`nextOffset`), and a tool that fails returns a normal result with `isError: true` and a readable
+message (one whose SCM or AI provider is not configured returns `{ error }`).
 
 **Modules.** Every tool belongs to one module, `core`, `workflow`, `healing` or `agents`, the groups the Setup page
 asks about. Declining a capability drops the tools that depend on it. Append `?modules=core` (comma-separated) to the
@@ -34,14 +37,15 @@ administrator role.
 
 ## Authentication
 
-The MCP server takes the same API keys as the REST API: `pd_` keys, created in **Settings → Users → [your account] →
-API keys**. Pass the key as a Bearer token on every request:
+The MCP server takes the same API keys as the REST API: `pd_` keys, created in **Settings → Account → API keys**
+(administrators manage anyone's keys from **Settings → Users**). Pass the key as a Bearer token on every request:
 
 ```
 Authorization: Bearer pd_YOUR_API_KEY
 ```
 
-When `PIWI_AUTH_ENABLED` is not set, every request is accepted without a key.
+When `PIWI_AUTH_ENABLED` is not set, every request is accepted without a key, except in the desktop app, which
+requires its local access token as the Bearer value.
 
 ## Client setup
 

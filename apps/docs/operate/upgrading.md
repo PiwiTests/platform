@@ -21,7 +21,7 @@ what happens before you pull a new tag.
 
 ## What happens when a new version starts
 
-On boot, before the server accepts a single request:
+On boot, before any request can touch the database (requests that need it wait for these steps):
 
 1. **Database migrations run automatically** — SQLite or PostgreSQL, whichever you're on. There is no
    separate migrate command and nothing to run by hand. Before migrating, Piwi compares the migrations
@@ -32,8 +32,9 @@ On boot, before the server accepts a single request:
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
    merged rather than dropped, so your triage statuses and notes survive.
 
-Steps 2 and 3 log an error and continue if they fail — they never block startup. **Step 1 does not.**
-If a migration fails, the server refuses to start rather than serving against a half-migrated schema.
+Steps 2 and 3 log an error and continue if they fail. **Step 1 does not.** If a migration fails, the
+process keeps running but every database call fails with the migration error and `GET /api/health`
+returns `503`, so the container reports unhealthy — nothing is served against a half-migrated schema.
 That's deliberate: a loud failure you can restore from beats silent corruption.
 
 ## A database that ran another build
@@ -52,8 +53,8 @@ this build`, lists what differs, and repairs it in a single transaction:
 
 The log ends with `Migration history repaired` and the next start is a normal one. If the result would
 still differ from the expected schema — a column only the other build has, `NOT NULL` without a
-default, for instance — nothing is changed and the server stops with `Migration history repair
-failed` and the difference it found: restore a backup, or start from an empty database.
+default, for instance — nothing is changed, and it fails like any migration (see above) with `Migration
+history repair failed` and the difference it found: restore a backup, or start from an empty database.
 
 A database that is only **ahead** of this version, as after starting an older version on it, gets a
 single warning, `applied migration(s) are not in this build`, and nothing else: see below.
@@ -90,9 +91,10 @@ The available tag patterns — and the GHCR mirror — are in
 
 Three ways, in increasing order of automation:
 
-- **Settings → About** shows the running version, the build SHA, the Node version, and which database
-  backend is active.
-- The version endpoint returns the same thing as JSON, with no authentication required:
+- **Settings → About** shows the running version, the build SHA, the Node.js version the server was
+  built with, and which database backend is active.
+- The version endpoint returns the version, build SHA and database backend as JSON, along with the
+  Node.js version actually running — no authentication required:
 
   ```bash
   curl -s http://localhost:3000/api/version
@@ -133,8 +135,8 @@ progress bar.
 
 ## If an upgrade goes wrong
 
-**The container won't start after upgrading.** Check the logs for `Migration error`. The schema is
-mid-flight or incompatible; restore your backup and open an
+**The container is unhealthy after upgrading** (`/api/health` returns `503` and anything that reads data fails). Check
+the logs for `Migration error`. The schema is mid-flight or incompatible; restore your backup and open an
 [issue](https://github.com/PiwiTests/platform/issues) with the error. If the error starts with
 `Migration history repair failed`, the database ran another build and could not be brought in line
 automatically ([details](#a-database-that-ran-another-build)); it was left as it was.

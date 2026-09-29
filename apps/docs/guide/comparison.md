@@ -50,7 +50,7 @@ In the **Fault0** column, ➖ marks a capability we did not find in its public d
 
 ### Is my data safe? Does Piwi phone home?
 
-**Zero telemetry.** Piwi makes no outbound calls except the ones you configure; [Privacy & data flow](./privacy) lists each one.
+**Zero telemetry.** Piwi makes no outbound calls except the ones you configure, plus two that need no setting: anonymous public-API reads of the repository your runs report (its default branch and CODEOWNERS), and fetching the title of a link you attach. [Privacy & data flow](./privacy) lists each one.
 
 ### Does AI diagnosis send my code to a third party?
 

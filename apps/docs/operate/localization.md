@@ -35,7 +35,7 @@ of the same instant:
 | `en-US` | `9/22/2026, 2:30:05 PM`   |
 | `en-GB` | `22/09/2026, 14:30:05`    |
 | `fr-FR` | `22/09/2026 14:30:05`     |
-| `de-DE` | `22.09.2026, 14:30:05`    |
+| `de-DE` | `22.9.2026, 14:30:05`     |
 | `ja-JP` | `2026/9/22 14:30:05`      |
 
 The settings dropdown lists common locales; `Intl` accepts any valid tag, so an environment value is

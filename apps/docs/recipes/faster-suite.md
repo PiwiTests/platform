@@ -35,7 +35,7 @@ Piwi classifies wait steps as **wasted time** and totals them per execution and 
 only explicit sleeps count — `waitForTimeout` and friends — because framework-injected waits
 (load-state, wait-for-function) are usually unavoidable and would drown the signal.
 
-- A failing execution's summary shows the wasted time spent in fixed waits, right next to its duration.
+- The run's test list shows each test's fixed-wait time; so does an execution's **Details** popover.
 - A run's **Timeline** tab draws a per-worker timeline: turn on **Show waits** and the sleeps show as bars that
   open the test.
 - Tune what counts in **Settings → Performance** (or lock it with
@@ -73,7 +73,7 @@ That is why Piwi ranks flaky tests by **wasted CI minutes** rather than by flaki
 often but finishes in 200ms costs little, and one that flakes weekly on a four-minute timeout hurts.
 
 [Cutting the flakiness that costs the most](./flaky-cleanup) is the whole recipe for this. The short
-version: sort by impact, fix the red dots, and
+version: work down the impact order, fix the red dots, and
 [quarantine](/features/flaky-tests#quarantine-with-a-way-out) the rest so they stop blocking merges while
 still running.
 

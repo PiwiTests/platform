@@ -79,7 +79,7 @@ The server reads three process-level variables directly:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NODE_ENV` | `production` | Set automatically |
-| `HOST` | `0.0.0.0` | Listen on all interfaces |
+| `HOST` | `0.0.0.0` | Listen on all interfaces. The Docker image sets `NITRO_HOST=0.0.0.0`, which takes precedence — override the bind address there with `NITRO_HOST` |
 | `PORT` | `3000` | Application port |
 
 Everything else is a `PIWI_*` variable, listed with its default and whether the Settings UI can override it in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
@@ -160,6 +160,8 @@ metadata:
   name: piwi-dashboard
 spec:
   replicas: 1
+  strategy:
+    type: Recreate   # never two pods at once, not even during a rollout
   selector:
     matchLabels:
       app: piwi-dashboard
@@ -192,6 +194,17 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: piwi-dashboard-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: piwi-dashboard-data
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
@@ -239,7 +252,7 @@ isolates the environment.
 
 ## Health checks
 
-`GET /api/health` verifies database connectivity and returns `200 {"status":"ok"}` when healthy, `503` otherwise — use it for load-balancer targets, uptime monitors, and container orchestration. The Docker image ships a built-in `HEALTHCHECK` against it, so `docker ps` shows `healthy`/`unhealthy` out of the box. The version endpoint additionally reports the running version and database backend ([Upgrading](./upgrading#verifying-the-upgrade-landed)).
+`GET /api/health` verifies database connectivity and returns `200 {"status":"ok","database":"ok"}` when healthy, `503 {"status":"error","database":"unreachable"}` otherwise — use it for load-balancer targets, uptime monitors, and container orchestration. The Docker image ships a built-in `HEALTHCHECK` against it, so `docker ps` shows `healthy`/`unhealthy` out of the box. The version endpoint additionally reports the running version and database backend ([Upgrading](./upgrading#verifying-the-upgrade-landed)).
 
 ## Reverse proxy (HTTPS)
 
@@ -304,7 +317,7 @@ On **Linux hosts**, the bind-mounted directory must be writable by the container
 
 ```bash
 mkdir -p .data
-chown -R 1001:1001 .data   # match the container's non-root UID 1001
+sudo chown -R 1001:1001 .data   # match the container's non-root UID 1001
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 

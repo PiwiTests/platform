@@ -58,10 +58,10 @@ Jira project permission:
 | Add Comments | `ADD_COMMENTS` | The write-back policies (fix landed, regressed, still failing, merged). |
 | Transition Issues | `TRANSITION_ISSUES` | The *transition on fix* and *reopen* policies. |
 | Assign Issues | `ASSIGN_ISSUES` | Set the assignee on a created issue, and list assignable users in the picker. |
-| Create Attachments | `CREATE_ATTACHMENTS` | Attach the failure screenshot when its toggle is on. |
+| Create Attachments | `CREATE_ATTACHMENTS` | Attach a bug report's screenshots to the issue filed from it. |
 
 For the **full integration**, grant all six on each bound project. You can drop the ones whose feature you do not
-use: `CREATE_ATTACHMENTS` if you never attach a screenshot, `ASSIGN_ISSUES` if you never set an assignee,
+use: `CREATE_ATTACHMENTS` if you never file an issue from a bug report, `ASSIGN_ISSUES` if you never set an assignee,
 `ADD_COMMENTS` and `TRANSITION_ISSUES` if the [write-back policies](/features/issue-tracking#keep-the-ticket-honest)
 stay off. `BROWSE_PROJECTS` on its own is enough for read-only unfurl and status sync.
 
@@ -101,10 +101,10 @@ See the [configuration reference](/reference/configuration#integrations) for the
 
 ## Trusted base URLs and private hosts
 
-A connection base URL is supplied by an administrator, so Piwi trusts it: a self-hosted tracker on a
-private network — `https://jira.internal.example.com` or an RFC 1918 address — works without extra
-configuration. Every URL a non-administrator supplies (pinning a link, for instance) still goes through the
-SSRF guard that blocks private hosts.
+A connection base URL is supplied by an administrator, so Piwi trusts it: a host on a private network —
+`https://jira.internal.example.com` or an RFC 1918 address — is reachable without extra configuration. The client
+itself speaks Jira Cloud's REST v3 only. Every URL a non-administrator supplies (pinning a link, for instance) still
+goes through the SSRF guard that blocks private hosts.
 
 ## What unfurl gives today
 
@@ -128,8 +128,9 @@ to French); a project binding overrides it, and the create modal offers a per-is
 
 A background task reads every tracked issue back through its connection and caches the status, title and assignee, so a
 closed ticket stops showing as open in the dashboard. It runs **every 15 minutes by default**; set
-[`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence. Links on an open cluster
-refresh every sweep; links on a resolved or ignored cluster refresh at most once a day. A connection that fails to
+[`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration) (1–1440) to change the cadence; a value of 60 or more is
+rounded to whole hours. Each sweep refreshes up to 100 links. Links on an open cluster refresh every sweep; links on
+a resolved or ignored cluster refresh at most once a day. A connection that fails to
 answer records the error on the connection card and does not stop the sweep. An administrator can run one sweep on
 demand through the REST API (see the [API docs](https://piwitests.dev/demo/docs)); the response counts the links it refreshed, failed and skipped.
 
@@ -149,7 +150,8 @@ register a webhook so a close or reopen reflects immediately instead of within t
 3. Piwi looks the issue up by its id in its links and refreshes just that one, applying the resolve/reopen policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
-create or transition anything. Regenerating the token invalidates the old URL; *Disable webhook* clears it.
+create or transition anything. **Regenerate webhook** invalidates the old URL; turning the webhook off is an
+administrator call in the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
 
 ## Related
 

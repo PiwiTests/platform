@@ -90,7 +90,7 @@ Docker below; the desktop app replaces step 1 only, and everything after it is i
 
 ```bash
 # Linux / macOS
-mkdir -p .data && chown -R 1001:1001 .data # the container runs as non-root UID 1001
+mkdir -p .data && sudo chown -R 1001:1001 .data # the container runs as non-root UID 1001
 docker run -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
@@ -170,8 +170,8 @@ and not fine on a network. Three things to set before anyone else can reach it:
 
 - `PIWI_AUTH_ENABLED=true` and `PIWI_AUTH_SECRET` — turn on accounts and roles
   ([guide](https://piwitests.dev/operate/authentication)).
-- `PIWI_SECRET_KEY` — without it, stored credentials (AI keys, SCM tokens) are encrypted with a
-  built-in development key rather than yours.
+- `PIWI_SECRET_KEY` — the key stored credentials (AI keys, SCM tokens) are encrypted with; without it,
+  the dashboard refuses to save them.
 - **HTTPS**, via a reverse proxy — see the
   [deployment guide](https://piwitests.dev/operate/deployment#reverse-proxy-https).
 
@@ -221,7 +221,7 @@ Everything below is built and published from this repository on each release.
 | [`PiwiTests.Instrumentation.AspNetCore`](https://www.nuget.org/packages/PiwiTests.Instrumentation.AspNetCore) | NuGet | Optional: the same for an ASP.NET Core backend |
 | [`PiwiTests.Instrumentation.Serilog`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Serilog) | NuGet | Optional: a Serilog sink for an ASP.NET Core backend that logs through Serilog |
 | [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) | NuGet | The capture buffer the two .NET packages above share — installed with them |
-| Desktop app (`.msi`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window — no Docker or Node |
+| Desktop app (`.msi`/`.exe`, `.dmg`, `.deb`/`.rpm`/`.AppImage`) | [GitHub Releases](https://github.com/PiwiTests/platform/releases/latest) | The server bundled in a native window — no Docker or Node |
 | [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe) | Chrome Web Store | The browser extension — ranked Playwright locators picked from the live page (Chrome, Edge, and other Chromium browsers) |
 
 The instrumentation packages are optional and only needed for

@@ -14,15 +14,17 @@ once on the server; API keys never leave it.
 
 ## Enabling AI diagnosis
 
-Configure a provider via **Settings → AI**, or with environment variables (env always takes precedence over values stored through the UI, and the UI shows env-managed fields read-only).
+Configure a provider via **Settings → AI**, or with environment variables. `PIWI_AI_PROVIDER` is the switch: once it
+is set, the provider configuration comes from the environment and the UI shows it read-only (a model picked in the UI
+still overrides the env model); without it, the other provider variables below are not read.
 
 | Variable | Description |
 |----------|-------------|
 | `PIWI_AI_PROVIDER` | `anthropic`, `openai`, or `claude-cli` |
 | `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
-| `PIWI_AI_BASE_URL` | Base URL for OpenAI-compatible providers (e.g. Ollama, LM Studio, vLLM) |
-| `PIWI_AI_AUTO_DIAGNOSE` | `true` to automatically diagnose new clusters when a run finishes |
+| `PIWI_AI_BASE_URL` | Base URL of the provider API: required for `openai`, OpenAI itself (`https://api.openai.com/v1`) included; optional for `anthropic` (a gateway or proxy) |
+| `PIWI_AI_AUTO_DIAGNOSE` | `true` to diagnose, when a run finishes, the clusters that failed in it and have no completed diagnosis yet |
 | `PIWI_AI_AUTO_DIAGNOSE_MAX` | Max clusters auto-diagnosed per finished run (budget cap; default `3`) |
 | `PIWI_AI_RESEARCH_MODEL` / `_PROVIDER` / `_BASE_URL` / `_API_KEY` | Optional **research** model for two-stage diagnosis; provider/base URL/key default to the main ones |
 | `PIWI_AI_EMBEDDING_PROVIDER` / `_MODEL` / `_BASE_URL` / `_API_KEY` | Optional **embedding** model for semantic failure clustering (OpenAI-compatible only: Anthropic has no embeddings API) |
@@ -33,8 +35,8 @@ When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOS
 
 ### Streaming diagnosis
 
-A diagnosis streams: the model's reasoning appears in a live panel as it arrives, with a stage indicator, and turns
-into the result card when it completes. The [API docs](https://piwitests.dev/demo/docs) describe the streaming
+A diagnosis streams: the model's reasoning appears in a live panel as it arrives, and turns into the result card when
+it completes. The [API docs](https://piwitests.dev/demo/docs) describe the streaming
 protocol (the in-app reference at `/docs` shows the same spec).
 
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.
@@ -64,6 +66,7 @@ PIWI_AI_MODEL=claude-opus-4-8
 ```bash
 PIWI_AI_PROVIDER=openai
 PIWI_AI_API_KEY=sk-...
+PIWI_AI_BASE_URL=https://api.openai.com/v1
 PIWI_AI_MODEL=gpt-4o
 ```
 
@@ -73,14 +76,14 @@ PIWI_AI_MODEL=gpt-4o
 PIWI_AI_PROVIDER=openai
 PIWI_AI_BASE_URL=http://localhost:11434/v1
 PIWI_AI_MODEL=llama3.1
-PIWI_AI_API_KEY=ollama   # any non-empty value for local servers
+PIWI_AI_API_KEY=ollama   # optional: sent only when set, for servers that check one
 ```
 
 A local model keeps every diagnosis on your own infrastructure; see [Privacy & data flow](./privacy).
 
 **Claude Code CLI (local, no API key)**: in the [desktop app](/features/desktop), pick **Claude Code (local)**. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path.
 
-Use **Settings → AI → Test** to check the configured provider. The dashboard shows its AI actions only once a provider is configured.
+Each role's form in **Settings → AI** has a **Test connection** button that checks its provider. The dashboard shows its AI actions only once a provider is configured.
 
 ## Response language
 

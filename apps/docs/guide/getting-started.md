@@ -37,8 +37,8 @@ why the snippet creates `.data` with the right owner; see
 [Permission issues with volumes](/operate/deployment#permission-issues-with-volumes) if the container cannot write to
 it. [Deployment](/operate/deployment) covers Docker Compose, PostgreSQL and Kubernetes.
 
-With the desktop app, copy its access token from **Settings → Storage** before the next step: the reporter uses it to
-send results.
+With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
+token, for when you need them, are on its **Setup** page under **Send results to this app**.
 
 Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's. Want
 to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.

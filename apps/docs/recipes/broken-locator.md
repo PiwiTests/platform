@@ -15,11 +15,11 @@ replacement is proposed from a page that worked rather than from the broken one 
 
 ## 1. Open the failing execution's alternative locators
 
-On a failing test case, the **Alternative locators** panel lists candidate replacements ranked by
-stability, with one marked as the recommended fix.
+On a failing execution, the **Locator fix** panel (under *More ways to fix*) lists candidate replacements
+ranked by stability, with one marked as the recommended fix.
 
 <figure>
-  <img src="/screenshots/locator-healing.png" alt="Alternative locators panel with ranked replacement locators and a recommended fix">
+  <img src="/screenshots/locator-healing.png" alt="Locator fix panel with ranked replacement locators and a recommended fix">
   <figcaption>Ranked replacements captured from the last passing run — the recommendation favours locators that match the conventions already in your suite.</figcaption>
 </figure>
 

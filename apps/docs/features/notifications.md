@@ -46,11 +46,12 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
 
-The diagnosis panel toggles diagnosis completion notifications without deleting the subscription.
+Diagnosis-completion notifications can be switched off per browser in **Settings → AI diagnosis → Diagnosis
+notifications** without deleting the subscription.
 
 ### Email
 
-Requires SMTP to be configured (see below). Sends to a destination address.
+Requires SMTP to be configured (see below). Sends to a destination address. With authentication on, each user with an account email also gets an automatic **Account email** channel.
 
 ### Slack
 
@@ -69,19 +70,20 @@ Microsoft keeps it, and the form flags it. Each event, digest and
 
 ### Webhook
 
-Piwi `POST`s a JSON body to your URL, signed with an HMAC-SHA256 `X-Piwi-Signature` header derived from the channel's
-secret, which the form can generate (storing it needs `PIWI_SECRET_KEY`). Private and loopback addresses are refused.
+Piwi `POST`s a JSON body to your URL. When the channel has a secret, which the form can generate (storing it needs
+`PIWI_SECRET_KEY`), each request is signed with an HMAC-SHA256 `X-Piwi-Signature` header. Private and loopback
+addresses are refused.
 The body, its fields and how to verify the signature are in
 [Notification events & webhooks](/reference/notification-events#webhook-body).
 
 ### Reaching the person who fixed it
 
-When an [SCM token](/guide/source-control) is configured, `cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the provider (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
+`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider, which for a private repository needs an [SCM token](/guide/source-control) (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly:
 
 - **Email**, through the same outbox, when SMTP is configured **and** the commit's email belongs to a registered Piwi user. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.
 
-Without a token, an exposed email or a successful lookup, subscriptions alone apply.
+When the lookup fails (a private repository without a token, a host that exposes no email), subscriptions alone apply.
 
 ### Global channels & subscriptions
 
@@ -89,15 +91,16 @@ Admins can mark a channel **global** so it is available to all users, and mark a
 
 ## Subscriptions
 
-A subscription controls *what* is delivered and *how*:
+A subscription controls *what* is delivered and *how*. The project **bell** creates one for that project — a channel and one or more of the events above, delivered in real time. **Settings → Notifications** lists them, and mutes one for 7 days or removes it.
 
-- **Events**: one or more of the events above.
-- **Scope**: all projects, or a single project.
-- **Filters**: by branch, status, **owner** (only when the run broke a test that team owns; see
-  [Tags & ownership](/guide/concepts#tags-ownership)), or a numeric threshold (such as flakiness above N%).
-- **Mode**: `realtime`, sent as events happen, or `digest`, held until the configured time and sent as **one combined
-  message** per email, Slack or Teams channel.
-- **Mute**: silence a subscription until a chosen time without deleting it.
+The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
+
+- **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
+- **Filters**: for run events, by branch, status or **owner** (only when the run broke a test that team owns; see
+  [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold` (a 0–1 rate) and `perfRegressionPct`.
+- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
+  **one combined message** per email, Slack or Teams channel.
+- **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration
 

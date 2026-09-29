@@ -90,7 +90,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
       color: 'error',
       variant: 'solid',
       icon: 'i-lucide-flame',
-      title: 'First run in which this test failed',
+      title: 'Failing here, passing in the baseline run',
     });
   }
   if (input.isNewFlaky) {

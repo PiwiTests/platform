@@ -113,7 +113,7 @@ const hasAnything = computed(
       variant="solid"
       size="xs"
       class="uppercase tracking-wider shrink-0"
-      title="First run in which this test failed"
+      title="Failing here, passing in the baseline run"
     >
       NEW
     </UBadge>

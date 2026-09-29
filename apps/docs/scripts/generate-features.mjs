@@ -1,6 +1,7 @@
 /**
  * Generates apps/docs/reference/features.md — the All features page — from the
- * feature catalog (apps/application/shared/piwi-features.ts).
+ * feature catalog (apps/application/shared/piwi-features.ts), followed by the
+ * pieces and setup decisions (apps/application/shared/piwi-ecosystem.ts).
  *
  * The page is a build artifact (gitignored): `docs:dev` and `docs:build` run
  * this first, so the page can never drift from the catalog. To change the page,
@@ -18,6 +19,11 @@ const jiti = createJiti(import.meta.url);
 
 const { PIWI_FEATURE_GROUPS, FEATURE_NEED_LABELS } = await jiti.import(
   join(repoRoot, 'application/shared/piwi-features.ts'),
+);
+// The pieces and the setup decisions — the same registry the MCP describe_piwi
+// tool answers from, so the tool never says anything this page does not.
+const { ECOSYSTEM_PIECES, SETUP_DECISIONS } = await jiti.import(
+  join(repoRoot, 'application/shared/piwi-ecosystem.ts'),
 );
 
 const cell = (text) => text.replace(/\|/g, '\\|');
@@ -43,6 +49,38 @@ function groupMarkdown({ title, intro, features }) {
 
 const total = PIWI_FEATURE_GROUPS.reduce((n, g) => n + g.features.length, 0);
 
+const pieceRow = ({ name, summary, get, when, doc }) =>
+  `| [${cell(name)}](/${doc}) | ${cell(summary)} | ${cell(get)} | ${cell(when)} |`;
+
+const piecesMarkdown = [
+  '## The pieces',
+  '',
+  'What you install or reach, how to get each piece, and when you need it.',
+  '',
+  '| Piece | What it is | How to get it | When you need it |',
+  '|-------|------------|---------------|------------------|',
+  ...ECOSYSTEM_PIECES.map(pieceRow),
+  '',
+].join('\n');
+
+const decisionMarkdown = ({ question, default: fallback, options, doc }) =>
+  [
+    `### ${question}`,
+    '',
+    `*Default:* ${fallback} [Details](/${doc})`,
+    '',
+    ...options.map(({ option, when }) => `- **${option}** — ${when}`),
+    '',
+  ].join('\n');
+
+const decisionsMarkdown = [
+  '## Choosing a setup',
+  '',
+  'The decisions a team makes once, what happens if you make none, and the page that settles each.',
+  '',
+  ...SETUP_DECISIONS.map(decisionMarkdown),
+].join('\n');
+
 const page = `---
 title: All features
 description: Every Piwi feature in one table per group, with what it needs beyond the reporter, where it lives in the dashboard, and the page that explains it.
@@ -51,7 +89,7 @@ editLink: false
 ---
 
 <!-- GENERATED FILE — do not edit. -->
-<!-- Source of truth: apps/application/shared/piwi-features.ts, rendered by apps/docs/scripts/generate-features.mjs (npm run docs:gen). -->
+<!-- Source of truth: apps/application/shared/piwi-features.ts and piwi-ecosystem.ts, rendered by apps/docs/scripts/generate-features.mjs (npm run docs:gen). -->
 
 # All features
 
@@ -62,10 +100,14 @@ the history**, **explain the failures**, **hand back a fix**, **find what your
 tests miss**), then the routes that carry the results to people and tools, and
 what an operator runs. The docs sidebar and the landing page use the same groups.
 
-New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this page is the "where next" once a first run has landed.
+New here? Start with [What Piwi does](/guide/what-piwi-does) and [Getting started](/guide/getting-started); this page is the "where next" once a first run has landed. The last two sections list the pieces you install and the decisions a setup involves.
 
-${PIWI_FEATURE_GROUPS.map(groupMarkdown).join('\n')}`;
+${PIWI_FEATURE_GROUPS.map(groupMarkdown).join('\n')}
+${piecesMarkdown}
+${decisionsMarkdown}`;
 
 mkdirSync(join(here, '..', 'reference'), { recursive: true });
 writeFileSync(join(here, '..', 'reference', 'features.md'), page);
-console.log(`generated apps/docs/reference/features.md from ${total} features`);
+console.log(
+  `generated apps/docs/reference/features.md from ${total} features, ${ECOSYSTEM_PIECES.length} pieces and ${SETUP_DECISIONS.length} decisions`,
+);

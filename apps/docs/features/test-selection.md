@@ -21,13 +21,13 @@ npx @piwitests/reporter run smoke
 `piwi run <key>` resolves the selection and runs `playwright test` with exactly those tests. It finds your dashboard
 the way the reporter does, through `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` (if auth is on) and `PIWI_PROJECT_NAME`, and
 passes anything after `--` straight to Playwright. The run is **stamped** with the selection it came from, so the
-dashboard shows `smoke · 42 tests` instead of an anonymous filter, and a [gate](/guide/ci) can re-resolve the same definition
-to check nothing was silently dropped.
+[pull-request comment](/features/pr-feedback) names the subset, and a [gate](/guide/ci) can re-resolve the same
+definition to check nothing was silently dropped.
 
 If the dashboard is unreachable, `piwi run` falls back to the full suite with a warning (and reuses the last good
 resolution from `.piwi/selection-cache.json` when it has one): a reporting problem never breaks the test run. Pass
-`--strict` to invert that for CI, where an unresolvable selection should stop the pipeline. Resolving to **zero** tests
-is always an error: a smoke job that silently runs nothing is worse than one that fails loudly.
+`--strict` to invert that for CI, where an unresolvable selection should stop the pipeline. Resolving a named selection to
+**zero** tests is always an error: a smoke job that silently runs nothing is worse than one that fails loudly.
 
 ### Print, shard and reorder
 
@@ -42,8 +42,8 @@ flags shape a resolution:
   so a `--require-selection` gate still sees the whole set.
 - `--budget 5m` caps the total time for this resolution.
 
-Because Piwi merges a run's shards into one, the merged run still covers the whole selection. Every flag and the
-output formats are in the [CLI reference](/reference/cli#select-run).
+Jobs split with `piwi run --shard` are not merged into one run, so `--require-selection` sees one job's share. Every
+flag and the output formats are in the [CLI reference](/reference/cli#select-run).
 
 ## Built-in selections
 
@@ -76,6 +76,7 @@ absent `include` starts from the whole suite. The predicates, all optional:
 
 | Predicate | Matches when |
 |---|---|
+| `ids` | the test-case id is one of these |
 | `tags` / `anyTags` | the test carries all / any of these tags |
 | `owner`, `priority`, `feature` | the `piwi:` annotation is one of these |
 | `files` | the file path matches one of these globs (`**`, `*`, `?`) |
@@ -106,7 +107,7 @@ import { defineConfig } from '@playwright/test';
 import { wrapConfig, resolveSelection } from '@piwitests/reporter';
 
 const selection = await resolveSelection(); // reads PIWI_SELECTION; undefined when unset
-export default wrapConfig(defineConfig({ grep: selection?.grep }));
+export default wrapConfig(defineConfig({ grep: selection?.grep ? new RegExp(selection.grep) : undefined }));
 ```
 
 It stamps the run like `piwi run`, and returns `undefined` (so everything runs) when no selection is named or the
@@ -162,10 +163,10 @@ nothing.
 Piwi can _propose_ selections and tags from the history it keeps, with the evidence attached, never applied. The
 **Suggestions** panel on the Selections tab (and the `suggest_selections` MCP tool) surface three kinds:
 
-- **`@slow` tags**: tests whose average duration sits well past the suite's 95th percentile.
+- **`@slow` tags**: tests whose average duration is above the suite's 95th percentile.
 - **`@feature` tags**: the dominant route family a test hits (say `checkout`) when it carries no `feature` annotation.
 - **A mined smoke suite**: a greedy set cover over _observed_ route coverage under a time budget, keeping the test
-  that buys the most new routes per second until the budget is spent. Only stable tests qualify. "Save as selection"
+  that adds the most new routes until the budget is spent. Only stable tests qualify. "Save as selection"
   turns the picks into a selection pinned to exactly those tests.
 
 Coverage here means the routes a test was _seen_ to hit on recent runs, not instrumented code coverage.

@@ -22,8 +22,9 @@ runs that follow.
 
 Pairs in the **ambiguous band**, between `PIWI_CLUSTER_SUGGEST_THRESHOLD` (default `0.80`) and the merge threshold, are
 not merged automatically. When AI is configured, a model judges the pair from its error text, locators, most-affected
-tests and overlap, and merges only on a confident yes; otherwise the pair becomes a **merge suggestion** on the
-project's Failure clusters tab, for a reporter or admin to approve or dismiss. This runs after every finished run
+tests and overlap: it merges on a confident yes, turns a less confident yes into a **merge suggestion** on the
+project's Failure clusters tab, for a reporter or admin to approve or dismiss, and leaves a no apart. Without AI, or
+past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
 whenever an embedding role is configured, independently of auto-diagnose.
 
 <figure>
@@ -60,8 +61,9 @@ A diagnosis is grounded in your actual run, not a generic "ask AI" button. Each 
 ## Diagnosing one execution
 
 A cluster page diagnoses every failure that shares a fingerprint. On a single failing
-[execution](./evidence#one-execution-diagnosis-first), the **Diagnosis** section of **More ways to fix** diagnoses just
-that execution, with the same panel and model: handy when a failure has not clustered yet. Execution and cluster
+[execution](./evidence#one-execution-diagnosis-first), the **Diagnosis** section of **More ways to fix** shows the
+cluster's completed diagnosis with an **Open** link to it; without one, it diagnoses just that execution, with the same
+panel and model: handy when a failure has not clustered yet. Execution and cluster
 diagnoses are stored separately, and running one never overwrites the other.
 
 A stored diagnosis stays on screen even with no provider configured. With no result and no provider, **Copy prompt**
@@ -77,7 +79,7 @@ The diagnosis is fed the code that changed. On a cluster page you can:
 - **Preview the exact context** before running it, so nothing leaves your server by surprise.
 
 Without a pinned baseline, the diff starts at the last green run before the cluster first appeared, else at the last
-run where this test passed; the response names which one it used. With the repository reachable, Piwi also sends the
+run where this test passed; the context preview names which one it used. With the repository reachable, Piwi also sends the
 **full current content** of the most suspect changed files and of the failing test's local imports (page objects,
 helpers, fixtures), capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4) and `PIWI_AI_MAX_SOURCE_FILE_CHARS`. The
 repository connection is set up on [Source control](/guide/source-control).
@@ -103,7 +105,8 @@ The diagnosis, its patch, the locator fix and the verify command come together i
 
 ## Diagnosis history
 
-Every re-diagnose keeps the previous result, up to 50 versions per cluster. **History** in the panel header lists them
+Every re-diagnose keeps the previous result; a nightly sweep keeps the newest 20 per cluster
+(`PIWI_RETENTION_DIAGNOSIS_VERSIONS`, `0` keeps all). **History** in the panel header lists them
 newest first, with the model, category, confidence and token cost, and shows what changed since each one.
 
 A diagnosis is flagged **may be stale** only when the evidence changed since it ran **and** the cluster is still

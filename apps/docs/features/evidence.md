@@ -29,9 +29,9 @@ explained](/guide/first-failure). Traces stream in while the run is still runnin
   <figcaption>A failing execution: the situation block, then one evidence card whose tabs hold everything captured.</figcaption>
 </figure>
 
-Below the block, one **evidence card** holds tabs, each with a count or a dot when it holds data. It opens on the tab the story's leading clue cites (when it
-is strong or medium), else on **Timeline** when it can place two or more items, else on **Screen** when a screenshot or
-video exists, else on **Source**; never on **State**.
+Below the block, one **evidence card** holds tabs, each with a count or a dot when it holds data. It opens on **Source** or
+**Performance** when a strong or medium leading clue cites it, else on **Timeline** when it can place two or more items,
+else on the cited tab, else on **Screen** when a screenshot or video exists, else on **Source**; never on **State**.
 
 - **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
   browser dialogs, with the failure marked, over a steps table giving each step's offset (`t-1.1s`) and duration.
@@ -46,7 +46,7 @@ video exists, else on **Source**; never on **State**.
 - **Network**: the requests with inline [backend logs](/guide/backend-logs); one with no response shows the browser's
   error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
   **State**: the app state at test end and the environment diff against the last green run. **Performance**:
-  performance hints, Web Vitals, the slowest step and wasted time.
+  performance hints and Web Vitals.
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
 of this test's recent executions. A **passing** execution shows the identity and facts lines only, with the evidence
@@ -57,8 +57,8 @@ card on **Timeline**. Network, console, Web Vitals, ARIA and alternative-locator
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence already captured, with no model
 involved. Each carries a **strength** (strong, medium or weak) and a **citation** to the evidence section it came from,
-so a click jumps to the proof; the **Most likely** line leads with the strongest one, or with the story several of them
-form, and the AI diagnosis receives them as evidence. Every rule, and when it fires, is listed on
+so a click jumps to the proof; the **Most likely** line leads with the story they form, else a completed diagnosis, else
+the strongest one, and the AI diagnosis receives them as evidence. Every rule, and when it fires, is listed on
 [Clue rules](/reference/clues).
 
 ### Attempts

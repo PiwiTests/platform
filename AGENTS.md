@@ -228,7 +228,7 @@ itself the same way everywhere:
 > the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted,
 > zero telemetry.
 
-Seven surfaces carry it, and they drift the moment one changes alone. Update them **in the same commit**:
+Eight surfaces carry it, and they drift the moment one changes alone. Update them **in the same commit**:
 
 | Surface                                | Where                                                                    |
 | -------------------------------------- | ------------------------------------------------------------------------ |
@@ -237,10 +237,11 @@ Seven surfaces carry it, and they drift the moment one changes alone. Update the
 | Site description (meta + search index) | `apps/docs/.vitepress/config.mts` → `description`                        |
 | Social cards                           | `apps/docs/.vitepress/config.mts` → `og:` title + description            |
 | Docker Hub overview                    | `DOCKER_HUB.md` first paragraph                                          |
+| MCP `describe_piwi` overview           | `apps/application/shared/piwi-ecosystem.ts` → `POSITIONING`              |
 | npm package descriptions               | `packages/server/package.json`, `packages/reporter/package.json`         |
 | GitHub repo description + topics       | Repository settings — not in the repo, so check it by hand               |
 
-The four surfaces that live in the repository are guarded by
+The five surfaces that live in the repository are guarded by
 `apps/application/tests/unit/docs-drift.test.ts`, clause by clause — it also checks that no page but the generated MCP tools page
 states an MCP tool count, and every `doc:` anchor the app deep-links into. The npm descriptions
 and the GitHub repo description are still on you.

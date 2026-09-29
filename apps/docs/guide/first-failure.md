@@ -27,15 +27,15 @@ It is read from the action or matcher, the locator, the expected and received va
 
 ## 2. Most likely: why
 
-Under the headline, the **Most likely** line gives you the one explanation, not a pile of them. It is built from **[clues](/features/evidence#clues)**: deterministic, rule-based findings correlated from the evidence, with *no model involved*. When several clues form a known combination, the line is a [story](./concepts#story), one sentence that chains them:
+Under the headline, the **Most likely** line gives you the one explanation, not a pile of them. It is built from **[clues](/features/evidence#clues)**: deterministic, rule-based findings correlated from the evidence, with *no model involved*. When the clues match a known pattern (some patterns need only one clue), the line is a [story](./concepts#story), one sentence that chains them:
 
 > *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight (28 s); the console said so 1.5 s before the click gave up"*
 
-Otherwise it is the strongest clue, or the cluster's completed [AI diagnosis](/features/ai-diagnosis). It carries a strength (or confidence) chip and how many clues **agree**; a **more** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
+Otherwise it is the cluster's completed [AI diagnosis](/features/ai-diagnosis), else the strongest clue. It carries a strength (*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
 
 ## 3. The situation: what's going on
 
-Below the explanation, the **situation** sentence puts the failure in context in one line: since when it's been failing (the first failing run, its commit and author), how many other tests share the same cause and the [cluster](/features/failure-clusters) they join, with its triage status and whether an earlier fix regressed, and who owns it. An exceptional case (a new regression, a pass on retry, a newly flaky test, an infrastructure failure) leads the sentence as its one badge.
+Below the explanation, the **situation** sentence puts the failure in context in one line: since when it's been failing (the first failing run), this run's commit and author, how many other tests share the same cause and the [cluster](/features/failure-clusters) they join, with its triage status and whether an earlier fix regressed, and who owns it. An exceptional case (a new regression, a pass on retry, a newly flaky test, an infrastructure failure) leads the sentence as its one badge.
 
 ## 4. Next: what to do
 
@@ -45,10 +45,10 @@ The block closes on a **facts** line, one size smaller: the failing file and lin
 
 ## 5. The evidence: see it
 
-One **evidence card** with tabs (**Timeline, Screen, Source, Network, Console, State, Performance**) holds everything captured. It opens on the tab the leading clue cites, and a click on any citation switches tabs for you. The one to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the last green run, and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper. Each tab is described on [Failure evidence](/features/evidence).
+One **evidence card** with tabs (**Timeline, Screen, Source, Network, Console, State, Performance**, plus **Attempts** when the test retried) holds everything captured. It opens on **Timeline** when it can place two or more steps, requests or console entries, otherwise on the tab the leading clue cites, and a click on any citation switches tabs for you. The one to know first is **Timeline**: it places the test's steps, console entries, network requests and backend logs on a single clock and marks the **moment of failure**, so "console (1) / network (3)" becomes *what the app was doing when the test gave up*. **Screen** holds the failure screenshot, the visual diff against the last green run, and the failure-time page state; **Source** shows the test source as a real call stack, so a failure inside a helper shows the helper. Each tab is described on [Failure evidence](/features/evidence).
 
 ::: tip Most of this needs one file
-The error, trace, headline and clustering work with the reporter alone. The console, network, Web Vitals, failure-time snapshot and locator healing come from the [capture fixtures](./capture-fixtures), one file in your test setup. A tab that needs them and never received any data is left out, and one footer line says so.
+The error, trace, headline and clustering work with the reporter alone, and an uploaded trace recovers the console, network and failure-time snapshot. Web Vitals, page state and locator healing come from the [capture fixtures](./capture-fixtures), one file in your test setup. A tab that needs them and never received any data is left out, and until you decide on the fixtures one footer line names what they would add.
 :::
 
 ## 6. More ways to fix
