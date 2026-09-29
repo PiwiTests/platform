@@ -41,6 +41,9 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/desktop/repro-requests/:id', // desktop build only; a repro request and its verdict, 404 everywhere else
   'PATCH /api/desktop/repro-requests/:id', // desktop build only; the window records what it did with a request
   'GET /api/desktop/repro-requests/:id/spec', // desktop build only; the shell reads the spec it writes and runs
+  'POST /api/desktop/picker-pairings', // desktop build only; Piwi Picker asks to pair with the app, 404 everywhere else
+  'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
+  'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
   'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section is hidden client-side in demo mode instead of faking an understanding of whatever the visitor pastes
   'POST /api/ai/step-resolution', // AI-step authoring — resolves an arbitrary page snapshot against a natural-language prompt; no server or real LLM in the demo, and the reporter only calls it in resolve/heal mode (never a normal run), so there is nothing to script
   // Share links: capability tokens for anonymous viewers. The demo has no

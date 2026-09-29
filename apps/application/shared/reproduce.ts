@@ -133,6 +133,11 @@ export interface ReproduceDesktopContext {
   repositoryUrl: string | null;
   /** A bisect result already recorded on the cluster, when one was found. */
   bisectedCommit: BisectedCommit | null;
+  /**
+   * The Flake Lab arm that reproduced the failing test, when it is one test and
+   * an experiment reproduced it: a bisect then runs that arm at each step.
+   */
+  flakeArm: { testCaseId: number; label: string } | null;
 }
 
 /**

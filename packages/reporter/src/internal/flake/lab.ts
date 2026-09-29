@@ -234,10 +234,23 @@ export function verifyVerdict(arm: ArmCount, reproducedRate: number): VerifyVerd
 export const EXIT_REPRODUCED = 0;
 export const EXIT_NOT_REPRODUCED = 1;
 export const EXIT_ERROR = 2;
+/** A bisect step that cannot judge its commit: the code `git bisect run` skips on. */
+export const EXIT_BISECT_SKIP = 125;
 
 /** 0 when an arm reproduced (or the fix held), 1 otherwise. */
 export function exitCodeFor(verdict: FlakeVerdict | VerifyVerdict | string): number {
   return verdict === 'reproduced' || verdict === 'verified' ? EXIT_REPRODUCED : EXIT_NOT_REPRODUCED;
+}
+
+/**
+ * A bisect step's exit code from the verify arm's verdict: 0 (good) when the
+ * fix holds at this commit, 1 (bad) on a matching failure, 125 (skip) with too
+ * few clean runs to tell.
+ */
+export function bisectExitCode(verdict: VerifyVerdict | string): number {
+  if (verdict === 'verified') return EXIT_REPRODUCED;
+  if (verdict === 'still-fails') return EXIT_NOT_REPRODUCED;
+  return EXIT_BISECT_SKIP;
 }
 
 /**

@@ -84,6 +84,7 @@ export const PROJECT = {
   FIX_PLAN: 'fix-plan-test',
   FIX_VERIFICATION: 'fix-verification-test',
   FLAKE_LAB: 'flake-lab-test',
+  FLAKE_LAB_DESKTOP: 'flake-lab-desktop-test',
   FLAKE_LAB_RUNS: 'flake-lab-runs-test',
   FLAKE_SUSPECTS: 'flake-suspects-test',
   FLAKY_BOARD: 'flaky-board-test',

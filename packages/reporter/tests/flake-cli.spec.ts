@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FlakeCondition, FlakeResultLine } from '@piwitests/core/flake-plan';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   FLAKE_BATCH_RUNS,
   armDone,
+  bisectExitCode,
   countArm,
   estimateMs,
   exitCodeFor,
@@ -229,6 +233,12 @@ describe('verdicts and exit codes', () => {
     expect(exitCodeFor('inconclusive')).toBe(1);
   });
 
+  it('a bisect step answers good, bad or skip in git bisect run codes', () => {
+    expect(bisectExitCode('verified')).toBe(0);
+    expect(bisectExitCode('still-fails')).toBe(1);
+    expect(bisectExitCode('inconclusive')).toBe(125);
+  });
+
   it('verify holds at the D9 run count with no matching failure', () => {
     const count = countArm([[pass(), pass(), pass(), pass(), pass()]], arm({ stopAt: 1 }));
     expect(verifyVerdict(count, 0.75)).toBe('verified');
@@ -258,6 +268,17 @@ describe('the command line', () => {
     expect(() => parseFlakeArgs(['1', '--budget', 'later'])).toThrow(/duration/);
     expect(() => parseFlakeArgs(['1', '--frobnicate'])).toThrow(/unknown option/);
     expect(() => parseFlakeArgs(['verify', '1', '--all'])).toThrow(/verify reruns one arm/);
+  });
+
+  it('reads --bisect on verify only, and saves nothing with it', () => {
+    expect(parseFlakeArgs(['verify', '1842', '--bisect'])).toMatchObject({ verify: true, bisect: true, upload: false });
+    expect(() => parseFlakeArgs(['1842', '--bisect'])).toThrow(/--bisect is a verify option/);
+  });
+
+  it('reads --source from a closed list', () => {
+    expect(parseFlakeArgs(['1842', '--source', 'desktop'])).toMatchObject({ source: 'desktop' });
+    expect(parseFlakeArgs(['1842'])).toMatchObject({ source: null });
+    expect(() => parseFlakeArgs(['1842', '--source', 'laptop'])).toThrow(/--source must be one of cli, ci, desktop/);
   });
 
   it('exits 2 on a bad option and with no dashboard to read the plan from', async () => {
@@ -412,5 +433,65 @@ describe('a session', () => {
     await expect(runSession(runner, planOf(), { suspect: null, all: false, budgetMs: 60_000 })).rejects.toThrow(
       /recorded no attempt/,
     );
+  });
+});
+
+describe('a bisect step', () => {
+  const verifyPlan = () =>
+    planOf({
+      kind: 'verify',
+      experimentId: null,
+      arms: [arm({ id: 'verify', rank: null, runs: 5, stopAt: 1 })],
+      combined: null,
+      verifies: {
+        experimentId: 3,
+        armId: 9,
+        label: 'delay GET /api/cart 1.8 s',
+        rate: 0.75,
+        commit: null,
+        finishedAt: null,
+      },
+    });
+
+  function planFile(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-flake-bisect-'));
+    const file = path.join(dir, 'plan.json');
+    fs.writeFileSync(file, JSON.stringify(verifyPlan()));
+    return file;
+  }
+
+  async function step(
+    script: Record<string, (i: number) => FlakeResultLine>,
+  ): Promise<{ code: number; calls: string[]; out: string }> {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const runner = fakeRunner(script);
+    try {
+      const code = await runFlake(['verify', '--plan', planFile(), '--bisect'], runner);
+      return { code, calls: runner.calls, out: log.mock.calls.flat().join('\n') };
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+  }
+
+  it('runs the verify arm alone and exits 0 when it holds', async () => {
+    const { code, calls, out } = await step({ verify: () => pass() });
+    expect(code).toBe(0);
+    expect(calls.every((c) => c.startsWith('verify'))).toBe(true);
+    expect(out).toMatch(/Bisect step: good/);
+    expect(out).not.toMatch(/control/);
+  });
+
+  it('exits 1 at the first failure with the same error as in CI', async () => {
+    const { code, out } = await step({ verify: (i) => (i === 2 ? match() : pass()) });
+    expect(code).toBe(1);
+    expect(out).toMatch(/Bisect step: bad/);
+  });
+
+  it('exits 125 when the commit cannot run the arm', async () => {
+    const { code, out } = await step({ verify: () => line({ role: 'companion' }) });
+    expect(code).toBe(125);
+    expect(out).toMatch(/Bisect step: skip/);
   });
 });

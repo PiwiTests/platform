@@ -6,7 +6,7 @@
  * layout; runs keep going while it is closed, and closing it never stops
  * anything. Renders nothing without the IPC bridge.
  */
-import type { LocalRun } from '~/composables/useDesktopLocalRuns';
+import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
@@ -46,6 +46,11 @@ function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'err
     case 'running':
       return { label: localRunProgressLabel(run), color: run.stopRequested ? 'neutral' : 'info' };
     case 'passed':
+      if (run.kind === 'flake') {
+        return flakeLabOutcome(run.exitCode) === 'reproduced'
+          ? { label: 'Reproduced', color: 'success' }
+          : { label: 'Not reproduced', color: 'neutral' };
+      }
       return { label: 'Passed', color: 'success' };
     case 'failed':
       return { label: run.exitCode != null ? `Failed (exit ${run.exitCode})` : 'Failed', color: 'error' };
