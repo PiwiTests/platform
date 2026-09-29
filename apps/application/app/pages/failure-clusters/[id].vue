@@ -712,7 +712,6 @@ const breadcrumbItems = computed(() => [
             <template #locator-fix>
               <LocatorHealingPanel
                 ref="clusterLocatorPanel"
-                :run-id="cluster.lastSeenRunId"
                 :test-runs-case-id="affectedCases[0]!.recentTestRunsCaseId"
                 :affected-count="affectedCases.length"
                 :chrome="false"

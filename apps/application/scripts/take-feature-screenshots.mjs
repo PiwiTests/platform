@@ -1223,15 +1223,41 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="test-case-locators"]', pad: 12 });
     },
   },
+  ...['', '-mobile'].map((suffix) => ({
+    name: `screen-views${suffix}`,
+    description: suffix
+      ? 'Screen tab at phone width: the views of the page at the failure, the strip wrapping onto two rows'
+      : 'Screen tab: one strip of views of the page at the failure (Screenshot, DOM, Accessibility tree, Visual diff, Page diff, Video) over the files',
+    route: '/test-run-cases/37',
+    viewport: suffix ? { width: 390, height: 1400 } : { width: 1280, height: 1100 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async run({ page, shoot, settle }) {
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Screen', exact: true })
+        .click();
+      // The strip is whole once the diffs have reported.
+      await page
+        .getByRole('tablist', { name: 'Screen view' })
+        .getByRole('tab', { name: 'Page diff' })
+        .waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  })),
   {
-    name: 'page-structure-picker',
-    description: 'Screen tab: Page structure → Open in picker, the locator picker over the failure-time page',
+    name: 'screen-dom-picker',
+    description: 'Screen tab: the DOM view → Open in picker, the locator picker over the same page',
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 1000 },
-    async run({ page, shoot, settle, openTab }) {
-      await openTab(/^Screen/);
-      await page.getByRole('button', { name: /Page structure/ }).click();
-      await page.locator('iframe[title="Failure-time page"]').waitFor({ timeout: 15000 });
+    async run({ page, shoot, settle }) {
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Screen', exact: true })
+        .click();
+      await page.getByRole('tablist', { name: 'Screen view' }).getByRole('tab', { name: 'DOM', exact: true }).click();
+      await page.locator('iframe[title="DOM at the failure"]').waitFor({ timeout: 15000 });
       await page.getByRole('button', { name: 'Open in picker' }).click();
       await page.getByText('Rendered from the failure-time DOM snapshot').waitFor({ timeout: 15000 });
       await page.getByText('Initializing picker').waitFor({ state: 'detached', timeout: 15000 });
@@ -1728,9 +1754,10 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     // Execution 37 carries an attachment, a trace and a visual diff, so the
-    // evidence cards are populated rather than empty.
+    // evidence cards are populated rather than empty. The height takes in the
+    // failing step's page views at the foot of the steps table.
     route: '/test-run-cases/37',
-    viewport: { width: 1560, height: 1400 },
+    viewport: { width: 1560, height: 1800 },
     colorScheme: 'dark',
   },
   {
@@ -2293,7 +2320,7 @@ const SCENES = [
 
   {
     name: 'page-diff',
-    description: 'Screen tab: the Screenshot · Page diff toggle and the structural diff of the failing page',
+    description: 'Screen tab: the Page diff view, the structural diff of the failing page',
     // Execution 37 (checkout) has a green ARIA sample and a failing one that
     // renames the "Pay" button and disables it — a legible one-line diff.
     route: '/test-run-cases/37',
@@ -2312,10 +2339,13 @@ const SCENES = [
       await shoot();
     },
   },
-  {
-    name: 'failing-step-evidence',
-    description:
-      "Timeline tab: the failing step's before/at-failure screenshot, the DOM of the same moment and the ARIA tree, in the step's block",
+  ...[
+    { view: 'Screenshot', suffix: '' },
+    { view: 'DOM', suffix: '-dom' },
+    { view: 'Accessibility tree', suffix: '-aria' },
+  ].map(({ view, suffix }) => ({
+    name: `failing-step-evidence${suffix}`,
+    description: `Timeline tab: the page at the failing step on its ${view} view, in the step's block`,
     viewport: { width: 1280, height: 1600 },
     of: 'table',
     pad: 12,
@@ -2328,18 +2358,40 @@ const SCENES = [
         .getByRole('tablist', { name: 'Evidence sections' })
         .getByRole('tab', { name: 'Timeline', exact: true })
         .click();
-      // Unfold the accessibility tree so the capture shows both the screenshot
-      // and the ARIA the failing step carries.
-      const aria = page.getByRole('button', { name: 'Accessibility tree at the failure' }).first();
-      await aria.waitFor({ state: 'visible', timeout: 30_000 });
-      await aria.click();
+      const tab = page
+        .locator('table')
+        .getByRole('tablist', { name: 'Page at the failing step' })
+        .getByRole('tab', { name: view, exact: true });
+      await tab.waitFor({ state: 'visible', timeout: 30_000 });
+      await tab.click();
+      if (view === 'DOM') await page.locator('table iframe[title="DOM at the failure"]').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'failing-step-picker',
+    description: "Timeline tab: Open in picker on the failing step's page, the picker over the DOM of that moment",
+    viewport: { width: 1280, height: 1000 },
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page.locator('table').getByRole('button', { name: 'Open in picker' }).click();
+      await page.getByRole('dialog').locator('iframe[title="DOM snapshot"]').waitFor({ timeout: 15000 });
+      await page.getByText('Initializing picker').waitFor({ state: 'detached', timeout: 15000 });
       await settle();
       await shoot();
     },
   },
   {
     name: 'failing-step-evidence-mobile',
-    description: "Failing step's page snapshot on the timeline at phone width",
+    description: "Failing step's page at phone width, on its Screenshot view",
     viewport: { width: 390, height: 1800 },
     of: '[data-shot="failing-step-evidence"]',
     pad: 12,
@@ -2352,9 +2404,7 @@ const SCENES = [
         .getByRole('tablist', { name: 'Evidence sections' })
         .getByRole('tab', { name: 'Timeline', exact: true })
         .click();
-      const aria = page.getByRole('button', { name: 'Accessibility tree at the failure' }).first();
-      await aria.waitFor({ state: 'visible', timeout: 30_000 });
-      await aria.click();
+      await page.locator('[data-shot="failing-step-evidence"]').waitFor({ state: 'visible', timeout: 30_000 });
       await settle();
       await shoot();
     },
@@ -2362,7 +2412,7 @@ const SCENES = [
   {
     name: 'failing-step-evidence-fallback',
     description:
-      "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step, beside the failure-time DOM",
+      "Failing step evidence on a pre-1.63 trace: the run's failure screenshot bound to the failing step, with the failure-time DOM and tree as views",
     route: '/projects',
     viewport: { width: 1280, height: 2000 },
     of: 'table',

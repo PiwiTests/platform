@@ -14,7 +14,6 @@ import CollapsibleSectionCard from './CollapsibleSectionCard.vue';
 import SnapshotLocatorPicker from './SnapshotLocatorPicker.vue';
 
 const props = defineProps<{
-  runId: number;
   testRunsCaseId: number;
   /** When set, the panel folds to a header with a peek (persisted per user). */
   storageKey?: string;
@@ -821,7 +820,6 @@ defineExpose({
   <SnapshotLocatorPicker
     v-if="healing?.failingLocator"
     v-model:open="pickerOpen"
-    :run-id="runId"
     :test-runs-case-id="testRunsCaseId"
     :failing-locator="healing.failingLocator"
     :healing="healing"

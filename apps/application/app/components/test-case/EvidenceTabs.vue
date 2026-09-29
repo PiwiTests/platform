@@ -5,12 +5,15 @@
  * an execution. A tab shows a count or a dot when it holds data and is dimmed
  * when empty; a dimmed tab still opens and states why it is empty. The default
  * tab is the one the strongest clue cites, else Timeline when it can place two
- * or more items, else Screen. A clue or diagnosis citation switches to the tab
- * that holds the evidence and scrolls to it. The Playwright trace opens from the
- * card's header, whichever tab is showing. A test that never ran and left
- * nothing behind shows no card at all.
+ * or more items, else Screen. The Screen tab is one strip of views of the page
+ * at the failure (`FailingStepSnapshot`), over the execution's files. A clue or
+ * diagnosis citation switches to the tab (and the Screen view) that holds the
+ * evidence and scrolls to it. The Playwright trace opens from the card's header,
+ * whichever tab is showing. A test that never ran and left nothing behind shows
+ * no card at all.
  */
-import type { NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
+import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
+import { isVideoFile } from '~/utils/text-format';
 import { getPerformanceHints } from '~/utils/performance-hints';
 import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state';
 import type { CapabilityState } from '#shared/capabilities';
@@ -50,6 +53,7 @@ const emit = defineEmits<{ 'decline-fixtures': [level: 'project' | 'instance'] }
 
 type TabValue = EvidenceTabValue;
 
+const config = useRuntimeConfig();
 const runId = computed<number | null>(() => props.testCase?.testRun?.id ?? null);
 const projectKey = computed(() => props.testCase?.testRun?.project?.id ?? undefined);
 
@@ -276,13 +280,27 @@ watch(tabs, (list) => {
   }
 });
 
-// The Screen tab holds two views: the screenshot evidence and the structural
-// page diff. The toggle appears once either page-diff card signals it has a
-// diff — the in-execution before→failure diff or the vs-last-green diff.
-const screenView = ref<'screenshot' | 'pagediff'>('screenshot');
+// The Screen tab is one strip of views of the page at the failure: the page's
+// own (Screenshot, DOM, Accessibility tree), then the visual diff and the page
+// diff once their cards report a diff, then the video when one was recorded.
+// Null opens it on the first view with content.
+const screenView = ref<string | null>(null);
+const visualDiffAvailable = ref(false);
 const pageDiffAvailable = ref(false);
 const traceDiffAvailable = ref(false);
-const pageDiffToggleShown = computed(() => pageDiffAvailable.value || traceDiffAvailable.value);
+const videos = computed(() =>
+  (attachments.value as AttachmentInfo[])
+    .filter((att) => isVideoFile(att.path, att.contentType))
+    .map((att) => ({
+      src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
+      name: att.name || att.path.split('/').pop() || att.path,
+    })),
+);
+const screenExtraViews = computed(() => [
+  { value: 'visual-diff', label: 'Visual diff', shown: visualDiffAvailable.value },
+  { value: 'page-diff', label: 'Page diff', shown: pageDiffAvailable.value || traceDiffAvailable.value },
+  { value: 'video', label: 'Video', shown: videos.value.length > 0 },
+]);
 
 // ── Section locator: switch to the tab holding a cited section, then scroll ──
 const timelineWrap = ref<HTMLElement | null>(null);
@@ -291,12 +309,8 @@ const networkWrap = ref<HTMLElement | null>(null);
 const consoleWrap = ref<HTMLElement | null>(null);
 const pageStateWrap = ref<HTMLElement | null>(null);
 const envDiffWrap = ref<HTMLElement | null>(null);
-const screenEvidenceWrap = ref<HTMLElement | null>(null);
-const visualDiffWrap = ref<HTMLElement | null>(null);
-const pageDiffWrap = ref<HTMLElement | null>(null);
-// The ARIA tree and the DOM snapshot now share the Page structure disclosure;
-// a citation for either reveals and scrolls to it.
-const pageStructureWrap = ref<HTMLElement | null>(null);
+const screenViewsWrap = ref<HTMLElement | null>(null);
+const screenFilesWrap = ref<HTMLElement | null>(null);
 const performanceWrap = ref<HTMLElement | null>(null);
 const WRAP_REF: Record<string, Ref<HTMLElement | null>> = {
   timeline: timelineWrap,
@@ -305,10 +319,8 @@ const WRAP_REF: Record<string, Ref<HTMLElement | null>> = {
   console: consoleWrap,
   pageState: pageStateWrap,
   envDiff: envDiffWrap,
-  screenEvidence: screenEvidenceWrap,
-  visualDiff: visualDiffWrap,
-  pageDiff: pageDiffWrap,
-  pageStructure: pageStructureWrap,
+  screenViews: screenViewsWrap,
+  screenFiles: screenFilesWrap,
   performance: performanceWrap,
 };
 const SECTION_WRAP: Record<string, keyof typeof WRAP_REF> = {
@@ -325,18 +337,25 @@ const SECTION_WRAP: Record<string, keyof typeof WRAP_REF> = {
   console: 'console',
   appState: 'pageState',
   environmentDiff: 'envDiff',
-  visualDiff: 'visualDiff',
-  pageDiff: 'pageDiff',
-  domSnapshot: 'pageStructure',
-  ariaSnapshot: 'pageStructure',
-  screenshots: 'screenEvidence',
-  tracePointers: 'screenEvidence',
-  artifacts: 'screenEvidence',
+  visualDiff: 'screenViews',
+  pageDiff: 'screenViews',
+  domSnapshot: 'screenViews',
+  ariaSnapshot: 'screenViews',
+  screenshots: 'screenViews',
+  tracePointers: 'screenFiles',
+  artifacts: 'screenFiles',
   webVitals: 'performance',
+};
+// The Screen tab's view each cited section shows.
+const SECTION_SCREEN_VIEW: Record<string, string> = {
+  screenshots: 'screenshot',
+  domSnapshot: 'dom',
+  ariaSnapshot: 'aria',
+  visualDiff: 'visual-diff',
+  pageDiff: 'page-diff',
 };
 
 const networkComp = ref<{ showTraceMode?: () => void } | null>(null);
-const pageStructure = ref<{ reveal?: () => void } | null>(null);
 
 function canLocate(sectionId: string): boolean {
   return sectionId in EVIDENCE_SECTION_TAB;
@@ -346,12 +365,10 @@ function revealSection(sectionId: string): boolean {
   const tab = EVIDENCE_SECTION_TAB[sectionId];
   if (!tab) return false;
   activeTab.value = tab;
-  // The page diff lives behind the Screen tab's Screenshot · Page diff toggle.
-  if (sectionId === 'pageDiff') screenView.value = 'pagediff';
+  const citedView = SECTION_SCREEN_VIEW[sectionId];
+  if (citedView) screenView.value = citedView;
   nextTick(() => {
     if (sectionId === 'traceNetwork') networkComp.value?.showTraceMode?.();
-    // The ARIA tree and the DOM live inside the folded Page structure disclosure.
-    if (sectionId === 'ariaSnapshot' || sectionId === 'domSnapshot') pageStructure.value?.reveal?.();
     const wrapKey = SECTION_WRAP[sectionId];
     if (wrapKey) WRAP_REF[wrapKey]?.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -446,75 +463,53 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       </div>
 
       <!-- ── Screen ───────────────────────────────────────────────── -->
+      <!-- One strip of views of the page at the failure, then the files. -->
       <div v-else-if="activeTab === 'screen'" data-shot="screen-evidence" class="space-y-4">
-        <!-- Screenshot · Page diff — shown only once a diff is available. -->
-        <div
-          v-if="pageDiffToggleShown"
-          role="tablist"
-          aria-label="Screen view"
-          class="inline-flex gap-1 rounded-md bg-elevated/60 p-0.5"
-        >
-          <button
-            v-for="view in [
-              { value: 'screenshot' as const, label: 'Screenshot', icon: 'i-lucide-camera' },
-              { value: 'pagediff' as const, label: 'Page diff', icon: 'i-lucide-file-diff' },
-            ]"
-            :key="view.value"
-            type="button"
-            role="tab"
-            :aria-selected="screenView === view.value ? 'true' : 'false'"
-            class="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm outline-none focus-visible:outline-2 focus-visible:outline-primary transition-colors"
-            :class="
-              screenView === view.value
-                ? 'bg-default shadow-sm text-primary font-medium'
-                : 'text-muted hover:text-default'
-            "
-            @click="screenView = view.value"
-          >
-            <UIcon :name="view.icon" class="size-4 shrink-0" />
-            {{ view.label }}
-          </button>
-        </div>
-
-        <div v-show="!pageDiffToggleShown || screenView === 'screenshot'" class="space-y-4">
-          <div ref="screenEvidenceWrap" class="scroll-mt-4 space-y-4">
-            <TestCaseEvidenceCard :attachments="attachments" :traces="traces" embedded />
-          </div>
-          <div class="scroll-mt-4">
-            <TraceBeforeActionCard embedded :test-runs-case-id="testRunsCaseId" />
-          </div>
-          <div ref="visualDiffWrap" class="scroll-mt-4">
-            <VisualDiffCard v-if="runId" embedded :run-id="runId" :test-runs-case-id="testRunsCaseId" />
-          </div>
-          <!-- The raw page structure — the ARIA tree and the failure-time DOM,
-               the DOM rendered as the page, not as escaped XML — folded away
-               behind one disclosure so the screenshot leads the tab. -->
-          <div ref="pageStructureWrap" class="scroll-mt-4">
-            <PageStructureDisclosure
-              v-if="runId"
-              ref="pageStructure"
-              :run-id="runId"
-              :test-runs-case-id="testRunsCaseId"
-              :tree="ariaSnapshot"
-              :tree-state="ariaState"
-              :tree-derived="ariaDerived"
-            />
-          </div>
-        </div>
-
-        <div
-          v-show="!pageDiffToggleShown || screenView === 'pagediff'"
-          ref="pageDiffWrap"
-          class="scroll-mt-4 space-y-4"
-        >
-          <TracePageDiffCard embedded :test-runs-case-id="testRunsCaseId" @available="traceDiffAvailable = $event" />
-          <PageDiffCard
-            v-if="runId"
-            embedded
-            :run-id="runId"
+        <div ref="screenViewsWrap" class="scroll-mt-4">
+          <FailingStepSnapshot
+            v-model:view="screenView"
+            full
             :test-runs-case-id="testRunsCaseId"
-            @available="pageDiffAvailable = $event"
-          />
+            :attachments="attachments"
+            :aria-snapshot="ariaSnapshot"
+            :aria-state="ariaState"
+            :aria-derived="ariaDerived"
+            :extra-views="screenExtraViews"
+          >
+            <template #visual-diff>
+              <VisualDiffCard
+                v-if="runId"
+                embedded
+                :run-id="runId"
+                :test-runs-case-id="testRunsCaseId"
+                @available="visualDiffAvailable = $event"
+              />
+            </template>
+            <template #page-diff>
+              <div class="space-y-4">
+                <TracePageDiffCard
+                  embedded
+                  :test-runs-case-id="testRunsCaseId"
+                  @available="traceDiffAvailable = $event"
+                />
+                <PageDiffCard
+                  v-if="runId"
+                  embedded
+                  :run-id="runId"
+                  :test-runs-case-id="testRunsCaseId"
+                  @available="pageDiffAvailable = $event"
+                />
+              </div>
+            </template>
+            <template #video>
+              <div class="space-y-2">
+                <VideoPlayer v-for="video in videos" :key="video.src" :src="video.src" :label="video.name" />
+              </div>
+            </template>
+          </FailingStepSnapshot>
+        </div>
+        <div ref="screenFilesWrap" class="scroll-mt-4">
+          <TestEvidenceFiles :attachments="attachments" :traces="traces" />
         </div>
       </div>
 

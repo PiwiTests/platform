@@ -487,7 +487,7 @@ export const HELP_TOPICS = {
   },
   'case.evidence': {
     title: 'Evidence',
-    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the screenshot and video with the visual and page diffs, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at; the raw page structure — the accessibility tree and the failure-time DOM — folds behind Page structure at the bottom of the Screen tab. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
+    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the page at the failure, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at. The Screen tab shows the page as views (its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video), and Open in picker finds a locator on that DOM; the failing step on the timeline carries the same first three. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   // ── Setup & capabilities ──────────────────────────────────────────────
