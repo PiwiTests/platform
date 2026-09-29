@@ -1,12 +1,13 @@
 import * as path from 'node:path';
 import { errorMessage } from '../internal/support/errors.js';
 import * as fs from 'node:fs';
-import type { PiwiDashboardOptions, ShardInfo } from './options.js';
+import type { PiwiDashboardOptions } from './options.js';
 import { resolveOptions } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { detectCiRunLabel } from '../internal/support/ci.js';
+import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
@@ -114,10 +115,8 @@ export function createGlobalSetup(
       const auth = await httpClient.resolveAuth(opts);
       const runLabel = opts.runLabel || detectCiRunLabel();
 
-      // Detect shard info from Playwright config (--shard=1/3)
-      const pwShard = (config as any).shard as ShardInfo | null | undefined;
-      const shardIndex = pwShard?.current;
-      const shardTotal = pwShard?.total;
+      // The shard from Playwright's --shard=1/3, or the one `piwi run --shard` set
+      const shard = resolveShardInfo(config);
 
       const response = await httpClient.postJSON(
         '/api/test-runs/setup',
@@ -129,8 +128,8 @@ export function createGlobalSetup(
           keep: opts.keep === true,
           startTime: new Date().toISOString(),
           instanceId: computeInstanceId(opts.projectName!, runLabel),
-          shardIndex,
-          shardTotal,
+          shardIndex: shard?.current,
+          shardTotal: shard?.total,
         },
         auth,
       );

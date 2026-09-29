@@ -18,6 +18,7 @@ import { detectCiRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
+import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
@@ -244,10 +245,9 @@ export class PiwiDashboardReporter {
     // attempts.
     this.plannedTests = suite.allTests();
 
-    // Detect Playwright shard config (--shard=1/3)
-    const pwShard = (config as any).shard as ShardInfo | null | undefined;
-    if (pwShard?.total && pwShard.total > 1) {
-      this.shardInfo = { current: pwShard.current, total: pwShard.total };
+    // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
+    this.shardInfo = resolveShardInfo(config);
+    if (this.shardInfo) {
       this.logger.info(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
 

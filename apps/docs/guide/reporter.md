@@ -118,8 +118,8 @@ opt out; `PIWI_DESKTOP_CONFIG` overrides the path.
 
 ## Sharding
 
-Playwright's `--shard` jobs are merged back into a single dashboard run automatically, as long as every shard uses the
-same `projectName`. `runLabel` is the manual override when your CI isn't detected. See
+Playwright's `--shard` jobs, and `piwi run --shard` jobs, are merged back into a single dashboard run automatically, as
+long as every shard uses the same `projectName`. `runLabel` is the manual override when your CI isn't detected. See
 [CI & sharding](./ci#sharding).
 
 ## Live streaming

@@ -79,8 +79,7 @@ or turn a collector off with `collectScmInfo: false` or `collectCiInfo: false`.
 
 ## Sharding
 
-Playwright's `--shard=1/3` splits a suite across parallel jobs. Piwi merges them back into **one run**
-— you shouldn't have to think about shards when reading results.
+Playwright's `--shard=1/3` splits a suite across parallel jobs. Piwi merges them back into **one run**.
 
 ```yaml
 strategy:
@@ -103,6 +102,8 @@ How the merge works:
    shard progress badge (`2/3`) while shards are still arriving.
 
 **All shards must use the same `projectName`.** That's the one requirement.
+
+Jobs sharded with `piwi run --shard` merge the same way ([details](/features/test-selection#print-shard-and-reorder)).
 
 If your CI isn't detected, set the label yourself to anything common to all shards:
 

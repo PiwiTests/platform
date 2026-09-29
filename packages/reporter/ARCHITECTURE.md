@@ -91,7 +91,7 @@ src/
                 page, the results file
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
                 cli-filters, setup-file, source-snippet, worker-index, errors,
-                selection-client, selection-env
+                selection-client, selection-env, shard-info
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model

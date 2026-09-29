@@ -141,6 +141,45 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  describe('shard identity in the setup call', () => {
+    async function setupBody(name: string, config: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const { server, url, requests } = await startServer((_req, res) =>
+        jsonRes(res, 200, { runId: 3, setupToken: 't' }),
+      );
+      cleanupNames.push(name);
+      try {
+        const setupFn = createGlobalSetup({ serverUrl: url, projectName: name });
+        await setupFn({ reporter: [PIWI_REPORTER_ENTRY], ...config });
+        return JSON.parse(requests.find((r) => r.url === '/api/test-runs/setup')!.body);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }
+
+    afterEach(() => {
+      delete process.env.PIWI_SHARD;
+    });
+
+    it("reports Playwright's own --shard", async () => {
+      const body = await setupBody('global-setup-pw-shard', { shard: { current: 2, total: 3 } });
+      expect(body.shardIndex).toBe(2);
+      expect(body.shardTotal).toBe(3);
+    });
+
+    it('reports the shard `piwi run --shard` leaves in PIWI_SHARD', async () => {
+      process.env.PIWI_SHARD = '3/4';
+      const body = await setupBody('global-setup-env-shard', { shard: null });
+      expect(body.shardIndex).toBe(3);
+      expect(body.shardTotal).toBe(4);
+    });
+
+    it('reports no shard for a run that is not one', async () => {
+      const body = await setupBody('global-setup-no-shard', { shard: null });
+      expect(body.shardIndex).toBeUndefined();
+      expect(body.shardTotal).toBeUndefined();
+    });
+  });
+
   it('does nothing when no serverUrl is configured (and still chains userSetup)', async () => {
     let userSetupCalled = false;
     const setupFn = createGlobalSetup({ projectName: 'global-setup-no-url' }, async () => {
