@@ -226,8 +226,8 @@ Everything below is built and published from this repository on each release.
 
 The instrumentation packages are optional and only needed for
 [backend log capture](https://piwitests.dev/guide/backend-logs). Both container registries carry the
-same images; use whichever your organization prefers. The extension is the one entry uploaded to its
-store by hand rather than by CI, so its listed version can trail a release by a day or two.
+same images; use whichever your organization prefers. The extension reaches its store through the
+store's review, so its listed version can trail a release by a day or two.
 
 ## Project status
 

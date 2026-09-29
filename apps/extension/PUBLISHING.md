@@ -27,7 +27,7 @@ Runs a **release build** (`extension:build:release`), then writes the zips next 
 - `piwi-picker-v<version>-source.zip` — the sources that build came from, for Firefox only (§4 b). Chrome and Edge don't ask for it.
 - `piwi-picker-v<version>-amo-metadata.json` — the Firefox listing fields the add-on can't carry itself, in both languages (§4 c).
 
-Both are gitignored; regenerate them together whenever you need a fresh pair rather than keeping old ones around. A release build stamps `v<version>` into every bundle where a dev build (`extension:build`, `extension:dev`) stamps the build time, so the same sources always produce the same files — that is what lets Firefox reviewers rebuild the source zip and get the add-on zip back.
+Both are gitignored; regenerate them together whenever you need a fresh pair rather than keeping old ones around. Every release tag builds the same four files in CI and keeps them as the artifacts of its **Publish Browser Extension** run (§5): download them from there rather than building a release locally. A release build stamps `v<version>` into every bundle where a dev build (`extension:build`, `extension:dev`) stamps the build time, so the same sources always produce the same files — that is what lets Firefox reviewers rebuild the source zip and get the add-on zip back.
 
 ## 2. Chrome Web Store — **done**
 
@@ -124,4 +124,23 @@ Submission steps (web form):
 
 ## 5. Ongoing updates
 
-Every store re-review happens on **every version bump**, not just the first. Since release-please already bumps `apps/extension/manifest.json`'s version repo-wide, the practical loop becomes: tag lands → rebuild zip → re-upload to every dashboard the extension is listed on — Chrome today, plus Edge and Firefox once §3 and §4 land. That's manual, which is why the store's listed version can trail a release: nothing reminds you, and a skipped upload is invisible from inside the repo. It's genuinely automatable — Chrome Web Store, Edge, and AMO all have publish APIs — following the same shape as `.github/workflows/desktop-release.yml`'s already-established pattern (tag-triggered on `v*`, attaches build output to the release release-please created). The first manual submission it needed as a model has now happened, so this is the natural next step once the by-hand loop has been run a few times and its quirks are known.
+Every store re-reviews **every version bump**, not just the first. release-please bumps `apps/extension/manifest.json`'s version repo-wide, and each release tag runs `.github/workflows/publish-extension.yml` (**Publish Browser Extension**), which:
+
+1. runs `npm run extension:zip` and keeps the four files of §1 as the run's artifacts, each one downloading as the file itself rather than inside another zip. These are the files to upload by hand;
+2. submits the package to every store whose secrets are configured (repository **Settings → Secrets and variables → Actions**), and skips the others:
+
+| Store | Secrets | What the step does |
+|---|---|---|
+| Chrome Web Store | `CHROME_PUBLISHER_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` | Uploads `piwi-picker-v<version>.zip` and submits it for review, with [`chrome-webstore-upload-cli`](https://github.com/fregante/chrome-webstore-upload-cli) (Chrome Web Store API v2). The store publishes it once approved |
+| Edge Add-ons | `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY` | Uploads the same zip and submits it, with [`wdzeng/edge-addon`](https://github.com/wdzeng/edge-addon) (Edge Add-ons API v1.1) |
+| Firefox AMO | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` | Runs `web-ext sign --channel listed` (§4) on `dist-firefox/` with the source zip, without waiting for the review |
+
+Where each credential comes from:
+
+- **Chrome Web Store** — the publisher ID is under **Publisher → Settings** in the Developer Dashboard. The client ID, client secret and refresh token come from a Google Cloud OAuth client with the Chrome Web Store API enabled; [chrome-webstore-upload-keys](https://github.com/fregante/chrome-webstore-upload-keys) walks through it. Set the OAuth consent screen's publishing status to **In production**: while it is **Testing**, the refresh token expires after 7 days.
+- **Edge Add-ons** — Partner Center → **Microsoft Edge** → **Publish API** → **Create API credentials** shows the client ID and an API key; the product ID is on the extension's overview page. The API key expires on the date Partner Center shows next to it: create a new one and replace `EDGE_API_KEY` before then. The API only updates a product that exists, so the first submission (§3) is made in Partner Center.
+- **Firefox AMO** — <https://addons.mozilla.org/developers/addon/api/key/> gives the JWT issuer and secret. Until the add-on is public on AMO, each submission carries the whole listing (`--amo-metadata`, §4 c), so the first one creates it pre-filled: add the two secrets once the Firefox check at the end of §4 is done, since the next release tag submits the add-on. Once it is public, only the version's own fields go (license, compatibility, notes to the reviewer), and the listing is edited on AMO. Screenshots are added in the listing editor either way.
+
+A store step that fails leaves the artifacts in place: upload them by hand from the run's page. To submit a release that already has its tag, to a store configured after that release, run the workflow by hand against the tag (**Actions → Publish Browser Extension → Run workflow**, then pick the tag under **Use workflow from**); a store that already has that version rejects it again. A failed store step fails the run without holding back the other stores' steps. Run against a branch, the workflow builds the artifacts and submits nothing.
+
+A store's listed version trails a release by its review time and, on a store without secrets, until the upload by hand.
