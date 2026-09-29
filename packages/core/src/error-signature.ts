@@ -15,7 +15,7 @@ export interface ErrorSignature {
   errorType: ErrorType;
   /** Normalized first error line — the human-readable cluster name */
   signature: string;
-  /** Normalized message head (up to 5 lines, volatile tokens masked) — the main fingerprint input */
+  /** Normalized message head (up to 5 lines, volatile tokens and locator options masked) — the main fingerprint input */
   normalizedMessage: string;
   /** Playwright locator extracted from the error, if any (unmasked, for display) */
   selector: string | null;
@@ -77,20 +77,25 @@ export function maskVolatile(text: string): string {
     .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
 }
 
+/** Blank out the dynamic option values (row names, hasText, …) of every locator expression in `text`. */
+function maskSelectorOptions(text: string): string {
+  return text.replace(SELECTOR_OPTION_RE, (_m, key: string) => `${key}: <STR>`);
+}
+
 /**
  * Normalize a locator for the fingerprint: blank out dynamic option values
  * (row names, hasText, …) that carry per-row data, then apply the standard
  * volatile masking. The primary positional target is preserved.
  */
 export function maskSelector(selector: string): string {
-  return maskVolatile(selector.replace(SELECTOR_OPTION_RE, (_m, key: string) => `${key}: <STR>`));
+  return maskVolatile(maskSelectorOptions(selector));
 }
 
 /** Reduce raw error text to its {@link ErrorSignature}. */
 export function extractErrorSignature(rawError: string): ErrorSignature {
   const text = stripAnsi(rawError);
   const errorType = classifyError(text);
-  const normalizedMessage = maskVolatile(extractMessageHead(text));
+  const normalizedMessage = maskVolatile(maskSelectorOptions(extractMessageHead(text)));
   const selector = extractSelector(text);
   const topFrameFile = extractTopFrameFile(text);
   const signature = (normalizedMessage.split('\n')[0] || '').slice(0, 200) || 'Unknown error';

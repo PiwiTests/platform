@@ -10,8 +10,34 @@ describe('extractErrorSignature', () => {
     expect(sig.errorType).toBe('assertion');
     expect(sig.signature).toBe('Error: expect(locator).toHaveText(expected) failed');
     expect(sig.normalizedMessage).toContain('Expected: <VALUE>');
+    expect(sig.normalizedMessage).toContain("Locator: getByRole('row', { name: <STR> })");
     expect(sig.selector).toBe("getByRole('row', { name: 'Order 42' })");
     expect(sig.topFrameFile).toBe('tests/orders.spec.ts');
+  });
+
+  test('gives rows that differ only by locator options the same normalized message', () => {
+    const rowError = (name: string) =>
+      `Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: '${name}' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms`;
+    const alice = extractErrorSignature(rowError('Alice'));
+    const bob = extractErrorSignature(rowError('Bob'));
+    expect(alice.normalizedMessage).toBe(bob.normalizedMessage);
+    expect(alice.selector).toBe("getByRole('row', { name: 'Alice' })");
+    expect(bob.selector).toBe("getByRole('row', { name: 'Bob' })");
+  });
+
+  test('masks locator options in a strict mode violation line', () => {
+    const sig = extractErrorSignature(
+      "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:",
+    );
+    expect(sig.normalizedMessage).toBe(
+      "Error: strict mode violation: getByRole('row', { name: <STR> }) resolved to <N> elements:",
+    );
+  });
+
+  test('keeps different locator targets apart', () => {
+    const save = extractErrorSignature("Locator: getByTestId('save')\nExpected: visible");
+    const cancel = extractErrorSignature("Locator: getByTestId('cancel')\nExpected: visible");
+    expect(save.normalizedMessage).not.toBe(cancel.normalizedMessage);
   });
 
   test('names an empty error', () => {

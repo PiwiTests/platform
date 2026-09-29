@@ -13,7 +13,7 @@
  * `shared/error-fingerprint.ts`; mirror its value.
  */
 
-const FINGERPRINT_VERSION = 3;
+const FINGERPRINT_VERSION = 4;
 
 // eslint-disable-next-line no-control-regex -- intentionally matches the ESC byte to strip ANSI color codes
 const ANSI_RE = new RegExp('\\u001B\\[[0-9;]*m', 'g');
@@ -72,9 +72,14 @@ export function maskVolatile(text) {
     .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
 }
 
+/** @param {string} text */
+function maskSelectorOptions(text) {
+  return text.replace(SELECTOR_OPTION_RE, (_m, key) => `${key}: <STR>`);
+}
+
 /** @param {string} selector */
 export function maskSelector(selector) {
-  return maskVolatile(selector.replace(SELECTOR_OPTION_RE, (_m, key) => `${key}: <STR>`));
+  return maskVolatile(maskSelectorOptions(selector));
 }
 
 /** @param {string} text @returns {string | null} */
@@ -122,7 +127,7 @@ async function sha256Hex(input) {
 export function extractErrorSignature(rawError) {
   const text = stripAnsi(rawError);
   const errorType = classifyError(text);
-  const normalizedMessage = maskVolatile(extractMessageHead(text));
+  const normalizedMessage = maskVolatile(maskSelectorOptions(extractMessageHead(text)));
   const selector = extractSelector(text);
   const topFrameFile = extractTopFrameFile(text);
   const signature = (normalizedMessage.split('\n')[0] || '').slice(0, 200) || 'Unknown error';

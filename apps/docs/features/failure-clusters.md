@@ -18,7 +18,8 @@ Failed executions that share the same **error fingerprint** join one cluster, so
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
   emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
-  `{ name: '…' }` of a table row. The locator target itself (the test id, the role) still tells different failures apart.
+  `{ name: '…' }` of a table row, wherever the error prints the locator. The locator target itself (the test id, the
+  role) still tells different failures apart.
 - It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
   cause reached from several spec files stays one cluster.
 - The fingerprint is always computed from the error the cluster was created from, so an improved normalization
