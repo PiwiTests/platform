@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
+import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
 import ProjectsMenu from '~/components/layout/ProjectsMenu.vue';
 import { DOCS_BASE_URL } from '#shared/docs';
@@ -124,6 +124,8 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
         icon: statusIcon,
         color: statusColor,
       },
+      // The `project-trailing` slot turns the status badge into a shortcut to the latest run.
+      slot: 'project',
       value: `project-${project.id}`,
       type: 'link' as const,
       to: `/projects/${project.id}`,
@@ -151,6 +153,30 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
 
   return items;
 });
+
+const latestRunByItemValue = computed(() => {
+  const map = new Map<string, NonNullable<ProjectWithStats['latestRun']>>();
+  for (const project of projects.value ?? []) {
+    if (project.latestRun) map.set(`project-${project.id}`, project.latestRun);
+  }
+  return map;
+});
+
+// Nuxt UI does not type the props of a per-item slot (`#project-trailing`), so they are named here.
+function projectStatusBadgeProps({
+  item,
+  ui,
+}: {
+  item: NavigationMenuItem;
+  ui: { linkTrailingBadgeSize: () => string; linkTrailingBadge: () => string };
+}) {
+  return {
+    run: item.value ? latestRunByItemValue.value.get(item.value) : undefined,
+    badge: item.badge as BadgeProps,
+    size: ui.linkTrailingBadgeSize() as BadgeProps['size'],
+    badgeClass: ui.linkTrailingBadge(),
+  };
+}
 
 const links = computed(() => {
   const bottomLinks: NavigationMenuItem[] = [
@@ -462,7 +488,11 @@ onMounted(async () => {
           orientation="vertical"
           tooltip
           popover
-        />
+        >
+          <template #project-trailing="slotProps">
+            <SidebarProjectStatusBadge v-bind="projectStatusBadgeProps(slotProps)" @navigate="open = false" />
+          </template>
+        </UNavigationMenu>
 
         <UNavigationMenu :collapsed="collapsed" :items="links[1]" orientation="vertical" tooltip class="mt-auto" />
       </template>
