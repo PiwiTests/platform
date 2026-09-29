@@ -1,12 +1,16 @@
 name: Publish JetBrains Plugin
 
-# Builds apps/jetbrains on each release tag, then signs it and publishes it to the JetBrains
-# Marketplace. Needs PUBLISH_TOKEN, and CERTIFICATE_CHAIN, PRIVATE_KEY and
-# PRIVATE_KEY_PASSWORD for signing; skipped without the token.
+# Builds apps/jetbrains on each release tag, signs it when the signing secrets
+# are configured (JETBRAINS_CERTIFICATE_CHAIN, JETBRAINS_PRIVATE_KEY and
+# JETBRAINS_PRIVATE_KEY_PASSWORD), and keeps the plugin archive as a workflow
+# artifact, to publish or install by hand. A tag build then publishes it to the
+# JetBrains Marketplace (JETBRAINS_PUBLISH_TOKEN); skipped without the token.
 on:
   push:
     tags:
       - 'v*'
+  # Run against a tag, it publishes as a tag push does; against a branch, it
+  # only builds the artifact.
   workflow_dispatch:
 
 jobs:
@@ -15,10 +19,11 @@ jobs:
     permissions:
       contents: read
     env:
-      PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
-      CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
-      PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
-      PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+      TAG_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      # Whether signing and publishing are configured. The secrets themselves
+      # reach only the steps that sign and publish.
+      SIGNING_CONFIGURED: ${{ secrets.JETBRAINS_PRIVATE_KEY != '' }}
+      PUBLISH_CONFIGURED: ${{ secrets.JETBRAINS_PUBLISH_TOKEN != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -47,17 +52,49 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build
+        id: build
         working-directory: ./apps/jetbrains
         run: ./gradlew buildPlugin
 
-      # publishPlugin signs the archive first.
-      - name: Sign and publish to the JetBrains Marketplace
-        if: ${{ env.PUBLISH_TOKEN != '' }}
+      # Writes piwi-jetbrains-<version>-signed.zip next to the built archive.
+      - name: Sign
+        if: ${{ env.SIGNING_CONFIGURED == 'true' }}
         working-directory: ./apps/jetbrains
-        run: ./gradlew publishPlugin
+        env:
+          CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+        run: ./gradlew signPlugin
 
+      # The signed archive when signing succeeded, the built one otherwise: a
+      # failed signing fails the job and skips publishing, but keeps the
+      # artifact.
+      - name: Pick the plugin archive
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: ./apps/jetbrains
+        run: |
+          archive="build/distributions/piwi-jetbrains-$(sed -n 's/^pluginVersion=//p' gradle.properties)"
+          if [ -f "$archive-signed.zip" ]; then archive="$archive-signed"; fi
+          echo "PLUGIN_ARCHIVE=apps/jetbrains/$archive.zip" >> "$GITHUB_ENV"
+
+      # Uploaded as is: it downloads as the plugin archive, not inside another
+      # zip.
       - name: Upload the plugin
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
-          name: piwi-jetbrains
-          path: apps/jetbrains/build/distributions/*.zip
+          path: ${{ env.PLUGIN_ARCHIVE }}
+          archive: false
+          if-no-files-found: error
+
+      # publishPlugin uploads the signed archive when the signing secrets are
+      # set, and the built one otherwise.
+      - name: Publish to the JetBrains Marketplace
+        if: ${{ env.TAG_BUILD == 'true' && env.PUBLISH_CONFIGURED == 'true' }}
+        working-directory: ./apps/jetbrains
+        env:
+          PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+        run: ./gradlew publishPlugin

@@ -1,12 +1,15 @@
 name: Publish VS Code Extension
 
-# Packages apps/vscode on each release tag and publishes it to the Visual
-# Studio Marketplace (VSCE_PAT) and Open VSX (OVSX_PAT), for Cursor and
+# Packages apps/vscode on each release tag and keeps the .vsix as a workflow
+# artifact, to publish or install by hand. A tag build then publishes it to the
+# Visual Studio Marketplace (VSCE_PAT) and Open VSX (OVSX_PAT), for Cursor and
 # VSCodium. A marketplace whose token is not configured is skipped.
 on:
   push:
     tags:
       - 'v*'
+  # Run against a tag, it publishes as a tag push does; against a branch, it
+  # only builds the artifact.
   workflow_dispatch:
 
 jobs:
@@ -15,8 +18,11 @@ jobs:
     permissions:
       contents: read
     env:
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      TAG_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      # Whether each marketplace is configured. The tokens themselves reach
+      # only the step that publishes to that marketplace.
+      VSCE_CONFIGURED: ${{ secrets.VSCE_PAT != '' }}
+      OVSX_CONFIGURED: ${{ secrets.OVSX_PAT != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -32,21 +38,34 @@ jobs:
         run: npm ci --prefer-offline --no-audit --fund=false
 
       - name: Package
+        id: package
         working-directory: ./apps/vscode
-        run: npm run vscode:package
+        run: |
+          npm run vscode:package
+          version=$(node -p "require('./package.json').version")
+          cp dist/piwi.vsix "dist/piwi-$version.vsix"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Publish to the Visual Studio Marketplace
-        if: ${{ env.VSCE_PAT != '' }}
-        working-directory: ./apps/vscode
-        run: npx vsce publish --packagePath dist/piwi.vsix
-
-      - name: Publish to Open VSX
-        if: ${{ env.OVSX_PAT != '' }}
-        working-directory: ./apps/vscode
-        run: npx ovsx publish dist/piwi.vsix
-
+      # Uploaded as is: it downloads as the .vsix, not inside a zip.
       - name: Upload the package
         uses: actions/upload-artifact@v7
         with:
-          name: piwi-vsix
-          path: apps/vscode/dist/piwi.vsix
+          path: apps/vscode/dist/piwi-${{ env.VERSION }}.vsix
+          archive: false
+          if-no-files-found: error
+
+      # Each marketplace's step runs whether or not the one before it failed,
+      # so one failure fails the job without holding back the other.
+      - name: Publish to the Visual Studio Marketplace
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' && env.VSCE_CONFIGURED == 'true' }}
+        working-directory: ./apps/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --packagePath dist/piwi.vsix
+
+      - name: Publish to Open VSX
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' && env.OVSX_CONFIGURED == 'true' }}
+        working-directory: ./apps/vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx ovsx publish dist/piwi.vsix

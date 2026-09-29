@@ -114,3 +114,16 @@ Merging a release-please PR (titled `chore(main): release X.Y.Z`) tags the relea
 2. **A `RELEASE_PLEASE_TOKEN` repo secret** — a Personal Access Token (classic `repo` scope, or fine-grained with `Contents: read/write` + `Pull requests: read/write`) or a GitHub App installation token, added at `Settings → Secrets and variables → Actions`. This is required because GitHub's anti-recursion protection means a tag created with the default `GITHUB_TOKEN` does **not** trigger other `on: push: tags` workflows — `publish.yml`, `publish-instrumentation.yml`, and `publish-nuget.yml` would never run even though the tag exists. A PAT/App token isn't subject to that restriction.
 
 If a release's tag already exists but the packages never published (e.g. because this wasn't set up yet), re-run the affected workflow manually against that tag — `publish.yml` / `publish-instrumentation.yml` / `publish-nuget.yml` all have a `workflow_dispatch` trigger for exactly this.
+
+The browser extension and the editor plugins go to their stores from three more tag workflows. Each one keeps its packages as the run's workflow artifacts (not release assets), each downloading as the file a store takes, so they can be uploaded by hand; then it publishes to every store whose secrets are set and skips the others:
+
+| Workflow | Store | Secrets |
+|---|---|---|
+| `publish-extension.yml` | Chrome Web Store | `CHROME_PUBLISHER_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
+| | Edge Add-ons | `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY` |
+| | Firefox Add-ons (AMO) | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` |
+| `publish-vscode.yml` | Visual Studio Marketplace | `VSCE_PAT` |
+| | Open VSX | `OVSX_PAT` |
+| `publish-jetbrains.yml` | JetBrains Marketplace | `JETBRAINS_PUBLISH_TOKEN`, plus `JETBRAINS_CERTIFICATE_CHAIN`, `JETBRAINS_PRIVATE_KEY` and `JETBRAINS_PRIVATE_KEY_PASSWORD` to sign the plugin (the artifact too) |
+
+[`apps/extension/PUBLISHING.md`](apps/extension/PUBLISHING.md) §5 says where each extension credential comes from and what each store needs by hand first. Run manually against a tag, these workflows publish as the tag push does; against a branch, they only build the artifacts.

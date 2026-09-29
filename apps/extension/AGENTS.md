@@ -13,8 +13,9 @@ tests reach ("Tested elements"). See "Connected mode" and "Tested elements" belo
 Published on the Chrome Web Store as
 [Piwi Picker](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)
 (`pakhnokpjboejcghgcmkjlpnogfjihhe`) — that listing is how Chrome *and* Edge users install it.
-Uploads are manual per release; `PUBLISHING.md` has the loop, and the Edge Add-ons and Firefox
-AMO listings that are still outstanding.
+Each release tag packages it in CI (`.github/workflows/publish-extension.yml`), keeps the store zips as the run's
+artifacts and submits them to every store whose secrets are configured; `PUBLISHING.md` has the loop, the secrets,
+and the Edge Add-ons and Firefox AMO listings that are still outstanding.
 
 ## What it is
 
