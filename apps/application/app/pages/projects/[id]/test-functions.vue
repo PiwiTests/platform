@@ -424,7 +424,7 @@ function describeSteps(entry: TestFunctionInfo): string {
           <EmptyState
             v-else-if="entries.length === 0"
             icon="i-lucide-function-square"
-            text="No functions registered yet — add one, or extract one from a recording in the extension."
+            text="No functions registered yet — add one by hand, or paste a function's source to extract it."
           >
             <p class="text-xs text-gray-400 max-w-sm">
               The extension is a separate install:
