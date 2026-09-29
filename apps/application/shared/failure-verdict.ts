@@ -127,7 +127,7 @@ function classifyWhy(input: FailureVerdictInput, kind: ParsedErrorKind): Failure
 export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict | null {
   if (!input.error || !input.error.trim()) return null;
   const steps = Array.isArray(input.steps) ? (input.steps as HeadlineStepLike[]) : null;
-  const parsed = parsePlaywrightError(input.error, { stepParams: failingStepParams(steps) });
+  const parsed = parsePlaywrightError(input.error, { stepParams: failingStepParams(steps, input.error) });
   const description = caseHeadline({ error: input.error, steps: input.steps });
   if (!description) return null;
 

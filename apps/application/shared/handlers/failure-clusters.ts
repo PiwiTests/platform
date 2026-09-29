@@ -219,6 +219,7 @@ export async function getFailureCluster(
       latestErrorKind = parsePlaywrightError(latestExec.error, {
         stepParams: failingStepParams(
           Array.isArray(latestExec.steps) ? (latestExec.steps as Parameters<typeof failingStepParams>[0]) : null,
+          latestExec.error,
         ),
       }).kind;
     }

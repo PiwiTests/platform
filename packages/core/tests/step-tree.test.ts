@@ -4,16 +4,25 @@ import {
   failureHookContext,
   isCaptureStep,
   isPhaseContainer,
+  sameCodeLocation,
+  stepFailureRoles,
   stepParents,
   stepPhases,
   type TreeStepLike,
 } from '../src/step-tree';
-import { categorizeStep, flattenSteps } from '../src/step-analysis';
+import { categorizeStep, collectStepMetrics, flattenSteps, markRecoveredSteps } from '../src/step-analysis';
 import {
   afterAllFailure,
   beforeAllFailure,
   beforeEachFailure,
   bodyFailure,
+  caughtProbeFailure,
+  caughtProbeTimeout,
+  sameMessageProbeFailure,
+  softAssertionsFailure,
+  teardownAfterBodyFailure,
+  toPassFailure,
+  type RecordedExecution,
   type RecordedStep,
 } from './fixtures/playwright-steps';
 
@@ -22,6 +31,35 @@ const titleAt = (steps: RecordedStep[], index: number | null) =>
 
 /** The same steps without the recorded depth, as a reporter that predates it stored them. */
 const withoutDepth = (steps: RecordedStep[]): TreeStepLike[] => steps.map(({ depth: _depth, ...rest }) => rest);
+
+/**
+ * The same steps as a reporter that marks no caught error stored them: no
+ * `recovered` mark and no error location, with or without the depth.
+ */
+const unmarked = (steps: RecordedStep[], { depth = true } = {}): TreeStepLike[] =>
+  steps.map(({ recovered: _recovered, depth: stepDepth, error, ...rest }) => ({
+    ...rest,
+    ...(depth ? { depth: stepDepth } : {}),
+    ...(error ? { error: { message: error.message } } : {}),
+  }));
+
+/** Every way the steps of one execution can be stored: marked, unmarked, with and without depth. */
+const storedShapes = (execution: RecordedExecution): Array<[string, TreeStepLike[]]> => [
+  ['marked', execution.steps],
+  ['marked, no depth', withoutDepth(execution.steps)],
+  ['unmarked', unmarked(execution.steps)],
+  ['unmarked, no depth', unmarked(execution.steps, { depth: false })],
+];
+
+/** The failing step's title and subtitle. */
+const failingOf = (execution: RecordedExecution, steps: TreeStepLike[], error: string | null = execution.error) =>
+  titleAt(execution.steps, failingStepIndex(steps, stepParents(steps), error));
+
+/** Each failed step's role, keyed by `title subtitle`, the capture's and the passing steps left out. */
+const rolesOf = (execution: RecordedExecution, steps: TreeStepLike[] = execution.steps) => {
+  const roles = stepFailureRoles(steps, execution.error);
+  return execution.steps.flatMap((_, i) => (roles[i] ? [[titleAt(execution.steps, i), roles[i]]] : []));
+};
 
 describe('stepParents', () => {
   test('rebuilds the tree from each step’s depth', () => {
@@ -113,6 +151,151 @@ describe('failingStepIndex', () => {
   test('is null when no step failed', () => {
     expect(failingStepIndex([{ title: 'a' }, { title: 'b' }])).toBeNull();
   });
+
+  test.each(storedShapes(caughtProbeFailure))('skips a probe the test caught (%s)', (_, steps) => {
+    expect(failingOf(caughtProbeFailure, steps)).toBe(
+      "Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' })",
+    );
+  });
+
+  test('skips a caught probe on the last failing chain when the error is unknown', () => {
+    expect(failingOf(caughtProbeFailure, unmarked(caughtProbeFailure.steps), null)).toBe(
+      "Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' })",
+    );
+  });
+
+  test.each(storedShapes(sameMessageProbeFailure))(
+    'tells caught probes that read the same error apart by where it was thrown (%s)',
+    (_, steps) => {
+      expect(failingOf(sameMessageProbeFailure, steps)).toBe(
+        "Expect \"toBeVisible\" getByRole('button', { name: 'Missing' })",
+      );
+    },
+  );
+
+  test.each(storedShapes(softAssertionsFailure))('is the first failed soft assertion (%s)', (_, steps) => {
+    expect(failingOf(softAssertionsFailure, steps)).toBe(
+      "Expect \"soft toBeVisible\" getByRole('button', { name: 'Zed' })",
+    );
+  });
+
+  test.each(storedShapes(teardownAfterBodyFailure))(
+    'stays on the test body when the teardown fails after it (%s)',
+    (_, steps) => {
+      expect(failingOf(teardownAfterBodyFailure, steps)).toBe(
+        "Expect \"toBeVisible\" getByRole('button', { name: 'Nope' })",
+      );
+    },
+  );
+
+  test('stays on the test body when the teardown fails after it and the error is unknown', () => {
+    expect(failingOf(teardownAfterBodyFailure, teardownAfterBodyFailure.steps, null)).toBe(
+      "Expect \"toBeVisible\" getByRole('button', { name: 'Nope' })",
+    );
+  });
+
+  test.each(storedShapes(caughtProbeTimeout))('is the action the test timeout interrupted (%s)', (_, steps) => {
+    expect(failingOf(caughtProbeTimeout, steps)).toBe("Click getByRole('button', { name: 'Nope' })");
+  });
+
+  test('is the toPass assertion when the reporter marked its attempts recovered', () => {
+    expect(failingOf(toPassFailure, toPassFailure.steps)).toBe('Expect "toPass"');
+  });
+
+  test('is the last toPass attempt on steps stored without the mark', () => {
+    const steps = unmarked(toPassFailure.steps);
+    const index = failingStepIndex(steps, stepParents(steps), toPassFailure.error);
+    expect(titleAt(toPassFailure.steps, index)).toBe('Expect "toBe"');
+    expect(index).toBe(toPassFailure.steps.map((s) => s.title).lastIndexOf('Expect "toBe"'));
+  });
+});
+
+describe('stepFailureRoles', () => {
+  test('marks the caught probe recovered and the test.step around the failure enclosing', () => {
+    expect(rolesOf(caughtProbeFailure)).toEqual([
+      ["Expect \"toBeVisible\" getByRole('dialog').getByRole('button', { name: 'Confirm' })", 'recovered'],
+      ['Check the download link', 'enclosing'],
+      ["Expect \"toBeEnabled\" locator('.carousel').getByRole('link', { name: '' })", 'failing'],
+    ]);
+  });
+
+  test('without the reporter’s mark, a step whose error is none of the test’s is recovered', () => {
+    expect(rolesOf(caughtProbeFailure, unmarked(caughtProbeFailure.steps))).toEqual(rolesOf(caughtProbeFailure));
+  });
+
+  test('never marks a failed soft assertion recovered', () => {
+    expect(rolesOf(softAssertionsFailure)).toEqual([
+      ["Expect \"soft toBeVisible\" getByRole('button', { name: 'Zed' })", 'failing'],
+      ["Expect \"soft toBeVisible\" getByRole('button', { name: 'Qux' })", 'failed'],
+    ]);
+  });
+
+  test('keeps a teardown that failed after the body as a second failure', () => {
+    expect(rolesOf(teardownAfterBodyFailure)).toEqual([
+      ["Expect \"toBeVisible\" getByRole('button', { name: 'Nope' })", 'failing'],
+      ['After Hooks', 'failed'],
+      ['afterEach hook', 'failed'],
+      ["Expect \"toBeVisible\" getByRole('heading', { name: 'Bye' })", 'failed'],
+    ]);
+  });
+
+  test('marks every retried toPass attempt recovered', () => {
+    const roles = rolesOf(toPassFailure);
+    expect(roles[0]).toEqual(['Expect "toPass"', 'failing']);
+    expect(roles.slice(1).every(([, role]) => role === 'recovered')).toBe(true);
+    expect(roles).toHaveLength(6);
+  });
+
+  test('is null for every step of a passing execution', () => {
+    expect(stepFailureRoles(bodyFailure.steps.map(({ failed: _f, error: _e, ...rest }) => rest))).toEqual(
+      bodyFailure.steps.map(() => null),
+    );
+  });
+});
+
+describe('sameCodeLocation', () => {
+  test('matches the same line and column in the same file, one path relative', () => {
+    expect(
+      sameCodeLocation('/work/shop/tests/a.spec.ts:26:77', { file: 'tests/a.spec.ts', line: 26, column: 77 }),
+    ).toBe(true);
+    expect(sameCodeLocation('/work/shop/tests/a.spec.ts:26:77', '/work/shop/tests/a.spec.ts:26:78')).toBe(false);
+    expect(sameCodeLocation('/work/shop/tests/a.spec.ts:26:77', 'tests/b.spec.ts:26:77')).toBe(false);
+    expect(sameCodeLocation('', 'tests/b.spec.ts:26:77')).toBe(false);
+  });
+});
+
+describe('markRecoveredSteps', () => {
+  const location = (line: number) => ({ file: '/work/shop/tests/a.spec.ts', line, column: 5 });
+  const probe = (line: number) => ({
+    title: 'Expect "toBeVisible"',
+    category: 'expect',
+    duration: 500,
+    error: {
+      message: '\u001b[2mexpect(\u001b[22mlocator).toBeVisible() failed\n\nLocator: …',
+      location: location(line),
+    },
+    steps: [],
+  });
+
+  test('marks a step whose error is none of the test’s errors, and keeps where each was thrown', () => {
+    const steps = flattenSteps([probe(10), probe(20)]);
+    markRecoveredSteps(steps, [{ message: 'expect(locator).toBeVisible() failed', location: location(20) }]);
+    expect(steps.map((s) => [s.error?.location, s.recovered ?? false])).toEqual([
+      ['/work/shop/tests/a.spec.ts:10:5', true],
+      ['/work/shop/tests/a.spec.ts:20:5', false],
+    ]);
+  });
+
+  test('matches on the first line alone when the test error records no location', () => {
+    const steps = flattenSteps([probe(10)]);
+    markRecoveredSteps(steps, [{ message: 'expect(locator).toBeVisible() failed\n\nsomething else' }]);
+    expect(steps[0]!.recovered).toBeUndefined();
+  });
+
+  test('marks every step error of a passing test, through collectStepMetrics', () => {
+    expect(collectStepMetrics([probe(10)], []).steps[0]!.recovered).toBe(true);
+    expect(collectStepMetrics([probe(10)]).steps[0]!.recovered).toBeUndefined();
+  });
 });
 
 describe('failureHookContext', () => {
@@ -151,6 +334,10 @@ describe('failureHookContext', () => {
 
   test('is null when the failing hook step does not carry the execution’s own error', () => {
     expect(failureHookContext(afterAllFailure.steps, 'Error: something else in the test body')).toBeNull();
+  });
+
+  test('is null for a body failure followed by a failing teardown', () => {
+    expect(failureHookContext(teardownAfterBodyFailure.steps, teardownAfterBodyFailure.error)).toBeNull();
   });
 });
 

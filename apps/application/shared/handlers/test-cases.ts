@@ -612,6 +612,7 @@ export async function getFailureTimeline(
     duration: trc.duration,
     timeout: trc.timeout,
     status: trc.status,
+    error: trc.error,
     steps: trc.steps,
     stepEvents: trc.stepEvents,
     consoleLogs: trc.consoleLogs,
@@ -731,6 +732,7 @@ export async function loadFailureClueInput(
     duration: trc.duration,
     timeout: trc.timeout,
     status: trc.status,
+    error: trc.error,
     steps: trc.steps,
     stepEvents: trc.stepEvents,
     consoleLogs: trc.consoleLogs,
@@ -840,6 +842,7 @@ export async function loadFailureClueInput(
       ? parsePlaywrightError(trc.error, {
           stepParams: failingStepParams(
             Array.isArray(trc.steps) ? (trc.steps as Parameters<typeof failingStepParams>[0]) : null,
+            trc.error,
           ),
         })
       : null,
@@ -1001,6 +1004,7 @@ async function loadAttemptEvidence(
       ? parsePlaywrightError(row.error, {
           stepParams: failingStepParams(
             Array.isArray(row.steps) ? (row.steps as Parameters<typeof failingStepParams>[0]) : null,
+            row.error,
           ),
         })
       : null,

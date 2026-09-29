@@ -13,6 +13,7 @@ import {
 import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stepLabel, orderedStepParams } from '@piwitests/core/step-analysis';
+import { stepFailureRoles, type StepFailureRole } from '#shared/step-tree';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
@@ -481,15 +482,31 @@ function stepParamsLine(step: TestStepInfo): string | null {
   return `Parameters: ${entries.map(([key, value]) => `${key}=${value}`).join(', ')}`;
 }
 
-/** Extract steps that have an error attached (D6). */
-function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): string | null {
+/** Where each failure role sorts in "Failed Steps": the failing chain first, then the rest in step order. */
+const FAILED_STEP_RANK: Record<StepFailureRole, number> = { failing: 0, enclosing: 1, failed: 2, recovered: 2 };
+
+/**
+ * Extract steps that have an error attached (D6): the step that failed the
+ * test first, then the steps around it (same error, not repeated), then the
+ * other errored steps in order — another error the test ended with, or one the
+ * test caught and went on from, labeled so.
+ */
+export function failingStepsSection(rep: RepresentativeRow, limits: ContextLimits): string | null {
   const steps = (rep.steps as TestStepInfo[] | null) ?? [];
-  const failing = steps.filter((s) => s.error?.message);
-  if (failing.length === 0) return null;
-  const out = failing.map((s) => {
-    const params = stepParamsLine(s);
+  const roles = stepFailureRoles(steps, rep.error);
+  const errored = steps.flatMap((step, i) => {
+    const role = roles[i];
+    return step.error?.message && role ? [{ step, role }] : [];
+  });
+  if (errored.length === 0) return null;
+  const ordered = [...errored].sort((a, b) => FAILED_STEP_RANK[a.role] - FAILED_STEP_RANK[b.role]);
+  const out = ordered.map(({ step, role }) => {
+    const head = `- [${step.category ?? 'step'}] ${stepLabel(step)}`;
+    if (role === 'enclosing') return `${head} (around the failing step, same error)`;
+    const note = role === 'recovered' ? ' (caught, the test continued)' : '';
+    const params = stepParamsLine(step);
     const paramLine = params ? `\n  ${params}` : '';
-    return `- [${s.category ?? 'step'}] ${stepLabel(s)}${paramLine}\n\`\`\`\n${condenseErrorText(s.error!.message!, limits.sampleErrorChars)}\n\`\`\``;
+    return `${head}${note}${paramLine}\n\`\`\`\n${condenseErrorText(step.error!.message!, limits.sampleErrorChars)}\n\`\`\``;
   });
   return `### Failed Steps\n${out.join('\n')}`;
 }
@@ -1691,16 +1708,21 @@ export function representativeExecutionSections(
   }
 
   // Steps — failed steps are annotated inline so the narrative flow
-  // ("it did A, B, C, then D failed") is readable in one pass.
+  // ("it did A, B, C, then D failed") is readable in one pass; an error the
+  // test caught is marked as such, never as the failure.
   const steps = (rep.steps as TestStepInfo[] | null) ?? [];
   if (steps.length > 0) {
-    const shown = steps.slice(-limits.steps);
+    const roles = stepFailureRoles(steps, rep.error);
+    const first = Math.max(0, steps.length - limits.steps);
+    const shown = steps.slice(first);
     out.push({
       id: 'steps',
       markdown: `### Steps (last ${shown.length})\n${shown
-        .map((s) => {
-          const prefix = s.failed ? '✗ ' : '- ';
-          const suffix = s.failed ? ' ← FAILED' : '';
+        .map((s, i) => {
+          const role = roles[first + i];
+          const failed = s.failed && role !== 'recovered';
+          const prefix = failed ? '✗ ' : '- ';
+          const suffix = role === 'recovered' ? ' (error caught, the test continued)' : failed ? ' ← FAILED' : '';
           const dur = s.duration != null ? ` (${s.duration}ms)` : '';
           const params = stepParamsLine(s);
           const paramLine = params ? `\n    ${params}` : '';

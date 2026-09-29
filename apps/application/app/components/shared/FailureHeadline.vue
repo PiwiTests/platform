@@ -26,7 +26,7 @@ const props = withDefaults(
 
 const resolvedParts = computed<HeadlinePart[]>(() => {
   if (props.parts?.length) return props.parts;
-  return describeFailureText(props.error, { lastStepTitle: lastStepTitle(props.steps) })?.parts ?? [];
+  return describeFailureText(props.error, { lastStepTitle: lastStepTitle(props.steps, props.error) })?.parts ?? [];
 });
 
 const title = computed(() => (props.error ? stripAnsi(props.error).trim() : undefined));

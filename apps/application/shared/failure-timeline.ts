@@ -146,6 +146,8 @@ export interface FailureTimelineInput {
   duration?: number | null;
   timeout?: number | null;
   status?: string | null;
+  /** The execution's error text — tells the step that failed the test from an error it caught. */
+  error?: string | null;
   steps?: unknown;
   stepEvents?: unknown;
   consoleLogs?: unknown;
@@ -330,13 +332,14 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
   const estimated = steps.length > 0 && !stepsHaveStartTimes;
   let cursor = startedAt ?? origin;
   // The step tree the flat list came from: the failing step is the innermost of
-  // the failing chain (Playwright marks the hook or test.step around it failed
-  // too), never one of the capture's own reads.
+  // the failing chain that carries the execution's error (Playwright marks the
+  // hook or test.step around it failed too), never an error the test caught or
+  // one of the capture's own reads.
   const treeSteps = steps as TreeStepLike[];
   const parents = stepParents(treeSteps);
   const phases = stepPhases(treeSteps, parents);
   const failedStepIndex = (() => {
-    const failing = failingStepIndex(treeSteps, parents);
+    const failing = failingStepIndex(treeSteps, parents, str(input.error) || null);
     if (failing !== null) return failing;
     // The last step of the test body is the failure when nothing is marked.
     if (steps.length > 0 && FAILED_STATUSES.has(str(input.status))) return lastBodyStepIndex(treeSteps, phases);

@@ -5,6 +5,7 @@ import {
   buildTraceBodyPreview,
   buildTraceCallStack,
   buildTraceNetwork,
+  buildTraceSnapshots,
   maskBodyText,
   maskHeaders,
   matchNetworkBodySha1,
@@ -435,5 +436,30 @@ describe('committed demo trace integration', () => {
     expect(withSource!.source!.lines.length).toBeGreaterThan(0);
     // The window really covers the failing line of the recorded scenario script.
     expect(withSource!.line).toBeGreaterThanOrEqual(withSource!.source!.startLine);
+  });
+});
+
+describe('buildTraceSnapshots — a runner action', () => {
+  test('marks the page call the failing runner action drove, not a later teardown call', () => {
+    const events = [
+      { type: 'before', callId: 'expect@5', class: 'Test', method: 'expect', startTime: 100 },
+      {
+        type: 'after',
+        callId: 'expect@5',
+        endTime: 400,
+        error: { message: 'Error: expect(locator).toBeVisible() failed' },
+      },
+      { type: 'error', message: 'Error: expect(locator).toBeVisible() failed' },
+      { type: 'before', callId: 'call@3', class: 'Frame', method: 'expect', startTime: 101 },
+      { type: 'aria-snapshot', callId: 'call@3', phase: 'after', file: 'aria/call@3-after.json' },
+      { type: 'after', callId: 'call@3', endTime: 399, error: { message: 'Expect failed' } },
+      { type: 'before', callId: 'call@7', class: 'Frame', method: 'expect', startTime: 501 },
+      { type: 'aria-snapshot', callId: 'call@7', phase: 'after', file: 'aria/call@7-after.json' },
+      { type: 'after', callId: 'call@7', endTime: 699, error: { message: 'Expect failed' } },
+    ];
+    const parsed = parseTraceTexts([events.map((e) => JSON.stringify(e)).join('\n')]);
+    const res = buildTraceSnapshots(parsed, (file) => `- text: ${file}`);
+    expect(res.failingCallId).toBe('call@3');
+    expect(res.failingAriaText).toBe('- text: aria/call@3-after.json');
   });
 });

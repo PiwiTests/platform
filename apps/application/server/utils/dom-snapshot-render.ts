@@ -16,7 +16,7 @@
  * demo can render the committed demo trace with the same code the server
  * uses; the node-only trace loading lives in `dom-snapshot.ts`.
  */
-import type { ParsedTraceData, TraceFrameSnapshot } from './trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceFrameSnapshot } from './trace-events';
 
 /**
  * Cap for the rendered snapshot HTML. Generous so a fully-styled snapshot
@@ -491,8 +491,10 @@ export interface DomSnapshotResult {
 
 /**
  * Pick and render the failure-time DOM from parsed trace data: the failing
- * action's before-snapshot, falling back to its after-snapshot and finally the
- * frame's last recorded snapshot (final page state).
+ * action's before-snapshot, falling back to its after-snapshot. A runner action
+ * (`Test.*`) records none, so the page-side action it drove stands in: its
+ * after-snapshot (the page when the error was raised), then its before-snapshot.
+ * Finally the frame's last recorded snapshot (final page state).
  */
 export function extractDomSnapshot(
   data: ParsedTraceData,
@@ -502,7 +504,15 @@ export function extractDomSnapshot(
   if (data.frameSnapshots.length === 0) return { status: 'no-snapshot' };
 
   const fa = data.failingAction;
-  const candidates = [fa?.beforeSnapshot, fa?.snapshotName, fa?.afterSnapshot].filter((name): name is string => !!name);
+  const pageAction = pageActionOf(data, fa);
+  const candidates = [
+    fa?.beforeSnapshot,
+    fa?.snapshotName,
+    fa?.afterSnapshot,
+    pageAction?.afterSnapshot,
+    pageAction?.snapshotName,
+    pageAction?.beforeSnapshot,
+  ].filter((name): name is string => !!name);
   // Final fallback: the last main-frame snapshot in the trace.
   const mains = data.frameSnapshots.filter((s) => s.isMainFrame !== false && s.snapshotName);
   const last = mains[mains.length - 1];

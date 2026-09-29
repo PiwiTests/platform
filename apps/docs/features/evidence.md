@@ -33,11 +33,11 @@ Below the block, one **evidence card** holds tabs, each with a count or a dot wh
 is strong or medium), else on **Timeline** when it can place two or more items, else on **Screen** when a screenshot or
 video exists, else on **Source**; never on **State**.
 
-- **Timeline**: one time axis for the steps, console entries, network requests, their backend logs and (Playwright
-  1.63+) open browser dialogs, with the moment of failure marked, over one steps table with each step's offset from
-  the failure (`t-1.1s`) and duration. **Around the failure** / **Whole test** and one chip per item type filter both.
-  Hooks and fixtures fold into **Setup** and **Teardown** rows, open when the failure is in one; a `test.step` holds
-  its steps; the innermost failing step shows its error and page.
+- **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
+  browser dialogs, with the failure marked, over a steps table giving each step's offset (`t-1.1s`) and duration.
+  **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
+  **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the step that raised
+  the test's error shows its error and page; a caught error is greyed out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the failure screenshot with the **visual diff** and [page diff](#page-diff) toggles, the video, the trace
   and attachments, and under **Page structure ▸** the failure-time ARIA tree and the reconstructed DOM.
@@ -97,7 +97,7 @@ that needs no green baseline: the structure at the failure against the last diff
 ## Trace-powered deep views
 
 ::: tip Screenshots are Playwright's to record
-Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`, so with the option unset the evidence shows video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
+Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`: with the option unset, the evidence has video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
 :::
 
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:

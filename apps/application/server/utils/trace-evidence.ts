@@ -11,7 +11,7 @@ import { getStorage } from '../storage';
 import { ariaJsonToText } from '#shared/aria-json';
 import { parseZip, parseZipDirectory, decompressEntry, type ZipEntry } from './trace-zip';
 import { decodeResource } from './resource-compression';
-import { parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
+import { pageActionOf, parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import {
   buildActionCallsites,
   buildTraceBodyPreview,
@@ -277,13 +277,16 @@ export async function getTraceSnapshotResourceFromBlob(
 }
 
 /**
- * The failing action's *before* aria tree rendered as ARIA text, for the
- * fixture-less fallback evidence. Null when the trace carries no failing-action
- * aria snapshot.
+ * The failing action's *before* aria tree rendered as ARIA text (for a runner
+ * action, the page-side action it drove), for the fixture-less fallback
+ * evidence. Null when the trace carries no failing-action aria snapshot.
  */
 export async function getTraceFallbackAriaTextFromBlob(blobPath: string): Promise<string | null> {
   const bundle = await loadTraceBundle(blobPath);
-  const file = bundle?.parsed?.failingAction?.ariaSnapshotBefore;
+  const failing = bundle?.parsed?.failingAction ?? null;
+  const file =
+    failing?.ariaSnapshotBefore ??
+    (bundle?.parsed ? pageActionOf(bundle.parsed, failing)?.ariaSnapshotBefore : undefined);
   if (!bundle || !file) return null;
   return readAriaText(bundle, file);
 }

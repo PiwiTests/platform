@@ -1,5 +1,5 @@
 import { parseZip } from './trace-zip';
-import { parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
+import { actionHolds, parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import { getStorage } from '../storage';
 import { getAppSetting, setAppSetting } from './app-settings';
 import type { ContextLimits } from '#shared/ai-context-limits';
@@ -161,13 +161,19 @@ export function formatFailingActionSection(
     }
   }
 
-  // Nearby actions (before the failing one)
+  // Nearby actions (before the failing one). An earlier errored action that
+  // does not hold the failing one raised an error the test caught.
   const startIdx = Math.max(0, data.failingActionIndex - maxTraceActions);
   const nearbyActions = data.actions.slice(startIdx, data.failingActionIndex + 1);
   if (nearbyActions.length > 1) {
     lines.push('', '### Actions Leading to Failure');
     for (const a of nearbyActions) {
-      const marker = a === data.failingAction ? ' ← FAILED' : '';
+      const marker =
+        a === data.failingAction
+          ? ' ← FAILED'
+          : a.error && !actionHolds(data.actions, a, action)
+            ? ' (error caught, the test continued)'
+            : '';
       lines.push(`- ${a.apiName}${marker}`);
     }
   }
