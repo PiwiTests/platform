@@ -43,8 +43,8 @@ Every flaky test is automatically tagged with one of five categories, using keyw
 | `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
 | `other` | No clear signal |
 
-Piwi classifies a test each time it passes on retry in a finished run (up to 20 tests per run), so the category follows
-new evidence. A listed test that still has no category is classified when the list is opened, ten at a time.
+A test is classified when it passes on retry in a finished run, and a listed test still without a category when the
+list opens.
 
 Filter the flaky table by category to triage a class of failures at once.
 
