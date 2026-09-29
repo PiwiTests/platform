@@ -5,8 +5,22 @@ data changes. A reader of [Flake Lab](../apps/docs/features/flake-lab.md) learns
 holds one, on a real screen, one click away. Today the reader has to find it, and a question from a user ("I can't
 find any example to test the Flake Lab in the demo, is that normal?") shows they often don't.
 
-**Status.** Proposed 2026-09-29. Not started. The Flake Lab page's "Try it in the demo" section, added the same day
-with hand-written links, is the example this plan generalizes.
+**Status.** Proposed 2026-09-29. **PR 1 built 2026-09-29**: the registry with five examples (three for Flake Lab, two
+for AI diagnosis), `<DemoExamples />`, the seed check and the docs drift rules, with the Flake Lab and AI diagnosis
+pages moved onto them. PR 1 took the recommended answer to "Where the section sits" and to "Word budgets"; the other two
+decisions wait for PR 2 and PR 3. What changed while building PR 1:
+
+- `<DemoExamples />` takes no `page` prop: it reads the page it renders on, so a page cannot show another page's
+  examples. The `## Try it in the demo` heading stays in the page's Markdown, so the outline and its anchor keep
+  working, and the drift test checks the component sits in that section, the last one before `## Related`.
+- The links open in a new tab. VitePress's router loads every same-origin link without a `target` as a docs page, so
+  a plain `/demo/…` link would load a docs 404.
+- `shows` is plain text, rendered as text; a control's name is written out ("the Diagnose with AI button").
+- The `expect` vocabulary as built: `testCase`, `project`, `cluster` (by its failure story's key), `diagnosis`
+  (`'with-patch'` or `'none'`), `fixLanded`, and `lab`, a test's Flake Lab state computed with the app's own rules
+  (`flakeLabTestState` and the verified-fix rule). `verifiedFix: true` in the first sketch became `lab: 'verified'`.
+- `llms-full.txt` expands `<DemoExamples />` into the page's links, with absolute URLs, so language models read the
+  same examples.
 
 ## Why
 
@@ -37,11 +51,11 @@ export const DEMO_EXAMPLES = [
     id: 'flake-lab-verified-fix',
     // The docs page that shows it; the drift test checks the page renders it.
     doc: 'features/flake-lab',
-    title: 'Table pagination works correctly',
+    title: 'UI Components › Table pagination works correctly',
     shows: 'One suspect reproduced it and one did not, a first fix still failed, and the second is verified.',
     route: '/test-cases/35?tab=flakiness',
     // What the seed must hold for the route to show it; checked against the generated seed.
-    expect: { testCase: { id: 35, title: 'Table pagination works correctly' }, verifiedFix: true },
+    expect: { testCase: { id: 35, title: 'Table pagination works correctly' }, lab: 'verified' },
   },
   // …
 ];
@@ -53,7 +67,7 @@ predicates: an example says what it promises in words a reviewer can read.
 
 ### 2. A docs component
 
-`<DemoExamples page="features/flake-lab" />` in `apps/docs/.vitepress/theme/components/`, registered like `<Needs>`,
+`<DemoExamples />` in `apps/docs/.vitepress/theme/components/`, registered like `<Needs>`,
 renders the page's examples as one short list under a fixed heading ("Try it in the demo"): the title as the link,
 then the `shows` sentence. Links are built with `withBase('/demo' + route)`, so the docs and the demo deployed together
 on GitHub Pages stay on one host, and a fork that deploys both points at its own demo. A component-rendered anchor is

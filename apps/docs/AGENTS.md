@@ -132,6 +132,11 @@ flags, events): link the reference page instead of copying it.
 - No endpoint path in prose, except `/api/health` and `/api/metrics`: link the API reference (see "The API
   reference" above). A path inside a code example stays, and so does an example route of the reader's own app.
 - No MCP tool count: the generated MCP tools page states it, and every other page links there.
+- A concrete screen of the live demo is linked only through the demo examples registry,
+  `apps/application/shared/demo/demo-examples.mjs`: add an entry (its `doc`, `title`, `shows`, `route` and the
+  `expect` the seed must hold) and render the page's entries with `<DemoExamples />` in a `## Try it in the demo`
+  section, the last one before `## Related`. A hand-written link may point at the demo's home or its API reference,
+  nothing deeper. `llms-full.txt` expands the component into the page's links.
 
 ### `recipes/` — task-first pages
 
@@ -182,7 +187,9 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 - a hand-written page names a Piwi endpoint in prose, states an MCP tool count, uses changelog wording ("since
   version", "now supports") or announces planned work;
 - a notification event, a clue rule, a registered shortcut or a CLI flag is missing from its reference page;
-- a recipe is not linked from a feature page and a help topic.
+- a recipe is not linked from a feature page and a help topic;
+- a demo example's page does not render `<DemoExamples />` in its "Try it in the demo" section before `## Related`,
+  a page renders the component with no example, or a page links a demo screen by hand.
 
 It also guards the positioning line and the single-source snippets. The endpoint check reads the routes under
 `apps/application/server/api`, so it flags only Piwi's own endpoints.

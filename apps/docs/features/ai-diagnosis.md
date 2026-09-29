@@ -117,13 +117,15 @@ Tailor the analysis to your stack with **global** instructions (Settings → AI)
 
 Each input sent to the model is capped to keep diagnoses fast and affordable; the caps are set on the [AI provider](/guide/ai-provider#context-limits-and-token-cost) page.
 
+## Privacy
+
+API keys are encrypted at rest with [`PIWI_SECRET_KEY`](/reference/configuration#general). When you run a diagnosis, the bounded context above is sent to your configured provider, so for fully local analysis, use Ollama or another self-hosted OpenAI-compatible model and keep everything on your own infrastructure.
+
 ## Try it in the demo
 
 The [live demo](https://piwitests.dev/demo/) needs no AI provider: some clusters carry a completed diagnosis with a validated patch, and the others run a simulated streaming diagnosis.
 
-## Privacy
-
-API keys are encrypted at rest with [`PIWI_SECRET_KEY`](/reference/configuration#general). When you run a diagnosis, the bounded context above is sent to your configured provider, so for fully local analysis, use Ollama or another self-hosted OpenAI-compatible model and keep everything on your own infrastructure.
+<DemoExamples />
 
 ## Related
 

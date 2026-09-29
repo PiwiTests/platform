@@ -35,6 +35,7 @@ const GENERATED = new Set([
 
 const jiti = createJiti(import.meta.url);
 const { sidebars } = await jiti.import(join(docsRoot, '.vitepress/navigation.ts'));
+const { demoExamplesFor } = await jiti.import(join(docsRoot, '../application/shared/demo/demo-examples.mjs'));
 
 const config = readFileSync(join(docsRoot, '.vitepress/config.mts'), 'utf8');
 const title = /^\s*title: '([^']+)'/m.exec(config)?.[1];
@@ -84,10 +85,16 @@ index.push('## Optional', '', `- [Full documentation](${SITE}/llms-full.txt): ev
 writeFileSync(join(docsRoot, 'public/llms.txt'), index.join('\n'));
 
 // llms-full.txt: the hand-written pages, each introduced by its URL. A snippet
-// include (`<<< @/snippets/file{lang}` or `… [tab]`) becomes a fenced block;
-// the <Needs> chips and the configuration widgets render nothing as text.
-const inline = (body) =>
+// include (`<<< @/snippets/file{lang}` or `… [tab]`) becomes a fenced block,
+// <DemoExamples /> becomes the page's list of demo links, and the <Needs> chips
+// and the configuration widgets render nothing as text.
+const inline = (body, page) =>
   body
+    .replace(/^<DemoExamples\b[^>]*\/>[ \t]*$/gm, () =>
+      demoExamplesFor(page)
+        .map((example) => `- [${example.title}](${SITE}/demo${example.route}): ${example.shows}`)
+        .join('\n'),
+    )
     .replace(/^([ \t]*)<<< @\/snippets\/([\w.-]+)(?:\{(\w+)\})?(?: \[([^\]]+)\])?[ \t]*$/gm, (_, indent, file, lang, tab) => {
       const code = readFileSync(join(docsRoot, 'snippets', file), 'utf8').trimEnd();
       const fence = `\`\`\`${lang ?? file.split('.').pop()}${tab ? ` [${tab}]` : ''}`;
@@ -101,7 +108,7 @@ const full = [`# ${title}`, '', `> ${summary}`, ''];
 for (const { pages } of sections) {
   for (const { page } of pages) {
     if (GENERATED.has(page)) continue;
-    full.push(`<!-- ${SITE}/${page} -->`, '', inline(read(page).body), '');
+    full.push(`<!-- ${SITE}/${page} -->`, '', inline(read(page).body, page), '');
   }
 }
 writeFileSync(join(docsRoot, 'public/llms-full.txt'), full.join('\n'));
