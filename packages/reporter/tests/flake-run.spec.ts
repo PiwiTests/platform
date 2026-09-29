@@ -46,11 +46,12 @@ exports.test = extendPiwiFixtures(base);
 exports.expect = expect;
 `;
   write('fixture.cjs', fixture);
+  // Its own outputDir: Playwright defaults to the package's test-results/, which every spawned run clears on start.
   write(
     'playwright.config.cjs',
     `const { defineConfig } = require('@playwright/test');
 const { wrapConfig } = require(${JSON.stringify(dist)});
-module.exports = wrapConfig(defineConfig({ testDir: './tests', retries: 2, workers: 4, reporter: 'line' }));
+module.exports = wrapConfig(defineConfig({ testDir: './tests', outputDir: './test-results', retries: 2, workers: 4, reporter: 'line' }));
 `,
   );
   write(
