@@ -22,12 +22,14 @@ import {
   RUN_ARGS_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
+  DESKTOP_REQUEST,
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   TRACE_REQUEST,
+  type DesktopResult,
   type EditorCredentials,
   type FileSummary,
   type McpServersResult,
@@ -55,7 +57,14 @@ import {
   waitForSignIn,
   type ProjectItem,
 } from './connect';
-import { DOCUMENT_PATTERN, indentBlock, mcpConfiguration, sourceLabel, statusBarView } from './glue';
+import {
+  DOCUMENT_PATTERN,
+  disconnectQuestion,
+  indentBlock,
+  mcpConfiguration,
+  sourceLabel,
+  statusBarView,
+} from './glue';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
 /** The key every instance shared before keys were kept per instance; removed once. */
@@ -409,6 +418,29 @@ async function offerMcp(context: vscode.ExtensionContext, servers: McpServersRes
  */
 async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
+  // The desktop app running on this machine needs no address or sign-in: offer it first.
+  const desktop = await lc
+    .sendRequest<DesktopResult>(DESKTOP_REQUEST)
+    .then((d) => (d.url ? d : null))
+    .catch(() => null);
+  if (desktop) {
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(device-desktop) Use the Piwi desktop app',
+          description: desktop.url ?? '',
+          detail: desktop.linked
+            ? `This folder is linked there to the project ${desktop.linked.name}.`
+            : 'It runs on this machine; no address or key needed.',
+          desktop: true,
+        },
+        { label: '$(globe) Another instance…', detail: 'A Piwi server, by its address.', desktop: false },
+      ],
+      { title: 'Piwi: Connect', placeHolder: 'Connect to', ignoreFocusOut: true },
+    );
+    if (!choice) return false;
+    if (choice.desktop) return useDesktop(context, lc, desktop);
+  }
   const input = await vscode.window.showInputBox({
     title: 'Piwi: Connect',
     prompt: "The Piwi instance's address",
@@ -418,6 +450,7 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   });
   const base = normalizeServerUrl(input);
   if (!base) return false;
+  if (desktop && base === desktop.url) return useDesktop(context, lc, desktop);
   let apiKey: string | null = null;
   let projects: ProjectItem[];
   try {
@@ -467,7 +500,10 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
   await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
   const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
-  const first = status?.contexts.find((c) => c.source && c.source !== 'editor' && c.serverUrl !== base);
+  // The environment and a workspace `.env` come before the settings.
+  const first = status?.contexts.find(
+    (c) => (c.source === 'environment' || c.source === 'dotenv') && c.serverUrl !== base,
+  );
   if (first) {
     void vscode.window.showWarningMessage(
       `Piwi: saved, but ${sourceLabel(first.source)} names ${first.serverUrl}, which comes before the settings.`,
@@ -482,21 +518,54 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   return true;
 }
 
+/**
+ * Use the desktop app: no address and no key are saved, so the service reads them from the
+ * app while it runs. The project is the one linked there to this folder, else the one picked.
+ */
+async function useDesktop(
+  context: vscode.ExtensionContext,
+  lc: LanguageClient,
+  desktop: DesktopResult,
+): Promise<boolean> {
+  const settings = vscode.workspace.getConfiguration('piwi');
+  let project: string | undefined;
+  if (!desktop.linked && desktop.projects.length) {
+    const picked = await vscode.window.showQuickPick(
+      desktop.projects.map((p) => ({ label: p.name, description: `#${p.id}` })),
+      {
+        title: 'Piwi: Connect',
+        placeHolder: 'The project this workspace reports to (link this folder in the desktop app to skip this step)',
+        ignoreFocusOut: true,
+      },
+    );
+    if (!picked) return false;
+    project = picked.label;
+  }
+  await settings.update('serverUrl', undefined, vscode.ConfigurationTarget.Workspace);
+  await settings.update('project', project, vscode.ConfigurationTarget.Workspace);
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  const name = desktop.linked?.name ?? project;
+  void vscode.window.showInformationMessage(
+    name
+      ? `Piwi: connected to the desktop app, project ${name}${desktop.linked ? ' (linked to this folder)' : ''}.`
+      : "Piwi: the desktop app has no project yet. Import or send a run to it, then link this folder on the project's page there.",
+  );
+  return true;
+}
+
 /** Piwi: Disconnect — forget the workspace's instance and project, and the key saved for that instance. */
 async function disconnect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
   const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl'));
-  if (!serverUrl) {
-    void vscode.window.showInformationMessage('Piwi: no instance is saved in the settings.');
+  const question = disconnectQuestion(serverUrl, settings.get<string>('project') || null);
+  if (!question) {
+    void vscode.window.showInformationMessage('Piwi: nothing is saved in the settings.');
     return false;
   }
-  const answer = await vscode.window.showWarningMessage(
-    `Piwi: forget ${serverUrl}, the project, and the API key saved for it?`,
-    { modal: true },
-    'Disconnect',
-  );
+  const answer = await vscode.window.showWarningMessage(`Piwi: ${question}`, { modal: true }, 'Disconnect');
   if (answer !== 'Disconnect') return false;
-  await context.secrets.delete(apiKeySecret(serverUrl));
+  if (serverUrl) await context.secrets.delete(apiKeySecret(serverUrl));
   await settings.update('serverUrl', undefined, vscode.ConfigurationTarget.Workspace);
   await settings.update('project', undefined, vscode.ConfigurationTarget.Workspace);
   await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));

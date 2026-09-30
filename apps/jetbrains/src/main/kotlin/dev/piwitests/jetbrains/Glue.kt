@@ -73,6 +73,13 @@ object Glue {
         return "Connected to ${c.projectName ?: "Piwi"}$branch at ${c.serverUrl}, from ${sourceLabel(c.source)}."
     }
 
+    /** What Disconnect asks before forgetting the saved connection; null when nothing is saved. */
+    fun disconnectQuestion(serverUrl: String, project: String): String? = when {
+        serverUrl.isNotBlank() -> "Forget $serverUrl, the project, and the API key saved for it?"
+        project.isNotBlank() -> "Forget the project $project saved for the desktop app?"
+        else -> null
+    }
+
     /** An instance URL as it is stored: trimmed, without trailing slashes; null when it is not an http(s) URL. */
     fun normalizeServerUrl(input: String?): String? {
         val url = input?.trim()?.trimEnd('/') ?: return null

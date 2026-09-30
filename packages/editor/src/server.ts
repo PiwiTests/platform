@@ -66,8 +66,8 @@ import {
   timeoutMessage,
   type LineLocator,
 } from './analysis.js';
-import { PiwiContext } from './context.js';
-import type { BranchFailure, FixPlan } from './piwi-client.js';
+import { PiwiContext, desktopConfigPath, linkedDesktopProject, readDesktopDiscovery } from './context.js';
+import { PiwiClient, type BranchFailure, type FixPlan } from './piwi-client.js';
 import {
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
@@ -81,8 +81,10 @@ import {
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
+  DESKTOP_REQUEST,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  type DesktopResult,
   type EditorCredentials,
   type EditorTest,
   type FailuresResult,
@@ -112,6 +114,8 @@ const REFRESH_MS = 5 * 60_000;
 /** How often the latest run is read again while it runs, and otherwise. */
 const RUN_POLL_ACTIVE_MS = 15_000;
 const RUN_POLL_MS = 60_000;
+/** How often the desktop app's discovery file is checked. */
+const DESKTOP_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
@@ -125,6 +129,8 @@ export interface ServerOptions {
   debounceMs?: number;
   /** How often the latest run is read while none runs; a quarter of it while one runs. */
   runPollMs?: number;
+  /** How often the desktop app's discovery file is checked for its start, stop and folder links. */
+  desktopWatchMs?: number;
 }
 
 /** What the last analysis of an application file found, for its quick fixes and hover. */
@@ -164,6 +170,10 @@ function testCounts(tests: Array<{ status: string | null }>): string {
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
   const env = options.env ?? process.env;
+  const desktopFile = desktopConfigPath(env);
+  const onDesktopFile = (now: fs.Stats, before: fs.Stats) => {
+    if (now.mtimeMs !== before.mtimeMs || now.size !== before.size) void refreshAll();
+  };
   const documents = new TextDocuments(TextDocument);
   const contexts: PiwiContext[] = [];
   let credentials: EditorCredentials = {};
@@ -538,6 +548,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     refreshTimer = setInterval(() => void refreshAll(), options.refreshMs ?? REFRESH_MS);
     refreshTimer.unref?.();
     pollRuns();
+    // The desktop app writes its discovery file when it starts or a folder link
+    // changes, and removes it on quit: read the connection again then.
+    fs.watchFile(
+      desktopFile,
+      { interval: options.desktopWatchMs ?? DESKTOP_WATCH_MS, persistent: false },
+      onDesktopFile,
+    );
   });
 
   documents.onDidOpen((e) => schedule(e.document, 0));
@@ -1088,6 +1105,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
 
+  connection.onRequest(DESKTOP_REQUEST, async (): Promise<DesktopResult> => {
+    const desktop = readDesktopDiscovery(env);
+    if (!desktop) return { url: null, projects: [], linked: null };
+    const projects = await new PiwiClient({ serverUrl: desktop.url, apiKey: desktop.token, project: '' })
+      .projects()
+      .catch(() => []);
+    const id = contexts[0] ? linkedDesktopProject(desktop, contexts[0].root) : null;
+    const linked = id === null ? null : (projects.find((p) => p.id === id) ?? null);
+    return { url: desktop.url, projects, linked };
+  });
+
   connection.onRequest(SELECTIONS_REQUEST, async (params: SelectionsParams): Promise<SelectionsResult> => {
     const file = params.uri ? uriToPath(params.uri) : null;
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
@@ -1209,6 +1237,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   return () => {
     stopped = true;
     if (refreshTimer) clearInterval(refreshTimer);
+    fs.unwatchFile(desktopFile, onDesktopFile);
     if (runTimer) clearTimeout(runTimer);
     for (const t of timers.values()) clearTimeout(t);
   };

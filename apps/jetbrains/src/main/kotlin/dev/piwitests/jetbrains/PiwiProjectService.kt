@@ -107,7 +107,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val settings = settings()
         settings.serverUrl = url
         settings.project = projectName.trim()
-        PasswordSafe.instance.setPassword(credentialAttributes(url), apiKey?.trim()?.ifBlank { null })
+        // No address: the desktop app, whose token the service reads from its discovery file.
+        if (url.isNotBlank()) PasswordSafe.instance.setPassword(credentialAttributes(url), apiKey?.trim()?.ifBlank { null })
         sendCredentials()
     }
 

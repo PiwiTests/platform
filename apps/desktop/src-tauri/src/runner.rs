@@ -217,7 +217,10 @@ pub(crate) fn read_links(app: &AppHandle) -> HashMap<String, LinkRecord> {
 fn write_links(app: &AppHandle, links: &HashMap<String, LinkRecord>) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
     store.set(PROJECT_LINKS_KEY, json!(links));
-    store.save().map_err(|e| e.to_string())
+    store.save().map_err(|e| e.to_string())?;
+    // Editors read the links from the discovery file to pick their project.
+    crate::refresh_discovery_file(app);
+    Ok(())
 }
 
 /// The linked folder for a project, when one is set and still on disk. Used by

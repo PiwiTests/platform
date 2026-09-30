@@ -32,8 +32,11 @@ clients stay thin and both editors give the same answers.
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials`, and requests answer from them. What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
   fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it.
-- **The connection order is fixed**: the environment, the workspace `.env`, the desktop app's discovery file, then the
-  editor's own settings (`resolveContextConnection`). The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
+- **The connection order is fixed**: the environment, the workspace `.env`, the editor's own settings (what Connect
+  saved: explicit, so it comes before an app that only runs), then the desktop app's discovery file
+  (`resolveContextConnection`). With the desktop app, the project is `PIWI_PROJECT_NAME`, the editor's, else the one
+  the app links to the folder holding the Playwright config (`projects` in `~/.piwi/desktop.json`); the service
+  watches that file, and `piwi/desktop` tells Connect what the app offers. The reporter keeps its own order. The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
   client for its agent.
 - Nothing from the workspace is sent to the instance but file paths it already stores.
 

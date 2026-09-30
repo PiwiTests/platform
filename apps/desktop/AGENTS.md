@@ -27,10 +27,13 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
   poll, which it sends before it holds the token. The start answers only an extension's JSON request and keeps at most
   three waiting; the poll answers only with the secret the start gave; the token goes out once, after **Allow** in the
   window (`DesktopPickerPairingModal`), behind the guard. A route added to that list needs the same care.
-- **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token }` to
-  `~/.piwi/desktop.json` while it runs and deletes it on quit; `@piwitests/reporter` reads it from
-  `src/internal/config/desktop.ts`, and `src-tauri/src/mcp_stdio.rs` resolves the app's address from it on every
-  message. The three ship separately, so changing the path or the shape means changing all of them.
+- **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token, projects }` to
+  `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
+  linked folders), and deletes it on quit; `@piwitests/reporter` reads it from `src/internal/config/desktop.ts`,
+  `src-tauri/src/mcp_stdio.rs` resolves the app's address from it on every message, and the editor service
+  (`packages/editor/src/context.ts`) picks the project linked to the workspace from it. They ship separately, so
+  changing the path or the shape means changing all of them; a new field is fine, since every reader ignores the
+  ones it does not know.
 - **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
   one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
   breaks every config already written — it can only be added to, and the bridge must keep speaking newline-delimited

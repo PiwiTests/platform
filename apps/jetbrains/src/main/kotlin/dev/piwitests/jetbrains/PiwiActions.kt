@@ -14,7 +14,6 @@ import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
-import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
 import java.awt.datatransfer.StringSelection
@@ -31,26 +30,18 @@ class ConnectAction : AnAction() {
     }
 }
 
-/** Piwi: Disconnect — forget this project's instance, project and the key saved for that instance. */
+/** Piwi: Disconnect — forget this project's saved instance and project, and the key saved for that instance. */
 class DisconnectAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         val project = e.project
-        e.presentation.isEnabled = project != null && project.service<PiwiProjectService>().settings().serverUrl.isNotBlank()
+        val settings = e.project?.service<PiwiProjectService>()?.settings()
+        e.presentation.isEnabled = settings != null && Glue.disconnectQuestion(settings.serverUrl, settings.project) != null
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return
-        val service = project.service<PiwiProjectService>()
-        val url = service.settings().serverUrl.ifBlank { return }
-        val answer = Messages.showYesNoDialog(
-            project,
-            "Forget $url, the project, and the API key saved for it?",
-            "Piwi: Disconnect",
-            null,
-        )
-        if (answer == Messages.YES) service.disconnect()
+        PiwiConnectFlow.disconnect(e.project ?: return)
     }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
-import { mcpConfiguration, statusBarView } from '../src/glue';
+import { disconnectQuestion, mcpConfiguration, sourceLabel, statusBarView } from '../src/glue';
 
 const connected: StatusResult = {
   contexts: [
@@ -106,5 +106,19 @@ describe('mcpConfiguration', () => {
         'piwi-2': { type: 'http', url: 'http://b/mcp' },
       },
     });
+  });
+});
+
+describe('Piwi: Disconnect', () => {
+  test('asks about what is saved, and nothing when nothing is', () => {
+    expect(disconnectQuestion('https://piwi.corp', 'Shop')).toBe(
+      'forget https://piwi.corp, the project, and the API key saved for it?',
+    );
+    expect(disconnectQuestion(null, 'Shop')).toBe('forget the project Shop saved for the desktop app?');
+    expect(disconnectQuestion(null, null)).toBeNull();
+  });
+
+  test('the desktop app is named as a source', () => {
+    expect(sourceLabel('desktop')).toBe('the Piwi desktop app');
   });
 });
