@@ -634,7 +634,11 @@ export const MCP_TOOL_DEFS = [
         projectId: { type: 'number', description: 'Project ID' },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
         offset: { type: 'number', description: 'Row offset for paging (default 0)' },
-        query: { type: 'string', description: 'Optional case-insensitive substring filter on title or file path' },
+        query: {
+          type: 'string',
+          description:
+            'Optional search, as in the catalog search box: words match the title, describe blocks or file path; qualifiers match one field (file:, describe:, title:, tag:, lock:, owner:, priority:, feature:); a leading - excludes; * is a wildcard in text fields',
+        },
         tags: {
           type: 'string',
           description: 'Comma-separated tags; a test must carry every one of them. A leading @ is optional.',
