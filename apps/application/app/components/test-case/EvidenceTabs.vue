@@ -480,7 +480,6 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
               <VisualDiffCard
                 v-if="runId"
                 embedded
-                :run-id="runId"
                 :test-runs-case-id="testRunsCaseId"
                 @available="visualDiffAvailable = $event"
               />

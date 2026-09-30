@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
+import { computed, nextTick, watch, ref } from 'vue';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { summarizeRunCases } from '#shared/utils/test-counts';
@@ -663,7 +663,6 @@ function scrollToCase(id: number) {
   });
 }
 
-onUnmounted(() => {});
 defineExpose({ scrollToCase });
 </script>
 

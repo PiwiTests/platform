@@ -824,6 +824,5 @@ defineExpose({
     :failing-locator="healing.failingLocator"
     :healing="healing"
     @confirmed="refreshHealing"
-    @close="pickerOpen = false"
   />
 </template>

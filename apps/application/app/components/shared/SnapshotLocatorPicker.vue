@@ -38,7 +38,6 @@ function momentParams(): Record<string, string> {
 }
 
 const emit = defineEmits<{
-  close: [];
   confirmed: [pick: RankedLocator];
 }>();
 
