@@ -32,7 +32,7 @@ export interface RawAttachment {
   originalName?: string;
 }
 
-/** Performance metrics collected from `result.steps` by `step-analyzer`. */
+/** Performance metrics collected from `result.steps` by `collectStepMetrics`. */
 export interface CollectedPerformanceMetrics {
   steps: Array<{ title: string; duration: number; category: string; error?: { message: string }; failed?: boolean }>;
   totalStepDuration: number;

@@ -10,7 +10,7 @@ import { FileHandler } from '../internal/files/file-handler.js';
 import { ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
 import { MetadataCollector } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '../internal/collect/step-analyzer.js';
+import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
@@ -33,7 +33,7 @@ import {
   expectedFailureError,
   resolveUnrunReason,
   linkBlockedTests,
-} from '../internal/collect/skip-classify.js';
+} from '@piwitests/core/status-classify';
 import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';

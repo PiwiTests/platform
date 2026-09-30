@@ -79,7 +79,7 @@ src/
     submit/     run-submitter, uploader, serializer
     transport/  http-client (+ HttpError)
     streaming/  stream-manager, stream-buffer, crash-recovery
-    collect/    metadata-collector, step-analyzer, skip-classify, error-text
+    collect/    metadata-collector, error-text
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
