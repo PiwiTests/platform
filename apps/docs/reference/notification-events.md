@@ -45,6 +45,7 @@ For run events the payload includes up to three failing tests, so you can act wi
     "totalTests": 120,
     "failedTests": 3,
     "branch": "main",
+    "environment": "staging",
     "topFailures": [
       {
         "title": "applies discount code",
@@ -69,8 +70,12 @@ The [pull-request comment](/features/pr-feedback) quotes failures the same way.
 
 ## Payload fields by event
 
-- **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts and branch, `topFailures`, and
-  the `owners` of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
+Every event that comes from a run carries that run's `branch` and `environment` when the run reported them: the
+`run.*` events, `flakiness.spike`, `perf.regression`, the `cluster.*` events and `bug.looks_fixed`. A subscription's
+[branch and environment filters](/features/notifications#branches-and-environments) match on these two fields.
+
+- **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
+  of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
 - **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`) and
   `affectedCases`.
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the

@@ -36,6 +36,7 @@ import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, stripAbPrefix } from '#shared/patch';
 import type { FixAuthor, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
+import { resolveRunBranch } from './run-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { enqueueFixPolicies, enqueueRegressionPolicies, enqueueStillFailingPolicy } from './integrations/policies';
 import type { DbClient } from '../database';
@@ -167,6 +168,10 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
   const meta = (run.metadata as RunMetadata | null) ?? null;
   const currentCommit = meta?.scm?.commit ?? null;
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
+  const runScope = {
+    branch: run.branch ?? resolveRunBranch(run.metadata) ?? undefined,
+    environment: run.environment ?? undefined,
+  };
 
   // What this run saw, per test case: any pass, and any failure.
   const caseRows = await db
@@ -246,6 +251,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         signature: cluster.signature,
         title: cluster.title,
         runId,
+        ...runScope,
         fixLandedRunId: cluster.fixLandedRunId,
         reopened,
         fixAuthor,
@@ -394,6 +400,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       signature: cluster.signature,
       title: cluster.title,
       runId,
+      ...runScope,
       verification,
       commit: currentCommit,
       timeToResolutionMs,

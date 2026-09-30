@@ -116,6 +116,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
     if (!project) return;
 
     const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
+    const environment = runRow.environment ?? undefined;
     const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
     const isDefaultBranch = branch ? branch === defaultBranch : false;
 
@@ -159,6 +160,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
       flakinessRate: runRow.totalTests > 0 ? runRow.flakyTests / runRow.totalTests : 0,
       durationMs: runRow.duration ?? undefined,
       branch,
+      environment,
       isDefaultBranch,
       topFailures,
       owners,
@@ -245,6 +247,8 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         signature: cluster.signature,
         title: describeCluster(cluster),
         runId,
+        branch,
+        environment,
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
@@ -258,6 +262,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         projectName: project.label || project.name,
         runId,
         branch,
+        environment,
         tests: looksFixed,
       });
     }

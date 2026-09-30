@@ -50,6 +50,7 @@ async function insertRun(status: 'passed' | 'failed', commit: string, opts: { is
     status,
     startTime: new Date(Date.UTC(2026, 0, 1) + id * 3_600_000),
     isFullRun: opts.isFullRun === false ? 0 : 1,
+    environment: 'staging',
     metadata: { scm: { commit, remoteUrl: REMOTE, branch: 'main' } },
   });
   return id;
@@ -148,6 +149,8 @@ describe('verifyClusterFixes — status transitions', () => {
       projectId: 1,
       projectName: 'Shop',
       runId: green,
+      branch: 'main',
+      environment: 'staging',
       verification: 'diagnosis-verified',
       commit: 'bbb222',
       resolved: true,
@@ -225,6 +228,8 @@ describe('verifyClusterFixes — status transitions', () => {
       clusterId,
       projectName: 'Shop',
       runId: red,
+      branch: 'main',
+      environment: 'staging',
       fixLandedRunId: green,
       reopened: true,
     });

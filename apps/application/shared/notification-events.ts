@@ -68,7 +68,16 @@ export interface TopFailure {
   executionId?: number;
 }
 
-export interface RunFinishedPayload {
+/**
+ * The branch and environment of the run an event comes from. Every payload of a
+ * {@link RUN_SCOPED_EVENTS} event carries them when the run reported them.
+ */
+export interface RunScope {
+  branch?: string;
+  environment?: string;
+}
+
+export interface RunFinishedPayload extends RunScope {
   runId: number;
   projectId: number;
   projectName: string;
@@ -77,7 +86,6 @@ export interface RunFinishedPayload {
   failedTests: number;
   passedTests: number;
   flakyTests: number;
-  branch?: string;
   isDefaultBranch?: boolean;
   flakinessRate?: number; // 0-1
   /** Duration of the run in milliseconds. */
@@ -95,7 +103,7 @@ export interface RunFinishedPayload {
   owners?: string[];
 }
 
-export interface ClusterNewPayload {
+export interface ClusterNewPayload extends RunScope {
   clusterId: number;
   projectId: number;
   projectName: string;
@@ -208,7 +216,7 @@ export interface FixAuthor {
 }
 
 /** A cluster whose every affected test passed again. */
-export interface ClusterFixedPayload {
+export interface ClusterFixedPayload extends RunScope {
   clusterId: number;
   projectId: number;
   projectName: string;
@@ -232,7 +240,7 @@ export interface ClusterFixedPayload {
 }
 
 /** A cluster with a recorded fix that is failing again. */
-export interface ClusterRegressedPayload {
+export interface ClusterRegressedPayload extends RunScope {
   clusterId: number;
   projectId: number;
   projectName: string;
@@ -285,11 +293,10 @@ export interface LooksFixedTest {
   link?: string;
 }
 
-export interface BugLooksFixedPayload {
+export interface BugLooksFixedPayload extends RunScope {
   projectId: number;
   projectName: string;
   runId: number;
-  branch?: string;
   tests: LooksFixedTest[];
 }
 
@@ -304,7 +311,10 @@ export type NotificationPayload =
 
 /** Per-subscription delivery filters, stored as JSON on the subscription row. */
 export interface SubscriptionFilters {
+  /** Only deliver events from runs on these branches; `*` matches any characters (`release/*`). */
   branches?: string[];
+  /** Only deliver events from runs in these environments; `*` matches any characters. */
+  environments?: string[];
   tags?: string[];
   statuses?: string[];
   defaultBranchOnly?: boolean;
@@ -314,6 +324,38 @@ export interface SubscriptionFilters {
   flakinessThreshold?: number;
   /** Minimum slowdown percent for perf.regression deliveries. */
   perfRegressionPct?: number;
+}
+
+/**
+ * Events that come from one run and carry its {@link RunScope}: the branch and
+ * environment filters apply to them. `auto_heal.pr_opened` names the pull
+ * request's branch, and `diagnosis.completed` is about a cluster across runs.
+ */
+export const RUN_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<NotificationEvent>([
+  'run.finished',
+  'run.failed',
+  'run.failed.default_branch',
+  'flakiness.spike',
+  'perf.regression',
+  'cluster.new',
+  'cluster.fixed',
+  'cluster.regressed',
+  'bug.looks_fixed',
+]);
+
+/**
+ * Whether a branch or environment name matches one of the patterns: an exact
+ * name, or a pattern where `*` matches any run of characters, `/` included.
+ */
+export function matchesNamePattern(name: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    if (!pattern.includes('*')) return pattern === name;
+    const source = pattern
+      .split('*')
+      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+      .join('.*');
+    return new RegExp(`^${source}$`).test(name);
+  });
 }
 
 /** Whether an event/payload passes a subscription's delivery filters. */
@@ -326,11 +368,16 @@ export function passesSubscriptionFilters(
 
   const runPayload = payload as RunFinishedPayload;
 
+  if (RUN_SCOPED_EVENTS.has(event)) {
+    // A run that reported no branch (or environment) is on none of the listed ones.
+    const { branch, environment } = payload as RunScope;
+    if (filters.branches?.length && !(branch && matchesNamePattern(branch, filters.branches))) return false;
+    if (filters.environments?.length && !(environment && matchesNamePattern(environment, filters.environments))) {
+      return false;
+    }
+  }
   if (filters.defaultBranchOnly && event.startsWith('run.')) {
     if (!runPayload.isDefaultBranch) return false;
-  }
-  if (filters.branches?.length && event.startsWith('run.') && runPayload.branch) {
-    if (!filters.branches.includes(runPayload.branch)) return false;
   }
   if (filters.statuses?.length && event.startsWith('run.') && runPayload.status) {
     if (!filters.statuses.includes(runPayload.status)) return false;
@@ -351,6 +398,23 @@ export function passesSubscriptionFilters(
   }
 
   return true;
+}
+
+/**
+ * A subscription's filters in words, one entry per filter set: what the
+ * subscription lists show under each row. Empty when nothing is filtered.
+ */
+export function describeSubscriptionFilters(filters: SubscriptionFilters | null | undefined): string[] {
+  if (!filters) return [];
+  const parts: string[] = [];
+  if (filters.branches?.length) parts.push(`Branch: ${filters.branches.join(', ')}`);
+  if (filters.environments?.length) parts.push(`Environment: ${filters.environments.join(', ')}`);
+  if (filters.defaultBranchOnly) parts.push('Default branch only');
+  if (filters.statuses?.length) parts.push(`Status: ${filters.statuses.join(', ')}`);
+  if (filters.owners?.length) parts.push(`Owner: ${filters.owners.join(', ')}`);
+  if (filters.flakinessThreshold != null) parts.push(`Flakiness ≥ ${Math.round(filters.flakinessThreshold * 100)}%`);
+  if (filters.perfRegressionPct != null) parts.push(`Slowdown ≥ ${filters.perfRegressionPct}%`);
+  return parts;
 }
 
 /**

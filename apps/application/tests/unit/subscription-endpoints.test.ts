@@ -75,7 +75,8 @@ const run = (owners: string[]): RunFinishedPayload => ({
 describe('POST /api/subscriptions filters', () => {
   test('persists the owners filter and every other filter it accepts', async () => {
     const filters = {
-      branches: ['main'],
+      branches: ['main', 'release/*'],
+      environments: ['staging'],
       statuses: ['failed'],
       defaultBranchOnly: true,
       owners: ['@team/checkout'],
@@ -97,6 +98,13 @@ describe('POST /api/subscriptions filters', () => {
   test('stores no filters when none are sent', async () => {
     const { subscription } = await create();
     expect(await storedFilters(subscription.id)).toBeNull();
+  });
+
+  test('trims branch and environment names and rejects a blank one', async () => {
+    const { subscription } = await create({ branches: [' main '], environments: ['staging '] });
+    expect(await storedFilters(subscription.id)).toEqual({ branches: ['main'], environments: ['staging'] });
+    await expect(create({ branches: [' '] })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ environments: 'staging' })).rejects.toMatchObject({ statusCode: 400 });
   });
 
   test('rejects an owners filter that is not a list of strings', async () => {
