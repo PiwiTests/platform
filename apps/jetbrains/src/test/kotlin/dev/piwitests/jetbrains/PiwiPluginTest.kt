@@ -142,6 +142,28 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
     }
 
+    /** An instance that drops a request asking to upgrade, as `nuxt dev` does: Connect never asks. */
+    fun testReachesAnInstanceThatDropsUpgradeRequests() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            if (exchange.requestHeaders.containsKey("Upgrade")) {
+                exchange.close()
+                return@createContext
+            }
+            val bytes = """{"items":[{"id":7,"name":"Acme Mugs"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val url = "http://127.0.0.1:${server.address.port}"
+        try {
+            assertEquals(PiwiInstance.Reached(url, false), PiwiInstance.reach(url))
+            assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, null).map { it.name })
+        } finally {
+            server.stop(0)
+        }
+    }
+
     fun testCopyTextCopiesTheAgentContext() {
         PiwiCommands.execute(project, "piwi.copyText", listOf(com.google.gson.JsonPrimitive("# Failing test: pays")))
         val copied = com.intellij.openapi.ide.CopyPasteManager.getInstance()

@@ -28,13 +28,17 @@ import javax.swing.JComponent
 /** The instance's side of Connect: its projects, and the browser sign-in (an RFC 8628 device authorization). */
 object PiwiInstance {
     private val gson = Gson()
+    // HTTP/1.1: over plain http, the default HTTP/2 asks the server to upgrade (`Upgrade: h2c`), and a
+    // Node server that takes upgrades for its WebSockets, such as `nuxt dev`, drops the request.
     private val http: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
 
     /** For an instance on this machine: the IDE's proxy settings never apply to it. */
     private val loopback: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .proxy(HttpClient.Builder.NO_PROXY)
@@ -83,7 +87,9 @@ object PiwiInstance {
             } catch (e: HttpStatus) {
                 if (e.status == 401 || e.status == 403) return Reached(base, true) else throw e
             } catch (e: java.io.IOException) {
-                if (tried.size == 1 || e is java.net.http.HttpTimeoutException && e !is java.net.http.HttpConnectTimeoutException) throw e
+                // Only an address nothing listens on moves to the next one; any other failure is the instance's.
+                val notListening = e is java.net.SocketException || e is java.net.http.HttpConnectTimeoutException
+                if (tried.size == 1 || !notListening) throw e
             }
         }
         throw Unreachable(tried)
