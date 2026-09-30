@@ -356,19 +356,29 @@ export async function createProject(
   const existing: any[] = await db.select().from(projects).where(eq(projects.name, name));
   if (existing.length > 0) throw new Error('A project with this name already exists');
 
-  const result: any[] = await db.insert(projects).values({ name, label, description }).returning();
-  const project = result[0]!;
+  const uniqueTagIds = tagIds ? await validTagIds(db, tagIds) : [];
 
-  // Link tags if provided
-  if (tagIds && tagIds.length > 0) {
-    const existingTags: any[] = await db.select().from(tags).where(inArray(tags.id, tagIds));
-    if (existingTags.length !== tagIds.length) {
-      throw new Error('One or more tag IDs are invalid');
+  const project = await db.transaction(async (tx) => {
+    const result: any[] = await tx.insert(projects).values({ name, label, description }).returning();
+    const created = result[0]!;
+    if (uniqueTagIds.length > 0) {
+      await tx.insert(projectTags).values(uniqueTagIds.map((tagId) => ({ projectId: created.id, tagId })));
     }
-    await db.insert(projectTags).values(tagIds.map((tagId: number) => ({ projectId: project.id, tagId })));
-  }
+    return created;
+  });
 
   return { success: true, project };
+}
+
+/** The distinct tag ids, or throws when one of them names no tag. */
+async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) return unique;
+  const existingTags: any[] = await db.select({ id: tags.id }).from(tags).where(inArray(tags.id, unique));
+  if (existingTags.length !== unique.length) {
+    throw new Error('One or more tag IDs are invalid');
+  }
+  return unique;
 }
 
 // ─── updateProject ───────────────────────────────────────────────
@@ -411,42 +421,34 @@ export async function updateProject(
     tagIds: dataTagIds,
   } = data;
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
+  const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
-  // Update project
-  await db
-    .update(projects)
-    .set({
-      label,
-      description,
-      diagnosisInstructions: diagnosisInstructions ?? undefined,
-      aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
-      scmToken: scmToken !== undefined ? scmToken : undefined,
-      defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
-      openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
-      serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
-      ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
-      generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
-      targets: resolvedTargets,
-      updatedAt: new Date(),
-    })
-    .where(eq(projects.id, id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(projects)
+      .set({
+        label,
+        description,
+        diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
+        aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
+        scmToken: scmToken !== undefined ? scmToken : undefined,
+        defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
+        openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
+        serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
+        ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+        generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
+        targets: resolvedTargets,
+        updatedAt: new Date(),
+      })
+      .where(eq(projects.id, id));
 
-  // Update project tags if provided
-  if (dataTagIds !== undefined) {
-    // Remove all existing tags for this project
-    await db.delete(projectTags).where(eq(projectTags.projectId, id));
-
-    if (dataTagIds.length > 0) {
-      // Validate that all tag IDs exist
-      const existingTags: any[] = await db.select().from(tags).where(inArray(tags.id, dataTagIds));
-      if (existingTags.length !== dataTagIds.length) {
-        throw new Error('One or more tag IDs are invalid');
+    if (uniqueTagIds !== undefined) {
+      await tx.delete(projectTags).where(eq(projectTags.projectId, id));
+      if (uniqueTagIds.length > 0) {
+        await tx.insert(projectTags).values(uniqueTagIds.map((tagId) => ({ projectId: id, tagId })));
       }
-
-      // Insert new tag associations
-      await db.insert(projectTags).values(dataTagIds.map((tagId: number) => ({ projectId: id, tagId })));
     }
-  }
+  });
 
   // Get updated project with tags
   const updatedProject: any[] = await db.select().from(projects).where(eq(projects.id, id));
