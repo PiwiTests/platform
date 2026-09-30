@@ -15,8 +15,11 @@ clients stay thin and both editors give the same answers.
   `piwi/runStatusChanged` and `piwi/statusChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
   files only (the JetBrains IDEs).
-- The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); its failures are
-  published as `ci-failure` diagnostics in every file they point to, merged with the analysis of open documents.
+- The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); while that branch
+  has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in `piwi/runStatus`).
+  Its failures are published as `ci-failure` diagnostics in every file they point to, merged with the analysis of
+  open documents. On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
+  call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.

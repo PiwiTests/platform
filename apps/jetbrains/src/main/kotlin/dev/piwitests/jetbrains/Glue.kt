@@ -117,7 +117,7 @@ object Glue {
         val connected = contexts.firstOrNull { it.connected }
             ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
-        val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "")
+        val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
         val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet$from", null, StatusAction.NONE)
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
@@ -137,6 +137,25 @@ object Glue {
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** When the checked-out branch has no run yet and another branch's is shown: which one, and why. */
+    fun fallbackNote(run: RunStatus?): String {
+        val checkedOut = run?.checkedOut ?: return ""
+        if (run.branch == checkedOut) return ""
+        return " ($checkedOut has no run yet)"
+    }
+
+    /** A test's gutter tooltip: its latest result, then its history as the service sums it up. */
+    fun testResultTooltip(status: String?, title: String?): String {
+        val result = when (status) {
+            "failed" -> "failing"
+            "flaky" -> "flaky"
+            "passed" -> "passing"
+            "skipped" -> "skipped"
+            else -> "no recent result"
+        }
+        return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
+    }
 
     /** Where the service found the instance, in the words of the settings page. */
     fun sourceLabel(source: String?): String = when (source) {

@@ -169,6 +169,9 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/branch-failures?branch=feature%2Fnew-cart') {
+      return res.end(JSON.stringify({ run: null, failures: [] }));
+    }
     if (u === '/api/projects/7/branch-failures?branch=main') {
       return res.end(
         JSON.stringify({
@@ -585,6 +588,7 @@ describe('the Piwi language server', () => {
       {
         root: dir,
         branch: 'main',
+        checkedOut: 'main',
         run: expect.objectContaining({ id: 41, status: 'failed', failedTests: 1, url: `${url}/test-runs/41` }),
         failures: 1,
       },
@@ -760,6 +764,9 @@ describe('the Piwi language server', () => {
         title:
           'passed 48/50 · quarantined 5 d · 3/10 passes toward release · flaky score 42 · 12 CI min wasted · timing · in Smoke',
         command: { title: 'Open in dashboard', command: 'piwi.openInDashboard', arguments: [`${url}/test-cases/1`] },
+        // The document as the earlier tests left it: the test's body spans two more lines.
+        status: 'passed',
+        endLine: 4,
       },
     ]);
 
@@ -838,6 +845,55 @@ describe('the desktop app', () => {
       fs.rmSync(desktopFile, { force: true });
       stopDesktop();
       desktopClient.dispose();
+    }
+  });
+});
+
+describe('a branch with no run yet', () => {
+  test('shows the default branch’s latest run, and says which branch it is', async () => {
+    const other = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-editor-branch-')));
+    fs.cpSync(dir, other, { recursive: true, filter: (src) => !src.split(path.sep).includes('.git') });
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
+        cwd: other,
+        stdio: 'ignore',
+      });
+    git('init', '-q', '-b', 'feature/new-cart');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopBranch = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    const branchClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const published = new Map<string, Array<{ message: string }>>();
+    branchClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    branchClient.listen();
+    try {
+      await branchClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(other).href, name: 'shop' }],
+      });
+      await branchClient.sendNotification('initialized', {});
+      const status = await waitFor(async () => {
+        const s = (await branchClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+        return s.contexts[0]?.run ? s : undefined;
+      });
+      expect(status.contexts[0]).toMatchObject({ branch: 'main', checkedOut: 'feature/new-cart', run: { id: 41 } });
+      const onPage = await waitFor(() =>
+        published.get(pathToFileURL(path.join(other, 'tests/pages/checkout.page.ts')).href),
+      );
+      expect(onPage[0]?.message).toContain('run #41 on main');
+    } finally {
+      stopBranch();
+      branchClient.dispose();
+      fs.rmSync(other, { recursive: true, force: true });
     }
   });
 });

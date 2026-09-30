@@ -8,7 +8,8 @@
     <ul>
       <li>the failures of the latest CI run on the checked-out branch, at their failing lines, with the
           recommended locator heal as a quick fix, the trace and the screenshot one action away;</li>
-      <li>the tests behind each locator line and each application file, and each test's pass rate;</li>
+      <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
+          line and each application file;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
       <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant;</li>
       <li>locators and recorded flows sent from the Piwi Picker browser extension, inserted at the caret;</li>
@@ -28,6 +29,10 @@
         <postStartupActivity implementation="dev.piwitests.jetbrains.PiwiStartupActivity"/>
         <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
+        <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestAnnotator"/>
+        <colorSettingsPage implementation="dev.piwitests.jetbrains.PiwiColorSettingsPage"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/PiwiDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/PiwiDarcula.xml"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
         <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>

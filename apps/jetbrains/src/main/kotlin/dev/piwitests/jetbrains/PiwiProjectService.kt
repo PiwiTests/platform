@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
@@ -265,10 +266,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun refreshStatus() {
         ApplicationManager.getApplication().executeOnPooledThread {
             val server = server()
+            val before = runs
             status = server?.status()?.orNull()
             runs = server?.runStatus()?.orNull()
             failures = server?.failures()?.orNull()?.items.orEmpty()
-            ApplicationManager.getApplication().invokeLater({ listeners.forEach { it() } }, project.disposed)
+            ApplicationManager.getApplication().invokeLater({
+                listeners.forEach { it() }
+                // Another run: the gutter, the backgrounds and Code Vision of the open files show it.
+                if (runs != before) DaemonCodeAnalyzer.getInstance(project).restart()
+            }, project.disposed)
             offerDesktop(status)
         }
     }

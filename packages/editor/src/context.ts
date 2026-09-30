@@ -201,8 +201,13 @@ export class PiwiContext {
   codeIndex: CodeIndex | null = null;
   /** Why the context has no data, in one sentence; null when it has. */
   problem: string | null = null;
-  /** The branch whose latest run is read: the checked-out one, else the default branch. */
+  /**
+   * The branch whose latest run is read: the checked-out one, else, while it has no run, the
+   * project's default branch, else null for the newest run of any branch.
+   */
   runBranch: string | null = null;
+  /** The branch checked out in the workspace; null on a detached head. */
+  checkedOutBranch: string | null = null;
   /** Quarantined tests by test case id, and the passing streak that releases one. */
   quarantined = new Map<number, QuarantinedTest>();
   releaseAfter = 0;
@@ -343,6 +348,7 @@ export class PiwiContext {
     this.flaky = new Map();
     this.failures = null;
     this.runBranch = null;
+    this.checkedOutBranch = null;
     this.functions = null;
     this.words = null;
     for (const cache of [
@@ -359,14 +365,28 @@ export class PiwiContext {
 
   /**
    * Fetch the latest run on the checked-out branch (the default branch on a
-   * detached head). Returns whether the run or its failures changed.
+   * detached head); while that branch has no run, the default branch's, else the
+   * newest of any branch. Returns whether the run or its failures changed.
    */
   async refreshRun(): Promise<boolean> {
     if (!this.client || !this.project) return false;
-    const branch = (await currentBranch(this.repoRoot)) ?? this.index?.defaultBranch ?? null;
+    const checkedOut = await currentBranch(this.repoRoot);
+    // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
+    const branches = [
+      ...new Set([checkedOut ?? this.index?.defaultBranch ?? null, this.index?.defaultBranch ?? null, null]),
+    ];
     try {
-      const next = await this.client.branchFailures(this.project.id, branch);
-      const changed = branch !== this.runBranch || JSON.stringify(next) !== JSON.stringify(this.failures);
+      let branch: string | null = branches[0] ?? null;
+      let next = await this.client.branchFailures(this.project.id, branch);
+      for (const other of branches.slice(1)) {
+        if (next.run) break;
+        branch = other;
+        next = await this.client.branchFailures(this.project.id, other);
+      }
+      const changed =
+        branch !== this.runBranch ||
+        checkedOut !== this.checkedOutBranch ||
+        JSON.stringify(next) !== JSON.stringify(this.failures);
       if (next.run?.id !== this.failures?.run?.id) {
         this.healings.clear();
         this.issues.clear();
@@ -374,6 +394,7 @@ export class PiwiContext {
         this.fixPlanTexts.clear();
       }
       this.runBranch = branch;
+      this.checkedOutBranch = checkedOut;
       this.failures = next;
       return changed;
     } catch {

@@ -539,3 +539,52 @@ export function functionSnippet(entry: TestFunctionEntry): string {
   const callee = entry.kind === 'page-object-method' && entry.receiver ? `${entry.receiver}.${entry.name}` : entry.name;
   return `await ${callee}(${args})`;
 }
+
+/**
+ * The 0-based line where the call whose `(` is at `line`/`column` ends: brackets are
+ * matched, skipping strings, template literals and comments. Null when it does not end
+ * within `maxLines` lines.
+ */
+export function callEndLine(lines: string[], line: number, column: number, maxLines = 2000): number | null {
+  // Open brackets, `` ` `` for a template literal, `$` for an expression inside one.
+  const stack: string[] = [];
+  let blockComment = false;
+  for (let l = line; l < Math.min(lines.length, line + maxLines); l++) {
+    const text = lines[l]!;
+    let i = l === line ? column : 0;
+    while (i < text.length) {
+      const c = text[i]!;
+      const top = stack[stack.length - 1];
+      if (blockComment) {
+        if (c === '*' && text[i + 1] === '/') {
+          blockComment = false;
+          i++;
+        }
+      } else if (top === '`') {
+        if (c === '\\') i++;
+        else if (c === '`') stack.pop();
+        else if (c === '$' && text[i + 1] === '{') {
+          stack.push('$');
+          i++;
+        }
+      } else if (c === '/' && text[i + 1] === '/') {
+        break;
+      } else if (c === '/' && text[i + 1] === '*') {
+        blockComment = true;
+        i++;
+      } else if (c === "'" || c === '"') {
+        i++;
+        while (i < text.length && text[i] !== c) i += text[i] === '\\' ? 2 : 1;
+      } else if (c === '`') {
+        stack.push('`');
+      } else if (c === '(' || c === '[' || c === '{') {
+        stack.push(c);
+      } else if (c === ')' || c === ']' || c === '}') {
+        stack.pop();
+        if (!stack.length) return l;
+      }
+      i++;
+    }
+  }
+  return null;
+}

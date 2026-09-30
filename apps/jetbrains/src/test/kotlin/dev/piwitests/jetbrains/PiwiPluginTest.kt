@@ -33,6 +33,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
             com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
                 .any { it.instanceClass == PiwiConfigurable::class.java.name },
         )
+        // Registered on JavaScript, the annotator serves its dialects too: a spec is TypeScript.
+        val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
+        assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
+        assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
         for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }

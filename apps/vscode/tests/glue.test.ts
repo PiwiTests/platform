@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import type { DesktopResult, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
-import { connectChoices, disconnectQuestion, mcpConfiguration, sourceLabel, statusBarView } from '../src/glue';
+import {
+  connectChoices,
+  disconnectQuestion,
+  mcpConfiguration,
+  sourceLabel,
+  statusBarView,
+  testDecorations,
+} from '../src/glue';
 
 const connected: StatusResult = {
   contexts: [
@@ -182,5 +189,46 @@ describe('the desktop app beside another instance', () => {
     expect(statusBarView(team, run({})).tooltip).toMatch(/desktop app runs on this machine: Piwi: Connect to use it/);
     expect(statusBarView(connected, run({}), true).tooltip).toMatch(/chosen with Piwi: Connect, is not running/);
     expect(statusBarView(connected, run({})).tooltip).not.toMatch(/desktop/);
+  });
+});
+
+describe('the tests of a file', () => {
+  test('are drawn with their latest result, a failing one over its whole body', () => {
+    expect(
+      testDecorations([
+        { line: 0, title: '2 tests in Piwi' },
+        {
+          line: 3,
+          title: 'passed 1/4 · failed',
+          status: 'failed',
+          endLine: 6,
+          command: {
+            title: 'Open in dashboard',
+            command: 'piwi.openInDashboard',
+            arguments: ['http://piwi/test-cases/9'],
+          },
+        },
+        { line: 8, title: 'passed 4/4', status: 'passed', endLine: 10 },
+      ]),
+    ).toEqual([
+      {
+        status: 'failed',
+        line: 3,
+        failingUntil: 6,
+        hover: '**Piwi**: failing · passed 1/4 · failed',
+        dashboardUrl: 'http://piwi/test-cases/9',
+      },
+      { status: 'passed', line: 8, failingUntil: null, hover: '**Piwi**: passing · passed 4/4', dashboardUrl: null },
+    ]);
+  });
+
+  test('the status bar says when the checked-out branch has no run yet', () => {
+    const onMain: RunStatusResult = {
+      contexts: [{ ...run({}).contexts[0]!, branch: 'main', checkedOut: 'feature/cart' }],
+    };
+    expect(statusBarView(connected, onMain).tooltip).toMatch(
+      /^Run #41 of Acme on main \(feature\/cart has no run yet\)/,
+    );
+    expect(statusBarView(connected, run({})).tooltip).not.toMatch(/no run yet/);
   });
 });

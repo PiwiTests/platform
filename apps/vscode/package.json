@@ -146,6 +146,18 @@
         }
       }
     },
+    "colors": [
+      {
+        "id": "piwi.failingTestBackground",
+        "description": "The background of a test that failed in the latest run Piwi reads.",
+        "defaults": {
+          "dark": "#f8514926",
+          "light": "#f851491a",
+          "highContrast": "#f8514940",
+          "highContrastLight": "#f8514926"
+        }
+      }
+    ],
     "mcpServerDefinitionProviders": [
       {
         "id": "piwi.mcp",

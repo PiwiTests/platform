@@ -10,6 +10,8 @@ import type {
   McpServerDefinition,
   RunStatusResult,
   StatusResult,
+  SummaryLine,
+  TestLineStatus,
 } from '@piwitests/editor/protocol';
 
 /** The files the editor service reads: test and application code, and translations. */
@@ -65,7 +67,10 @@ export function statusBarView(
     };
   }
   const run = runs?.contexts.find((c) => c.root === connected.root) ?? runs?.contexts[0];
-  const where = `${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}`;
+  // The checked-out branch has no run yet: another branch's is shown.
+  const fallback =
+    run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
+  const where = `${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`;
   const from = (connected.serverUrl ? `\n${connected.serverUrl}, from ${sourceLabel(connected.source)}` : '') + hint;
   if (!run?.run) {
     return {
@@ -110,6 +115,48 @@ export function statusBarView(
     url: r.url,
     error: false,
   };
+}
+
+/** A test's latest result, drawn on the test: a gutter icon, a hover, and a background while it fails. */
+export interface TestDecoration {
+  status: TestLineStatus;
+  line: number;
+  /** The last line of a failing test's background; null for any other result. */
+  failingUntil: number | null;
+  hover: string;
+  dashboardUrl: string | null;
+}
+
+/** The decorations of a file's tests: the summary lines that carry a result. */
+export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
+  return lines.flatMap((l) =>
+    l.status
+      ? [
+          {
+            status: l.status,
+            line: l.line,
+            failingUntil: l.status === 'failed' ? Math.max(l.line, l.endLine ?? l.line) : null,
+            hover: testResultHover(l.status, l.title),
+            dashboardUrl:
+              l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
+                ? (l.command.arguments[0] as string)
+                : null,
+          },
+        ]
+      : [],
+  );
+}
+
+/** A test's hover: its latest result, then its history as the service sums it up. */
+export function testResultHover(status: TestLineStatus, title: string): string {
+  const result = {
+    failed: 'failing',
+    flaky: 'flaky',
+    passed: 'passing',
+    skipped: 'skipped',
+    unknown: 'no recent result',
+  }[status];
+  return [`**Piwi**: ${result}`, title].filter(Boolean).join(' · ');
 }
 
 /** Where the service found the instance: the settings come last. */

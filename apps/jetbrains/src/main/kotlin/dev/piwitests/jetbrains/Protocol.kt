@@ -14,7 +14,17 @@ data class UriParams(val uri: String)
 
 data class PiwiCommand(val title: String? = null, val command: String? = null, val arguments: List<Any?>? = null)
 
-data class SummaryLine(val line: Int = 0, val title: String? = null, val command: PiwiCommand? = null)
+/**
+ * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
+ * `skipped` or `unknown`), shown in the gutter with `title` as its tooltip, and `endLine` where its call ends.
+ */
+data class SummaryLine(
+    val line: Int = 0,
+    val title: String? = null,
+    val command: PiwiCommand? = null,
+    val status: String? = null,
+    val endLine: Int? = null,
+)
 
 data class FileSummary(val file: SummaryLine? = null, val lines: List<SummaryLine>? = null)
 
@@ -71,7 +81,14 @@ data class RunInfo(
     val url: String? = null,
 )
 
-data class RunStatus(val root: String? = null, val branch: String? = null, val run: RunInfo? = null, val failures: Int = 0)
+/** The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run. */
+data class RunStatus(
+    val root: String? = null,
+    val branch: String? = null,
+    val run: RunInfo? = null,
+    val failures: Int = 0,
+    val checkedOut: String? = null,
+)
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 

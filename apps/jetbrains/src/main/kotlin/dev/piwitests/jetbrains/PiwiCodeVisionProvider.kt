@@ -35,7 +35,8 @@ class PiwiCodeVisionProvider : DaemonBoundCodeVisionProvider {
         val summary = server.fileSummary(UriParams(virtualFile.toNioPath().toUri().toString())).awaitCancellably(3_000)
             ?: return emptyList()
         val document = editor.document
-        return (listOfNotNull(summary.file) + summary.lines.orEmpty()).mapNotNull { line ->
+        // A test's line is drawn in the gutter (PiwiTestAnnotator), not as text above it.
+        return (listOfNotNull(summary.file) + summary.lines.orEmpty().filter { it.status == null }).mapNotNull { line ->
             if (line.line < 0 || line.line >= document.lineCount || line.title.isNullOrBlank()) return@mapNotNull null
             val range = TextRange(document.getLineStartOffset(line.line), document.getLineEndOffset(line.line))
             val entry = ClickableTextCodeVisionEntry(line.title, id, { _, _ ->

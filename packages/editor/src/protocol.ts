@@ -24,7 +24,17 @@ export interface SummaryLine {
   line: number;
   title: string;
   command?: PiwiCommand;
+  /**
+   * On a test's line: its latest result, which the clients show in the gutter, with `title`
+   * as its tooltip, rather than as text above the line. Absent on other lines.
+   */
+  status?: TestLineStatus;
+  /** On a test's line: the 0-based line its `test(…)` call ends on, for the background of a failing test. */
+  endLine?: number;
 }
+
+/** A test's latest result: `failed` when it failed in the latest run the service reads. */
+export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
 
 /** `piwi/fileSummary`: what to show above a file and above its test and locator lines. */
 export interface FileSummaryParams {
@@ -188,6 +198,11 @@ export interface RunStatus {
   root: string;
   /** The branch whose runs are read; null reads the newest run of any branch. */
   branch: string | null;
+  /**
+   * The branch checked out in the workspace. When it has no run yet, `branch` is the
+   * project's default branch, or null for the newest run of any branch.
+   */
+  checkedOut?: string | null;
   run: {
     id: number;
     status: string;

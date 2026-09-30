@@ -41,6 +41,7 @@ import {
   type RunTestsArgs,
   type SelectionsResult,
   type StatusResult,
+  type SummaryLine,
   type TestsForFile,
   type TraceParams,
   type TraceResult,
@@ -61,6 +62,7 @@ import {
 import {
   DOCUMENT_PATTERN,
   connectChoices,
+  testDecorations,
   disconnectQuestion,
   indentBlock,
   mcpConfiguration,
@@ -143,6 +145,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
+
+  // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails.
+  const gutterIcons = new Map(
+    (['failed', 'flaky', 'passed', 'skipped'] as const).map((status) => [
+      status,
+      vscode.window.createTextEditorDecorationType({
+        gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
+        gutterIconSize: 'contain',
+      }),
+    ]),
+  );
+  const failingBackground = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('piwi.failingTestBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+  });
+  context.subscriptions.push(failingBackground, ...gutterIcons.values());
+  const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
+    const tests = testDecorations(lines);
+    for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
+      for (const [status, type] of gutterIcons) {
+        editor.setDecorations(
+          type,
+          tests
+            .filter((t) => t.status === status && t.line < document.lineCount)
+            .map((t) => {
+              const hover = new vscode.MarkdownString(
+                t.dashboardUrl
+                  ? `${t.hover}\n\n[Open in dashboard](command:piwi.openInDashboard?${encodeURIComponent(JSON.stringify([t.dashboardUrl]))})`
+                  : t.hover,
+              );
+              hover.isTrusted = { enabledCommands: ['piwi.openInDashboard'] };
+              return { range: document.lineAt(t.line).range, hoverMessage: hover };
+            }),
+        );
+      }
+      editor.setDecorations(
+        failingBackground,
+        tests
+          .filter((t) => t.failingUntil !== null && t.line < document.lineCount)
+          .map((t) => new vscode.Range(t.line, 0, Math.min(t.failingUntil!, document.lineCount - 1), 0)),
+      );
+    }
+  };
 
   const lensesChanged = new vscode.EventEmitter<void>();
   const mcpChanged = new vscode.EventEmitter<void>();
@@ -308,8 +355,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const summary = await lc
             .sendRequest<FileSummary>(FILE_SUMMARY_REQUEST, { uri: document.uri.toString() })
             .catch(() => null);
+          decorateTests(document, summary?.lines ?? []);
           if (!summary) return [];
-          return [...(summary.file ? [summary.file] : []), ...summary.lines].map((line) => {
+          // A test's line is drawn in the gutter and its hover, not as a lens above it.
+          return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
             return new vscode.CodeLens(range, {
               title: line.title,
