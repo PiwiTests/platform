@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { stripAnsi, isImageFile, isVideoFile } from '../../app/utils/text-format';
+import { stripAnsi, isImageFile, isVideoFile, withTypedValue } from '../../app/utils/text-format';
 
 const ESC = String.fromCharCode(27); // ANSI escape
 
@@ -41,5 +41,17 @@ describe('isVideoFile', () => {
   test('detects by content type when the extension is absent', () => {
     expect(isVideoFile('attachment', 'video/webm')).toBe(true);
     expect(isVideoFile('attachment', 'image/png')).toBe(false);
+  });
+});
+
+describe('withTypedValue', () => {
+  test('appends the trimmed value', () => {
+    expect(withTypedValue(['e2e'], '  flaky  ')).toEqual(['e2e', 'flaky']);
+  });
+
+  test('keeps the list as is for a blank or already present value', () => {
+    const list = ['e2e'];
+    expect(withTypedValue(list, '   ')).toBe(list);
+    expect(withTypedValue(list, ' e2e ')).toBe(list);
   });
 });

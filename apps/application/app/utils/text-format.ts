@@ -30,3 +30,13 @@ export function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 }
+
+/**
+ * The list with a typed value appended — trimmed, and only when it is not empty
+ * and not already there. For a `UInputMenu` with `multiple` and `create-item`,
+ * whose `create` event hands over the search term without adding it.
+ */
+export function withTypedValue(list: string[], text: string): string[] {
+  const value = text.trim();
+  return value && !list.includes(value) ? [...list, value] : list;
+}

@@ -18,6 +18,7 @@ import {
   settableFields,
   type FieldValues,
 } from '#shared/integrations/fields';
+import { withTypedValue } from '~/utils/text-format';
 
 const props = defineProps<{
   entityType: IssueEntityType;
@@ -202,6 +203,10 @@ async function searchAssignable() {
   } catch {
     /* the modal falls back to the prefilled assignee */
   }
+}
+
+function addLabel(text: string) {
+  labels.value = withTypedValue(labels.value, text);
 }
 
 const assigneeItems = computed(() => assignableUsers.value.map((u) => ({ label: u.displayName || u.id, value: u.id })));
@@ -426,7 +431,15 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <UFormField label="Labels">
-              <UInputMenu v-model="labels" multiple create-item class="w-full" :items="labels" />
+              <UInputMenu
+                v-model="labels"
+                multiple
+                create-item
+                class="w-full"
+                :items="labels"
+                data-testid="create-issue-labels"
+                @create="addLabel"
+              />
             </UFormField>
             <UFormField label="Language">
               <USelect v-model="locale" :items="LOCALE_ITEMS" value-key="value" class="w-full" />
