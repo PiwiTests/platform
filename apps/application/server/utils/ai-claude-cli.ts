@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import type { AiCallOptions, AiCallResult, StreamChunk } from './ai-provider';
@@ -215,8 +215,9 @@ interface SpawnResult {
 /**
  * Run the CLI with `args`, feeding `input` on stdin and streaming stdout lines
  * to `onLine` as they arrive. Always resolves (never rejects) with the captured
- * output and exit code so callers can build a clear error from it. Runs in a
- * throwaway temp dir so no project `CLAUDE.md` or files leak into the prompt.
+ * output and exit code so callers can build a clear error from it. Runs in its
+ * own private temp dir, removed afterwards, so no project `CLAUDE.md` or files
+ * leak into the prompt and no other local user can plant settings there.
  */
 function runClaude(
   binary: string,
@@ -224,12 +225,27 @@ function runClaude(
   opts: { input?: string; timeoutMs: number; onLine?: (line: string) => void },
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, {
-      cwd: tmpdir(),
-      env: spawnEnv(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    const cwd = mkdtempSync(join(tmpdir(), 'piwi-claude-'));
+    const removeCwd = () => {
+      try {
+        rmSync(cwd, { recursive: true, force: true });
+      } catch {
+        // A Windows handle still closing; the OS temp cleanup takes it.
+      }
+    };
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(binary, args, {
+        cwd,
+        env: spawnEnv(),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (err) {
+      removeCwd();
+      resolve({ code: null, stdout: '', stderr: err instanceof Error ? err.message : String(err), timedOut: false });
+      return;
+    }
 
     let stdout = '';
     let stderr = '';
@@ -246,6 +262,7 @@ function runClaude(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      removeCwd();
       if (lineBuffer && opts.onLine) opts.onLine(lineBuffer);
       resolve({ code, stdout, stderr, timedOut });
     };

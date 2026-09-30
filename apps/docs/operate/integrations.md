@@ -104,7 +104,8 @@ See the [configuration reference](/reference/configuration#integrations) for the
 A connection base URL is supplied by an administrator, so Piwi trusts it: a host on a private network —
 `https://jira.internal.example.com` or an RFC 1918 address — is reachable without extra configuration. The client
 itself speaks Jira Cloud's REST v3 only. Every URL a non-administrator supplies (pinning a link, for instance) still
-goes through the SSRF guard that blocks private hosts.
+goes through the SSRF guard that blocks private hosts. Moving a connection to another site drops its stored email
+and API token: enter them again for the new site.
 
 ## What unfurl gives today
 
