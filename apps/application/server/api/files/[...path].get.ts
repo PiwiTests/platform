@@ -1,6 +1,10 @@
 import { extname } from 'path';
 import { requireAuth } from '../../utils/auth';
-import { requireProjectAccess } from '../../utils/project-access';
+import {
+  requireProjectAccess,
+  requireResolvedProjectAccess,
+  resolveBugReportProjectId,
+} from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
@@ -90,20 +94,6 @@ export default eventHandler(async (event) => {
   const overrideContentType = typeof query.contentType === 'string' ? query.contentType : null;
   const wantCompressed = query.compress === '1';
 
-  // Extract project ID from path for access control
-  const pathStr = path || '';
-  const pathMatch = pathStr.match(/^project-(\d+)\//);
-  if (pathMatch && pathMatch[1]) {
-    const projectId = parseInt(pathMatch[1]);
-    if (projectId) {
-      await requireProjectAccess(event, projectId);
-    } else {
-      await requireAuth(event);
-    }
-  } else {
-    await requireAuth(event);
-  }
-
   if (!path) {
     throw apiError({
       statusCode: 400,
@@ -117,6 +107,19 @@ export default eventHandler(async (event) => {
       statusCode: 403,
       message: 'Invalid file path',
     });
+  }
+
+  // Every stored file belongs to a project: its own folder, or a bug report's.
+  // A path that names neither is refused rather than served to any signed-in user.
+  const projectMatch = path.match(/^project-(\d+)\//);
+  const bugReportMatch = path.match(/^bug-reports\/(\d+)\//);
+  if (projectMatch) {
+    await requireProjectAccess(event, Number(projectMatch[1]));
+  } else if (bugReportMatch) {
+    await requireResolvedProjectAccess(event, Number(bugReportMatch[1]), resolveBugReportProjectId, 'Bug report');
+  } else {
+    await requireAuth(event);
+    throw apiError({ statusCode: 404, message: 'File not found' });
   }
 
   const storage = getStorage();
