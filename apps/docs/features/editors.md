@@ -146,4 +146,9 @@ is drawn natively:
   environment.
 - **[Open in IDE](./ide-integration)**: a path clicked in the dashboard opens at its line, with nothing to set.
 
+The tool window, the status bar item and the service appear once the plugin finds a Playwright config, down to four
+folder levels below the project's folder (in Rider, the solution's folder) or, when there is none there, below the root
+of its Git repository: a solution in `backend/` finds the tests in `e2e/`. After adding a config, **Tools → Piwi →
+Refresh** looks again.
+
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

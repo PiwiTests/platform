@@ -17,6 +17,11 @@ with the project's Node.js interpreter.
   window from `piwi/failures` (the LSP client highlights open files only) with the connection from `piwi/status`, and
   the actions under **Tools → Piwi**. The service starts with the first supported file opened (2023.3 has no way to
   start it without one): until then the status is null, and the status bar and tool window say so.
+- Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
+  (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
+  solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those
+  hold none, in the Git repository around them. The tool window, the status bar item and the service wait for it, and
+  the service's workspace folders are the folders it searched (`createInitializeParams`). **Refresh** searches again.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
   `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
@@ -39,6 +44,9 @@ with the project's Node.js interpreter.
   diagnostics, quick fixes and hover. Compile against it; `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA
   Ultimate and Rider too. An API newer than 2023.3 is looked up at run time or not used.
 - **No logic the VS Code extension would need too.** A new feature is a service request first.
+- **Nothing blocks the event thread, and nothing in a read action waits on the service without giving way**: the daemon
+  (Code Vision) waits with `awaitCancellably`, which a write action cancels, and reads of the disk run on a pooled
+  thread.
 - A change to `protocol.ts` updates `Protocol.kt` in the same change.
 
 ## Workflow

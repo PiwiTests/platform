@@ -107,7 +107,8 @@ class PiwiOpenHandler : RestService() {
         val roots = ReadAction.compute<List<String>, RuntimeException> {
             buildList {
                 service.status?.contexts.orEmpty().mapNotNullTo(this) { it.root }
-                service.playwrightConfigDirs().mapTo(this) { it.path }
+                service.playwrightConfigDirs().mapTo(this) { it.toString() }
+                service.searchRoots().mapTo(this) { it.toString() }
                 project.basePath?.let { add(it) }
                 ProjectRootManager.getInstance(project).contentRoots.mapTo(this) { it.path }
             }

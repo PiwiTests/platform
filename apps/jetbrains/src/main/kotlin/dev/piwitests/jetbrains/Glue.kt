@@ -1,8 +1,16 @@
 package dev.piwitests.jetbrains
 
+import java.io.IOException
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
+
 /**
- * What the plugin shows, computed from the editor service's answers with no
- * platform API, so it is tested without an IDE.
+ * What the plugin shows, computed from the editor service's answers, and where
+ * it looks for Playwright configs, with no platform API, so it is tested
+ * without an IDE.
  */
 object Glue {
     /** The files the editor service reads: test and application code, translations, and Razor views. */
@@ -14,6 +22,78 @@ object Glue {
     val PLAYWRIGHT_CONFIGS = listOf(
         "playwright.config.ts", "playwright.config.js", "playwright.config.mjs", "playwright.config.cjs",
     )
+
+    /** Directory levels searched below a folder for Playwright configs, as the editor service does. */
+    const val CONFIG_DEPTH = 4
+
+    /** Folders never searched for a Playwright config, beside the hidden ones. */
+    private val SKIPPED_DIRS = setOf("node_modules", "dist", "build", "coverage", "test-results")
+
+    /** Where a project's Playwright configs are: the folders searched, and those holding a config. */
+    data class PlaywrightSearch(val roots: List<Path>, val configDirs: List<Path>)
+
+    /**
+     * The folder holding a project's files, from the IDE's project path: Rider keeps a solution's
+     * project in `<solution folder>/.idea/.idea.<name>`, so it is the folder above `.idea`.
+     */
+    fun projectFolder(basePath: String): String {
+        val path = basePath.replace('\\', '/').trimEnd('/')
+        val idea = Regex("/\\.idea(/|$)").find(path) ?: return path
+        return path.substring(0, idea.range.first).ifEmpty { "/" }
+    }
+
+    /** The folders, each once, without those inside another one. */
+    fun outermost(folders: List<Path>): List<Path> {
+        val all = folders.map { it.toAbsolutePath().normalize() }.distinct()
+        return all.filter { folder -> all.none { it != folder && folder.startsWith(it) } }
+    }
+
+    /**
+     * The folders under `roots`, the roots included and down to [CONFIG_DEPTH] levels, that hold a
+     * Playwright config. Dependencies, build output and hidden folders are skipped, as the editor
+     * service skips them.
+     */
+    fun playwrightConfigDirs(roots: List<Path>): List<Path> {
+        val found = LinkedHashSet<Path>()
+        for (root in roots) {
+            if (!Files.isDirectory(root)) continue
+            Files.walkFileTree(root, emptySet(), CONFIG_DEPTH + 1, object : SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    val name = dir.fileName?.toString() ?: return FileVisitResult.CONTINUE
+                    val skipped = dir != root && (name.startsWith(".") || name in SKIPPED_DIRS)
+                    return if (skipped) FileVisitResult.SKIP_SUBTREE else FileVisitResult.CONTINUE
+                }
+
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (attrs.isRegularFile && file.fileName.toString() in PLAYWRIGHT_CONFIGS) file.parent?.let { found.add(it) }
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.CONTINUE
+            })
+        }
+        return found.sorted()
+    }
+
+    /** The repository around `dir`: the nearest folder, `dir` included, that holds `.git`; null outside one. */
+    fun repositoryRoot(dir: Path): Path? =
+        generateSequence(dir.toAbsolutePath().normalize()) { it.parent }.firstOrNull { Files.exists(it.resolve(".git")) }
+
+    /**
+     * The Playwright configs of a project whose files are in `folders` (those on disk). When they
+     * hold none, the repository around them is searched: a Rider solution in a subfolder, beside
+     * the tests. A repository in the home folder or at a drive's root is not: it holds other projects.
+     */
+    fun findPlaywright(folders: List<Path>, home: Path?): PlaywrightSearch {
+        val roots = outermost(folders.filter { Files.isDirectory(it) })
+        val dirs = playwrightConfigDirs(roots)
+        if (dirs.isNotEmpty()) return PlaywrightSearch(roots, dirs)
+        val homeFolder = home?.toAbsolutePath()?.normalize()
+        val repositories = outermost(roots.mapNotNull { repositoryRoot(it) }.filter { it != homeFolder && it.parent != null })
+        if (repositories.isEmpty() || repositories == roots) return PlaywrightSearch(roots, dirs)
+        val inRepositories = playwrightConfigDirs(repositories)
+        return if (inRepositories.isEmpty()) PlaywrightSearch(roots, dirs) else PlaywrightSearch(repositories, inRepositories)
+    }
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 

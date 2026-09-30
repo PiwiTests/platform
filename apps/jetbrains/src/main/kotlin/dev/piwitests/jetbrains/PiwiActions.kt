@@ -13,7 +13,6 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
 import java.awt.datatransfer.StringSelection
@@ -64,6 +63,8 @@ class RefreshAction : AnAction() {
             project.service<PiwiProjectService>().server()?.refresh()?.orNull()
             project.service<PiwiProjectService>().refreshStatus()
         }
+        // A Playwright config added since the project opened shows the tool window and starts the service.
+        project.service<PiwiProjectService>().findPlaywright()
     }
 }
 
@@ -121,7 +122,9 @@ class RunSelectionAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val uri = (e.getData(CommonDataKeys.VIRTUAL_FILE) ?: project.guessProjectDir())?.let { fileUri(it) } ?: ""
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) }
+            ?: project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toUri()?.toString()
+            ?: ""
         ApplicationManager.getApplication().executeOnPooledThread {
             val server = project.service<PiwiProjectService>().server()
             val items = server?.selections(SelectionsParams(uri))?.orNull()?.items.orEmpty()
