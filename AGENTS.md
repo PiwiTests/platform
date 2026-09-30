@@ -133,6 +133,11 @@ From the repository root: `node scripts/package-smoke.mjs <dir>` installs the pa
 reports a run through it. CI's `package-smoke` job runs it on Linux, macOS and Windows; the script header shows how to
 pack the tarballs.
 
+From the repository root: `npm run knip` lists unused files, exports, types and dependencies, and imports of packages a
+workspace does not declare, across every JS workspace. The entry points it cannot infer (the extension bundles, the demo
+service worker, the dashboard widgets imported from `#components`) are declared in [`knip.ts`](knip.ts); add a new
+standalone entry there, or knip reports its whole import tree as unused.
+
 Run typecheck, lint and tests **once at the end** before the final commit — not after every edit.
 
 ## Conventions that apply everywhere
