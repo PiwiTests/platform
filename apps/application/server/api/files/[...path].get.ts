@@ -150,9 +150,10 @@ export default eventHandler(async (event) => {
   // browser. The bundled local viewer (/trace-viewer/) is same-origin, so it
   // works with auth on; the hosted trace.playwright.dev viewer is cross-origin
   // and cannot send the session cookie, so it only works when auth is disabled.
-  // The wildcard is safe because responses carry no credentials cross-origin.
+  // Only that viewer may read them cross-origin.
   if (path.endsWith('.zip')) {
-    setResponseHeader(event, 'Access-Control-Allow-Origin', '*');
+    setResponseHeader(event, 'Access-Control-Allow-Origin', 'https://trace.playwright.dev');
+    setResponseHeader(event, 'Vary', 'Origin');
   }
 
   // Content types that should be displayed inline rather than downloaded

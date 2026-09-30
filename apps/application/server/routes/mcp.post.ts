@@ -58,19 +58,6 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // Auth: same pd_<key> Bearer token as the REST API.
 
 export default eventHandler(async (event) => {
-  // CORS — MCP clients are typically local desktop apps or CLI tools that
-  // may POST from a different origin than the dashboard UI.
-  setResponseHeaders(event, {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
-  });
-
-  if (event.method === 'OPTIONS') {
-    setResponseStatus(event, 204);
-    return null;
-  }
-
   // Authenticate using the same API-key / session mechanism as the REST API,
   // then resolve the caller's project scope. Every tool honors this scope so a
   // non-admin key can only read the projects it is assigned to — the same

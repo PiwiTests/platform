@@ -98,6 +98,10 @@ export default eventHandler(async (event) => {
 - `requireAuth(event, roles)` still exists as an **explicit override** for handlers computing their own authorization
   (e.g. `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
 - Streaming endpoints (`start`, `events`, `finish`, `case-files`) use **stream-token** auth instead of `requireAuth`.
+- **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
+  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
+  `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin
+  pages or Piwi Picker's background worker; everything else (reporter, CLI, MCP, IDE clients) sends no browser metadata.
 
 ### Project-level permissions
 
