@@ -211,7 +211,7 @@ export type LocatorHealingSource =
   | 'none';
 
 /** The rename behind a `diff-rename` healing result: "`Pay now` became `Pay` in CheckoutButton.vue:14". */
-export interface DiffRenameEvidence {
+interface DiffRenameEvidence {
   before: string;
   after: string;
   /** The changed application file, repository-relative. */

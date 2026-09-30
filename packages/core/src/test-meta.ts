@@ -16,7 +16,7 @@
  */
 
 /** Prefix identifying an annotation as Piwi metadata rather than a test mark. */
-export const PIWI_ANNOTATION_PREFIX = 'piwi:';
+const PIWI_ANNOTATION_PREFIX = 'piwi:';
 
 /** Priority levels accepted by `piwi:priority`, most severe first. */
 export const TEST_PRIORITIES = ['critical', 'high', 'medium', 'low'] as const;
@@ -27,8 +27,8 @@ export const MAX_TEST_TAG_CHARS = 60;
 export const MAX_TEST_LOCKS = 20;
 export const MAX_TEST_LOCK_CHARS = 100;
 /** Cap for `owner` and `feature`; `link` gets its own, longer cap. */
-export const MAX_TEST_META_CHARS = 120;
-export const MAX_TEST_LINK_CHARS = 500;
+const MAX_TEST_META_CHARS = 120;
+const MAX_TEST_LINK_CHARS = 500;
 /** The largest `piwi:bug` id: bug report ids are 32-bit serials. */
 const MAX_BUG_ID = 2_147_483_647;
 

@@ -87,7 +87,7 @@ export interface RankedFunctionMatch {
 }
 
 /** The `args` key one param source resolves into — see `RankedFunctionMatch.args`. */
-export function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>): string {
+function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>): string {
   return source.path ? `${source.param}.${source.path}` : source.param;
 }
 

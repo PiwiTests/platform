@@ -52,7 +52,7 @@ export type BugExpectation =
   | { matcher: 'state'; state: BugState };
 
 /** What a report holds besides its steps, counted for its one-line summary. */
-export interface BugEvidenceCounts {
+interface BugEvidenceCounts {
   screenshots: number;
   consoleErrors: number;
   consoleWarnings: number;
@@ -61,7 +61,7 @@ export interface BugEvidenceCounts {
 }
 
 /** The labels and lines of the Markdown report. Arguments arrive formatted: quoted, in code, or as times. */
-export interface BugReportPhrases {
+interface BugReportPhrases {
   /** The title of a report nobody titled, and of one made from its page. */
   untitled: string;
   titleOnPage(pageKey: string): string;

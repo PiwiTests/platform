@@ -42,7 +42,7 @@ export const LOCATING_METHODS: ReadonlySet<string> = new Set([
 ]);
 
 /** Calls that narrow, combine or re-root the current link without locating anew. */
-export const NARROWING_METHODS: ReadonlySet<string> = new Set([
+const NARROWING_METHODS: ReadonlySet<string> = new Set([
   'filter',
   'first',
   'last',
@@ -55,10 +55,10 @@ export const NARROWING_METHODS: ReadonlySet<string> = new Set([
 ]);
 
 /** Every method a chain may contain. */
-export const LOCATOR_CHAIN_METHODS: ReadonlySet<string> = new Set([...LOCATING_METHODS, ...NARROWING_METHODS]);
+const LOCATOR_CHAIN_METHODS: ReadonlySet<string> = new Set([...LOCATING_METHODS, ...NARROWING_METHODS]);
 
 /** Raised for any expression outside the supported grammar; the message says where. */
-export class LocatorParseError extends Error {
+class LocatorParseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'LocatorParseError';
@@ -366,7 +366,7 @@ function renderArg(arg: LocatorArg): string {
 }
 
 /** Render a call in canonical form: single quotes, `{ key: value }` objects. */
-export function renderLocatorCall(call: LocatorCall): string {
+function renderLocatorCall(call: LocatorCall): string {
   return `${call.method}(${call.args.map(renderArg).join(', ')})`;
 }
 

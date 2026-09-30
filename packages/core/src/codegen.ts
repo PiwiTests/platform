@@ -50,12 +50,7 @@ export interface CodegenOptions {
   format?: 'file' | 'body';
 }
 
-export type CodegenWarningCode =
-  | 'no-locator'
-  | 'brittle-locator'
-  | 'redacted-value'
-  | 'incomplete-assertion'
-  | 'file-needed';
+type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
 
 /** Something about a step the reader of the generated spec should check. */
 export interface CodegenWarning {

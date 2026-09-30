@@ -38,7 +38,7 @@ export function expectsFailure(annotations: TestAnnotation[]): boolean {
 }
 
 /** Playwright's message for a `test.fail()` test that unexpectedly passed. */
-export const EXPECTED_FAILURE_PASSED_MESSAGE = 'Expected to fail, but passed.';
+const EXPECTED_FAILURE_PASSED_MESSAGE = 'Expected to fail, but passed.';
 
 /**
  * Synthetic error text for a should-fail test that passed — the one case where
@@ -50,11 +50,11 @@ export function expectedFailureError(rawStatus: string, annotations: TestAnnotat
 }
 
 /** Playwright's `TestCase.expectedStatus` values. */
-export const EXPECTED_STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'] as const;
+const EXPECTED_STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'] as const;
 export type ExpectedStatus = (typeof EXPECTED_STATUSES)[number];
 
 /** A known `expectedStatus` value, or null for anything else. */
-export function normalizeExpectedStatus(raw: unknown): ExpectedStatus | null {
+function normalizeExpectedStatus(raw: unknown): ExpectedStatus | null {
   return typeof raw === 'string' && (EXPECTED_STATUSES as readonly string[]).includes(raw)
     ? (raw as ExpectedStatus)
     : null;

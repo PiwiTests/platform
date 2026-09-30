@@ -190,7 +190,7 @@ export const RECORDED_KEYS: ReadonlySet<string> = new Set(['Enter', 'Escape', 'A
  * single character pressed outside a field (a page's own shortcut, such as `?`).
  * The recorder decides which presses to send; this keeps the rest out.
  */
-export function isRecordedKey(key: string | null | undefined): key is string {
+function isRecordedKey(key: string | null | undefined): key is string {
   if (!key) return false;
   return (
     RECORDED_KEYS.has(key) || /^(?:(?:ControlOrMeta|Control|Meta|Alt|Shift)\+)+.+$/.test(key) || [...key].length === 1

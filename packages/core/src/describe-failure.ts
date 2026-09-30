@@ -23,7 +23,7 @@ import {
   type TreeStepLike,
 } from './step-tree';
 
-export type HeadlinePartKind = 'text' | 'locator' | 'value';
+type HeadlinePartKind = 'text' | 'locator' | 'value';
 
 export interface HeadlinePart {
   kind: HeadlinePartKind;

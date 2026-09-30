@@ -6,10 +6,10 @@
  */
 
 /** Significance level for a verdict and confidence level for a verification. */
-export const FLAKE_SIGNIFICANCE = 0.05;
+const FLAKE_SIGNIFICANCE = 0.05;
 
 /** An arm is reproduced only at or above this rate of matching failures. */
-export const FLAKE_REPRODUCED_RATE = 0.5;
+const FLAKE_REPRODUCED_RATE = 0.5;
 
 /** The fewest clean runs that verify a fix, however high the reproduced rate. */
 export const FLAKE_VERIFY_MIN_RUNS = 5;

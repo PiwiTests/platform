@@ -72,7 +72,7 @@ export interface GateFacts {
   };
 }
 
-export interface GateViolation {
+interface GateViolation {
   /** Stable identifier, so a pipeline can branch on the kind of failure. */
   rule:
     | 'required-tag'

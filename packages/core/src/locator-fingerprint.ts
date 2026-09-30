@@ -54,7 +54,7 @@ const MATCH_SIMILARITY = 0.2;
  * `getByText` alternative for these roles, whose visible text content is exactly
  * what `getByText` matches.
  */
-export const TEXT_CONTENT_ROLES = new Set([
+const TEXT_CONTENT_ROLES = new Set([
   'button',
   'link',
   'heading',
@@ -373,7 +373,7 @@ function tokenize(text: string): Set<string> {
  * from the failing page but nothing confident replaced it, so the stored
  * name-derived alternatives are almost certainly broken too.
  */
-export type ElementMatchStatus = 'no-fingerprint' | 'no-aria' | 'no-candidates' | 'unchanged' | 'matched' | 'no-match';
+type ElementMatchStatus = 'no-fingerprint' | 'no-aria' | 'no-candidates' | 'unchanged' | 'matched' | 'no-match';
 
 export interface ElementMatchOutcome {
   status: ElementMatchStatus;

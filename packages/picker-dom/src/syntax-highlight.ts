@@ -8,7 +8,7 @@ export interface LocatorToken {
 }
 
 /** CSS class emitted for each token kind, styled by `LOCATOR_SYNTAX_CSS`. */
-export const LOCATOR_TOKEN_CLASS: Record<LocatorTokenKind, string> = {
+const LOCATOR_TOKEN_CLASS: Record<LocatorTokenKind, string> = {
   string: 'piwi-tok-str',
   method: 'piwi-tok-fn',
   option: 'piwi-tok-key',
