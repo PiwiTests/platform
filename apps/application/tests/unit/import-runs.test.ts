@@ -6,11 +6,12 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
+import type { ParsedTraceImport } from '../../server/utils/trace-import';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules that import the barrel load.
 delete process.env.PIWI_DATABASE_URL;
-const { importBlobReportRun } = await import('#shared/handlers/import-runs');
+const { importBlobReportRun, importTraceRun, findImportedRun } = await import('#shared/handlers/import-runs');
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
@@ -72,6 +73,31 @@ function report(cases: ImportedRunCase[]): ParsedBlobReport {
 
 const readEntry = async (name: string) => new TextEncoder().encode(name);
 
+const failingPersist: Partial<Port> = {
+  persistRunCases: async () => {
+    throw new Error('SQLITE_BUSY: database is locked');
+  },
+};
+
+function trace(title: string): ParsedTraceImport {
+  return {
+    case: { title, filePath: 'checkout.spec.ts', status: 'passed', line: 10, column: 5 },
+    startedAt: Date.parse('2026-09-30T10:00:00Z'),
+    duration: 500,
+    playwrightVersion: '1.55.0',
+    rawFilePath: 'checkout.spec.ts',
+  };
+}
+
+const traceInput = (importGroup: string | null = null) => ({
+  projectId: 1,
+  parsed: trace('pays'),
+  bytes: new TextEncoder().encode('trace bytes'),
+  importHash: 'c'.repeat(64),
+  importGroup,
+  source: 'trace.zip',
+});
+
 describe('importBlobReportRun', () => {
   test('links each file to the execution of its own case when a repeated case is deduplicated', async () => {
     const result = await importBlobReportRun(db as never, port(), {
@@ -100,5 +126,70 @@ describe('importBlobReportRun', () => {
         [idOf('pays'), 'stored/resources/pays.png'],
       ].sort(),
     );
+  });
+});
+
+describe('a failed import', () => {
+  const blobInput = (cases: ImportedRunCase[]) => ({
+    projectId: 1,
+    parsed: report(cases),
+    readEntry,
+    importHash: 'b'.repeat(64),
+    source: 'report.zip',
+  });
+
+  test('leaves no run behind, so the retry imports instead of reporting a duplicate', async () => {
+    await expect(
+      importBlobReportRun(db as never, port(failingPersist), blobInput([execution('pays', 'pays.png')])),
+    ).rejects.toThrow('SQLITE_BUSY');
+
+    expect(await db.select().from(schema.testRuns)).toEqual([]);
+    expect(await findImportedRun(db as never, 1, 'b'.repeat(64))).toBeNull();
+
+    const retry = await importBlobReportRun(db as never, port(), blobInput([execution('pays', 'pays.png')]));
+    expect(retry.status).toBe('imported');
+  });
+
+  test('removes the executions and files it already wrote', async () => {
+    let stored = 0;
+    const failsOnSecondFile: Partial<Port> = {
+      storeFile: async ({ entryName }) => {
+        if (++stored > 1) throw new Error('disk full');
+        return { path: `stored/${entryName}`, size: 1 };
+      },
+    };
+
+    await expect(
+      importBlobReportRun(
+        db as never,
+        port(failsOnSecondFile),
+        blobInput([execution('adds to cart', 'cart.png'), execution('pays', 'pays.png')]),
+      ),
+    ).rejects.toThrow('disk full');
+
+    expect(await db.select().from(schema.testRuns)).toEqual([]);
+    expect(await db.select().from(schema.testRunsCases)).toEqual([]);
+    expect(await db.select().from(schema.files)).toEqual([]);
+  });
+
+  test('of a single trace leaves no run keyed by its hash', async () => {
+    await expect(importTraceRun(db as never, port(failingPersist), traceInput())).rejects.toThrow('SQLITE_BUSY');
+
+    expect(await db.select().from(schema.testRuns)).toEqual([]);
+    const retry = await importTraceRun(db as never, port(), traceInput());
+    expect(retry.status).toBe('imported');
+  });
+
+  test('of a trace joining an existing group run keeps that run', async () => {
+    const group = 'd'.repeat(64);
+    await importTraceRun(db as never, port(), { ...traceInput(group), parsed: trace('adds to cart') });
+
+    await expect(
+      importTraceRun(db as never, port(failingPersist), { ...traceInput(group), importHash: 'e'.repeat(64) }),
+    ).rejects.toThrow('SQLITE_BUSY');
+
+    const runs = await db.select().from(schema.testRuns);
+    expect(runs.map((r) => r.importHash)).toEqual([group]);
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(1);
   });
 });
