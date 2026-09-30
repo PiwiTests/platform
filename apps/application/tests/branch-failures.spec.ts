@@ -56,8 +56,11 @@ test.describe.serial('Branch failures', () => {
       file: 'tests/checkout.spec.ts',
       line: 10,
       location: '/ci/work/tests/pages/checkout.page.ts:12:19',
+      frames: ['/ci/work/tests/pages/checkout.page.ts:12:19'],
     });
     expect(body.failures[0].headline).toContain('Pay now');
+    expect(body.failures[0].message).toContain("Call log:\n  - waiting for getByRole('button', { name: 'Pay now' })");
+    expect(body.failures[0].message).not.toContain('    at ');
   });
 
   test('reads the newest run of any branch without one, and no run for an unknown branch', async ({ request }) => {

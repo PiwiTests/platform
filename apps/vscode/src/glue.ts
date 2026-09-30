@@ -123,6 +123,8 @@ export interface TestDecoration {
   line: number;
   /** The last line of a failing test's background; null for any other result. */
   failingUntil: number | null;
+  /** The line a failing test failed at, when the latest run says; null otherwise. */
+  failingLine: number | null;
   hover: string;
   dashboardUrl: string | null;
 }
@@ -136,6 +138,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
             status: l.status,
             line: l.line,
             failingUntil: l.status === 'failed' ? Math.max(l.line, l.endLine ?? l.line) : null,
+            failingLine: l.failure?.line ?? null,
             hover: testResultHover(l.status, l.title),
             dashboardUrl:
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'

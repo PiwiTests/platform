@@ -15,7 +15,9 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.ui.SimpleListCellRenderer
 import java.awt.datatransfer.StringSelection
+import javax.swing.JList
 
 /** The file's URI, or null for a file that is not on disk. */
 private fun fileUri(file: VirtualFile): String? =
@@ -110,7 +112,7 @@ class OpenInDashboardAction : AnAction() {
                     tests.size == 1 -> tests[0].url?.let { BrowserUtil.browse(it) }
                     tests.size > 1 -> JBPopupFactory.getInstance()
                         .createPopupChooserBuilder(tests)
-                        .setRenderer(com.intellij.ui.SimpleListCellRenderer.create("") { "${it.title} · ${it.file}" })
+                        .setRenderer(textRenderer<EditorTest> { "${it.title} · ${it.file}" })
                         .setTitle("Open which test in the dashboard?")
                         .setItemChosenCallback { t -> t.url?.let { BrowserUtil.browse(it) } }
                         .createPopup()
@@ -142,7 +144,7 @@ class RunSelectionAction : AnAction() {
                 JBPopupFactory.getInstance()
                     .createPopupChooserBuilder(items)
                     .setRenderer(
-                        com.intellij.ui.SimpleListCellRenderer.create("") {
+                        textRenderer<SelectionItem> {
                             "${it.name ?: it.key} · ${it.count} tests" + if (it.includesFile) " · includes this file" else ""
                         },
                     )
@@ -201,5 +203,12 @@ class CopyMcpConfigurationAction : AnAction() {
         }
 
         private const val OFFERED = "piwi.mcpOffered"
+    }
+}
+
+/** A popup list's cell: the text `label` gives its item. */
+private fun <T> textRenderer(label: (T) -> String): SimpleListCellRenderer<T> = object : SimpleListCellRenderer<T>() {
+    override fun customize(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = value?.let(label) ?: ""
     }
 }

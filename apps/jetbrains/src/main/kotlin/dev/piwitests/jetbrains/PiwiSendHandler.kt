@@ -1,7 +1,6 @@
 package dev.piwitests.jetbrains
 
 import com.google.gson.Gson
-import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -35,7 +34,7 @@ import java.util.concurrent.CompletableFuture
 
 /** The pairing token Piwi Picker sends with each request, kept in the password safe. */
 object PiwiSendToken {
-    private val attributes = CredentialAttributes(generateServiceName("Piwi", "sendToken"))
+    private val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
 
     @Volatile private var cached: String? = null
 

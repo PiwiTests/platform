@@ -94,6 +94,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openScreenshot",
+        "title": "Open the failure screenshot",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.runCommand",
         "title": "Run a command",
         "category": "Piwi"
@@ -112,6 +117,10 @@
         },
         {
           "command": "piwi.openTrace",
+          "when": "false"
+        },
+        {
+          "command": "piwi.openScreenshot",
           "when": "false"
         },
         {
@@ -155,6 +164,16 @@
           "light": "#f851491a",
           "highContrast": "#f8514940",
           "highContrastLight": "#f8514926"
+        }
+      },
+      {
+        "id": "piwi.failingLineBackground",
+        "description": "The background of the line a failing test failed at, over the test's own.",
+        "defaults": {
+          "dark": "#f8514940",
+          "light": "#f8514933",
+          "highContrast": "#f8514966",
+          "highContrastLight": "#f8514940"
         }
       }
     ],

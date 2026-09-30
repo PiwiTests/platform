@@ -384,6 +384,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(listOf(4 to "1 test · click · 1 failing"), summary?.lines?.map { it.line to it.title })
                 assertEquals("piwi.runTests", summary?.lines?.single()?.command?.command)
 
+                // In the spec: the line the failure went through, why, and the evidence above it.
+                val spec = File(dir, "tests/checkout.spec.ts").toURI().toString().replace("file:/", "file:///")
+                val specLines = server.fileSummary(UriParams(spec)).get(5, TimeUnit.SECONDS)?.lines.orEmpty()
+                val test = specLines.single { it.status != null }
+                assertEquals("failed", test.status)
+                assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900"), test.failure)
+                assertEquals(
+                    listOf(
+                        Triple(4, "✗ not found", "piwi.openInDashboard"),
+                        Triple(4, "Screenshot", "piwi.openScreenshot"),
+                        Triple(4, "Trace", "piwi.openTrace"),
+                    ),
+                    specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
+                )
+                val shot = server.screenshot(TraceParams(spec, 900)).get(10, TimeUnit.SECONDS)
+                assertEquals("PNG-stub", shot?.path?.let { File(it).readText() })
+
                 val mcp = server.mcp().get(5, TimeUnit.SECONDS)?.servers?.single()
                 assertEquals("${stub.url}/mcp", mcp?.url)
                 assertTrue(client.runStatusChanges > 0)
@@ -410,7 +427,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "",
             ).joinToString("\n"),
         )
-        write("tests/checkout.spec.ts", "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n")
+        write(
+            "tests/checkout.spec.ts",
+            listOf(
+                "import { test } from '@playwright/test';",
+                "import { CheckoutPage } from './pages/checkout.page';",
+                "",
+                "test('removes a row', async ({ page }) => {",
+                "  await new CheckoutPage(page).row().click();",
+                "});",
+                "",
+            ).joinToString("\n"),
+        )
         fun git(vararg args: String) {
             val p = ProcessBuilder(listOf("git", "-c", "user.email=t@example.com", "-c", "user.name=t") + args)
                 .directory(dir).redirectErrorStream(true).start()
@@ -459,10 +487,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     {"run":{"id":41,"status":"failed","branch":"main","startTime":"2026-09-27T10:00:00.000Z","totalTests":2,
                       "passedTests":1,"failedTests":1,"flakyTests":0,"skippedTests":0},
                      "failures":[{"executionId":900,"testCaseId":3,"title":"removes a row","file":"tests/checkout.spec.ts",
-                      "line":3,"status":"failed","headline":"not found","location":"/ci/work/tests/pages/checkout.page.ts:5:21",
-                      "traces":["traces/900.zip"],"screenshot":null}]}
+                      "line":4,"status":"failed","headline":"not found","location":"/ci/work/tests/pages/checkout.page.ts:5:21",
+                      "message":"Error: locator.click: Timeout 5000ms exceeded.",
+                      "frames":["/ci/work/tests/pages/checkout.page.ts:5:21","/ci/work/tests/checkout.spec.ts:5:32"],
+                      "traces":["traces/900.zip"],"screenshot":"shots/900.png"}]}
                 """.trimIndent(),
-                "/api/projects/7/test-cases" to """{"items":[]}""",
+                "/api/projects/7/test-cases" to """
+                    {"items":[{"id":3,"title":"removes a row","filePath":"tests/checkout.spec.ts","status":"failed",
+                      "totalRuns":4,"passedRuns":3}]}
+                """.trimIndent(),
+                "/api/files/shots/900.png" to "PNG-stub",
                 "/api/projects/7/locator-alternatives" to """{"items":[]}""",
             )
             server.createContext("/") { exchange ->

@@ -11,18 +11,21 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.vfs.LocalFileSystem
 import java.awt.datatransfer.StringSelection
+import java.nio.file.Path
 
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.runCommand`, `piwi.copyText`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`).
  */
 object PiwiCommands {
     private val gson = Gson()
@@ -38,6 +41,7 @@ object PiwiCommands {
             "piwi.openInDashboard" -> arg<String>(arguments.firstOrNull())?.let { BrowserUtil.browse(it) }
             "piwi.runTests" -> arg<RunTestsArgs>(arguments.firstOrNull())?.let { runTests(project, it) }
             "piwi.openTrace" -> arg<TraceParams>(arguments.firstOrNull())?.let { openTrace(project, it) }
+            "piwi.openScreenshot" -> arg<TraceParams>(arguments.firstOrNull())?.let { openScreenshot(project, it) }
             "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command) }
             "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
@@ -64,6 +68,21 @@ object PiwiCommands {
                 notify(project, "This failure has no trace to open.", NotificationType.WARNING)
             } else {
                 run(project, trace.cwd, trace.command)
+            }
+        }
+    }
+
+    /** Download a failure's screenshot and open it in an editor tab. */
+    fun openScreenshot(project: Project, params: TraceParams) {
+        background(project, "Piwi: downloading the screenshot") {
+            val path = project.service<PiwiProjectService>().server()?.screenshot(params)?.orNull()?.path
+            val file = path?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(it)) }
+            if (file == null) {
+                notify(project, "This failure has no screenshot to open.", NotificationType.WARNING)
+            } else {
+                ApplicationManager.getApplication().invokeLater({
+                    FileEditorManager.getInstance(project).openFile(file, true)
+                }, project.disposed)
             }
         }
     }

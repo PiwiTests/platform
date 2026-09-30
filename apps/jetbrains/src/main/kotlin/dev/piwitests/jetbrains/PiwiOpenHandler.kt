@@ -4,13 +4,13 @@ import com.google.gson.Gson
 import com.intellij.ide.impl.ProjectUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ApplicationNamesInfo
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.roots.ProjectRootManager
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -104,7 +104,7 @@ class PiwiOpenHandler : RestService() {
      */
     private fun locate(project: Project, path: String, root: String?): VirtualFile? {
         val service = project.service<PiwiProjectService>()
-        val roots = ReadAction.compute<List<String>, RuntimeException> {
+        val roots = ApplicationManager.getApplication().runReadAction(Computable {
             buildList {
                 service.status?.contexts.orEmpty().mapNotNullTo(this) { it.root }
                 service.playwrightConfigDirs().mapTo(this) { it.toString() }
@@ -112,15 +112,15 @@ class PiwiOpenHandler : RestService() {
                 project.basePath?.let { add(it) }
                 ProjectRootManager.getInstance(project).contentRoots.mapTo(this) { it.path }
             }
-        }
+        })
         for (candidate in Glue.candidatePaths(path, listOfNotNull(root) + roots)) {
             val io = File(candidate)
             if (!io.isFile) continue
             // Refreshed, so a spec file created since the IDE last scanned the disk is found too.
             val file = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(io) ?: continue
-            val inProject = ReadAction.compute<Boolean, RuntimeException> {
+            val inProject = ApplicationManager.getApplication().runReadAction(Computable {
                 ProjectFileIndex.getInstance(project).isInContent(file) || roots.any { FileUtil.isAncestor(it, file.path, false) }
-            }
+            })
             if (inProject) return file
         }
         return null

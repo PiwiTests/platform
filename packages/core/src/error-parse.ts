@@ -325,16 +325,22 @@ function readChain(region: string): ReturnType<typeof scanLocatorChain> {
   return link && CHAIN_LINK_METHODS.has(link[1]!) ? null : scanned;
 }
 
-/** The first stack frame outside node_modules and Node internals. */
-export function extractTopFrame(text: string): { file: string; line: number; column: number } | null {
+/** The stack frames outside node_modules and Node internals, innermost first. */
+export function extractStackFrames(text: string): Array<{ file: string; line: number; column: number }> {
   const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):(\d+):(\d+)\)?\s*$/gm;
+  const frames: Array<{ file: string; line: number; column: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = frameRe.exec(text)) !== null) {
     const file = m[1]!.replace(/\\/g, '/');
     if (file.includes('node_modules') || file.startsWith('node:')) continue;
-    return { file, line: Number(m[2]), column: Number(m[3]) };
+    frames.push({ file, line: Number(m[2]), column: Number(m[3]) });
   }
-  return null;
+  return frames;
+}
+
+/** The first stack frame outside node_modules and Node internals. */
+export function extractTopFrame(text: string): { file: string; line: number; column: number } | null {
+  return extractStackFrames(text)[0] ?? null;
 }
 
 /** First stack frame outside node_modules and Node internals, file path only. */
@@ -374,8 +380,8 @@ interface CallLogRead {
   matcher: string | null;
 }
 
-/** Drop the JS stack frames so a helper named `goto` in a path never reads as a navigation. */
-function withoutStackFrames(text: string): string {
+/** The text without its JS stack frames (so a helper named `goto` in a path never reads as a navigation). */
+export function withoutStackFrames(text: string): string {
   return text
     .split('\n')
     .filter((line) => !/^\s+at /.test(line))

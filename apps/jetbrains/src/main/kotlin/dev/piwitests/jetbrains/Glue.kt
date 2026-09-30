@@ -157,6 +157,14 @@ object Glue {
         return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
     }
 
+    /** The tooltip of a test's failing line: why it failed, and the error without its stack. */
+    fun failureTooltip(headline: String?, message: String?): String {
+        val escape = { text: String -> text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
+        val why = headline?.ifBlank { null } ?: "Failed"
+        val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escape(it)}</pre>" } ?: ""
+        return "<html><b>Piwi: failed here</b><br>${escape(why)}$details</html>"
+    }
+
     /** Where the service found the instance, in the words of the settings page. */
     fun sourceLabel(source: String?): String = when (source) {
         "environment" -> "the environment (PIWI_DASHBOARD_URL)"

@@ -75,6 +75,10 @@ export interface BranchFailures {
     status: string;
     headline: string | null;
     location: string | null;
+    /** Absent from an instance older than the editor service. */
+    message?: string | null;
+    /** The error's frames outside `node_modules`, innermost first; absent from an instance older than the editor service. */
+    frames?: string[];
     traces: string[];
     screenshot: string | null;
   }>;

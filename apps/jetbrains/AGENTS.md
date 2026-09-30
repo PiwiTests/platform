@@ -18,9 +18,10 @@ with the project's Node.js interpreter.
   removed by 2026.2). Every status, Code Vision, gutter and tool-window answer depends on it. Its
   `createLspServerWidgetItem` gives the Language Services widget Piwi's icon and the gear that opens the settings.
 - `PiwiTestAnnotator.kt` (an external annotator on JavaScript, so on its TypeScript dialects too) draws each test's
-  latest result from `piwi/fileSummary`: a gutter icon, the details as its tooltip, and the `PIWI_FAILING_TEST`
-  background over a failing test (`PiwiColorSettingsPage.kt`, defaults in `resources/colorSchemes/`). Code Vision skips
-  those lines, and the daemon restarts when the run changes.
+  latest result from `piwi/fileSummary`: a gutter icon, the details as its tooltip, the `PIWI_FAILING_TEST`
+  background over a failing test, and `PIWI_FAILING_LINE` on the line it failed at, with why as the tooltip; the test's
+  background goes around that line, since two backgrounds on a line have no set order (`PiwiColorSettingsPage.kt`,
+  defaults in `resources/colorSchemes/`). Code Vision skips those lines, and the daemon restarts when the run changes.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
   window from `piwi/failures` (the LSP client highlights open files only) with the connection from `piwi/status`, and
   the actions under **Tools → Piwi**. The service starts with the first supported file opened (2024.1 has no way to
@@ -62,6 +63,15 @@ with the project's Node.js interpreter.
   up at run time or not used. Its test framework is pinned (`platformTestFrameworkVersion`: it is published with
   IntelliJ IDEA's build numbers, just after WebStorm's), and the test sandbox disables the Swagger plugin, whose test
   service ships with its own tests only.
+- **An API deprecated on the newest platform is replaced by one 2024.1 has too**: the Marketplace's Plugin Verifier
+  counts every use. `Application.runReadAction(Computable)` rather than `ReadAction.compute`,
+  `ActionManager.tryToExecute` rather than `ActionUtil.invokeAction`, a `SimpleListCellRenderer` subclass rather than
+  its `create`, `PiwiCredentials.attributes` (Java, so it binds to the one-argument constructor) rather than
+  `CredentialAttributes(…)` in Kotlin. What stays has no replacement in 2024.1: the LSP API, renamed in 2026.3
+  (`LspServer` → `LspClient`, `LspServerSupportProvider` → `LspIntegrationProvider`, `LspServerManager` →
+  `LspClientManager`, `…ServerDescriptor` → `…ClientDescriptor`, `lspCommandsSupport` →
+  `lspCustomization.commandsCustomizer`), and `DaemonCodeAnalyzer.restart()`. Kotlin compiles without its
+  compatibility bridges (`jvmDefault`), each of which the verifier counts as a use of the default method it calls.
 - **No logic the VS Code extension would need too.** A new feature is a service request first.
 - **Nothing blocks the event thread, and nothing in a read action waits on the service without giving way**: the daemon
   (Code Vision) waits with `awaitCancellably`, which a write action cancels, and reads of the disk run on a pooled
