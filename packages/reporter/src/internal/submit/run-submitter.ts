@@ -58,9 +58,6 @@ export interface CollectedRun {
  *      traces to attach,
  *   3. fall back to plain JSON (`/submit`) as the last resort, persisting a
  *      recovery payload on total failure.
- *
- * The order and logging are identical to the pre-extraction reporter — this is
- * a move, not a redesign.
  */
 export class RunSubmitter {
   /**

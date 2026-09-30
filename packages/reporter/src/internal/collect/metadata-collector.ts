@@ -276,7 +276,7 @@ export class MetadataCollector {
 
   private collectCiInfo(): Record<string, string | boolean | undefined> | undefined {
     // Env vars are `string | undefined`; undefined values are dropped on JSON
-    // serialization, so collecting them directly preserves the prior behavior.
+    // serialization, so they are collected as-is.
     const ci: Record<string, string | boolean | undefined> = {};
     const env = process.env;
 

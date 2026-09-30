@@ -163,7 +163,7 @@ type EnvKind = 'string' | 'number' | 'bool';
  * of repeating ~15 near-identical merge lines, so adding an env-backed option
  * means adding one row.
  *
- * Guard semantics (preserved from the original hand-written merges):
+ * Guard semantics:
  *  - `string` / `number`: a *truthy* env value fills the option, so an empty
  *    string is ignored.
  *  - `bool`: any *defined* env value fills it (via `readBool`), so
@@ -228,8 +228,7 @@ export function usedDesktopDiscovery(): boolean {
  * never masks an env var (`PIWI_PROJECT_NAME` would otherwise be masked by the
  * `default-project` default).
  *
- * One preserved quirk: `PIWI_VERBOSE` wins over both the default *and* an
- * explicit user option.
+ * `PIWI_VERBOSE` wins over both the default *and* an explicit user option.
  */
 export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
   const env = process.env;
@@ -264,7 +263,7 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
 
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 
-  // Preserved quirk: PIWI_VERBOSE wins over both default and user option.
+  // PIWI_VERBOSE wins over both default and user option.
   if (env[PIWI_ENV_KEYS.verbose] !== undefined) opts.verbose = env[PIWI_ENV_KEYS.verbose] === 'true';
 
   return opts;

@@ -10,9 +10,8 @@
  * - `debug` → stdout (only when `verbose`),
  * - `debugError` → stderr (only when `verbose`).
  *
- * `debugError` exists so verbose-only diagnostics that previously used
- * `console.error` (e.g. HTTP response bodies on failure) keep going to stderr
- * after the refactor.
+ * `debugError` sends verbose-only diagnostics (e.g. HTTP response bodies on
+ * failure) to stderr.
  */
 export class Logger {
   private readonly prefix = '[Piwi Dashboard] ';

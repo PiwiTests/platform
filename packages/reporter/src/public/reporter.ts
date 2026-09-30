@@ -441,8 +441,8 @@ export class PiwiDashboardReporter {
       this.fileHandler.parsePerformanceAttachments(testCase, result.attachments);
 
       // Locator snapshots arrive pre-stamped with their call-site `location`
-      // (captured in the fixture at action call time). No index correlation
-      // with pw:api steps — that was unreliable across workers/concurrent calls.
+      // (captured in the fixture at action call time), so they are not
+      // correlated with pw:api steps by index.
       const locatorAttachment =
         this.options.captureLocators !== false
           ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locators)

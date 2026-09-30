@@ -99,7 +99,7 @@ export function maskValues(text: string, params: ParamValues): string {
 }
 
 /**
- * Parametricity check (D9): every placeholder must actually appear as a marker
+ * Parametricity check: every placeholder must actually appear as a marker
  * somewhere in the compiled locator/value text. A grounding that pinned a
  * concrete value positionally instead of parametrically is rejected, never
  * cached — otherwise the "one entry per template" guarantee would silently break.

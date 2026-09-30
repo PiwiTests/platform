@@ -33,7 +33,7 @@ export function resolveOverallStatus(
  * the server. Carries the `type` discriminant through so the same mapper works
  * for `begin` and `complete` stream events as well as batch submissions.
  *
- * Quirks preserved from the original in-reporter implementation:
+ * Field defaults:
  * - `status`/`duration`/`error`/`retries` pass through unchanged (no `null`
  *   default), so a `begin` event yields `undefined` for those fields.
  * - Numeric/array fields use `|| null` (so `0` and `''` collapse to `null`),

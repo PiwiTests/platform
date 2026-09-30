@@ -63,8 +63,8 @@ export class HttpClient {
   /**
    * @param serverUrl Base URL of the Piwi Dashboard server (e.g. `http://localhost:3000`).
    * @param logger    Prefixed logger for verbose diagnostics.
-   * @param timeout   Socket inactivity timeout in ms (default 30s). A hung
-   *                  server now fails fast instead of stalling the reporter.
+   * @param timeout   Socket inactivity timeout in ms (default 30s), so a hung
+   *                  server fails fast rather than stalling the reporter.
    */
   constructor(
     private readonly serverUrl: string,
@@ -82,7 +82,7 @@ export class HttpClient {
    * endpoint exposes the key and payloads on the wire. Loopback (localhost /
    * 127.0.0.1 / ::1) is exempt: that traffic never leaves the machine. This
    * warns rather than refuses so internal HTTP deployments (e.g. behind a VPN)
-   * still work, but the exposure is no longer silent.
+   * work, while the exposure is still reported.
    */
   private warnIfInsecureTransport(): void {
     let url: URL;

@@ -98,8 +98,7 @@ export function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>)
  *
  * `?` belongs in the escaped set even though it is not glob syntax here: a URL
  * pattern that names a query string (`**\/search?tab=orders`) is entirely
- * ordinary, and leaving `?` as a regex quantifier made every one of them match
- * nothing at all.
+ * ordinary, and as a regex quantifier `?` would make it match nothing at all.
  */
 function globToRegExp(glob: string): RegExp {
   const escaped = glob
@@ -297,14 +296,12 @@ export function rankFunctionMatches(
  * Aligns a pattern against the run of steps starting at `startIndex`, one
  * pattern step per recorded step with nothing skipped on either side.
  *
- * Deliberately *not* `bestAlignment`: that one maximizes score over an
- * in-order-but-gapped alignment, which is the right rule for ranking how close
- * a recording is to a function, and the wrong one for substitution. A gapped
- * match let codegen collapse `[click user, click UNRELATED, click submit]` into
- * a single `login(page)` and advance past all three — the interleaved action
- * vanished from the exported spec with nothing to show it had ever been
- * recorded. Requiring a contiguous run means a substituted call always stands
- * for exactly the steps it replaced.
+ * Not `bestAlignment`: that one maximizes score over an in-order-but-gapped
+ * alignment, which is the right rule for ranking how close a recording is to a
+ * function, and the wrong one for substitution — a gapped match would fold
+ * `[click user, click UNRELATED, click submit]` into a single `login(page)` and
+ * drop the interleaved action from the exported spec. Requiring a contiguous
+ * run means a substituted call always stands for exactly the steps it replaced.
  */
 function contiguousAlignment(
   steps: RecordedStep[],

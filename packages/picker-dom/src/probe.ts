@@ -72,8 +72,8 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
     if (attrMap['name']) selectorCounts.name = count(`[name=${JSON.stringify(attrMap['name'])}]`);
     // `getByPlaceholder`/`getByAltText`/`getByTitle` each resolve to exactly the
     // elements carrying that attribute value, so an attribute selector counts
-    // their real match set — without these, a placeholder repeated across a
-    // wizard's steps scored as though it were unique.
+    // their real match set, so a placeholder repeated across a wizard's steps
+    // does not score as unique.
     if (attrMap['placeholder']) {
       selectorCounts.placeholder = count(`[placeholder=${JSON.stringify(attrMap['placeholder'])}]`);
     }
@@ -117,8 +117,8 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       // read again as its parent's child. Memoized per probe call (the maps are
       // local and die with it), which turns those repeats into map lookups
       // instead of fresh attribute reads and fresh `textContent` concatenations.
-      // `textContent` in particular is O(subtree), so re-reading it was what
-      // made a probe of a large page superlinear.
+      // `textContent` in particular is O(subtree), so re-reading it would make
+      // a probe of a large page superlinear.
       const roleMemo = new Map<any, string | null>();
       const textMemo = new Map<any, string>();
 
@@ -224,10 +224,10 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
         let roleCountAll = 0;
         let index = -1;
         let levelCount = 0;
-        // How many elements a `getByRole(role, { name })` would actually
-        // match. Without it, an ambiguous locator scores exactly as well as a
-        // unique one and wins on base score alone. `visibleRoleName` is the
-        // subset that is laid out — what `.visible()` would keep.
+        // How many elements share the role and the exact accessible name, so
+        // an ambiguous locator does not score as well as a unique one on base
+        // score alone. `visibleRoleName` is the subset that is laid out — what
+        // `.visible()` would keep.
         let roleNameCount = 0;
         let visibleRoleNameCount = 0;
         for (let i = 0; i < nodes.length; i++) {
