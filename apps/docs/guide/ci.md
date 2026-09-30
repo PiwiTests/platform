@@ -274,10 +274,10 @@ network, or a missing API key against an instance with authentication enabled.
 `use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' }` in your Playwright config, or install through
 [`wrapConfig`](./reporter#installing-via-wrapconfig), which sets both when they are unset.
 
-**A run is stuck as `interrupted`.** When a run sends nothing for two minutes (a cancelled job, a killed runner,
-a dropped network), the server marks it `interrupted`. If the reporter comes back, the next event revives the run, so
-`interrupted` is only final when the job really died. [Analytics](/features/analytics#scope) counts them as failing
-runs; **full runs only** drops only partial runs.
+**A run is stuck as `interrupted`.** A run silent for two minutes (a cancelled job, a killed runner, a dropped
+network) is marked `interrupted` until its next event revives it. A run still uploading its report (`finalizing`) waits
+ten minutes, then keeps the status the reporter sent. [Analytics](/features/analytics#scope) counts interrupted runs as
+failing; **full runs only** drops only partial runs.
 
 ## Related
 

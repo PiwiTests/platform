@@ -18,6 +18,7 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
+import { settleFinalizingRun } from '../../utils/finalizing-runs';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
@@ -396,55 +397,25 @@ export default eventHandler(async (event) => {
     );
   }
 
-  // When attaching reports to an existing streaming run, either transition from
-  // finalizing to the actual final status, or re-notify if already finished.
+  // When attaching reports to an existing streaming run, either settle a
+  // finalizing run to the status its reporter sent to /finish, or re-notify if
+  // it already finished.
   if (attachingToExistingRun) {
-    const finalStatus =
-      existingRunStatus === 'finalizing' ? runEventBus.consumeFinalStatus(existingTestRunId!) : undefined;
+    const settledStatus =
+      existingRunStatus === 'finalizing'
+        ? await settleFinalizingRun(db, { id: testRun.id, projectId: testRun.projectId, metadata: existingRunMetadata })
+        : null;
 
-    if (finalStatus) {
-      // Run was in finalizing state — transition to actual final status now
-      await db.update(testRuns).set({ status: finalStatus }).where(eq(testRuns.id, existingTestRunId!));
-
-      // Notify per-run SSE subscribers that the run is fully finished
-      runEventBus.publish(existingTestRunId!, {
-        type: 'run-finished',
-        data: { status: finalStatus },
-      });
-
-      // Broadcast global run-finished event with the actual final status
-      runEventBus.publishGlobal({
-        type: 'run-finished',
-        runId: existingTestRunId!,
-        projectId: testRun.projectId,
-        status: finalStatus,
-      });
-
-      await runFinalizeSideEffects(db, existingTestRunId!, {
-        projectId: testRun.projectId,
-        metadata: existingRunMetadata,
-      });
-
-      // Cleanup event bus for this run
-      runEventBus.cleanup(existingTestRunId!);
-    } else if (existingRunStatus === 'finalizing') {
-      // Server restarted between finish and upload — final status map was lost.
-      // Set a temporary "failed" status so the run doesn't stay finalizing forever.
-      console.warn(`[Upload] Run #${existingTestRunId} was finalizing but final status not found; marking as failed`);
-      await db.update(testRuns).set({ status: 'failed' }).where(eq(testRuns.id, existingTestRunId!));
-      runEventBus.publishGlobal({
-        type: 'run-finished',
-        runId: existingTestRunId!,
-        projectId: testRun.projectId,
-        status: 'failed',
-      });
-    } else {
-      // Run already had a final status — just re-notify for dashboard refresh
+    if (!settledStatus) {
+      // Run already had a final status — just re-notify for dashboard refresh.
+      // Re-read it: the stale-run sweep may have settled the run while the
+      // reports were being stored.
+      const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, testRun.id));
       runEventBus.publishGlobal({
         type: 'run-finished',
         runId: testRun.id,
         projectId: testRun.projectId,
-        status: existingRunStatus!,
+        status: current?.status ?? existingRunStatus!,
       });
     }
   }
