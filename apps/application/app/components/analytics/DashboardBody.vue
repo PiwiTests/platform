@@ -388,6 +388,13 @@ async function setVisibility(visibility: 'private' | 'shared') {
   }
 }
 
+const renameOpen = ref(false);
+async function onRenamed(saved: DashboardView) {
+  emit('saved', saved);
+  // The switcher lists every dashboard by name.
+  await refreshNuxtData('analytics-dashboards');
+}
+
 const deleteOpen = ref(false);
 async function confirmDelete() {
   try {
@@ -496,6 +503,9 @@ const moreItems = computed(() => {
       icon: 'i-lucide-cast',
       onSelect: () => (liveLinksOpen.value = true),
     });
+  }
+  if (isSaved && view.canEdit) {
+    manage.unshift({ label: 'Rename…', icon: 'i-lucide-pencil-line', onSelect: () => (renameOpen.value = true) });
   }
   if (isSaved && view.canEdit && props.list?.canShare) {
     manage.unshift(
@@ -888,6 +898,7 @@ function exitTvMode() {
       </UModal>
 
       <DeleteDashboardModal v-model:open="deleteOpen" :dashboard="view" @confirm="confirmDelete" />
+      <RenameDashboardModal v-if="isSaved" v-model:open="renameOpen" :dashboard="view" @saved="onRenamed" />
       <ShareLinksModal
         v-if="isSaved && !isDemoMode"
         v-model:open="liveLinksOpen"

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * `/analytics/dashboards`: every dashboard the viewer can open, grouped as
- * the switcher groups them, with *New dashboard*, duplicate, delete, the
- * viewer's default and, for administrators, the instance default.
+ * the switcher groups them, with *New dashboard*, rename, duplicate, delete,
+ * the viewer's default and, for administrators, the instance default.
  */
 import type { DashboardSummary, DashboardView } from '#shared/handlers/dashboards';
 
@@ -120,6 +120,14 @@ async function setInstanceDefault(id: string) {
   }
 }
 
+const renaming = ref<DashboardSummary | null>(null);
+const renameOpen = ref(false);
+
+function askRename(d: DashboardSummary) {
+  renaming.value = d;
+  renameOpen.value = true;
+}
+
 const deleting = ref<DashboardView | null>(null);
 const deleteOpen = ref(false);
 
@@ -147,9 +155,11 @@ async function confirmDelete() {
 }
 
 function rowMenu(d: DashboardSummary) {
-  const items: Array<Record<string, any>> = [
-    { label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => duplicate(d) },
-  ];
+  const items: Array<Record<string, any>> = [];
+  if (d.kind === 'saved' && d.canEdit) {
+    items.push({ label: 'Rename…', icon: 'i-lucide-pencil-line', onSelect: () => askRename(d) });
+  }
+  items.push({ label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => duplicate(d) });
   if ((myDefault.value ?? 'overview') !== d.id) {
     items.push({ label: 'Make it my default', icon: 'i-lucide-home', onSelect: () => setMyDefault(d) });
   }
@@ -277,6 +287,7 @@ function rowMenu(d: DashboardSummary) {
         </template>
       </UModal>
 
+      <RenameDashboardModal v-model:open="renameOpen" :dashboard="renaming" @saved="refresh()" />
       <DeleteDashboardModal v-model:open="deleteOpen" :dashboard="deleting" @confirm="confirmDelete" />
     </template>
   </UDashboardPanel>
