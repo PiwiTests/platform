@@ -1,7 +1,7 @@
 /**
  * Saved dashboards:
  *   /api/dashboards …          — CRUD, duplicate, the save precondition, widget data, preview
- *   /analytics, /analytics/d/<id>        — Overview unchanged, duplicate, edit, save, reload, TV mode
+ *   /analytics, /analytics/d/<id>        — Overview unchanged, duplicate, edit, save, reload, rename, TV mode
  *   deletion                              — names the schedules rendering the dashboard, which go inactive
  *   access (auth server, CI only)         — a USER-role viewer of a shared dashboard sees only their projects
  */
@@ -214,6 +214,32 @@ test.describe('Dashboards UI', () => {
     await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText('Saved by someone else')).toBeVisible();
     await expect(page.getByTestId('conflict-save-copy')).toBeVisible();
+  });
+
+  test('Rename… changes the name and the description, on the dashboard and on the list', async ({ page, request }) => {
+    const view = await createDashboard(request, 'Before rename');
+    await page.goto(`/analytics/d/${view.id}`);
+    await waitForDashboard(page);
+    await page.getByTestId('dashboard-more').click();
+    await page.getByRole('menuitem', { name: 'Rename…' }).click();
+    await expect(page.getByTestId('rename-dashboard-name')).toHaveValue('Before rename');
+    await page.getByTestId('rename-dashboard-name').fill('Checkout health');
+    await page.getByTestId('rename-dashboard-description').fill('The checkout suite, week by week.');
+    await page.getByTestId('rename-dashboard-save').click();
+    await expect(page.getByTestId('dashboard-switcher')).toContainText('Checkout health');
+    await expect(page.getByTestId('dashboard-meta')).toContainText('The checkout suite, week by week.');
+
+    await page.goto('/analytics/dashboards');
+    const row = page.getByTestId(`dashboard-row-${view.id}`);
+    await expect(row).toContainText('Checkout health', { timeout: 30_000 });
+    await row.getByRole('button', { name: 'Actions: Checkout health' }).click();
+    await page.getByRole('menuitem', { name: 'Rename…' }).click();
+    await page.getByTestId('rename-dashboard-name').fill('Checkout, renamed from the list');
+    await page.getByTestId('rename-dashboard-save').click();
+    await expect(row).toContainText('Checkout, renamed from the list');
+    const saved: DashboardView = await (await request.get(`/api/dashboards/${view.id}`)).json();
+    expect(saved.name).toBe('Checkout, renamed from the list');
+    expect(saved.description).toBe('The checkout suite, week by week.');
   });
 
   test('TV mode shows the dashboard without the navigation', async ({ page, request }) => {

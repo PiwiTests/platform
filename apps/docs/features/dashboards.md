@@ -28,7 +28,9 @@ The header's switcher lists every dashboard you can open, with a search:
   delete them.
 
 `/analytics/d/<id>` opens one dashboard; *Manage dashboards* (`/analytics/dashboards`) lists them all,
-with *New dashboard* (empty, or a copy of any dashboard you can open), *Duplicate* and *Delete*.
+with *New dashboard* (empty, or a copy of any dashboard you can open), *Rename…*, *Duplicate* and *Delete*.
+*Rename…*, also in a dashboard's **⋯** menu, changes the name and the description of a saved dashboard you
+can edit; duplicate a built-in one first.
 
 ## Your default dashboard
 

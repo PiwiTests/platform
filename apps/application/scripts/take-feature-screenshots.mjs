@@ -1173,6 +1173,34 @@ const SCENES = [
       await shoot();
     },
   })),
+  // *Rename…* on Manage dashboards: the seeded wasted-CI dashboard's name and description.
+  ...[
+    { name: 'dashboard-rename', width: 1280, height: 800 },
+    { name: 'dashboard-rename-mobile', width: 375, height: 800 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Manage dashboards, then Rename… on a saved dashboard, at ${width} px`,
+    route: '/analytics/dashboards',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const dialog = page.getByTestId('rename-dashboard');
+      await page.getByTestId('dashboard-row-2').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await dialog.isVisible()); attempt++) {
+        await page
+          .getByTestId('dashboard-row-2')
+          .getByRole('button', { name: /^Actions:/ })
+          .click();
+        await page
+          .getByRole('menuitem', { name: 'Rename…' })
+          .click({ timeout: 3000 })
+          .catch(() => {});
+        await dialog.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await settle();
+      await shoot();
+    },
+  })),
   ...[
     { name: 'report-schedule-form', width: 1280, height: 900 },
     { name: 'report-schedule-form-mobile', width: 375, height: 900 },
@@ -1190,6 +1218,38 @@ const SCENES = [
         await form.waitFor({ timeout: 3000 }).catch(() => {});
       }
       await page.getByTestId('schedule-name').fill('Weekly executive report');
+      await settle();
+      await shoot();
+    },
+  })),
+  // *Send to* in the schedule form: each channel with who receives it (`-picker`,
+  // the list open), then the recipients of the picked channel under it.
+  ...[
+    { name: 'report-schedule-recipients', width: 1280, height: 1000 },
+    { name: 'report-schedule-recipients-mobile', width: 375, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Schedule… then Send to: who each channel reaches, and the picked channels' recipients, at ${width} px`,
+    prepare: prepareReportSchedule,
+    route: '/analytics',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      const form = page.getByTestId('schedule-form');
+      await page.getByTestId('stat-test-pass-rate').waitFor({ timeout: 60000 });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await form.isVisible()); attempt++) {
+        await page.locator('button[title="Schedule a quality report of this scope"]').first().click();
+        await form.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await page.getByTestId('schedule-name').fill('Weekly executive report');
+      await page.getByTestId('schedule-channels').click();
+      const option = page.getByRole('option', { name: /Email to/ }).first();
+      await option.waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('picker');
+      await option.click();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('schedule-recipients').waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
@@ -1215,7 +1275,7 @@ const SCENES = [
       await page.getByTestId('schedule-name').fill('Weekly executive report');
       await page.getByTestId('schedule-channels').click();
       await page
-        .getByRole('option', { name: /\(email\)/ })
+        .getByRole('option', { name: /Email to/ })
         .first()
         .click();
       await page.keyboard.press('Escape');

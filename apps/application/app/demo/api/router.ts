@@ -2964,7 +2964,13 @@ routes.push(
 // Report schedules and snapshots — stored in the in-browser database; the demo
 // has no scheduler, so a schedule never fires by itself.
 const demoReportChannels = () => [
-  { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type, userId: DEMO_CHANNEL.userId },
+  {
+    id: DEMO_CHANNEL.id,
+    name: DEMO_CHANNEL.name,
+    type: DEMO_CHANNEL.type,
+    userId: DEMO_CHANNEL.userId,
+    address: DEMO_CHANNEL.config.address,
+  },
 ];
 
 routes.push(

@@ -82,6 +82,9 @@ reports** page starts an empty one. Reporters and administrators create schedule
   channel a notification. With **Share link** on, each report carries a
   [share link](./share-links#report-share-links) that opens it without an account.
   **AI narrative** adds the [narrative](/reference/analytics-widgets#where-things-stand) the AI model writes.
+- **Who receives it**: **Send to** lists each channel with its recipient (an address, the Slack or Teams
+  channel its webhook posts to, a webhook's host, dashboard tabs) and whose it is: yours, global, or
+  another person's. The schedules on the **Quality reports** page show the same, with each schedule's owner.
 
 **Run now** sends the last complete period straight away; **Preview**, in the form, shows that report
 before you save, as its email and as the full report, and sends nothing. **Mute** keeps the snapshots
