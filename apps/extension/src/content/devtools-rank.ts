@@ -50,7 +50,7 @@ function toSelectionLocator(alt: CheckedLocator): SelectionLocator {
   };
 }
 
-export function rankSelected(node: unknown): SelectionRanking {
+function rankSelected(node: unknown): SelectionRanking {
   const candidate = node as Node | null | undefined;
   const el = candidate?.nodeType === Node.TEXT_NODE ? candidate.parentElement : candidate;
   if (!el || el.nodeType !== Node.ELEMENT_NODE) return { status: 'none' };
@@ -76,7 +76,7 @@ const HIGHLIGHT_HOST_ID = 'piwi-devtools-highlight';
 /** The elements the last query found, for the outline and the reveal that follow it. */
 let lastMatches: Element[] = [];
 
-export function queryLocator(expression: string): LocatorQueryResult {
+function queryLocator(expression: string): LocatorQueryResult {
   try {
     const engine = createPageEngine(document);
     lastMatches = engine.queryAll(parseLocatorChain(expression));

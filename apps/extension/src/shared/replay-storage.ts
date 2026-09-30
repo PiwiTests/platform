@@ -12,7 +12,7 @@ import type { FallbackReason, ReplayDriver } from './cdp-input.js';
 export const REPLAY_KEY = 'piwiReplay';
 
 /** `skipped`: a step the person chose to leave out, such as a file they did not choose. */
-export type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped';
+type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped';
 
 export interface ReplayStepResult {
   status: ReplayStepStatus;
@@ -24,7 +24,7 @@ export interface ReplayStepResult {
   driver?: ReplayDriver;
 }
 
-export type ReplayStatus = 'running' | 'paused' | 'done' | 'stopped';
+type ReplayStatus = 'running' | 'paused' | 'done' | 'stopped';
 
 export interface ReplayState {
   id: string;
@@ -112,7 +112,7 @@ export function newReplayState(
  * apart from the replay's state (which each step rewrites whole) under the
  * replay's evidence token: entries from an older replay are dropped.
  */
-export const REPLAY_EVIDENCE_KEY = 'piwiReplayEvidence';
+const REPLAY_EVIDENCE_KEY = 'piwiReplayEvidence';
 
 export interface ReplayEvidence {
   token: string;

@@ -4,7 +4,7 @@ import type { ConnectionSettings } from './connection-settings.js';
 import { sessionArea } from './session-area.js';
 
 /** Where the active project came from: the popup's choice, a pattern kept in this browser, or one of the instance's. */
-export type ActiveProjectSource = 'override' | 'local' | 'server';
+type ActiveProjectSource = 'override' | 'local' | 'server';
 
 export interface ActiveProject {
   projectId: number;

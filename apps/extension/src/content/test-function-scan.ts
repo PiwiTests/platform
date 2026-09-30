@@ -2,7 +2,7 @@ import { domRoleOf, type DomRoleMaps } from '@piwitests/picker-dom';
 import { scoreTargetMatch, type TestFunctionEntry, type FunctionPatternTarget } from '@piwitests/core/function-match';
 import type { StepAction } from '@piwitests/core/recording';
 
-export interface FunctionTestStepResult {
+interface FunctionTestStepResult {
   stepIndex: number;
   action: StepAction;
   matchCount: number;

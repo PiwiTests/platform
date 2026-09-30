@@ -12,7 +12,7 @@ import { stepRow, viewHead } from './panel-record.js';
 import { button, el, emptyState } from './ui.js';
 
 /** The message the replay script answers in each page of the replayed site: redraw its panel, and go on when `wake`. */
-export const REPLAY_WAKE_MESSAGE = 'piwi-replay-wake';
+const REPLAY_WAKE_MESSAGE = 'piwi-replay-wake';
 
 /**
  * Tells the replay script, in every tab of the replayed site, that the state

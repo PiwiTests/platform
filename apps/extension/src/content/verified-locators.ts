@@ -43,7 +43,7 @@ import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 export const ROLE_SOURCES = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
 
 /** The probe as the ranking needs it: every captured attribute, role maps, and the structural anchors. */
-export const PROBE_ARG: ProbeArg = {
+const PROBE_ARG: ProbeArg = {
   keep: [...CAPTURED_ATTRIBUTES],
   tagRoles: TAG_TO_ROLE,
   inputRoles: INPUT_TYPE_TO_ROLE,
@@ -66,7 +66,7 @@ export function createPageEngine(doc: Document = document, testIdAttributes?: st
  * composite control included; the probe's approximation only when the model
  * finds none (an element hidden from the accessibility tree).
  */
-export function accessibleNameOf(el: Element, attrs: ProbedAttrs, model: DomModel = new DomModel()): string | null {
+function accessibleNameOf(el: Element, attrs: ProbedAttrs, model: DomModel = new DomModel()): string | null {
   return model.normalizedAccessibleName(el, false) || approximateAccessibleName({ ...attrs, accessibleName: null });
 }
 
@@ -358,12 +358,12 @@ export function deriveTopLocator(el: Element, engine?: LocatorEngine): TopLocato
 }
 
 /** How long the pointer rests on an element before its locator is checked against the page. */
-export const HOVER_REST_MS = 80;
+const HOVER_REST_MS = 80;
 
 /** The probe for a hover preview: no structural anchors, which walk the page. */
 const QUICK_PROBE: ProbeArg = { keep: [...CAPTURED_ATTRIBUTES], includeStructural: false };
 
-export interface HoverLocator {
+interface HoverLocator {
   /**
    * The locator to show for `el` now: the checked one once the pointer has
    * rested on it this frame, else its best-ranked candidate, named as
@@ -383,7 +383,7 @@ export interface HoverLocator {
  * engine over the page as it is then (`deriveTopLocator`), keeps the answer for
  * that animation frame and calls `onChecked` so the caller asks again.
  */
-export function createHoverLocator(onChecked: (el: Element) => void): HoverLocator {
+function createHoverLocator(onChecked: (el: Element) => void): HoverLocator {
   let checked = new WeakMap<Element, string | null>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const check = (el: Element) => {

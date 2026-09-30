@@ -73,7 +73,7 @@ export interface ReportLanguage {
   screenshotNote(note: string): string;
 }
 
-export const ENGLISH_REPORT: ReportLanguage = { phrases: bugPhrases('en'), screenshotNote: (note) => note };
+const ENGLISH_REPORT: ReportLanguage = { phrases: bugPhrases('en'), screenshotNote: (note) => note };
 
 /** The report as Markdown, in `language`. The steps document, the spec and the evidence stay as they are stored. */
 export function bugReportMarkdown(report: BugReport, language: ReportLanguage = ENGLISH_REPORT): string {

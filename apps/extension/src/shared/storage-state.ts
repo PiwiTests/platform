@@ -19,7 +19,7 @@ export interface BrowserCookie {
   expirationDate?: number;
 }
 
-export interface StorageStateCookie {
+interface StorageStateCookie {
   name: string;
   value: string;
   domain: string;
@@ -37,7 +37,7 @@ export interface StorageState {
 }
 
 /** Where the file goes in a project, as Playwright's authentication guide names it. */
-export const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
+const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
 
 /** `lax`, and `unspecified`, which Chromium treats as Lax, → `Lax`. */
 function sameSiteOf(value: string): StorageStateCookie['sameSite'] {

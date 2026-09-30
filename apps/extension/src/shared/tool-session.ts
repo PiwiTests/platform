@@ -81,7 +81,7 @@ export function endTool(epoch: number): void {
 }
 
 /** Tears down the running tool, if any — what Escape triggers. */
-export function stopActiveTool(): void {
+function stopActiveTool(): void {
   const g = globals();
   const active = g.__piwiActiveTool;
   if (!active) return;

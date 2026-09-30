@@ -342,7 +342,7 @@ export async function postToEditor(
 }
 
 /** Deep link to a bug report's page in the dashboard. */
-export function bugReportUrl(instanceUrl: string, id: number): string {
+function bugReportUrl(instanceUrl: string, id: number): string {
   return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
 }
 

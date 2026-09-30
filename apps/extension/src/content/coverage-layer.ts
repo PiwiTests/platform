@@ -45,7 +45,7 @@ export interface Rect {
  * An element's box in the top window's viewport: frame offsets added, and
  * clipped to each frame it sits in. Null when nothing of it shows.
  */
-export function viewportRect(element: Element): Rect | null {
+function viewportRect(element: Element): Rect | null {
   const r = element.getBoundingClientRect();
   let left = r.left;
   let top = r.top;

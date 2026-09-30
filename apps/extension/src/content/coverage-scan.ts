@@ -21,9 +21,9 @@ import { normalizeWhiteSpace, parentElementOrShadowHost, tagNameOf, type DomMode
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 
 /** Operated by at least one test (clicked, filled, …), or only asserted on. */
-export type CoverageKind = 'operated' | 'checked';
+type CoverageKind = 'operated' | 'checked';
 
-export interface CoverageMatch {
+interface CoverageMatch {
   /** Position of the chain in `LocatorIndex.locators`. */
   entry: number;
   /** How many elements the chain resolves to on this page. */
@@ -47,13 +47,13 @@ export interface UncoveredElement {
   description: string;
 }
 
-export interface InteractiveElement {
+interface InteractiveElement {
   element: Element;
   /** A chain reaches it, a child of it, or its label. */
   reached: boolean;
 }
 
-export interface PageTest {
+interface PageTest {
   /** Position in `LocatorIndex.tests`. */
   test: number;
   /** The covered elements the test reaches on this page. */
@@ -415,7 +415,7 @@ function surfaceOf(
  * An element's containers, nearest first: its parents across shadow roots,
  * then the frame element of its document and that frame's own containers.
  */
-export function containersOf(element: Element): Element[] {
+function containersOf(element: Element): Element[] {
   const out: Element[] = [];
   let current: Element | null = element;
   while (current) {

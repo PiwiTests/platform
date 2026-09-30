@@ -1,6 +1,6 @@
 import { deriveTopLocator } from './verified-locators.js';
 
-export interface AssertionCandidate {
+interface AssertionCandidate {
   /** Which Playwright assertion this suggests. */
   method: 'toHaveValue' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
   /** The literal value being asserted, for display next to the method name — null for `toBeVisible`, which takes no argument. */
