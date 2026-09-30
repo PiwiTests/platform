@@ -341,7 +341,7 @@ async function dedupeGreenSamples(
   const existing = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
-      latest: sql<number>`max(${testRunsCases.createdAt})`,
+      latest: sql<Date>`max(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
     })
     .from(testRunsCases)
     .where(
@@ -353,7 +353,7 @@ async function dedupeGreenSamples(
     )
     .groupBy(testRunsCases.testCaseId);
 
-  const freshById = new Map(existing.map((r) => [r.testCaseId, Number(r.latest)]));
+  const freshById = new Map(existing.map((r) => [r.testCaseId, r.latest.getTime()]));
   for (const { index, caseId } of greenRows) {
     const latest = freshById.get(caseId);
     if (latest != null && latest >= cutoff) {

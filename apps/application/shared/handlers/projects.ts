@@ -712,17 +712,14 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
 }
 
 /**
- * Normalize a `MAX(created_at)` aggregate to epoch milliseconds. The raw value
- * is a ms integer on SQLite, a Date (or timestamp string) on PostgreSQL, and
- * Unix seconds in demo databases seeded before the unit fix.
+ * Epoch milliseconds of a `MAX(created_at)` aggregate mapped to a Date. Demo
+ * databases seeded before the unit fix hold Unix seconds, which map to a date
+ * in January 1970.
  */
-function toEpochMs(value: unknown): number | null {
+function toEpochMs(value: Date | null): number | null {
   if (value == null) return null;
-  if (value instanceof Date) return value.getTime();
-  const n = typeof value === 'number' ? value : Number(value);
-  if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
-  const parsed = Date.parse(String(value));
-  return Number.isNaN(parsed) ? null : parsed;
+  const ms = value.getTime();
+  return ms < 1e12 ? ms * 1000 : ms;
 }
 
 /**
@@ -753,8 +750,14 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     dir = 'desc',
   } = options;
 
-  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`;
-  const failed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`;
+  // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
+  // (numeric) as strings, and a timestamp aggregate unparsed: each selected
+  // aggregate is mapped so both dialects agree.
+  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number);
+  const failed =
+    sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
+      Number,
+    );
   const recentFlaky = sql<number>`(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
@@ -764,7 +767,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
-    )`;
+    )`.mapWith(Number);
   const lastStatus = sql<string | null>`(
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
@@ -780,7 +783,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     END`;
   const passRate = sql<
     number | null
-  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`;
+  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`.mapWith(Number);
 
   const conditions = [eq(testCases.projectId, projectId)];
   if (q) {
@@ -854,19 +857,29 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       feature: testCases.feature,
       link: testCases.link,
       status: category,
-      totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
+      totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
       passedRuns: passed,
       failedRuns: failed,
-      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
-      fixmeRuns: sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`,
-      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`,
-      flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
+      fixmeRuns:
+        sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`.mapWith(
+          Number,
+        ),
+      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`.mapWith(
+        Number,
+      ),
+      flakyRuns:
+        sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
+          Number,
+        ),
       recentFlakyRuns: recentFlaky,
       passRate,
       avgDuration: sql<
         number | null
-      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-      lastRun: sql<number | null>`MAX(${testRunsCases.createdAt})`,
+      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`.mapWith(
+        Number,
+      ),
+      lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
     })
     .from(testCases)
