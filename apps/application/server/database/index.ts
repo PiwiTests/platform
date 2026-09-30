@@ -8,6 +8,7 @@ import { backfillProjectAssignments } from '#shared/handlers/project-assignments
 import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
+import { configureSqliteConnections } from './sqlite-connections';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -156,11 +157,7 @@ async function openDatabase(): Promise<DB> {
         await client.execute('PRAGMA auto_vacuum=INCREMENTAL');
       }
       await client.execute('PRAGMA journal_mode=WAL');
-      await client.execute('PRAGMA synchronous=NORMAL');
-      // Enforce the ON DELETE actions declared in the schema. Delete paths
-      // still remove child rows explicitly (see server/utils/retention.ts) so
-      // behavior does not depend on this per-connection pragma.
-      await client.execute('PRAGMA foreign_keys=ON');
+      await configureSqliteConnections(client);
       db = sqliteDrizzle(client, { schema: sqliteSchema });
 
       migrationPromise = (async () => {
