@@ -297,6 +297,8 @@ export class HttpClient {
       });
 
       if (opts.form) {
+        // A file in the form that cannot be read fails the request.
+        opts.form.on('error', (error) => req.destroy(error));
         opts.form.pipe(req);
       } else if (opts.body !== undefined) {
         req.write(opts.body);

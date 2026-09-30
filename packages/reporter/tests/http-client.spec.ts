@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs';
 import * as http from 'node:http';
-import { HttpClient } from '../src/internal/transport/http-client.js';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { FormData, HttpClient } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
@@ -207,6 +210,30 @@ describe('HttpClient (against fake http.Server)', () => {
         await expect(client.postJSON('/api/slow', {}, null)).rejects.toThrow(/timed out after 100ms/);
       } finally {
         // Drop the hung connection and stop accepting new ones.
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
+  describe('postFormData', () => {
+    it('rejects when a file in the form cannot be read, without an uncaught exception', async () => {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      const uncaught: unknown[] = [];
+      const onUncaught = (error: unknown) => uncaught.push(error);
+      process.on('uncaughtException', onUncaught);
+      try {
+        const form = new FormData();
+        form.append('field', 'value');
+        form.append('file', fs.createReadStream(path.join(os.tmpdir(), `piwi-missing-${process.pid}.zip`)), {
+          filename: 'trace.zip',
+        });
+        const client = new HttpClient(url, new Logger(false));
+        await expect(client.postFormData('/api/upload', form, null)).rejects.toThrow(/ENOENT/);
+        expect(uncaught).toEqual([]);
+      } finally {
+        process.off('uncaughtException', onUncaught);
         (server as any).closeAllConnections?.();
         server.close();
         await new Promise<void>((r) => server.on('close', () => r()));
