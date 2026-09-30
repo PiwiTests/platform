@@ -458,7 +458,7 @@ describe('locator and frame helpers', () => {
   });
 
   test('stripAnsi removes SGR codes only', () => {
-    expect(stripAnsi('[31mred[39m text [0m')).toBe('red text ');
+    expect(stripAnsi('\x1b[31mred\x1b[39m text \x1b[0m')).toBe('red text ');
     expect(stripAnsi('plain')).toBe('plain');
   });
 });

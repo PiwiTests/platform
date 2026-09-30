@@ -74,7 +74,8 @@ describe('describeFailure — one line per shape', () => {
     for (const key of Object.keys(ERRORS) as ErrorKey[]) {
       const d = describeFailure(parsePlaywrightError(ERRORS[key]));
       expect(d.headline.length, key).toBeLessThanOrEqual(HEADLINE_MAX_CHARS);
-      expect(d.headline, key).not.toMatch(/\n|/);
+      // eslint-disable-next-line no-control-regex
+      expect(d.headline, key).not.toMatch(/\n|\x1b/);
       expect(d.headline, key).not.toMatch(/<(?:N|VALUE|URL|STR|UUID|HASH|EMAIL)>/);
       expect(d.parts.map((p) => p.text).join(''), key).toBe(d.headline);
       expect(d.headline.trim().length, key).toBeGreaterThan(0);
@@ -203,7 +204,7 @@ describe('describeFailure — length control', () => {
 
 describe('describeFailure — fallbacks', () => {
   test('an unknown shape returns its first line, trimmed and ANSI-free', () => {
-    const d = describeFailureText('[31m  Something odd happened  [0m\nmore\n');
+    const d = describeFailureText('\x1b[31m  Something odd happened  \x1b[0m\nmore\n');
     expect(d?.headline).toBe('Something odd happened');
   });
 

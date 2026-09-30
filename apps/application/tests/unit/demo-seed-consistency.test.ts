@@ -87,7 +87,7 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
   const corpus = [
     ...FAILURE_STORIES.flatMap((s) => s.failingCases.map((fc) => fc.error)),
     // Adversarial cases beyond the seeded stories.
-    '[31mError: expect(locator).toBeVisible() failed[39m',
+    '\x1b[31mError: expect(locator).toBeVisible() failed\x1b[39m',
     "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })\n    at tests/x.spec.ts:1:1",
     'Error: expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500\n    at tests/x.spec.ts:2:2',
     'Error: page.click: Target page, context or browser has been closed',

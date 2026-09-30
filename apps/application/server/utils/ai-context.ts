@@ -537,7 +537,7 @@ function runContextSection(rep: RepresentativeRow): string | null {
   }
 
   const sp = rep.testSuitePath;
-  if (sp) lines.push(`- Describe path: ${sp.split('').join(' › ')}`);
+  if (sp) lines.push(`- Describe path: ${sp.split('\x1f').join(' › ')}`);
 
   if (rep.workerIndex != null) {
     const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
