@@ -2,10 +2,14 @@ import { describe, test, expect } from 'vitest';
 import {
   buildJetbrainsHttpUrl,
   buildJetbrainsNavigateUrl,
+  buildPiwiPluginOpenUrl,
   buildVscodeUrl,
   encodePathForUrl,
+  isJetbrainsProduct,
+  jetbrainsPorts,
   joinWorkspacePath,
   parseLocation,
+  pickPiwiPluginAnswer,
   VSCODE_CLI_COMMANDS,
 } from '../../app/utils/ide-links';
 
@@ -73,7 +77,7 @@ describe('buildVscodeUrl', () => {
 });
 
 describe('buildJetbrainsNavigateUrl', () => {
-  test('puts line and column inside the path value', () => {
+  test('puts the 0-based line and column the IDE reads inside the path value', () => {
     expect(
       buildJetbrainsNavigateUrl({
         product: 'idea',
@@ -82,7 +86,13 @@ describe('buildJetbrainsNavigateUrl', () => {
         line: 12,
         column: 3,
       }),
-    ).toBe('jetbrains://idea/navigate/reference?project=my-app&path=tests/a.spec.ts:12:3');
+    ).toBe('jetbrains://idea/navigate/reference?project=my-app&path=tests/a.spec.ts:11:2');
+  });
+
+  test('sends line 1 as 0 and a line without a column alone', () => {
+    expect(buildJetbrainsNavigateUrl({ product: 'rider', projectName: 'Shop', relPath: 'a.ts', line: 1 })).toBe(
+      'jetbrains://rider/navigate/reference?project=Shop&path=a.ts:0',
+    );
   });
 
   test('encodes a project name with a space', () => {
@@ -103,6 +113,67 @@ describe('buildJetbrainsHttpUrl', () => {
     expect(buildJetbrainsHttpUrl({ port: 63350, path: 'tests/a.ts', line: 7 })).toBe(
       'http://localhost:63350/api/file/tests/a.ts:7',
     );
+  });
+});
+
+describe('jetbrainsPorts', () => {
+  test('asks the configured port first, then the rest of the range the IDEs take', () => {
+    const ports = jetbrainsPorts(63345);
+    expect(ports[0]).toBe(63345);
+    expect(ports).toHaveLength(20);
+    expect(ports.slice(1, 4)).toEqual([63342, 63343, 63344]);
+    expect(ports.at(-1)).toBe(63361);
+  });
+
+  test('adds a port outside the range, and drops an invalid one', () => {
+    expect(jetbrainsPorts(8080)).toHaveLength(21);
+    expect(jetbrainsPorts(Number.NaN)[0]).toBe(63342);
+  });
+});
+
+describe('buildPiwiPluginOpenUrl', () => {
+  test('sends the run path, the root, the 1-based position and the project as query parameters', () => {
+    expect(
+      buildPiwiPluginOpenUrl({
+        port: 63342,
+        path: 'tests\\checkout #1.spec.ts',
+        root: 'C:\\repo\\e2e',
+        line: 12,
+        column: 3,
+        project: 'Shop & Co',
+      }),
+    ).toBe(
+      'http://127.0.0.1:63342/api/piwi/open?file=tests%2Fcheckout+%231.spec.ts&root=C%3A%2Frepo%2Fe2e&line=12&column=3&project=Shop+%26+Co',
+    );
+  });
+
+  test('asks for a check, and leaves out what is unknown', () => {
+    expect(buildPiwiPluginOpenUrl({ port: 63343, path: 'a.ts', column: 4, check: true })).toBe(
+      'http://127.0.0.1:63343/api/piwi/open?file=a.ts&check=1',
+    );
+  });
+});
+
+describe('pickPiwiPluginAnswer', () => {
+  const webstorm = { port: 63342, answer: { found: true, ide: 'WebStorm' } };
+  const rider = { port: 63343, answer: { found: true, ide: 'Rider' } };
+  const idea = { port: 63344, answer: { found: false, ide: 'IntelliJ IDEA' } };
+  const none = { port: 63345, answer: null };
+
+  test('picks the configured product among the IDEs that hold the file', () => {
+    expect(pickPiwiPluginAnswer([webstorm, rider, idea, none], 'rider')).toBe(rider);
+  });
+
+  test('falls back to the first IDE that holds the file, and to null when none does', () => {
+    expect(pickPiwiPluginAnswer([idea, webstorm, rider], 'idea')).toBe(webstorm);
+    expect(pickPiwiPluginAnswer([idea, none], 'idea')).toBeNull();
+  });
+
+  test('matches a product tag to the IDE name', () => {
+    expect(isJetbrainsProduct('IntelliJ IDEA', 'idea')).toBe(true);
+    expect(isJetbrainsProduct('RustRover', 'rustrover')).toBe(true);
+    expect(isJetbrainsProduct('WebStorm', 'rider')).toBe(false);
+    expect(isJetbrainsProduct('Rider', '')).toBe(false);
   });
 });
 

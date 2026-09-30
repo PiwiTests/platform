@@ -20,6 +20,12 @@ with the project's Node.js interpreter.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
   `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
+- `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]`
+  on the built-in server, a `RestService`, so the platform's origin rules apply (a loopback page is trusted, the IDE
+  asks before trusting another origin). It looks the run's path up under the Playwright config folders, the project
+  folder and the content roots (`Glue.candidatePaths`), opens only a file inside an open project, and answers JSON
+  with CORS so the dashboard knows it opened. The dashboard side is `useOpenInIde` / `ide-links.ts` in
+  `apps/application`; a change to the query or the answer changes both.
 - `Protocol.kt` mirrors `packages/editor/src/protocol.ts` for lsp4j; `Glue.kt` is the pure half, tested without an IDE.
 - **Connect** (`PiwiConnect.kt`) asks the instance whether it needs a key, then signs in with the browser (the device
   authorization Piwi Picker uses, `/api/extension/connect`) or takes a pasted key, then the project. It runs from
