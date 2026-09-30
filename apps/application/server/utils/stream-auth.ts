@@ -38,7 +38,10 @@ export async function authorizeStreamToken(db: DB, runId: number, streamToken: s
   const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
   await validateAndReviveRun(db, runId, testRun, streamToken, isShardToken);
 
-  // Warm the cache so subsequent requests skip this SELECT
-  runEventBus.cacheRunState(runId, { streamToken, projectId: testRun.projectId, shardTokens });
+  // Warm the cache so subsequent requests skip this SELECT. The run's own token is
+  // cached, not the presented one, which may be a shard's.
+  if (testRun.streamToken) {
+    runEventBus.cacheRunState(runId, { streamToken: testRun.streamToken, projectId: testRun.projectId, shardTokens });
+  }
   return { projectId: testRun.projectId };
 }
