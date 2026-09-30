@@ -4,7 +4,6 @@ import {
   normalizeTestLocks,
   normalizeTestTags,
   parseTestMetadata,
-  priorityRank,
   sanitizeTestMetadata,
   MAX_TEST_LOCKS,
   MAX_TEST_LOCK_CHARS,
@@ -188,12 +187,5 @@ describe('isPiwiAnnotation', () => {
   test("counts the reporter's own annotations as Piwi's", () => {
     expect(isPiwiAnnotation('piwi-locator-suggestion')).toBe(true);
     expect(isPiwiAnnotation('piwis')).toBe(false);
-  });
-});
-
-describe('priorityRank', () => {
-  test('orders most severe first and sorts unknowns last', () => {
-    const sorted = ['low', 'critical', null, 'medium', 'high'].sort((a, b) => priorityRank(a) - priorityRank(b));
-    expect(sorted).toEqual(['critical', 'high', 'medium', 'low', null]);
   });
 });

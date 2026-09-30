@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { BUG_PHRASES, bugPhrases, roleWord, type BugPhrases } from '../src/bug-phrases';
+import { BUG_PHRASES, bugPhrases, type BugPhrases } from '../src/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   describeExpectation,
@@ -136,12 +136,6 @@ describe('the phrasebooks', () => {
     expect(bugPhrases('fr')).toBe(french);
     expect(bugPhrases('ja')).toBe(english);
     expect(bugPhrases(null)).toBe(english);
-  });
-
-  test('roleWord reads a phrasebook, English by default', () => {
-    expect(roleWord('combobox')).toBe('dropdown');
-    expect(roleWord('combobox', french)).toBe('liste déroulante');
-    expect(roleWord('made-up-role', french)).toBe('made-up-role');
   });
 });
 

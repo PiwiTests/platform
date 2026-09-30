@@ -404,14 +404,3 @@ export function elementMatchOutcome(
   if (fresh.length > 0) return { status: 'matched', fresh };
   return { status: 'no-match', fresh: null };
 }
-
-/**
- * Legacy boolean-shaped wrapper over {@link elementMatchOutcome}: fresh
- * locators when the element was confidently re-found, null otherwise.
- */
-export function elementMatchAlternatives(
-  fp: ElementFingerprint,
-  ariaSnapshot: string | null | undefined,
-): RankedLocator[] | null {
-  return elementMatchOutcome(fp, ariaSnapshot).fresh;
-}

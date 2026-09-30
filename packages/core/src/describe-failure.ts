@@ -693,12 +693,3 @@ export function stepHeadlineContext(
     failedIn: steps && steps.length > 0 ? failureHookContext(steps, error ?? null) : null,
   };
 }
-
-/** The headline as markdown: locators and values in code spans, the rest escaped. */
-export function headlineMarkdown(description: Pick<FailureDescription, 'parts'>): string {
-  return description.parts
-    .map((part) =>
-      part.kind === 'text' ? part.text.replace(/([\\`*_[\]<>])/g, '\\$1') : `\`${part.text.replace(/`/g, 'ˋ')}\``,
-    )
-    .join('');
-}

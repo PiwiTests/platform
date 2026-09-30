@@ -4,7 +4,6 @@ import {
   describeFailure,
   describeFailureText,
   formatTimeout,
-  headlineMarkdown,
   lastStepTitle,
   stepHeadlineContext,
   HEADLINE_MAX_CHARS,
@@ -244,12 +243,6 @@ describe('helpers', () => {
   test('lastStepTitle falls back to the last step of the test body, not the teardown', () => {
     const passedSteps = bodyFailure.steps.map(({ failed: _failed, error: _error, ...step }) => step);
     expect(lastStepTitle(passedSteps)).toBe('Fill "ada@example.com"');
-  });
-
-  test('headlineMarkdown puts locators and values in code spans and escapes the rest', () => {
-    const d = describeFailure(parsePlaywrightError(ERRORS.toHaveCount));
-    expect(headlineMarkdown(d)).toBe("Expected 26 rows, found 51 — `getByRole('row')` toHaveCount");
-    expect(headlineMarkdown({ parts: [{ kind: 'text', text: 'a_b*c' }] })).toBe('a\\_b\\*c');
   });
 });
 

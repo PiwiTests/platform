@@ -98,12 +98,6 @@ export const FLAKE_CONDITION_KINDS: readonly FlakeConditionKind[] = [
   'project',
 ];
 
-/** Conditions the capture fixtures apply inside the page. */
-export const PAGE_CONDITION_KINDS: readonly FlakeConditionKind[] = ['delay', 'fail', 'cpu', 'network'];
-
-/** Conditions that need a Chrome DevTools Protocol session, so Chromium only. */
-export const CHROMIUM_ONLY_CONDITION_KINDS: readonly FlakeConditionKind[] = ['cpu', 'network'];
-
 /** Conditions the command line applies through Playwright's arguments; flake mode only records them. */
 export const COMMAND_CONDITION_KINDS: readonly FlakeConditionKind[] = ['alongside', 'after', 'project'];
 

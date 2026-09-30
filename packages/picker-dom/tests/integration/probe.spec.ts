@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { probeElementAttrs } from '../../src/probe.js';
-import { domRoleOf, domHeadingLevel } from '../../src/dom-role.js';
+import { domRoleOf } from '../../src/dom-role.js';
 import {
   approximateAccessibleName,
   CAPTURED_ATTRIBUTES,
@@ -8,8 +8,8 @@ import {
   TAG_TO_ROLE,
 } from '@piwitests/core/locator-generation';
 
-test.describe('domRoleOf / domHeadingLevel', () => {
-  test('resolves explicit and implicit roles, and heading level', async ({ page }) => {
+test.describe('domRoleOf', () => {
+  test('resolves explicit and implicit roles', async ({ page }) => {
     await page.setContent(`<!doctype html><html><body>
       <button id="btn">X</button>
       <a id="link" href="/x">X</a>
@@ -17,11 +17,9 @@ test.describe('domRoleOf / domHeadingLevel', () => {
       <input id="text-input" />
       <input id="checkbox-input" type="checkbox" />
       <div id="explicit" role="tab">X</div>
-      <h2 id="heading">X</h2>
-      <div id="aria-heading" role="heading" aria-level="4">X</div>
     </body></html>`);
     const maps = {
-      tagRoles: { a: 'link', button: 'button', h2: 'heading' },
+      tagRoles: { a: 'link', button: 'button' },
       inputRoles: { text: 'textbox', checkbox: 'checkbox' },
     };
     const roleOf = (id: string) => page.locator(`#${id}`).evaluate(domRoleOf, maps);
@@ -32,10 +30,6 @@ test.describe('domRoleOf / domHeadingLevel', () => {
     expect(await roleOf('text-input')).toBe('textbox');
     expect(await roleOf('checkbox-input')).toBe('checkbox');
     expect(await roleOf('explicit')).toBe('tab');
-
-    expect(await page.locator('#heading').evaluate(domHeadingLevel)).toBe(2);
-    expect(await page.locator('#aria-heading').evaluate(domHeadingLevel)).toBe(4);
-    expect(await page.locator('#btn').evaluate(domHeadingLevel)).toBe(null);
   });
 });
 

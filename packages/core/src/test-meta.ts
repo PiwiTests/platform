@@ -200,9 +200,3 @@ export function isPiwiAnnotation(type: unknown): boolean {
   const lower = type.trim().toLowerCase();
   return lower.startsWith(PIWI_ANNOTATION_PREFIX) || lower.startsWith('piwi-');
 }
-
-/** Sort key for a priority, lowest number = most severe. Unknown sorts last. */
-export function priorityRank(priority: string | null | undefined): number {
-  const index = TEST_PRIORITIES.indexOf(priority as TestPriority);
-  return index === -1 ? TEST_PRIORITIES.length : index;
-}

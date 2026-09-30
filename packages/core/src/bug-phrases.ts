@@ -17,7 +17,6 @@ import { SPANISH_BUG_PHRASES } from './bug-phrases.es';
 import { PORTUGUESE_BUG_PHRASES } from './bug-phrases.pt';
 
 export { markdownCode } from './markdown-code';
-export { keyCombo } from './key-combo';
 
 export type NounGender = 'masculine' | 'feminine' | 'neuter';
 
@@ -153,9 +152,4 @@ export const BUG_PHRASES: Readonly<Record<string, BugPhrases>> = {
 export function bugPhrases(language: string | null | undefined = 'en'): BugPhrases {
   const primary = (language ?? 'en').split(/[-_]/)[0]!.toLowerCase();
   return BUG_PHRASES[primary] ?? ENGLISH_BUG_PHRASES;
-}
-
-/** A role in a language's everyday words, lower case; an unknown role is returned as it is. */
-export function roleWord(role: string, phrases: BugPhrases = ENGLISH_BUG_PHRASES): string {
-  return phrases.roles[role]?.noun ?? role;
 }

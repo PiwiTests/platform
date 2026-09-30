@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { BUG_PHRASES, bugPhrases, roleWord, type BugPhrases } from '../src/bug-phrases';
+import { BUG_PHRASES, bugPhrases, type BugPhrases } from '../src/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   describeExpectation,
@@ -116,7 +116,7 @@ describe('Spanish', () => {
     expect(bugPhrases('es')).toBe(spanish);
     expect(bugPhrases('es-419')).toBe(spanish);
     expect(bugPhrases('es_MX')).toBe(spanish);
-    expect(roleWord('combobox', spanish)).toBe('lista desplegable');
+    expect(spanish.roles.combobox?.noun).toBe('lista desplegable');
   });
 
   test('writes the steps of the plan’s table, page texts kept as they are', () => {

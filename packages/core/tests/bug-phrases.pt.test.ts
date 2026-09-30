@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { BUG_PHRASES, bugPhrases, roleWord } from '../src/bug-phrases';
+import { BUG_PHRASES, bugPhrases } from '../src/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   describeExpectation,
@@ -116,7 +116,7 @@ describe('Brazilian Portuguese', () => {
     expect(bugPhrases('pt-BR')).toBe(portuguese);
     expect(bugPhrases('pt_BR')).toBe(portuguese);
     expect(portuguese.language).toBe('pt-BR');
-    expect(roleWord('combobox', portuguese)).toBe('lista suspensa');
+    expect(portuguese.roles.combobox?.noun).toBe('lista suspensa');
   });
 
   test('writes the steps of the plan, the preposition contracted with the article', () => {

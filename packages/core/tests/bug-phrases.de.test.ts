@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { BUG_PHRASES, bugPhrases, roleWord, type BugPhrases } from '../src/bug-phrases';
+import { BUG_PHRASES, bugPhrases, type BugPhrases } from '../src/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   describeExpectation,
@@ -116,7 +116,7 @@ describe('German', () => {
   test('is the phrasebook of every German tag', () => {
     expect(bugPhrases('de')).toBe(german);
     expect(bugPhrases('de-AT')).toBe(german);
-    expect(roleWord('combobox', german)).toBe('Auswahlliste');
+    expect(german.roles.combobox?.noun).toBe('Auswahlliste');
   });
 
   test('writes the steps of the plan’s table, page texts kept as they are', () => {
