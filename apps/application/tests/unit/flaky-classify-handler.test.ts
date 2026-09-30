@@ -96,6 +96,39 @@ describe('classifyAndPersistFlakyRootCause', () => {
     expect(result.rootCause).toBe('network');
   });
 
+  test('reads the real failures behind more newer lab-run failures than it reads', async () => {
+    const start = Date.UTC(2026, 8, 1);
+    for (let i = 0; i < 3; i++) {
+      const runId = await addRun('passed');
+      await addAttempt(
+        runId,
+        0,
+        'failed',
+        'chromium',
+        'Error: connect ECONNREFUSED 127.0.0.1:3000',
+        new Date(start + i),
+      );
+      await addAttempt(runId, 1, 'passed', 'chromium', null, new Date(start + i));
+    }
+    // A flake experiment replays the test under an injected slowdown.
+    for (let i = 0; i < 120; i++) {
+      const [lab] = await db
+        .insert(schema.testRuns)
+        .values({
+          projectId: 1,
+          status: 'passed',
+          startTime: new Date(start + 1_000 + i),
+          metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'slow' } },
+        })
+        .returning({ id: schema.testRuns.id });
+      const at = new Date(start + 1_000 + i);
+      await addAttempt(lab!.id, 0, 'failed', 'chromium', 'TimeoutError: Timeout 5000ms exceeded', at);
+      await addAttempt(lab!.id, 1, 'passed', 'chromium', null, at);
+    }
+    const result = await classifyAndPersistFlakyRootCause(db as any, 1, 1);
+    expect(result.rootCause).toBe('network');
+  });
+
   test('stays other with no failed attempt', async () => {
     const runId = await addRun('passed');
     await addAttempt(runId, 0, 'passed', 'chromium');

@@ -189,7 +189,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
   // Lab runs replay a test with an injected fault or condition, so their executions never
   // appear in a test's history.
-  const rows = await db
+  return db
     .select({
       id: testRunsCases.id,
       runId: testRuns.id,
@@ -200,14 +200,12 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       attempts: testRunsCases.attempts,
       startTime: testRuns.startTime,
       runStatus: testRuns.status,
-      runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.testCaseId, testCaseId))
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
-  return rows.filter((r) => !isLabRun(r.runMetadata)).map(({ runMetadata: _runMetadata, ...row }) => row);
 }
 
 export async function getTestRunCase(

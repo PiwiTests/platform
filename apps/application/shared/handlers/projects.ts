@@ -15,7 +15,7 @@ import {
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
-import { isLabRun, notLabExecution, notLabRun } from './probes';
+import { notLabExecution, notLabRun } from './probes';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -911,18 +911,16 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const projRows: any[] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
   if (projRows.length === 0) throw new Error('Project not found');
 
+  // Lab runs (probes, flake experiments) inject faults and conditions, so their
+  // executions never count toward spec health.
   const recentRuns: any[] = await db
-    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
-
-  // Lab runs (probes, flake experiments) inject faults and conditions, so their
-  // executions never count toward spec health.
-  const runIds: number[] = recentRuns.filter((r: any) => !isLabRun(r.metadata)).map((r: any) => r.id);
-  if (runIds.length === 0) return { specs: [] };
+  const runIds: number[] = recentRuns.map((r: any) => r.id);
   const rows: any[] = await db
     .select({
       filePath: testCases.filePath,
@@ -1462,35 +1460,26 @@ export async function getProjectFlakyTestsWithVerified(
   // that branch. Otherwise, when the project's default branch is known, the
   // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
   // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently.
-  const runsConditions = [eq(testRuns.projectId, projectId)];
+  // project's health signal. Environment scopes independently. Lab runs
+  // (probes, flake experiments) inject faults and conditions, so their
+  // executions never enter the flaky leaderboard.
+  const runsConditions = [
+    eq(testRuns.projectId, projectId),
+    inArray(testRuns.status, TERMINAL_STATUSES),
+    notLabRun(testRuns.metadata),
+  ];
   if (environment) runsConditions.push(eq(testRuns.environment, environment));
   if (branch) {
     runsConditions.push(eq(testRuns.branch, branch));
   } else if (project.defaultBranch) {
     runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
   }
-  const recentRuns: any[] = await db
+  const filteredRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)
     .where(and(...runsConditions))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
-
-  if (recentRuns.length === 0) return { items: [], verifiedFixed: [] };
-
-  const runIds: number[] = recentRuns.map((r: any) => r.id);
-
-  // Re-fetch with status filter. Lab runs (probes, flake experiments) inject
-  // faults and conditions, so their executions
-  // never enter the flaky leaderboard.
-  const runsWithStatus: any[] = await db
-    .select({ id: testRuns.id, startTime: testRuns.startTime, status: testRuns.status, metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(inArray(testRuns.id, runIds));
-  const filteredRuns: any[] = runsWithStatus.filter(
-    (r: any) => TERMINAL_STATUSES.includes(r.status) && !isLabRun(r.metadata),
-  );
 
   if (filteredRuns.length === 0) return { items: [], verifiedFixed: [] };
   const filteredRunIds: number[] = filteredRuns.map((r: any) => r.id);
