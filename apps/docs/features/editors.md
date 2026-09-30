@@ -131,8 +131,9 @@ the one that paired receives.
 ## JetBrains IDEs
 
 The plugin starts the editor service with the project's Node.js interpreter (**Settings → Languages & Frameworks →
-Node.js**) when you open a file of the project. The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
-is drawn natively:
+Node.js**) once it finds a Playwright config within four folders of the project's (in Rider, the solution's) or of its
+Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP client shows warnings, quick fixes and hover in open
+files; the rest is native:
 
 - **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
   failures, since the IDE highlights open files only. Double-click
@@ -145,10 +146,5 @@ is drawn natively:
   Assistant → Model Context Protocol** or another agent. It runs the server through `mcp-remote`, with the key in its
   environment.
 - **[Open in IDE](./ide-integration)**: a path clicked in the dashboard opens at its line, with nothing to set.
-
-The tool window, the status bar item and the service appear once the plugin finds a Playwright config, down to four
-folder levels below the project's folder (in Rider, the solution's folder) or, when there is none there, below the root
-of its Git repository: a solution in `backend/` finds the tests in `e2e/`. After adding a config, **Tools → Piwi →
-Refresh** looks again.
 
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.
