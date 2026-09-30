@@ -96,7 +96,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         server.start()
         val url = "http://127.0.0.1:${server.address.port}"
         try {
-            assertTrue(PiwiInstance.needsKey(url))
+            assertEquals(PiwiInstance.Reached(url, needsKey = true), PiwiInstance.reach(url))
             val signIn = PiwiInstance.startSignIn(url, "WebStorm", "Linux")
             assertEquals("BCDF-GHJK", signIn.userCode)
             assertEquals(5, signIn.interval)
@@ -108,6 +108,38 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             server.stop(0)
         }
+    }
+
+    /**
+     * An instance on this machine answers on whichever loopback address it listens on: this one listens on
+     * 127.0.0.1 only, so `[::1]` is refused (or has no IPv6 at all) and Connect keeps the address that answered.
+     */
+    fun testReachesAnInstanceOnTheOtherLoopbackAddress() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            val bytes = """{"items":[{"id":7,"name":"Acme Mugs"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val port = server.address.port
+        try {
+            assertEquals(PiwiInstance.Reached("http://127.0.0.1:$port", false), PiwiInstance.reach("http://[::1]:$port"))
+            assertEquals(PiwiInstance.Reached("http://localhost:$port", false), PiwiInstance.reach("http://localhost:$port"))
+        } finally {
+            server.stop(0)
+        }
+        val refused = try {
+            PiwiInstance.reach("http://localhost:$port")
+            null
+        } catch (e: PiwiInstance.Unreachable) {
+            e
+        }
+        assertEquals(
+            "nothing answers at http://localhost:$port (nor at http://127.0.0.1:$port or http://[::1]:$port). " +
+                "Is the instance running, on that port?",
+            refused?.message,
+        )
     }
 
     fun testCopyTextCopiesTheAgentContext() {

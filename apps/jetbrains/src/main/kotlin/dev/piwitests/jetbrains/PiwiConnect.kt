@@ -33,7 +33,24 @@ object PiwiInstance {
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
 
+    /** For an instance on this machine: the IDE's proxy settings never apply to it. */
+    private val loopback: HttpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(10))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .proxy(HttpClient.Builder.NO_PROXY)
+        .build()
+
     class HttpStatus(val status: Int) : Exception("the instance answered $status")
+
+    /** No address of the instance answered. */
+    class Unreachable(tried: List<String>) : Exception(
+        "nothing answers at ${tried.first()}" +
+            (if (tried.size > 1) " (nor at ${tried.drop(1).joinToString(" or ")})" else "") +
+            ". Is the instance running, on that port?",
+    )
+
+    /** Where the instance answered, and whether it asks for a key. */
+    data class Reached(val url: String, val needsKey: Boolean)
 
     data class ProjectItem(val id: Int = 0, val name: String = "")
     private data class Menu(val items: List<ProjectItem>? = null)
@@ -51,14 +68,26 @@ object PiwiInstance {
     fun projects(url: String, key: String?): List<ProjectItem> =
         gson.fromJson(send(url, "/api/projects/menu", key, null), Menu::class.java)?.items.orEmpty()
 
-    /** Whether the instance asks for a key: it lists its projects to anyone when authentication is off. */
-    fun needsKey(url: String): Boolean =
-        try {
-            projects(url, null)
-            false
-        } catch (e: HttpStatus) {
-            if (e.status == 401 || e.status == 403) true else throw e
+    /**
+     * The instance's address and whether it asks for a key: it lists its projects to anyone when
+     * authentication is off. An instance on this machine is tried on every loopback address
+     * (`Glue.loopbackAlternatives`): a server started on `localhost` may listen on one of them only,
+     * `::1` on Windows, while Java connects to the first address the name resolves to.
+     */
+    fun reach(url: String): Reached {
+        val tried = Glue.loopbackAlternatives(url)
+        for (base in tried) {
+            try {
+                projects(base, null)
+                return Reached(base, false)
+            } catch (e: HttpStatus) {
+                if (e.status == 401 || e.status == 403) return Reached(base, true) else throw e
+            } catch (e: java.io.IOException) {
+                if (tried.size == 1 || e is java.net.http.HttpTimeoutException && e !is java.net.http.HttpConnectTimeoutException) throw e
+            }
         }
+        throw Unreachable(tried)
+    }
 
     fun startSignIn(url: String, editor: String, os: String): SignIn =
         gson.fromJson(send(url, "/api/extension/connect", null, gson.toJson(mapOf("editor" to editor, "os" to os))), SignIn::class.java)
@@ -70,7 +99,8 @@ object PiwiInstance {
         val request = HttpRequest.newBuilder(URI("$url$path")).timeout(Duration.ofSeconds(15))
         if (json == null) request.GET() else request.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(json))
         if (!key.isNullOrEmpty()) request.header("X-API-Key", key)
-        val response = http.send(request.build(), HttpResponse.BodyHandlers.ofString())
+        val client = if (Glue.isLoopback(url)) loopback else http
+        val response = client.send(request.build(), HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) throw HttpStatus(response.statusCode())
         return response.body()
     }
@@ -106,10 +136,13 @@ object PiwiConnectFlow {
                 Glue.ConnectTarget.OTHER -> Unit
             }
         }
-        val url = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
+        val typed = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
+        if (desktop != null && typed == desktop.url) return useDesktop(project, desktop)
+        val reached = request(project, "Reaching $typed…") { PiwiInstance.reach(typed) } ?: return false
+        // The address that answered: on this machine, it may be another loopback address than the one typed.
+        val url = reached.url
         if (desktop != null && url == desktop.url) return useDesktop(project, desktop)
-        val needsKey = request(project, "Reaching $url…") { PiwiInstance.needsKey(url) } ?: return false
-        val key = if (needsKey) askKey(project, url) ?: return false else null
+        val key = if (reached.needsKey) askKey(project, url) ?: return false else null
         val projects = request(project, "Listing the projects of $url…") { PiwiInstance.projects(url, key.orEmpty()) } ?: return false
         if (projects.isEmpty()) {
             service.saveCredentials(url, "", key)
@@ -307,6 +340,9 @@ object PiwiConnectFlow {
     private fun <T> failed(project: Project, url: String?, e: Exception): T? {
         val reason = when {
             e is PiwiInstance.HttpStatus && (e.status == 401 || e.status == 403) -> "the instance refused the key (${e.status})"
+            e is java.net.ConnectException -> "nothing answers there. Is the instance running, on that port?"
+            e is java.net.http.HttpConnectTimeoutException -> "no answer within 10 seconds"
+            e is java.net.UnknownHostException -> "unknown host ${e.message ?: ""}".trim()
             else -> e.message ?: e.javaClass.simpleName
         }
         Messages.showErrorDialog(project, "Could not connect${url?.let { " to $it" } ?: ""}: $reason", TITLE)

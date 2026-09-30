@@ -34,7 +34,9 @@ with the project's Node.js interpreter.
 - `Protocol.kt` mirrors `packages/editor/src/protocol.ts` for lsp4j; `Glue.kt` is the pure half, tested without an IDE.
 - **Connect** (`PiwiConnect.kt`) asks the instance whether it needs a key, then signs in with the browser (the device
   authorization Piwi Picker uses, `/api/extension/connect`) or takes a pasted key, then the project. When the desktop
-  app runs, it first lists the app beside the instance the project names (`Glue.connectChoices`). It runs from
+  app runs, it first lists the app beside the instance the project names (`Glue.connectChoices`). An instance on this
+  machine is tried on every loopback address (`Glue.loopbackAlternatives`: a server started on `localhost` may listen
+  on `::1` only), never through the IDE's proxy, and the address that answered is saved. It runs from
   **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and **Tools → Piwi**.
 - `PiwiProjectService.desktop()` asks the service (`piwi/desktop`) and, while the service has not started, reads the
   app's discovery file itself (`Glue.parseDesktopDiscovery`, `Glue.linkedDesktopProject`): Connect finds the app

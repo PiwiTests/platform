@@ -257,6 +257,22 @@ object Glue {
         return url.takeIf { it.matches(Regex("^https?://[^\\s/]+\\S*$")) }
     }
 
+    private val LOOPBACK_URL = Regex("^(https?://)(localhost|127\\.0\\.0\\.1|\\[::1])(?=[:/?#]|$)", RegexOption.IGNORE_CASE)
+
+    /** Whether an instance URL names this machine: `localhost`, `127.0.0.1` or `[::1]`. */
+    fun isLoopback(url: String): Boolean = LOOPBACK_URL.containsMatchIn(url)
+
+    /**
+     * The addresses to try for an instance URL: the URL, then, for one on this machine, the same URL
+     * on the other loopback addresses. A server started on `localhost` may listen on `::1` only, or on
+     * `127.0.0.1` only, whichever the system named first.
+     */
+    fun loopbackAlternatives(url: String): List<String> {
+        val match = LOOPBACK_URL.find(url) ?: return listOf(url)
+        val rest = url.substring(match.range.last + 1)
+        return (listOf(url) + listOf("127.0.0.1", "[::1]").map { match.groupValues[1] + it + rest }).distinct()
+    }
+
     /**
      * The password-safe entry of an instance's API key. The key is kept per instance: a
      * project's settings, which a repository may commit, never select another instance's key.

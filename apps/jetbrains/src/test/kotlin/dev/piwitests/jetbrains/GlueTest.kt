@@ -191,6 +191,20 @@ class GlueTest {
     }
 
     @Test
+    fun `an instance on this machine is tried on every loopback address`() {
+        assertEquals(
+            listOf("http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"),
+            Glue.loopbackAlternatives("http://localhost:3000"),
+        )
+        assertEquals(listOf("http://127.0.0.1:3000/piwi", "http://[::1]:3000/piwi"), Glue.loopbackAlternatives("http://127.0.0.1:3000/piwi"))
+        assertEquals(listOf("https://LOCALHOST", "https://127.0.0.1", "https://[::1]"), Glue.loopbackAlternatives("https://LOCALHOST"))
+        assertEquals(listOf("http://localhost.example.com:3000"), Glue.loopbackAlternatives("http://localhost.example.com:3000"))
+        assertEquals(listOf("https://piwi.corp"), Glue.loopbackAlternatives("https://piwi.corp"))
+        assertEquals(true, Glue.isLoopback("http://[::1]:3000"))
+        assertEquals(false, Glue.isLoopback("http://127.0.0.10:3000"))
+    }
+
+    @Test
     fun `the desktop app is named as a source`() {
         assertEquals("the Piwi desktop app", Glue.sourceLabel("desktop"))
     }

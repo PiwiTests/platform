@@ -62,6 +62,8 @@ the **Connect…** button of **Settings → Tools → Piwi**, in the **Piwi** to
 3. Pick the project.
 
 When the environment or a `.env` names another instance, Connect saves your choice and says which source comes first.
+In a JetBrains IDE, an instance on your machine is reached at `localhost`, `127.0.0.1` or `[::1]`, whichever it
+listens on: Connect tries all three and saves the one that answered.
 
 ## What is saved where
 
