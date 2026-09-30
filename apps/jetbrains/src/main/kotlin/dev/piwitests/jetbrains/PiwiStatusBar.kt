@@ -3,7 +3,6 @@ package dev.piwitests.jetbrains
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -70,7 +69,7 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
             Glue.StatusAction.NONE -> null
         }
         action?.let { ActionManager.getInstance().getAction(it) }?.let {
-            ActionUtil.invokeAction(it, event.component, ActionPlaces.STATUS_BAR_PLACE, event, null)
+            ActionManager.getInstance().tryToExecute(it, event, event.component, ActionPlaces.STATUS_BAR_PLACE, true)
         }
     }
 

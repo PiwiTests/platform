@@ -1,7 +1,6 @@
 package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
-import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.notification.NotificationAction
@@ -9,7 +8,6 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -21,6 +19,7 @@ import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDire
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.platform.lsp.api.LspServerManager
@@ -109,13 +108,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * the project folder (above `.idea` in Rider), the folder the IDE guesses and its base directories.
      */
     fun searchPlaywright(): Glue.PlaywrightSearch {
-        val folders = ReadAction.compute<List<String>, RuntimeException> {
+        val folders = ApplicationManager.getApplication().runReadAction(Computable {
             buildList {
                 project.basePath?.let { add(Glue.projectFolder(it)) }
                 project.guessProjectDir()?.takeIf { it.isInLocalFileSystem }?.let { add(it.path) }
                 project.getBaseDirectories().filter { it.isInLocalFileSystem }.mapTo(this) { it.path }
             }
-        }
+        })
         val home = System.getProperty("user.home")?.let { runCatching { Path.of(it) }.getOrNull() }
         return Glue.findPlaywright(folders.mapNotNull { runCatching { Path.of(it) }.getOrNull() }, home).also { playwright = it }
     }
@@ -306,7 +305,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     private fun credentialAttributes(serverUrl: String) =
-        CredentialAttributes(generateServiceName("Piwi", Glue.apiKeyEntry(serverUrl)))
+        PiwiCredentials.attributes(generateServiceName("Piwi", Glue.apiKeyEntry(serverUrl)))
 
     /**
      * Deletes the key shared by every instance, once: a project naming another
@@ -316,7 +315,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
         if (properties.getBoolean(SHARED_KEY_FORGOTTEN)) return
         properties.setValue(SHARED_KEY_FORGOTTEN, true)
-        PasswordSafe.instance.setPassword(CredentialAttributes(generateServiceName("Piwi", "apiKey")), null)
+        PasswordSafe.instance.setPassword(PiwiCredentials.attributes(generateServiceName("Piwi", "apiKey")), null)
     }
 
     companion object {
