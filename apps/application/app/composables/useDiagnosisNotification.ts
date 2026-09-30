@@ -1,18 +1,7 @@
-import type { FailureDiagnosis } from '~~/server/database/schema';
-
 const STORAGE_KEY = 'piwi-diagnosis-notifications';
-
-export interface DiagnosisNotificationPayload {
-  clusterId: number;
-  summary?: string | null;
-  rootCause?: string | null;
-  category?: string | null;
-  confidence?: string | null;
-}
 
 export function useDiagnosisNotification() {
   const permission = ref<NotificationPermission>('default');
-  const notifiedIds = new Set<number>();
 
   const enabled = ref(true);
 
@@ -39,39 +28,5 @@ export function useDiagnosisNotification() {
     localStorage.setItem(STORAGE_KEY, String(enabled.value));
   }
 
-  function notify(diagnosis: FailureDiagnosis, clusterId: number) {
-    notifyFromPayload({
-      clusterId,
-      summary: diagnosis.summary,
-      rootCause: diagnosis.rootCause,
-      category: diagnosis.category,
-      confidence: diagnosis.confidence,
-    });
-  }
-
-  function notifyFromPayload(payload: DiagnosisNotificationPayload) {
-    if (!active.value) return;
-    if (notifiedIds.has(payload.clusterId)) return;
-
-    const lines = [payload.summary || payload.rootCause];
-    if (payload.category) lines.push(`Category: ${payload.category}`);
-    if (payload.confidence) lines.push(`Confidence: ${payload.confidence}`);
-    const body = lines.join('\n');
-    if (!body) return;
-
-    const notification = new Notification('Piwi diagnosis complete', {
-      body,
-      tag: `diagnosis-${payload.clusterId}`,
-      icon: '/logo.svg',
-    });
-
-    notification.onclick = () => {
-      window.focus();
-      notification.close();
-    };
-
-    notifiedIds.add(payload.clusterId);
-  }
-
-  return { permission, supported, active, requestPermission, toggleEnabled, notify, notifyFromPayload };
+  return { permission, supported, active, requestPermission, toggleEnabled };
 }

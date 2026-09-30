@@ -87,7 +87,6 @@ function renderBody(data: NotificationEventData): string {
       lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);
       break;
     case 'diagnosis.completed':
-    case 'diagnosis-completed':
       lines.push(data.summary || data.rootCause || '');
       if (data.category) lines.push(`Category: ${data.category}`);
       if (data.confidence) lines.push(`Confidence: ${data.confidence}`);
@@ -109,11 +108,7 @@ function handleEvent(data: NotificationEventData) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible' && _windowFocused) return;
 
-  if (
-    (data.type === 'diagnosis.completed' || data.type === 'diagnosis-completed') &&
-    _diagnosisActive &&
-    !_diagnosisActive.value
-  ) {
+  if (data.type === 'diagnosis.completed' && _diagnosisActive && !_diagnosisActive.value) {
     return;
   }
 
@@ -219,9 +214,5 @@ export function useNotificationStream() {
     } else {
       connectLive();
     }
-  });
-
-  onScopeDispose(() => {
-    // Keep alive — this is app-wide, not per-component.
   });
 }

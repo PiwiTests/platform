@@ -264,21 +264,11 @@ export function fieldEnvVars(field: SettingFieldMeta): PiwiEnvVarName[] {
   return helpEnvVars(field.help);
 }
 
-/** Whether a field can be overridden by an env var. */
-export function fieldIsOverridable(field: SettingFieldMeta): boolean {
-  return fieldEnvVars(field).length > 0;
-}
-
 /** Union of all env vars across a page's fields (for banners / nav badges). */
 export function pageEnvVars(page: SettingsPageMeta): PiwiEnvVarName[] {
   const seen = new Set<PiwiEnvVarName>();
   for (const f of page.fields) for (const v of fieldEnvVars(f)) seen.add(v);
   return [...seen];
-}
-
-/** A page is "env-overridable" if any of its fields can be pinned by env. */
-export function pageIsOverridable(page: SettingsPageMeta): boolean {
-  return page.fields.some(fieldIsOverridable);
 }
 
 /** Look up a page by id. */
