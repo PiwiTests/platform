@@ -44,7 +44,7 @@ function envJiraCredentials(): { baseUrl: string; email: string; apiToken: strin
   return null;
 }
 
-function jiraFlavor(_baseUrl: string): 'cloud' {
+function jiraFlavor(): 'cloud' {
   // Cloud is the only supported flavor; the field exists so a later Server /
   // Data Center client selects itself from the connection.
   return 'cloud';
@@ -73,7 +73,7 @@ export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
       // Preserve any admin-set config (e.g. the webhook token) across a base-URL change.
       const config = {
         ...((existing.config as Record<string, unknown> | null) ?? {}),
-        flavor: jiraFlavor(env.baseUrl),
+        flavor: jiraFlavor(),
       };
       await db
         .update(integrationConnections)
@@ -87,7 +87,7 @@ export async function ensureEnvManagedConnections(db: DbClient): Promise<void> {
     provider: 'jira',
     name: ENV_JIRA_NAME,
     baseUrl: env.baseUrl,
-    config: { flavor: jiraFlavor(env.baseUrl) },
+    config: { flavor: jiraFlavor() },
     credentials: null,
     status: 'unverified',
     managedBy: 'env',
@@ -269,18 +269,6 @@ export function trackerForRow(row: IntegrationConnection): IssueTracker | null {
   const credentials = resolveTrackerCredentials(row);
   if (!credentials) return null;
   return JiraClient.fromCredentials(row.baseUrl, credentials, cloudIdFromConfig(row));
-}
-
-/**
- * The instance's tracker connection when there is exactly one — the fallback the
- * link resolver and (later) the create flow use when no project binding names a
- * connection. Returns null when there are none or several.
- */
-export async function defaultTrackerConnection(db: DbClient): Promise<IntegrationConnection | null> {
-  await ensureEnvManagedConnections(db);
-  const rows = await db.select().from(integrationConnections);
-  const trackers = rows.filter((r) => TRACKER_PROVIDERS.has(r.provider as IntegrationProviderName));
-  return trackers.length === 1 ? trackers[0]! : null;
 }
 
 /** Every tracker connection with usable credentials — what drives the UI entry points. */

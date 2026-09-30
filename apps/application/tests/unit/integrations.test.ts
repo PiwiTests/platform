@@ -20,7 +20,6 @@ const {
   listConnections,
   getConnectionRow,
   createTracker,
-  defaultTrackerConnection,
   ensureEnvManagedConnections,
   testConnection,
   credentialsForCheck,
@@ -313,26 +312,6 @@ describe('connections and link resolution', () => {
     delete process.env.PIWI_JIRA_EMAIL;
     delete process.env.PIWI_JIRA_API_TOKEN;
     expect(await listConnections(dbc)).toHaveLength(0);
-  });
-
-  test('defaultTrackerConnection returns the sole tracker, else null', async () => {
-    expect(await defaultTrackerConnection(dbc)).toBeNull();
-    const created = await createConnection(dbc, {
-      provider: 'jira',
-      name: 'Only',
-      baseUrl: 'https://only.atlassian.net',
-      credentials: { email: 'a@b.io', apiToken: 't' },
-    });
-    const sole = await defaultTrackerConnection(dbc);
-    expect(sole?.id).toBe(created.id);
-
-    await createConnection(dbc, {
-      provider: 'jira',
-      name: 'Second',
-      baseUrl: 'https://second.atlassian.net',
-      credentials: { email: 'a@b.io', apiToken: 't' },
-    });
-    expect(await defaultTrackerConnection(dbc)).toBeNull();
   });
 
   test('detectProviderWithConnections recognizes a self-hosted Jira once connected', async () => {
