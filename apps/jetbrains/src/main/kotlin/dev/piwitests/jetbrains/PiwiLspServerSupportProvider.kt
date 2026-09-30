@@ -6,6 +6,7 @@ import com.intellij.javascript.nodejs.interpreter.NodeJsInterpreterManager
 import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -21,8 +22,15 @@ import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
+import org.eclipse.lsp4j.services.LanguageServer
+import java.lang.ref.WeakReference
+import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Method
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Collections
+import java.util.WeakHashMap
+import java.util.concurrent.CompletableFuture
 
 /**
  * Starts the editor service for projects that hold a Playwright config, on the files it reads.
@@ -103,17 +111,56 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 }
 
+/** The lsp4j proxy of a running service, with the service's own requests; null until it runs. */
+fun LspServer.piwiServer(): PiwiLanguageServer? = Lsp4jAccess.server(this) as? PiwiLanguageServer
+
 /**
- * The lsp4j proxy of a running service. The accessor is declared on `LspServer` in
- * the oldest supported platform and on a super-interface of it in later ones, so it
- * is looked up at run time.
+ * The lsp4j proxy of a running service, found at run time: no one accessor is declared on every
+ * supported platform. Up to 2024.x, `getLsp4jServer()` hands it out; later platforms only pass it
+ * to a request, so it is taken from a `sendRequestSync` that sends nothing. Kept per server.
  */
-fun LspServer.piwiServer(): PiwiLanguageServer? =
-    try {
-        LspServer::class.java.getMethod("getLsp4jServer").invoke(this) as? PiwiLanguageServer
-    } catch (_: ReflectiveOperationException) {
-        null
+object Lsp4jAccess {
+    private val found = Collections.synchronizedMap(WeakHashMap<Any, WeakReference<LanguageServer>>())
+
+    fun server(client: Any): LanguageServer? {
+        found[client]?.get()?.let { return it }
+        val server = accessor(client) ?: fromRequest(client) ?: return null
+        found[client] = WeakReference(server)
+        return server
     }
+
+    private fun accessor(client: Any): LanguageServer? =
+        method(client, "getLsp4jServer")?.let { runCatching { it.invoke(client) as? LanguageServer }.getOrNull() }
+
+    private fun fromRequest(client: Any): LanguageServer? {
+        val send = method(client, "sendRequestSync", Int::class.javaPrimitiveType!!, Function1::class.java) ?: return null
+        var captured: LanguageServer? = null
+        val sender: (LanguageServer) -> CompletableFuture<Any?> = {
+            captured = it
+            CompletableFuture.completedFuture(null)
+        }
+        // The platform runs the sender only while the service runs, and waits for it.
+        try {
+            send.invoke(client, 1_000, sender)
+        } catch (e: InvocationTargetException) {
+            (e.cause as? ControlFlowException)?.let { throw it as Throwable }
+        } catch (_: ReflectiveOperationException) {
+        }
+        return captured
+    }
+
+    /** A public method of the client's interfaces: its implementation class is the platform's own. */
+    private fun method(client: Any, name: String, vararg parameters: Class<*>): Method? {
+        val interfaces = LinkedHashSet<Class<*>>()
+        fun collect(type: Class<*>?) {
+            if (type == null) return
+            for (i in type.interfaces) if (interfaces.add(i)) collect(i)
+            collect(type.superclass)
+        }
+        collect(client.javaClass)
+        return interfaces.firstNotNullOfOrNull { runCatching { it.getMethod(name, *parameters) }.getOrNull() }
+    }
+}
 
 /** Receives the service's notifications beside the protocol's. */
 class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val project: Project) : Lsp4jClient(handler) {

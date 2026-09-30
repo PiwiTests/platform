@@ -12,7 +12,10 @@ build copies the editor service's bundle (`packages/editor/dist/piwi-language-se
 with the project's Node.js interpreter.
 
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
-  hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`).
+  hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`). The plugin's
+  own requests go through the service's lsp4j proxy, which no single accessor reaches on every platform
+  (`getLsp4jServer()` up to 2024.x, removed by 2026.2): `Lsp4jAccess` looks it up at run time, else takes it from a
+  `sendRequestSync` that sends nothing. Every status, Code Vision and tool-window answer depends on it.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
   window from `piwi/failures` (the LSP client highlights open files only) with the connection from `piwi/status`, and
   the actions under **Tools → Piwi**. The service starts with the first supported file opened (2023.3 has no way to
