@@ -17,7 +17,9 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
 import java.awt.datatransfer.StringSelection
 
-private fun fileUri(file: VirtualFile): String = file.toNioPath().toUri().toString()
+/** The file's URI, or null for a file that is not on disk. */
+private fun fileUri(file: VirtualFile): String? =
+    if (file.isInLocalFileSystem) runCatching { file.toNioPath().toUri().toString() }.getOrNull() else null
 
 /** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
 class ConnectAction : AnAction() {
@@ -80,7 +82,7 @@ class RunTestsForFileAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        val uri = fileUri(file)
+        val uri = fileUri(file) ?: return
         ApplicationManager.getApplication().executeOnPooledThread {
             val tests = project.service<PiwiProjectService>().server()?.testsForFile(UriParams(uri))?.orNull()?.tests.orEmpty()
             if (tests.isEmpty()) PiwiCommands.notify(project, "No test reaches this file yet.")
@@ -98,7 +100,7 @@ class OpenInDashboardAction : AnAction() {
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = project.service<PiwiProjectService>()
-            val tests = file?.let { service.server()?.testsForFile(UriParams(fileUri(it)))?.orNull()?.tests }.orEmpty()
+            val tests = file?.let { fileUri(it) }?.let { service.server()?.testsForFile(UriParams(it))?.orNull()?.tests }.orEmpty()
             ApplicationManager.getApplication().invokeLater {
                 when {
                     tests.size == 1 -> tests[0].url?.let { BrowserUtil.browse(it) }

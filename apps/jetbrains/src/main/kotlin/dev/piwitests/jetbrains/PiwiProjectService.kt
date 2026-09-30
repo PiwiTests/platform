@@ -236,9 +236,9 @@ fun <T> CompletableFuture<T>.orNull(): T? =
     }
 
 /**
- * The answer of a service request made in a read action, or null when it failed or took longer
- * than `timeoutMillis`. The wait ends as soon as the platform cancels the read action, so a write
- * action, such as typing, never waits on the service.
+ * The answer of a service request, or null when it failed or took longer than `timeoutMillis`.
+ * The wait ends as soon as the platform cancels the caller: a read action gives way to a write
+ * action, such as typing, and a task with progress stops at its Cancel button.
  */
 fun <T> CompletableFuture<T>.awaitCancellably(timeoutMillis: Long): T? {
     val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
