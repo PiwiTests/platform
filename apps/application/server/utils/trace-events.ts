@@ -10,6 +10,7 @@
  */
 import { stripAnsi } from '#shared/error-parse';
 import { sameCodeLocation } from '#shared/step-tree';
+import { safeStorageSegment } from './sanitize-filename';
 
 /** A source position, as a trace records a call site or an error's stack frame. */
 export interface TraceSourceFrame {
@@ -196,8 +197,8 @@ function resourceBodyName(content: { _sha1?: unknown; _file?: unknown } | undefi
   // (`resources/<name>`) are keyed by.
   const ref =
     typeof content?._sha1 === 'string' ? content._sha1 : typeof content?._file === 'string' ? content._file : '';
-  const name = ref.replace(/^resources\//, '');
-  return name || null;
+  // The name addresses the storage pool, so it must be a single path segment.
+  return safeStorageSegment(ref.replace(/^resources\//, ''));
 }
 
 /**

@@ -7,14 +7,14 @@
  * copy-pasteable command) rather than only a shell string, and it works from a
  * resolved selection rather than a set of failures.
  */
-import { escapeGrep, toPosixPath } from '../retry-command';
+import { quoteShellArg, titleGrepPattern, toPosixPath } from '../retry-command';
 import type { MaterializedSelection, ResolvedTest, SelectionFormat } from './types';
 
 const MAX_CMD_LENGTH = 4096;
 
-/** Double-quote a token for the copy-pasteable command. */
-function quote(arg: string): string {
-  return '"' + arg.replace(/"/g, '\\"') + '"';
+/** Whether a token can be double-quoted safely in every shell; a file token that cannot is left out. */
+function isShellSafe(arg: string): boolean {
+  return quoteShellArg(arg) !== null;
 }
 
 function fileLineArgs(tests: ResolvedTest[]): string[] {
@@ -22,7 +22,7 @@ function fileLineArgs(tests: ResolvedTest[]): string[] {
   const args: string[] = [];
   for (const t of tests) {
     const token = t.line ? `${toPosixPath(t.filePath)}:${t.line}` : toPosixPath(t.filePath);
-    if (seen.has(token)) continue;
+    if (seen.has(token) || !isShellSafe(token)) continue;
     seen.add(token);
     args.push(token);
   }
@@ -34,7 +34,7 @@ function fileArgs(tests: ResolvedTest[]): string[] {
   const args: string[] = [];
   for (const t of tests) {
     const posix = toPosixPath(t.filePath);
-    if (seen.has(posix)) continue;
+    if (seen.has(posix) || !isShellSafe(posix)) continue;
     seen.add(posix);
     args.push(posix);
   }
@@ -42,19 +42,23 @@ function fileArgs(tests: ResolvedTest[]): string[] {
 }
 
 function grepArgs(tests: ResolvedTest[]): string[] {
-  const escaped = [...new Set(tests.map((t) => escapeGrep(t.title)))];
+  const escaped = [...new Set(tests.map((t) => titleGrepPattern(t.title)))];
   const pattern = escaped.length === 1 ? escaped[0]! : `(${escaped.join('|')})`;
   return ['--grep', pattern];
 }
 
-function buildArgs(tests: ResolvedTest[], format: Exclude<SelectionFormat, 'json'>): string[] {
-  if (format === 'grep') return grepArgs(tests);
-  if (format === 'files') return fileArgs(tests);
-  return fileLineArgs(tests);
+type CommandFormat = Exclude<SelectionFormat, 'json'>;
+
+function buildArgs(tests: ResolvedTest[], format: CommandFormat): { format: CommandFormat; args: string[] } {
+  if (format === 'grep') return { format, args: grepArgs(tests) };
+  const args = format === 'files' ? fileArgs(tests) : fileLineArgs(tests);
+  // Every file left out as unsafe: select by title rather than run the whole suite.
+  return args.length > 0 ? { format, args } : { format: 'grep', args: grepArgs(tests) };
 }
 
+/** Every token is shell-safe by construction: file tokens are filtered, grep patterns are built safe. */
 function render(base: string, args: string[]): string {
-  return `${base} ${args.map(quote).join(' ')}`;
+  return `${base} ${args.map((arg) => `"${arg}"`).join(' ')}`;
 }
 
 /**
@@ -73,19 +77,19 @@ export function materializeSelection(
 
   const base = `${opts?.pkgRunner ?? 'npx'} playwright test`;
 
-  let current: Exclude<SelectionFormat, 'json'> = format;
-  let args = buildArgs(tests, current);
-  let command = render(base, args);
+  let current: CommandFormat = format;
+  let built = buildArgs(tests, current);
+  let command = render(base, built.args);
 
   while (command.length > MAX_CMD_LENGTH && current !== 'files') {
     current = current === 'grep' ? 'args' : 'files';
-    args = buildArgs(tests, current);
-    command = render(base, args);
+    built = buildArgs(tests, current);
+    command = render(base, built.args);
   }
 
   if (command.length > MAX_CMD_LENGTH) {
     command = command.slice(0, MAX_CMD_LENGTH - 3) + '...';
   }
 
-  return { format: current, args, command };
+  return { format: built.format, args: built.args, command };
 }

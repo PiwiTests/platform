@@ -201,6 +201,22 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   return assembleConfig(diagnosis, research, null, autoDiagnose, 'settings');
 }
 
+const endpointOf = (baseUrl: string | null | undefined) => (baseUrl ?? '').trim().replace(/\/+$/, '').toLowerCase();
+
+/**
+ * `stored`'s API key when `provider` and `baseUrl` name the endpoint it was saved
+ * for, else ''. A stored or env-managed key is only ever sent to its own endpoint,
+ * so a form that points elsewhere must carry its own key.
+ */
+export function storedKeyFor(
+  stored: { provider?: string | null; baseUrl?: string | null; apiKey?: string | null } | null | undefined,
+  provider: string | null | undefined,
+  baseUrl: string | null | undefined,
+): string {
+  if (!stored?.apiKey || !provider || stored.provider !== provider) return '';
+  return endpointOf(stored.baseUrl) === endpointOf(baseUrl) ? stored.apiKey : '';
+}
+
 /** Resolved config for a given role, or null when that role is unconfigured. */
 export function resolveAiRole(config: AiConfig, role: AiModelRole): ResolvedAiRole | null {
   return config.roles[role];

@@ -1,10 +1,11 @@
-import { failureClusters, failureDiagnoses, testRunsCases } from '../../../../database/schema';
+import { failureClusters, failureDiagnoses } from '../../../../database/schema';
 import { queryFlag } from '../../../../utils/query-params';
 import { eq, and } from 'drizzle-orm';
 import {
   requireResolvedProjectAccess,
   requireRouteId,
   resolveClusterProjectId,
+  resolveTestRunCaseProjectId,
 } from '../../../../utils/project-access';
 import { resolveAiConfig } from '../../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../../utils/ai-provider';
@@ -33,7 +34,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const body = (await readBody(event).catch(() => null)) as {
     additionalContext?: string;
@@ -53,13 +54,9 @@ export default eventHandler(async (event) => {
 
   const isExecutionScope = body?.scope === 'execution' && Boolean(body?.executionId);
 
-  if (isExecutionScope) {
-    const [trc] = await db
-      .select({ id: testRunsCases.id })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.id, body!.executionId!))
-      .limit(1);
-    if (!trc) throw apiError({ statusCode: 404, message: 'Test run case not found' });
+  // The execution must belong to the cluster's project: its diagnosis and evidence are that project's.
+  if (isExecutionScope && (await resolveTestRunCaseProjectId(db, body!.executionId!)) !== projectId) {
+    throw apiError({ statusCode: 404, message: 'Test run case not found' });
   }
 
   if (isDiagnosisRunning(id)) {

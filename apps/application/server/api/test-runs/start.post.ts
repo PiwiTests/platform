@@ -7,7 +7,7 @@ import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken } from '../../utils/shard-tokens';
+import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 
@@ -154,10 +154,10 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { ...(sanitizeMetadata(body.metadata ?? {}) ?? {}), shardTokens: [streamToken] } as Record<
-          string,
-          unknown
-        >,
+        metadata: {
+          ...(sanitizeMetadata(body.metadata ?? {}) ?? {}),
+          shardTokens: [shardTokenDigest(streamToken)],
+        } as Record<string, unknown>,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,

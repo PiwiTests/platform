@@ -77,7 +77,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const hlTokens = (expr: string): string => {
     const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const re =
-      /('(?:\\.|[^'])*'|"(?:\\.|[^"])*")|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)(?=\s*:)|(true|false|null|\d+)|([{}(),.])/g;
+      /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)(?=\s*:)|(true|false|null|\d+)|([{}(),.])/g;
     let html = '';
     let last = 0;
     let m: RegExpExecArray | null;

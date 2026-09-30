@@ -1,6 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { describe, test, expect } from 'vitest';
-import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
+import { mkdtempSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildRetryCommand, buildRetryArgs, buildTitleGrepFlag } from '#shared/retry-command';
 
 const sampleCases = [
   { filePath: 'tests/login.spec.ts', title: 'should login', line: 10, projectName: 'chromium' },
@@ -102,12 +105,14 @@ describe('buildTitleGrepFlag', () => {
 
   test('escapes regex metacharacters in each title', () => {
     expect(buildTitleGrepFlag(['click .button (plus?)', 'list [a] + *b'])).toBe(
-      ' -g "click \\\\.button \\\\(plus\\\\?\\\\)|list \\\\[a\\\\] \\\\+ \\\\*b"',
+      ' -g "click \\.button \\(plus\\?\\)|list \\[a\\] \\+ \\*b"',
     );
   });
 
-  test('escapes the characters a double-quoted shell argument treats specially', () => {
-    expect(buildTitleGrepFlag(['say "hi"', 'cost `5`'])).toBe(' -g "say \\"hi\\"|cost \\`5\\`"');
+  test('matches a character any shell would expand as `.`, so none reaches the shell', () => {
+    expect(buildTitleGrepFlag(['say "hi"', 'cost `5` $x', 'a\\b %PATH% !x'])).toBe(
+      ' -g "say .hi.|cost .5. .x|a.b .PATH. .x"',
+    );
   });
 
   describe.skipIf(process.platform === 'win32')('through a POSIX shell', () => {
@@ -124,12 +129,42 @@ describe('buildTitleGrepFlag', () => {
       return out.split('\n').slice(0, -1);
     }
 
-    test.each(titles)('the shell hands Playwright a regex that matches only %s', (title) => {
-      const [flag, pattern] = shellArguments(buildTitleGrepFlag([title]));
-      expect(flag).toBe('-g');
-      const regex = new RegExp(pattern!);
-      expect(regex.test(title)).toBe(true);
-      expect(regex.test(title.replace(/[^A-Za-z0-9 ]/, 'Z'))).toBe(false);
+    test.each(titles)('the shell hands Playwright a regex that matches %s', (title) => {
+      const flag = buildTitleGrepFlag([title]);
+      const [name, pattern] = shellArguments(flag);
+      expect(name).toBe('-g');
+      // The shell passes the pattern through unchanged: nothing in it expands.
+      expect(pattern).toBe(flag.slice(' -g "'.length, -1));
+      expect(new RegExp(pattern!).test(title)).toBe(true);
+    });
+
+    test.each(titles.filter((t) => !/[$`"\\%!]/.test(t)))(
+      'a title without shell characters matches only %s',
+      (title) => {
+        const [, pattern] = shellArguments(buildTitleGrepFlag([title]));
+        expect(new RegExp(pattern!).test(title.replace(/[^A-Za-z0-9 ]/, 'Z'))).toBe(false);
+      },
+    );
+
+    test('command substitution in a title or a path never runs', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'piwi-retry-'));
+      const marker = join(dir, 'pwned');
+      const title = `checkout $(touch ${marker}) \`touch ${marker}\` works`;
+      shellArguments(buildTitleGrepFlag([title]));
+      const cmd = buildRetryCommand(
+        [
+          { filePath: `tests/$(touch ${marker}).spec.ts`, title, line: 3, projectName: `p$(touch ${marker})` },
+          { filePath: 'tests/ok.spec.ts', title: 'ok', line: 4, projectName: 'chromium' },
+        ],
+        { mode: 'file-line' },
+      );
+      execFileSync('sh', [
+        '-c',
+        `printf '%s\\n' ${cmd.replace(/^npx playwright test /, '').replace(/ && npx playwright test /g, ' ')}`,
+      ]);
+      expect(existsSync(marker)).toBe(false);
+      expect(cmd).toContain('"tests/ok.spec.ts:4"');
+      expect(cmd).not.toContain('$(');
     });
 
     test('a dot, a star and a bracket in a title match only themselves', () => {
@@ -146,5 +181,25 @@ describe('buildTitleGrepFlag', () => {
       for (const title of titles) expect(regex.test(title)).toBe(true);
       expect(regex.test('an unrelated title')).toBe(false);
     });
+  });
+});
+
+describe('unsafe file paths and project names are left out', () => {
+  test('a path a shell would expand is dropped, and the project flag with it', () => {
+    expect(buildRetryCommand([{ filePath: 'tests/`id`.spec.ts', title: 't', line: 1, projectName: 'chromium' }])).toBe(
+      '',
+    );
+    expect(buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: 'x$(id)' }])).toBe(
+      'npx playwright test "tests/a.spec.ts:1"',
+    );
+  });
+
+  test('CI re-run arguments keep only safe specs', () => {
+    expect(
+      buildRetryArgs([
+        { filePath: 'tests/$(id).spec.ts', title: 't', line: null },
+        { filePath: 'tests/b.spec.ts', title: 't', line: null },
+      ]),
+    ).toBe('"tests/b.spec.ts"');
   });
 });

@@ -10,7 +10,8 @@ import { dayKey } from '#shared/handlers/analytics/common';
 // run's `updatedAt` never goes quiet for long. This timeout must stay comfortably
 // above the heartbeat interval to tolerate transient network blips and the long
 // idle gaps of pre-heartbeat reporters (a single slow test with no events). If a
-// run is reaped early, the next event or heartbeat revives it (see revive-run.ts).
+// run is reaped early, the next event or heartbeat carrying its stream token revives it
+// (see revive-run.ts).
 export const STALE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes without activity → mark interrupted
 
 /**
@@ -29,7 +30,6 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promis
     .update(testRuns)
     .set({
       status: 'interrupted',
-      streamToken: null,
       updatedAt: new Date(now),
     })
     .where(

@@ -142,7 +142,7 @@ export function renderPasswordResetEmail(token: string): { html: string; text: s
 export function renderInviteEmail(token: string, invitedBy?: string): { html: string; text: string } {
   const url = `${siteUrl()}/reset-password?token=${encodeURIComponent(token)}&mode=invite`;
   const byLine = invitedBy
-    ? `<p style="margin:0 0 24px;color:#52525b;">You were invited by <strong>${invitedBy}</strong>. Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`
+    ? `<p style="margin:0 0 24px;color:#52525b;">You were invited by <strong>${escapeHtml(invitedBy)}</strong>. Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`
     : `<p style="margin:0 0 24px;color:#52525b;">Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`;
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">You've been invited to Piwi Dashboard</h2>
@@ -170,7 +170,7 @@ export function renderTestEmail(to: string): { html: string; text: string } {
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Test email</h2>
     <p style="margin:0 0 8px;color:#52525b;">This is a test email from Piwi Dashboard. If you received this, SMTP is configured correctly.</p>
-    <p style="margin:0;color:#a1a1aa;font-size:12px;">Sent to: ${to}</p>`;
+    <p style="margin:0;color:#a1a1aa;font-size:12px;">Sent to: ${escapeHtml(to)}</p>`;
   const { html } = emailLayout('Test email — Piwi Dashboard', body);
   const text = `Test email from Piwi Dashboard. SMTP is configured correctly. Sent to: ${to}`;
   return { html, text };
@@ -226,12 +226,12 @@ export function renderRunNotificationEmail(opts: {
   }
 
   const body = `
-    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">Test run ${opts.status}</h2>
+    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">Test run ${escapeHtml(opts.status)}</h2>
     <p style="margin:0 0 24px;color:#52525b;font-size:14px;">${escapeHtml(opts.projectName)}${opts.branch ? ` · ${escapeHtml(opts.branch)}` : ''}</p>
     <table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
       <tr>
         <td style="padding:8px 16px;background:#f4f4f5;border-radius:6px;font-size:14px;">
-          Status: <strong style="color:${statusColor};">${opts.status}</strong>
+          Status: <strong style="color:${statusColor};">${escapeHtml(opts.status)}</strong>
           &nbsp;·&nbsp; ${opts.totalTests} tests
           ${opts.failedTests > 0 ? `&nbsp;·&nbsp; <strong style="color:${FAILED_COLOR};">${opts.failedTests} failed</strong>` : ''}
         </td>

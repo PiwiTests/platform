@@ -13,6 +13,7 @@
 import type { FailureClusterDetail } from '~~/types/api';
 import type { ClusterState, ClusterStateAction } from '#shared/cluster-state';
 import { SNOOZE_OPTIONS, type SnoozeOption } from '#shared/inbox-queues';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   cluster: FailureClusterDetail;
@@ -213,7 +214,7 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
         color="neutral"
         variant="outline"
         icon="i-simple-icons-jira"
-        :to="knownIssue.url"
+        :to="safeHttpUrl(knownIssue.url) ?? undefined"
         target="_blank"
       >
         Open in Jira
