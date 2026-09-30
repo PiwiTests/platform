@@ -29,7 +29,8 @@ class TestCaseCache {
 
   /**
    * Return the id→cache map for the project, loading it from DB on first call.
-   * Concurrent callers for the same project share a single in-flight SELECT.
+   * Concurrent callers for the same project share a single in-flight SELECT; a
+   * failed SELECT is not kept, so the next call loads again.
    */
   async getProjectCache(db: DB, projectId: number): Promise<Map<string, number>> {
     const cached = this.cache.get(projectId);
@@ -54,9 +55,8 @@ class TestCaseCache {
         map.set(makeCacheKey(row.filePath, row.suitePath ?? '', row.title), row.id);
       }
       this.cache.set(projectId, map);
-      this.loading.delete(projectId);
       return map;
-    })();
+    })().finally(() => this.loading.delete(projectId));
 
     this.loading.set(projectId, load);
     return load;
