@@ -28,6 +28,7 @@ import {
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
+import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
@@ -771,32 +772,23 @@ export async function persistRunCases(
 
   // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
   // this idempotent across batch retries and same-test-different-browser rows.
-  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
-    id: testRunsCases.id,
-    status: testRunsCases.status,
-    testCaseId: testRunsCases.testCaseId,
-    retries: testRunsCases.retries,
-    browserName: testRunsCases.browserName,
-  });
+  const insertedCases = matchInsertedRunCases(
+    runCasesRows,
+    await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+      id: testRunsCases.id,
+      status: testRunsCases.status,
+      testCaseId: testRunsCases.testCaseId,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+    }),
+  );
 
-  // The unique (run, case, retries, browser) index makes this tuple unique
-  // within a batch, so each inserted row maps back to exactly one input entry
-  // even when deduplication skipped duplicates in between.
-  const tupleToInputIndex = new Map<string, number>();
-  runCasesRows.forEach((row, k) => {
-    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
-    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
-  });
-
-  const result = insertedCases.map((r) => {
-    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
-    return {
-      id: r.id,
-      status: r.status,
-      testCaseId: r.testCaseId,
-      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
-    };
-  });
+  const result = insertedCases.map((r) => ({
+    id: r.id,
+    status: r.status,
+    testCaseId: r.testCaseId,
+    inputIndex: rowInputIndices[r.rowIndex]!,
+  }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {

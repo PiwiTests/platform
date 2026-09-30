@@ -15,6 +15,18 @@ import { runUrl } from '../support/run-url.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 
 /**
+ * Largest `/events` request body the dashboard accepts (`MAX_EVENT_BATCH_BYTES`
+ * in its events route); a larger one is refused with 413.
+ */
+const SERVER_MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
+/** Room kept for the request envelope (`streamToken`, the `testCases` array) around the events. */
+const EVENT_ENVELOPE_BYTES = 1024;
+/** Byte budget for the events of one `/events` request, well under the server's limit. */
+const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
+/** Uploads in a row without any response after which `uploadRemaining` gives up. */
+const MAX_UPLOAD_CONNECTION_FAILURES = 3;
+
+/**
  * Manages the streaming protocol: queues events (begin / complete), flushes
  * them in batches, schedules retries on failure, and handles per-test-case
  * live file uploads.
@@ -50,6 +62,8 @@ export class StreamManager {
   private readonly heartbeatInterval = 15000;
   /** Tracks cases whose files have already been uploaded live, so `uploadRemaining` can skip them. */
   private readonly uploadedCaseFiles = new WeakSet<CollectedTestCase>();
+  /** Set when a test-result event left the live stream undelivered: too large to send, or still queued when the drain gave up. */
+  private resultsUndelivered = false;
 
   private _enabled = false;
   private _runId: number | null = null;
@@ -80,7 +94,7 @@ export class StreamManager {
 
   /**
    * @param httpClient  HTTP client for server communication.
-   * @param streamBuffer On-disk buffer for crash-safe event persistence.
+   * @param streamBuffer On-disk buffer for the run's undelivered events.
    * @param recovery    Crash-recovery handler for uploading stale payloads on startup.
    * @param uploader    Uploader for per-test-case file uploads.
    * @param fileHandler File-discovery helper for finding traces and attachments.
@@ -102,13 +116,15 @@ export class StreamManager {
   }
 
   /**
-   * Whether buffer pressure forced a test-result (`complete`) event to be
-   * dropped from the live stream. When true the submitter finalizes via the
-   * end-of-run batch (which re-sends the full run from the reporter's own
-   * memory) instead of `/finish`, so the dropped detail is not lost.
+   * Whether a test-result (`complete`) event never reached the server through
+   * the live stream: shed under buffer pressure, too large for any request the
+   * server accepts, or still undelivered when the drain gave up. When true the
+   * submitter finalizes via the end-of-run batch (which re-sends the full run
+   * from the reporter's own memory) instead of `/finish`, so the missing
+   * results are not lost.
    */
-  get bufferLostResults(): boolean {
-    return this.pendingEvents.lostResults || this.pendingBeginEvents.lostResults;
+  get lostResults(): boolean {
+    return this.resultsUndelivered || this.pendingEvents.lostResults || this.pendingBeginEvents.lostResults;
   }
 
   /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
@@ -229,6 +245,7 @@ export class StreamManager {
         this._runId = response.runId;
         this._token = response.streamToken;
         this._enabled = true;
+        this.streamBuffer.bindRun(response.runId);
         this.logger.info(`Streaming enabled. Run ID: ${response.runId}`);
         if (this.options.serverUrl) {
           this.logger.info(`Watch live: ${runUrl(this.options.serverUrl, response.runId)}`);
@@ -290,26 +307,83 @@ export class StreamManager {
     }
     if (this.pendingEvents.isEmpty || !this._enabled || !this._runId) return null;
 
-    const events = this.pendingEvents.takeAll();
     // Never rejects: failed events are re-queued so the retry timer or the
     // end-of-run drain can resend them (the server deduplicates).
-    const promise = this.httpClient
-      .postJSON(`/api/test-runs/${this._runId}/events`, { streamToken: this._token, testCases: events }, this._auth)
-      .then(
-        () => {
-          this.retryCount = 0;
-          this.lastActivityAt = Date.now();
-          return true;
-        },
-        (error) => {
-          this.pendingEvents.prepend(events);
-          this.scheduleRetry(errorMessage(error));
-          return false;
-        },
-      );
-
+    const promise = this.sendEvents(this.pendingEvents.takeAll());
     this.flushPromises.push(promise);
     return promise;
+  }
+
+  // Post the events in order, in requests of at most `MAX_EVENT_REQUEST_BYTES`.
+  // A request the server refuses as too large (413) is split in half and resent;
+  // a single event it still refuses leaves the live stream. On any other failure
+  // the unsent events go back to the head of the queue and a retry is scheduled.
+  private async sendEvents(events: StreamEvent[]): Promise<boolean> {
+    const chunks = this.chunkEvents(events);
+    while (chunks.length > 0) {
+      const chunk = chunks.shift()!;
+      try {
+        await this.httpClient.postJSON(
+          `/api/test-runs/${this._runId}/events`,
+          { streamToken: this._token, testCases: chunk },
+          this._auth,
+        );
+        this.retryCount = 0;
+        this.lastActivityAt = Date.now();
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 413) {
+          if (chunk.length > 1) {
+            const half = Math.ceil(chunk.length / 2);
+            chunks.unshift(chunk.slice(0, half), chunk.slice(half));
+          } else {
+            this.dropOversized(chunk[0]);
+          }
+          continue;
+        }
+        this.pendingEvents.prepend(chunk.concat(...chunks));
+        this.scheduleRetry(errorMessage(error));
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Group events into request-sized chunks, keeping their order. An event
+  // larger than any request the server accepts is dropped here.
+  private chunkEvents(events: StreamEvent[]): StreamEvent[][] {
+    const chunks: StreamEvent[][] = [];
+    let chunk: StreamEvent[] = [];
+    let chunkBytes = 0;
+    for (const event of events) {
+      const bytes = serializedBytes(event);
+      if (bytes > SERVER_MAX_EVENT_BATCH_BYTES - EVENT_ENVELOPE_BYTES) {
+        this.dropOversized(event);
+        continue;
+      }
+      if (chunk.length > 0 && chunkBytes + bytes > MAX_EVENT_REQUEST_BYTES) {
+        chunks.push(chunk);
+        chunk = [];
+        chunkBytes = 0;
+      }
+      chunk.push(event);
+      chunkBytes += bytes;
+    }
+    if (chunk.length > 0) chunks.push(chunk);
+    return chunks;
+  }
+
+  // Leave an event the server will not accept out of the live stream. A test
+  // result dropped this way sends the run through the end-of-run batch upload,
+  // which carries the full run (see `lostResults`).
+  private dropOversized(event: StreamEvent): void {
+    if (event.type === 'complete') {
+      this.resultsUndelivered = true;
+      this.logger.warn(
+        `The live result of "${event.title}" is too large for the dashboard's event stream — it is sent with the end-of-run upload instead.`,
+      );
+    } else {
+      this.logger.debug(`Dropped a ${event.type} event for "${event.title}" that is too large to stream.`);
+    }
   }
 
   private scheduleRetry(reason: string): void {
@@ -383,7 +457,7 @@ export class StreamManager {
     }
   }
 
-  /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off. */
+  /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off, until the HTTP client is closed. */
   async drain(): Promise<void> {
     try {
       await this._drain();
@@ -419,6 +493,7 @@ export class StreamManager {
           }
           return;
         }
+        if (this.httpClient.closed) break;
         if (attempt === 0) {
           this.logger.warn(
             `The dashboard has not accepted ${this.pendingEvents.length} live event(s) yet — retrying delivery before the final submit (this can take a few minutes)...`,
@@ -432,6 +507,7 @@ export class StreamManager {
 
       if (!this.pendingEvents.isEmpty) {
         const remaining = this.pendingEvents.takeAll();
+        if (remaining.some((event) => event.type === 'complete')) this.resultsUndelivered = true;
         this.logger.warn(
           `Could not deliver ${remaining.length} live event(s) to the dashboard — continuing with the end-of-run submit.`,
         );
@@ -442,6 +518,11 @@ export class StreamManager {
       // last delivery attempt, so nothing may stay scheduled past it.
       this.clearRetryTimer();
     }
+  }
+
+  /** Delete the run's on-disk event buffer. Called once the run's results reached the server. */
+  discardBuffered(): void {
+    this.streamBuffer.clear();
   }
 
   // Emit a single summary when buffer pressure shed events, so a full disk or a
@@ -524,7 +605,11 @@ export class StreamManager {
     this.liveUploadPromises.push(promise);
   }
 
-  /** Wait for all live uploads to settle, then upload files for any test cases that weren't uploaded live */
+  /**
+   * Wait for all live uploads to settle, then upload files for any test cases
+   * that weren't uploaded live. Stops after `MAX_UPLOAD_CONNECTION_FAILURES`
+   * uploads in a row got no response at all.
+   */
   async uploadRemaining(testCases: CollectedTestCase[]): Promise<void> {
     if (this.liveUploadPromises.length > 0) {
       await Promise.allSettled(this.liveUploadPromises);
@@ -532,6 +617,7 @@ export class StreamManager {
     }
     if (!this._enabled || !this._runId || !this._token) return;
 
+    let connectionFailures = 0;
     for (const tc of testCases) {
       if (this.uploadedCaseFiles.has(tc)) continue;
       try {
@@ -544,9 +630,27 @@ export class StreamManager {
           this._auth,
         );
         if (uploaded) this.uploadedCaseFiles.add(tc);
+        connectionFailures = 0;
       } catch (error) {
         this.logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
+        // Any HTTP status means the dashboard answered; only a request that got
+        // no response (refused, reset, timed out) counts toward giving up.
+        connectionFailures = error instanceof HttpError ? 0 : connectionFailures + 1;
+        if (connectionFailures >= MAX_UPLOAD_CONNECTION_FAILURES) {
+          this.logger.warn(`The dashboard stopped responding — skipping the file uploads of the remaining tests.`);
+          return;
+        }
       }
     }
+  }
+}
+
+// UTF-8 size of the event's JSON, the unit the server's limit counts, plus one
+// byte for the separating comma.
+function serializedBytes(event: StreamEvent): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(event)) + 1;
+  } catch {
+    return 0;
   }
 }

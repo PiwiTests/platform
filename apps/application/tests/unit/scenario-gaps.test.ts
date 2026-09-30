@@ -505,6 +505,42 @@ describe('computeScenarioGaps', () => {
     expect(list.map((r) => r.key)).toContain('GET /api/orders');
   });
 
+  test('lab runs newer than every real run leave the history window its real runs', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+    const [exec] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .returning({ id: schema.testRunsCases.id });
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'route',
+      key: 'GET /api/orders',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      lastSeenAt: new Date(++clock),
+    });
+    for (let i = 0; i < 6; i++) {
+      await db.insert(schema.networkRequests).values({
+        testRunsCaseId: exec!.id,
+        testRunId: 1,
+        method: 'GET',
+        normalizedUrl: '/api/orders',
+        status: 200,
+      });
+    }
+    // Twice as many probe runs since then as the window holds.
+    for (let id = 2; id <= 1 + 2 * gaps.HISTORY_WINDOW_RUNS; id++) {
+      await db
+        .insert(schema.testRuns)
+        .values({ id, projectId: 1, status: 'failed', startTime: new Date(++clock), metadata: { piwiProbe: true } });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(list.map((r) => r.key)).toEqual(['GET /api/orders']);
+  });
+
   test('two tests with opposite outcomes on one route do not flip the gap', async () => {
     await seedRun(1);
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });

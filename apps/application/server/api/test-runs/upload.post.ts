@@ -18,7 +18,9 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
+import { settleFinalizingRun } from '../../utils/finalizing-runs';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { resolveIngestProject } from '../../utils/ingest-project';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { formatBytes } from '#shared/utils/format-bytes';
@@ -229,34 +231,12 @@ export default eventHandler(async (event) => {
   }
 
   if (!project) {
-    // Get or create project by name
-    const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName));
-    project = existingProjects[0];
-
-    if (project) {
-      if (!scopeAllows(scope, project.id)) {
-        throw apiError({ statusCode: 403, message: 'No access to this project' });
-      }
-    } else {
-      if (scope !== 'all') {
-        throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-      }
-      const result = await db
-        .insert(projects)
-        .values({
-          name: projectName,
-          description: (testRunData.projectDescription as string | null | undefined) || null,
-        })
-        .returning();
-      project = result[0];
-    }
-  }
-
-  if (!project) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create or retrieve project',
-    });
+    project = await resolveIngestProject(
+      db,
+      scope,
+      projectName,
+      testRunData.projectDescription as string | null | undefined,
+    );
   }
 
   // Create project directory in storage
@@ -417,55 +397,25 @@ export default eventHandler(async (event) => {
     );
   }
 
-  // When attaching reports to an existing streaming run, either transition from
-  // finalizing to the actual final status, or re-notify if already finished.
+  // When attaching reports to an existing streaming run, either settle a
+  // finalizing run to the status its reporter sent to /finish, or re-notify if
+  // it already finished.
   if (attachingToExistingRun) {
-    const finalStatus =
-      existingRunStatus === 'finalizing' ? runEventBus.consumeFinalStatus(existingTestRunId!) : undefined;
+    const settledStatus =
+      existingRunStatus === 'finalizing'
+        ? await settleFinalizingRun(db, { id: testRun.id, projectId: testRun.projectId, metadata: existingRunMetadata })
+        : null;
 
-    if (finalStatus) {
-      // Run was in finalizing state — transition to actual final status now
-      await db.update(testRuns).set({ status: finalStatus }).where(eq(testRuns.id, existingTestRunId!));
-
-      // Notify per-run SSE subscribers that the run is fully finished
-      runEventBus.publish(existingTestRunId!, {
-        type: 'run-finished',
-        data: { status: finalStatus },
-      });
-
-      // Broadcast global run-finished event with the actual final status
-      runEventBus.publishGlobal({
-        type: 'run-finished',
-        runId: existingTestRunId!,
-        projectId: testRun.projectId,
-        status: finalStatus,
-      });
-
-      await runFinalizeSideEffects(db, existingTestRunId!, {
-        projectId: testRun.projectId,
-        metadata: existingRunMetadata,
-      });
-
-      // Cleanup event bus for this run
-      runEventBus.cleanup(existingTestRunId!);
-    } else if (existingRunStatus === 'finalizing') {
-      // Server restarted between finish and upload — final status map was lost.
-      // Set a temporary "failed" status so the run doesn't stay finalizing forever.
-      console.warn(`[Upload] Run #${existingTestRunId} was finalizing but final status not found; marking as failed`);
-      await db.update(testRuns).set({ status: 'failed' }).where(eq(testRuns.id, existingTestRunId!));
-      runEventBus.publishGlobal({
-        type: 'run-finished',
-        runId: existingTestRunId!,
-        projectId: testRun.projectId,
-        status: 'failed',
-      });
-    } else {
-      // Run already had a final status — just re-notify for dashboard refresh
+    if (!settledStatus) {
+      // Run already had a final status — just re-notify for dashboard refresh.
+      // Re-read it: the stale-run sweep may have settled the run while the
+      // reports were being stored.
+      const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, testRun.id));
       runEventBus.publishGlobal({
         type: 'run-finished',
         runId: testRun.id,
         projectId: testRun.projectId,
-        status: existingRunStatus!,
+        status: current?.status ?? existingRunStatus!,
       });
     }
   }
@@ -528,7 +478,10 @@ export default eventHandler(async (event) => {
       };
     });
 
+    // Traces and attachments are keyed by the index of their case in the
+    // upload; a duplicate case the insert skipped has no execution to link to.
     const insertedRunCases = await persistRunCases(db, project.id, testRun.id, cases);
+    const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
     // Store trace files linked to their test run case, with content-addressed deduplication.
     // traceHashes may contain entries for indices where no file was uploaded (reporter
@@ -538,10 +491,9 @@ export default eventHandler(async (event) => {
     // Execution rows that got a trace this upload — evidence is derived from
     // them once all files are stored.
     const tracedCaseIds: number[] = [];
-    if (insertedRunCases.length > 0 && allTraceIndices.size > 0) {
+    if (executionByIndex.size > 0 && allTraceIndices.size > 0) {
       for (const index of allTraceIndices) {
-        if (index < 0 || index >= insertedRunCases.length) continue;
-        const inserted = insertedRunCases[index];
+        const inserted = executionByIndex.get(index);
         if (!inserted?.id) continue;
         const testRunsCaseId = inserted.id;
         const traceFile = traceFiles.get(index);
@@ -600,10 +552,9 @@ export default eventHandler(async (event) => {
     }
 
     // Store non-trace attachments (screenshots, videos, custom files) linked to test run cases
-    if (insertedRunCases.length > 0 && attachmentMeta.size > 0) {
+    if (executionByIndex.size > 0 && attachmentMeta.size > 0) {
       for (const [index, metaList] of attachmentMeta) {
-        if (index < 0 || index >= insertedRunCases.length) continue;
-        const inserted = insertedRunCases[index];
+        const inserted = executionByIndex.get(index);
         if (!inserted?.id) continue;
         const testRunsCaseId = inserted.id;
         const filesList = attachmentFiles.get(index) || [];

@@ -14,7 +14,7 @@ import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '..
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
-import { detectCiRunLabel } from '../internal/support/ci.js';
+import { resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
@@ -84,8 +84,8 @@ export class PiwiDashboardReporter {
     string,
     Array<{ retry: number; status: string; duration: number; startedAt: number | null }>
   >();
-  private instanceId: string;
-  private runLabel: string | null = null;
+  /** Derived in `onBegin`, once the shard is known. */
+  private instanceId = '';
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
@@ -120,8 +120,6 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
-    this.runLabel = this.options.runLabel || detectCiRunLabel();
-    this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
 
     const logger = new Logger(this.options.verbose ?? false);
     this.logger = logger;
@@ -250,6 +248,10 @@ export class PiwiDashboardReporter {
     if (this.shardInfo) {
       this.logger.info(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
+    this.instanceId = computeInstanceId(
+      this.options.projectName!,
+      resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
+    );
 
     this.streamManager?.start(
       this.startTime,

@@ -316,18 +316,21 @@ const RECENT_FIELDS = {
 };
 
 export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
+  if (scope !== 'all' && scope.size === 0) return [];
+  // Filtered before the limit, so runs of other projects never crowd out the caller's.
+  const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
   const [activeRuns, recentRuns] = await Promise.all([
     db
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))))
+      .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), inScope))
       .orderBy(desc(testRuns.startTime)),
     db
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.metadata)))
+      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.metadata), inScope))
       .orderBy(desc(testRuns.startTime))
       .limit(30),
   ]);
@@ -340,9 +343,7 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
       result.push(run);
     }
   }
-  if (scope === 'all') return result;
-  if (scope.size === 0) return [];
-  return result.filter((run) => scope.has(run.projectId));
+  return result;
 }
 
 /**

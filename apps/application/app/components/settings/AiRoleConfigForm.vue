@@ -141,7 +141,7 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
             !canStoreSecrets && !disabled
               ? 'Needs PIWI_SECRET_KEY set on the server to be stored'
               : hasApiKey
-                ? 'Leave empty to keep the stored key, clear and save to remove it'
+                ? 'Leave empty to keep the stored key, or enter a new value to replace it'
                 : 'Required for Anthropic; optional for local OpenAI-compatible servers'
           "
         >

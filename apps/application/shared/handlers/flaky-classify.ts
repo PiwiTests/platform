@@ -13,7 +13,7 @@ import { testCases, testRunsCases, testRuns, networkRequests } from '../../serve
 import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { getAttemptDiff } from './test-cases';
-import { isLabRun } from './probes';
+import { notLabRun } from './probes';
 import type { DrizzleDB } from './db';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
@@ -61,14 +61,18 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
         error: testRunsCases.error,
         steps: testRunsCases.steps,
         browser: testRunsCases.browser,
-        runMetadata: testRuns.metadata,
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(and(eq(testRunsCases.testCaseId, testCaseId), inArray(testRunsCases.status, statuses)))
+      .where(
+        and(
+          eq(testRunsCases.testCaseId, testCaseId),
+          inArray(testRunsCases.status, statuses),
+          notLabRun(testRuns.metadata),
+        ),
+      )
       .orderBy(desc(testRunsCases.createdAt))
-      .limit(RECENT_ATTEMPTS)
-      .then((rows) => rows.filter((r) => !isLabRun(r.runMetadata)));
+      .limit(RECENT_ATTEMPTS);
   const recentFailures = await recentAttempts([...FAILED_STATUS_KEYS]);
 
   if (recentFailures.length === 0) return 'other';
@@ -120,17 +124,20 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
   // The sharpest network signal: a recent flaky execution whose failing attempt
   // had a request that failed (or 5xx'd) and the passing attempt did not.
   let attemptDiffNetworkVotes = 0;
-  const flakyExecutions = (
-    await db
-      .select({ id: testRunsCases.id, runMetadata: testRuns.metadata })
-      .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(
-        and(eq(testRunsCases.testCaseId, testCaseId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)),
-      )
-      .orderBy(desc(testRunsCases.createdAt))
-      .limit(ATTEMPT_DIFF_SAMPLE)
-  ).filter((r) => !isLabRun(r.runMetadata));
+  const flakyExecutions = await db
+    .select({ id: testRunsCases.id })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(
+      and(
+        eq(testRunsCases.testCaseId, testCaseId),
+        eq(testRunsCases.status, 'passed'),
+        gt(testRunsCases.retries, 0),
+        notLabRun(testRuns.metadata),
+      ),
+    )
+    .orderBy(desc(testRunsCases.createdAt))
+    .limit(ATTEMPT_DIFF_SAMPLE);
   for (const exec of flakyExecutions) {
     const diff = await getAttemptDiff(db, exec.id);
     if (diff.differences.some((d) => d.kind === 'network' && d.only === 'failing')) {

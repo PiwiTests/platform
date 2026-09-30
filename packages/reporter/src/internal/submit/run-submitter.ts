@@ -14,6 +14,9 @@ import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../suppo
 import type { FailureLinks } from '../support/failure-links.js';
 import type { CollectedTestCase, SetupStep, FilterDetails } from '../../types.js';
 
+/** Longest delay `setTimeout` supports; a larger one fires at once. */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
 /**
  * Result of one rung of the submit ladder. `done` stops the ladder (the run
  * landed, or the last rung was reached); `output` carries the run identity to
@@ -80,8 +83,33 @@ export class RunSubmitter {
     private readonly failureLinks: FailureLinks | null = null,
   ) {}
 
-  /** Run the fallback ladder for a completed test run. */
+  /**
+   * Run the fallback ladder for a completed test run, within the
+   * `submitTimeout` budget. When the budget runs out, every request in flight
+   * and every later one fails, so the ladder falls through to saving the
+   * recovery copy.
+   */
   async submit(run: CollectedRun, result: FullResult): Promise<void> {
+    const budgetMs = run.options.submitTimeout ?? 0;
+    const timer =
+      budgetMs > 0 && Number.isFinite(budgetMs)
+        ? setTimeout(() => this.expireBudget(budgetMs), Math.min(budgetMs, MAX_TIMER_DELAY_MS))
+        : null;
+    try {
+      await this.submitRun(run, result);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private expireBudget(budgetMs: number): void {
+    this.logger.warn(
+      `The dashboard did not take the run within ${Math.round(budgetMs / 1000)}s (submitTimeout) — stopping the upload and saving the results locally.`,
+    );
+    this.httpClient.close(`the end-of-run time budget (submitTimeout: ${budgetMs} ms) ran out`);
+  }
+
+  private async submitRun(run: CollectedRun, result: FullResult): Promise<void> {
     const endTime = new Date().toISOString();
     const duration = new Date(endTime).getTime() - new Date(run.startTime!).getTime();
 
@@ -133,15 +161,17 @@ export class RunSubmitter {
 
     let outcome: SubmitOutcome = { done: false, output: null };
 
-    // When buffer pressure forced test-result events out of the live stream, the
-    // server is missing that detail; finalizing with `/finish` would lock it in.
-    // Fall through to the batch upload, which re-sends the full run from the
-    // reporter's own in-memory collection, so the dropped detail is recovered.
-    if (sm?.enabled && sm?.runId != null && !sm.bufferLostResults) {
+    // When test-result events never reached the server through the live stream,
+    // the server is missing that detail; finalizing with `/finish` would lock it
+    // in. Fall through to the batch upload, which re-sends the full run from the
+    // reporter's own in-memory collection, so the missing detail is recovered.
+    if (sm?.enabled && sm?.runId != null && !sm.lostResults) {
       outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
     }
 
-    if (!outcome.done && (this.hasReports(run) || run.options.uploadTraces)) {
+    // Once the time budget closed the client, the multipart upload is skipped:
+    // the JSON rung below fails at once and saves the recovery copy.
+    if (!outcome.done && !this.httpClient.closed && (this.hasReports(run) || run.options.uploadTraces)) {
       outcome = await this.tryUploadWithFiles(run, overallStatus, duration, auth);
     }
 
@@ -259,7 +289,7 @@ export class RunSubmitter {
       await this.httpClient.postJSON(`/api/test-runs/${sm.runId}/finish`, finishBody, auth);
 
       this.logger.info(`Successfully finalized streaming run #${sm.runId}`);
-      this.recovery.clear();
+      this.dropLocalCopies();
 
       if (this.hasReports(run)) {
         try {
@@ -291,7 +321,7 @@ export class RunSubmitter {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
       const response = await this.uploader.uploadWithFiles(payload, this.reportOptions(run), auth);
-      this.recovery.clear();
+      this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) {
@@ -314,7 +344,7 @@ export class RunSubmitter {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
       const response = await this.uploader.uploadJSON(payload, auth);
-      this.recovery.clear();
+      this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       // If the server returned 401 and no auth was configured, this is a
@@ -333,6 +363,12 @@ export class RunSubmitter {
       // The ladder is exhausted; nothing to surface to CI.
       return { done: true, output: null };
     }
+  }
+
+  /** The run reached the server: drop the recovery copy and the run's buffered live events. */
+  private dropLocalCopies(): void {
+    this.recovery.clear();
+    this.streamManager?.discardBuffered();
   }
 
   /**

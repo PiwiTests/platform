@@ -1065,10 +1065,10 @@ export const notificationDeliveries = pgTable(
     event: text('event').notNull(),
     payload: jsonb('payload'),
     dedupeKey: text('dedupe_key'), // e.g. `${event}:${runId}:${channelId}` — prevents double-send
-    status: text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'sent' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     error: text('error'),
-    scheduledFor: timestamp('scheduled_for', { mode: 'date' }), // digest batching / backoff
+    scheduledFor: timestamp('scheduled_for', { mode: 'date' }), // digest batching / backoff / claim lease
     sentAt: timestamp('sent_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -1097,7 +1097,7 @@ export const healActions = pgTable(
     runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     dedupeKey: text('dedupe_key').notNull(),
     kind: text('kind').notNull().default('open-pr'),
-    status: text('status').notNull().default('pending'), // 'pending' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     payload: jsonb('payload').notNull(),
     result: jsonb('result'),
@@ -1174,7 +1174,7 @@ export const integrationActions = pgTable(
     entityType: text('entity_type').notNull(), // 'failure_cluster' | 'test_runs_case' | 'test_case' | 'test_run'
     entityId: integer('entity_id').notNull(),
     dedupeKey: text('dedupe_key').notNull(),
-    status: text('status').notNull().default('pending'), // 'pending' | 'done' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'done' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     scheduledFor: timestamp('scheduled_for', { mode: 'date' }),
     error: text('error'),

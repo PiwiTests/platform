@@ -79,10 +79,16 @@ const props = defineProps<{
 }>();
 
 // The axis only exists for a failure; a passing execution reads its steps off the
-// prop and never needs the timeline build.
-const { data } = await useFetch<FailureTimeline>(`/api/test-run-cases/${props.testRunsCaseId}/timeline`, {
-  immediate: props.hasError !== false,
-});
+// prop and never needs the timeline build. The cluster page swaps the execution in
+// place, so a new one refetches (or clears) the axis.
+const { data, execute, clear } = await useFetch<FailureTimeline>(
+  () => `/api/test-run-cases/${props.testRunsCaseId}/timeline`,
+  { immediate: props.hasError !== false, watch: false },
+);
+watch(
+  () => [props.testRunsCaseId, props.hasError] as const,
+  ([, hasError]) => (hasError !== false ? void execute() : clear()),
+);
 
 const locator = useClusterSectionLocator();
 

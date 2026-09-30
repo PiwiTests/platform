@@ -196,6 +196,9 @@ export default eventHandler(async (event) => {
   }
 
   const insights = await computeRunInsights(db, id).catch(() => null);
+  const caseIdByExecution = new Map(caseRows.map((row) => [row.id, row.testCaseId]));
+  const notQuarantined = (entry: { executionId: number }) =>
+    !quarantined.has(caseIdByExecution.get(entry.executionId) ?? -1);
 
   const newClusters = await db
     .select({ id: failureClusters.id })
@@ -211,8 +214,8 @@ export default eventHandler(async (event) => {
     status: run.status,
     totalTests: run.totalTests,
     failedTests: countedFailures,
-    newRegressions: insights?.newRegressions.length ?? 0,
-    newFlaky: insights?.newFlaky.length ?? 0,
+    newRegressions: insights?.newRegressions.filter(notQuarantined).length ?? 0,
+    newFlaky: insights?.newFlaky.filter(notQuarantined).length ?? 0,
     newClusters: newClusters.length,
     failingByTag,
     unmatchedTags,

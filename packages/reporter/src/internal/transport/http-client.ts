@@ -60,6 +60,11 @@ interface HttpRequestOptions {
  * the single `form-data` runtime dependency — no HTTP client library.
  */
 export class HttpClient {
+  /** Requests in flight, so `close` can abort them. */
+  private readonly inFlight = new Set<http.ClientRequest>();
+  /** Set by `close`: every later request fails with this reason. */
+  private closedReason: string | null = null;
+
   /**
    * @param serverUrl Base URL of the Piwi Dashboard server (e.g. `http://localhost:3000`).
    * @param logger    Prefixed logger for verbose diagnostics.
@@ -104,6 +109,18 @@ export class HttpClient {
   /** Base URL of the Piwi Dashboard server this client talks to (used to print run links). */
   get baseUrl(): string {
     return this.serverUrl;
+  }
+
+  /** Whether `close` was called. */
+  get closed(): boolean {
+    return this.closedReason !== null;
+  }
+
+  /** Abort every request in flight and fail every later one with `reason`. */
+  close(reason: string): void {
+    this.closedReason = reason;
+    for (const req of this.inFlight) req.destroy(new Error(reason));
+    this.inFlight.clear();
   }
 
   /**
@@ -236,6 +253,10 @@ export class HttpClient {
   /** Unified request core: transport, headers, auth, response accumulation, timeout. */
   private request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
+      if (this.closedReason !== null) {
+        reject(new Error(this.closedReason));
+        return;
+      }
       const url = new URL(pathname, this.serverUrl);
       const transport = url.protocol === 'https:' ? https : http;
       const headers: Record<string, string | number> = { ...opts.headers };
@@ -268,12 +289,16 @@ export class HttpClient {
         },
       );
 
+      this.inFlight.add(req);
+      req.on('close', () => this.inFlight.delete(req));
       req.on('error', reject);
       req.setTimeout(this.timeout, () => {
         req.destroy(new Error(`Request to ${pathname} timed out after ${this.timeout}ms`));
       });
 
       if (opts.form) {
+        // A file in the form that cannot be read fails the request.
+        opts.form.on('error', (error) => req.destroy(error));
         opts.form.pipe(req);
       } else if (opts.body !== undefined) {
         req.write(opts.body);

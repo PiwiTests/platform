@@ -346,7 +346,7 @@ async function browserDistributionSection(db: DbClient, cluster: FailureCluster)
   const browserRows = await db
     .select({
       browser: testRunsCases.browser,
-      count: sql<number>`COUNT(*)`,
+      count: sql<number>`COUNT(*)`.mapWith(Number),
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.failureClusterId, cluster.id))

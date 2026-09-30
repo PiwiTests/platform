@@ -31,6 +31,7 @@ import {
   sanitizeTestMetadata,
   type TestMetadata,
 } from '@piwitests/core/test-meta';
+import { matchInsertedRunCases } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
@@ -305,25 +306,6 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
 }
 
 /**
- * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
- * `test_runs_cases` rows in a single statement. Network requests, web vitals and
- * console logs are sanitised here (stripping query strings from URLs). Failed
- * cases with error text are fingerprinted and linked to a `failure_clusters`
- * row so failures sharing a root cause can be grouped.
- *
- * Shared by the submit, upload and streaming-events endpoints. Returns the
- * inserted junction rows in input order so callers can link attachments (e.g.
- * trace files) by index. Each entry also carries the index of the input case
- * that produced it, so the streaming endpoint can attach the persisted
- * execution id to the right `test-completed` event even when duplicates were
- * skipped.
- *
- * Deduplication is enforced by a DB unique index on
- * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
- * clause silently skips rows that would violate it. This naturally handles both
- * batch retries and same-test-different-browser scenarios.
- */
-/**
  * Drop redundant green ARIA samples before they reach storage. A passing
  * execution's snapshot is kept only when the test has no other green snapshot
  * from the last {@link GREEN_SAMPLE_MAX_AGE_MS} — both against snapshots already
@@ -359,7 +341,7 @@ async function dedupeGreenSamples(
   const existing = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
-      latest: sql<number>`max(${testRunsCases.createdAt})`,
+      latest: sql<Date>`max(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
     })
     .from(testRunsCases)
     .where(
@@ -371,7 +353,7 @@ async function dedupeGreenSamples(
     )
     .groupBy(testRunsCases.testCaseId);
 
-  const freshById = new Map(existing.map((r) => [r.testCaseId, Number(r.latest)]));
+  const freshById = new Map(existing.map((r) => [r.testCaseId, r.latest.getTime()]));
   for (const { index, caseId } of greenRows) {
     const latest = freshById.get(caseId);
     if (latest != null && latest >= cutoff) {
@@ -381,6 +363,24 @@ async function dedupeGreenSamples(
   }
 }
 
+/**
+ * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
+ * `test_runs_cases` rows in a single statement. Network requests, web vitals and
+ * console logs are sanitised here (stripping query strings from URLs). Failed
+ * cases with error text are fingerprinted and linked to a `failure_clusters`
+ * row so failures sharing a root cause can be grouped.
+ *
+ * Shared by the submit, upload, import and streaming-events endpoints. Returns
+ * one entry per inserted junction row, each carrying the index of the input
+ * case that produced it. A skipped duplicate has no entry, so callers link
+ * attachments (e.g. trace files) and events to executions by `inputIndex`,
+ * never by position in the returned array.
+ *
+ * Deduplication is enforced by a DB unique index on
+ * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
+ * clause silently skips rows that would violate it. This naturally handles both
+ * batch retries and same-test-different-browser scenarios.
+ */
 export async function persistRunCases(
   db: DB,
   projectId: number,
@@ -622,32 +622,23 @@ export async function persistRunCases(
     });
   }
 
-  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
-    id: testRunsCases.id,
-    status: testRunsCases.status,
-    testCaseId: testRunsCases.testCaseId,
-    retries: testRunsCases.retries,
-    browserName: testRunsCases.browserName,
-  });
+  const insertedCases = matchInsertedRunCases(
+    runCasesRows,
+    await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+      id: testRunsCases.id,
+      status: testRunsCases.status,
+      testCaseId: testRunsCases.testCaseId,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+    }),
+  );
 
-  // The unique (run, case, retries, browser) index makes this tuple unique
-  // within a batch, so each inserted row maps back to exactly one input entry
-  // even when ON CONFLICT DO NOTHING skipped duplicates in between.
-  const tupleToInputIndex = new Map<string, number>();
-  runCasesRows.forEach((row, k) => {
-    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
-    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
-  });
-
-  const result = insertedCases.map((r) => {
-    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
-    return {
-      id: r.id,
-      status: r.status,
-      testCaseId: r.testCaseId,
-      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
-    };
-  });
+  const result = insertedCases.map((r) => ({
+    id: r.id,
+    status: r.status,
+    testCaseId: r.testCaseId,
+    inputIndex: rowInputIndices[r.rowIndex]!,
+  }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {

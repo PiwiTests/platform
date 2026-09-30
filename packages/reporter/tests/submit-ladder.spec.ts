@@ -1,8 +1,14 @@
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
+import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-submitter.js';
+import { HttpClient } from '../src/internal/transport/http-client.js';
+import { Uploader } from '../src/internal/submit/uploader.js';
+import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
+import { FileHandler } from '../src/internal/files/file-handler.js';
+import { Logger } from '../src/internal/support/logger.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import {
   startServer,
@@ -355,6 +361,102 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(submitBody.testCases.length).toBe(4);
   });
 
+  it('a result too large for /events keeps the stream going and re-sends the full run via /submit', async () => {
+    const streamed: string[] = [];
+    let finishHit = false;
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        // A request-size limit in front of the dashboard, like a reverse proxy's.
+        if (Buffer.byteLength(req.body) > 1024 * 1024) return textRes(res, 413, 'too large');
+        streamed.push(...JSON.parse(req.body).testCases.map((e: any) => `${e.type}:${e.title}`));
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/1/finish') {
+        finishHit = true;
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        jsonRes(res, 200, { runId: 1, projectId: 2 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+    });
+    const suite = fakeSuite();
+    const tests = ['small-1', 'huge', 'small-2'].map((t) => fakeTestCase({ title: t, parent: suite }));
+    suite.allTests = () => tests;
+    reporter.onBegin(fakeConfig(), suite);
+    for (const test of tests) {
+      const huge = test.title === 'huge';
+      const result = fakeResult({ status: huge ? 'failed' : 'passed', workerIndex: 0 });
+      if (huge) result.errors = [{ message: 'x'.repeat(2 * 1024 * 1024) }];
+      reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+      reporter.onTestEnd(test, result);
+    }
+    await reporter.onEnd({ status: 'failed' } as any);
+
+    expect(streamed).toContain('complete:small-1');
+    expect(streamed).toContain('complete:small-2');
+    expect(streamed).not.toContain('complete:huge');
+    expect(finishHit).toBe(false);
+    expect(submitBody.testCases.map((tc: any) => tc.title)).toEqual(['small-1', 'huge', 'small-2']);
+  });
+
+  it('submitTimeout stops waiting for a hung dashboard and saves the run for the next one', async () => {
+    // Accepts every request and never answers, like a hung process or a
+    // firewall that drops the replies.
+    server = await startServer(() => {});
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+      submitTimeout: 300,
+    });
+    const started = Date.now();
+    await runOneTest(reporter, 'hung-dashboard-test');
+
+    // Each request alone would wait for the 30 s socket timeout.
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
+    expect(recovered.testCases[0].title).toBe('hung-dashboard-test');
+    server.server.closeAllConnections();
+  });
+
+  it('a non-finite submitTimeout means no limit', async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 5 }) : textRes(res, 404, 'nope'),
+    );
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      submitTimeout: Infinity,
+    });
+    await runOneTest(reporter, 'unbounded-test');
+
+    expect(urlsHit(server)).toContain('/api/test-runs/submit');
+    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(false);
+  });
+
   it('401 with no auth propagates (does not fall back) and saves a recovery copy', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
@@ -381,5 +483,92 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
     expect(recovered.projectName).toBe(projectName);
     expect(recovered.testCases[0].title).toBe('auth-fail-test');
+  });
+});
+
+describe('RunSubmitter local copies', () => {
+  let server: FakeServer;
+  const projectName = 'piwi-submitter-' + process.pid;
+
+  beforeEach(() => cleanupProjectArtifacts(projectName));
+  afterEach(async () => {
+    if (server) await server.close();
+    cleanupProjectArtifacts(projectName);
+  });
+
+  function collectedRun(serverUrl: string): CollectedRun {
+    return {
+      options: { serverUrl, projectName, uploadReport: false, uploadTraces: false },
+      testCases: [],
+      startTime: new Date().toISOString(),
+      playwrightVersion: null,
+      reporterVersion: null,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      timedOutTests: 0,
+      didNotRunTests: 0,
+      metadata: {},
+      instanceId: 'instance',
+      shardInfo: null,
+      setupSteps: [],
+      isFullRun: true,
+      filterDetails: null,
+    };
+  }
+
+  function streamSession(overrides: Record<string, unknown> = {}) {
+    return {
+      startPromise: null,
+      drain: async () => {},
+      auth: null,
+      enabled: true,
+      runId: 1,
+      token: 'tok',
+      lostResults: false,
+      uploadRemaining: async () => {},
+      discardBuffered: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  function submitter(url: string, sm: ReturnType<typeof streamSession>): RunSubmitter {
+    const logger = new Logger(false);
+    const http = new HttpClient(url, logger);
+    return new RunSubmitter(
+      http,
+      new Uploader(http, new FileHandler(logger), logger),
+      new CrashRecovery(projectName, logger),
+      sm as any,
+      logger,
+    );
+  }
+
+  it("discards the run's buffered live events once /finish succeeds", async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/1/finish' ? jsonRes(res, 200, {}) : textRes(res, 404, 'nope'),
+    );
+    const sm = streamSession();
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(sm.discardBuffered).toHaveBeenCalledOnce();
+  });
+
+  it("discards the run's buffered live events once the batch submit succeeds", async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 2 }) : textRes(res, 404, 'nope'),
+    );
+    const sm = streamSession({ lostResults: true });
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(urlsHit(server)).toEqual(['/api/test-runs/submit']);
+    expect(sm.discardBuffered).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the buffered live events when no rung reaches the server', async () => {
+    server = await startServer((_req, res) => textRes(res, 500, 'down'));
+    const sm = streamSession();
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(sm.discardBuffered).not.toHaveBeenCalled();
+    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(true);
   });
 });

@@ -8,6 +8,7 @@ import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
+import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 
@@ -248,12 +249,12 @@ export default eventHandler(async (event) => {
     : testRun.failedTests;
 
   if (hasPendingUploads) {
-    runEventBus.setFinalStatus(id, status);
-
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
       streamToken: null,
+      // The stale-run sweep measures the wait for the report upload from here.
+      updatedAt: new Date(),
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
@@ -262,7 +263,10 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      // The reported status waits in the metadata, where it survives a restart,
+      // until the report upload or the stale-run sweep settles the run.
+      metadata: withPendingStatus(body.metadata ? sanitizeMetadata(body.metadata) : testRun.metadata, status),
+      ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),

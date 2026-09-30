@@ -33,26 +33,28 @@ export async function setUserAssignments(
   data: UserAssignments,
   createdBy?: number,
 ): Promise<void> {
-  // Remove all existing assignments
-  await db.delete(projectAssignments).where(eq(projectAssignments.userId, userId));
+  const projectIds = [...new Set(data.projectIds)];
+  await db.transaction(async (tx) => {
+    await tx.delete(projectAssignments).where(eq(projectAssignments.userId, userId));
 
-  if (data.global) {
-    // Single global assignment row
-    await db.insert(projectAssignments).values({
-      userId,
-      projectId: null,
-      createdBy: createdBy ?? null,
-    });
-  } else if (data.projectIds.length > 0) {
-    // One row per project
-    await db.insert(projectAssignments).values(
-      data.projectIds.map((projectId) => ({
+    if (data.global) {
+      // Single global assignment row
+      await tx.insert(projectAssignments).values({
         userId,
-        projectId,
+        projectId: null,
         createdBy: createdBy ?? null,
-      })),
-    );
-  }
+      });
+    } else if (projectIds.length > 0) {
+      // One row per project
+      await tx.insert(projectAssignments).values(
+        projectIds.map((projectId) => ({
+          userId,
+          projectId,
+          createdBy: createdBy ?? null,
+        })),
+      );
+    }
+  });
 }
 
 export interface ProjectMember {
@@ -130,19 +132,21 @@ export async function setProjectMembers(
   userIds: number[],
   createdBy?: number,
 ): Promise<void> {
-  // Remove all explicit (non-global) assignments for this project
-  await db.delete(projectAssignments).where(and(eq(projectAssignments.projectId, projectId)));
+  const uniqueUserIds = [...new Set(userIds)];
+  await db.transaction(async (tx) => {
+    // Remove all explicit (non-global) assignments for this project
+    await tx.delete(projectAssignments).where(eq(projectAssignments.projectId, projectId));
 
-  // Insert new assignments
-  if (userIds.length > 0) {
-    await db.insert(projectAssignments).values(
-      userIds.map((userId) => ({
-        userId,
-        projectId,
-        createdBy: createdBy ?? null,
-      })),
-    );
-  }
+    if (uniqueUserIds.length > 0) {
+      await tx.insert(projectAssignments).values(
+        uniqueUserIds.map((userId) => ({
+          userId,
+          projectId,
+          createdBy: createdBy ?? null,
+        })),
+      );
+    }
+  });
 }
 
 /** Every user with the project access they hold, and every project — the permission grid. */

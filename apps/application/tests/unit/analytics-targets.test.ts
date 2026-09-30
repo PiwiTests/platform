@@ -1,9 +1,6 @@
-import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
-import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
-import { createClient } from '@libsql/client';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
+import { openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { normalizeProjectTargets, readProjectTargets, targetForPeriod, targetMet, TARGET_DEFS } =
@@ -21,11 +18,11 @@ const { collectReportBundle } = await import('../../shared/reports/collect');
 const { updateProject } = await import('../../shared/handlers/projects');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-let db: ReturnType<typeof drizzle<typeof schema>>;
+let db: TempDb;
+let close: () => Promise<void>;
 
 beforeAll(async () => {
-  db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  ({ db, close } = await openTempDb());
   await db.insert(schema.projects).values([
     { id: 1, name: 'meets', targets: { testPassRate: 80, maxFlakyTests: 5 } },
     { id: 2, name: 'misses', targets: { testPassRate: 99 } },
@@ -44,6 +41,8 @@ beforeAll(async () => {
   await db.insert(schema.testRuns).values([run(1, 3, 9), run(1, 2, 10), run(2, 3, 9), run(2, 1, 9), run(3, 2, 5)]);
   await backfillDailyRollups(db as any);
 });
+
+afterAll(() => close());
 
 describe('targets', () => {
   test('normalize drops empty values and refuses values out of range', () => {

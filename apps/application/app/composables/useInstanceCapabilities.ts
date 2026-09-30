@@ -20,11 +20,12 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  */
 export async function useInstanceCapabilities() {
   const { canSeeAdmin } = useAuth();
+  const requestFetch = useRequestFetch();
 
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     'capabilities-instance',
     () =>
-      $fetch<CapabilityStates>('/api/capabilities')
+      requestFetch<CapabilityStates>('/api/capabilities')
         .then((r) => r.items)
         .catch(() => []),
     { default: () => [] },

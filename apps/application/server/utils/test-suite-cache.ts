@@ -10,8 +10,9 @@ function makeCacheKey(filePath: string, suitePath: string): string {
  * Process-level cache of suite IDs keyed by project.
  *
  * Mirrors TestCaseCache but for test_suites rows. Loaded from DB on first
- * access per project; new inserts are added immediately so subsequent
- * streaming batches skip the upsert path.
+ * access per project (a failed load is retried on the next access); new
+ * inserts are added immediately so subsequent streaming batches skip the
+ * upsert path.
  */
 class TestSuiteCache {
   private readonly cache = new Map<number, Map<string, number>>();
@@ -35,9 +36,8 @@ class TestSuiteCache {
         map.set(makeCacheKey(row.filePath, row.suitePath), row.id);
       }
       this.cache.set(projectId, map);
-      this.loading.delete(projectId);
       return map;
-    })();
+    })().finally(() => this.loading.delete(projectId));
 
     this.loading.set(projectId, load);
     return load;

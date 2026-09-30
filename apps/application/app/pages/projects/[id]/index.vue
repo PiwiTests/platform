@@ -676,7 +676,8 @@ const membersChanged = computed(() => {
 watch(
   () => project.value?.id,
   async (newId) => {
-    if (!newId || !isAdmin.value) return;
+    // The member editor loads in the browser only; the server render leaves it empty.
+    if (!import.meta.client || !newId || !isAdmin.value) return;
     try {
       const [membersData, usersData] = await Promise.all([
         $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`),
@@ -820,7 +821,7 @@ async function handleSaveSettings() {
         description: editState.value.description || null,
         diagnosisInstructions: editState.value.diagnosisInstructions || null,
         aiLanguage: editState.value.aiLanguage || null,
-        scmToken: editState.value.scmToken || null,
+        scmToken: editState.value.scmToken.trim() || undefined,
         defaultBranch: editState.value.defaultBranch || null,
         openApiUrl: editState.value.openApiUrl || null,
         serverProbes: {
@@ -841,6 +842,19 @@ async function handleSaveSettings() {
     await refresh();
   } catch {
     toast.add({ title: 'Error', description: 'Failed to update project', color: 'error' });
+  } finally {
+    savingSettings.value = false;
+  }
+}
+
+async function handleRemoveScmToken() {
+  savingSettings.value = true;
+  try {
+    await $fetch(`/api/projects/${projectId}` as '/api/projects/:id', { method: 'PATCH', body: { scmToken: null } });
+    toast.add({ title: 'SCM token removed', color: 'success' });
+    await refresh();
+  } catch {
+    toast.add({ title: 'Error', description: 'Failed to remove the SCM token', color: 'error' });
   } finally {
     savingSettings.value = false;
   }
@@ -1609,6 +1623,7 @@ const moreMenuItems = computed(() => {
                 v-model:tags="selectedTags"
                 :all-tags="allTags"
                 @tag-created="refreshTags()"
+                @remove-scm-token="handleRemoveScmToken"
               />
               <div class="flex justify-end gap-2 pt-2">
                 <UButton type="submit" icon="i-lucide-check" :loading="savingSettings">Save changes</UButton>

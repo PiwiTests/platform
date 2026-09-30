@@ -29,6 +29,15 @@ export interface PiwiDashboardOptions {
   projectName?: string;
   /** Optional description of the project */
   projectDescription?: string;
+  /**
+   * Time budget (ms) for the reporter's end-of-run work: delivering the last
+   * live events, uploading the remaining traces and attachments, and submitting
+   * the run. When it runs out, the reporter stops waiting for the dashboard and
+   * saves the run's results locally; the next run for the project uploads them,
+   * without traces or attachments. Defaults to `900000` (15 minutes). Set to `0`
+   * for no limit. Can also be set with `PIWI_SUBMIT_TIMEOUT`.
+   */
+  submitTimeout?: number;
 
   // ── What gets uploaded ─────────────────────────────────────────────────────
   /** Upload trace files to the dashboard. Defaults to `true`. */
@@ -213,7 +222,12 @@ export interface PiwiDashboardOptions {
   // ── Run metadata ───────────────────────────────────────────────────────────
   /** Additional report types to upload. Each entry can specify `type`, optional `dir`, and optional `label`. */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
-  /** Stable label that ties shards together (e.g. CI run ID). Auto-detected from CI env; override if needed. */
+  /**
+   * Stable label that ties shards together (e.g. CI run ID). Auto-detected from
+   * CI env, with the CI job's id added for a run that is not sharded; a label
+   * set here is used as it is. Override it when your CI is not detected, or to
+   * keep matrix legs that report to one project apart.
+   */
   runLabel?: string;
   /** Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` */
   environment?: string;

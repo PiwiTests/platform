@@ -18,6 +18,7 @@ const PIWI_KEYS = [
   'PIWI_STREAMING_BATCH_SIZE',
   'PIWI_STREAMING_BATCH_DELAY',
   'PIWI_MAX_STREAM_BUFFER_BYTES',
+  'PIWI_SUBMIT_TIMEOUT',
   'PIWI_LIVE_FILE_UPLOADS',
   'PIWI_UPLOAD_TRACES',
   'PIWI_UPLOAD_REPORT',
@@ -64,6 +65,7 @@ describe('resolveOptions', () => {
     expect(opts.streamingBatchSize).toBe(5);
     expect(opts.streamingBatchDelay).toBe(2000);
     expect(opts.maxStreamBufferBytes).toBe(100 * 1024 * 1024);
+    expect(opts.submitTimeout).toBe(15 * 60 * 1000);
     expect(opts.verbose).toBe(false);
     expect(opts.apiKey).toBe(null);
     expect(opts.username).toBe(null);
@@ -152,6 +154,14 @@ describe('resolveOptions', () => {
     process.env.PIWI_MAX_STREAM_BUFFER_BYTES = '2048';
     expect(resolveOptions({}).maxStreamBufferBytes).toBe(2048);
     expect(resolveOptions({ maxStreamBufferBytes: 4096 }).maxStreamBufferBytes).toBe(4096);
+  });
+
+  it('reads PIWI_SUBMIT_TIMEOUT from env, including 0 for no limit, and a user option wins over it', () => {
+    process.env.PIWI_SUBMIT_TIMEOUT = '0';
+    expect(resolveOptions({}).submitTimeout).toBe(0);
+    process.env.PIWI_SUBMIT_TIMEOUT = '60000';
+    expect(resolveOptions({}).submitTimeout).toBe(60000);
+    expect(resolveOptions({ submitTimeout: 5000 }).submitTimeout).toBe(5000);
   });
 
   it('PIWI_VERBOSE env wins over user option (preserved quirk)', () => {

@@ -7,6 +7,7 @@ import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
+import { attemptKey, finalAttempts } from '../utils/test-counts';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
 
 interface TestCaseEntry {
@@ -108,21 +109,24 @@ export async function computeRunInsights(
   const run = runResults[0];
   if (!run) throw new Error('Run not found');
 
-  // Fetch all current run's cases
-  const currentCases: any[] = await db
-    .select({
-      id: testRunsCases.id,
-      testCaseId: testRunsCases.testCaseId,
-      status: testRunsCases.status,
-      duration: testRunsCases.duration,
-      retries: testRunsCases.retries,
-      workerIndex: testRunsCases.workerIndex,
-      title: testCases.title,
-      filePath: testCases.filePath,
-    })
-    .from(testRunsCases)
-    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(eq(testRunsCases.testRunId, runId));
+  // The run's tests, one row per (test case, browser): its final attempt.
+  const currentCases: any[] = finalAttempts(
+    await db
+      .select({
+        id: testRunsCases.id,
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        status: testRunsCases.status,
+        duration: testRunsCases.duration,
+        retries: testRunsCases.retries,
+        workerIndex: testRunsCases.workerIndex,
+        title: testCases.title,
+        filePath: testCases.filePath,
+      })
+      .from(testRunsCases)
+      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+      .where(eq(testRunsCases.testRunId, runId)),
+  );
 
   // The baseline ladder: a passing full run in this run's environment, on its
   // own branch, else on the branch it forked from (the pull request's target
@@ -208,21 +212,19 @@ export async function computeRunInsights(
 
   if (!baselineRun) return empty;
 
-  // Fetch baseline cases
-  const baselineCases: any[] = await db
-    .select({
-      testCaseId: testRunsCases.testCaseId,
-      status: testRunsCases.status,
-      duration: testRunsCases.duration,
-      retries: testRunsCases.retries,
-    })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.testRunId, baselineRun.id));
-
-  const baselineByCaseId = new Map<number, any>();
-  for (const bc of baselineCases) {
-    baselineByCaseId.set(bc.testCaseId, bc);
-  }
+  const baselineCases: any[] = finalAttempts(
+    await db
+      .select({
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        status: testRunsCases.status,
+        duration: testRunsCases.duration,
+        retries: testRunsCases.retries,
+      })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.testRunId, baselineRun.id)),
+  );
+  const baselineByTest = new Map<string, any>(baselineCases.map((bc) => [attemptKey(bc), bc]));
 
   const newRegressions: TestCaseEntry[] = [];
   const recurrences: TestCaseEntry[] = [];
@@ -232,7 +234,7 @@ export async function computeRunInsights(
   const perfChanges: PerfChangeEntry[] = [];
 
   for (const cc of currentCases) {
-    const bc = baselineByCaseId.get(cc.testCaseId);
+    const bc = baselineByTest.get(attemptKey(cc));
 
     // Status changes
     if (bc) {

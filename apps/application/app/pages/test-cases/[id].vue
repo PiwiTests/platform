@@ -38,11 +38,7 @@ useHead(
   })),
 );
 
-const passRate = computed(() => {
-  const t = testCase.value;
-  if (!t || !t.totalRuns) return null;
-  return Math.round(((t.passedRuns + t.skippedRuns) / t.totalRuns) * 100);
-});
+const passRate = computed<number | null>(() => testCase.value?.passRate ?? null);
 
 // Desktop shell: reproduce this test on this machine. Selected by title so no
 // line number is needed; repeat ×20 with a trace is the flake-hunting preset.

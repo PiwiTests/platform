@@ -6,7 +6,7 @@ import { resolveOptions } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
-import { detectCiRunLabel } from '../internal/support/ci.js';
+import { resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
@@ -113,7 +113,6 @@ export function createGlobalSetup(
 
     try {
       const auth = await httpClient.resolveAuth(opts);
-      const runLabel = opts.runLabel || detectCiRunLabel();
 
       // The shard from Playwright's --shard=1/3, or the one `piwi run --shard` set
       const shard = resolveShardInfo(config);
@@ -127,7 +126,7 @@ export function createGlobalSetup(
           label: opts.label || null,
           keep: opts.keep === true,
           startTime: new Date().toISOString(),
-          instanceId: computeInstanceId(opts.projectName!, runLabel),
+          instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
           shardIndex: shard?.current,
           shardTotal: shard?.total,
         },
