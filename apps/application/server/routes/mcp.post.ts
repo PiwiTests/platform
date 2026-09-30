@@ -21,6 +21,8 @@ const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
 const ACTIVE_TOOLS = IS_DESKTOP ? [...MCP_TOOLS, ...DESKTOP_MCP_TOOLS] : MCP_TOOLS;
 const TOOL_BY_NAME = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
+// Every request of a batch runs at once, and one tool call can be a heavy query.
+const MAX_BATCH_REQUESTS = 20;
 
 const KNOWN_MODULES = new Set<CapabilityModule>(CAPABILITY_MODULES);
 
@@ -79,6 +81,14 @@ export default eventHandler(async (event) => {
 
   const body = await readBody<JsonRpcRequest | JsonRpcRequest[]>(event);
   const requests = Array.isArray(body) ? body : [body];
+  if (requests.length > MAX_BATCH_REQUESTS) {
+    setResponseStatus(event, 400);
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: RPC.INVALID_REQUEST, message: `A batch holds at most ${MAX_BATCH_REQUESTS} requests` },
+    };
+  }
 
   const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event, db)));
 
