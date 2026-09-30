@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { GENERATION_CACHE, GENERATION_MODELS } from '../../../docs/.vitepress/theme/ask-docs/generation-models';
+import {
+  GENERATION_CACHE,
+  GENERATION_MODELS,
+  explainError,
+} from '../../../docs/.vitepress/theme/ask-docs/generation-models';
 import type { GenerationMessage, GenerationRequest, Source } from '../../../docs/.vitepress/theme/ask-docs/protocol';
 import { useGeneration } from '../../../docs/.vitepress/theme/ask-docs/useGeneration';
 
@@ -105,6 +109,22 @@ describe('useGeneration', () => {
     expect(write.type).toBe('write');
     expect(write.messages[1]!.content).toContain('[1] Database > PostgreSQL');
     expect(write.messages[1]!.content).toContain('Question: can I use PostgreSQL?');
+  });
+
+  test('starts with the model the reader agreed to last time, not the first of the catalog', () => {
+    const other = GENERATION_MODELS[1]!;
+    storage.set('ask-docs:generation', other.id);
+    const generation = useGeneration(hrefOf);
+    expect(generation.model.value.id).toBe(other.id);
+    generation.write('a question', sources);
+    expect(worker().sent).toEqual([{ type: 'probe', model: other.id, files: other.files }]);
+    worker().reply({ type: 'device', supported: true, dtype: 'q4f16', cached: false });
+    expect(generation.phase.value).toBe('downloading');
+  });
+
+  test('ignores a remembered model that is no longer in the catalog', () => {
+    storage.set('ask-docs:generation', 'someone/retired-model');
+    expect(useGeneration(hrefOf).model.value.id).toBe(model.id);
   });
 
   test('a model already in this browser loads without a question', () => {
@@ -228,5 +248,23 @@ describe('useGeneration', () => {
     expect(deleted).toEqual([GENERATION_CACHE]);
     expect(storage.has('ask-docs:generation')).toBe(false);
     expect(generation.phase.value).toBe('off');
+  });
+});
+
+describe('explainError', () => {
+  test('replaces the words of the runtime for running out of memory with advice', () => {
+    for (const message of [
+      "Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: std::bad_alloc",
+      'RangeError: Array buffer allocation failed',
+      'Aborted(OOM). Out of memory',
+      'RuntimeError: memory access out of bounds',
+    ]) {
+      expect(explainError(message)).toContain('enough memory');
+      expect(explainError(message)).toContain('Qwen3 0.6B');
+    }
+  });
+
+  test('passes other errors through', () => {
+    expect(explainError('the model is not loaded')).toBe('the model is not loaded');
   });
 });

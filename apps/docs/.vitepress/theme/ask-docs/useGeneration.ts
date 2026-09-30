@@ -41,7 +41,8 @@ const remember = (id: string | null) => {
 export function useGeneration(hrefOf: (source: Source) => string) {
   const phase = ref<GenerationPhase>('off')
   // A catalog entry is sent to the worker: it must not become a reactive proxy, which cannot be cloned.
-  const model = shallowRef<GenerationModel>(GENERATION_MODELS[0]!)
+  // The model the reader agreed to last time, so the choice is not asked again after a reload.
+  const model = shallowRef<GenerationModel>(GENERATION_MODELS.find((candidate) => candidate.id === remembered()) ?? GENERATION_MODELS[0]!)
   const device = ref<{ dtype: 'q4f16' | 'q4'; cached: boolean } | null>(null)
   const progress = ref({ loaded: 0, total: 0 })
   const message = ref('')

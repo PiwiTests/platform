@@ -320,8 +320,13 @@ onBeforeUnmount(() => {
 
               <div v-else-if="generation.phase.value === 'downloading'" class="ask-download">
                 <p class="ask-note">
-                  Downloading {{ generation.model.value.label }}<template v-if="generation.progress.value.total">,
-                    {{ formatBytes(generation.progress.value.loaded) }} of {{ formatBytes(generation.progress.value.total) }}</template>.
+                  <template v-if="generation.progress.value.total && generation.progress.value.loaded >= generation.progress.value.total">
+                    Starting {{ generation.model.value.label }}.
+                  </template>
+                  <template v-else>
+                    Downloading {{ generation.model.value.label }}<template v-if="generation.progress.value.total">,
+                      {{ formatBytes(generation.progress.value.loaded) }} of {{ formatBytes(generation.progress.value.total) }}</template>.
+                  </template>
                 </p>
                 <progress :value="generation.progress.value.loaded" :max="generation.progress.value.total || undefined" />
               </div>

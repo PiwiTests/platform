@@ -87,6 +87,8 @@ node scripts/eval-answer.mjs --model <hugging face id> --dtype q4 [--verbose]   
 | The instructions given to a language model, the reading of its reply, the check that the reply stays in the passages | `.vitepress/theme/ask-docs/prompt.ts`, tested by `docs-ask-prompt.test.ts` |
 | The models that can write an answer, and their sizes | `.vitepress/theme/ask-docs/generation-models.ts` |
 | The generation worker, and the panel's side of it | `.vitepress/theme/ask-docs/generate.worker.ts`, `useGeneration.ts` (tested by `docs-ask-generation.test.ts`) |
+| The download of the model's files on several connections | `.vitepress/theme/ask-docs/download.ts`, tested by `docs-ask-download.test.ts` |
+| The weights moved out of the `.onnx` file into data files | `.vitepress/theme/ask-docs/split-weights.ts`, tested by `docs-ask-split-weights.test.ts` |
 | The button and the panel | `.vitepress/theme/components/AskDocs.vue`, added to the nav bar by `.vitepress/theme/index.ts` |
 
 - **The passages are the MCP corpus** (`buildDocsCorpus` in `apps/application/shared/docs-corpus.ts`, with its
@@ -119,6 +121,28 @@ node scripts/eval-answer.mjs --model <hugging face id> --dtype q4 [--verbose]   
   use are shown as a warning. The reply is never presented as the docs' own text. A table is not asked of the model:
   small models fill a table with cells the docs do not contain, so tables come from the docs themselves, as quoted
   blocks.
+- **The model's files are downloaded on 8 connections at once** (`download.ts`, ranged requests of 32 MiB). One HTTP
+  stream from Hugging Face's CDN carried 35 to 125 MB/s when measured from the build machine, depending on the moment,
+  and 8 at once 150 to 320 MB/s: the host is not capped at 50 MB/s, each stream is. transformers.js reads a file on one
+  stream, so the worker downloads first and puts the result in the cache under the address transformers.js looks for.
+  When the host cannot serve ranges, or a part keeps failing, `prefetch` returns null and transformers.js downloads the
+  file itself.
+- **The weights are moved out of the `.onnx` file before the model loads** (`split-weights.ts`). onnxruntime-web copies
+  a whole `.onnx` file into the memory of its WebAssembly module, then parses it into a second copy, so a 1.4 GB model
+  needs more than 2.8 GB there and fails with `Can't create a session ... std::bad_alloc`: reproduced in Chromium with
+  the `q4f16` file of Qwen3 1.7B. ONNX can keep the weights in separate files ("external data"), which onnxruntime-web
+  reads one tensor at a time, and Hugging Face ships its larger models that way. The worker rewrites the file, reading
+  field headers only, into a graph of a few hundred KB and data files named as transformers.js looks for them
+  (`model_q4f16.onnx_data`, `_data_1`...). Each data file holds at most 1 GiB, because a JavaScript buffer cannot reach
+  2 GB (measured in Chromium: 2.0 GB is allowed, 2.147 GB is not) and transformers.js reads each file into one. The
+  graph is written to the cache last: its presence says the model is complete. Checked by comparing the text
+  generated from the original file and from the split one (identical, Qwen3 0.6B and 1.7B `q4`, in Node), and by loading
+  the split files in Chromium with a software WebGPU.
+- **Known limits.** In a private window the browser refuses to store a large file in Cache Storage: the worker then
+  falls back to transformers.js, which downloads the file again and loads it as served. Qwen3 0.6B still loads;
+  Qwen3 1.7B fails with the memory message that `explainError` writes. The `q4` file, for a GPU without 16-bit floats,
+  holds the embeddings as 32-bit floats: for Qwen3 1.7B that is one GPU buffer of 1.24 GB, which needs a GPU whose
+  maximum buffer size is at least that.
 - **Choosing a model is a measurement.** Run `scripts/eval-answer.mjs` on the same questions for each candidate: names
   the passages do not contain, tables and lists, citations, refusals outside the docs, speed. Size is not the
   predictor: models of the same size differ more than models of different sizes, and a repetition penalty of 1.1 is
