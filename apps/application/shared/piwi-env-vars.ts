@@ -1150,6 +1150,15 @@ export const PIWI_ENV_VARS = {
   },
 
   // ── Integrations ─────────────────────────────────────────────────────────
+  PIWI_SCM_GITLAB_HOSTS: {
+    description:
+      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may call with the SCM token. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
+    category: 'integrations',
+    type: 'list',
+    example: 'gitlab.example.com',
+    since: '0.43.0',
+    docs: 'guide/source-control#which-repository',
+  },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
     category: 'integrations',

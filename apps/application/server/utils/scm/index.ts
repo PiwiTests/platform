@@ -13,7 +13,29 @@ export function detectScmProvider(repositoryUrl: string | null | undefined): Scm
   return detectScmHost(repositoryUrl);
 }
 
-/** Instantiate the correct provider for the given URL with a pre-loaded token. */
+/**
+ * Self-hosted GitLab hosts a stored SCM token may be sent to, from
+ * `PIWI_SCM_GITLAB_HOSTS` (comma-separated host names). `gitlab.com` needs no entry.
+ */
+export function configuredGitlabHosts(): Set<string> {
+  return new Set(
+    (process.env.PIWI_SCM_GITLAB_HOSTS ?? '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+const warnedGitlabHosts = new Set<string>();
+
+/**
+ * Instantiate the correct provider for the given URL with a pre-loaded token.
+ *
+ * The repository URL usually comes from run metadata the reporter submits, so it
+ * never chooses where the token goes: GitHub and Bitbucket are called on their
+ * fixed API hosts, and GitLab only on `gitlab.com` or a host listed in
+ * `PIWI_SCM_GITLAB_HOSTS`. Any other GitLab-looking host gets no provider.
+ */
 export function scmProviderForUrl(
   repositoryUrl: string,
   token: string | null,
@@ -24,8 +46,17 @@ export function scmProviderForUrl(
     if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
       return new GitHubProvider(repoPath, token);
     }
-    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
+    if (hostname === 'gitlab.com' || configuredGitlabHosts().has(hostname.toLowerCase())) {
       return new GitLabProvider(hostname, repoPath, token);
+    }
+    if (hostname.includes('gitlab')) {
+      if (!warnedGitlabHosts.has(hostname)) {
+        warnedGitlabHosts.add(hostname);
+        console.warn(
+          `[scm] ${hostname} is not in PIWI_SCM_GITLAB_HOSTS, so Piwi does not call it; add it to read that GitLab instance.`,
+        );
+      }
+      return null;
     }
     if (hostname === 'bitbucket.org') {
       const [workspace, repoSlug] = repoPath.split('/');
