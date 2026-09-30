@@ -14,7 +14,7 @@ export function escapeGrep(text: string): string {
 }
 
 // Characters bash, zsh, PowerShell or cmd expand inside double quotes, plus control characters.
-const SHELL_EXPANDED = /[$`"\\%!\u0000-\u001f\u007f]/;
+const SHELL_EXPANDED = /[$`"\\%!\p{Cc}]/u;
 
 /**
  * `arg` double-quoted for a copy-pasteable command, or null when it holds a
