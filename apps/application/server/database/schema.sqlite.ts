@@ -1164,7 +1164,7 @@ export const integrationActions = sqliteTable(
     entityType: text('entity_type').notNull(), // 'failure_cluster' | 'test_runs_case' | 'test_case' | 'test_run'
     entityId: integer('entity_id').notNull(),
     dedupeKey: text('dedupe_key').notNull(),
-    status: text('status').notNull().default('pending'), // 'pending' | 'done' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'done' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }),
     error: text('error'),
