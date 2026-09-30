@@ -21,6 +21,7 @@ mod taskbar_win;
 mod updates;
 mod worktree;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -450,16 +451,55 @@ fn load_or_create_token(app_data_dir: &PathBuf) -> String {
 /// back when 3000 is taken) and removed on quit, so the file's presence means
 /// "this app is up at this address". Mode 0600: the token is a full-access local
 /// credential, and `$HOME` itself is world-readable on most systems.
-fn write_discovery_file(home: &Path, port: u16, token: &str) -> std::io::Result<PathBuf> {
+fn write_discovery_file(
+    home: &Path,
+    port: u16,
+    token: &str,
+    links: &HashMap<String, runner::LinkRecord>,
+) -> std::io::Result<PathBuf> {
     let dir = home.join(DISCOVERY_DIR);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(DISCOVERY_FILE);
-    // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
-    // localhost resolves to ::1 first on some systems.
-    let body = json!({ "url": format!("http://127.0.0.1:{port}"), "token": token }).to_string();
-    std::fs::write(&path, body)?;
+    std::fs::write(&path, discovery_body(port, token, links).to_string())?;
     restrict_to_owner(&path);
     Ok(path)
+}
+
+/// The discovery file's content: the address and token, and the projects linked
+/// to a folder on this machine, so an editor opened on one of those folders
+/// connects to its project with no setup. Readers ignore fields they do not know.
+fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRecord>) -> serde_json::Value {
+    let mut projects: Vec<(i64, &str)> = links
+        .iter()
+        .filter_map(|(id, link)| id.parse::<i64>().ok().map(|id| (id, link.path.as_str())))
+        .collect();
+    projects.sort();
+    // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
+    // localhost resolves to ::1 first on some systems.
+    json!({
+        "url": format!("http://127.0.0.1:{port}"),
+        "token": token,
+        "projects": projects.iter().map(|(id, path)| json!({ "id": id, "path": path })).collect::<Vec<_>>(),
+    })
+}
+
+/// Rewrite the discovery file after a folder link changes, while this app
+/// publishes one.
+pub(crate) fn refresh_discovery_file(app: &AppHandle) {
+    let (Some(file), Some(info)) = (
+        app.try_state::<DiscoveryFile>(),
+        app.try_state::<mcp_clients::ServerInfo>(),
+    ) else {
+        return;
+    };
+    // Removed on quit: never bring it back for a server that is going away.
+    if !file.0.exists() {
+        return;
+    }
+    let body = discovery_body(info.port, &info.token, &runner::read_links(app));
+    if std::fs::write(&file.0, body.to_string()).is_ok() {
+        restrict_to_owner(&file.0);
+    }
 }
 
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
@@ -1332,7 +1372,7 @@ pub fn run() {
 
             // --- publish connection details for the Playwright reporter ---
             match app.path().home_dir().map_err(|e| e.to_string()).and_then(|home| {
-                write_discovery_file(&home, port, &token).map_err(|e| e.to_string())
+                write_discovery_file(&home, port, &token, &runner::read_links(app.handle())).map_err(|e| e.to_string())
             }) {
                 Ok(path) => {
                     append_log(&log_path, &format!("reporter discovery file: {}", path.display()));
@@ -1631,12 +1671,29 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_log_line, compose_tooltip, debug_mode_requested, ide_launcher_args,
+        clamp_log_line, compose_tooltip, debug_mode_requested, discovery_body, ide_launcher_args,
         is_safe_launcher_command, is_truthy_flag, progress_bar_status, render_status_dot,
         status_dot_color, write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
+
+    #[test]
+    fn discovery_lists_the_linked_projects_by_id() {
+        let mut links = std::collections::HashMap::new();
+        let link = |path: &str| crate::runner::LinkRecord { path: path.into(), ..Default::default() };
+        links.insert("12".to_string(), link("/work/shop"));
+        links.insert("3".to_string(), link("/work/admin"));
+        links.insert("not-an-id".to_string(), link("/work/other"));
+        assert_eq!(
+            discovery_body(3001, "pd_x", &links),
+            serde_json::json!({
+                "url": "http://127.0.0.1:3001",
+                "token": "pd_x",
+                "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
+            })
+        );
+    }
 
     #[test]
     fn tooltip_composes_run_progress_unread_and_idle() {
