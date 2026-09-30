@@ -291,6 +291,10 @@ onBeforeUnmount(() => {
               </p>
 
               <div v-else-if="generation.phase.value === 'asking'" class="ask-consent">
+                <p v-if="generation.failed.value" class="ask-warn">
+                  {{ generation.failed.value }} could not be loaded ({{ generation.message.value }}). Pick another model, or try
+                  again.
+                </p>
                 <p>
                   To write the answer, this browser downloads a language model from <code>{{ modelHost }}</code>, and the
                   runtime that runs it (about 27 MB) from <code>cdn.jsdelivr.net</code>. Both are kept in this browser, so they
@@ -323,10 +327,11 @@ onBeforeUnmount(() => {
                   <template v-if="generation.progress.value.total && generation.progress.value.loaded >= generation.progress.value.total">
                     Starting {{ generation.model.value.label }}.
                   </template>
-                  <template v-else>
-                    Downloading {{ generation.model.value.label }}<template v-if="generation.progress.value.total">,
-                      {{ formatBytes(generation.progress.value.loaded) }} of {{ formatBytes(generation.progress.value.total) }}</template>.
+                  <template v-else-if="generation.progress.value.total">
+                    Downloading {{ generation.model.value.label }}, {{ formatBytes(generation.progress.value.loaded) }} of
+                    {{ formatBytes(generation.progress.value.total) }}.
                   </template>
+                  <template v-else>Loading {{ generation.model.value.label }}.</template>
                 </p>
                 <progress :value="generation.progress.value.loaded" :max="generation.progress.value.total || undefined" />
               </div>

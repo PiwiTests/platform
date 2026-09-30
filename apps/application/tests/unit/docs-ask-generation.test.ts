@@ -229,13 +229,79 @@ describe('useGeneration', () => {
     expect(generation.written.value).toBeNull();
   });
 
-  test('an error from the worker is shown', () => {
+  test('an error while writing is shown, and the model stays loaded', () => {
     const generation = useGeneration(hrefOf);
     generation.write('a question', sources);
     worker().reply({ type: 'device', supported: true, dtype: 'q4f16', cached: true });
-    worker().reply({ type: 'error', id: null, message: 'out of memory' });
+    worker().reply({ type: 'ready' });
+    const write = worker().sent.at(-1) as Extract<GenerationRequest, { type: 'write' }>;
+    worker().reply({ type: 'error', id: write.id, message: 'the GPU was lost' });
     expect(generation.phase.value).toBe('error');
-    expect(generation.message.value).toBe('out of memory');
+    expect(generation.message.value).toBe('the GPU was lost');
+    expect(worker().terminated).toBe(false);
+  });
+
+  describe('a model that cannot be loaded', () => {
+    const [small, large] = GENERATION_MODELS as [GenerationModel, GenerationModel];
+
+    function failLarge() {
+      storage.set('ask-docs:generation', large.id);
+      const generation = useGeneration(hrefOf);
+      generation.write('a question', sources);
+      worker().reply({ type: 'device', supported: true, dtype: 'q4f16', cached: true });
+      expect(worker().sent.at(-1)).toEqual({ type: 'load' });
+      worker().reply({
+        type: 'error',
+        id: null,
+        message: 'this browser could not give the model enough memory: std::bad_alloc',
+      });
+      return generation;
+    }
+
+    test('lets the reader pick another model, with the reason shown', () => {
+      const generation = failLarge();
+      expect(generation.phase.value).toBe('asking');
+      expect(generation.failed.value).toBe(large.label);
+      expect(generation.message.value).toContain('std::bad_alloc');
+    });
+
+    test('is not loaded again on its own after a reload', () => {
+      failLarge();
+      expect(storage.has('ask-docs:generation')).toBe(false);
+      expect(useGeneration(hrefOf).model.value.id).toBe(small.id);
+    });
+
+    test('replaces the worker, and the next choice loads in a new one', () => {
+      const generation = failLarge();
+      const first = worker();
+      expect(first.terminated).toBe(true);
+
+      generation.choose(small.id);
+      // Picking does not start anything after a failure: the reader decides with the button.
+      expect(FakeWorker.instances).toHaveLength(1);
+      generation.accept();
+      const second = FakeWorker.instances[1]!;
+      expect(second.sent).toEqual([{ type: 'probe', model: small.id, files: small.files }]);
+      second.reply({ type: 'device', supported: true, dtype: 'q4f16', cached: false });
+      expect(second.sent.at(-1)).toEqual({ type: 'load' });
+      expect(generation.phase.value).toBe('downloading');
+      expect(generation.failed.value).toBeNull();
+      expect(storage.get('ask-docs:generation')).toBe(small.id);
+    });
+
+    test('a cached model that failed waits for the reader, who can still pick it again', () => {
+      const generation = failLarge();
+      generation.cancel();
+      generation.write('another question', sources);
+      const second = FakeWorker.instances[1]!;
+      second.reply({ type: 'device', supported: true, dtype: 'q4f16', cached: true });
+      expect(generation.phase.value).toBe('asking');
+      expect(second.sent.some((request) => request.type === 'load')).toBe(false);
+
+      generation.accept();
+      expect(second.sent.at(-1)).toEqual({ type: 'load' });
+      expect(generation.phase.value).toBe('downloading');
+    });
   });
 
   test('removing the model deletes its files and forgets the agreement', async () => {
@@ -252,15 +318,14 @@ describe('useGeneration', () => {
 });
 
 describe('explainError', () => {
-  test('replaces the words of the runtime for running out of memory with advice', () => {
+  test('explains the words of the runtime for running out of memory, and keeps them', () => {
     for (const message of [
       "Can't create a session. ERROR_CODE: 6, ERROR_MESSAGE: std::bad_alloc",
       'RangeError: Array buffer allocation failed',
       'Aborted(OOM). Out of memory',
       'RuntimeError: memory access out of bounds',
     ]) {
-      expect(explainError(message)).toContain('enough memory');
-      expect(explainError(message)).toContain('Qwen3 0.6B');
+      expect(explainError(message)).toBe(`this browser could not give the model enough memory: ${message}`);
     }
   });
 

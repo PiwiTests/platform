@@ -135,12 +135,18 @@ node scripts/eval-answer.mjs --model <hugging face id> --dtype q4 [--verbose]   
   field headers only, into a graph of a few hundred KB and data files named as transformers.js looks for them
   (`model_q4f16.onnx_data`, `_data_1`...). Each data file holds at most 1 GiB, because a JavaScript buffer cannot reach
   2 GB (measured in Chromium: 2.0 GB is allowed, 2.147 GB is not) and transformers.js reads each file into one. The
-  graph is written to the cache last: its presence says the model is complete. Checked by comparing the text
+  graph is written to the cache last: its presence says the model is complete. A whole file already in the cache, kept
+  by an earlier version of the panel or by transformers.js when it downloaded the file itself, is split in place before
+  the model loads. transformers.js reads the files through `modelCache` in the worker (`env.customCache`): the Cache
+  Storage, and memory for what the browser refused to store. Checked by comparing the text
   generated from the original file and from the split one (identical, Qwen3 0.6B and 1.7B `q4`, in Node), and by loading
   the split files in Chromium with a software WebGPU.
-- **Known limits.** In a private window the browser refuses to store a large file in Cache Storage: the worker then
-  falls back to transformers.js, which downloads the file again and loads it as served. Qwen3 0.6B still loads;
-  Qwen3 1.7B fails with the memory message that `explainError` writes. The `q4` file, for a GPU without 16-bit floats,
+- **A model that cannot be loaded** brings the choice of model back, with the error. The agreement is forgotten, so a
+  reload does not load it again on its own, a cached model that failed waits for the reader, and the worker is
+  replaced, since a runtime that ran out of memory keeps the memory it took.
+- **Known limits.** In a private window the browser neither stores a large file in Cache Storage nor reads parts of a
+  large Blob it keeps in memory (`NotReadableError`, seen in Chromium): the file cannot be split, and loads as served.
+  Qwen3 0.6B still loads; Qwen3 1.7B fails with `std::bad_alloc`. The `q4` file, for a GPU without 16-bit floats,
   holds the embeddings as 32-bit floats: for Qwen3 1.7B that is one GPU buffer of 1.24 GB, which needs a GPU whose
   maximum buffer size is at least that.
 - **Choosing a model is a measurement.** Run `scripts/eval-answer.mjs` on the same questions for each candidate: names

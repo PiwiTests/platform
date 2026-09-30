@@ -56,42 +56,77 @@ async function isCached(model: string, file: string): Promise<boolean> {
 }
 
 /**
+ * Files the browser would not store: a private window, or a full disk, refuses
+ * large ones. They are served from memory for as long as this worker lives, so
+ * the model still loads, as prepared below, without a second download.
+ */
+const unstored = new Map<string, Blob>()
+
+/**
+ * The cache transformers.js reads the model's files from: the Cache Storage of
+ * the panel (`GENERATION_CACHE`), and `unstored` for what it refused.
+ */
+const modelCache = {
+  async match(request: string): Promise<Response | undefined> {
+    const kept = unstored.get(request)
+    if (kept) return new Response(kept, { headers: { 'Content-Length': String(kept.size) } })
+    try {
+      return await (await caches.open(GENERATION_CACHE)).match(request)
+    } catch {
+      return undefined
+    }
+  },
+  async put(request: string, response: Response): Promise<void> {
+    const blob = await response.blob()
+    try {
+      const headers = { 'Content-Length': String(blob.size), 'Content-Type': 'application/octet-stream' }
+      await (await caches.open(GENERATION_CACHE)).put(request, new Response(blob, { headers }))
+      unstored.delete(request)
+    } catch {
+      unstored.set(request, blob)
+    }
+  },
+}
+
+const keep = (request: string, content: Blob | Uint8Array) => modelCache.put(request, new Response(content as BodyInit))
+
+/**
  * Put the model in the cache under the addresses transformers.js reads it from,
- * downloaded on several connections: one connection carries a fraction of what
- * the host can send. The weights are moved to data files of their own on the
- * way (see split-weights.ts), so that loading the model does not copy the whole
- * file into the memory of onnxruntime-web.
+ * with its weights moved to data files of their own (see split-weights.ts), so
+ * that loading it does not copy the whole file into the memory of
+ * onnxruntime-web. The file is downloaded on several connections: one carries a
+ * fraction of what the host can send. A whole file already in the cache, kept
+ * by an earlier version of the panel or by transformers.js, is split in place.
  *
- * Returns how many data files hold the weights (0 when the model is stored as
- * the host serves it), or null when the host cannot serve ranges or a part
- * keeps failing: transformers.js then downloads the file itself.
+ * Returns how many data files hold the weights (0 when the model stays as the
+ * host serves it), or null when the host cannot serve ranges or a part keeps
+ * failing: transformers.js then downloads the file itself.
  */
 async function prefetch(url: string): Promise<number | null> {
   try {
-    const cache = await caches.open(GENERATION_CACHE)
-    const first = url.slice(url.lastIndexOf('/') + 1) + '_data'
-    const dataUrl = (index: number) => url.slice(0, url.lastIndexOf('/') + 1) + dataFileName(first, index)
-    if (await cache.match(url)) {
+    const folder = url.slice(0, url.lastIndexOf('/') + 1)
+    const first = url.slice(folder.length) + '_data'
+    const dataUrl = (index: number) => folder + dataFileName(first, index)
+
+    const stored = await modelCache.match(url)
+    if (stored) {
       let files = 0
-      while (await cache.match(dataUrl(files))) files++
-      return files
+      while (await modelCache.match(dataUrl(files))) files++
+      if (files) return files
     }
-    const blob = await downloadInParts(url, { onProgress: (loaded, total) => post({ type: 'progress', loaded, total }) })
+    const blob = stored
+      ? await stored.blob()
+      : await downloadInParts(url, { onProgress: (loaded, total) => post({ type: 'progress', loaded, total }) })
     if (!blob) return null
 
-    const save = (address: string, content: Blob | Uint8Array) => {
-      const size = content instanceof Blob ? content.size : content.byteLength
-      const headers = { 'Content-Length': String(size), 'Content-Type': 'application/octet-stream' }
-      return cache.put(address, new Response(content as BodyInit, { headers }))
-    }
     const split = await splitWeights(blob, first).catch(() => null)
     if (!split) {
-      await save(url, blob)
+      if (!stored) await keep(url, blob)
       return 0
     }
-    for (const [index, file] of split.files.entries()) await save(dataUrl(index), file)
-    // The graph goes last: its presence says the model is complete.
-    await save(url, split.graph)
+    for (const [index, file] of split.files.entries()) await keep(dataUrl(index), file)
+    // The graph goes last, over the whole file when there was one: its presence says the model is complete.
+    await keep(url, split.graph)
     return split.files.length
   } catch {
     return null
@@ -105,8 +140,8 @@ async function load(): Promise<void> {
     env.allowLocalModels = false
     env.allowRemoteModels = true
     env.remoteHost = __ASK_DOCS_MODEL_HOST__
-    env.useBrowserCache = true
-    env.cacheKey = GENERATION_CACHE
+    env.useCustomCache = true
+    env.customCache = modelCache
     const dataFiles = await prefetch(`${__ASK_DOCS_MODEL_HOST__}${probe.model}/resolve/main/onnx/${probe.file}`)
 
     const files = new Map<string, { loaded: number; total: number }>()

@@ -40,10 +40,10 @@ export const MAX_NEW_TOKENS = 350
 /** The Cache Storage that holds the model's files, so the panel can delete them. */
 export const GENERATION_CACHE = 'ask-docs-generation'
 
-/** What to tell the reader about an error that loading or running a model raised: the browser's own words for running out of memory mean nothing to them. */
+/** What to tell the reader about an error that loading or running a model raised: the runtime's words for running out of memory mean little to them, so they come after an explanation. */
 export function explainError(message: string): string {
-  if (/bad_alloc|out of memory|memory access out of bounds|allocation failed|Array buffer allocation/i.test(message)) {
-    return 'this browser could not give the model enough memory, try Qwen3 0.6B, which needs less'
+  if (/bad_alloc|out of memory|memory access out of bounds|allocation failed/i.test(message)) {
+    return `this browser could not give the model enough memory: ${message}`
   }
   return message
 }
