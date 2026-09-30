@@ -164,8 +164,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
         CredentialAttributes(generateServiceName("Piwi", Glue.apiKeyEntry(serverUrl)))
 
     /**
-     * Earlier versions kept one key for every instance, which a project naming another
-     * instance would have sent there. It is removed once: connect again to save it per instance.
+     * Deletes the key shared by every instance, once: a project naming another
+     * instance would send it there. Connect again to save a key per instance.
      */
     private fun forgetSharedKey() {
         val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
