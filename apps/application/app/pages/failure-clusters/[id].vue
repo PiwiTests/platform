@@ -16,6 +16,7 @@ import { buildRetryCommand } from '~/utils/retry-command';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-time';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
@@ -539,7 +540,7 @@ const breadcrumbItems = computed(() => [
               <span v-if="knownIssue" aria-hidden="true">·</span>
               <a
                 v-if="knownIssue"
-                :href="knownIssue.url"
+                :href="safeHttpUrl(knownIssue.url) ?? undefined"
                 target="_blank"
                 rel="noopener noreferrer"
                 :class="SENTENCE_LINK_CLASS"

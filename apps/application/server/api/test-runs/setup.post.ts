@@ -5,7 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken } from '../../utils/shard-tokens';
+import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
@@ -143,7 +143,7 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
+        metadata: { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,

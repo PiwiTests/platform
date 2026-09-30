@@ -1,12 +1,13 @@
 import { testRuns } from '../database/schema';
 import { apiError } from './api-error';
+import { timingSafeEqualStr } from './timing-safe';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
 
 /**
- * Validates the stream token for a test run. If the run was interrupted by the
- * stale-run cleanup (no activity for `STALE_TIMEOUT_MS`, streamToken cleared),
- * this revives it back to `running` by accepting the reporter's existing token.
+ * Validates the stream token for a test run. A run the stale-run cleanup marked
+ * `interrupted` (no activity for 2 minutes) keeps its stream token, and a request
+ * carrying that token, or one of the run's shard tokens, revives it to `running`.
  *
  * Throws a proper HTTP error on invalid state or token mismatch.
  * Mutates `testRun` in place on revival so callers see the updated state.
@@ -20,7 +21,7 @@ export async function validateAndReviveRun(
   bodyStreamToken: string | null | undefined,
   isShardToken?: (token: string) => boolean,
 ): Promise<void> {
-  const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken;
+  const isInterrupted = testRun.status === 'interrupted';
 
   if (testRun.status !== 'running' && !isInterrupted) {
     throw apiError({
@@ -29,29 +30,25 @@ export async function validateAndReviveRun(
     });
   }
 
-  if (isInterrupted) {
-    if (!bodyStreamToken) {
-      throw apiError({
-        statusCode: 403,
-        message: 'Missing stream token',
-      });
-    }
-    await db
-      .update(testRuns)
-      .set({
-        status: 'running',
-        streamToken: bodyStreamToken,
-        updatedAt: new Date(),
-      })
-      .where(eq(testRuns.id, runId));
-    testRun.status = 'running';
-    testRun.streamToken = bodyStreamToken;
-  } else if (testRun.streamToken !== bodyStreamToken) {
-    // Fallback: accept shard token if provided
-    if (isShardToken && bodyStreamToken && isShardToken(bodyStreamToken)) return;
+  if (!bodyStreamToken) {
+    throw apiError({
+      statusCode: 403,
+      message: 'Missing stream token',
+    });
+  }
+
+  const valid =
+    (testRun.streamToken != null && timingSafeEqualStr(testRun.streamToken, bodyStreamToken)) ||
+    (isShardToken?.(bodyStreamToken) ?? false);
+  if (!valid) {
     throw apiError({
       statusCode: 403,
       message: 'Invalid stream token',
     });
+  }
+
+  if (isInterrupted) {
+    await db.update(testRuns).set({ status: 'running', updatedAt: new Date() }).where(eq(testRuns.id, runId));
+    testRun.status = 'running';
   }
 }

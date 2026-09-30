@@ -18,7 +18,7 @@ const LOCATOR_TOKEN_CLASS: Record<LocatorTokenKind, string> = {
 };
 
 const TOKEN_RE =
-  /('(?:\\.|[^'])*'|"(?:\\.|[^"])*")|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)(?=\s*:)|(true|false|null|\d+)|([{}(),.])/g;
+  /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)(?=\s*:)|(true|false|null|\d+)|([{}(),.])/g;
 
 /**
  * Split a locator expression into method names, string arguments, option keys,

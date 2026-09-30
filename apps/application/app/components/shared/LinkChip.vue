@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { EntityLinkInfo } from '~~/types/api';
 import { getProviderIcon } from '#shared/link-detect';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   link: EntityLinkInfo;
@@ -33,7 +34,7 @@ const providerIcon = computed(() => getProviderIcon(props.link.provider as any))
     </UBadge>
 
     <UButton
-      :to="link.url"
+      :to="safeHttpUrl(link.url) ?? undefined"
       target="_blank"
       size="xs"
       variant="ghost"

@@ -1,6 +1,10 @@
 import { extname } from 'path';
 import { requireAuth } from '../../utils/auth';
-import { requireProjectAccess } from '../../utils/project-access';
+import {
+  requireProjectAccess,
+  requireResolvedProjectAccess,
+  resolveBugReportProjectId,
+} from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
@@ -74,18 +78,14 @@ async function findInArchive(buffer: Buffer, targetName: string): Promise<Buffer
 
 const COMPRESSIBLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
-// Content types a browser can execute as a scriptable document. Untrusted stored
-// files are never served as one of these on the strength of a caller override.
-const ACTIVE_CONTENT_TYPES = new Set([
-  'text/html',
-  'application/xhtml+xml',
-  'image/svg+xml',
-  'application/xml',
-  'text/xml',
-]);
+// Content types a caller may name for an extension-less attachment, all inert.
+// Anything else (HTML, SVG, any XML type) would let arbitrary stored bytes run as
+// a scriptable document on the dashboard origin, so it falls back to octet-stream.
+const OVERRIDABLE_CONTENT_TYPE =
+  /^(?:image\/(?:png|jpeg|gif|webp|avif|bmp)|video\/[\w.-]+|audio\/[\w.-]+|text\/(?:plain|csv|markdown)|application\/(?:json|x-ndjson|pdf|zip|octet-stream))$/;
 
-function isActiveContentType(value: string): boolean {
-  return ACTIVE_CONTENT_TYPES.has(value.split(';')[0]!.trim().toLowerCase());
+function isOverridableContentType(value: string): boolean {
+  return OVERRIDABLE_CONTENT_TYPE.test(value.split(';')[0]!.trim().toLowerCase());
 }
 
 export default eventHandler(async (event) => {
@@ -93,20 +93,6 @@ export default eventHandler(async (event) => {
   const query = getQuery(event);
   const overrideContentType = typeof query.contentType === 'string' ? query.contentType : null;
   const wantCompressed = query.compress === '1';
-
-  // Extract project ID from path for access control
-  const pathStr = path || '';
-  const pathMatch = pathStr.match(/^project-(\d+)\//);
-  if (pathMatch && pathMatch[1]) {
-    const projectId = parseInt(pathMatch[1]);
-    if (projectId) {
-      await requireProjectAccess(event, projectId);
-    } else {
-      await requireAuth(event);
-    }
-  } else {
-    await requireAuth(event);
-  }
 
   if (!path) {
     throw apiError({
@@ -121,6 +107,19 @@ export default eventHandler(async (event) => {
       statusCode: 403,
       message: 'Invalid file path',
     });
+  }
+
+  // Every stored file belongs to a project: its own folder, or a bug report's.
+  // A path that names neither is refused rather than served to any signed-in user.
+  const projectMatch = path.match(/^project-(\d+)\//);
+  const bugReportMatch = path.match(/^bug-reports\/(\d+)\//);
+  if (projectMatch) {
+    await requireProjectAccess(event, Number(projectMatch[1]));
+  } else if (bugReportMatch) {
+    await requireResolvedProjectAccess(event, Number(bugReportMatch[1]), resolveBugReportProjectId, 'Bug report');
+  } else {
+    await requireAuth(event);
+    throw apiError({ statusCode: 404, message: 'File not found' });
   }
 
   const storage = getStorage();
@@ -150,9 +149,10 @@ export default eventHandler(async (event) => {
   // browser. The bundled local viewer (/trace-viewer/) is same-origin, so it
   // works with auth on; the hosted trace.playwright.dev viewer is cross-origin
   // and cannot send the session cookie, so it only works when auth is disabled.
-  // The wildcard is safe because responses carry no credentials cross-origin.
+  // Only that viewer may read them cross-origin.
   if (path.endsWith('.zip')) {
-    setResponseHeader(event, 'Access-Control-Allow-Origin', '*');
+    setResponseHeader(event, 'Access-Control-Allow-Origin', 'https://trace.playwright.dev');
+    setResponseHeader(event, 'Vary', 'Origin');
   }
 
   // Content types that should be displayed inline rather than downloaded
@@ -211,12 +211,14 @@ export default eventHandler(async (event) => {
 
   function resolveContentType(ext: string): string {
     // If the caller supplied a content-type for an extension-less attachment,
-    // honor it only for inert types. An override that names an active type
-    // (text/html, image/svg+xml, XML) would turn arbitrary stored bytes into a
-    // scriptable document served from the dashboard origin, so it is ignored —
-    // the file then falls back to octet-stream, which `nosniff` keeps inert.
+    // honor it only for inert types; otherwise the file stays octet-stream, which
+    // `nosniff` keeps inert.
     const guessed = setContentType(ext);
-    if (guessed === 'application/octet-stream' && overrideContentType && !isActiveContentType(overrideContentType)) {
+    if (
+      guessed === 'application/octet-stream' &&
+      overrideContentType &&
+      isOverridableContentType(overrideContentType)
+    ) {
       return overrideContentType;
     }
     return guessed;

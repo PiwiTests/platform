@@ -34,6 +34,7 @@ import type {
   TraceNetworkResponse,
   TraceSnapshotsResponse,
 } from '../../types/api';
+import { safeStorageSegment } from './sanitize-filename';
 
 /** Path of the execution's stored (slim) trace blob, or null when no trace was uploaded. */
 export async function resolveCaseTraceBlobPath(db: DbClient, testRunsCaseId: number): Promise<string | null> {
@@ -116,6 +117,8 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
       : // Without a manifest only exact-shaped probes are possible.
         resourceNameCandidates(name, []);
     for (const candidate of poolCandidates) {
+      // Names come from the uploaded trace: only a single path segment may address the pool.
+      if (!safeStorageSegment(candidate)) continue;
       try {
         return decodeResource(await storage.readFile(`${projectPrefix}/trace-resources/${candidate}`));
       } catch {

@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { projects, testRunsCases } from '../database/schema';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
-import { buildCompareUrl, computeMetadataDiff, type MetaDiffEntry } from '#shared/utils/run-metadata';
+import { buildCommitRange, computeMetadataDiff, type MetaDiffEntry } from '#shared/utils/run-metadata';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { normalizeGitUrl } from './scm/git-url';
 import { resolveRunBranch } from './run-branch';
@@ -86,19 +86,7 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
 
   const repositoryUrl = normalizeGitUrl(remoteUrl);
 
-  let commitRange = null;
-  if (currentCommit && lastGreenCommit && currentCommit !== lastGreenCommit) {
-    const compareUrl = repositoryUrl ? buildCompareUrl(repositoryUrl, lastGreenCommit, currentCommit) : null;
-    commitRange = {
-      fromSha: lastGreenCommit,
-      toSha: currentCommit,
-      fromShort: lastGreenCommit.slice(0, 7),
-      toShort: currentCommit.slice(0, 7),
-      repositoryUrl,
-      compareUrl,
-      gitCommand: `git log --oneline ${lastGreenCommit}..${currentCommit}`,
-    };
-  }
+  const commitRange = buildCommitRange(repositoryUrl, lastGreenCommit, currentCommit);
 
   const metadataDiff = computeMetadataDiff(greenMeta, currMeta, lastGreen.environment, run.environment);
 

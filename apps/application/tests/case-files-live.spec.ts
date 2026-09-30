@@ -265,7 +265,7 @@ test.describe.serial('Live case file uploads', () => {
     const { items: traces } = await (await request.get(`/api/test-run-cases/${caseWithFilesId}/traces`)).json();
     const response = await request.get(`/api/files/${traces[0].filePath}`);
     expect(response.ok()).toBeTruthy();
-    expect(response.headers()['access-control-allow-origin']).toBe('*');
+    expect(response.headers()['access-control-allow-origin']).toBe('https://trace.playwright.dev');
   });
 });
 

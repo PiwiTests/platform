@@ -66,6 +66,9 @@ PORT=8080 npx @piwitests/server
 $env:PORT='8080'; npx @piwitests/server
 ```
 
+The server listens on `127.0.0.1` only: with authentication off, anyone who reaches the port is an
+administrator. To serve other machines, enable authentication and set `HOST=0.0.0.0`.
+
 ## Sending results
 
 Add the [`@piwitests/reporter`](https://www.npmjs.com/package/@piwitests/reporter) to your

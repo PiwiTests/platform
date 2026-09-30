@@ -232,7 +232,7 @@ function countNoun(locator: string | null, count: number): string {
 /** `getByText('Invite sent')` → `Invite sent`, for the `Text "…"` phrasing. */
 function textOfGetByText(locator: string | null): string | null {
   if (!locator) return null;
-  const m = /^getByText\(\s*(['"`])((?:\\.|(?!\1).)*)\1\s*(?:,\s*\{[^}]*\})?\s*\)$/.exec(locator);
+  const m = /^getByText\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1\s*(?:,\s*\{[^}]*\})?\s*\)$/.exec(locator);
   return m ? m[2]! : null;
 }
 

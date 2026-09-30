@@ -266,15 +266,6 @@ export default defineNuxtConfig({
   // dev servers (e.g., auth server in CI, demo build).
   buildDir: process.env.PIWI_BUILD_DIR || undefined,
 
-  routeRules: {
-    '/api/**': {
-      cors: true,
-    },
-    '/mcp': {
-      cors: true,
-    },
-  },
-
   experimental: {
     // Disable buildCache in demo mode: restoring an SSR cache when generating
     // a SPA (ssr: false) causes Rollup to look for client.precomputed.mjs

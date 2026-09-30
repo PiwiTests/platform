@@ -88,7 +88,8 @@ describe('interruptStaleRuns', () => {
     const byId = new Map(rows.map((r) => [r.id, r]));
     for (const id of [1, 2, 3]) {
       expect(byId.get(id)?.status).toBe('interrupted');
-      expect(byId.get(id)?.streamToken).toBeNull();
+      // The token stays so the run's own reporter, and only it, can revive the run.
+      expect(byId.get(id)?.streamToken).toBe(`token-${id}`);
     }
     expect(byId.get(4)?.status).toBe('running');
     expect(byId.get(5)?.status).toBe('passed');

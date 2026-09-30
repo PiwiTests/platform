@@ -21,8 +21,12 @@ if (!existsSync(entry)) {
   process.exit(1)
 }
 
+// Loopback unless HOST or NITRO_HOST names another address: with authentication off,
+// the default, anyone who reaches the port is an administrator.
+if (!process.env.HOST && !process.env.NITRO_HOST) process.env.HOST = '127.0.0.1'
+const host = process.env.NITRO_HOST || process.env.HOST
 const port = process.env.PORT || process.env.NITRO_PORT || '3000'
-console.log(`Starting Piwi Dashboard on http://localhost:${port}`)
+console.log(`Starting Piwi Dashboard on http://${host === '127.0.0.1' ? 'localhost' : host}:${port}`)
 console.log(`Data (SQLite database + file storage) will be stored in ${resolve(process.cwd(), '.data')}`)
 
 // import() takes a URL, not a path: a Windows path (C:\...) reads as a `c:` scheme.

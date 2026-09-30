@@ -101,10 +101,10 @@ See the [configuration reference](/reference/configuration#integrations) for the
 
 ## Trusted base URLs and private hosts
 
-A connection base URL is supplied by an administrator, so Piwi trusts it: a host on a private network —
-`https://jira.internal.example.com` or an RFC 1918 address — is reachable without extra configuration. The client
-itself speaks Jira Cloud's REST v3 only. Every URL a non-administrator supplies (pinning a link, for instance) still
-goes through the SSRF guard that blocks private hosts.
+A connection base URL is supplied by an administrator, so Piwi trusts it: a private host such as
+`https://jira.internal.example.com` or an RFC 1918 address is reachable without extra configuration. The client speaks
+Jira Cloud's REST v3 only. A URL a non-administrator supplies (a pinned link) goes through the SSRF guard that blocks
+private hosts. Moving a connection to another site drops its stored credentials.
 
 ## What unfurl gives today
 

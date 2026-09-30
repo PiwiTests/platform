@@ -21,6 +21,8 @@ const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
 const ACTIVE_TOOLS = IS_DESKTOP ? [...MCP_TOOLS, ...DESKTOP_MCP_TOOLS] : MCP_TOOLS;
 const TOOL_BY_NAME = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
+// Every request of a batch runs at once, and one tool call can be a heavy query.
+const MAX_BATCH_REQUESTS = 20;
 
 const KNOWN_MODULES = new Set<CapabilityModule>(CAPABILITY_MODULES);
 
@@ -59,14 +61,6 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // Auth: same pd_<key> Bearer token as the REST API.
 
 export default eventHandler(async (event) => {
-  // CORS — MCP clients are typically local desktop apps or CLI tools that
-  // may POST from a different origin than the dashboard UI.
-  setResponseHeaders(event, {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
-  });
-
   // Authenticate using the same API-key / session mechanism as the REST API,
   // then resolve the caller's project scope. Every tool honors this scope so a
   // non-admin key can only read the projects it is assigned to — the same
@@ -88,6 +82,14 @@ export default eventHandler(async (event) => {
 
   const body = await readBody<JsonRpcRequest | JsonRpcRequest[]>(event);
   const requests = Array.isArray(body) ? body : [body];
+  if (requests.length > MAX_BATCH_REQUESTS) {
+    setResponseStatus(event, 400);
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: RPC.INVALID_REQUEST, message: `A batch holds at most ${MAX_BATCH_REQUESTS} requests` },
+    };
+  }
 
   const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event, db)));
 

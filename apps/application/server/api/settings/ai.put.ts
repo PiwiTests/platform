@@ -11,6 +11,7 @@ import {
   type RawStoredRole,
 } from '../../utils/ai-settings';
 import { claudeCliEnabled } from '../../utils/ai-claude-cli';
+import { storedKeyFor } from '../../utils/ai-provider';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
 defineRouteMeta({
@@ -155,8 +156,22 @@ export default eventHandler(async (event) => {
           message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model`,
         });
       }
+      // A stored key is kept only for the provider and base URL it was saved for;
+      // pointing the role elsewhere needs the key entered again.
+      const existing = existingRoles[role];
+      if (
+        provider !== 'claude-cli' &&
+        cfg.apiKey === undefined &&
+        existing?.apiKey &&
+        !storedKeyFor({ ...existing, apiKey: 'stored' }, provider, baseUrl)
+      ) {
+        throw apiError({
+          statusCode: 400,
+          message: `Role "${role}": enter the API key again. A saved key is only sent to the provider and base URL it was saved for.`,
+        });
+      }
       // claude-cli carries no key or base URL — the CLI owns auth and endpoint.
-      const apiKey = provider === 'claude-cli' ? undefined : resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
+      const apiKey = provider === 'claude-cli' ? undefined : resolveKey(cfg.apiKey, existing?.apiKey);
       out[role] = {
         provider,
         model,

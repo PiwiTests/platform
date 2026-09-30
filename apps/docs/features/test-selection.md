@@ -34,7 +34,7 @@ resolution from `.piwi/selection-cache.json` when it has one): a reporting probl
 `piwi select <key>` resolves and prints the Playwright arguments instead of running them, for a two-step job. Three
 flags shape a resolution:
 
-- `--shard i/n` keeps only shard _i_ of _n_, split so each shard's summed test duration is even. The split is
+- `--shard i/n` keeps only shard _i_ of _n_ (up to 1,000 shards), split so each shard's summed test duration is even. The split is
   **lock-aware**: every test that shares a [lock](/reference/test-metadata#test-locks) goes to the same shard, because
   Playwright serializes lock holders only inside one process. Shard with `piwi run --shard` rather than Playwright's
   own `--shard`, which would split the lock; a resolution whose tests share a lock carries a `split-lock` warning.
