@@ -1121,6 +1121,23 @@ const SCENES = [
     })),
   ),
   ...[
+    { name: 'project-url-patterns-empty', width: 1280 },
+    { name: 'project-url-patterns-empty-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `The browser extension URLs of a project whose runs recorded no baseURL, saying why nothing is suggested, at ${width} px`,
+    route: '/projects/2?tab=settings',
+    viewport: { width, height: 1000 },
+    of: '[data-shot="project-url-patterns"]',
+    async run({ page, shoot, settle }) {
+      const card = page.locator('[data-shot="project-url-patterns"]');
+      await card.getByTestId('url-pattern-no-suggestions').waitFor({ timeout: 90000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'chart-export-menu', width: 1280 },
     { name: 'chart-export-menu-mobile', width: 375 },
   ].map(({ name, width }) => ({

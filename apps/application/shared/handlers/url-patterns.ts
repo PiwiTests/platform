@@ -2,7 +2,14 @@ import { and, asc, desc, eq, inArray, like } from 'drizzle-orm';
 import { z } from 'zod';
 import { urlMatches } from '@piwitests/core/function-match';
 import { parsePathPrefix, type PathPrefixProblem } from '@piwitests/core/page-key';
-import { graphNodes, locatorUsages, projects, projectUrlPatterns, testRuns } from '../../server/database/schema';
+import {
+  graphNodes,
+  locatorUsages,
+  projects,
+  projectUrlPatterns,
+  testRuns,
+  testRunsCases,
+} from '../../server/database/schema';
 import { projectRouteOrigins, runBaseUrls, urlOrigin } from '#shared/graph';
 import type { DrizzleDB } from './db';
 
@@ -197,7 +204,7 @@ export async function listVisibleUrlPatterns(db: DrizzleDB, scope: 'all' | Set<n
   return rows.map((r) => ({ ...r, projectLabel: r.projectLabel || r.projectName }));
 }
 
-export type UrlPatternSuggestionSource = 'base-url' | 'test-map' | 'locator-pages';
+export type UrlPatternSuggestionSource = 'base-url' | 'navigation' | 'test-map' | 'locator-pages';
 
 export interface UrlPatternSuggestion {
   pattern: string;
@@ -209,11 +216,20 @@ export interface UrlPatternSuggestion {
   hits: number;
 }
 
+export interface UrlPatternSuggestions {
+  items: UrlPatternSuggestion[];
+  /** Origins the suite visited that a saved pattern already covers, left out of `items`. */
+  covered: number;
+}
+
 const SUGGESTION_RUNS = 20;
 const SUGGESTION_RUNS_PER_ENVIRONMENT = 5;
 const SUGGESTION_RUN_WINDOW = 1000;
 const SUGGESTION_ENVIRONMENTS = 20;
 const SUGGESTION_ROWS = 2000;
+const NAVIGATION_RUNS = 6;
+const NAVIGATION_RUNS_PER_ENVIRONMENT = 2;
+const NAVIGATION_CASES_PER_RUN = 20;
 
 function runEnvironment(environment: string | null): string | null {
   const trimmed = environment?.trim();
@@ -248,13 +264,60 @@ async function suggestionRunIds(db: DrizzleDB, projectId: number): Promise<numbe
 }
 
 /**
- * One `https://host/**` pattern per origin the project's suite visited: the
- * Playwright `baseURL` of its runs and its own route origins, the URL of each
- * page node of the Test Map, and each absolute page its locators ran on.
- * A `baseURL` origin carries the environment its runs were reported with.
- * Origins an existing pattern already covers are left out.
+ * The absolute address a navigation step opened (`page.goto`), or null: its
+ * `params.url`, its subtitle, or a URL spelled in its title, whichever the
+ * Playwright version that ran it recorded. A path under the `baseURL` is null.
  */
-export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Promise<UrlPatternSuggestion[]> {
+export function stepNavigationUrl(step: unknown): string | null {
+  if (!step || typeof step !== 'object') return null;
+  const s = step as { category?: unknown; title?: unknown; subtitle?: unknown; params?: { url?: unknown } | null };
+  if (s.category !== 'navigation') return null;
+  const inTitle = typeof s.title === 'string' ? /https?:\/\/[^\s"'`)]+/i.exec(s.title)?.[0] : undefined;
+  for (const candidate of [s.params?.url, s.subtitle, inTitle]) {
+    if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate.trim())) return candidate.trim();
+  }
+  return null;
+}
+
+function stepList(steps: unknown): unknown[] {
+  if (typeof steps !== 'string') return Array.isArray(steps) ? steps : [];
+  try {
+    const parsed: unknown = JSON.parse(steps);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The runs whose `page.goto` steps feed the suggestions: the newest two per
+ * environment of the runs that recorded no `baseURL`, whose tests open full
+ * addresses rather than paths.
+ */
+function navigationRuns<T extends { environment: string | null }>(runs: T[]): T[] {
+  const perEnvironment = new Map<string, number>();
+  const picked: T[] = [];
+  for (const run of runs) {
+    if (picked.length >= NAVIGATION_RUNS) break;
+    const environment = runEnvironment(run.environment) ?? '';
+    const count = perEnvironment.get(environment) ?? 0;
+    if (count >= NAVIGATION_RUNS_PER_ENVIRONMENT) continue;
+    picked.push(run);
+    perEnvironment.set(environment, count + 1);
+  }
+  return picked;
+}
+
+/**
+ * One `https://host/**` pattern per origin the project's suite visited: the
+ * Playwright `baseURL` of its runs and its own route origins, the full
+ * addresses its tests opened with `page.goto` when a run recorded no
+ * `baseURL`, the URL of each page node of the Test Map, and each absolute page
+ * its locators ran on. An origin a run visited carries the environment the run
+ * was reported with. Origins an existing pattern already covers are left out
+ * and counted in `covered`.
+ */
+export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Promise<UrlPatternSuggestions> {
   const byOrigin = new Map<
     string,
     { sources: Set<UrlPatternSuggestionSource>; hits: number; environments: Map<string, number> }
@@ -273,7 +336,7 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
     .select({ routeOrigins: projects.routeOrigins })
     .from(projects)
     .where(eq(projects.id, projectId));
-  if (!project) return [];
+  if (!project) return { items: [], covered: 0 };
   for (const origin of projectRouteOrigins(project.routeOrigins)) add(origin, 'base-url');
 
   const runIds = await suggestionRunIds(db, projectId);
@@ -281,15 +344,36 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
     runIds.length === 0
       ? []
       : await db
-          .select({ environment: testRuns.environment, metadata: testRuns.metadata })
+          .select({ id: testRuns.id, environment: testRuns.environment, metadata: testRuns.metadata })
           .from(testRuns)
           .where(inArray(testRuns.id, runIds))
           .orderBy(desc(testRuns.startTime), desc(testRuns.id));
+  const withoutBaseUrl: typeof runs = [];
   for (const run of runs) {
     // One vote per run and origin, whatever the number of Playwright projects pointing at it.
-    const origins = new Set(runBaseUrls(run.metadata).map(urlOrigin));
+    const origins = new Set(
+      runBaseUrls(run.metadata)
+        .map(urlOrigin)
+        .filter((origin) => origin !== null && /^https?:\/\//.test(origin)),
+    );
+    if (origins.size === 0) withoutBaseUrl.push(run);
     for (const origin of origins) add(origin, 'base-url', runEnvironment(run.environment));
   }
+
+  const navigated = await Promise.all(
+    navigationRuns(withoutBaseUrl).map(async (run) => {
+      const cases = await db
+        .select({ steps: testRunsCases.steps })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.testRunId, run.id))
+        .orderBy(asc(testRunsCases.id))
+        .limit(NAVIGATION_CASES_PER_RUN);
+      const origins = new Set<string | null>();
+      for (const c of cases) for (const step of stepList(c.steps)) origins.add(urlOrigin(stepNavigationUrl(step)));
+      return { environment: runEnvironment(run.environment), origins };
+    }),
+  );
+  for (const run of navigated) for (const origin of run.origins) add(origin, 'navigation', run.environment);
 
   const pageNodes = await db
     .select({ attrs: graphNodes.attrs })
@@ -306,8 +390,10 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
   for (const row of pages) add(row.page, 'locator-pages');
 
   const existing = await listProjectUrlPatterns(db, projectId);
-  return [...byOrigin.entries()]
-    .filter(([origin]) => !existing.some((p) => urlMatches(p.pattern, `${origin}/`)))
+  const uncovered = [...byOrigin.entries()].filter(
+    ([origin]) => !existing.some((p) => urlMatches(p.pattern, `${origin}/`)),
+  );
+  const items = uncovered
     .map(([origin, entry]) => ({
       pattern: `${origin}/**`,
       origin,
@@ -316,6 +402,7 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
       hits: entry.hits,
     }))
     .sort((a, b) => b.hits - a.hits || a.origin.localeCompare(b.origin));
+  return { items, covered: byOrigin.size - uncovered.length };
 }
 
 /** The key with the highest count; on a tie, the one counted first (the newest run's). */
