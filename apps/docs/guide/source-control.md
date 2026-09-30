@@ -34,7 +34,8 @@ logged, and the feature shows nothing rather than failing a run.
   project. Prefer one per project for write access: an instance-wide write token can write everywhere it reaches.
 
 A token is stored encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general) and never returned by the API;
-the field shows that one is stored. Leave the field empty to keep it, or save it empty to remove it.
+the field shows that one is stored. Leave the field empty to keep it. To remove it, save the instance-wide field empty,
+or click **Remove stored token** under the project field.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
 A private repository needs one.

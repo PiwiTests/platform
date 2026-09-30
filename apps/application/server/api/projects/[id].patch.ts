@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, targets, and tags. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires administrator role.',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, targets, and tags. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator'],
   },
@@ -85,9 +85,9 @@ export default eventHandler(async (event) => {
     tagIds,
   } = validation.data;
 
-  // Encrypt SCM token before persisting; null/empty clears the stored value
+  // Encrypt SCM token before persisting; omitted keeps the stored value, null or empty clears it
   const encryptedScmToken =
-    scmToken != null && scmToken.trim() ? encryptSecret(scmToken.trim(), getEncryptionKey()) : scmToken;
+    scmToken === undefined ? undefined : scmToken?.trim() ? encryptSecret(scmToken.trim(), getEncryptionKey()) : null;
 
   // Normalize the CI re-run config (drops empty targets); null clears it.
   const resolvedCiRerun =

@@ -31,7 +31,7 @@ const props = withDefaults(
   { hasToken: false, hideOpenApi: false, hideServerProbes: false },
 );
 
-const emit = defineEmits<{ 'tag-created': [] }>();
+const emit = defineEmits<{ 'tag-created': []; 'remove-scm-token': [] }>();
 
 const name = defineModel<string>('name', { default: '' });
 const label = defineModel<string>('label', { default: '' });
@@ -132,7 +132,7 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
         name="scmToken"
         :description="
           hasToken
-            ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it'
+            ? 'Leave empty to keep the stored token, or enter a new value to replace it'
             : 'For GitHub, GitLab, or Bitbucket. Falls back to the global SCM token if not set.'
         "
       >
@@ -145,6 +145,17 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
           :placeholder="hasToken ? '•••••••• (unchanged)' : 'ghp_..., glpat-..., or bitbucket token'"
           class="w-full font-mono"
         />
+        <UButton
+          v-if="hasToken"
+          size="xs"
+          color="error"
+          variant="link"
+          class="px-0 mt-1"
+          icon="i-lucide-trash-2"
+          @click="emit('remove-scm-token')"
+        >
+          Remove stored token
+        </UButton>
       </UFormField>
 
       <UFormField

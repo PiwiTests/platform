@@ -45,7 +45,7 @@ export async function getAriaSampling(
   const freshest = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
-      latest: sql<number>`max(${testRunsCases.createdAt})`,
+      latest: sql<Date>`max(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -58,7 +58,7 @@ export async function getAriaSampling(
     )
     .groupBy(testRunsCases.testCaseId);
 
-  const freshById = new Map(freshest.map((row) => [row.testCaseId, Number(row.latest)]));
+  const freshById = new Map(freshest.map((row) => [row.testCaseId, row.latest.getTime()]));
   const cutoff = now - GREEN_SAMPLE_MAX_AGE_MS;
 
   const tests = cases

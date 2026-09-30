@@ -64,6 +64,27 @@ export interface DistinctRunCounts {
 }
 
 /**
+ * The final attempt of each (test case, browser) — the row with the highest
+ * retry. A run stores one row per attempt; this row decides the test's outcome.
+ */
+export function finalAttempts<T extends { testCaseId: number; browserName?: string | null; retries?: number | null }>(
+  rows: ReadonlyArray<T>,
+): T[] {
+  const final = new Map<string, T>();
+  for (const r of rows) {
+    const key = attemptKey(r);
+    const prev = final.get(key);
+    if (!prev || (r.retries ?? 0) >= (prev.retries ?? 0)) final.set(key, r);
+  }
+  return [...final.values()];
+}
+
+/** The (test case, browser) identity shared by all attempts of one test in a run. */
+export function attemptKey(row: { testCaseId: number; browserName?: string | null }): string {
+  return `${row.testCaseId}\x00${row.browserName ?? ''}`;
+}
+
+/**
  * Reduce a run's per-attempt `test_runs_cases` rows to distinct-test counters:
  * the final attempt per (test case, browser) — the highest retry — decides each
  * test's outcome, timed-out folds into `failedTests` (Piwi has no separate
@@ -74,26 +95,20 @@ export interface DistinctRunCounts {
 export function distinctRunCountsFromAttempts(
   rows: ReadonlyArray<{ testCaseId: number; browserName?: string | null; retries?: number | null; status: string }>,
 ): DistinctRunCounts {
-  const final = new Map<string, { status: string; retries: number }>();
-  for (const r of rows) {
-    const key = `${r.testCaseId}\x00${r.browserName ?? ''}`;
-    const retries = r.retries ?? 0;
-    const prev = final.get(key);
-    if (!prev || retries >= prev.retries) final.set(key, { status: r.status, retries });
-  }
+  const final = finalAttempts(rows);
   const counts: DistinctRunCounts = {
-    totalTests: final.size,
+    totalTests: final.length,
     passedTests: 0,
     failedTests: 0,
     skippedTests: 0,
     didNotRunTests: 0,
     flakyTests: 0,
   };
-  for (const { status, retries } of final.values()) {
+  for (const { status, retries } of final) {
     if (FAILED_STATUS_SET.has(status)) counts.failedTests++;
     else if (status === 'passed') {
       counts.passedTests++;
-      if (retries > 0) counts.flakyTests++;
+      if ((retries ?? 0) > 0) counts.flakyTests++;
     } else if (status === 'skipped') counts.skippedTests++;
     else if (status === 'didnotrun') counts.didNotRunTests++;
   }

@@ -12,7 +12,7 @@
  * adoption stops duplicate PRs, and `applyLineEdit`'s already-applied result
  * makes re-running an action a no-op once its commit has landed.
  */
-import { and, eq, lt, lte } from 'drizzle-orm';
+import { and, eq, inArray, lt, lte } from 'drizzle-orm';
 import { healActions, projects } from '../../database/schema';
 import { createScmProvider } from '../scm';
 import { emitNotification } from '../notifications/emit';
@@ -22,7 +22,7 @@ import { buildHealPrBody, buildHealPrTitle } from '#shared/heal-pr';
 import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import type { ScmProvider, ScmFileEdit } from '../scm/ScmProvider';
 import type { DbClient } from '../../database';
-import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 
@@ -111,7 +111,11 @@ export async function applyHealAction(
   return openPr(commitSha);
 }
 
-/** Process queued heal actions that are due now. Mirrors the notifications sweeper. */
+/**
+ * Process queued heal actions that are due now, including a claimed one whose
+ * lease ran out. Each is claimed first and skipped when another sweep holds it.
+ * Mirrors the notifications sweeper.
+ */
 export async function sweepHealActions(db: DbClient): Promise<{ opened: number; failed: number; skipped: number }> {
   const now = new Date();
   let opened = 0;
@@ -128,13 +132,15 @@ export async function sweepHealActions(db: DbClient): Promise<{ opened: number; 
     .from(healActions)
     .where(
       and(
-        eq(healActions.status, 'pending'),
+        inArray(healActions.status, OUTBOX_SWEEPABLE_STATUSES),
         lte(healActions.scheduledFor, now),
         lt(healActions.attempts, MAX_ATTEMPTS),
       ),
     );
 
   for (const action of due) {
+    const claimed = await claimOutboxRows(db, healActions, [action.id]);
+    if (!claimed.has(action.id)) continue;
     const payload = action.payload as HealActionPayload;
     const attempts = action.attempts + 1;
     try {

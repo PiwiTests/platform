@@ -23,7 +23,7 @@ import {
   bugReports,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
-import { isLabRun } from './probes';
+import { notLabRun } from './probes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -37,8 +37,6 @@ export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
-/** Extra recent runs fetched beyond the window so excluded lab runs don't shrink it. */
-const PROBE_RUN_WINDOW_BUFFER = 20;
 /** A route must be seen at least this many times before "always success" is a claim. */
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
 /** Each exposure factor is clamped here so a missing input can never zero a row. */
@@ -1130,19 +1128,16 @@ function maxPriority(
 /**
  * Ids of a project's most recent real runs, newest first. Lab runs (probes,
  * flake experiments) are excluded — their injected faults must never enter the detectors' history
- * window — so a buffer beyond the window is fetched to keep it full.
+ * window.
  */
 async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number): Promise<number[]> {
   const rows = await db
-    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.id))
-    .limit(limit + PROBE_RUN_WINDOW_BUFFER);
-  return rows
-    .filter((r) => !isLabRun(r.metadata))
-    .slice(0, limit)
-    .map((r) => r.id);
+    .limit(limit);
+  return rows.map((r) => r.id);
 }
 
 /** Title + priority for a set of test cases. */

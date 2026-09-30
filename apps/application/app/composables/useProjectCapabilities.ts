@@ -21,11 +21,12 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  */
 export async function useProjectCapabilities(projectId: number) {
   const { canSeeAdmin } = useAuth();
+  const requestFetch = useRequestFetch();
 
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     `capabilities-project-${projectId}`,
     () =>
-      $fetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
+      requestFetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`)
         .then((r) => r.items)
         .catch(() => []),
     { default: () => [] },

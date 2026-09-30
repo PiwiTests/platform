@@ -145,10 +145,11 @@ export interface HealActionResult {
 }
 
 /**
- * `opened` is a PR still open on the SCM; `merged` and `closed` are the states
- * the PR-state refresh records once the SCM reports it settled.
+ * `processing` is an action a sweep is opening right now; `opened` is a PR still
+ * open on the SCM; `merged` and `closed` are the states the PR-state refresh
+ * records once the SCM reports it settled.
  */
-export type HealActionStatus = 'pending' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped';
+export type HealActionStatus = 'pending' | 'processing' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped';
 
 // ── Deterministic identity (dedupe key + branch name) ────────────────────────
 

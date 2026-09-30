@@ -62,7 +62,8 @@ Click **Import N archives** to upload the ready ones, one at a time, with a prog
 the server would have rejected, and nothing that is already there is uploaded twice.
 
 Importing is **idempotent**: an archive is identified by the SHA-256 of its bytes, so re-uploading one changes nothing.
-An interrupted batch is safe to simply repeat.
+An interrupted batch is safe to simply repeat. An import that fails partway leaves no run behind, so the archive reads
+as ready again and the retry imports it in full.
 
 ## Importing trace files
 

@@ -15,7 +15,7 @@ import {
 } from '../../server/database/schema';
 import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
-import { isLabRun, notLabExecution, notLabRun } from './probes';
+import { notLabExecution, notLabRun } from './probes';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -354,19 +354,29 @@ export async function createProject(
   const existing: any[] = await db.select().from(projects).where(eq(projects.name, name));
   if (existing.length > 0) throw new Error('A project with this name already exists');
 
-  const result: any[] = await db.insert(projects).values({ name, label, description }).returning();
-  const project = result[0]!;
+  const uniqueTagIds = tagIds ? await validTagIds(db, tagIds) : [];
 
-  // Link tags if provided
-  if (tagIds && tagIds.length > 0) {
-    const existingTags: any[] = await db.select().from(tags).where(inArray(tags.id, tagIds));
-    if (existingTags.length !== tagIds.length) {
-      throw new Error('One or more tag IDs are invalid');
+  const project = await db.transaction(async (tx) => {
+    const result: any[] = await tx.insert(projects).values({ name, label, description }).returning();
+    const created = result[0]!;
+    if (uniqueTagIds.length > 0) {
+      await tx.insert(projectTags).values(uniqueTagIds.map((tagId) => ({ projectId: created.id, tagId })));
     }
-    await db.insert(projectTags).values(tagIds.map((tagId: number) => ({ projectId: project.id, tagId })));
-  }
+    return created;
+  });
 
   return { success: true, project };
+}
+
+/** The distinct tag ids, or throws when one of them names no tag. */
+async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) return unique;
+  const existingTags: any[] = await db.select({ id: tags.id }).from(tags).where(inArray(tags.id, unique));
+  if (existingTags.length !== unique.length) {
+    throw new Error('One or more tag IDs are invalid');
+  }
+  return unique;
 }
 
 // ─── updateProject ───────────────────────────────────────────────
@@ -409,42 +419,34 @@ export async function updateProject(
     tagIds: dataTagIds,
   } = data;
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
+  const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
-  // Update project
-  await db
-    .update(projects)
-    .set({
-      label,
-      description,
-      diagnosisInstructions: diagnosisInstructions ?? undefined,
-      aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
-      scmToken: scmToken !== undefined ? scmToken : undefined,
-      defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
-      openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
-      serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
-      ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
-      generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
-      targets: resolvedTargets,
-      updatedAt: new Date(),
-    })
-    .where(eq(projects.id, id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(projects)
+      .set({
+        label,
+        description,
+        diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
+        aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
+        scmToken: scmToken !== undefined ? scmToken : undefined,
+        defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
+        openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
+        serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
+        ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+        generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
+        targets: resolvedTargets,
+        updatedAt: new Date(),
+      })
+      .where(eq(projects.id, id));
 
-  // Update project tags if provided
-  if (dataTagIds !== undefined) {
-    // Remove all existing tags for this project
-    await db.delete(projectTags).where(eq(projectTags.projectId, id));
-
-    if (dataTagIds.length > 0) {
-      // Validate that all tag IDs exist
-      const existingTags: any[] = await db.select().from(tags).where(inArray(tags.id, dataTagIds));
-      if (existingTags.length !== dataTagIds.length) {
-        throw new Error('One or more tag IDs are invalid');
+    if (uniqueTagIds !== undefined) {
+      await tx.delete(projectTags).where(eq(projectTags.projectId, id));
+      if (uniqueTagIds.length > 0) {
+        await tx.insert(projectTags).values(uniqueTagIds.map((tagId) => ({ projectId: id, tagId })));
       }
-
-      // Insert new tag associations
-      await db.insert(projectTags).values(dataTagIds.map((tagId: number) => ({ projectId: id, tagId })));
     }
-  }
+  });
 
   // Get updated project with tags
   const updatedProject: any[] = await db.select().from(projects).where(eq(projects.id, id));
@@ -705,17 +707,14 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
 }
 
 /**
- * Normalize a `MAX(created_at)` aggregate to epoch milliseconds. The raw value
- * is a ms integer on SQLite, a Date (or timestamp string) on PostgreSQL, and
- * Unix seconds in a demo database whose seed stored seconds.
+ * Epoch milliseconds of a `MAX(created_at)` aggregate mapped to a Date. A demo
+ * database whose seed stored Unix seconds yields a date in January 1970, so a
+ * value below 1e12 ms is read as seconds.
  */
-function toEpochMs(value: unknown): number | null {
+function toEpochMs(value: Date | null): number | null {
   if (value == null) return null;
-  if (value instanceof Date) return value.getTime();
-  const n = typeof value === 'number' ? value : Number(value);
-  if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
-  const parsed = Date.parse(String(value));
-  return Number.isNaN(parsed) ? null : parsed;
+  const ms = value.getTime();
+  return ms < 1e12 ? ms * 1000 : ms;
 }
 
 /**
@@ -746,8 +745,14 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     dir = 'desc',
   } = options;
 
-  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`;
-  const failed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`;
+  // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
+  // (numeric) as strings, and a timestamp aggregate unparsed: each selected
+  // aggregate is mapped so both dialects agree.
+  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number);
+  const failed =
+    sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
+      Number,
+    );
   const recentFlaky = sql<number>`(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
@@ -757,7 +762,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
-    )`;
+    )`.mapWith(Number);
   const lastStatus = sql<string | null>`(
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
@@ -773,7 +778,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     END`;
   const passRate = sql<
     number | null
-  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`;
+  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`.mapWith(Number);
 
   const conditions = [eq(testCases.projectId, projectId)];
   if (q) {
@@ -847,19 +852,29 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       feature: testCases.feature,
       link: testCases.link,
       status: category,
-      totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
+      totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
       passedRuns: passed,
       failedRuns: failed,
-      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
-      fixmeRuns: sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`,
-      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`,
-      flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
+      fixmeRuns:
+        sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`.mapWith(
+          Number,
+        ),
+      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`.mapWith(
+        Number,
+      ),
+      flakyRuns:
+        sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
+          Number,
+        ),
       recentFlakyRuns: recentFlaky,
       passRate,
       avgDuration: sql<
         number | null
-      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-      lastRun: sql<number | null>`MAX(${testRunsCases.createdAt})`,
+      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`.mapWith(
+        Number,
+      ),
+      lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
     })
     .from(testCases)
@@ -891,18 +906,16 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const projRows: any[] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
   if (projRows.length === 0) throw new Error('Project not found');
 
+  // Lab runs (probes, flake experiments) inject faults and conditions, so their
+  // executions never count toward spec health.
   const recentRuns: any[] = await db
-    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
-
-  // Lab runs (probes, flake experiments) inject faults and conditions, so their
-  // executions never count toward spec health.
-  const runIds: number[] = recentRuns.filter((r: any) => !isLabRun(r.metadata)).map((r: any) => r.id);
-  if (runIds.length === 0) return { specs: [] };
+  const runIds: number[] = recentRuns.map((r: any) => r.id);
   const rows: any[] = await db
     .select({
       filePath: testCases.filePath,
@@ -1442,35 +1455,26 @@ export async function getProjectFlakyTestsWithVerified(
   // that branch. Otherwise, when the project's default branch is known, the
   // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
   // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently.
-  const runsConditions = [eq(testRuns.projectId, projectId)];
+  // project's health signal. Environment scopes independently. Lab runs
+  // (probes, flake experiments) inject faults and conditions, so their
+  // executions never enter the flaky leaderboard.
+  const runsConditions = [
+    eq(testRuns.projectId, projectId),
+    inArray(testRuns.status, TERMINAL_STATUSES),
+    notLabRun(testRuns.metadata),
+  ];
   if (environment) runsConditions.push(eq(testRuns.environment, environment));
   if (branch) {
     runsConditions.push(eq(testRuns.branch, branch));
   } else if (project.defaultBranch) {
     runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
   }
-  const recentRuns: any[] = await db
+  const filteredRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)
     .where(and(...runsConditions))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
-
-  if (recentRuns.length === 0) return { items: [], verifiedFixed: [] };
-
-  const runIds: number[] = recentRuns.map((r: any) => r.id);
-
-  // Re-fetch with status filter. Lab runs (probes, flake experiments) inject
-  // faults and conditions, so their executions
-  // never enter the flaky leaderboard.
-  const runsWithStatus: any[] = await db
-    .select({ id: testRuns.id, startTime: testRuns.startTime, status: testRuns.status, metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(inArray(testRuns.id, runIds));
-  const filteredRuns: any[] = runsWithStatus.filter(
-    (r: any) => TERMINAL_STATUSES.includes(r.status) && !isLabRun(r.metadata),
-  );
 
   if (filteredRuns.length === 0) return { items: [], verifiedFixed: [] };
   const filteredRunIds: number[] = filteredRuns.map((r: any) => r.id);

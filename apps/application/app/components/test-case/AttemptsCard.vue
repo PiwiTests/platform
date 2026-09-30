@@ -25,7 +25,9 @@ const props = defineProps<{
   projectId?: number | null;
 }>();
 
-const { data, status } = await useFetch<AttemptDiffResult>(`/api/test-run-cases/${props.testRunsCaseId}/attempt-diff`);
+const { data, status } = await useFetch<AttemptDiffResult>(
+  () => `/api/test-run-cases/${props.testRunsCaseId}/attempt-diff`,
+);
 const { isHidden: capabilityHidden } = await useProjectCapabilities(props.projectId ?? 0);
 
 const locator = useClusterSectionLocator();

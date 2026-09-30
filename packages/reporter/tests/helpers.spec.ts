@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { hashForProject, computeInstanceId } from '../src/internal/support/instance-id.js';
 import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
-import { detectCiRunLabel } from '../src/internal/support/ci.js';
+import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
 import { workerIndexOf } from '../src/internal/support/worker-index.js';
@@ -13,21 +13,31 @@ import { detectCliFileFilters } from '../src/internal/support/cli-filters.js';
 const CI_KEYS = [
   'GITHUB_ACTIONS',
   'GITHUB_RUN_ID',
+  'GITHUB_RUN_ATTEMPT',
+  'GITHUB_JOB',
   'GITLAB_CI',
   'CI_PIPELINE_ID',
+  'CI_JOB_ID',
   'CIRCLECI',
   'CIRCLE_WORKFLOW_ID',
+  'CIRCLE_BUILD_NUM',
   'TRAVIS',
   'TRAVIS_BUILD_ID',
+  'TRAVIS_JOB_ID',
   'TF_BUILD',
   'BUILD_BUILDID',
+  'SYSTEM_JOBID',
   'JENKINS_URL',
   'BUILD_ID',
   'BUILDKITE_BUILD_ID',
+  'BUILDKITE_JOB_ID',
   'TEAMCITY_BUILD_ID',
   'BITBUCKET_BUILD_NUMBER',
+  'BITBUCKET_STEP_UUID',
   'SEMAPHORE_WORKFLOW_ID',
+  'SEMAPHORE_JOB_ID',
   'APPVEYOR_BUILD_ID',
+  'APPVEYOR_JOB_ID',
   'DRONE_BUILD_NUMBER',
 ];
 
@@ -109,7 +119,7 @@ describe('computeInstanceId', () => {
   });
 });
 
-describe('detectCiRunLabel', () => {
+describe('resolveRunLabel: CI pipeline label', () => {
   beforeEach(() => {
     saveEnv();
     clearCiEnv();
@@ -117,68 +127,131 @@ describe('detectCiRunLabel', () => {
   afterEach(() => restoreEnv());
 
   it('returns null outside CI', () => {
-    expect(detectCiRunLabel()).toBe(null);
+    expect(resolveRunLabel(null, true)).toBe(null);
   });
 
   it('detects GitHub Actions', () => {
     process.env.GITHUB_ACTIONS = 'true';
     process.env.GITHUB_RUN_ID = 'gh-123';
-    expect(detectCiRunLabel()).toBe('gh-123');
+    expect(resolveRunLabel(null, true)).toBe('gh-123');
+  });
+
+  it('gives each GitHub Actions attempt its own label', () => {
+    process.env.GITHUB_ACTIONS = 'true';
+    process.env.GITHUB_RUN_ID = 'gh-123';
+    process.env.GITHUB_RUN_ATTEMPT = '1';
+    expect(resolveRunLabel(null, true)).toBe('gh-123-1');
+    process.env.GITHUB_RUN_ATTEMPT = '2';
+    expect(resolveRunLabel(null, true)).toBe('gh-123-2');
   });
 
   it('detects GitLab CI', () => {
     process.env.GITLAB_CI = 'true';
     process.env.CI_PIPELINE_ID = 'gl-456';
-    expect(detectCiRunLabel()).toBe('gl-456');
+    expect(resolveRunLabel(null, true)).toBe('gl-456');
   });
 
   it('detects CircleCI', () => {
     process.env.CIRCLECI = 'true';
     process.env.CIRCLE_WORKFLOW_ID = 'cc-789';
-    expect(detectCiRunLabel()).toBe('cc-789');
+    expect(resolveRunLabel(null, true)).toBe('cc-789');
   });
 
   it('detects Travis', () => {
     process.env.TRAVIS = 'true';
     process.env.TRAVIS_BUILD_ID = 'tv-1';
-    expect(detectCiRunLabel()).toBe('tv-1');
+    expect(resolveRunLabel(null, true)).toBe('tv-1');
   });
 
   it('detects Azure Pipelines (TF_BUILD)', () => {
     process.env.TF_BUILD = 'true';
     process.env.BUILD_BUILDID = 'az-1';
-    expect(detectCiRunLabel()).toBe('az-1');
+    expect(resolveRunLabel(null, true)).toBe('az-1');
   });
 
   it('detects Jenkins', () => {
     process.env.JENKINS_URL = 'https://jenkins.example.com';
     process.env.BUILD_ID = 'jk-1';
-    expect(detectCiRunLabel()).toBe('jk-1');
+    expect(resolveRunLabel(null, true)).toBe('jk-1');
   });
 
   it('detects Buildkite / TeamCity / Bitbucket / Semaphore / AppVeyor / Drone', () => {
     process.env.BUILDKITE_BUILD_ID = 'bk-1';
-    expect(detectCiRunLabel()).toBe('bk-1');
+    expect(resolveRunLabel(null, true)).toBe('bk-1');
     clearCiEnv();
 
     process.env.TEAMCITY_BUILD_ID = 'tc-1';
-    expect(detectCiRunLabel()).toBe('tc-1');
+    expect(resolveRunLabel(null, true)).toBe('tc-1');
     clearCiEnv();
 
     process.env.BITBUCKET_BUILD_NUMBER = 'bb-1';
-    expect(detectCiRunLabel()).toBe('bb-1');
+    expect(resolveRunLabel(null, true)).toBe('bb-1');
     clearCiEnv();
 
     process.env.SEMAPHORE_WORKFLOW_ID = 'sm-1';
-    expect(detectCiRunLabel()).toBe('sm-1');
+    expect(resolveRunLabel(null, true)).toBe('sm-1');
     clearCiEnv();
 
     process.env.APPVEYOR_BUILD_ID = 'ap-1';
-    expect(detectCiRunLabel()).toBe('ap-1');
+    expect(resolveRunLabel(null, true)).toBe('ap-1');
     clearCiEnv();
 
     process.env.DRONE_BUILD_NUMBER = 'dr-1';
-    expect(detectCiRunLabel()).toBe('dr-1');
+    expect(resolveRunLabel(null, true)).toBe('dr-1');
+  });
+});
+
+describe('resolveRunLabel: per-run scoping', () => {
+  beforeEach(() => {
+    saveEnv();
+    clearCiEnv();
+  });
+  afterEach(() => restoreEnv());
+
+  it('returns a configured label verbatim, sharded or not', () => {
+    process.env.GITLAB_CI = 'true';
+    process.env.CI_PIPELINE_ID = 'gl-456';
+    process.env.CI_JOB_ID = '9';
+    expect(resolveRunLabel('my-label', true)).toBe('my-label');
+    expect(resolveRunLabel('my-label', false)).toBe('my-label');
+  });
+
+  it('adds the CI job id to the label of a run that is not sharded', () => {
+    process.env.GITLAB_CI = 'true';
+    process.env.CI_PIPELINE_ID = 'gl-456';
+    process.env.CI_JOB_ID = '9';
+    expect(resolveRunLabel(null, false)).toBe('gl-456|9');
+    expect(resolveRunLabel(null, true)).toBe('gl-456');
+
+    clearCiEnv();
+    process.env.GITHUB_ACTIONS = 'true';
+    process.env.GITHUB_RUN_ID = 'gh-123';
+    process.env.GITHUB_RUN_ATTEMPT = '1';
+    process.env.GITHUB_JOB = 'e2e';
+    expect(resolveRunLabel(null, false)).toBe('gh-123-1|e2e');
+    expect(resolveRunLabel(null, true)).toBe('gh-123-1');
+  });
+
+  it('keeps the pipeline label when the CI exposes no job id', () => {
+    process.env.JENKINS_URL = 'https://jenkins.example.com';
+    process.env.BUILD_ID = 'jk-1';
+    expect(resolveRunLabel(null, false)).toBe('jk-1');
+  });
+
+  it('returns null outside CI without a configured label', () => {
+    expect(resolveRunLabel(undefined, false)).toBe(null);
+  });
+
+  it('merges the shards of a pipeline, and keeps its unsharded jobs apart', () => {
+    process.env.GITLAB_CI = 'true';
+    process.env.CI_PIPELINE_ID = 'gl-456';
+    const instanceOfJob = (jobId: string, sharded: boolean) => {
+      process.env.CI_JOB_ID = jobId;
+      return computeInstanceId('proj', resolveRunLabel(null, sharded));
+    };
+    // Each shard runs as its own job.
+    expect(instanceOfJob('1', true)).toBe(instanceOfJob('2', true));
+    expect(instanceOfJob('3', false)).not.toBe(instanceOfJob('4', false));
   });
 });
 
@@ -241,7 +314,10 @@ describe('collectSourceFrames', () => {
       ].join('\n');
       const frames = collectSourceFrames(error, spec, 40, { projectRoot: root, context: 2 });
       // The node_modules frame is dropped; helper (innermost in-project) comes before the spec.
-      expect(frames.map((f) => f.file)).toEqual([path.join('tests', 'helper.ts'), path.join('tests', 'checkout.spec.ts')]);
+      expect(frames.map((f) => f.file)).toEqual([
+        path.join('tests', 'helper.ts'),
+        path.join('tests', 'checkout.spec.ts'),
+      ]);
       expect(frames[0]!.line).toBe(15);
       expect(frames[0]!.snippet).toContain('> ');
       expect(frames[0]!.file.startsWith('..')).toBe(false); // project-relative
@@ -290,11 +366,7 @@ describe('readSetupInfo', () => {
   it('round-trips setup info and deletes the file', () => {
     const projectName = 'piwi-setup-roundtrip-' + Date.now();
     const file = getSetupFilePath(projectName);
-    fs.writeFileSync(
-      file,
-      JSON.stringify({ runId: 42, setupToken: 'tok', projectName }),
-      'utf8',
-    );
+    fs.writeFileSync(file, JSON.stringify({ runId: 42, setupToken: 'tok', projectName }), 'utf8');
     try {
       const info = readSetupInfo(projectName);
       expect(info).toEqual({ runId: 42, setupToken: 'tok', projectName });
@@ -308,11 +380,7 @@ describe('readSetupInfo', () => {
   it('returns null when projectName does not match', () => {
     const projectName = 'piwi-setup-mismatch-' + Date.now();
     const file = getSetupFilePath(projectName);
-    fs.writeFileSync(
-      file,
-      JSON.stringify({ runId: 1, setupToken: 't', projectName: 'other-project' }),
-      'utf8',
-    );
+    fs.writeFileSync(file, JSON.stringify({ runId: 1, setupToken: 't', projectName: 'other-project' }), 'utf8');
     try {
       expect(readSetupInfo(projectName)).toBe(null);
     } finally {
@@ -360,7 +428,13 @@ describe('createLimiter', () => {
   it('coerces maxConcurrent < 1 to 1', async () => {
     const limiter = createLimiter(0);
     let count = 0;
-    await Promise.all(Array.from({ length: 3 }, () => limiter(async () => { count++; })));
+    await Promise.all(
+      Array.from({ length: 3 }, () =>
+        limiter(async () => {
+          count++;
+        }),
+      ),
+    );
     expect(count).toBe(3);
   });
 
@@ -368,6 +442,10 @@ describe('createLimiter', () => {
     const limiter = createLimiter(3);
     const ok = await limiter(async () => 7);
     expect(ok).toBe(7);
-    await expect(limiter(async () => { throw new Error('boom'); })).rejects.toThrow(/boom/);
+    await expect(
+      limiter(async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow(/boom/);
   });
 });

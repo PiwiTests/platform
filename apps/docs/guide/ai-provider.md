@@ -15,8 +15,10 @@ once on the server; API keys never leave it.
 ## Enabling AI diagnosis
 
 Configure a provider via **Settings → AI**, or with environment variables. `PIWI_AI_PROVIDER` is the switch: once it
-is set, the provider configuration comes from the environment and the UI shows it read-only (a model picked in the UI
-still overrides the env model); without it, the other provider variables below are not read.
+is set, the provider configuration comes from the environment and the UI shows its provider, key and base URL
+read-only. A model or temperature picked in the UI still overrides the env one, and a role the environment leaves out
+can be turned on in the UI by reusing a role it sets. Without `PIWI_AI_PROVIDER`, the other provider variables below
+are not read.
 
 | Variable | Description |
 |----------|-------------|

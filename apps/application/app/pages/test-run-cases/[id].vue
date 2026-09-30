@@ -27,6 +27,9 @@ const { data: testCase, refresh } = await useFetch<
   ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>
 >(`/api/test-run-cases/${testCaseId}`);
 
+// Server-rendered fetches carry the viewer's session.
+const requestFetch = useRequestFetch();
+
 // The rows ride in the SSR payload, so the server and the client agree on the
 // History block's strip at hydration.
 const { data: historyData } = await useAsyncData(
@@ -34,7 +37,7 @@ const { data: historyData } = await useAsyncData(
   () => {
     const tcId = testCase.value?.testCaseId;
     return tcId
-      ? $fetch<{ items: TestCaseHistoryPoint[] }>(`/api/test-cases/${tcId}/history`).then((r) => r.items)
+      ? requestFetch<{ items: TestCaseHistoryPoint[] }>(`/api/test-cases/${tcId}/history`).then((r) => r.items)
       : Promise.resolve([]);
   },
   { default: (): TestCaseHistoryPoint[] => [], watch: [() => testCase.value?.testCaseId] },
@@ -228,7 +231,7 @@ const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo 
   `test-run-case-rerun-${testCaseId}`,
   () => {
     const id = failureCluster.value?.id;
-    return id ? $fetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
+    return id ? requestFetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
   },
   { default: (): RerunInfo | null => null, watch: [() => failureCluster.value?.id] },
 );
@@ -238,7 +241,7 @@ const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncDat
   () => {
     const id = failureCluster.value?.id;
     return id
-      ? $fetch<{ items: FixedBeforeMatch[] }>(`/api/failure-clusters/${id}/fixed-before`).then((r) => r.items)
+      ? requestFetch<{ items: FixedBeforeMatch[] }>(`/api/failure-clusters/${id}/fixed-before`).then((r) => r.items)
       : Promise.resolve([]);
   },
   { default: (): FixedBeforeMatch[] => [], watch: [() => failureCluster.value?.id] },
@@ -252,7 +255,7 @@ const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   `test-run-case-fix-plan-${testCaseId}`,
   () => {
     const id = failureCluster.value?.id;
-    return id ? $fetch<FixPlan>(`/api/failure-clusters/${id}/fix-plan`).catch(() => null) : Promise.resolve(null);
+    return id ? requestFetch<FixPlan>(`/api/failure-clusters/${id}/fix-plan`).catch(() => null) : Promise.resolve(null);
   },
   { default: (): FixPlan | null => null, watch: [() => failureCluster.value?.id] },
 );

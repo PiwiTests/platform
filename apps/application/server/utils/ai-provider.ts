@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
-import { parseEnvTemperature } from './ai-settings';
+import { overlayStoredRoles, parseEnvTemperature } from './ai-settings';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -74,9 +74,14 @@ function makeRole(
 
 const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
 
-/** Resolve the new `roles` storage shape, decrypting keys and following `reuse` links. */
-function resolveStoredRoles(roles: Partial<Record<AiModelRole, StoredRole>>): AiConfig['roles'] {
-  const decrypt = (enc?: string) => (enc ? decryptSecret(enc, getEncryptionKey()) : '');
+/**
+ * Resolve a role map, following `reuse` links. `readKey` turns each role's
+ * `apiKey` into the key to send: stored keys are decrypted, env keys are plain.
+ */
+function resolveRoles(
+  roles: Partial<Record<AiModelRole, StoredRole>>,
+  readKey: (key?: string) => string = (enc) => (enc ? decryptSecret(enc, getEncryptionKey()) : ''),
+): AiConfig['roles'] {
   const out: Record<AiModelRole, ResolvedAiRole | null> = { diagnosis: null, research: null, embedding: null };
 
   for (const role of ROLE_ORDER) {
@@ -87,7 +92,7 @@ function resolveStoredRoles(roles: Partial<Record<AiModelRole, StoredRole>>): Ai
       const base = out[cfg.reuse]!;
       out[role] = makeRole(base.provider, base.apiKey, cfg.model || base.model, base.baseUrl, kind, cfg.temperature);
     } else {
-      out[role] = makeRole(cfg.provider, decrypt(cfg.apiKey), cfg.model, cfg.baseUrl, kind, cfg.temperature);
+      out[role] = makeRole(cfg.provider, readKey(cfg.apiKey), cfg.model, cfg.baseUrl, kind, cfg.temperature);
     }
   }
 
@@ -141,38 +146,46 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
     | undefined;
 
   if (envAi?.provider) {
-    const diagnosis = makeRole(
-      envAi.provider,
-      envAi.apiKey,
-      envAi.model,
-      envAi.baseUrl,
-      'chat',
-      parseEnvTemperature(envAi.temperature),
-    );
+    const envRoles: Partial<Record<AiModelRole, StoredRole>> = {
+      diagnosis: {
+        provider: envAi.provider,
+        apiKey: envAi.apiKey,
+        model: envAi.model,
+        baseUrl: envAi.baseUrl,
+        temperature: parseEnvTemperature(envAi.temperature),
+      },
+    };
     // Research defaults its provider/baseUrl/key to the diagnosis role when not overridden.
-    const research = envAi.researchModel
-      ? makeRole(
-          envAi.researchProvider || envAi.provider,
-          envAi.researchApiKey || envAi.apiKey,
-          envAi.researchModel,
-          envAi.researchBaseUrl || envAi.baseUrl,
-          'chat',
-          parseEnvTemperature(envAi.researchTemperature),
-        )
-      : null;
+    if (envAi.researchModel) {
+      envRoles.research = {
+        provider: envAi.researchProvider || envAi.provider,
+        apiKey: envAi.researchApiKey || envAi.apiKey,
+        model: envAi.researchModel,
+        baseUrl: envAi.researchBaseUrl || envAi.baseUrl,
+        temperature: parseEnvTemperature(envAi.researchTemperature),
+      };
+    }
     // Embedding defaults its provider/key/baseUrl to the main role when not
     // overridden (same convention as research). Only useful when the main
     // provider is OpenAI-compatible — embeddings require one.
-    const embedding = envAi.embeddingModel
-      ? makeRole(
-          envAi.embeddingProvider || envAi.provider,
-          envAi.embeddingApiKey || envAi.apiKey,
-          envAi.embeddingModel,
-          envAi.embeddingBaseUrl || envAi.baseUrl,
-          'embedding',
-        )
-      : null;
-    return assembleConfig(diagnosis, research, embedding, String(envAi.autoDiagnose) === 'true', 'env');
+    if (envAi.embeddingModel) {
+      envRoles.embedding = {
+        provider: envAi.embeddingProvider || envAi.provider,
+        apiKey: envAi.embeddingApiKey || envAi.apiKey,
+        model: envAi.embeddingModel,
+        baseUrl: envAi.embeddingBaseUrl || envAi.baseUrl,
+      };
+    }
+    // The per-role settings saved in Settings → AI apply over the env config.
+    const stored = await getAppSetting<StoredAi>(db, 'ai');
+    const roles = resolveRoles(overlayStoredRoles(envRoles, stored), (key) => key ?? '');
+    return assembleConfig(
+      roles.diagnosis,
+      roles.research,
+      roles.embedding,
+      String(envAi.autoDiagnose) === 'true',
+      'env',
+    );
   }
 
   const stored = await getAppSetting<StoredAi>(db, 'ai');
@@ -182,7 +195,7 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
 
   // New role-based storage
   if (stored.roles) {
-    const roles = resolveStoredRoles(stored.roles);
+    const roles = resolveRoles(stored.roles);
     return assembleConfig(roles.diagnosis, roles.research, roles.embedding, autoDiagnose, 'settings');
   }
 

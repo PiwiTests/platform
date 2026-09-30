@@ -64,14 +64,22 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       .from(projects)
       .where(eq(projects.id, testCase.projectId))
       .then((r: any[]) => (r.length > 0 ? [r[0]] : [undefined])),
+    // PostgreSQL returns COUNT and SUM (int8) and AVG (numeric) as strings, and
+    // a timestamp aggregate unparsed: each is mapped so both dialects agree.
     db
       .select({
-        totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
-        passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`,
-        failedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'failed' THEN 1 ELSE 0 END)`,
-        skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
-        timedOutRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('timedOut', 'timedout') THEN 1 ELSE 0 END)`,
-        flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+        totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
+        passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number),
+        failedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'failed' THEN 1 ELSE 0 END)`.mapWith(Number),
+        skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
+        timedOutRuns:
+          sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
+            Number,
+          ),
+        flakyRuns:
+          sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
+            Number,
+          ),
         recentFlakyRuns: sql<number>`(
           SELECT COUNT(*) FROM (
             SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
@@ -80,10 +88,10 @@ export async function getTestCase(db: DrizzleDB, id: number) {
               AND ${notLabExecution(testRunsCases.testRunId)}
             ORDER BY ${testRunsCases.createdAt} DESC
             LIMIT 10
-          ) WHERE s = 'passed' AND r > 0
-        )`,
-        avgDuration: sql<number>`AVG(${testRunsCases.duration})`,
-        lastRunAt: sql<number>`MAX(${testRunsCases.createdAt})`,
+          ) AS recent WHERE s = 'passed' AND r > 0
+        )`.mapWith(Number),
+        avgDuration: sql<number>`AVG(${testRunsCases.duration})`.mapWith(Number),
+        lastRunAt: sql<Date>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       })
       .from(testRunsCases)
       .where(realExecution),
@@ -181,7 +189,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
 export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
   // Lab runs replay a test with an injected fault or condition, so their executions never
   // appear in a test's history.
-  const rows = await db
+  return db
     .select({
       id: testRunsCases.id,
       runId: testRuns.id,
@@ -192,14 +200,12 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       attempts: testRunsCases.attempts,
       startTime: testRuns.startTime,
       runStatus: testRuns.status,
-      runMetadata: testRuns.metadata,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.testCaseId, testCaseId))
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
-  return rows.filter((r) => !isLabRun(r.runMetadata)).map(({ runMetadata: _runMetadata, ...row }) => row);
 }
 
 export async function getTestRunCase(

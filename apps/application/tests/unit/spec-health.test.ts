@@ -55,4 +55,25 @@ describe('getProjectSpecHealth', () => {
       },
     ]);
   });
+
+  test('counts the real runs behind a hundred newer lab runs', async () => {
+    const real = await addRun();
+    await addExecution(real, 0, 'passed');
+    for (let i = 0; i < 100; i++) {
+      const [lab] = await db
+        .insert(schema.testRuns)
+        .values({
+          projectId: 1,
+          status: 'failed',
+          startTime: new Date(Date.now() + i + 1),
+          metadata: { piwiProbe: true },
+        })
+        .returning({ id: schema.testRuns.id });
+      await addExecution(lab!.id, 0, 'failed');
+    }
+
+    const { specs } = await getProjectSpecHealth(db as any, 1, 30);
+
+    expect(specs).toMatchObject([{ prefix: 'tests/cart', passRate: 1, failureCount: 0, testCount: 1 }]);
+  });
 });
