@@ -14,6 +14,9 @@ import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../suppo
 import type { FailureLinks } from '../support/failure-links.js';
 import type { CollectedTestCase, SetupStep, FilterDetails } from '../../types.js';
 
+/** Longest delay `setTimeout` supports; a larger one fires at once. */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
 /**
  * Result of one rung of the submit ladder. `done` stops the ladder (the run
  * landed, or the last rung was reached); `output` carries the run identity to
@@ -80,8 +83,33 @@ export class RunSubmitter {
     private readonly failureLinks: FailureLinks | null = null,
   ) {}
 
-  /** Run the fallback ladder for a completed test run. */
+  /**
+   * Run the fallback ladder for a completed test run, within the
+   * `submitTimeout` budget. When the budget runs out, every request in flight
+   * and every later one fails, so the ladder falls through to saving the
+   * recovery copy.
+   */
   async submit(run: CollectedRun, result: FullResult): Promise<void> {
+    const budgetMs = run.options.submitTimeout ?? 0;
+    const timer =
+      budgetMs > 0 && Number.isFinite(budgetMs)
+        ? setTimeout(() => this.expireBudget(budgetMs), Math.min(budgetMs, MAX_TIMER_DELAY_MS))
+        : null;
+    try {
+      await this.submitRun(run, result);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private expireBudget(budgetMs: number): void {
+    this.logger.warn(
+      `The dashboard did not take the run within ${Math.round(budgetMs / 1000)}s (submitTimeout) — stopping the upload and saving the results locally.`,
+    );
+    this.httpClient.close(`the end-of-run time budget (submitTimeout: ${budgetMs} ms) ran out`);
+  }
+
+  private async submitRun(run: CollectedRun, result: FullResult): Promise<void> {
     const endTime = new Date().toISOString();
     const duration = new Date(endTime).getTime() - new Date(run.startTime!).getTime();
 
@@ -141,7 +169,9 @@ export class RunSubmitter {
       outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
     }
 
-    if (!outcome.done && (this.hasReports(run) || run.options.uploadTraces)) {
+    // Once the time budget closed the client, the multipart upload is skipped:
+    // the JSON rung below fails at once and saves the recovery copy.
+    if (!outcome.done && !this.httpClient.closed && (this.hasReports(run) || run.options.uploadTraces)) {
       outcome = await this.tryUploadWithFiles(run, overallStatus, duration, auth);
     }
 

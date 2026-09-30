@@ -598,3 +598,67 @@ describe('StreamManager request sizing', () => {
     });
   });
 });
+
+describe('StreamManager end-of-run bounds', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  function makeManager(http: Record<string, unknown>, uploader: Record<string, unknown> = {}): StreamManager {
+    const client = {
+      async resolveAuth() {
+        return null;
+      },
+      ...http,
+    };
+    const sm = new StreamManager(
+      client as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      uploader as any,
+      new FileHandler(),
+      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+    return sm;
+  }
+
+  const cases = (n: number) => Array.from({ length: n }, (_, i) => ({ title: `t${i}` }) as any);
+
+  it('uploadRemaining stops after three uploads in a row get no response', async () => {
+    const uploadCaseFiles = vi.fn(async () => {
+      throw new Error('connect ECONNREFUSED');
+    });
+    const sm = makeManager({}, { uploadCaseFiles });
+    await sm.uploadRemaining(cases(10));
+    expect(uploadCaseFiles).toHaveBeenCalledTimes(3);
+  });
+
+  it('uploadRemaining keeps going while the dashboard answers, even with an error status', async () => {
+    let call = 0;
+    const uploadCaseFiles = vi.fn(async () => {
+      call++;
+      // Two connection failures, an answer, then two more: never three in a row.
+      if (call === 3) throw new HttpError(500);
+      if (call <= 5) throw new Error('socket hang up');
+      return true;
+    });
+    const sm = makeManager({}, { uploadCaseFiles });
+    await sm.uploadRemaining(cases(10));
+    expect(uploadCaseFiles).toHaveBeenCalledTimes(10);
+  });
+
+  it('drain stops retrying once the HTTP client is closed', async () => {
+    const sm = makeManager({
+      closed: true,
+      async postJSON() {
+        throw new Error('budget spent');
+      },
+    });
+    sm.queueEvent(completeEvent('undelivered'));
+    // The drain's back-off alone would take over a minute.
+    await sm.drain();
+    expect(sm.lostResults).toBe(true);
+  });
+});

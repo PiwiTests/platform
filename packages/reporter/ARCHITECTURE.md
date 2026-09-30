@@ -63,6 +63,10 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 3. **plain JSON `/submit`** — last resort,
 4. **crash recovery** — on total failure, persist the payload to disk for the next run.
 
+The ladder, including the stream drain and the remaining file uploads, runs within
+the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
+in flight and every later one, so the ladder falls through to crash recovery.
+
 All HTTP goes through `internal/transport/http-client.ts`, which throws `HttpError`
 (carrying `status`) so callers branch on `error.status`, never the message text.
 

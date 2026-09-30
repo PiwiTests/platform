@@ -214,6 +214,28 @@ describe('HttpClient (against fake http.Server)', () => {
     });
   });
 
+  describe('close', () => {
+    it('aborts a request in flight and fails every later one with the reason', async () => {
+      const { server, url, requests } = await startServer((_req, _res) => {
+        // never respond
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 30000);
+        const pending = client.postJSON('/api/hung', {}, null);
+        await expect.poll(() => requests.length).toBe(1);
+        client.close('budget spent');
+        await expect(pending).rejects.toThrow('budget spent');
+        expect(client.closed).toBe(true);
+        await expect(client.postJSON('/api/later', {}, null)).rejects.toThrow('budget spent');
+        expect(requests.length).toBe(1);
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
   describe('connection dropped mid-response', () => {
     it('rejects when the socket closes after the headers but before the body completes', async () => {
       const { server, url } = await startServer((_req, res) => {

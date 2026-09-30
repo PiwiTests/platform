@@ -23,6 +23,8 @@ const SERVER_MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 const EVENT_ENVELOPE_BYTES = 1024;
 /** Byte budget for the events of one `/events` request, well under the server's limit. */
 const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
+/** Uploads in a row without any response after which `uploadRemaining` gives up. */
+const MAX_UPLOAD_CONNECTION_FAILURES = 3;
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -455,7 +457,7 @@ export class StreamManager {
     }
   }
 
-  /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off. */
+  /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off, until the HTTP client is closed. */
   async drain(): Promise<void> {
     try {
       await this._drain();
@@ -491,6 +493,7 @@ export class StreamManager {
           }
           return;
         }
+        if (this.httpClient.closed) break;
         if (attempt === 0) {
           this.logger.warn(
             `The dashboard has not accepted ${this.pendingEvents.length} live event(s) yet — retrying delivery before the final submit (this can take a few minutes)...`,
@@ -602,7 +605,11 @@ export class StreamManager {
     this.liveUploadPromises.push(promise);
   }
 
-  /** Wait for all live uploads to settle, then upload files for any test cases that weren't uploaded live */
+  /**
+   * Wait for all live uploads to settle, then upload files for any test cases
+   * that weren't uploaded live. Stops after `MAX_UPLOAD_CONNECTION_FAILURES`
+   * uploads in a row got no response at all.
+   */
   async uploadRemaining(testCases: CollectedTestCase[]): Promise<void> {
     if (this.liveUploadPromises.length > 0) {
       await Promise.allSettled(this.liveUploadPromises);
@@ -610,6 +617,7 @@ export class StreamManager {
     }
     if (!this._enabled || !this._runId || !this._token) return;
 
+    let connectionFailures = 0;
     for (const tc of testCases) {
       if (this.uploadedCaseFiles.has(tc)) continue;
       try {
@@ -622,8 +630,16 @@ export class StreamManager {
           this._auth,
         );
         if (uploaded) this.uploadedCaseFiles.add(tc);
+        connectionFailures = 0;
       } catch (error) {
         this.logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
+        // Any HTTP status means the dashboard answered; only a request that got
+        // no response (refused, reset, timed out) counts toward giving up.
+        connectionFailures = error instanceof HttpError ? 0 : connectionFailures + 1;
+        if (connectionFailures >= MAX_UPLOAD_CONNECTION_FAILURES) {
+          this.logger.warn(`The dashboard stopped responding — skipping the file uploads of the remaining tests.`);
+          return;
+        }
       }
     }
   }

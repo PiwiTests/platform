@@ -413,6 +413,50 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(submitBody.testCases.map((tc: any) => tc.title)).toEqual(['small-1', 'huge', 'small-2']);
   });
 
+  it('submitTimeout stops waiting for a hung dashboard and saves the run for the next one', async () => {
+    // Accepts every request and never answers, like a hung process or a
+    // firewall that drops the replies.
+    server = await startServer(() => {});
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+      submitTimeout: 300,
+    });
+    const started = Date.now();
+    await runOneTest(reporter, 'hung-dashboard-test');
+
+    // Each request alone would wait for the 30 s socket timeout.
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
+    expect(recovered.testCases[0].title).toBe('hung-dashboard-test');
+    server.server.closeAllConnections();
+  });
+
+  it('a non-finite submitTimeout means no limit', async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 5 }) : textRes(res, 404, 'nope'),
+    );
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      submitTimeout: Infinity,
+    });
+    await runOneTest(reporter, 'unbounded-test');
+
+    expect(urlsHit(server)).toContain('/api/test-runs/submit');
+    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(false);
+  });
+
   it('401 with no auth propagates (does not fall back) and saves a recovery copy', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
