@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: "Every keyboard shortcut the dashboard registers: the command palette, the go-to chords, failure inbox triage, and the keys of the image and element viewers."
+description: "Every keyboard shortcut the dashboard registers: the command palette, the go-to chords, failure inbox triage, the test lists' search, and the keys of the image and element viewers."
 lang: en-US
 ---
 
@@ -38,6 +38,17 @@ row. The triage actions need write access to the project.
 | `l` | Link a known issue |
 | `c` | Create an issue in the connected tracker, when the cluster has none |
 
+## Test lists
+
+On a run's and a project's **Tests** tab ([test search](/reference/test-search)):
+
+| Keys | Action |
+|---|---|
+| `Ctrl` + `F` (`⌘` + `F` on macOS) | Focus the search box; pressed again there, open the browser's find |
+| `↓` / `↑` | Move through the search suggestions |
+| `Enter` / `Tab` | Take the highlighted suggestion |
+| `Esc` | Close the suggestions |
+
 ## Screenshot viewer
 
 | Keys | Action |
@@ -63,5 +74,6 @@ jump to the first / last project of the row.
 ## Related
 
 - [UI overview](/features/ui-overview): the pages these keys move between
+- [Test search](/reference/test-search): the language of the Tests tabs' search box
 - [Failure clusters & the inbox](/features/failure-clusters): the triage actions
 - [Project access](/operate/project-access#permission-grid): the permission grid

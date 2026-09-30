@@ -13,8 +13,31 @@ import {
   bugReports,
   analyticsDailyRollups,
 } from '../../server/database/schema';
-import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
+import {
+  asc,
+  desc,
+  eq,
+  exists,
+  sql,
+  and,
+  or,
+  inArray,
+  gte,
+  lte,
+  isNull,
+  isNotNull,
+  count,
+  type SQL,
+} from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
+import { testSearchConditions } from '#shared/utils/test-search-sql';
+import {
+  CATALOG_SEARCH_FIELDS,
+  collectTestSearchValues,
+  parseTestSearch,
+  type TestSearchValues,
+} from '#shared/test-search';
+import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecution, notLabRun } from './probes';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
@@ -640,7 +663,7 @@ export async function getProjectPerformance(
 
 // ─── getProjectTestCases ─────────────────────────────────────────
 
-export const TEST_CASE_SORTS = ['lastRun', 'title', 'totalRuns', 'passRate', 'avgDuration', 'status'] as const;
+export const TEST_CASE_SORTS = ['file', 'lastRun', 'title', 'totalRuns', 'passRate', 'avgDuration', 'status'] as const;
 export type TestCasesSort = (typeof TEST_CASE_SORTS)[number];
 
 /** Filterable per-case status categories (the derived `status` field, not raw run statuses). */
@@ -649,6 +672,7 @@ export const TEST_CASE_STATUS_FILTERS = ['passed', 'failed', 'flaky', 'skipped',
 export interface TestCasesQuery {
   limit: number;
   offset: number;
+  /** A test-list search (`#shared/test-search`): words, phrases and qualifiers such as `file:` or `-tag:`. */
   q?: string;
   /** Exact spec file path, as the test case stores it. */
   file?: string;
@@ -704,6 +728,35 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     sort: (TEST_CASE_SORTS as readonly string[]).includes(rawSort) ? (rawSort as TestCasesSort) : 'lastRun',
     dir: get('dir') === 'asc' ? 'asc' : 'desc',
   };
+}
+
+/** Test cases with an execution (outside lab runs) in the last `maxAgeDays` days. */
+function executedWithin(db: DrizzleDB, maxAgeDays: number) {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+  return exists(
+    db
+      .select({ one: sql`1` })
+      .from(testRunsCases)
+      .where(
+        and(
+          eq(testRunsCases.testCaseId, testCases.id),
+          gte(testRunsCases.createdAt, cutoff),
+          notLabExecution(testRunsCases.testRunId),
+        ),
+      ),
+  );
+}
+
+/** The column of a test case's latest execution (outside lab runs), as a correlated subquery. */
+function latestExecutionColumn(column: typeof testRunsCases.line | typeof testRunsCases.column) {
+  return sql<number | null>`(
+      SELECT ${column}
+      FROM ${testRunsCases}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        AND ${notLabExecution(testRunsCases.testRunId)}
+      ORDER BY ${testRunsCases.createdAt} DESC
+      LIMIT 1
+    )`;
 }
 
 /**
@@ -782,8 +835,18 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
 
   const conditions = [eq(testCases.projectId, projectId)];
   if (q) {
-    const pattern = `%${q.toLowerCase()}%`;
-    conditions.push(sql`(lower(${testCases.title}) LIKE ${pattern} OR lower(${testCases.filePath}) LIKE ${pattern})`);
+    conditions.push(
+      ...testSearchConditions(parseTestSearch(q, CATALOG_SEARCH_FIELDS), {
+        title: testCases.title,
+        describe: testCases.suitePath,
+        file: testCases.filePath,
+        tag: testCases.tags,
+        lock: testCases.locks,
+        owner: testCases.owner,
+        priority: testCases.priority,
+        feature: testCases.feature,
+      }),
+    );
   }
   if (file) {
     // The reporter stores paths from the CI working directory, which may sit above the Playwright config the
@@ -791,23 +854,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
     conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
   }
-  if (maxAgeDays > 0) {
-    const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
-    conditions.push(
-      exists(
-        db
-          .select({ one: sql`1` })
-          .from(testRunsCases)
-          .where(
-            and(
-              eq(testRunsCases.testCaseId, testCases.id),
-              gte(testRunsCases.createdAt, cutoff),
-              notLabExecution(testRunsCases.testRunId),
-            ),
-          ),
-      ),
-    );
-  }
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, maxAgeDays));
   if (statuses && statuses.length > 0) {
     conditions.push(inArray(category, statuses));
   }
@@ -830,14 +877,24 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   const countRows: any[] = await db.select({ total: count() }).from(testCases).where(where);
   const total = Number(countRows[0]?.total ?? 0);
 
-  const sortExpressions: Record<TestCasesSort, ReturnType<typeof sql>> = {
-    lastRun: sql`MAX(${testRunsCases.createdAt})`,
-    title: sql`lower(${testCases.title})`,
-    totalRuns: sql`COUNT(${testRunsCases.id})`,
-    passRate,
-    avgDuration: sql`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-    status: category,
+  // Where the test sits in its file, as its latest execution reported it.
+  const line = latestExecutionColumn(testRunsCases.line);
+  const column = latestExecutionColumn(testRunsCases.column);
+
+  // Each sort is a list of keys; `file` is the order the tests are declared in,
+  // file by file, which is the order Playwright lists and runs them.
+  const sortExpressions: Record<TestCasesSort, SQL[]> = {
+    file: [sql`lower(${testCases.filePath})`, line, column, sql`lower(${testCases.title})`],
+    lastRun: [sql`MAX(${testRunsCases.createdAt})`],
+    title: [sql`lower(${testCases.title})`],
+    totalRuns: [sql`COUNT(${testRunsCases.id})`],
+    passRate: [passRate],
+    avgDuration: [
+      sql`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
+    ],
+    status: [category],
   };
+  const direction = sql.raw(dir === 'asc' ? 'ASC' : 'DESC');
 
   const rows: any[] = await db
     .select({
@@ -876,12 +933,14 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       ),
       lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
+      line,
+      column,
     })
     .from(testCases)
     .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), notLabExecution(testRunsCases.testRunId)))
     .where(where)
     .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title)
-    .orderBy(sql`${sortExpressions[sort]} ${sql.raw(dir === 'asc' ? 'ASC' : 'DESC')} NULLS LAST`, asc(testCases.id))
+    .orderBy(...sortExpressions[sort].map((key) => sql`${key} ${direction} NULLS LAST`), asc(testCases.id))
     .limit(limit)
     .offset(offset);
 
@@ -891,6 +950,45 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     limit,
     offset,
   };
+}
+
+/**
+ * Every value the catalog's search qualifiers can take in a project — spec
+ * files, describe blocks, tags, locks, owners, priorities and features — with
+ * how many test cases carry each, for the search box's completion. With
+ * `maxAgeDays` it covers the cases the catalog shows for that window.
+ */
+export async function getProjectTestCaseFacets(
+  db: DrizzleDB,
+  projectId: number,
+  options: { maxAgeDays?: number } = {},
+): Promise<{ values: TestSearchValues }> {
+  const maxAgeDays = options.maxAgeDays ?? 0;
+  const conditions = [eq(testCases.projectId, projectId)];
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, maxAgeDays));
+  const rows: any[] = await db
+    .select({
+      filePath: testCases.filePath,
+      suitePath: testCases.suitePath,
+      tags: testCases.tags,
+      locks: testCases.locks,
+      owner: testCases.owner,
+      priority: testCases.priority,
+      feature: testCases.feature,
+    })
+    .from(testCases)
+    .where(and(...conditions));
+  const subjects = rows.map((row) => ({
+    title: '',
+    filePath: row.filePath as string,
+    suitePath: splitSuitePath(row.suitePath),
+    tags: (row.tags as string[] | null) ?? [],
+    locks: (row.locks as string[] | null) ?? [],
+    owner: row.owner as string | null,
+    priority: row.priority as string | null,
+    feature: row.feature as string | null,
+  }));
+  return { values: collectTestSearchValues(subjects, CATALOG_SEARCH_FIELDS) };
 }
 
 /**

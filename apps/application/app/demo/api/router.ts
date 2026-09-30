@@ -94,6 +94,7 @@ import {
   getProjectAiStepCoverage,
   getProjectPerformance,
   getProjectTestCases,
+  getProjectTestCaseFacets,
   parseTestCasesQuery,
   getProjectSlowTests,
   getProjectTimeoutOpportunities,
@@ -665,6 +666,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectTestCases(await getDemoDb(), +m[1]!, parseTestCasesQuery(q));
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-cases\/facets$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const maxAgeDays = Math.max(0, Math.floor(Number(q?.get('maxAgeDays')) || 0));
+      return getProjectTestCaseFacets(await getDemoDb(), +m[1]!, { maxAgeDays });
     },
   },
   {

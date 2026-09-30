@@ -514,8 +514,6 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
-const testCaseBrowserFilter = ref('all');
-const testCaseTagFilter = ref<string[]>([]);
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.
@@ -818,8 +816,6 @@ const moreMenuItems = computed(() => {
             data-shot="failure-clusters"
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
-            v-model:browser-filter="testCaseBrowserFilter"
-            v-model:tag-filter="testCaseTagFilter"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"

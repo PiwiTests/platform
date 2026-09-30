@@ -13,11 +13,17 @@
  * in a test's history) passes the identity and status directly and supplies its
  * own right-side facts through the `metrics` slot, an extra line through the
  * `subline` slot, and its own link through `href`.
+ *
+ * A searchable list passes `highlight` to mark what its search matched, and
+ * `suitePath` to name the describe blocks before the title (`Checkout › pays
+ * by card`, as Playwright's reporters print it) when its grouping does not
+ * already show them.
  */
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { TestSearchHighlights } from '#shared/test-search';
 import { badgesFromTestCase } from '~/utils/test-row-badges';
 
 const props = withDefaults(
@@ -67,6 +73,10 @@ const props = withDefaults(
     badgeMax?: number;
     /** Extra left padding in px, to indent a row under a nested group header. */
     indent?: number;
+    /** The describe blocks, outermost first, named before the title. */
+    suitePath?: readonly string[] | null;
+    /** What the list's search matched, marked in the title, path, describe blocks and error. */
+    highlight?: TestSearchHighlights | null;
   }>(),
   {
     testCase: null,
@@ -94,6 +104,8 @@ const props = withDefaults(
     projectName: null,
     badgeMax: 3,
     indent: 0,
+    suitePath: null,
+    highlight: null,
   },
 );
 
@@ -125,6 +137,11 @@ const statusHint = computed(() =>
     ? formatDidNotRunReason(tc.value.didNotRunReason)
     : formatStatusLabel(status.value),
 );
+
+const suiteSegments = computed(() => props.suitePath ?? []);
+/** What to mark in the title and the source path; empty when nothing was searched. */
+const titleMarks = computed(() => props.highlight?.title ?? []);
+const fileMarks = computed(() => props.highlight?.file ?? []);
 
 const clusterLabel = computed(() =>
   tc.value?.failureClusterId != null ? (props.clusterName ?? `Cluster #${tc.value.failureClusterId}`) : '',
@@ -168,16 +185,32 @@ const clusterLabel = computed(() =>
       <div class="flex-1 min-w-0 space-y-1">
         <!-- Line 1: title, badges, then the right-side metrics -->
         <div class="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
-          <!-- Neutral title: a primary-green title reads as "passed" on a failed row. -->
-          <a
-            v-if="linkable"
-            :href="href"
-            class="text-highlighted hover:text-primary hover:underline font-medium break-words min-w-0"
-            :title="title"
-            @click.prevent="selectOnClick ? emit('select') : navigateTo(href)"
-            >{{ title }}</a
-          >
-          <span v-else class="text-highlighted font-medium break-words min-w-0" :title="title">{{ title }}</span>
+          <!-- The describe blocks and the title read as one line of text, wrapping together. -->
+          <span class="min-w-0 break-words">
+            <span v-if="suiteSegments.length" class="text-muted">
+              <span class="sr-only">In </span>
+              <template v-for="(segment, i) in suiteSegments" :key="i"
+                ><SearchHighlight :text="segment" :patterns="highlight?.describe" /><span aria-hidden="true"> › </span
+                ><span v-if="i < suiteSegments.length - 1" class="sr-only">, </span></template
+              ><span class="sr-only">: </span>
+            </span>
+            <!-- Neutral title: a primary-green title reads as "passed" on a failed row. -->
+            <a
+              v-if="linkable"
+              :href="href"
+              class="text-highlighted hover:text-primary hover:underline font-medium"
+              :title="title"
+              @click.prevent="selectOnClick ? emit('select') : navigateTo(href)"
+              ><SearchHighlight v-if="titleMarks.length" :text="title" :patterns="titleMarks" /><template v-else>{{
+                title
+              }}</template></a
+            >
+            <span v-else class="text-highlighted font-medium" :title="title"
+              ><SearchHighlight v-if="titleMarks.length" :text="title" :patterns="titleMarks" /><template v-else>{{
+                title
+              }}</template></span
+            >
+          </span>
           <BadgeGroup :badges="badges" :max="badgeMax" />
 
           <div class="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 ml-auto min-w-0 text-xs text-muted">
@@ -225,6 +258,7 @@ const clusterLabel = computed(() =>
           v-if="failed && errorText"
           :error="errorText"
           :steps="stepsData"
+          :highlight="highlight?.error"
           truncate
           class="text-xs text-gray-600 dark:text-gray-400"
         />
@@ -236,7 +270,11 @@ const clusterLabel = computed(() =>
           :project-key="projectKey"
           :project-name="projectName"
           class="block text-xs text-zinc-400 dark:text-zinc-500"
-        />
+        >
+          <template v-if="fileMarks.length" #default="{ label }"
+            ><SearchHighlight :text="label" :patterns="fileMarks"
+          /></template>
+        </OpenInIdeLink>
 
         <slot name="subline" />
 

@@ -1117,6 +1117,9 @@ export interface TestCaseWithStats {
   avgDuration: number | null;
   lastRun: number | null;
   lastStatus: string | null;
+  /** Where the test is declared, as its latest execution reported it; null before it ever ran. */
+  line: number | null;
+  column: number | null;
 }
 
 /**
