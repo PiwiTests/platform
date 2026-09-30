@@ -1,6 +1,6 @@
 name: JetBrains Plugin
 
-# Builds and tests apps/jetbrains on WebStorm 2023.3, the oldest supported
+# Builds and tests apps/jetbrains on WebStorm 2024.1, the oldest supported
 # platform, and runs the Plugin Verifier on the IDEs gradle.properties lists.
 # Only on editor changes and on demand: the IDE downloads are large.
 on:
@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ide: ['WS:2023.3', 'WS:2026.2.3', 'IU:2026.2.3', 'RD:2026.2.2']
+        ide: ['WS:2024.1', 'WS:2026.2.3', 'IU:2026.2.3', 'RD:2026.2.2']
     steps:
       - name: Checkout
         uses: actions/checkout@v7

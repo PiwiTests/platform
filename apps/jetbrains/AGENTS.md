@@ -13,16 +13,17 @@ with the project's Node.js interpreter.
 
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`). The plugin's
-  own requests go through the service's lsp4j proxy, which no single accessor reaches on every platform
-  (`getLsp4jServer()` up to 2024.x, removed by 2026.2): `Lsp4jAccess` looks it up at run time, else takes it from a
-  `sendRequestSync` that sends nothing. Every status, Code Vision and tool-window answer depends on it.
+  own requests go through the service's lsp4j proxy, which the platform hands only to a request's sender:
+  `Lsp4jAccess` takes it from a `sendRequestSync` that sends nothing, never from `getLsp4jServer()` (deprecated, then
+  removed by 2026.2). Every status, Code Vision, gutter and tool-window answer depends on it. Its
+  `createLspServerWidgetItem` gives the Language Services widget Piwi's icon and the gear that opens the settings.
 - `PiwiTestAnnotator.kt` (an external annotator on JavaScript, so on its TypeScript dialects too) draws each test's
   latest result from `piwi/fileSummary`: a gutter icon, the details as its tooltip, and the `PIWI_FAILING_TEST`
   background over a failing test (`PiwiColorSettingsPage.kt`, defaults in `resources/colorSchemes/`). Code Vision skips
   those lines, and the daemon restarts when the run changes.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
   window from `piwi/failures` (the LSP client highlights open files only) with the connection from `piwi/status`, and
-  the actions under **Tools → Piwi**. The service starts with the first supported file opened (2023.3 has no way to
+  the actions under **Tools → Piwi**. The service starts with the first supported file opened (2024.1 has no way to
   start it without one): until then the status is null, and the status bar and tool window say so.
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
@@ -55,13 +56,12 @@ with the project's Node.js interpreter.
 
 ## Rules
 
-- **The oldest supported platform is 2023.3** (`pluginSinceBuild=233`): its LSP client is the first to render
-  diagnostics, quick fixes and hover. Compile against it; `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA
-  Ultimate and Rider too. An API newer than 2023.3 is looked up at run time or not used. The one exception is a
-  method the platform calls on the plugin through an interface that 2023.3 lacks it on: it is declared with the same
-  JVM signature against a compile-only stub in `src/platformStubs/` (never packaged, checked with `javap` against the
-  newest platform), and its missing class is accepted on 2023.3 in `verifier-ignored-problems.txt`. Today that is
-  `createLspServerWidgetItem`, Piwi's entry in the Language Services widget (2024.1+), whose gear opens the settings.
+- **The oldest supported platform is 2024.1** (`pluginSinceBuild=241`): the first whose LSP API sends requests
+  through the server (`sendRequestSync`) and lists servers in the Language Services widget. Compile against it;
+  `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA Ultimate and Rider too. An API newer than 2024.1 is looked
+  up at run time or not used. Its test framework is pinned (`platformTestFrameworkVersion`: it is published with
+  IntelliJ IDEA's build numbers, just after WebStorm's), and the test sandbox disables the Swagger plugin, whose test
+  service ships with its own tests only.
 - **No logic the VS Code extension would need too.** A new feature is a service request first.
 - **Nothing blocks the event thread, and nothing in a read action waits on the service without giving way**: the daemon
   (Code Vision) waits with `awaitCancellably`, which a write action cancels, and reads of the disk run on a pooled
@@ -72,9 +72,9 @@ with the project's Node.js interpreter.
 
 ```bash
 npm run editor:build -w packages/editor   # from the repository root: the bundle the plugin ships
-./gradlew test                     # unit tests of Glue.kt, and platform tests on WebStorm 2023.3
+./gradlew test                     # unit tests of Glue.kt, and platform tests on WebStorm 2024.1
 ./gradlew buildPlugin              # build/distributions/piwi-jetbrains-<version>.zip
-./gradlew verifyPlugin             # the Plugin Verifier on `verifyIdes` (gradle.properties; -PverifyIdes=WS:2023.3 for one)
+./gradlew verifyPlugin             # the Plugin Verifier on `verifyIdes` (gradle.properties; -PverifyIdes=WS:2024.1 for one)
 ./gradlew runIde                   # a sandboxed WebStorm with the plugin
 ```
 

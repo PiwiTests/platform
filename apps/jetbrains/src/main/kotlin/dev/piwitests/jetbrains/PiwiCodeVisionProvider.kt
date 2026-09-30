@@ -22,10 +22,6 @@ class PiwiCodeVisionProvider : DaemonBoundCodeVisionProvider {
     override val defaultAnchor: CodeVisionAnchorKind = CodeVisionAnchorKind.Top
     override val relativeOrderings: List<CodeVisionRelativeOrdering> = listOf(CodeVisionRelativeOrdering.CodeVisionRelativeOrderingFirst)
 
-    @Deprecated("The platform calls computeForEditor(editor, file)")
-    @Suppress("OVERRIDE_DEPRECATION")
-    override fun computeForEditor(editor: Editor): List<Pair<TextRange, CodeVisionEntry>> = emptyList()
-
     override fun computeForEditor(editor: Editor, file: PsiFile): List<Pair<TextRange, CodeVisionEntry>> {
         val project = editor.project ?: return emptyList()
         val virtualFile = file.virtualFile ?: return emptyList()

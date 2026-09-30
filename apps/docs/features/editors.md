@@ -7,7 +7,7 @@ lang: en-US
 # Editor extensions
 
 The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
-(WebStorm, IntelliJ IDEA Ultimate, Rider, from 2023.3) bring what the dashboard knows about your suite to the line you
+(WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) bring what the dashboard knows about your suite to the line you
 are editing. Both run the same editor service; [JetBrains IDEs](#jetbrains-ides) lists what the plugin draws
 differently.
 

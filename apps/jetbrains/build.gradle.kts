@@ -28,16 +28,10 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
-        // The oldest supported platform (2023.3) bundles Kotlin 1.9.
+        // The oldest supported platform (2024.1) bundles Kotlin 1.9.
         apiVersion.set(KotlinVersion.KOTLIN_1_9)
         languageVersion.set(KotlinVersion.KOTLIN_1_9)
     }
-}
-
-// Platform classes newer than the oldest supported platform, as later platforms declare them:
-// compiled against, never packaged. The plugin reaches them only where the platform has them.
-val platformStubs: SourceSet = sourceSets.create("platformStubs") {
-    compileClasspath = configurations.compileClasspath.get()
 }
 
 dependencies {
@@ -45,7 +39,7 @@ dependencies {
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
         bundledPlugin("JavaScript")
-        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Platform, providers.gradleProperty("platformTestFrameworkVersion").get())
     }
 }
 
@@ -67,9 +61,6 @@ intellijPlatform {
     }
     // `verifyIdes` lists `<type code>:<version>` pairs, comma-separated; each IDE is a large download.
     pluginVerification {
-        // The Language Services widget's class, absent from the oldest supported platform, which never calls
-        // the method that names it: see platformStubs.
-        ignoredProblemsFile = layout.projectDirectory.file("verifier-ignored-problems.txt")
         failureLevel = listOf(
             VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
             VerifyPluginTask.FailureLevel.INVALID_PLUGIN,
@@ -82,6 +73,8 @@ intellijPlatform {
         }
     }
     buildSearchableOptions = false
+    // Kotlin sources and no GUI forms: nothing for the bytecode instrumenter to add.
+    instrumentCode = false
 }
 
 tasks {
@@ -91,9 +84,6 @@ tasks {
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
         compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
     }
-    named<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>("compileKotlin") {
-        libraries.from(platformStubs.output)
-    }
     prepareSandbox {
         from(languageServer) {
             into(pluginName.map { "$it/server" })
@@ -101,5 +91,9 @@ tasks {
     }
     test {
         systemProperty("piwi.editor.server", languageServer.asFile.absolutePath)
+    }
+    // WebStorm 2024.1's Swagger plugin declares a test service whose class ships with its own tests only.
+    prepareTestSandbox {
+        disabledPlugins.add("com.intellij.swagger")
     }
 }
