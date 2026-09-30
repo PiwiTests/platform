@@ -495,9 +495,10 @@ re-positions each drawn one. Keep every interaction proportional to what changed
   narrows the tests itself and gives Playwright no `--shard`; the reporter reads both through `resolveShardInfo`
   (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A run with no shard
   identity starts non-sharded and cancels every running run of its `instanceId`.
-- Each shard gets its own stream token, stored in `RunEventBus.runStates[id].shardTokens`. **Any new streaming endpoint
-  MUST validate shard tokens alongside the primary one** — check `cachedState.shardTokens?.has(body.streamToken)` as a
-  fallback, via `validateAndReviveRun()` with the `isShardToken` callback.
+- Each shard gets its own stream token, kept as its digest (`shardTokenDigest`) in `RunEventBus.runStates[id].shardTokens`
+  and in the run's `metadata.shardTokens`, which project members can read. **Any new streaming endpoint MUST validate
+  shard tokens alongside the primary one** — check `matchesShardToken(cachedState.shardTokens, body.streamToken)` as a
+  fallback, via `validateAndReviveRun()` with the `isShardToken` callback; never compare against the set directly.
 - Server-side merge: `/start`, `/setup` and `/submit` reuse an existing run when `shardTotal > 1` and an active run with
   the same `instanceId` exists; `/finish` accumulates counters with SQL `+` and only sets the final status when
   `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.

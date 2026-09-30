@@ -3,7 +3,7 @@ import { apiError } from './api-error';
 import { testRuns } from '../database/schema';
 import { runEventBus } from './run-events';
 import { validateAndReviveRun } from './revive-run';
-import { readShardTokensFromMeta } from './shard-tokens';
+import { matchesShardToken, readShardTokensFromMeta } from './shard-tokens';
 import { timingSafeEqualStr } from './timing-safe';
 import type { DbClient as DB } from '../database';
 
@@ -23,7 +23,8 @@ export async function authorizeStreamToken(db: DB, runId: number, streamToken: s
   const cachedState = runEventBus.getRunState(runId);
   if (cachedState) {
     const valid =
-      timingSafeEqualStr(cachedState.streamToken, streamToken) || (cachedState.shardTokens?.has(streamToken) ?? false);
+      timingSafeEqualStr(cachedState.streamToken, streamToken) ||
+      matchesShardToken(cachedState.shardTokens, streamToken);
     if (!valid) throw apiError({ statusCode: 403, message: 'Invalid stream token' });
     return { projectId: cachedState.projectId };
   }
@@ -35,7 +36,7 @@ export async function authorizeStreamToken(db: DB, runId: number, streamToken: s
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-  const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
+  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, runId, testRun, streamToken, isShardToken);
 
   // Warm the cache so subsequent requests skip this SELECT. The run's own token is
