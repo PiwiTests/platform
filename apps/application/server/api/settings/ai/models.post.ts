@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { resolveAiConfig } from '../../../utils/ai-provider';
+import { resolveAiConfig, storedKeyFor } from '../../../utils/ai-provider';
 import { CLAUDE_CLI_MODELS } from '../../../utils/claude-cli-models';
 import type { AiModelRole, ModelInfo } from '~~/types/api';
 
@@ -37,7 +37,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'List available models from an AI provider',
     description:
-      "Calls the provider's models endpoint to return available models with metadata. Accepts provider, baseUrl, apiKey, and role in the request body; when apiKey is omitted, the saved key for that role (then the diagnosis role) is used. Requires administrator role.",
+      "Calls the provider's models endpoint to return available models with metadata. Accepts provider, baseUrl, apiKey, and role in the request body; when apiKey is omitted, the saved key for that role (then the diagnosis role) is used, only if provider and baseUrl match the ones it was saved for. Requires administrator role.",
     'x-required-roles': ['administrator'],
   },
 });
@@ -64,12 +64,16 @@ export default eventHandler(async (event) => {
   }
 
   // The form clears key fields after save, so listing models for a saved
-  // config must fall back to the stored (decrypted) or env-managed key.
+  // config must fall back to the stored (decrypted) or env-managed key, but only
+  // for the provider and base URL that key was saved for.
   let apiKey = body?.apiKey;
   if (!apiKey) {
     const role: AiModelRole = body?.role === 'research' || body?.role === 'embedding' ? body.role : 'diagnosis';
     const resolved = await resolveAiConfig(await getDatabase());
-    apiKey = resolved?.roles[role]?.apiKey || resolved?.roles.diagnosis?.apiKey || undefined;
+    apiKey =
+      storedKeyFor(resolved?.roles[role], provider, baseUrl) ||
+      storedKeyFor(resolved?.roles.diagnosis, provider, baseUrl) ||
+      undefined;
   }
 
   if (provider === 'openai') {

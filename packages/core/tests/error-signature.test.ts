@@ -55,3 +55,33 @@ describe('extractErrorSignature', () => {
     expect(core.extractErrorSignature).toBe(extractErrorSignature);
   });
 });
+
+describe('locator option masking', () => {
+  // The expression the masking scan reproduces, run only on inputs short enough for it.
+  const REFERENCE =
+    /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])(?:\\.|(?!\2)[\s\S])*?\2/gi;
+  const reference = (text: string) => maskVolatile(text.replace(REFERENCE, (_m, key: string) => `${key}: <STR>`));
+
+  test('matches the backtracking expression on generated inputs', () => {
+    const pieces = ['name: ', 'hasText:', " '", '"', '`', '\\', '\\\\', "\\'", 'a', ' ', '\n', 'x}', 'title :'];
+    let seed = 7;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < 4000; i++) {
+      let text = '';
+      const len = 1 + Math.floor(next() * 10);
+      for (let j = 0; j < len; j++) text += pieces[Math.floor(next() * pieces.length)];
+      expect(maskSelector(text), JSON.stringify(text)).toBe(reference(text));
+    }
+  });
+
+  test('keeps a value that ends on an escaped quote with nothing after it', () => {
+    expect(maskSelector("getByRole('button', { name: 'Don\\'")).toBe(reference("getByRole('button', { name: 'Don\\'"));
+  });
+
+  test('stays linear on an unterminated run of escape pairs', () => {
+    const text = `Error: getByRole('button', { name: '${'\\a'.repeat(20_000)}`;
+    const started = performance.now();
+    extractErrorSignature(text);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

@@ -436,9 +436,9 @@ export class GitHubProvider extends ScmProvider {
   }
 
   override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
-    if (!this.token || !sha) return false;
+    if (!this.token || !isValidGitRef(sha)) return false;
     try {
-      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/statuses/${sha}`, {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/statuses/${encodeGitRef(sha)}`, {
         method: 'POST',
         headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({

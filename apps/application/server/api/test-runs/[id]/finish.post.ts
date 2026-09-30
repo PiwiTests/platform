@@ -6,7 +6,7 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
+import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
@@ -78,7 +78,7 @@ export default eventHandler(async (event) => {
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-  const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
+  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
   await applyReporterKeep(db, id, body.keep);
 

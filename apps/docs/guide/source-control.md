@@ -44,8 +44,9 @@ A private repository needs one.
 
 Piwi takes the repository from the run: the reporter records the Git remote URL, the branch and the commit of the
 checkout it runs in (see [SCM information](/reference/test-metadata#scm-information-git)). Supported hosts are
-`github.com`, `gitlab.com` and self-hosted GitLab (a host name containing `gitlab`), and `bitbucket.org`. A run
-without a remote URL has nothing to diff.
+`github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. List each self-hosted GitLab host in
+[`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): the remote URL comes from the reporter, so Piwi sends
+the token only to a host you named. A run without a remote URL has nothing to diff.
 
 ### Scopes
 

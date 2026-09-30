@@ -87,9 +87,9 @@ function randomToken(): string {
 
 /**
  * Validate a run's stream token for events/heartbeat/finish, mirroring the
- * server's `validateAndReviveRun`: an `interrupted` run (stream token cleared
- * by stale-run cleanup) is revived to `running` by accepting the reporter's
- * existing token; anything else must be running with a matching token.
+ * server's `validateAndReviveRun`: an `interrupted` run keeps its stream token,
+ * and a request carrying it (or a shard token) revives the run to `running`;
+ * anything else must be running with a matching token.
  */
 async function validateAndReviveDemoRun(
   db: DemoDb,
@@ -97,25 +97,20 @@ async function validateAndReviveDemoRun(
   bodyStreamToken: string | null | undefined,
   isValidShardToken: boolean,
 ): Promise<void> {
-  const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken;
+  const isInterrupted = testRun.status === 'interrupted';
 
   if (testRun.status !== 'running' && !isInterrupted) {
     throw demoHttpError(409, 'Test run is not in running state');
   }
-
-  if (isInterrupted) {
-    if (!bodyStreamToken) {
-      throw demoHttpError(403, 'Missing stream token');
-    }
-    await db
-      .update(testRuns)
-      .set({ status: 'running', streamToken: bodyStreamToken, updatedAt: new Date() })
-      .where(eq(testRuns.id, testRun.id));
-    testRun.status = 'running';
-    testRun.streamToken = bodyStreamToken;
-  } else if (testRun.streamToken !== bodyStreamToken) {
-    if (isValidShardToken && bodyStreamToken) return;
+  if (!bodyStreamToken) {
+    throw demoHttpError(403, 'Missing stream token');
+  }
+  if (testRun.streamToken !== bodyStreamToken && !isValidShardToken) {
     throw demoHttpError(403, 'Invalid stream token');
+  }
+  if (isInterrupted) {
+    await db.update(testRuns).set({ status: 'running', updatedAt: new Date() }).where(eq(testRuns.id, testRun.id));
+    testRun.status = 'running';
   }
 }
 

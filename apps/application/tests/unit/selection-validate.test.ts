@@ -5,10 +5,11 @@ describe('parseShard', () => {
   test('parses a valid i/n spec', () => {
     expect(parseShard('2/4')).toEqual({ index: 2, total: 4 });
     expect(parseShard(' 1 / 3 ')).toEqual({ index: 1, total: 3 });
+    expect(parseShard('1000/1000')).toEqual({ index: 1000, total: 1000 });
   });
 
   test('rejects out-of-range and malformed specs', () => {
-    for (const bad of ['0/4', '5/4', '4/0', 'a/b', '2', '2/', '', 2, null]) {
+    for (const bad of ['0/4', '5/4', '4/0', 'a/b', '2', '2/', '', 2, null, '1/100000000', '1/1001']) {
       expect(parseShard(bad as unknown), String(bad)).toBeNull();
     }
   });

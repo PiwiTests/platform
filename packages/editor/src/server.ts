@@ -120,7 +120,8 @@ const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
-const TEST_CALL = /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
+const TEST_CALL =
+  /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
 
 export interface ServerOptions {
   /** The environment the connection is read from; the process's by default. */

@@ -4,7 +4,7 @@
  * server-side regression-context builder so the diff stays identical on both.
  */
 
-import { compareUrl } from '#shared/scm-urls';
+import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 
 /** One field that changed between two runs, for the "what changed" summary. */
 export interface MetaDiffEntry {
@@ -40,7 +40,9 @@ export function buildCompareUrl(repositoryUrl: string, fromSha: string, toSha: s
 /**
  * The commit span from a baseline commit to a later one, with a compare URL when
  * the repository host is known and the `git log --oneline` command that lists it.
- * Returns null when either commit is missing or the two are the same.
+ * Returns null when either commit is missing, the two are the same, or either is
+ * not a plain revision (the commits come from the reporter, and the command is
+ * copied into a shell).
  */
 export function buildCommitRange(
   repositoryUrl: string | null,
@@ -48,6 +50,7 @@ export function buildCommitRange(
   toSha: string | null | undefined,
 ): CommitRange | null {
   if (!fromSha || !toSha || fromSha === toSha) return null;
+  if (!isPlainRevision(fromSha) || !isPlainRevision(toSha)) return null;
   return {
     fromSha,
     toSha,

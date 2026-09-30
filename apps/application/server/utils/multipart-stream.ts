@@ -104,6 +104,8 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
 
       const fileWrites: Promise<void>[] = [];
       let totalBytes = 0;
+      // Counted as the bytes arrive, so an oversized upload stops before it fills the disk.
+      let streamedBytes = 0;
 
       bb.on('file', (field: string, stream: NodeJS.ReadableStream, info: busboy.FileInfo) => {
         // A part with no filename is not a file upload — drain it so busboy can proceed.
@@ -119,23 +121,32 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         stream.on('limit', () => {
           truncated = true;
         });
+        stream.on('data', (chunk: Buffer) => {
+          streamedBytes += chunk.length;
+          if (streamedBytes > options.maxTotalBytes) {
+            const error = apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
+            (stream as unknown as { destroy(error?: Error): void }).destroy(error);
+            fail(error);
+          }
+        });
         const ws = createWriteStream(tmpPath);
-        fileWrites.push(
-          pipeline(stream, ws).then(() => {
-            if (truncated) throw apiError({ statusCode: 413, message: 'A file part exceeded the upload limit' });
-            totalBytes += ws.bytesWritten;
-            if (totalBytes > options.maxTotalBytes) {
-              throw apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
-            }
-            files[index] = {
-              field,
-              filename: info.filename,
-              path: tmpPath,
-              size: ws.bytesWritten,
-              mimeType: info.mimeType,
-            };
-          }),
-        );
+        const write = pipeline(stream, ws).then(() => {
+          if (truncated) throw apiError({ statusCode: 413, message: 'A file part exceeded the upload limit' });
+          totalBytes += ws.bytesWritten;
+          if (totalBytes > options.maxTotalBytes) {
+            throw apiError({ statusCode: 413, message: 'Upload exceeded the size limit' });
+          }
+          files[index] = {
+            field,
+            filename: info.filename,
+            path: tmpPath,
+            size: ws.bytesWritten,
+            mimeType: info.mimeType,
+          };
+        });
+        // A write cut short after the request already failed is not a second error.
+        write.catch(() => {});
+        fileWrites.push(write);
       });
 
       bb.on('field', (name: string, value: string, info: busboy.FieldInfo) => {
