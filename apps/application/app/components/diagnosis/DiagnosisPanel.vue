@@ -350,7 +350,6 @@ defineExpose({
     <DiagnosisCoverageStrip
       v-if="aiStatus?.configured"
       :sections="contextSections"
-      :not-applicable="coverage?.notApplicable"
       :token-estimate="tokenEstimate"
       :loading="contextLoading"
       @view-section="onViewSection"

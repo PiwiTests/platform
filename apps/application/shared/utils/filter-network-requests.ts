@@ -1,7 +1,5 @@
 /** Resource types that convey API/document exchanges — static assets are excluded. */
 export const TRACKED_RESOURCE_TYPES = ['fetch', 'xhr', 'document', 'other'] as const;
-
-export type TrackedResourceType = (typeof TRACKED_RESOURCE_TYPES)[number];
 export interface FilteredNetworkRequest {
   method: string;
   url: string;

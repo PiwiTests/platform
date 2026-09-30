@@ -315,7 +315,7 @@ async function applyAttach(tracker: IssueTracker, action: IntegrationAction): Pr
   await tracker.attach(payload.issueKey, { name: payload.name, bytes: new Uint8Array(bytes), mime: payload.mime });
 }
 
-/** Perform one comment against the tracker (used from the sync milestone). */
+/** Perform one comment against the tracker (queued by the comment policies). */
 async function applyComment(tracker: IssueTracker, action: IntegrationAction): Promise<void> {
   const payload = action.payload as CommentActionPayload;
   await tracker.addComment(payload.issueKey, payload.document);

@@ -32,7 +32,7 @@ export interface RawAttachment {
   originalName?: string;
 }
 
-/** Performance metrics collected from `result.steps` by `step-analyzer`. */
+/** Performance metrics collected from `result.steps` by `collectStepMetrics`. */
 export interface CollectedPerformanceMetrics {
   steps: Array<{ title: string; duration: number; category: string; error?: { message: string }; failed?: boolean }>;
   totalStepDuration: number;
@@ -53,8 +53,8 @@ export interface CollectedPerformanceMetrics {
  *  - the `type` discriminant so the same collected object can be queued as a
  *    stream event.
  *
- * Upload bookkeeping (`_filesUploaded`) is deliberately NOT on this object —
- * `StreamManager` tracks it in a side `Set` so the data model stays clean.
+ * Upload bookkeeping is not on this object — `StreamManager` tracks uploaded
+ * cases in a `WeakSet` (`uploadedCaseFiles`) so the data model stays clean.
  */
 export interface CollectedTestCase {
   /** Stream-event discriminant: `'begin'` or `'complete'`. Omitted for batch-only runs. */

@@ -28,13 +28,13 @@ export interface JsCoverageEntry {
 }
 
 /** Files reached per test at most. */
-export const MAX_CODE_REACH_FILES = 2000;
+const MAX_CODE_REACH_FILES = 2000;
 
 /**
  * The ranges of the functions that ran in a script, without its top-level
  * function (the one spanning the whole script).
  */
-export function executedFunctionRanges(entry: JsCoverageEntry): Array<{ start: number; end: number }> {
+function executedFunctionRanges(entry: JsCoverageEntry): Array<{ start: number; end: number }> {
   const length = entry.source?.length ?? Number.POSITIVE_INFINITY;
   const out: Array<{ start: number; end: number }> = [];
   entry.functions.forEach((fn, i) => {

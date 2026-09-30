@@ -221,7 +221,7 @@ export async function getTestRunCase(
   const [trc] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!trc) return null;
 
-  // Large evidence payloads are content-addressed; legacy rows keep them inline.
+  // Large evidence payloads are content-addressed; a row may still keep them inline.
   const evidence = await inlineCasePayloads(db, trc);
 
   // Every attempt is its own execution row (unique on run + test case + retries

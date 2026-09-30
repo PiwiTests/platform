@@ -80,7 +80,7 @@ async function getProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
 export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
-  // 1. Run counts per project (single GROUP BY query instead of loading all rows)
+  // 1. Run counts per project
   const runStats: any[] = await db
     .select({
       projectId: testRuns.projectId,
@@ -96,10 +96,8 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   }
 
   // Latest run id per project, ranked by start_time (id as a deterministic
-  // tiebreaker). Using start_time rather than MAX(id) keeps "latest run"
-  // correct even when rows are ingested out of chronological order — e.g.
-  // historical uploads on the server, or the demo seed which inserts runs
-  // newest-first (so MAX(id) would be the oldest run).
+  // tiebreaker): rows can be ingested out of chronological order (historical
+  // uploads on the server; the demo seed inserts runs newest-first).
   const rankedRuns = db.$with('ranked_latest_runs').as(
     db
       .select({
@@ -470,14 +468,11 @@ export async function updateProject(
 }
 
 // ─── deleteProjectData ───────────────────────────────────────────
-// Cascading DB-only delete — no storage operations, so it's safe to call from
-// both the server (via server/utils/delete-project.ts, which also clears
-// storage) and demo mode (directly, against the in-browser DB). The
-// storage-touching `deleteProject` wrapper lives in server/utils/ instead of
-// here so this shared module never imports server/storage — that module's
-// LocalStorageAdapter does synchronous fs/util promisify() calls at import
-// time, which crashes when bundled into the demo service worker (no Node
-// fs/util in a Worker global scope).
+// Cascading DB-only delete with no storage operations, called by the server
+// (via server/utils/delete-project.ts, which also clears storage) and by demo
+// mode (against the in-browser DB). This module must not import
+// server/storage: its LocalStorageAdapter calls Node fs/util at import time,
+// which the demo service worker does not have.
 
 /**
  * Where a project deletion stands. `files` removes the stored reports and
@@ -712,9 +707,9 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
 }
 
 /**
- * Epoch milliseconds of a `MAX(created_at)` aggregate mapped to a Date. Demo
- * databases seeded before the unit fix hold Unix seconds, which map to a date
- * in January 1970.
+ * Epoch milliseconds of a `MAX(created_at)` aggregate mapped to a Date. A demo
+ * database whose seed stored Unix seconds yields a date in January 1970, so a
+ * value below 1e12 ms is read as seconds.
  */
 function toEpochMs(value: Date | null): number | null {
   if (value == null) return null;

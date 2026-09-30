@@ -7,7 +7,7 @@ import type { Uploader, RunPayload, ReportOptions } from './uploader.js';
 import type { CrashRecovery } from '../streaming/crash-recovery.js';
 import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
-import { computePerformanceSummary } from '../collect/step-analyzer.js';
+import { computePerformanceSummary } from '@piwitests/core/step-analysis';
 import { computeDistinctRunCounts, resolveOverallStatus, serializeRun } from './serializer.js';
 import { runUrl } from '../support/run-url.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
@@ -61,9 +61,6 @@ export interface CollectedRun {
  *      traces to attach,
  *   3. fall back to plain JSON (`/submit`) as the last resort, persisting a
  *      recovery payload on total failure.
- *
- * The order and logging are identical to the pre-extraction reporter — this is
- * a move, not a redesign.
  */
 export class RunSubmitter {
   /**

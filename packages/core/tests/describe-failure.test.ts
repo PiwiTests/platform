@@ -4,7 +4,6 @@ import {
   describeFailure,
   describeFailureText,
   formatTimeout,
-  headlineMarkdown,
   lastStepTitle,
   stepHeadlineContext,
   HEADLINE_MAX_CHARS,
@@ -74,7 +73,8 @@ describe('describeFailure — one line per shape', () => {
     for (const key of Object.keys(ERRORS) as ErrorKey[]) {
       const d = describeFailure(parsePlaywrightError(ERRORS[key]));
       expect(d.headline.length, key).toBeLessThanOrEqual(HEADLINE_MAX_CHARS);
-      expect(d.headline, key).not.toMatch(/\n|/);
+      // eslint-disable-next-line no-control-regex
+      expect(d.headline, key).not.toMatch(/\n|\x1b/);
       expect(d.headline, key).not.toMatch(/<(?:N|VALUE|URL|STR|UUID|HASH|EMAIL)>/);
       expect(d.parts.map((p) => p.text).join(''), key).toBe(d.headline);
       expect(d.headline.trim().length, key).toBeGreaterThan(0);
@@ -203,7 +203,7 @@ describe('describeFailure — length control', () => {
 
 describe('describeFailure — fallbacks', () => {
   test('an unknown shape returns its first line, trimmed and ANSI-free', () => {
-    const d = describeFailureText('[31m  Something odd happened  [0m\nmore\n');
+    const d = describeFailureText('\x1b[31m  Something odd happened  \x1b[0m\nmore\n');
     expect(d?.headline).toBe('Something odd happened');
   });
 
@@ -243,12 +243,6 @@ describe('helpers', () => {
   test('lastStepTitle falls back to the last step of the test body, not the teardown', () => {
     const passedSteps = bodyFailure.steps.map(({ failed: _failed, error: _error, ...step }) => step);
     expect(lastStepTitle(passedSteps)).toBe('Fill "ada@example.com"');
-  });
-
-  test('headlineMarkdown puts locators and values in code spans and escapes the rest', () => {
-    const d = describeFailure(parsePlaywrightError(ERRORS.toHaveCount));
-    expect(headlineMarkdown(d)).toBe("Expected 26 rows, found 51 — `getByRole('row')` toHaveCount");
-    expect(headlineMarkdown({ parts: [{ kind: 'text', text: 'a_b*c' }] })).toBe('a\\_b\\*c');
   });
 });
 

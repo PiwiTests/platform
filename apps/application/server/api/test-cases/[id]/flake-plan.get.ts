@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Flake-lab plan for a test case',
     description:
-      'The experiment `piwi flake` runs on one test: the control arm (no condition), then one arm per suspect of the test’s flake profile, most likely first, each condition in the flake plan-file shape (an `alongside` or `after` test named by `{ file, title, suite }`), and `combined`, every arm’s conditions at once. It carries the `flakeErrorSignature` of each of the test’s failures in the profile window, the commit of its latest failure, the Playwright project its failures ran in and the median duration of its passes. With `kind=verify` it reruns the arm of the test’s latest reproduced experiment and its control, for the D9 number of runs (409 when nothing reproduced it yet). Records an unfinished experiment and returns its id unless `record=false`.',
+      'The experiment `piwi flake` runs on one test: the control arm (no condition), then one arm per suspect of the test’s flake profile, most likely first, each condition in the flake plan-file shape (an `alongside` or `after` test named by `{ file, title, suite }`), and `combined`, every arm’s conditions at once. It carries the `flakeErrorSignature` of each of the test’s failures in the profile window, the commit of its latest failure, the Playwright project its failures ran in and the median duration of its passes. With `kind=verify` it reruns the arm of the test’s latest reproduced experiment and its control, for enough runs that a failure at the reproduced rate would have shown with 95% confidence (⌈ln 0.05 / ln(1 − rate)⌉, at least 5; 409 when nothing reproduced it yet). Records an unfinished experiment and returns its id unless `record=false`.',
     'x-required-roles': ['administrator', 'reporter'],
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
@@ -21,7 +21,8 @@ defineRouteMeta({
         name: 'runs',
         in: 'query',
         required: false,
-        description: 'Runs of each arm (1–100); defaults to 10, or the D9 count for verify',
+        description:
+          'Runs of each arm (1–100); defaults to 10, or for verify to ⌈ln 0.05 / ln(1 − rate)⌉ (at least 5) for the rate the test reproduced at',
         schema: { type: 'integer' },
       },
       {

@@ -18,9 +18,6 @@ import { LOCATOR_METHODS, ACTION_METHODS } from '../capture/locator-healing.js';
 /** The current on-disk schema version. Bump only on a breaking layout change. */
 export const ARTIFACT_VERSION = 1 as const;
 
-/** What an entry compiles from. `expect`/`extract` are reserved for later phases. */
-export type AiEntryKind = 'locator' | 'run' | 'expect' | 'extract';
-
 /** A JSON-serializable Playwright argument value (no RegExp — canonical bytes). */
 export type LocatorArg = string | number | boolean | null | LocatorArg[] | { [key: string]: LocatorArg };
 
@@ -37,7 +34,7 @@ export interface StructuredLocator {
 }
 
 /** How a postcondition is asserted after a flow (the oracle, D4). */
-export type PostconditionAssert = 'visible' | 'hidden' | 'attached' | 'url';
+type PostconditionAssert = 'visible' | 'hidden' | 'attached' | 'url';
 
 export interface Postcondition {
   assert: PostconditionAssert;

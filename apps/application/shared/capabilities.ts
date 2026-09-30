@@ -289,9 +289,6 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
   { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff.' },
 ];
 
-/** The optional presets, in the order shown (core is always on, so excluded). */
-export const OPTIONAL_PRESETS: CapabilityPreset[] = CAPABILITY_PRESETS.filter((p) => p.module !== 'core');
-
 /** Facts about one capability in one context, gathered by the shared handler. */
 export interface CapabilityInput {
   /** Data exists (project-scoped where the level allows). */

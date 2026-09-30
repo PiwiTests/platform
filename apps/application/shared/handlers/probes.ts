@@ -65,7 +65,7 @@ export function isProbeRun(metadata: unknown): boolean {
  * The flag is matched in the serialized JSON, with and without the space
  * PostgreSQL's `jsonb` text output puts after the colon.
  */
-export function notProbeRun(metadata: SQLWrapper): SQL {
+function notProbeRun(metadata: SQLWrapper): SQL {
   const compact = `%"${PROBE_RUN_METADATA_KEY}":true%`;
   const spaced = `%"${PROBE_RUN_METADATA_KEY}": true%`;
   return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;
@@ -91,7 +91,7 @@ export function isFlakeLabRun(metadata: unknown): boolean {
  * JSON with and without the space PostgreSQL's `jsonb` text output puts after
  * the colon.
  */
-export function notFlakeLabRun(metadata: SQLWrapper): SQL {
+function notFlakeLabRun(metadata: SQLWrapper): SQL {
   const compact = `%"${FLAKE_LAB_RUN_METADATA_KEY}":{%`;
   const spaced = `%"${FLAKE_LAB_RUN_METADATA_KEY}": {%`;
   return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;

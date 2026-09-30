@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest';
 
 describe('Flaky root cause classification', () => {
   test('classifies timing errors', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['TimeoutError: locator.click: Timeout 30000ms exceeded'],
       stepErrors: [],
@@ -15,7 +15,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('classifies network errors', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['net::ERR_CONNECTION_REFUSED', 'status 500 on POST /api/orders'],
       stepErrors: [],
@@ -28,7 +28,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('classifies assertion errors without timing/network keywords', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['expect(received).toBe(expected)\n\nExpected: 3\nReceived: 0'],
       stepErrors: [],
@@ -41,7 +41,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('falls back to timing when assertion also has timing keywords', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['expect(element).toBeVisible: Timeout 5000ms exceeded'],
       stepErrors: [],
@@ -55,7 +55,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('classifies environment when one browser fails and another passes', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Some intermittent error'],
       stepErrors: [],
@@ -68,7 +68,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('is not environment when the other browsers never ran', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Some intermittent error'],
       stepErrors: [],
@@ -81,7 +81,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('is not environment when every browser fails', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Some intermittent error'],
       stepErrors: [],
@@ -94,7 +94,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('matches mixed-case network keywords against the error text', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Error: connect ECONNREFUSED 127.0.0.1:3000'],
       stepErrors: [],
@@ -107,7 +107,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('matches mixed-case timing keywords against step titles', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Something went wrong'],
       stepErrors: [],
@@ -120,7 +120,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('matches mixed-case assertion markers against the error text', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Error: order status mismatch\n\nExpected: "Paid"\nReceived: "Pending"'],
       stepErrors: [],
@@ -133,7 +133,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('returns other for empty inputs', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: [],
       stepErrors: [],
@@ -146,7 +146,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('returns other for unrecognized errors', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Something went wrong: undefined is not a function'],
       stepErrors: [],
@@ -159,7 +159,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('an attempt-diff network vote makes an otherwise-unclear flake network', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['Something went wrong: undefined is not a function'],
       stepErrors: [],
@@ -173,7 +173,7 @@ describe('Flaky root cause classification', () => {
   });
 
   test('an attempt-diff network vote outweighs a lone assertion keyword', async () => {
-    const { classifyFlakyRootCause } = await import('../../server/utils/flaky-classify');
+    const { classifyFlakyRootCause } = await import('#shared/flaky-classify');
     const result = classifyFlakyRootCause({
       errorMessages: ['expect(received).toBe(expected)'],
       stepErrors: [],

@@ -29,9 +29,8 @@ export function isFailedStatus(status: string | null | undefined): boolean {
 /**
  * Canonical spelling for a per-case status. The wire may carry Playwright's
  * camelCase `timedOut`; every stored value uses the lowercase `TestCaseStatus`
- * form. Rows written by earlier releases can still hold the camelCase form, so
- * readers keep matching both (`FAILED_STATUS_KEYS`) while writers go through
- * this.
+ * form. A stored row can still hold the camelCase form, so readers match both
+ * (`FAILED_STATUS_KEYS`) while writers go through this.
  */
 export function normalizeTestCaseStatus(status: string): string {
   return status === 'timedOut' ? 'timedout' : status;

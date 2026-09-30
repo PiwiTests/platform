@@ -58,11 +58,6 @@ export interface AnalyticsScope {
   locale?: string;
 }
 
-/** The legacy presets of the period picker, in days. */
-export const ANALYTICS_PERIODS = [7, 30, 90, 365] as const;
-
-export const DEFAULT_ANALYTICS_DAYS = 30;
-
 /** "All time" is expressed as a 10-year window so the bucket math needs no special case. */
 export const MAX_ANALYTICS_DAYS = ALL_TIME_DAYS;
 
@@ -87,9 +82,9 @@ function pick(query: QueryLike, key: string): string | null {
 const PRIORITIES = new Set<string>(['critical', 'high', 'medium', 'low']);
 
 /**
- * The query keys the scope reads. Today's keys (`days`, `projects`,
+ * The query keys the scope reads: `period`, `days`, `projects`,
  * `environments`, `branches`, `fullRunsOnly`, and the singular `environment`
- * and `branch`) keep working; `period` wins over `days` when both are set.
+ * and `branch`. `period` wins over `days` when both are set.
  */
 export function parseAnalyticsScope(query: QueryLike): AnalyticsScope {
   const rawDays = Number(pick(query, 'days'));

@@ -628,7 +628,7 @@ export async function ingestRequestGraph(
 /**
  * Persist `changes` edges for a diff: the head commit and every ticket named in
  * the pull request point at each changed file. Files are edge endpoints, not
- * materialized nodes in this milestone. Upsert semantics, never truncate. Rows
+ * materialized nodes. Upsert semantics, never truncate. Rows
  * carry the run's `branch` tag, like the reach graph.
  */
 export async function ingestChangesEdges(

@@ -1584,9 +1584,9 @@ function requestDuration(
 }
 
 /**
- * Drain in-flight capture work and attach the collected `piwi-*` data
- * to the test. Mirrors the per-test teardown the `page` fixture used to do, but
- * sourced from the sink so it works regardless of how the test's pages were made.
+ * Drain in-flight capture work and attach the collected `piwi-*` data to the
+ * test, sourced from the sink so it works regardless of how the test's pages
+ * were made.
  */
 async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   // Wait for all in-flight requestfinished handlers before snapshotting

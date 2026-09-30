@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
  * Standard banner shown at the top of a settings card (or page) when one or
- * more of its fields are pinned by `PIWI_*` environment variables. Replaces
- * the ad-hoc `UAlert`s that previously lived in the AI and wasted-time pages.
+ * more of its fields are pinned by `PIWI_*` environment variables.
  *
  * Always links to the configuration reference so a system admin can jump to the
  * canonical env-var documentation.

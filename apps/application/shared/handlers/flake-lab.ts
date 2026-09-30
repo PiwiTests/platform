@@ -139,7 +139,10 @@ export interface FlakePlanOptions {
   commit?: string | null;
   source?: FlakeExperimentSource;
   machine?: string | null;
-  /** Runs of the control and of each arm; a verify plan defaults to the D9 count. */
+  /**
+   * Runs of the control and of each arm; a verify plan defaults to
+   * `flakeVerifyRuns` of the rate the test reproduced at.
+   */
   runs?: number | null;
   now?: Date;
 }
@@ -175,7 +178,7 @@ function scmCommit(metadata: unknown): string | null {
  * request, and the other test of an `alongside` or `after` condition is named
  * by file, title and describe path. Null when that test is not known.
  */
-export function toPlanCondition(condition: ProfileCondition, tests: Map<number, FlakeTestRef>): PlanCondition | null {
+function toPlanCondition(condition: ProfileCondition, tests: Map<number, FlakeTestRef>): PlanCondition | null {
   switch (condition.kind) {
     case 'delay':
       return { kind: 'delay', route: condition.route, ms: condition.ms, match: 'all' };
@@ -591,10 +594,10 @@ export function judgeReproduce(arms: FlakeArmResultInput[]): {
 
 /**
  * The verdict of a verify experiment: verified when the rerun arm had no
- * matching failure in at least the D9 number of runs for the rate it reproduced
+ * matching failure in at least `flakeVerifyRuns` runs for the rate it reproduced
  * at, still failing when it had one, inconclusive with too few runs. Pure.
  */
-export function judgeVerify(
+function judgeVerify(
   arms: FlakeArmResultInput[],
   reproducedRate: number,
 ): { arms: FlakeArmOutcome[]; verdict: FlakeVerifyVerdict } {

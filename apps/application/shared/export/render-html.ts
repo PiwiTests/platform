@@ -31,7 +31,7 @@ import {
 import { STATUS_COLORS as C } from '#shared/status-colors';
 import type { ExportAsset, ExportBundle, ExportCase } from './types';
 
-export interface RenderOptions {
+interface RenderOptions {
   /** Resolves an asset to a URL usable from the rendered document, or null to omit it. */
   assetUrl: (asset: ExportAsset) => string | null;
 }

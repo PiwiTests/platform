@@ -298,7 +298,7 @@ export function parseGranularity(raw: string | null | undefined): Granularity | 
   return raw && (GRANULARITIES as string[]).includes(raw) ? (raw as Granularity) : null;
 }
 
-/** The rolling period a legacy `days` value stands for (3650 is All time). */
+/** The rolling period a `days` value stands for (3650 is All time). */
 export function periodFromDays(days: number): PeriodSpec {
   const clamped = clampDays(days);
   return clamped >= ALL_TIME_DAYS ? { kind: 'all' } : { kind: 'rolling', days: clamped };

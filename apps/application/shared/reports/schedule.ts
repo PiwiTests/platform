@@ -33,10 +33,6 @@ export interface ScheduleTiming {
 const AT_PATTERN = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 const MAX_STEPS = 1000;
 
-export function isValidScheduleTime(at: string): boolean {
-  return AT_PATTERN.test(at);
-}
-
 /** Normalize `8:05` to `08:05`. */
 export function normalizeScheduleTime(at: string): string {
   const m = AT_PATTERN.exec(at.trim());

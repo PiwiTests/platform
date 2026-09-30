@@ -86,7 +86,7 @@ function authHeaders(settings: ConnectionSettings): HeadersInit {
  * Test connection / Save) or a background revalidation whose caller has already
  * rendered from cache. Neither has anything to gain from waiting indefinitely,
  * and an unresponsive host — a stale URL, a VPN-only address, a hung server —
- * used to leave the options page's status stuck on "Testing…" with no way
+ * would leave the options page's status stuck on "Testing…" with no way
  * forward but a reload.
  */
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -342,7 +342,7 @@ export async function postToEditor(
 }
 
 /** Deep link to a bug report's page in the dashboard. */
-export function bugReportUrl(instanceUrl: string, id: number): string {
+function bugReportUrl(instanceUrl: string, id: number): string {
   return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
 }
 

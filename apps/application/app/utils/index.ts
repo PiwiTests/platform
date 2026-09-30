@@ -410,7 +410,7 @@ export function clusterErrorTypeColor(
  * Curated tag palette — the Tailwind 500 shades, which keep even perceived
  * saturation across hues. `TagBadge` derives its tint/text from whatever it
  * gets, but picking from a fixed set keeps sibling tags looking like one
- * family instead of the arbitrary HSL spins this used to generate.
+ * family.
  */
 export const TAG_COLOR_PALETTE = [
   '#ef4444', // red

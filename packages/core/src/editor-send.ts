@@ -16,7 +16,7 @@ export interface EditorPairing {
 }
 
 /** The longest locator line an editor accepts. */
-export const MAX_SEND_TEXT = 4000;
+const MAX_SEND_TEXT = 4000;
 /** The largest request body an editor accepts, in bytes. */
 export const MAX_SEND_BYTES = 2_000_000;
 

@@ -4,11 +4,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Purity boundary for @piwitests/core. This replaces the old reporter↔shared
- * drift-guard tests: instead of pinning two hand-mirrored copies, we now assert
- * the single copy stays clean enough to be safely bundled into the reporter and
- * inlined into the browser/server app — zero dependencies, and no imports of
- * Node built-ins or the consuming packages.
+ * Purity boundary for @piwitests/core: the package stays clean enough to be
+ * safely bundled into the reporter and inlined into the browser/server app —
+ * zero dependencies, and no imports of Node built-ins or the consuming
+ * packages.
  */
 
 const coreRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..');

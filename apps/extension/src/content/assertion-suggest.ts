@@ -1,6 +1,6 @@
 import { deriveTopLocator } from './verified-locators.js';
 
-export interface AssertionCandidate {
+interface AssertionCandidate {
   /** Which Playwright assertion this suggests. */
   method: 'toHaveValue' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
   /** The literal value being asserted, for display next to the method name — null for `toBeVisible`, which takes no argument. */
@@ -16,7 +16,7 @@ export interface AssertionSuggestion {
 }
 
 /**
- * Given a single picked element (C2), suggest ranked `expect(...)` candidates
+ * Given a single picked element, suggest ranked `expect(...)` candidates
  * against its best locator that finds it alone on the page (`deriveTopLocator`):
  * `toHaveValue` for form controls (except
  * checkbox/radio, which assert `checked` state, not `value` — out of scope

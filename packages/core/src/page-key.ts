@@ -85,10 +85,10 @@ export function pageKey(url: string): string | null {
 }
 
 /** The most path segments a URL mapping's path prefix may hold (`/a/b/c/d`). */
-export const MAX_PATH_PREFIX_SEGMENTS = 4;
+const MAX_PATH_PREFIX_SEGMENTS = 4;
 
 /** The longest path prefix accepted, in characters. */
-export const MAX_PATH_PREFIX_LENGTH = 200;
+const MAX_PATH_PREFIX_LENGTH = 200;
 
 /** Why a path prefix was refused. */
 export type PathPrefixProblem = 'query-or-hash' | 'not-a-path' | 'too-many-segments' | 'too-long';

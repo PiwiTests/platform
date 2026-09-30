@@ -205,9 +205,7 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
       >
         <ModelFieldInput
           v-model="model.model"
-          :provider="model.provider"
           :provider-resolved="providerResolved"
-          :reuse="!!model.reuse"
           :models="models"
           :loading-models="loadingModels"
           :placeholder-anthropic="meta.modelPlaceholderAnthropic"

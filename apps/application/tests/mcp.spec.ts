@@ -289,7 +289,7 @@ test.describe.serial('MCP server', () => {
       (await mcp(request, 'tools/call', { name: 'get_test_case_context', arguments: { executionId: execId } })).result
         .content[0].text,
     );
-    // Previously execution scope produced an empty coverage stub with 0 sections.
+    // Execution scope carries evidence: context sections or the raw execution.
     const hasEvidence = (ctx.sections?.length ?? 0) > 0 || !!ctx.rawExecution;
     expect(hasEvidence).toBe(true);
   });

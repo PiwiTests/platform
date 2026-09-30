@@ -440,7 +440,7 @@ export function computePerformanceSummary(testCases: any[]): PerformanceSummary 
 /** Max hooks and fixtures a hook section's event lists; the failed and the slowest are kept. */
 export const MAX_SECTION_HOOKS = 12;
 /** Max characters kept of a failed hook or fixture event's error line. */
-export const MAX_STEP_EVENT_ERROR_CHARS = 300;
+const MAX_STEP_EVENT_ERROR_CHARS = 300;
 
 /** A Playwright step location as `file:line:col`, or null. */
 function stepLocation(step: any): string | null {

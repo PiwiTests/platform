@@ -11,7 +11,7 @@ import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { tmpdir } from 'os';
 import { rm, mkdir, readdir } from 'fs/promises';
-import { parseLocation } from '../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { sanitizeMetadata } from '../../utils/sanitize';
@@ -124,13 +124,13 @@ export default eventHandler(async (event) => {
         });
       }
     } else if (part.name === 'htmlReport' && part.filename) {
-      // Backward-compat: treat 'htmlReport' as report type 'html'
+      // The 'htmlReport' field is the report of type 'html'
       reportFiles.set('html', {
         filename: sanitizeFilename(part.filename),
         data: part.data,
       });
     } else if (part.name?.startsWith('report_') && part.filename) {
-      // New multi-report format: field name is 'report_<type>'
+      // Any report type: the field name is 'report_<type>'
       const type = part.name.slice('report_'.length);
       if (type && /^[a-z0-9_-]+$/i.test(type)) {
         reportFiles.set(type, {

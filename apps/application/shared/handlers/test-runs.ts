@@ -41,10 +41,9 @@ export async function getProjectLatestRun(db: DrizzleDB, projectId: number) {
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, projectId))
-    // Rank by start_time (id as a deterministic tiebreaker), not MAX(id), so
-    // "latest" stays correct when rows are ingested out of chronological order —
-    // historical uploads on the server, or the demo seed which inserts runs
-    // newest-first (MAX(id) would be the oldest run). Matches `listProjects`.
+    // Rank by start_time (id as a deterministic tiebreaker): rows can be
+    // ingested out of chronological order (historical uploads on the server;
+    // the demo seed inserts runs newest-first). Matches `listProjects`.
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   return rows[0] ?? null;
@@ -174,7 +173,7 @@ export async function getTestRun(
     // With custom patterns configured, wasted time is recomputed from the
     // stored wait events so the new allowlist re-classifies existing runs.
     // With the defaults in effect the stored column is authoritative
-    // (recomputed only for legacy rows that predate it).
+    // (recomputed only for a row where it is null).
     wastedTimeMs: wastedPatterns
       ? tc.stepEvents != null
         ? computeWastedMs(tc.stepEvents as TestStepEvent[], wastedPatterns)

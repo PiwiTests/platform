@@ -297,7 +297,7 @@ export function pageMapFetcher(page: Page): MapFetcher {
 }
 
 /** Whether a page runs in Chromium, the only browser with JavaScript coverage. */
-export function isChromiumPage(page: Page): boolean {
+function isChromiumPage(page: Page): boolean {
   try {
     return page.context().browser()?.browserType().name() === 'chromium';
   } catch {

@@ -23,7 +23,7 @@ export interface SessionArea {
   remove(key: string): Promise<void>;
 }
 
-export type SessionStorageRequest =
+type SessionStorageRequest =
   | { type: 'piwi-session-storage'; op: 'get'; key: string }
   | { type: 'piwi-session-storage'; op: 'set'; items: Record<string, unknown> }
   | { type: 'piwi-session-storage'; op: 'remove'; key: string };

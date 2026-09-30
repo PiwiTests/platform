@@ -26,8 +26,7 @@ function isBlockedIpv4(ip: string): boolean {
  * The IPv4 address embedded in an IPv4-mapped/-compatible IPv6, or null. Handles
  * both the dotted-quad tail (`::ffff:127.0.0.1`) and the hex-hextet form
  * (`::ffff:7f00:1`) — the latter is what a raw `::ffff:7f00:1` literal or a
- * canonicalized address looks like, and matching only the dotted form let it slip
- * through as "public".
+ * canonicalized address looks like.
  */
 function embeddedIpv4(host: string): string | null {
   const dotted = host.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);

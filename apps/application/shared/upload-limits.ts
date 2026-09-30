@@ -1,10 +1,11 @@
 /**
  * Size ceiling for the multipart ingest endpoints.
  *
- * Bodies are buffered whole before parsing, so the cap bounds peak memory as
- * much as it bounds the wire. It is exposed to the browser by the import
+ * The upload and import endpoints buffer the body whole before parsing, so for
+ * them the cap bounds peak memory as much as it bounds the wire; `case-files`
+ * streams its parts to disk. The cap is exposed to the browser by the import
  * pre-flight endpoint, letting the import page reject an oversized archive
- * before spending the upload rather than after.
+ * before spending the upload.
  */
 
 /** Default ceiling for `/api/test-runs/upload` and `/api/test-runs/import`. */

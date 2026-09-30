@@ -13,7 +13,7 @@
  * page navigates. That is deliberately *not* `chrome.storage`: a record of
  * "what is running in this page" that outlives the page is a record that goes
  * stale, and the popup can read the live value with a one-line probe instead
- * (see `activeToolId` in `popup/main.ts`).
+ * (see `highlightActiveTool` in `popup/main.ts`).
  *
  * The recorder is not part of this. It is a persistent capture mode rather
  * than a momentary tool, and tearing it down because someone opened another
@@ -81,7 +81,7 @@ export function endTool(epoch: number): void {
 }
 
 /** Tears down the running tool, if any — what Escape triggers. */
-export function stopActiveTool(): void {
+function stopActiveTool(): void {
   const g = globals();
   const active = g.__piwiActiveTool;
   if (!active) return;
@@ -89,11 +89,6 @@ export function stopActiveTool(): void {
   // Bumping the epoch stops any loop still awaiting inside the tool.
   g.__piwiToolEpoch = (g.__piwiToolEpoch ?? 0) + 1;
   active.teardown();
-}
-
-/** The running tool's id, for the popup's highlight. */
-export function activeToolId(): ToolId | null {
-  return globals().__piwiActiveTool?.id ?? null;
 }
 
 /** Hosts belonging to the recorder, which is a capture mode rather than a momentary tool and must survive another tool starting. */

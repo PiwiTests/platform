@@ -8,7 +8,7 @@ import { describeCadence } from '#shared/reports/schedule';
 import type { ReportScheduleView } from '#shared/handlers/reports';
 
 const props = defineProps<{ schedules: ReportScheduleView[] }>();
-const emit = defineEmits<{ changed: []; edit: [schedule: ReportScheduleView]; ran: [snapshotId: number] }>();
+const emit = defineEmits<{ changed: []; edit: [schedule: ReportScheduleView] }>();
 
 const toast = useToast();
 const busy = ref<number | null>(null);
@@ -51,7 +51,6 @@ async function runNow(s: ReportScheduleView) {
         ? 'Kept as a snapshot; the schedule is muted, so nothing was sent.'
         : `Queued for ${result.queued} ${result.queued === 1 ? 'channel' : 'channels'}.`;
     toast.add({ title: 'Quality report generated', description: sent, color: 'success' });
-    emit('ran', result.snapshotId);
     emit('changed');
   } catch (error) {
     toast.add({ title: "Couldn't run the schedule", description: errorMessage(error), color: 'error' });

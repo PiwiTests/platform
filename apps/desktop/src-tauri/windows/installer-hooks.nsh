@@ -5,10 +5,10 @@
 ; that keeps the bundled native modules loaded — sharp's libvips DLLs among them.
 ; Tauri's installer only stops the main binary, so a sidecar still running holds
 ; those files locked and the copy fails with "Error opening file for writing".
-; That happens on every update started by a build up to 0.37 (their updater exits
-; without stopping the sidecar, see src/updates.rs), and whenever the app was
-; killed without its quit cleanup — from Task Manager, or by the installer's own
-; "close the app" step.
+; That happens whenever the app stops without its quit cleanup: an update
+; started by a build whose updater leaves the sidecar running (0.37 and earlier,
+; see src/updates.rs), a kill from Task Manager, or the installer's own "close
+; the app" step.
 ;
 ; So before any file is written or removed: run that app check first (a stopped
 ; app cannot restart the sidecar behind us; the template's own check then finds

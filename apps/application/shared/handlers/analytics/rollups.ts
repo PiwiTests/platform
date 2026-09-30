@@ -19,8 +19,6 @@ import { notLabRun } from '../probes';
 import { dayKey, DAY_MS, FAILING_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './common';
 import { branchPolicyCondition, type BranchPolicy } from './branch-policy';
 
-export type RollupPart = 'retained' | 'archived';
-
 /** The numbers a rollup row carries, summed over the runs of its cell. */
 export interface RollupTotals {
   runs: number;

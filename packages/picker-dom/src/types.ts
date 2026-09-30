@@ -33,7 +33,7 @@ export interface ProbedAttrs {
     id?: number;
     name?: number;
     classes?: Record<string, number>;
-    /** How many elements share this element's role *and* accessible name — i.e. what `getByRole(role, { name })` would really match. */
+    /** How many elements share this element's role *and* exact accessible name (`getByRole(role, { name })` without `exact` also matches names that contain it). */
     roleName?: number;
     /** Of the `roleName` matches, how many are laid out (a box, or an `offsetParent`) — what `getByRole(role, { name }).visible()` would match. */
     visibleRoleName?: number;

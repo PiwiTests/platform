@@ -9,12 +9,10 @@ export interface SessionPick {
 export const SESSION_KEY = 'piwiPickSession';
 
 /**
- * The running named-pick session (C3/C7), in `chrome.storage.session` rather
- * than `.local` — a working session for the current browser run, not a
- * permanent preference (same reasoning as the plan's own default for API
- * keys: session-scoped unless the user opts into persistence). Reached
- * through `sessionArea()`, since the session panel reads it from a content
- * script — see `session-area.ts`.
+ * The running named-pick session, in `chrome.storage.session` rather than
+ * `.local` — a working session for the current browser run, not a permanent
+ * preference. Reached through `sessionArea()`, since the session panel reads
+ * it from a content script — see `session-area.ts`.
  */
 export async function getSessionPicks(): Promise<SessionPick[]> {
   const stored = await sessionArea().get(SESSION_KEY);

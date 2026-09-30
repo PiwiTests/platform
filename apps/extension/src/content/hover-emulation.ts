@@ -9,7 +9,7 @@ import { parentOf } from './hover-reveal.js';
  * follows the replay's pointer and is removed with the replay.
  */
 
-export const HOVER_MARKER = 'data-piwi-hover';
+const HOVER_MARKER = 'data-piwi-hover';
 
 let sheet: CSSStyleSheet | null = null;
 let styleElement: HTMLStyleElement | null = null;
@@ -23,7 +23,7 @@ function wrap(rule: StyleRuleEntry): string {
 }
 
 /** The emulation sheet's text for the page's current rules. */
-export function emulationCss(doc: Document = document): string {
+function emulationCss(doc: Document = document): string {
   return documentStyleRules(doc).hover.map(wrap).join('\n');
 }
 

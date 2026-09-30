@@ -3,16 +3,14 @@ import type { AddressInfo } from 'node:net';
 import { test, expect } from './fixtures.js';
 
 /**
- * The regression this guards: the catalog used to be fetched in exactly one
- * place — the options page's save handler — so a function added in the
- * dashboard afterwards never reached the extension. Here a real HTTP server
- * stands in for a Piwi instance and *changes its catalog between requests*,
- * which is precisely the case that used to be invisible.
+ * A function added in the dashboard after the options page saved still reaches
+ * the extension. Here a real HTTP server stands in for a Piwi instance and
+ * *changes its catalog between requests*.
  *
  * The mock sends `Access-Control-Allow-Origin` so the fetch succeeds without
  * a granted host permission (Playwright can't accept the permission prompt).
  * Against a real instance that grant is what makes this work, which is why
- * the options page now requests it inside the save/test click.
+ * the options page requests it inside the save/test click.
  */
 function entry(id: number, name: string) {
   return {
@@ -123,8 +121,7 @@ test.describe.serial('catalog refresh', () => {
     // Someone adds a function in the dashboard.
     catalog = [entry(1, 'login'), entry(2, 'addToCart')];
 
-    // This is the case that used to be impossible: no options save, no
-    // reconnect — just the refresh the panels now issue on open.
+    // No options save, no reconnect — just the refresh the panels issue on open.
     expect(await refresh(true)).toMatchObject({ ok: true, refreshed: true, count: 2 });
     expect(await cachedNames()).toEqual(['login', 'addToCart']);
   });

@@ -79,10 +79,10 @@ describe('formatFailingActionSection — timeout-fallback duration', () => {
     // N = traceEndTime - startTime = 3500.
     expect(out).toContain('- Duration: ran ≥ 3500ms before the test was killed');
 
-    // Guard against the old Date.now()-based, seconds-vs-ms bug.
+    // The duration comes from trace times, never from Date.now().
     expect(out).not.toContain('timed out after');
     expect(out).not.toContain('ms+');
-    // No wall-clock leakage: the buggy code produced a ~1.7e9 second value.
+    // No wall-clock leakage: a Date.now()-based value would be ~1.7e9 seconds.
     expect(out).not.toMatch(/Duration: timed out/);
     expect(out).not.toMatch(/ran ≥ \d{7,}ms/);
   });

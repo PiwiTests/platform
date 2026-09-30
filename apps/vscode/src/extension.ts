@@ -67,7 +67,7 @@ import {
 } from './glue';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
-/** The key every instance shared before keys were kept per instance; removed once. */
+/** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
@@ -101,8 +101,8 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
 }
 
 /**
- * Earlier versions kept one key for every instance, which a workspace naming another
- * instance would have sent there. It is removed once: connect again to save it per instance.
+ * Deletes the key shared by every instance, once: a workspace naming another
+ * instance would send it there. Connect again to save a key per instance.
  */
 async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> {
   if (context.globalState.get(SHARED_KEY_FORGOTTEN)) return;

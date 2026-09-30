@@ -11,8 +11,6 @@ export interface BuildContextOptions {
   selectedCommitShas?: string[];
   /** When true, resolve screenshot data URLs into `images`. Default true. */
   includeImages?: boolean;
-  /** Omit a section by id (used by the UI include/exclude toggles). */
-  omitSections?: SectionId[];
   /**
    * Skip the SCM investigation network fetch (diff since last green + selected
    * commit diffs). Used by the two-stage pipeline to keep the research pass

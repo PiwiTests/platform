@@ -20,7 +20,7 @@ import {
   testSuites,
   networkRequests,
 } from '~~/server/database/schema.sqlite';
-import { parseLocation } from '~~/server/utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {

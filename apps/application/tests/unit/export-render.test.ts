@@ -82,11 +82,11 @@ describe('renderExportHtml', () => {
 
   it('strips ANSI escapes from error text', () => {
     const html = renderExportHtml(
-      bundle({ cases: [exportCase({ detail: { error: '[31mExpected true[39m' } })] }),
+      bundle({ cases: [exportCase({ detail: { error: '\x1b[31mExpected true\x1b[39m' } })] }),
       noAssets,
     );
     expect(html).toContain('Expected true');
-    expect(html).not.toContain('[31m');
+    expect(html).not.toContain('\x1b[31m');
   });
 
   it('syntax-highlights call stack snippets behind a plain line-number gutter', () => {

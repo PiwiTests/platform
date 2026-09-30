@@ -4,10 +4,10 @@ import { gzipSync, gunzipSync } from 'zlib';
  * At-rest compression for the shared trace-resource pool
  * (`project-<id>/trace-resources/<name>`).
  *
- * Playwright names each resource by its content hash, so the pool already stores
- * every unique resource once. What it did not do is shrink them: network bodies
- * (HTML, JS, CSS, JSON) are text and compress well, yet were written raw. These
- * helpers gzip a resource on the way in and restore it on the way out.
+ * Playwright names each resource by its content hash, so the pool stores every
+ * unique resource once. Network bodies (HTML, JS, CSS, JSON) are text and
+ * compress well, so these helpers gzip a resource on the way in and restore it
+ * on the way out.
  *
  * A compressed resource is stored as a self-describing container — a 4-byte
  * magic prefix followed by the gzip stream. The magic is what makes decoding
@@ -15,9 +15,8 @@ import { gzipSync, gunzipSync } from 'zlib';
  * gzip (a response captured still content-encoded), and sniffing for the gzip
  * magic alone would wrongly decode those. A raw resource is written verbatim and
  * never carries the prefix, so {@link decodeResource} touches only the bytes
- * this module compressed. That also means no schema column and no migration: the
- * bytes on disk carry their own encoding, and old raw resources keep reading
- * exactly as before.
+ * this module compressed. The bytes on disk carry their own encoding, so raw and
+ * compressed resources share the pool and read the same way.
  */
 
 /** Marks a container written by {@link compressResource}: "PZ" + version 0x0001. */

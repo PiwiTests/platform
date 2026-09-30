@@ -6,13 +6,6 @@ export function createSSEEndpoint(
   event: H3Event,
   onSubscribe: (controller: ReadableStreamDefaultController, encoder: TextEncoder) => (() => void) | undefined,
 ): Response {
-  setResponseHeaders(event, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {

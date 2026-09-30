@@ -206,7 +206,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
 }
 
 /**
- * Runs the assertion-suggester flow (C2): pick a single element or region,
+ * Runs the assertion-suggester flow: pick a single element or region,
  * then suggest ranked `expect(...)` candidates against its top-ranked
  * locator. Reuses the same single-pick mechanism as `pick.ts` (sharing its
  * `__piwiPicking` re-entrancy guard, since both drive the same underlying

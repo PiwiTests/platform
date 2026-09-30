@@ -12,7 +12,7 @@ import type { LocatorArg } from './artifact.js';
  * so a missing or misspelled parameter is a compile error. Placeholder names are
  * assumed brace-free (`{email}`, not `{a{b}}`).
  */
-export type ExtractParams<S extends string> = S extends `${string}{${infer Param}}${infer Rest}`
+type ExtractParams<S extends string> = S extends `${string}{${infer Param}}${infer Rest}`
   ? Param | ExtractParams<Rest>
   : never;
 
@@ -99,7 +99,7 @@ export function maskValues(text: string, params: ParamValues): string {
 }
 
 /**
- * Parametricity check (D9): every placeholder must actually appear as a marker
+ * Parametricity check: every placeholder must actually appear as a marker
  * somewhere in the compiled locator/value text. A grounding that pinned a
  * concrete value positionally instead of parametrically is rejected, never
  * cached — otherwise the "one entry per template" guarantee would silently break.

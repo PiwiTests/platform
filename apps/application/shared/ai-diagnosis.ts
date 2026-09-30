@@ -173,7 +173,7 @@ export function parseDiagnosisJson(text: string): AiDiagnosisResult {
   const raw = parsed as Record<string, unknown>;
 
   // Hypotheses are the source of truth. Fall back to a synthesized single
-  // hypothesis when a model returns the legacy top-level shape.
+  // hypothesis when a model returns a top-level shape without `hypotheses`.
   let hypotheses = Array.isArray(raw.hypotheses) ? raw.hypotheses.map(parseHypothesis).slice(0, 5) : [];
   hypotheses = hypotheses.filter((h) => h.rootCause || h.evidence.length);
   if (hypotheses.length === 0) {

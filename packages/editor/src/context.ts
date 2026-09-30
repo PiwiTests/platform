@@ -143,7 +143,7 @@ export function resolveContextConnection(
 }
 
 /** The owners a repository's CODEOWNERS file names: `@team`, `@user`, emails. */
-export function codeOwners(repoRoot: string): string[] {
+function codeOwners(repoRoot: string): string[] {
   const owners = new Set<string>();
   for (const file of ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS']) {
     let text: string;

@@ -81,7 +81,7 @@ export const specDirSchema = z
   .refine((dir) => !dir.startsWith('/') && !dir.includes('\\') && !dir.split('/').includes('..'))
   .optional();
 
-export function resolveGeneratedSpecSettings(raw: unknown): GeneratedSpecSettings {
+function resolveGeneratedSpecSettings(raw: unknown): GeneratedSpecSettings {
   const parsed = generatedSpecSettingsSchema.safeParse(raw ?? {});
   const value = parsed.success ? parsed.data : {};
   return {
@@ -340,7 +340,7 @@ export async function getBugReport(db: DrizzleDB, id: number): Promise<BugReport
   };
 }
 
-export async function listBugReproductions(db: DrizzleDB, bugReportId: number): Promise<BugReproductionItem[]> {
+async function listBugReproductions(db: DrizzleDB, bugReportId: number): Promise<BugReproductionItem[]> {
   const rows = await db
     .select({ r: bugReproductions, name: users.name, username: users.username })
     .from(bugReproductions)

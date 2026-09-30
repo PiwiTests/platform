@@ -42,7 +42,7 @@ export interface MockCode {
 export const HIDDEN_VALUE = '<hidden>';
 
 /** 100 kB: above it, a body goes to a file. */
-export const MAX_INLINE_BODY = 100_000;
+const MAX_INLINE_BODY = 100_000;
 
 /** Field names that hold a credential. */
 const SECRET_FIELD =

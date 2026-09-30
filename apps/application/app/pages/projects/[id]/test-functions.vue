@@ -356,8 +356,8 @@ async function save() {
   }
 }
 
-// Deleting used to happen on the click itself. A catalog entry is hand-authored
-// work — a pattern, its params, their sources — and nothing here undoes it.
+// Deleting asks for confirmation: a catalog entry is hand-authored work — a
+// pattern, its params, their sources — and nothing here undoes it.
 const functionToDelete = ref<TestFunctionInfo | null>(null);
 const isDeleteConfirmOpen = ref(false);
 

@@ -493,22 +493,6 @@ export interface TestRunDetails {
 }
 
 /**
- * Lightweight test run summary for comparison pages — omits heavy JSON blobs
- * returned by GET /api/test-runs/[id]/summary
- */
-export interface TestRunForCompare {
-  id: number;
-  status: string;
-  totalTests: number;
-  testCases: Array<{
-    title: string;
-    status: string;
-    duration?: number | null;
-    location?: string;
-  }>;
-}
-
-/**
  * Test run for charts and visualization
  */
 export interface TestRunForChart {
@@ -1414,50 +1398,6 @@ export interface AttachmentInfo {
   contentType: string | null;
   path: string;
   size: number | null;
-}
-
-// ============================================================================
-// Regression context types (Pillar 2)
-// ============================================================================
-
-/**
- * Commit range between last passing run and this run
- */
-export interface RegressionContextCommitRange {
-  fromSha: string;
-  toSha: string;
-  fromShort: string;
-  toShort: string;
-  repositoryUrl: string | null;
-  compareUrl: string | null;
-  gitCommand: string;
-}
-
-/**
- * A single field that changed between the last passing run and this run
- */
-export interface RegressionContextMetaDiff {
-  key: string;
-  label: string;
-  before: string | null;
-  after: string | null;
-}
-
-/**
- * Regression context for a test run — returned by GET /api/test-runs/[id]/regression-context.
- * hasGreen: false means no prior passing run exists for this project.
- */
-export interface RegressionContext {
-  hasGreen: boolean;
-  lastGreenRunId?: number;
-  lastGreenRunAt?: string | Date | null;
-  lastGreenCommit?: string | null;
-  lastGreenBranch?: string | null;
-  currentCommit?: string | null;
-  currentBranch?: string | null;
-  commitRange?: RegressionContextCommitRange | null;
-  metadataDiff?: RegressionContextMetaDiff[];
-  newFailures?: number;
 }
 
 /**

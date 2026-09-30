@@ -18,7 +18,6 @@ import {
 
 export { filePageTarget, fileRouteTarget, pageKeyMatchesTarget, type ConventionTarget };
 
-/** Node kinds. Route and page are populated today; the rest are reserved. */
 export type GraphNodeKind = 'feature' | 'page' | 'control' | 'link' | 'route' | 'handler' | 'dependency' | 'file';
 
 /**
@@ -27,7 +26,6 @@ export type GraphNodeKind = 'feature' | 'page' | 'control' | 'link' | 'route' | 
  */
 export type GraphEndpointKind = GraphNodeKind | 'test' | 'cluster' | 'commit' | 'ticket' | 'owner';
 
-/** Edge kinds. `reaches` and `changes` are populated today; the rest reserved. */
 export type GraphEdgeKind =
   | 'links'
   | 'contains'

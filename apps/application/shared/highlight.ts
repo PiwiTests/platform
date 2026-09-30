@@ -1,10 +1,6 @@
 /**
  * The one syntax-highlighting setup, shared by the dashboard components and
- * the offline export.
- *
- * Registering languages in each consumer meant the sets drifted — `yaml` was
- * passed by ARIA-snapshot call sites but registered nowhere, so those blocks
- * fell through to auto-detection. Add a language here and every surface gets it.
+ * the offline export. Add a language here and every surface gets it.
  */
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';

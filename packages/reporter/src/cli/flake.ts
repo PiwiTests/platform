@@ -93,7 +93,7 @@ Exit codes: 0 an arm reproduced the failure (verify: the fix held),
 
 const DEFAULT_BUDGET_MS = 15 * 60_000;
 const SOURCES = ['cli', 'ci', 'desktop'] as const;
-export type FlakeSource = (typeof SOURCES)[number];
+type FlakeSource = (typeof SOURCES)[number];
 /** The most Playwright invocations one arm makes, discarded rounds included. */
 const MAX_BATCHES = 12;
 /** Lines of Playwright's output shown when an arm records nothing. */
@@ -223,7 +223,7 @@ export interface ArmResult {
   skipped: string | null;
 }
 
-export interface FlakeReport {
+interface FlakeReport {
   kind: 'reproduce' | 'verify';
   testCaseId: number;
   test: string;
@@ -372,7 +372,7 @@ function readResults(file: string): FlakeResultLine[] {
  * batch records no attempt of the test at all (the fixtures are not in use, or
  * the plan names a test this checkout does not have).
  */
-export async function runArm(runner: FlakeRunner, plan: LabPlan, arm: LabArm): Promise<ArmCount> {
+async function runArm(runner: FlakeRunner, plan: LabPlan, arm: LabArm): Promise<ArmCount> {
   const batches: FlakeResultLine[][] = [];
   let count = countArm(batches, arm);
   for (let batch = 1; batch <= MAX_BATCHES && !armDone(count, arm); batch++) {
@@ -509,7 +509,7 @@ function verdictSentence(report: FlakeReport, arms: ArmResult[], control: ArmRes
 }
 
 /** The word `git bisect` would record for a step's exit code. */
-export function bisectStepWord(code: number): string {
+function bisectStepWord(code: number): string {
   if (code === 0) return 'good (the arm held at this commit)';
   if (code === 1) return 'bad (a failure with the same error as in CI)';
   return 'skip (too few clean runs to tell)';

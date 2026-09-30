@@ -63,14 +63,12 @@ export async function launchWithExtension(
   ];
   const language = opts.language ? languageLaunchOptions(opts.language) : { options: {}, args: [] };
   // Playwright's own docs example for extensions uses `channel: 'chromium'`
-  // with no `headless` option and no manual `--headless=new` — that's not
-  // cosmetic: CI was hanging indefinitely waiting for the extension's
-  // service worker to register (see extensionWorker below) with the previous
-  // `headless: true` + manual `--headless=new` combo, matching a known
-  // class of upstream reports where that combination is unreliable for
-  // extensions specifically in CI/Docker (works locally, hangs in CI).
-  // `executablePath` and `channel` are mutually exclusive, so the local
-  // sandbox override keeps its own previously-working combo instead.
+  // with no `headless` option and no manual `--headless=new`: with
+  // `headless: true` + `--headless=new`, CI hangs waiting for the extension's
+  // service worker to register (see extensionWorker below), a known class of
+  // upstream reports for extensions in CI/Docker. `executablePath` and
+  // `channel` are mutually exclusive, so the local sandbox override keeps its
+  // own launch options.
   return chromium.launchPersistentContext(
     userDataDir,
     chromiumExecutable

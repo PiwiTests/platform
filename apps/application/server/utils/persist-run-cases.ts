@@ -366,7 +366,7 @@ async function dedupeGreenSamples(
 /**
  * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
  * `test_runs_cases` rows in a single statement. Network requests, web vitals and
- * console logs are sanitised here (stripping query strings from URLs). Failed
+ * console logs are sanitized here (stripping query strings from URLs). Failed
  * cases with error text are fingerprinted and linked to a `failure_clusters`
  * row so failures sharing a root cause can be grouped.
  *

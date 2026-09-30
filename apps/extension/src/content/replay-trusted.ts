@@ -112,7 +112,7 @@ const COVERED_WAIT_MS = 3_000;
  * browser finds there. `requireHit` false takes the point as it is, for an
  * action that does not go through the pointer (a fill, a key press).
  */
-export async function pointFor(element: Element, requireHit = true): Promise<Point> {
+async function pointFor(element: Element, requireHit = true): Promise<Point> {
   const deadline = Date.now() + COVERED_WAIT_MS;
   for (;;) {
     const r = element.getBoundingClientRect();

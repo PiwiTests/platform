@@ -170,8 +170,9 @@ impl LocalRuns {
     }
 }
 
-/// A project's linked folder plus the optional start command the shell runs
-/// before a reproduce/bisect step when the Playwright config has no `webServer`.
+/// A project's linked folder plus an optional start command (and readiness URL)
+/// for reproduce/bisect steps when the Playwright config has no `webServer`.
+/// The command is stored only: no reproduce, bisect or lab driver runs it.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LinkRecord {
@@ -339,11 +340,9 @@ pub fn desktop_set_project_link(
     write_links(&app, &links)
 }
 
-/// Store (or clear) the start command the shell runs before each reproduce/bisect
-/// step when the Playwright config has no `webServer`, and the URL it polls until
-/// the app answers. Requires a linked folder; the command is executed only from
-/// here, never passed in at run time, so the stored text is the single source of
-/// truth for what runs.
+/// Store (or clear) the start command for reproduce/bisect steps when the
+/// Playwright config has no `webServer`, and the URL to poll until the app
+/// answers. Requires a linked folder. Stored only: no driver reads either value.
 #[tauri::command]
 pub fn desktop_set_project_start_command(
     app: AppHandle,

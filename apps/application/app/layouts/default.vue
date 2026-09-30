@@ -408,10 +408,9 @@ const { resetDemo } = useDemoReset();
 
 onMounted(async () => {
   // ── Demo data staleness ──
-  // Note: the demo DB now self-heals on load — a changed seed version reseeds
-  // automatically (see db.client `canReusePersistedDemoDb`). This prompt is a
-  // belt-and-suspenders nudge; its "Refresh" runs the same window + service
-  // worker reset the toolbar button uses.
+  // A changed seed version reseeds the demo DB on load (see db.client
+  // `canReusePersistedDemoDb`). This prompt is a second nudge; its "Refresh"
+  // runs the same window + service worker reset the toolbar button uses.
   if (isDemo && demoDataVersion) {
     // Lazy: the demo database module carries the server schema and Drizzle.
     const { getStoredDemoVersion } = await import('~/demo/db.client');

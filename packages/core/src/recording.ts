@@ -94,9 +94,9 @@ export interface RecordedTarget {
    * Exists because nothing else here identifies an element reliably: two
    * unlabelled `<input>`s on one form share tag, role, accessible name *and*
    * text, and neither gets any locator alternative at all (a bare role anchor
-   * needs the role to be document-unique). Without this, typing into the second
-   * field looked like a continuation of the first and its value overwrote it.
-   * Optional so a recording captured before this existed still deserializes.
+   * needs the role to be document-unique). Without it, typing into the second
+   * field would read as a continuation of the first and overwrite its value.
+   * Optional, so a recording without it still deserializes.
    */
   elementKey?: string | null;
 }
@@ -190,7 +190,7 @@ export const RECORDED_KEYS: ReadonlySet<string> = new Set(['Enter', 'Escape', 'A
  * single character pressed outside a field (a page's own shortcut, such as `?`).
  * The recorder decides which presses to send; this keeps the rest out.
  */
-export function isRecordedKey(key: string | null | undefined): key is string {
+function isRecordedKey(key: string | null | undefined): key is string {
   if (!key) return false;
   return (
     RECORDED_KEYS.has(key) || /^(?:(?:ControlOrMeta|Control|Meta|Alt|Shift)\+)+.+$/.test(key) || [...key].length === 1

@@ -63,9 +63,8 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 409, message: 'Diagnosis is already running for this cluster' });
   }
 
-  // Check for existing completed diagnosis (return as a single-event stream).
-  // Not using the Force header — the client controls this by calling the
-  // non-streaming diagnose endpoint first then switching to streaming for re-runs.
+  // Unless `?force` is set, an existing completed diagnosis is returned as a
+  // single-event stream.
   const force = queryFlag(event, 'force');
   if (!force) {
     const whereClause = isExecutionScope

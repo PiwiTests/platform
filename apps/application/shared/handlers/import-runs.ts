@@ -109,7 +109,7 @@ export interface ImportPort {
 }
 
 /** Reads one entry out of the archive, or null when absent or unreadable. */
-export type ArchiveEntryReader = (name: string) => Promise<Uint8Array | null>;
+type ArchiveEntryReader = (name: string) => Promise<Uint8Array | null>;
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 

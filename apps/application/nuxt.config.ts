@@ -78,11 +78,8 @@ const demoPwaConfig = isDemo
         enabled: false,
       },
     }
-  : // The option is `disable`; `disabled` is silently ignored, which left the
-    // normal build generating a Workbox service worker nobody asked for and
-    // every page registering `/sw.js` — a 404 on the dev server (logged as a
-    // Vue Router "No match found" warning on every page load) and a live
-    // asset-caching worker on a production build.
+  : // The option is `disable` (`disabled` is ignored): the normal build
+    // generates no Workbox service worker and no page registers `/sw.js`.
     { disable: true };
 
 export default defineNuxtConfig({
@@ -118,11 +115,11 @@ export default defineNuxtConfig({
     enabled: false,
   },
 
-  // Production builds emit no server source maps. Carrying them through the Vite
-  // SSR build and the Nitro bundle added over a gigabyte to the build's peak heap
-  // (enough to run out of memory at Node's 4 GB default in the Docker image), and
-  // nothing reads them: the server runs without --enable-source-maps and the
-  // desktop staging strips every *.map. `nuxt dev` keeps them.
+  // Production builds emit no server source maps: through the Vite SSR build and
+  // the Nitro bundle they add over a gigabyte to the build's peak heap (past
+  // Node's 4 GB default in the Docker image), and nothing reads them — the server
+  // runs without --enable-source-maps and the desktop staging strips every *.map.
+  // `nuxt dev` keeps them.
   $production: {
     sourcemap: { server: false },
   },
@@ -369,16 +366,15 @@ export default defineNuxtConfig({
       openAPI: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
       // resolution on Windows. legacyExternals swaps the plugin that traces the externals
-      // above for Nitro's older one, which keeps dependency resolution compatible with
-      // older behavior and prevents intermittent build timeouts / failures during Nitro
-      // server bundling on Windows. `nuxi build` sets NODE_ENV=production before it
-      // loads this file.
+      // above for Nitro's older one, which avoids intermittent build timeouts / failures
+      // during Nitro server bundling on Windows. `nuxi build` sets NODE_ENV=production
+      // before it loads this file.
       // See: https://github.com/nuxt/nuxt/issues/31836
-      // Never in the demo, whose only server bundle is the prerenderer: the legacy
+      // Never in the demo, whose only server bundle is the prerenderer: the older
       // resolver resolves bare imports from the project root rather than the importing
-      // file, which hands Nitro's runtime the hoisted hookable 6 in place of its own
+      // file, which would hand Nitro's runtime the hoisted hookable 6 in place of its own
       // hookable 5 (whose callHook() always returns a promise), and every prerendered
-      // route answers 500.
+      // route would answer 500.
       legacyExternals: !isDemo && process.platform === 'win32' && process.env.NODE_ENV === 'production',
       tasks: true,
     },

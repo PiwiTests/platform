@@ -4,7 +4,7 @@ import {
   classifyStatus,
   expectsFailure,
   expectedFailureError,
-} from '../src/internal/collect/skip-classify.js';
+} from '@piwitests/core/status-classify';
 
 describe('mergeAnnotations', () => {
   it('merges test- and result-level annotations, deduped', () => {

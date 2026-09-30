@@ -34,8 +34,8 @@ export const optionalIdentifierSchema = z
 
 /**
  * An import specifier, not a path on disk — `./pages/CartPage`,
- * `@fixtures/cart`. Quoted when emitted, so a quote or a line break in it can
- * no longer break out of the literal, but neither belongs in a module path and
+ * `@fixtures/cart`. Quoted when emitted, so a quote or a line break in it
+ * cannot break out of the literal, but neither belongs in a module path and
  * refusing them keeps the generated import readable.
  */
 export const moduleSchema = z
@@ -133,10 +133,9 @@ export const createTestFunctionSchema = z.object({
 
 /**
  * The same shape with every field optional — a PATCH-style update where an
- * absent field means "leave it alone". Lives here beside the create schema
- * rather than inline in the endpoint so the demo router's mirror validates
- * against the identical rules; two copies of "what a valid update looks like"
- * is exactly how the demo drifted into accepting entries the API rejects.
+ * absent field means "leave it alone". Lives here beside the create schema so
+ * the endpoint and the demo router's mirror validate against the identical
+ * rules.
  */
 export const updateTestFunctionSchema = z.object({
   name: testFunctionNameSchema.optional(),

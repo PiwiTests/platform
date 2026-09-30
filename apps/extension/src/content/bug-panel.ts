@@ -80,7 +80,7 @@ export interface BugRecorderHooks {
  * Why a report has no screenshot, as the report stores it. The panels show
  * {@link screenshotNoteText} instead, in the interface language.
  */
-export const NO_SCREENSHOT_NOTE =
+const NO_SCREENSHOT_NOTE =
   'Chrome lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose Take a screenshot.';
 
 /** A stored screenshot note in the interface language; a note this module does not know stays as it is. */

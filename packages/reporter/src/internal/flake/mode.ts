@@ -149,7 +149,7 @@ export function cdpCommandFor(condition: FlakeCondition): { method: string; para
 }
 
 /** The route action a `delay` or `fail` condition performs. */
-export function conditionRouteAction(condition: FlakeCondition): RouteAction | null {
+function conditionRouteAction(condition: FlakeCondition): RouteAction | null {
   if (condition.kind === 'delay') return { kind: 'delay', ms: condition.ms };
   if (condition.kind === 'fail')
     return 'abort' in condition ? { kind: 'abort' } : { kind: 'status', status: condition.status };
@@ -183,7 +183,7 @@ export function unappliedReports(plan: FlakePlan): FlakeConditionReport[] {
  * The interception is installed in every arm, the control and an arm without
  * route conditions included: routing turns off the page's HTTP cache and sends
  * every request through Playwright, so an arm that routed while its control did
- * not would differ from it by more than its conditions (D5).
+ * not would differ from it by more than its conditions.
  */
 export async function installFlakeConditions(page: Page, plan: FlakePlan): Promise<FlakeConditions> {
   const conditions = plan.arm.conditions;

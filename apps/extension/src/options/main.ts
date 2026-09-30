@@ -779,13 +779,10 @@ saveBtn.addEventListener('click', () => {
 });
 
 /**
- * Gives back the host permission for an instance we are no longer connected to.
- *
- * Disconnecting used to clear the settings and the cached catalogs but leave the
- * granted origin in place indefinitely — a standing grant for a host the
- * extension has no further business with, and one the user would reasonably
- * assume "Disconnect" had withdrawn. Never touches anything but that one origin:
- * a recording's own granted site is a separate grant with its own lifetime.
+ * Gives back the host permission for an instance we are no longer connected to,
+ * so "Disconnect" leaves no standing grant for a host the extension has no
+ * further business with. Never touches anything but that one origin: a
+ * recording's own granted site is a separate grant with its own lifetime.
  */
 async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> {
   if (!instanceUrl.trim()) return;

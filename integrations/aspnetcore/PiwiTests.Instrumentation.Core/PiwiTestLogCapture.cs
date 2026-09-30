@@ -54,7 +54,8 @@ public static class PiwiTestLogCapture
     /// Adds an entry to the active buffer, applying the shared level filter
     /// (<see cref="MinimumLevel"/>), the entry cap and the message truncation. A no-op when no
     /// buffer is active, when <paramref name="level"/> is below <see cref="MinimumLevel"/>, or
-    /// when the cap is already reached. Safe to call from any source and from any thread.
+    /// when the cap is already reached. Safe to call from any source; calls within one async
+    /// context share one unsynchronized list.
     /// </summary>
     public static void TryAdd(LogLevel level, string category, string message, Exception? exception)
     {

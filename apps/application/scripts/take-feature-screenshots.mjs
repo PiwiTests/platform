@@ -2761,8 +2761,8 @@ const SCENES = [
 
   // ── Failure page clarity (report artifacts) ───────────────────────────────
   // The first screen of each detail page in its default state, at wide and phone
-  // width, so the clarity plan's "In numbers" table can be re-read visually after
-  // each phase. Full-viewport, nothing expanded — the baseline these phases diff.
+  // width, the visual side of the `app:measure` legibility numbers.
+  // Full-viewport, nothing expanded.
   {
     name: 'execution-clarity',
     description: 'Execution page first screen, default state (1280×800 clarity baseline)',

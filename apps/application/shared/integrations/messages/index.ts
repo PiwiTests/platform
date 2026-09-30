@@ -1,8 +1,8 @@
 /**
  * The message catalog and the `t()` a ticket's copy goes through. Kept free of
- * runtime dependencies so the builders (and, in a later milestone, the policy
- * comments in `server/utils/integrations/` that have no document to render) can
- * call `t(locale, key, params)` the same way.
+ * runtime dependencies so the builders and the policy comments
+ * (`policy-comments.ts`, `server/utils/integrations/policies.ts`) call
+ * `t(locale, key, params)` the same way.
  */
 import { en, type MessageKey, type MessageValue } from './en';
 import { fr } from './fr';

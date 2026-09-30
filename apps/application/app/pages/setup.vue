@@ -2,12 +2,10 @@
 /**
  * Setup — the permanent home for "how do I connect this, and what else can it do?".
  *
- * The connect steps used to live only on Home behind `v-if="!hasProjects"`, so
- * everything past step one became undiscoverable the moment the first run
- * landed. This page keeps the wizard reachable forever and pairs it with the
- * capability ladder: every optional capability grouped by whether it is active,
- * available, not set up yet or declined, with the one place to decline a
- * capability for this instance or to reconsider one.
+ * This page keeps the connect wizard reachable after the first run lands and
+ * pairs it with the capability ladder: every optional capability grouped by
+ * whether it is active, available, not set up yet or declined, with the one
+ * place to decline a capability for this instance or to reconsider one.
  */
 import type { SetupStatus, SetupCapabilityId } from '#shared/handlers/setup-status';
 import type { CapabilityId, CapabilityState } from '#shared/capabilities';

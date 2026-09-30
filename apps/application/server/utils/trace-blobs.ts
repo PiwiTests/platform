@@ -225,9 +225,9 @@ export async function upsertTraceBlob(
 }
 
 /**
- * Backfill `trace_blob_resources` for blobs written before per-resource
- * refcounting existed (or whose links failed to write). Reads each un-indexed
- * blob's manifest, inserts the links and flips `resources_indexed`. Idempotent
+ * Backfill `trace_blob_resources` for blobs not yet indexed (no links, or links
+ * that failed to write). Reads each un-indexed blob's manifest, inserts the
+ * links and flips `resources_indexed`. Idempotent
  * and resumable: a cursor walks blob ids so a blob that errors is retried on a
  * future run without stalling this one. Returns how many blobs it indexed.
  *

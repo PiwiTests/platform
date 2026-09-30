@@ -16,7 +16,7 @@ import { createPageEngine, isPiwiElement } from './verified-locators.js';
  *   needs `exact`, a scope or `.nth()`.
  */
 
-export type ViewMark = 'unreachable' | 'ambiguous';
+type ViewMark = 'unreachable' | 'ambiguous';
 
 export interface ViewLabel {
   element: Element;

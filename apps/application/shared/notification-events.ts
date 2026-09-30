@@ -30,7 +30,7 @@ export function notificationEventLabel(event: string): string {
 
 /**
  * A report schedule's delivery: queued in the notification outbox by the
- * `reports:schedule` task, one row per channel. Deliberately not a member of
+ * `reports:schedule` task, one row per channel. Not a member of
  * {@link NOTIFICATION_EVENTS}: a quality report arrives on its schedule's
  * clock, so it is never something to subscribe to.
  */

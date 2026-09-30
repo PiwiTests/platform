@@ -182,9 +182,9 @@ export function extractLocatorExpressions(source: string): ExtractedLocator[] {
 /** How an indexed chain relates to a looked-up locator, closest first. */
 export type LocatorMatchKind = 'exact' | 'target' | 'similar' | 'scope';
 
-export const LOCATOR_MATCH_KINDS: readonly LocatorMatchKind[] = ['exact', 'target', 'similar', 'scope'];
+const LOCATOR_MATCH_KINDS: readonly LocatorMatchKind[] = ['exact', 'target', 'similar', 'scope'];
 
-export interface LocatorLookupHit {
+interface LocatorLookupHit {
   /** The indexed chain. */
   locator: string;
   kind: LocatorMatchKind;

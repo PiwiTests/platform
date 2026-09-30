@@ -3,9 +3,9 @@
  *
  * Storage: the `ai` app-setting holds `{ autoDiagnose, roles }` where each role
  * (`diagnosis` | `research` | `embedding`) has its own provider config, or a
- * `reuse` pointer to inherit another role's provider/key/baseUrl. Installs saved
- * before this refactor used flat fields (`provider`, `model`, `researchModel`,
- * …) — `storedRoles()` migrates those on read so nothing breaks.
+ * `reuse` pointer to inherit another role's provider/key/baseUrl. A stored
+ * setting may instead hold flat fields (`provider`, `model`, `researchModel`,
+ * …); `storedRoles()` maps those onto roles on read.
  */
 
 import { eq } from 'drizzle-orm';

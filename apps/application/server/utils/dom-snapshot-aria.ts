@@ -6,7 +6,7 @@
  * Playwright's `ariaSnapshot()` dump is an indented, YAML-ish tree; this module
  * parses that tree back into a real hierarchy and renders it as a nested,
  * inspector-style view (role chips + accessible names + state badges, drawn
- * with tree guides), rather than the old flat list of chips. Pickable rows
+ * with tree guides). Pickable rows
  * carry real `role` / `aria-label` / `aria-level` attributes so the interactive
  * locator picker probes them into correct `getByRole` / `getByText` locators.
  *

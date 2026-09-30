@@ -338,7 +338,7 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
 }
 
 /**
- * Runs the multi-pick flow (A7): pick 2-3 similar items, then derive a
+ * Runs the multi-pick flow: pick 2-3 similar items, then derive a
  * shared list-locator pattern. Requires the mandatory first two picks, then
  * offers a 3rd (stronger sample) or deriving now — Escape during any
  * individual pick cancels the whole session, and Escape/close on the

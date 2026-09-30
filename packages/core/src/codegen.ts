@@ -50,12 +50,7 @@ export interface CodegenOptions {
   format?: 'file' | 'body';
 }
 
-export type CodegenWarningCode =
-  | 'no-locator'
-  | 'brittle-locator'
-  | 'redacted-value'
-  | 'incomplete-assertion'
-  | 'file-needed';
+type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
 
 /** Something about a step the reader of the generated spec should check. */
 export interface CodegenWarning {
@@ -90,8 +85,8 @@ export interface CodegenResult {
  * A line terminator inside a single-quoted literal is a syntax error, not a
  * newline — and a recorded value reaches codegen unnormalized (`normalizeSteps`
  * collapses whitespace on a target's *text*, never on the value the user typed),
- * so one multi-line paste into a textarea used to be enough to make the whole
- * exported spec unparseable.
+ * so a multi-line paste into a textarea must be escaped for the exported spec
+ * to parse.
  */
 const QUOTE_ESCAPES: Record<string, string> = {
   '\\': '\\\\',

@@ -135,8 +135,8 @@ export async function releaseConditionsDebugger(tabId: number): Promise<void> {
 }
 
 /**
- * The viewports set on tabs from the popup, one per tab id, in session storage
- * so the popup can say so and offer to undo it.
+ * The viewports set on tabs from the DevTools panel, one per tab id, in session
+ * storage so the panel can say so and offer to undo it.
  */
 export const TAB_VIEWPORT_KEY = 'piwiTabViewport';
 
@@ -198,10 +198,6 @@ export async function clearTabViewport(tabId: number): Promise<void> {
 onDebuggerLost((tabId, purposes) => {
   if (purposes.includes('viewport')) void clearTabViewport(tabId);
 });
-
-export function conditionsThroughDebugger(tabId: number): boolean {
-  return holdsDebugger(tabId, 'conditions');
-}
 
 /** Called when the conditions' session ends without being released: the person cancelled the bar. */
 export function onConditionsDebuggerLost(fallback: (tabId: number, reason: 'canceled' | 'lost') => void): void {

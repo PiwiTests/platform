@@ -135,7 +135,7 @@ async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
 }
 
 // chrome.storage.session defaults to extension-page-only access; the pick
-// session (C3/C7) and the recording (`recording-storage.ts`) are read and
+// session and the recording (`recording-storage.ts`) are read and
 // written directly from content scripts, so this widens access once at
 // startup rather than routing every storage call through a background
 // message handler.
@@ -145,7 +145,7 @@ async function runPickCommand(tab?: chrome.tabs.Tab): Promise<void> {
 // before the restart has applied the wider access level, and a session-storage
 // read from a content script *throws* until it has. `piwi-ping` below lets a
 // content script wait for exactly that (see `shared/session-access.ts`) —
-// without it the recorder's HUD failed to appear at random.
+// without it the recorder's HUD would fail to appear at random.
 //
 // Called inside `.then` because Firefox has no `setAccessLevel`: calling it
 // directly throws there, synchronously, which would stop this script before any
@@ -236,9 +236,8 @@ async function handleStartRecording(
     return { ok: true };
   } catch (err) {
     // `startRecording` has already written `active: true`, so a failure after it
-    // used to leave a recording that captured nothing anywhere while the popup
-    // offered "Stop recording (0)" — a dead end reachable only via Discard.
-    // Unwind everything this function may have put in place.
+    // would leave a recording that captures nothing while the popup offers
+    // "Stop recording (0)". Unwind everything this function may have put in place.
     await discardRecording().catch(() => undefined);
     await stopBugDebugger().catch(() => undefined);
     await unregisterScripts(RECORDING_SCRIPT_IDS);
@@ -386,14 +385,11 @@ async function handleBugScreenshot(
 /**
  * Re-fetches one project's function catalog into the cache. This lives in the
  * background worker rather than in the panels that display the catalog for
- * the same reason `piwi-client.ts` has always said: the API key must never be
+ * the same reason as in `piwi-client.ts`: the API key must never be
  * reachable from a web page's JS context. Content scripts ask for a refresh
  * over `chrome.runtime.sendMessage` (`catalog-refresh.ts`) and only ever read
- * the resulting cache.
- *
- * Before this existed the catalog was written exactly once — by the options
- * page's save handler — so a function added in the dashboard afterwards never
- * appeared in the extension at all.
+ * the resulting cache, so a function added in the dashboard reaches the
+ * extension without saving the options page again.
  */
 async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise<RefreshCatalogResult> {
   await i18nReady;
@@ -640,7 +636,7 @@ async function tabSize(
 
 /**
  * Sets the viewport of the tab itself through the debugging protocol, as
- * DevTools' device toolbar does, until the popup resets it or the tab closes.
+ * DevTools' device toolbar does, until the DevTools panel resets it or the tab closes.
  */
 async function handleSetTabViewport(message: {
   tabId?: unknown;

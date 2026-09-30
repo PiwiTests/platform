@@ -60,11 +60,11 @@ export function snapshotPickerScriptTag(config: SnapshotPickerConfig, nonce?: st
   const extrasSrc = escScriptClose(String(installSnapshotPickerExtras));
   const overlaySrc = escScriptClose(String(installPickerOverlay));
   // Init runs inside a try/catch and behind error listeners that report any
-  // failure to the host over `postMessage` as `piwiError`. Without this, a throw
-  // during setup (a serialization slip, a missing browser API) leaves the host
-  // stuck on "Initializing picker…" with no clue why; now it shows the error and
-  // — in the desktop shell — logs it. A script that is *CSP-blocked* never runs
-  // at all, so this can't fire for that case: the host's readiness timeout does.
+  // failure to the host over `postMessage` as `piwiError`, so a throw during
+  // setup (a serialization slip, a missing browser API) shows as an error in the
+  // host — and, in the desktop shell, in its log. A script that is *CSP-blocked*
+  // never runs at all, so this can't fire for that case: the host's readiness
+  // timeout does.
   return (
     `<script${nonceAttr(nonce)}>` +
     `(function(){` +

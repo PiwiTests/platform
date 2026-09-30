@@ -5,7 +5,7 @@
  * interleaves this header and the rows into one item array, exactly as the run's
  * Tests tab does).
  *
- * It covers the three groupings the plan defines: by cluster (the cluster name,
+ * It covers three groupings: by cluster (the cluster name,
  * its triage status and an *Open cluster* link), by file (the path as an
  * open-in-IDE link with the per-file status tallies) and a plain *Passed (N)*
  * group. The caller owns the open/closed state and passes it back as `open`.

@@ -5,7 +5,6 @@ import {
   fingerprintPresent,
   matchRenamedElement,
   freshLocatorsFromCandidate,
-  elementMatchAlternatives,
   elementMatchOutcome,
   generateFromAriaSnapshot,
 } from '#shared/locator-fingerprint';
@@ -212,27 +211,14 @@ describe('freshLocatorsFromCandidate', () => {
  * getByText('Go to page'), but the button now reads "Open page". The fresh
  * suggestion must come from the current page.
  */
-describe('elementMatchAlternatives', () => {
+describe('renamed element', () => {
   const renamedAria = ['- navigation', '  - button "Open page"', '- contentinfo'].join('\n');
 
   test('suggests fresh locators for a renamed element', () => {
-    const alts = elementMatchAlternatives({ role: 'button', name: 'Go to page' }, renamedAria);
+    const alts = elementMatchOutcome({ role: 'button', name: 'Go to page' }, renamedAria).fresh;
     expect(alts).not.toBeNull();
     expect(alts!.some((a) => a.locator === "getByText('Open page')")).toBe(true);
     expect(alts!.some((a) => a.locator === "getByRole('button', { name: 'Open page' })")).toBe(true);
-  });
-
-  test('returns null when the element is unchanged (still on the page)', () => {
-    const aria = '- button "Go to page"';
-    expect(elementMatchAlternatives({ role: 'button', name: 'Go to page' }, aria)).toBeNull();
-  });
-
-  test('returns null without an ARIA snapshot', () => {
-    expect(elementMatchAlternatives({ role: 'button', name: 'Go to page' }, null)).toBeNull();
-  });
-
-  test('returns null when the fingerprint is empty', () => {
-    expect(elementMatchAlternatives({ role: null, name: null }, renamedAria)).toBeNull();
   });
 });
 

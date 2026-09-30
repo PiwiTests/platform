@@ -126,7 +126,7 @@ Key server utilities (`server/utils/`):
 | `export-request.ts`, `export-assets.ts`                       | Offline-export endpoints' shared plumbing: format parsing, download headers, size budget, storage-backed asset reader                                                                                                                                                                                                                                                                      |
 | `trace-reconstruct.ts`                                        | Rebuilds a full trace ZIP from a slim blob + the shared resource pool; used by the file endpoint and by exports                                                                                                                                                                                                                                                                            |
 | `retention.ts`                                                | Nightly pruning of runs, notification history, diagnosis versions and orphan payloads                                                                                                                                                                                                                                                                                                      |
-| `compute-regression-signals.ts`, `flaky-classify.ts`          | `isNewRegression` / `isNewFlaky` signals; flaky root-cause classification                                                                                                                                                                                                                                                                                                                  |
+| `compute-regression-signals.ts`                               | `isNewRegression` / `isNewFlaky` signals                                                                                                                                                                                                                                                                                                                                                   |
 | `server/tasks/notifications/sweep.ts`                         | Nitro scheduled task — sweeps the outbox every minute                                                                                                                                                                                                                                                                                                                                      |
 
 Import orchestration is shared, not mirrored: `shared/handlers/import-runs.ts` owns everything after parsing, with
@@ -173,8 +173,7 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 - **Structure** — `SectionCard` (standard icon/title/count/subtitle header, `actions` + `footer` slots),
   `CollapsibleSectionCard` (same contract + required `storageKey`, cookie-persisted fold state via `useFoldedState`,
   `#folded` peek slot), `FoldableSummary`, `DetailPageLayout` (summary + tabs + panels with correct flex height at `lg`+,
-  single-document scroll below), `SummaryMetaStrip` + `MetaStripGroup` (the wrapping fact-group footer of detail
-  summary cards).
+  single-document scroll below).
 - **States** — `EmptyState`, `LoadingState`, `ErrorState` (with an `action` slot).
 - **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
   `FilterToolbar`, `ChartCard` (header + `legend`), the SVG chart primitives `ChartFrame` (self-measuring plot area,

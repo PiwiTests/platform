@@ -46,10 +46,9 @@ export interface SettingFieldMeta {
 }
 
 /**
- * Settings splits into two jobs that were previously one flat list of ten:
- * running the instance, and tuning what Piwi infers from your results. A
- * newcomer met "Timeout hygiene" before they had seen a timeout, because
- * nothing said which pages were infrastructure and which were analysis.
+ * Settings splits into two jobs: running the instance, and tuning what Piwi
+ * infers from your results, so infrastructure pages and analysis pages are
+ * grouped apart.
  */
 export type SettingsGroupId = 'instance' | 'analysis' | 'meta';
 
@@ -264,21 +263,11 @@ export function fieldEnvVars(field: SettingFieldMeta): PiwiEnvVarName[] {
   return helpEnvVars(field.help);
 }
 
-/** Whether a field can be overridden by an env var. */
-export function fieldIsOverridable(field: SettingFieldMeta): boolean {
-  return fieldEnvVars(field).length > 0;
-}
-
 /** Union of all env vars across a page's fields (for banners / nav badges). */
 export function pageEnvVars(page: SettingsPageMeta): PiwiEnvVarName[] {
   const seen = new Set<PiwiEnvVarName>();
   for (const f of page.fields) for (const v of fieldEnvVars(f)) seen.add(v);
   return [...seen];
-}
-
-/** A page is "env-overridable" if any of its fields can be pinned by env. */
-export function pageIsOverridable(page: SettingsPageMeta): boolean {
-  return page.fields.some(fieldIsOverridable);
 }
 
 /** Look up a page by id. */

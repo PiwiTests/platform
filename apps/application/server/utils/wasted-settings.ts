@@ -31,8 +31,3 @@ export async function resolveWastedSettings(db: DbClient): Promise<ResolvedWaste
   const stored = await getAppSetting<{ value: string[] }>(db, WASTED_WAIT_PATTERNS_KEY);
   return { ...resolveStoredWastedPatterns(stored), envManaged: false };
 }
-
-/** Convenience: just the effective patterns (for read-path recomputation). */
-export async function resolveWastedPatterns(db: DbClient): Promise<string[]> {
-  return (await resolveWastedSettings(db)).patterns;
-}

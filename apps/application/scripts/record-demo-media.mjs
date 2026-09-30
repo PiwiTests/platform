@@ -72,7 +72,7 @@ const SCENARIOS = [
     routes: { '/checkout': () => checkoutFormPage({ contactRestructured: true }) },
     async run(page, baseUrl) {
       await page.goto(`${baseUrl}/checkout`);
-      // The old label-based locator no longer resolves — the field is now an
+      // The label-based locator does not resolve — the field is an
       // aria-labeled input behind a "Contact method" selector.
       await page
         .getByLabel('Email address')

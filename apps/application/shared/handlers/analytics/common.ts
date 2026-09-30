@@ -248,7 +248,7 @@ async function reportedDefaultBranches(db: DrizzleDB, projectIds: number[]): Pro
  * both together intersect. A test filter means the tests that match it today,
  * with their whole history.
  */
-export async function resolveTestFilter(
+async function resolveTestFilter(
   db: DrizzleDB,
   scope: AnalyticsScope,
   allowed: 'all' | number[],
@@ -341,7 +341,7 @@ function runConditions(
  * branch list only (no default-branch resolution). For callers outside a
  * resolved context.
  */
-export function scopedRunConditions(scope: AnalyticsScope, allowed: 'all' | number[], sinceMs: number): SQL[] {
+function scopedRunConditions(scope: AnalyticsScope, allowed: 'all' | number[], sinceMs: number): SQL[] {
   const policy: BranchPolicy =
     scope.branches && scope.branches.length > 0 ? { kind: 'list', branches: scope.branches } : { kind: 'any' };
   return runConditions(scope, allowed, policy, sinceMs, null);
@@ -362,14 +362,6 @@ export async function fetchContextProjects(db: DrizzleDB, ctx: AnalyticsContext)
     .from(projects)
     .where(ctx.allowed === 'all' ? undefined : inArray(projects.id, ctx.allowed));
   return rows;
-}
-
-export async function fetchScopedProjects(
-  db: DrizzleDB,
-  scope: AnalyticsScope,
-  access: ProjectAccess,
-): Promise<ScopedProject[]> {
-  return fetchContextProjects(db, await getAnalyticsContext(db, scope, access));
 }
 
 export async function fetchTagsByProject(

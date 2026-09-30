@@ -87,10 +87,6 @@ export function startNetworkLog(onChange: () => void): void {
   chrome.devtools.network.onRequestFinished.addListener((request) => add(request as HarEntry));
 }
 
-export function networkEntries(): readonly NetworkEntry[] {
-  return entries;
-}
-
 function pathOf(url: string): string {
   try {
     const parsed = new URL(url);

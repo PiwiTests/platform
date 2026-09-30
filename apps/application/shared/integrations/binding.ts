@@ -3,8 +3,8 @@
  * connection, which Jira project and issue type, the default labels and
  * assignee, the values for the fields the tracker requires, the include
  * toggles, the two-way sync policies, the owner routes that file a team's
- * failures into that team's project, and the auto-create fields (stored but
- * inert this milestone).
+ * failures into that team's project, and the auto-create fields (stored, but
+ * nothing creates issues from them).
  *
  * Pure + dependency-free, mirroring `shared/auto-heal.ts`: the code that reads
  * the binding and talks to Jira lives in `server/utils/integrations/`. The
@@ -60,9 +60,9 @@ export interface ProjectIntegrationPolicies {
   fileEveryBugReport: boolean;
 }
 
-/** The auto-create guards — stored so the form persists them, inert until step 4. */
+/** The auto-create guards — stored so the form persists them; nothing acts on them. */
 export interface AutoCreatePolicy {
-  /** Master switch. Always false this milestone — the trigger is unimplemented. */
+  /** Master switch. Stored only: no trigger reads it, and the form renders it disabled. */
   enabled: boolean;
   /** Minimum distinct occurrences before a cluster qualifies. */
   minOccurrences: number;
@@ -216,8 +216,7 @@ function resolvePolicies(raw: unknown): ProjectIntegrationPolicies {
 function resolveAutoCreate(raw: unknown): AutoCreatePolicy {
   const r = (raw ?? {}) as Partial<AutoCreatePolicy>;
   return {
-    // The trigger is unimplemented this milestone — the field is stored but never
-    // read to create anything, and the form renders it disabled.
+    // No trigger reads this field to create anything; the form renders it disabled.
     enabled: r.enabled === true,
     minOccurrences: clampInt(r.minOccurrences, 1, 1000, DEFAULT_AUTO_CREATE.minOccurrences),
     minRuns: clampInt(r.minRuns, 1, 1000, DEFAULT_AUTO_CREATE.minRuns),

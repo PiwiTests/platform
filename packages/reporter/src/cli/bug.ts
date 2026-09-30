@@ -94,7 +94,7 @@ export function parseBugArgs(argv: string[], env: NodeJS.ProcessEnv): BugArgs {
   };
 }
 
-export interface BugSpec {
+interface BugSpec {
   code: string;
   path: string;
   warnings: Array<{ step: number; message: string }>;
@@ -104,7 +104,7 @@ export interface BugSpec {
  * Fetch the spec. With `specDir`, the folder it is written to relative to the
  * repository root, the dashboard writes its relative test import for that folder.
  */
-export async function fetchBugSpec(
+async function fetchBugSpec(
   args: Pick<BugArgs, 'id' | 'mode' | 'serverUrl' | 'apiKey'>,
   specDir?: string,
 ): Promise<BugSpec> {

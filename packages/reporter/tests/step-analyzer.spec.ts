@@ -13,7 +13,7 @@ import {
   MAX_STEP_PARAM_KEYS,
   MAX_STEP_PARAM_VALUE_CHARS,
   MAX_SECTION_HOOKS,
-} from '../src/internal/collect/step-analyzer.js';
+} from '@piwitests/core/step-analysis';
 
 describe('categorizeStep', () => {
   it('returns "other" for empty title', () => {

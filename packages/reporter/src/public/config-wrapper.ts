@@ -14,7 +14,7 @@ const PIWI_MODULE = '@piwitests/reporter';
  * screenshot are what the dashboard derives the DOM snapshot, full stack, full
  * network and visual diff from without the capture fixtures.
  */
-export const CAPTURE_DEFAULTS = {
+const CAPTURE_DEFAULTS = {
   screenshot: 'only-on-failure',
   trace: 'retain-on-failure',
 } as const;
@@ -156,9 +156,8 @@ function resolveSetupModule(): string {
  * executed after it.
  *
  * Playwright options required in `globalSetup` are forwarded via `PIWI_*`
- * environment variables (see `applyOptionsToEnv` in `config.ts` for the
- * supported set — `serverUrl`, `projectName`, `verbose`, `apiKey`,
- * `username`, `password`, `environment`, `label`, `runLabel`).
+ * environment variables (see `applyOptionsToEnv` in `internal/config/env.ts`
+ * for the supported set).
  *
  * The top-level `use` block's `screenshot` and `trace` are defaulted to
  * `'only-on-failure'` / `'retain-on-failure'` when unset so failure evidence is

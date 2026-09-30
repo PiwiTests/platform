@@ -56,7 +56,7 @@ import { attachPanelShadow } from './panel-root.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 
-/** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping (not the identical algorithm — see AGENTS.md note in this file's own doc comment below). */
+/** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping, though not the identical algorithm. */
 const ACTIONABLE_SELECTOR =
   'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable="true"], [data-testid]';
 
@@ -195,11 +195,10 @@ function deriveRecordedTarget(el: Element): RecordedTarget {
  * `deriveRecordedTarget` for a field mid-burst, computed once per element.
  *
  * The probe behind it walks the document to count same-role and same-text
- * elements and to score anchor ancestors — cheap once per click, but it used to
- * run on *every* `input` event, so a probe of the whole page sat between one
- * keystroke and the next. Coalescing already discards all but the last value of
- * a burst, and `normalizeSteps` keeps the target from the burst's first event,
- * so re-deriving it per keystroke changed nothing it produced.
+ * elements and to score anchor ancestors — cheap once per click, too costly on
+ * every `input` event. Coalescing already discards all but the last value of a
+ * burst, and `normalizeSteps` keeps the target from the burst's first event, so
+ * deriving it once per field changes nothing it produces.
  */
 const fieldTargets = new WeakMap<Element, RecordedTarget>();
 
@@ -815,9 +814,9 @@ function scheduleHudRefresh(): void {
 /**
  * The last capture write that failed, surfaced in the HUD.
  *
- * A rejected write used to be an unhandled rejection: session storage filling
- * up mid-recording looked exactly like a recording that was still going fine,
- * and the steps after it were simply absent from the export.
+ * Session storage can fill up mid-recording; without this, a rejected write
+ * would look exactly like a recording still going fine, and the steps after it
+ * would be absent from the export.
  */
 let captureError: string | null = null;
 
@@ -965,7 +964,7 @@ function attachListeners(): void {
       captureEvent(
         buildEvent('input', el, {
           // Cached per field: the probe behind a target is a document-wide walk,
-          // and one per keystroke is what made typing lag on a large page.
+          // and one per keystroke would make typing lag on a large page.
           target: fieldTarget(el),
           value: passwordField ? null : el.value,
           isPasswordField: passwordField,
@@ -1051,7 +1050,7 @@ function attachListeners(): void {
  * The service worker fans the stop out with `chrome.tabs.sendMessage`, which is
  * the only thing that reaches a content script: `chrome.runtime.sendMessage`
  * goes to extension pages and the worker, never here, so a stop from the popup
- * used to leave this page's HUD and border standing indefinitely.
+ * would otherwise leave this page's HUD and border standing indefinitely.
  *
  * Registered once per document — repeated starts on the same page must not
  * stack handlers.

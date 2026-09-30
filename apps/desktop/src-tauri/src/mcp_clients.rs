@@ -10,13 +10,14 @@
 //
 // The entry is keyed `piwi-desktop`, not `piwi`, so it never collides with a
 // hosted Piwi a user has added by hand under `piwi` — the two coexist in one
-// client. Older builds wrote `piwi`; connecting rewrites to `piwi-desktop` and
-// drops the stale loopback `piwi` we left behind (never a remote one).
+// client. Connecting also removes a `piwi` entry with a loopback URL (a remote
+// one is kept).
 //
 // Editing another app's config is done conservatively:
 //   - only strict JSON is ever rewritten — a file that does not parse (JSONC
 //     with comments, trailing commas) is reported as `manual` and left alone;
-//   - the previous content is copied to `<file>.piwi-backup` before a write;
+//   - the previous content is copied to `<name>.piwi-backup.json` (the file's
+//     extension replaced) before a write;
 //   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
 //     everything else in the file is preserved as parsed.
 //

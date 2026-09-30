@@ -17,7 +17,7 @@ import { normalizePathPrefix } from '@piwitests/core/page-key';
  * `urlMatches`), so "which pages does this apply to" means one thing
  * everywhere in this extension.
  */
-export interface ProjectMapping {
+interface ProjectMapping {
   urlPattern: string;
   projectId: number;
   /** Cached display label so the popup/options UI doesn't need a network round-trip just to show a name. */
@@ -38,13 +38,13 @@ export interface ProjectMapping {
 }
 
 /** A project URL pattern kept on the instance, as the last sync read it. */
-export interface ServerMapping extends ProjectMapping {
+interface ServerMapping extends ProjectMapping {
   /** A label such as `staging`; absent when the pattern names none. */
   environment?: string;
 }
 
 /** A project the connected user can see, and whether their role may add URL patterns to it. */
-export interface ServerProject {
+interface ServerProject {
   id: number;
   label: string;
   canEdit: boolean;

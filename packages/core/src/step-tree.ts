@@ -100,12 +100,12 @@ export function sameCodeLocation(
 }
 
 /** Whether a stored step failed: marked failed, or carrying an error. */
-export function isFailedStep(step: TreeStepLike): boolean {
+function isFailedStep(step: TreeStepLike): boolean {
   return step.failed === true || errorMessage(step).trim().length > 0;
 }
 
 /** Whether the reporter marked a step's error as caught: the test went on after it. */
-export function isRecoveredStep(step: TreeStepLike): boolean {
+function isRecoveredStep(step: TreeStepLike): boolean {
   return step.recovered === true;
 }
 

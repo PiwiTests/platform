@@ -6,7 +6,7 @@
  * The field set is API-driven and gated by `mode`:
  * - `create` shows the immutable `name` (POST /api/projects only accepts
  *   name/label/description/tags).
- * - `edit` shows `diagnosisInstructions` + `scmToken` (PUT /api/projects/[id]
+ * - `edit` shows `diagnosisInstructions` + `scmToken` (PATCH /api/projects/[id]
  *   only; the SCM token is encrypted against an existing project).
  * Shared in both: label, description, tags.
  */

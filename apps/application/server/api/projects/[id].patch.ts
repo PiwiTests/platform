@@ -54,12 +54,11 @@ const updateProjectSchema = z.object({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
 
-  // Require administrator role for updating projects
+  // The administrator role comes from `x-required-roles` above.
   await requireProjectAccess(event, id);
 
   const db = await getDatabase();
 
-  // Parse and validate request body
   const body = await readBody(event);
   const validation = updateProjectSchema.safeParse(body);
 

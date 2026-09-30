@@ -18,12 +18,7 @@ export const BUG_RELAY = {
 
 export type BugRelayEntry = { kind: 'console'; entry: BugConsoleEntry } | { kind: 'request'; entry: BugFailedRequest };
 
-export interface BugRelayHello {
-  source: typeof BUG_RELAY.HELLO;
-  token: string;
-}
-
-export interface BugRelayMessage {
+interface BugRelayMessage {
   source: typeof BUG_RELAY.ENTRY;
   token: string;
   item: BugRelayEntry;

@@ -11,7 +11,6 @@ import { DIAGNOSIS_SECTIONS, DIAGNOSIS_SECTION_SHORT } from '#shared/diagnosis-s
 
 const props = defineProps<{
   sections: ContextSection[];
-  notApplicable?: Record<string, string>;
   tokenEstimate: number;
   loading?: boolean;
 }>();

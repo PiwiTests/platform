@@ -10,7 +10,7 @@
 import type { DiffFile, DiffHunk } from './diff-anchors';
 
 /** Edit distance searched before the middle is reported as one block. */
-export const MAX_EDIT_DISTANCE = 2000;
+const MAX_EDIT_DISTANCE = 2000;
 
 type Op = 'equal' | 'remove' | 'add';
 

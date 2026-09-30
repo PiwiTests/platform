@@ -23,7 +23,7 @@ import {
   type StepAssertion,
 } from './recording';
 
-export const STEPS_VERSION = 1;
+const STEPS_VERSION = 1;
 
 /** What a steps document may hold. */
 export const STEPS_LIMITS = {

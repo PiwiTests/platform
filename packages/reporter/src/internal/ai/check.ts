@@ -10,8 +10,8 @@ import * as path from 'node:path';
 import { parseEntry, serializeEntry } from './artifact.js';
 import { DEFAULT_AI_DIR, normalizeTemplate } from './keys.js';
 
-export type CheckSeverity = 'error' | 'warning';
-export type CheckKind = 'invalid' | 'non-canonical' | 'orphan' | 'duplicate-template';
+type CheckSeverity = 'error' | 'warning';
+type CheckKind = 'invalid' | 'non-canonical' | 'orphan' | 'duplicate-template';
 
 export interface CheckFinding {
   severity: CheckSeverity;

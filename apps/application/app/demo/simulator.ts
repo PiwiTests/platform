@@ -1126,8 +1126,8 @@ async function runSingleSimulation(
       setupToken: setup.setupToken,
       // Matches the real reporter (stream-manager.ts), which reports the planned
       // suite size up front so the dashboard shows the real total from the first
-      // render; the per-status counters build up from the streamed events, but
-      // the total is no longer incremented per row.
+      // render; the per-status counters build up from the streamed events, and
+      // the total is not incremented per row.
       totalTests: tests.length,
       metadata,
       playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
