@@ -398,7 +398,9 @@ export class PiwiContext {
     let found = this.downloads.get(key);
     if (!found) {
       const dir = path.join(os.tmpdir(), 'piwi-editor', createHash('sha256').update(key).digest('hex').slice(0, 16));
-      const target = path.join(dir, path.basename(storedPath) || 'file');
+      // The name comes from the server and ends up in a `show-trace "<path>"` command: keep it to plain characters.
+      const name = path.basename(storedPath).replace(/[^\w.-]/g, '_');
+      const target = path.join(dir, name && name !== '.' && name !== '..' ? name : 'file');
       found = (async () => {
         if (fs.existsSync(target)) return target;
         try {
