@@ -97,7 +97,7 @@ export interface ExposureInputs {
 
 // ── Exposure scoring (pure) ──────────────────────────────────────────────────
 
-export function clampFactor(value: number): number {
+function clampFactor(value: number): number {
   if (!Number.isFinite(value)) return FACTOR_FLOOR;
   return Math.max(FACTOR_FLOOR, Math.min(1, value));
 }
@@ -2294,11 +2294,7 @@ export async function reopenExpiredSnoozes(db: DrizzleDB, projectId: number, now
  * the gap is worth re-evaluating. A node merely re-observed with the same shape
  * does not wake.
  */
-export async function reopenChangedNodeSnoozes(
-  db: DrizzleDB,
-  projectId: number,
-  now: Date = new Date(),
-): Promise<number> {
+async function reopenChangedNodeSnoozes(db: DrizzleDB, projectId: number, now: Date = new Date()): Promise<number> {
   const snoozed = await db
     .select({ id: scenarioGaps.id, key: scenarioGaps.key, snoozedAtSignature: scenarioGaps.snoozedAtSignature })
     .from(scenarioGaps)

@@ -19,7 +19,7 @@ import { DAY_MS, type AnalyticsContext } from './common';
 import { computeMetricValues } from './metric-values';
 
 /** The context narrowed to one project: its runs, its clusters and its tests only. */
-export function contextForProject(ctx: AnalyticsContext, projectId: number): AnalyticsContext {
+function contextForProject(ctx: AnalyticsContext, projectId: number): AnalyticsContext {
   const testCaseIds = ctx.testFilter?.testCaseIds;
   return {
     ...ctx,

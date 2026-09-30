@@ -313,7 +313,7 @@ export async function computeMetricSeries(
 }
 
 /** Whether a change reads as better, worse or neither for this metric. */
-export function metricTrend(def: MetricDef, delta: number | null): AnalyticsMetricValue['trend'] {
+function metricTrend(def: MetricDef, delta: number | null): AnalyticsMetricValue['trend'] {
   if (delta === null || delta === 0 || def.betterWhen === 'neutral') return delta === null ? null : 'same';
   const up = delta > 0;
   return (def.betterWhen === 'higher') === up ? 'better' : 'worse';

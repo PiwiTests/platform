@@ -21,7 +21,7 @@ function ms(value: Date | number | string | null | undefined): number | null {
 }
 
 /** The q-th quantile (0–1) of a list, nearest rank; null for an empty list. */
-export function quantile(values: number[], q: number): number | null {
+function quantile(values: number[], q: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))]!;
