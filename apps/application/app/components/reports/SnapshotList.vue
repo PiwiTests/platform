@@ -12,7 +12,9 @@ function delivery(s: ReportSnapshotSummary): string {
   if (s.deliveries.length === 0) return s.scheduleName ? `${s.scheduleName} · not sent` : 'Not sent';
   const sent = s.deliveries.filter((d) => d.status === 'sent').map((d) => d.channelName);
   const failed = s.deliveries.filter((d) => d.status === 'failed').map((d) => d.channelName);
-  const pending = s.deliveries.filter((d) => d.status === 'pending').map((d) => d.channelName);
+  const pending = s.deliveries
+    .filter((d) => d.status === 'pending' || d.status === 'processing')
+    .map((d) => d.channelName);
   const parts: string[] = [];
   if (sent.length) parts.push(`sent to ${sent.join(', ')}`);
   if (pending.length) parts.push(`sending to ${pending.join(', ')}`);

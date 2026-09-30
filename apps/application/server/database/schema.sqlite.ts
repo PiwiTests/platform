@@ -1055,10 +1055,10 @@ export const notificationDeliveries = sqliteTable(
     event: text('event').notNull(),
     payload: text('payload', { mode: 'json' }),
     dedupeKey: text('dedupe_key'), // e.g. `${event}:${runId}:${channelId}` — prevents double-send
-    status: text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'sent' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     error: text('error'),
-    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }), // digest batching / backoff
+    scheduledFor: integer('scheduled_for', { mode: 'timestamp_ms' }), // digest batching / backoff / claim lease
     sentAt: integer('sent_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()

@@ -1,4 +1,4 @@
-import { and, eq, lte, lt } from 'drizzle-orm';
+import { and, eq, inArray, lte, lt } from 'drizzle-orm';
 import { notificationDeliveries, notificationChannels, subscriptions, users } from '../../database/schema';
 import { sendEmail, renderNotificationEmail, renderDigestEmail, isEmailConfigured, type DigestItem } from '../email';
 import { decryptSecret, getEncryptionKey } from '../crypto';
@@ -20,7 +20,7 @@ import {
   TOP_FAILURES_LIMIT,
 } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
 import {
   loadReportForDelivery,
@@ -297,14 +297,47 @@ async function markFailed(db: Db, rows: DeliveryRow[], message: string, now: Dat
   }
 }
 
+export interface SweepResult {
+  sent: number;
+  failed: number;
+}
+
+/** The sweep running in this process, and the one pass queued behind it. */
+let activeSweep: Promise<SweepResult> | null = null;
+let queuedSweep: Promise<SweepResult> | null = null;
+
 /**
- * Process pending deliveries that are due now (scheduledFor <= now, status = 'pending', attempts < MAX).
+ * Process the deliveries that are due now (see `sweepDue`). One sweep runs at a
+ * time in this process: a call made while one is running waits for it, then
+ * shares a single follow-up pass with every other call made meanwhile, so rows
+ * written during a sweep still go out.
+ */
+export function sweepOutbox(db: Db): Promise<SweepResult> {
+  if (!activeSweep) {
+    activeSweep = sweepDue(db).finally(() => {
+      activeSweep = null;
+    });
+    return activeSweep;
+  }
+  queuedSweep ??= activeSweep
+    .catch(() => undefined)
+    .then(() => {
+      queuedSweep = null;
+      return sweepOutbox(db);
+    });
+  return queuedSweep;
+}
+
+/**
+ * Send the deliveries that are due now (scheduledFor <= now, attempts < MAX):
+ * `pending` ones, and `processing` ones whose claim's lease has run out.
  *
  * Email and Slack deliveries queued by a digest-mode subscription batch into
  * one message per channel; every other delivery (realtime, webhook, browser)
- * sends individually. Returns per-row sent/failed counts.
+ * sends individually. Each row is claimed just before it is sent and skipped
+ * when another sweep holds it. Returns per-row sent/failed counts.
  */
-export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: number }> {
+async function sweepDue(db: Db): Promise<SweepResult> {
   const now = new Date();
   let sent = 0;
   let failed = 0;
@@ -316,7 +349,7 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
     .leftJoin(subscriptions, eq(notificationDeliveries.subscriptionId, subscriptions.id))
     .where(
       and(
-        eq(notificationDeliveries.status, 'pending'),
+        inArray(notificationDeliveries.status, OUTBOX_SWEEPABLE_STATUSES),
         lte(notificationDeliveries.scheduledFor, now),
         lt(notificationDeliveries.attempts, MAX_ATTEMPTS),
       ),
@@ -346,6 +379,8 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
   }
 
   for (const { d, c } of singles) {
+    const claimed = await claimOutboxRows(db, notificationDeliveries, [d.id]);
+    if (!claimed.has(d.id)) continue;
     try {
       await sendSingle(db, d, c);
       await markSent(db, [d], now);
@@ -357,7 +392,13 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
   }
 
   for (const group of digestGroups.values()) {
-    const rows = group.map((g) => g.d);
+    const claimed = await claimOutboxRows(
+      db,
+      notificationDeliveries,
+      group.map((g) => g.d.id),
+    );
+    const rows = group.map((g) => g.d).filter((d) => claimed.has(d.id));
+    if (rows.length === 0) continue;
     try {
       await sendDigest(db, group[0]!.c, rows);
       await markSent(db, rows, now);

@@ -1065,10 +1065,10 @@ export const notificationDeliveries = pgTable(
     event: text('event').notNull(),
     payload: jsonb('payload'),
     dedupeKey: text('dedupe_key'), // e.g. `${event}:${runId}:${channelId}` — prevents double-send
-    status: text('status').notNull().default('pending'), // 'pending' | 'sent' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'sent' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     error: text('error'),
-    scheduledFor: timestamp('scheduled_for', { mode: 'date' }), // digest batching / backoff
+    scheduledFor: timestamp('scheduled_for', { mode: 'date' }), // digest batching / backoff / claim lease
     sentAt: timestamp('sent_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
