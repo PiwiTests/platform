@@ -1,6 +1,7 @@
 import { requireResolvedProjectAccess, resolveLinkProjectId } from '../../utils/project-access';
 import { patchLink } from '#shared/handlers/links';
 import { z } from 'zod';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 import { detectProviderWithConnections } from '../../utils/integrations/link-resolve';
 
 defineRouteMeta({
@@ -14,7 +15,10 @@ defineRouteMeta({
 });
 
 const updateLinkSchema = z.object({
-  url: z.string().url('Must be a valid URL').optional(),
+  url: z
+    .string()
+    .refine((url) => safeHttpUrl(url) !== null, 'Must be an http(s) URL')
+    .optional(),
   title: z.string().max(200).nullable().optional(),
 });
 

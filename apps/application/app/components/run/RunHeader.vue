@@ -2,6 +2,7 @@
 import type { TestRunDetails, ReportInfo } from '~~/types/api';
 import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -259,9 +260,13 @@ function onLabelKeydown(e: KeyboardEvent) {
       </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
-        <a v-if="ci?.buildUrl" :href="ci.buildUrl" target="_blank" class="text-primary hover:underline">{{
-          ci?.buildNumber ? `Build #${ci.buildNumber}` : 'View build'
-        }}</a>
+        <a
+          v-if="safeHttpUrl(ci?.buildUrl)"
+          :href="safeHttpUrl(ci?.buildUrl) ?? undefined"
+          target="_blank"
+          class="text-primary hover:underline"
+          >{{ ci?.buildNumber ? `Build #${ci.buildNumber}` : 'View build' }}</a
+        >
         <span v-else>Build #{{ ci.buildNumber }}</span>
       </template>
     </template>

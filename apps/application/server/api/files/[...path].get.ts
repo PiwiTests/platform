@@ -74,18 +74,14 @@ async function findInArchive(buffer: Buffer, targetName: string): Promise<Buffer
 
 const COMPRESSIBLE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
-// Content types a browser can execute as a scriptable document. Untrusted stored
-// files are never served as one of these on the strength of a caller override.
-const ACTIVE_CONTENT_TYPES = new Set([
-  'text/html',
-  'application/xhtml+xml',
-  'image/svg+xml',
-  'application/xml',
-  'text/xml',
-]);
+// Content types a caller may name for an extension-less attachment, all inert.
+// Anything else (HTML, SVG, any XML type) would let arbitrary stored bytes run as
+// a scriptable document on the dashboard origin, so it falls back to octet-stream.
+const OVERRIDABLE_CONTENT_TYPE =
+  /^(?:image\/(?:png|jpeg|gif|webp|avif|bmp)|video\/[\w.-]+|audio\/[\w.-]+|text\/(?:plain|csv|markdown)|application\/(?:json|x-ndjson|pdf|zip|octet-stream))$/;
 
-function isActiveContentType(value: string): boolean {
-  return ACTIVE_CONTENT_TYPES.has(value.split(';')[0]!.trim().toLowerCase());
+function isOverridableContentType(value: string): boolean {
+  return OVERRIDABLE_CONTENT_TYPE.test(value.split(';')[0]!.trim().toLowerCase());
 }
 
 export default eventHandler(async (event) => {
@@ -212,12 +208,14 @@ export default eventHandler(async (event) => {
 
   function resolveContentType(ext: string): string {
     // If the caller supplied a content-type for an extension-less attachment,
-    // honor it only for inert types. An override that names an active type
-    // (text/html, image/svg+xml, XML) would turn arbitrary stored bytes into a
-    // scriptable document served from the dashboard origin, so it is ignored —
-    // the file then falls back to octet-stream, which `nosniff` keeps inert.
+    // honor it only for inert types; otherwise the file stays octet-stream, which
+    // `nosniff` keeps inert.
     const guessed = setContentType(ext);
-    if (guessed === 'application/octet-stream' && overrideContentType && !isActiveContentType(overrideContentType)) {
+    if (
+      guessed === 'application/octet-stream' &&
+      overrideContentType &&
+      isOverridableContentType(overrideContentType)
+    ) {
       return overrideContentType;
     }
     return guessed;
