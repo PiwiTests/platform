@@ -1,0 +1,1 @@
+dev.piwitests.piwi::.*'com\.intellij\.platform\.lsp\.api\.lsWidget'.*

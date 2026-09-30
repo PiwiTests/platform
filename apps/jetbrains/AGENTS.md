@@ -48,7 +48,11 @@ with the project's Node.js interpreter.
 
 - **The oldest supported platform is 2023.3** (`pluginSinceBuild=233`): its LSP client is the first to render
   diagnostics, quick fixes and hover. Compile against it; `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA
-  Ultimate and Rider too. An API newer than 2023.3 is looked up at run time or not used.
+  Ultimate and Rider too. An API newer than 2023.3 is looked up at run time or not used. The one exception is a
+  method the platform calls on the plugin through an interface that 2023.3 lacks it on: it is declared with the same
+  JVM signature against a compile-only stub in `src/platformStubs/` (never packaged, checked with `javap` against the
+  newest platform), and its missing class is accepted on 2023.3 in `verifier-ignored-problems.txt`. Today that is
+  `createLspServerWidgetItem`, Piwi's entry in the Language Services widget (2024.1+), whose gear opens the settings.
 - **No logic the VS Code extension would need too.** A new feature is a service request first.
 - **Nothing blocks the event thread, and nothing in a read action waits on the service without giving way**: the daemon
   (Code Vision) waits with `awaitCancellably`, which a write action cancels, and reads of the disk run on a pooled

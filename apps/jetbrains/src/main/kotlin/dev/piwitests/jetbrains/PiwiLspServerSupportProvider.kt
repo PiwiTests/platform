@@ -7,6 +7,7 @@ import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.Lsp4jClient
@@ -15,6 +16,7 @@ import com.intellij.platform.lsp.api.LspServerNotificationsHandler
 import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCommandsSupport
+import com.intellij.platform.lsp.api.lsWidget.LspServerWidgetItem
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.WorkspaceFolder
@@ -33,7 +35,19 @@ class PiwiLspServerSupportProvider : LspServerSupportProvider {
         serverStarter.ensureServerStarted(PiwiLspServerDescriptor(project))
     }
 
+    /**
+     * The service's entry in the Language Services widget (2024.1 and later): Piwi's icon, and
+     * the gear that opens **Settings → Tools → Piwi**. The platform calls it through the
+     * interface method of the same signature; the oldest supported platform has no widget, and
+     * no such method to override.
+     */
+    @Suppress("unused")
+    fun createLspServerWidgetItem(lspServer: LspServer, currentFile: VirtualFile?): LspServerWidgetItem =
+        LspServerWidgetItem(lspServer, currentFile, ICON, PiwiConfigurable::class.java)
+
     companion object {
+        private val ICON = IconLoader.getIcon("/icons/piwi.svg", PiwiLspServerSupportProvider::class.java)
+
         fun isSupported(file: VirtualFile): Boolean =
             file.isInLocalFileSystem && (file.extension?.lowercase() ?: "") in Glue.SUPPORTED_EXTENSIONS
     }
