@@ -4,6 +4,7 @@ import { getProviderIcon } from '#shared/link-detect';
 import { isCurrentlySnoozed } from '#shared/inbox-queues';
 import type { TableColumn } from '@nuxt/ui';
 import type { ProjectFailureCluster } from '~~/types/api';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   projectId: string | number;
@@ -231,7 +232,7 @@ const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
               />
               <a
                 v-if="row.original.issueLink"
-                :href="row.original.issueLink.url"
+                :href="safeHttpUrl(row.original.issueLink.url) ?? undefined"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="shrink-0"

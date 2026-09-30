@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
  * In-memory pub/sub for live test run streaming.
@@ -158,24 +159,24 @@ class RunEventBus {
     this.runStates.delete(runId);
   }
 
-  /** Register a per-shard stream token for an active run. */
+  /** Register a per-shard stream token for an active run (kept as its digest, like the stored copy). */
   addShardToken(runId: number, token: string): void {
     const state = this.runStates.get(runId);
     if (state) {
       if (!state.shardTokens) state.shardTokens = new Set();
-      state.shardTokens.add(token);
+      state.shardTokens.add(shardTokenDigest(token));
     }
   }
 
   /** Check whether a token is a valid per-shard stream token. */
   isValidShardToken(runId: number, token: string): boolean {
-    const state = this.runStates.get(runId);
-    return state?.shardTokens?.has(token) ?? false;
+    return matchesShardToken(this.runStates.get(runId)?.shardTokens, token);
   }
 
   /** Remove a per-shard stream token when its shard has finished. */
   removeShardToken(runId: number, token: string): void {
     const state = this.runStates.get(runId);
+    state?.shardTokens?.delete(shardTokenDigest(token));
     state?.shardTokens?.delete(token);
     // Clean up the set if it's now empty
     if (state?.shardTokens?.size === 0) state.shardTokens = undefined;

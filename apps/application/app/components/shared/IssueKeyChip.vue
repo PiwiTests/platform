@@ -7,6 +7,7 @@
  * sitting on the text baseline.
  */
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   issue: { key: string | null; url: string; provider: string; status?: string | null };
@@ -20,7 +21,7 @@ const title = computed(() => {
 
 <template>
   <a
-    :href="issue.url"
+    :href="safeHttpUrl(issue.url) ?? undefined"
     target="_blank"
     rel="noopener noreferrer"
     class="inline-flex shrink-0"

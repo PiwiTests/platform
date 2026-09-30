@@ -227,9 +227,12 @@ export async function updateConnection(
   // Merge the submitted credential fields onto the stored ones. A blank field is
   // ignored, so changing one field — rotating the API token, or correcting the
   // account email — never drops the others. An empty map keeps the stored blob.
+  // A move to another site keeps none of them: a stored token never goes to another host.
   const incoming = nonEmptyValues(input.credentials);
-  const stored = decryptCredentials(row) ?? {};
-  const changed = Object.keys(incoming).some((key) => stored[key] !== incoming[key]);
+  const movedSite =
+    input.baseUrl !== undefined && normalizeJiraSiteUrl(input.baseUrl)?.url !== normalizeJiraSiteUrl(row.baseUrl)?.url;
+  const stored = movedSite ? {} : (decryptCredentials(row) ?? {});
+  const changed = movedSite || Object.keys(incoming).some((key) => stored[key] !== incoming[key]);
   if (changed) {
     updates.credentials = encryptCredentials({ ...stored, ...incoming });
     updates.status = 'unverified';

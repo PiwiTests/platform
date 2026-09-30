@@ -91,6 +91,17 @@ describe('streamMultipart', () => {
     });
   });
 
+  test('rejects parts that are each under the cap but together exceed it', async () => {
+    const parts = Array.from({ length: 6 }, (_, i) => ({
+      name: 'file',
+      filename: `a${i}.bin`,
+      data: Buffer.alloc(200, 1),
+    }));
+    await expect(streamMultipart(makeEvent(buildMultipart(parts)), { maxTotalBytes: 512 })).rejects.toMatchObject({
+      statusCode: 413,
+    });
+  });
+
   test('rejects a non-multipart request', async () => {
     await expect(
       streamMultipart(makeEvent(Buffer.from('{}'), 'application/json'), { maxTotalBytes: 1024 }),

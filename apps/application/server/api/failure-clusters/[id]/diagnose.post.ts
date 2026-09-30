@@ -1,7 +1,12 @@
-import { failureClusters, failureDiagnoses, testRunsCases } from '../../../database/schema';
+import { failureClusters, failureDiagnoses } from '../../../database/schema';
 import { queryFlag } from '../../../utils/query-params';
 import { eq, and } from 'drizzle-orm';
-import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
+import {
+  requireResolvedProjectAccess,
+  requireRouteId,
+  resolveClusterProjectId,
+  resolveTestRunCaseProjectId,
+} from '../../../utils/project-access';
 import { resolveAiConfig } from '../../../utils/ai-provider';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../utils/ai-diagnosis';
@@ -28,7 +33,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const force = queryFlag(event, 'force');
   const body = (await readBody(event).catch(() => null)) as {
@@ -50,13 +55,9 @@ export default eventHandler(async (event) => {
   const isExecutionScope = body?.scope === 'execution' && Boolean(body?.executionId);
 
   // Validate executionId if execution scope
-  if (isExecutionScope) {
-    const [trc] = await db
-      .select({ id: testRunsCases.id })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.id, body!.executionId!))
-      .limit(1);
-    if (!trc) throw apiError({ statusCode: 404, message: 'Test run case not found' });
+  // The execution must belong to the cluster's project: its diagnosis and evidence are that project's.
+  if (isExecutionScope && (await resolveTestRunCaseProjectId(db, body!.executionId!)) !== projectId) {
+    throw apiError({ statusCode: 404, message: 'Test run case not found' });
   }
 
   // Check if already running
