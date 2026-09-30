@@ -46,10 +46,9 @@ export interface SettingFieldMeta {
 }
 
 /**
- * Settings splits into two jobs that were previously one flat list of ten:
- * running the instance, and tuning what Piwi infers from your results. A
- * newcomer met "Timeout hygiene" before they had seen a timeout, because
- * nothing said which pages were infrastructure and which were analysis.
+ * Settings splits into two jobs: running the instance, and tuning what Piwi
+ * infers from your results, so infrastructure pages and analysis pages are
+ * grouped apart.
  */
 export type SettingsGroupId = 'instance' | 'analysis' | 'meta';
 

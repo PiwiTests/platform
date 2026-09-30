@@ -292,10 +292,9 @@ describe('useTimelineModel', () => {
     expect(timelineData.value.filter((d) => d.kind === 'wait')).toHaveLength(1);
   });
 
-  // Regression: step ids used to be derived as `-tc.id - stepIndex - 1`, so
-  // adjacent test-case ids produced colliding ids (test 101 step 1 === test
-  // 102 step 0). Colliding ids broke hover dimming (bars sharing the hovered
-  // id stayed highlighted) and duplicated v-for keys.
+  // Step ids stay unique across tests with adjacent ids (test 101 step 1 vs
+  // test 102 step 0): colliding ids would break hover dimming (bars sharing the
+  // hovered id stay highlighted) and duplicate v-for keys.
   test('assigns a unique key to every item across tests with adjacent ids', () => {
     const steps: StepLike[] = [
       { title: 'Before Hooks', category: 'hook', startedAt: 1000, duration: 40, status: 'passed' },

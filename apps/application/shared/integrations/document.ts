@@ -1,8 +1,7 @@
 /**
  * A provider-neutral document tree. A ticket body or a wiki page is built once
- * as an `IssueDocument` and rendered per target markup (Markdown, ADF, …). The
- * renderers themselves arrive in a later milestone; this file is the model plus
- * a small builder helper.
+ * as an `IssueDocument` and rendered per target markup by `render-markdown.ts`
+ * and `render-adf.ts`; this file is the model plus a small builder helper.
  */
 
 /** An inline run of text, optionally a link and/or styled. */

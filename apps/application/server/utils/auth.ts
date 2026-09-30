@@ -50,10 +50,9 @@ function getSessionPassword(config: ReturnType<typeof useRuntimeConfig>): string
 const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
 
 /**
- * Name of the sealed session cookie. Set explicitly rather than left to h3's
- * default (`h3`) so the public cookie name reads as ours and does not leak the
- * framework — the name is frozen contract at 1.0 (documented in the OpenAPI
- * `sessionCookie` scheme in nuxt.config.ts).
+ * Name of the sealed session cookie. It names Piwi, not the framework (h3's
+ * default is `h3`), and is part of the public contract documented in the
+ * OpenAPI `sessionCookie` scheme in nuxt.config.ts.
  */
 export const SESSION_COOKIE_NAME = 'piwi_session';
 
@@ -62,12 +61,11 @@ export const SESSION_COOKIE_NAME = 'piwi_session';
  * attributes stay consistent (including on clear).
  *
  * `httpOnly` and `secure` keep the cookie out of reach of page scripts and off
- * plaintext connections. `sameSite: 'lax'` is set explicitly rather than left to
- * the browser's implicit default so the cookie is withheld from cross-site
+ * plaintext connections. `sameSite: 'lax'` withholds the cookie from cross-site
  * subrequests — a CSRF defense for the cookie-authenticated API — while still
- * riding top-level navigations, which OAuth callbacks and ordinary links into
- * the dashboard depend on. These are pinned here rather than inherited from h3's
- * defaults so the posture cannot silently change across h3 versions.
+ * sending it on top-level navigations, which OAuth callbacks and ordinary links
+ * into the dashboard depend on. Every attribute is set here, so neither the
+ * browser's nor h3's defaults apply.
  */
 function sessionOptions(config: ReturnType<typeof useRuntimeConfig>) {
   return {
@@ -169,7 +167,7 @@ export async function verifyUser(username: string, password: string): Promise<Us
   // Equalize response time whether or not the account exists and has a
   // password: a missing or OAuth-only (password-less) account still spends one
   // scrypt verification against a dummy hash, so login timing can't be used to
-  // enumerate which usernames are registered (audit L3).
+  // enumerate which usernames are registered.
   if (!user || !user.password) {
     await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return null;

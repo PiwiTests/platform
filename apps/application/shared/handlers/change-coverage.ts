@@ -237,7 +237,7 @@ async function loadFileReach(
  * Per-node set of test cases that reach it, from the graph's `reaches` edges.
  * Change coverage resolves a changed route handler or page file to its route or
  * page node through the file-routing convention and reads reach here, so a
- * changed application source file is no longer invisible to the join. Read across
+ * changed application source file joins to the tests that reach it. Read across
  * branches, since a pull-request run's reach is as valid as the default's.
  */
 async function loadGraphNodeReach(

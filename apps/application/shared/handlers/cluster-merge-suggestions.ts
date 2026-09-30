@@ -1,5 +1,5 @@
 /**
- * Cluster merge suggestions — the human-in-the-loop side of Phase 3.
+ * Cluster merge suggestions — the human review step of cluster reconciliation.
  *
  * When the reconciler / LLM adjudicator find two clusters that are probably (but
  * not certainly) the same root cause, they record a pending suggestion here.

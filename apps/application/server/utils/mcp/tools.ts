@@ -308,15 +308,6 @@ function selectionFormatParam(raw: unknown): SelectionFormat {
   return formats.includes(raw as SelectionFormat) ? (raw as SelectionFormat) : 'args';
 }
 
-// ── Tool handlers ────────────────────────────────────────────────────────────
-//
-// Keyed by tool name. The catalog (name/description/inputSchema) lives in
-// `shared/mcp-tools.ts` so both this server and `app/pages/mcp.vue` render the
-// same list; here we attach the DB-backed behavior. `MCP_TOOLS` below merges the
-// two and throws if a declared tool has no handler (catches drift either way).
-
-// Keyed by `McpToolName` (derived from MCP_TOOL_DEFS): TypeScript now rejects a
-// handler whose name isn't a declared tool, and a declared tool with no handler.
 /**
  * A create refused over empty required fields, worded for an agent: each field's
  * id, its name and what it takes, so the next call can pass them in `fields`.
@@ -330,6 +321,13 @@ function missingFieldsForAgent(missing: { id: string; name: string }[], screen: 
   return `Jira requires ${names} for this issue type. Pass ${missing.length === 1 ? 'it' : 'them'} in \`fields\`, keyed by field id: ${each.join('; ')}. Or set a default in the project's issue tracker settings.`;
 }
 
+// ── Tool handlers ────────────────────────────────────────────────────────────
+//
+// Keyed by tool name. The catalog (name/description/inputSchema) lives in
+// `shared/mcp-tools.ts` so both this server and `app/pages/mcp.vue` render the
+// same list; here we attach the DB-backed behavior. The record is keyed by
+// `McpToolName` (derived from MCP_TOOL_DEFS), so TypeScript rejects a handler
+// whose name isn't a declared tool, and a declared tool with no handler.
 const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── list_projects ──────────────────────────────────────────────────────────
   async list_projects(db, _params, ctx) {
@@ -514,8 +512,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!run) return null;
     assertProject(ctx, run.projectId);
 
-    // Push the status filter into SQL and paginate — no more loading passed
-    // cases (and their step JSON) just to discard them.
+    // Filter by status in SQL and paginate, so passed cases (and their step
+    // JSON) are never loaded just to be discarded.
     const caseConditions = [eq(testRunsCases.testRunId, runId)];
     if (statusFilter === 'flaky') {
       caseConditions.push(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0))!);
@@ -699,7 +697,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!tc) return null;
     if (tc.project?.id != null) assertProject(ctx, tc.project.id);
 
-    // Fetch executions with cursor pagination instead of hard-coded 10
+    // Fetch executions with cursor pagination
     const execConditions = [eq(testRunsCases.testCaseId, id)];
     if (cursor) execConditions.push(lt(testRunsCases.id, cursor));
 
@@ -807,9 +805,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const knownIssue = await getClusterKnownIssue(db, id);
 
-    // Fetch locator healing for up to 5 affected cases via a single batch
-    // query (2 DB round-trips instead of 5×2) so AI coding agents get fix
-    // suggestions without visiting the dashboard.
+    // Fetch locator healing for up to 5 affected cases in one batch (2 DB
+    // round-trips) so AI coding agents get fix suggestions without visiting
+    // the dashboard.
     const topCases = (cluster.affectedTestCases ?? []).slice(0, 5);
     const trcIds = topCases.map((t: any) => t.recentTestRunsCaseId).filter((id: any) => id != null);
     const healingMap = trcIds.length > 0 ? await getLocatorHealingBatch(db, trcIds) : new Map();
@@ -2047,8 +2045,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         sampleError: trunc(c.sampleError, 300),
       }),
     );
-    // Cursor is the last id; ordering is (occurrences DESC, id DESC) so paging by
-    // id is approximate but monotonic enough for a triage sweep.
+    // The cursor is the last id while the order is (occurrences DESC, id DESC),
+    // so a later page skips clusters newer than the cursor and can repeat older
+    // ones already shown.
     return paginatedItems(mapped, pageSize, (c: any) => String(c.id));
   },
 

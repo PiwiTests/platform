@@ -1,11 +1,10 @@
 <script setup lang="ts">
 /**
- * A failure cluster's state as one sentence with one verb: a coloured dot for the
+ * A failure cluster's state as one sentence with one verb: a colored dot for the
  * kind, the sentence's typed spans as prose (run references linked), the single
  * reconcile action the machine verdict and the human status imply (mark resolved,
  * reopen, unsnooze, release), and one Triage panel — open / resolved / ignored,
- * a note, an assignee, and a snooze. It replaces the segmented control, the note
- * icon, the verification badge and its sentence, and the snooze row.
+ * a note, an assignee, and a snooze.
  *
  * Every save toasts and asks the page to refresh; a viewer without write access
  * sees the sentence alone.

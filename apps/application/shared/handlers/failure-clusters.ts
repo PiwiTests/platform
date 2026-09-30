@@ -475,11 +475,6 @@ export async function patchClusterBaseCommit(db: DrizzleDB, clusterId: number, c
   return { success: true, cluster: updated };
 }
 
-// NOTE: The demo SCM (commits/branches/commit-diff) and AI-context endpoints used
-// to be no-op stubs here. They now have real, data-grounded demo implementations in
-// `app/demo/api/scm.ts` and `app/demo/api/diagnosis-context.ts` (kept out of shared/
-// so the canned SCM data never leaks into the server bundle).
-
 export async function extractClusterCases(
   db: DrizzleDB,
   clusterId: number,

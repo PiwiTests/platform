@@ -78,13 +78,12 @@ async function reclaimWholeProjectPool(db: Db, projectId: number): Promise<void>
 }
 
 /**
- * Reference-count and free deduplicated trace blobs — and now their individual
- * shared resources — after the referencing `files` rows have been deleted.
+ * Reference-count and free deduplicated trace blobs and their individual shared
+ * resources after the referencing `files` rows have been deleted.
  *
  * Runs AFTER the rows are gone so the count reflects only survivors: a blob is
  * removed exactly when nothing else points at it, whether several rows in one
- * delete batch shared it (which a per-row refcount got wrong — it saw the
- * not-yet-deleted siblings) or it was the last reference across runs.
+ * delete batch shared it or it was the last reference across runs.
  *
  * Resources are reclaimed per blob via the `trace_blob_resources` join table: a
  * resource goes as soon as no surviving blob references it, so deleting *some*
@@ -216,9 +215,9 @@ export async function reclaimOrphanTraceResources(db: Db): Promise<number> {
  * directory and are reference-counted by {@link gcTraceBlobs}, so they are left
  * untouched here.
  *
- * This is a backstop for run deletion: it removes files that were orphaned by
- * an earlier failure or by a version that predated per-file cleanup, so a run
- * never leaves bytes behind even when a `files` row is missing.
+ * This is a backstop for run deletion: it removes files orphaned by an earlier
+ * failed deletion, so a run never leaves bytes behind even when a `files` row
+ * is missing.
  */
 export async function deleteRunStorageDir(projectId: number, runId: number): Promise<void> {
   const storage = getStorage();

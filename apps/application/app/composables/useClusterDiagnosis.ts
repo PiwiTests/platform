@@ -5,10 +5,9 @@ import type { ContextSection, DiagnosisContextCoverage, ScmChanges } from '~~/ty
 /**
  * Shared state + actions for the failure-cluster diagnosis page, owned by the
  * page and consumed by `ClusterInvestigation` and `ClusterDiagnosis` via
- * provide/inject. Centralizing it here means the `/context` and `/diagnosis`
- * endpoints are each fetched once (both panels previously fetched them
- * separately), and the baseline/selected-commit state no longer round-trips
- * through page props/events.
+ * provide/inject, so the `/context` and `/diagnosis` endpoints are each fetched
+ * once for both panels, and the baseline/selected-commit state stays out of
+ * page props/events.
  */
 
 export interface DiagnoseImage {

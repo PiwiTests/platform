@@ -148,7 +148,7 @@ while ((m = PATTERN_RE.exec(routerSrc)) !== null) {
 // We build [{ method, pattern }] by scanning the routes array lines.
 // Extract method+pattern pairs.  Use the `s` flag so that `.*?` spans
 // newlines — many route entries in the demo router write `method` and
-// `pattern` on separate lines and the old single-line regex missed them.
+// `pattern` on separate lines.
 const ROUTE_BLOCK_RE = /\{\s*method:\s*'(GET|POST|PUT|PATCH|DELETE)'.*?pattern:\s*(\/[^,]+\/)/gs;
 const demoRoutes = [];
 while ((m = ROUTE_BLOCK_RE.exec(routerSrc)) !== null) {

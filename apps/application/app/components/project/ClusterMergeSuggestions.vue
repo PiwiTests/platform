@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Pending cluster-merge suggestions for a project (Phase 3). Each is a pair the
+ * Pending cluster-merge suggestions for a project. Each is a pair the
  * embedding reconciler / LLM adjudicator flagged as probably-the-same root cause
  * but didn't auto-merge. Admins/reporters approve (→ merge) or reject.
  */

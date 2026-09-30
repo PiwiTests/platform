@@ -88,8 +88,8 @@ export async function mergeEntityLinkMetadata(db: DbClient, id: number, patch: R
 }
 
 /**
- * Refresh an entity link's cached status fields — what the sync milestone calls
- * after reading the tracker back through the connection.
+ * Refresh an entity link's cached status fields — what the status pull
+ * (`sync.ts`) calls after reading the tracker back through the connection.
  */
 export async function updateEntityLinkStatus(
   db: DbClient,

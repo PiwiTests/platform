@@ -53,9 +53,9 @@ export default eventHandler(async (event) => {
 
   const { username, password, name } = validation.data;
 
-  // Close the check-then-create race: two concurrent setup requests can both
-  // pass the needsInitialSetup() check above and each create an administrator.
-  // claimInitialSetup() lets exactly one of them proceed; the rest are rejected.
+  // Two concurrent setup requests can both pass the needsInitialSetup() check
+  // above. claimInitialSetup() lets exactly one of them create the
+  // administrator; the rest are rejected.
   if (!(await claimInitialSetup())) {
     throw apiError({
       statusCode: 400,

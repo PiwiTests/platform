@@ -1,7 +1,7 @@
 /**
  * UI tests for the project test catalog, folded into the project's Tests tab:
  * server-driven search, status filtering and the group-by-file view on the
- * shared table. The old `/projects/:id/test-cases` route redirects into the tab.
+ * shared table. The `/projects/:id/test-cases` route redirects into the tab.
  */
 import { test, expect, type APIRequestContext } from './fixtures';
 import { waitForHydration, retryPost } from './utils';

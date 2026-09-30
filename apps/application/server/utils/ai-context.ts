@@ -452,7 +452,7 @@ function loadExecutionById(db: DbClient, testRunsCaseId: number) {
 
 type RepresentativeRow = NonNullable<Awaited<ReturnType<typeof loadExecutionRow>>>;
 
-/** Build a CI/run header string from the representative execution's run metadata (D4). */
+/** Build a CI/run header string from the representative execution's run metadata. */
 function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   const lines: string[] = [];
   const meta = rep.runMetadata as RunMetadata | null;
@@ -486,7 +486,7 @@ function stepParamsLine(step: TestStepInfo): string | null {
 const FAILED_STEP_RANK: Record<StepFailureRole, number> = { failing: 0, enclosing: 1, failed: 2, recovered: 2 };
 
 /**
- * Extract steps that have an error attached (D6): the step that failed the
+ * Extract steps that have an error attached: the step that failed the
  * test first, then the steps around it (same error, not repeated), then the
  * other errored steps in order — another error the test ended with, or one the
  * test caught and went on from, labeled so.
@@ -786,7 +786,7 @@ async function retryProgressionSection(db: DbClient, rep: RepresentativeRow): Pr
   return `## Retry Progression\n${insight}\n${lines.join('\n')}`;
 }
 
-/** Tests in the same file that passed in the representative execution's run (D5). */
+/** Tests in the same file that passed in the representative execution's run. */
 async function passedPeersSection(
   db: DbClient,
   rep: RepresentativeRow,
@@ -843,7 +843,7 @@ async function passedPeersSection(
   };
 }
 
-/** Trace file URLs for the representative execution (D12). */
+/** Trace file URLs for the representative execution. */
 async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
   const traceFiles = await db
     .select({ path: files.path, label: files.label })
@@ -855,7 +855,7 @@ async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promi
   return `## Trace Files\n${lines.join('\n')}`;
 }
 
-/** Parse the Playwright trace ZIP for the failing action context (B1). */
+/** Parse the Playwright trace ZIP for the failing action context. */
 async function failingActionSection(
   db: DbClient,
   rep: RepresentativeRow,
@@ -1072,7 +1072,7 @@ async function resolveErrorContextAria(db: DbClient, rep: RepresentativeRow): Pr
   }
 }
 
-/** Auto-resolve screenshots for the representative execution (D1). */
+/** Auto-resolve screenshots for the representative execution. */
 async function resolveScreenshots(
   db: DbClient,
   rep: RepresentativeRow,
@@ -1107,7 +1107,7 @@ async function resolveScreenshots(
   return images;
 }
 
-/** Recurrence pattern + flakiness analysis for the cluster (D2/D3). */
+/** Recurrence pattern + flakiness analysis for the cluster. */
 async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const recentRuns = await db
     .select({
@@ -1183,7 +1183,7 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
   return lines.join('\n');
 }
 
-/** Prior diagnosis + triage note + user feedback (D10). */
+/** Prior diagnosis + triage note + user feedback. */
 async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const prev = await db
     .select({
@@ -1634,9 +1634,8 @@ async function locatorHealingSection(
 
 /**
  * Header + error/source/steps/console/network/server-logs/web-vitals/ARIA
- * sub-sections from one execution, each tagged with its `SectionId`. Returning
- * ids (rather than a positional array) keeps every element self-labeling — the
- * assembler no longer has to guess which slot holds which evidence.
+ * sub-sections from one execution, each tagged with its `SectionId`, so the
+ * assembler places each piece of evidence by id, not by position.
  */
 export function representativeExecutionSections(
   rep: RepresentativeRow,
@@ -1660,7 +1659,7 @@ export function representativeExecutionSections(
     `- Duration: ${rep.duration != null ? `${rep.duration}ms` : 'unknown'}`,
   ];
 
-  // D4: CI/env/OS metadata
+  // CI/env/OS metadata
   headerLines.push(...ciRunHeaderLines(rep));
 
   out.push({ id: 'representativeExecution', markdown: headerLines.join('\n') });
@@ -1682,7 +1681,7 @@ export function representativeExecutionSections(
     }
   }
 
-  // D7: Test source — keep failing test body full, truncate surrounding
+  // Test source — keep failing test body full, truncate surrounding
   if (rep.testSource) {
     let source = rep.testSource;
     const isTruncated = source.length > limits.testSourceChars;
@@ -1751,7 +1750,7 @@ export function representativeExecutionSections(
     });
   }
 
-  // D8: Console — dedupe consecutive identical lines (SPA test failures
+  // Console — dedupe consecutive identical lines (SPA test failures
   // routinely repeat one error dozens of times, eating the window).
   const consoleLogs = (rep.consoleLogs as ConsoleLogEntry[] | null) ?? [];
   const windowLogs = consoleLogs.slice(-limits.maxConsoleWindow);
@@ -1780,7 +1779,7 @@ export function representativeExecutionSections(
     });
   }
 
-  // D9: Network — correlate with the failure when timing data allows
+  // Network — correlate with the failure when timing data allows
   const nrItems = (rep as any).nrItems ?? [];
   const networkLines: string[] = [];
   // Time anchor: the case's startedAt and the request's stored startTime are
@@ -2660,8 +2659,8 @@ export async function buildClusterDiagnosisContext(
 // ── Scope-aware diagnosis context builder ────────────────────────────────────
 
 /**
- * Build the full diagnosis context per the §7.0 contract. Scope-aware:
- * - `cluster` scope: evidence from a failure cluster (existing behavior + all §4 improvements).
+ * Build the full diagnosis context. Scope-aware:
+ * - `cluster` scope: evidence from a failure cluster.
  * - `execution` scope: evidence from a single test-runs-case, with optional cluster context.
  *
  * Returns a structured `BuiltDiagnosisContext` with sectioned markdown, coverage,
@@ -2743,7 +2742,7 @@ export async function buildDiagnosisContext(
     // them as evidence to confirm or refute, each with its [section] citation.
     push(section('clues', 'Clues', await cluesSection(db, rep, limits)));
 
-    // Failing steps (D6)
+    // Failing steps
     push(section('failingSteps', 'Failed Steps', failingStepsSection(rep, limits)));
 
     // Run context (partial run, parallelism, describe path, flaky class)
@@ -2793,8 +2792,8 @@ export async function buildDiagnosisContext(
     // Retry progression (per-attempt error evolution)
     push(section('retryProgression', 'Retry Progression', await retryProgressionSection(db, rep)));
 
-    // D2/D3: Recurrence & flakiness (cluster-scoped) — the retry-behavior one-liner
-    // is folded in here rather than mislabeled as its own section.
+    // Recurrence & flakiness (cluster-scoped), with the retry-behavior one-liner
+    // folded into this section.
     if (cluster) {
       let flakinessText = await recurrenceFlakinessSection(db, cluster);
       const retryText = await retryBehaviorSection(db, cluster);
@@ -2807,10 +2806,10 @@ export async function buildDiagnosisContext(
       }
     }
 
-    // D12: Trace pointers
+    // Trace pointers
     push(section('tracePointers', 'Trace Files', await tracePointersSection(db, rep)));
 
-    // B1: Failing action from trace parsing
+    // Failing action from trace parsing
     push(section('failingAction', 'Failing Action (from Trace)', await failingActionSection(db, rep, limits)));
 
     // Failure-time DOM snapshot rendered from the same trace blob
@@ -2838,7 +2837,7 @@ export async function buildDiagnosisContext(
     // Attachments & artifacts (video, HAR, custom files) — pointers only
     push(section('artifacts', 'Attachments & Artifacts', await artifactsSection(db, rep)));
 
-    // D1: Auto-resolve screenshots. `chars` reflects the markdown reference only;
+    // Auto-resolve screenshots. `chars` reflects the markdown reference only;
     // the base64 image payload is billed as vision tokens, estimated separately.
     images = await resolveScreenshots(db, rep, limits);
     if (images.length > 0) {
@@ -2920,7 +2919,7 @@ export async function buildDiagnosisContext(
     }
   }
 
-  // D10: Prior diagnosis + triage note (cluster-scoped)
+  // Prior diagnosis + triage note (cluster-scoped)
   if (cluster) {
     push(section('priorDiagnosis', 'Prior Assessment', await priorDiagnosisSection(db, cluster)));
     // A previously fixed similar failure — the resolved cluster this one most

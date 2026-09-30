@@ -5,8 +5,8 @@ import type { DbClient as DB } from '../database';
 
 /**
  * Validates the stream token for a test run. If the run was interrupted by the
- * stale-run cleanup (no activity for 1h, streamToken cleared), this revives it
- * back to `running` by accepting the reporter's existing token.
+ * stale-run cleanup (no activity for `STALE_TIMEOUT_MS`, streamToken cleared),
+ * this revives it back to `running` by accepting the reporter's existing token.
  *
  * Throws a proper HTTP error on invalid state or token mismatch.
  * Mutates `testRun` in place on revival so callers see the updated state.

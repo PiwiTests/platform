@@ -62,14 +62,13 @@ export interface DeleteRunsResult {
  *
  * Child rows are deleted explicitly, in FK order, rather than relying on
  * ON DELETE actions: SQLite foreign-key enforcement is a per-connection
- * pragma (historically supplied only by a libsql driver default, not by
- * every client that opens the file), and file/blob cleanup needs the rows
- * before they disappear. The result is identical on both dialects.
+ * pragma that not every client opening the file sets, and file/blob cleanup
+ * needs the rows before they disappear. The result is identical on both
+ * dialects.
  *
  * Trace-blob storage is freed by {@link gcTraceBlobs} AFTER the `files` rows are
  * gone, so a blob shared by several deleted rows (or by another run) is counted
- * correctly — a per-row refcount taken before deletion sees the not-yet-deleted
- * siblings and leaks the blob.
+ * correctly.
  *
  * The daily rollups follow in the transaction that deletes the run rows: the
  * retained rows of the touched days are recomputed from the runs that stay.

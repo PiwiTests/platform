@@ -456,14 +456,10 @@ async function buildArgs(
 function outcomeFromJson(json: ClaudeJsonResult, fallbackModel: string): ClaudeCallOutcome {
   const modelName = json.modelUsage ? Object.keys(json.modelUsage)[0] : undefined;
   const u = json.usage;
-  // Claude Code caches its large system prompt + tool definitions, so on every
-  // call the bulk of the prompt is reported under cache_creation / cache_read
-  // and `input_tokens` is only the small uncached delta (e.g. 2 tokens for a
-  // prompt that actually sent ~39k). Report the *full* prompt size as input
-  // tokens — the sum of the plain, cache-write and cache-read counts — so the
-  // usage tally and the persisted per-diagnosis totals aren't wildly undercounted.
-  // Cost is unaffected: it comes straight from total_cost_usd, which the CLI has
-  // already priced across the cache tiers.
+  // Claude Code caches its system prompt and tool definitions, so `input_tokens`
+  // is only the uncached delta. Input tokens are the full prompt size: the sum
+  // of the plain, cache-write and cache-read counts. Cost comes from
+  // total_cost_usd, which the CLI prices across the cache tiers.
   const inputTokens =
     u == null ? null : (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
   return {

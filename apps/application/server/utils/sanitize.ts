@@ -8,8 +8,8 @@ import type { IngestLimits } from '#shared/ingest-limits';
  *
  * These are used by both submit.post.ts and upload.post.ts to strip sensitive
  * information (query parameters, fragments) from network request URLs and web
- * vitals navigation URLs before they are persisted in the database and exposed
- * through unauthenticated GET endpoints.
+ * vitals navigation URLs before they are persisted in the database and returned
+ * by the read endpoints.
  */
 
 /**
@@ -56,13 +56,9 @@ export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undef
 }
 
 /**
- * Sanitize console log entries by stripping the query string from the URL part
- * of each entry's `location` (formatted as `url:line:column`).
- */
-/**
  * Strip userinfo (username:password) from a Git remote URL.
  * Handles `https://token@host/repo` and `https://user:pass@host/repo` patterns.
- * Returns the sanitised URL, or the original string if parsing fails.
+ * Returns the sanitized URL, or the original string if parsing fails.
  */
 export function sanitizeGitRemoteUrl(url: string): string {
   try {
@@ -78,8 +74,8 @@ export function sanitizeGitRemoteUrl(url: string): string {
 }
 
 /**
- * Sanitize run-level metadata by stripping credentials from SCM remote URLs.
- * This prevents token-leakage through public GET endpoints (§1.7).
+ * Sanitize run-level metadata by stripping credentials from SCM remote URLs,
+ * so the read endpoints never return a token embedded in the remote URL.
  */
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!metadata || typeof metadata !== 'object') return null;
@@ -191,6 +187,10 @@ export function sanitizeAiUsage(usage: unknown): { entries: string[]; intents?: 
   return intents.length > 0 ? { entries, intents } : { entries };
 }
 
+/**
+ * Sanitize console log entries by stripping the query string from the URL part
+ * of each entry's `location` (formatted as `url:line:column`).
+ */
 export function sanitizeConsoleLogs(
   logs: Array<Record<string, unknown>> | null | undefined,
 ): Array<Record<string, unknown>> | null {

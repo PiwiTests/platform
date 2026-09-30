@@ -181,7 +181,7 @@ test.describe('Test-run-case page', () => {
     await expect(page.locator('[data-shot="next-step"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Fix', exact: true })).toHaveCount(0);
     // A passing execution shows the steps table without the failure axis or its
-    // controls. The tab is the heading now — the block no longer repeats "Steps".
+    // controls. The tab is the heading — the block does not repeat "Steps".
     await expect(page.getByRole('button', { name: 'Around the failure' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /^Steps/ })).toHaveCount(0);
     await expect(page.locator('table').first()).toBeVisible();
@@ -190,7 +190,7 @@ test.describe('Test-run-case page', () => {
   test('the retry command is in the More menu, not an always-on header button', async ({ page }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
-    // The header no longer carries a standing Copy retry command button.
+    // The header carries no standing Copy retry command button.
     await expect(page.getByRole('button', { name: /Copy retry command/ })).toHaveCount(0);
     // It is reachable in the More actions menu.
     await page.getByRole('button', { name: 'More actions' }).click();
@@ -202,7 +202,7 @@ test.describe('Test-run-case page', () => {
     await waitForHydration(page);
     const performanceTab = page.getByRole('tab', { name: /^Performance/ });
     await performanceTab.click();
-    // The tab is the heading now; the block no longer repeats "Browser performance".
+    // The tab is the heading; the block does not repeat "Browser performance".
     await expect(performanceTab).toHaveAttribute('aria-selected', 'true');
     // The captured Web Vitals render as metric tiles (the tab shows only when it
     // has data — a fixtureless execution has no Performance tab at all).
@@ -234,7 +234,7 @@ test.describe('Test-run-case page', () => {
 
     await page.getByRole('tab', { name: /^Timeline/ }).click();
 
-    // The tab is the heading now — the block no longer repeats "Failure timeline".
+    // The tab is the heading — the block does not repeat "Failure timeline".
     await expect(page.getByRole('heading', { name: 'Failure timeline' })).toHaveCount(0);
     // Both window controls drive the axis and the table together.
     await expect(page.getByRole('button', { name: 'Around the failure' })).toBeVisible();
@@ -242,7 +242,7 @@ test.describe('Test-run-case page', () => {
     // This run recorded no step start times, so the estimated note shows.
     await expect(page.getByText(/Step positions are derived from durations/)).toBeVisible();
 
-    // One merged table — the old duplicate "what happened" list is gone.
+    // One merged table, with no separate "what happened" list.
     await expect(page.getByRole('heading', { name: 'What happened in this window' })).toHaveCount(0);
     const table = page.getByRole('table');
     await expect(table).toHaveCount(1);

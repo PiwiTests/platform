@@ -46,9 +46,9 @@ export type TestRunStatus =
 // Distinct from `skipped`, which is reserved for intentional `test.skip()` /
 // `test.fixme()`.
 // `timedout` is the canonical stored spelling: ingest normalizes Playwright's
-// camelCase `timedOut` wire value (`normalizeTestCaseStatus`), while rows
-// written by earlier releases may still carry the camelCase form — readers
-// match both via `FAILED_STATUS_KEYS` (shared/utils/test-counts.ts).
+// camelCase `timedOut` wire value (`normalizeTestCaseStatus`), while a stored
+// row may still carry the camelCase form — readers match both via
+// `FAILED_STATUS_KEYS` (shared/utils/test-counts.ts).
 export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout' | 'didnotrun';
 
 // ── Roles ─────────────────────────────────────────────────────────────────────

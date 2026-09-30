@@ -48,7 +48,7 @@ export interface RegisteredUser {
 /**
  * The registered user a fix should be delivered to, or null when there is none.
  *
- * The rule is deliberately strict: a fix is delivered to its author only when
+ * The rule is strict: a fix is delivered to its author only when
  * the commit's email matches a registered Piwi user (case-insensitively).
  * An absent author, an author with no email, and an author who is not a
  * registered user all return null — the fix outcome then reaches people only

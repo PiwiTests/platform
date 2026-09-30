@@ -53,7 +53,8 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 
 // ── MCP Streamable HTTP endpoint ─────────────────────────────────────────────
 //
-// Implements the MCP 2024-11-05 Streamable HTTP transport.
+// Implements the MCP Streamable HTTP transport for the protocol versions in
+// SUPPORTED_PROTOCOL_VERSIONS.
 // A single POST /mcp handles initialize, tools/list, tools/call, and ping.
 // Auth: same pd_<key> Bearer token as the REST API.
 

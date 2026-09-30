@@ -4,8 +4,8 @@ import type { LiveStepInfo } from '~/utils/live-steps';
 
 /**
  * The step a running test is executing right now, shown inline on its row.
- * Replaces the bare "In progress..." placeholder while step events stream in;
- * the outcome icon lingers on the last step until the next one begins.
+ * Shown in place of "In progress..." while step events stream in; the outcome
+ * icon lingers on the last step until the next one begins.
  */
 const props = defineProps<{ step: LiveStepInfo }>();
 

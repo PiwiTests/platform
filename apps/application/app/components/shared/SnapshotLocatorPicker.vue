@@ -258,7 +258,7 @@ watch([fitZoom, viewport], () => {
 
 // The iframe's full content height arrives over postMessage from the in-iframe
 // ResizeObserver (see `piwiContentHeight` in handleMessage) — the opaque-origin
-// sandbox means the host can no longer read the iframe's document to measure it.
+// sandbox keeps the host from reading the iframe's document to measure it.
 
 // Track the pane width for the fit calculation.
 let stageObserver: ResizeObserver | null = null;

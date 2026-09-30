@@ -122,13 +122,13 @@ export default eventHandler(async (event) => {
         });
       }
     } else if (part.name === 'htmlReport' && part.filename) {
-      // Backward-compat: treat 'htmlReport' as report type 'html'
+      // The 'htmlReport' field is the report of type 'html'
       reportFiles.set('html', {
         filename: sanitizeFilename(part.filename),
         data: part.data,
       });
     } else if (part.name?.startsWith('report_') && part.filename) {
-      // New multi-report format: field name is 'report_<type>'
+      // Any report type: the field name is 'report_<type>'
       const type = part.name.slice('report_'.length);
       if (type && /^[a-z0-9_-]+$/i.test(type)) {
         reportFiles.set(type, {

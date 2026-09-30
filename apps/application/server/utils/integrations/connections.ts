@@ -45,8 +45,7 @@ function envJiraCredentials(): { baseUrl: string; email: string; apiToken: strin
 }
 
 function jiraFlavor(): 'cloud' {
-  // Cloud is the only supported flavor; the field exists so a later Server /
-  // Data Center client selects itself from the connection.
+  // Cloud is the only supported flavor.
   return 'cloud';
 }
 

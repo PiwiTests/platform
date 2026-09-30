@@ -186,11 +186,11 @@ export async function getOrCreateFailureClusters(
  * Merge one failure cluster into another. The `survivorId` cluster keeps its
  * triage state (status, notes, manual base commit) and absorbs the victim:
  * all linked test-run cases and diagnoses are re-pointed, occurrence counts
- * and seen-run bounds are recomputed, then the victim row is deleted.
+ * are summed and the seen-run bounds widened to cover both, then the victim
+ * row is deleted.
  *
- * Used by the re-fingerprinting backfill (when an algorithm change makes two
- * previously-distinct clusters collapse onto the same fingerprint) and is the
- * building block for future cluster-reconciliation work.
+ * Used by the re-fingerprinting backfill (when two distinct clusters map onto
+ * the same fingerprint), cluster reconciliation and approved merge suggestions.
  */
 export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, victimId: number): Promise<void> {
   if (survivorId === victimId) return;
@@ -238,7 +238,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .set({ clusterId: survivorId })
       .where(eq(failureDiagnosisVersions.clusterId, victimId));
 
-    // Recompute aggregates from both clusters' surviving links.
+    // Combine the two clusters' aggregates.
     const [survivor] = await tx
       .select({
         occurrences: failureClusters.occurrences,

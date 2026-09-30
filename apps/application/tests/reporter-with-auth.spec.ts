@@ -1138,7 +1138,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // D11 in the browser: a "user" sees the effect of an undecided capability (the
+  // Capability roles in the browser: a "user" sees the effect of an undecided capability (the
   // one naming line) but none of the decline controls, and cannot reach Setup.
   // Reuses ci-user, who already has access to a fixtureless failing run in
   // PROJECT.AUTH_ROLE_CHECKS from an earlier test in this serial suite.

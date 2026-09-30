@@ -468,8 +468,8 @@ const moreMenuItems = computed(() => {
     target?: '_blank';
     onSelect?: () => void;
   }[] = [];
-  // The retry command was the header's always-on primary; it now lives here and
-  // on the next-step line (for code-change steps) and in the Verify section.
+  // The retry command also appears on the next-step line (for code-change
+  // steps) and in the Verify section.
   if (retryCommand.value && !desktopBridge.value) {
     items.push({
       label: 'Copy retry command',

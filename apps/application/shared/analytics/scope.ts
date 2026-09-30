@@ -82,9 +82,9 @@ function pick(query: QueryLike, key: string): string | null {
 const PRIORITIES = new Set<string>(['critical', 'high', 'medium', 'low']);
 
 /**
- * The query keys the scope reads. Today's keys (`days`, `projects`,
+ * The query keys the scope reads: `period`, `days`, `projects`,
  * `environments`, `branches`, `fullRunsOnly`, and the singular `environment`
- * and `branch`) keep working; `period` wins over `days` when both are set.
+ * and `branch`. `period` wins over `days` when both are set.
  */
 export function parseAnalyticsScope(query: QueryLike): AnalyticsScope {
   const rawDays = Number(pick(query, 'days'));

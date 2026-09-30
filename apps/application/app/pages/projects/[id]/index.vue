@@ -269,7 +269,7 @@ useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'gaps', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
-// Old ?tab= values (and the retired sub-routes) still land on the right tab.
+// Other ?tab= values (and the redirecting sub-routes) land on the tab that holds them.
 const TAB_ALIASES: Record<string, TabValue> = {
   'test-runs': 'runs',
   compare: 'runs',

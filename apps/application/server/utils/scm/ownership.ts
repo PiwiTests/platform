@@ -75,7 +75,8 @@ export async function getProjectCodeowners(db: DbClient, projectId: number): Pro
     return compiled;
   } catch {
     // A rate limit or an outage must not break the page that asked; cache the
-    // miss briefly so one bad token does not retry on every request.
+    // miss for the cache's one-hour TTL so one bad token does not retry on
+    // every request.
     codeownersCache.set(key, null);
     return null;
   }

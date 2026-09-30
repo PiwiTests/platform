@@ -1,9 +1,8 @@
 /**
  * Fix verification — closing the loop on "did my fix work?".
  *
- * Piwi already knows a cluster's failing tests, its diagnosis, the files the
- * suggested patch touches, and the last commit it failed at. Until now nothing
- * consumed that afterwards: a cluster went quiet and stayed open forever.
+ * Piwi knows a cluster's failing tests, its diagnosis, the files the suggested
+ * patch touches, and the last commit it failed at.
  *
  * After every run this asks two questions about each cluster:
  *

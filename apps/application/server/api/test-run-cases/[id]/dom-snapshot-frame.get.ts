@@ -106,8 +106,8 @@ export default eventHandler(async (event) => {
   // carries its stylesheets and images inline, so any fetch left in the snapshot
   // is blocked rather than sent to this origin or the tested app. Because this
   // is served over HTTP (not `srcdoc`), the frame carries THIS policy instead of
-  // inheriting the dashboard page's `strict-dynamic` CSP — which would block the
-  // inline picker script (the desktop-only failure this endpoint exists to fix).
+  // inheriting the dashboard page's `strict-dynamic` CSP, which would block the
+  // inline picker script.
   const nonce = randomBytes(16).toString('base64');
   setResponseHeader(
     event,

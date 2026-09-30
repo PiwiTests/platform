@@ -4,8 +4,10 @@ import type { AnalyticsTimeToFix } from '../../analytics/types';
 import { DAY_MS, firstNonEmptyIndex, getAnalyticsContext, roundRate, type ProjectAccess } from './common';
 import { clusterValue, loadClusters, type ClusterRow } from './metric-values';
 
-/** Open failure causes by age, youngest first; `maxDays` is exclusive, null for the last group. */
-/** The age buckets of open failure causes; a report translates their labels. */
+/**
+ * The age buckets of open failure causes, youngest first; `maxDays` is
+ * exclusive, null for the last group. A report translates their labels.
+ */
 export const AGE_GROUPS: Array<{ label: string; maxDays: number | null }> = [
   { label: 'Under a day', maxDays: 1 },
   { label: '1 to 7 days', maxDays: 7 },

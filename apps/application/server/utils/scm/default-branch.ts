@@ -8,16 +8,14 @@ import { mostCommonRunBranch, type DefaultBranchProject } from './stored-default
 
 /**
  * The effective default branch of a project, resolved through one chain the
- * whole codebase shares instead of the per-feature `'main'` guesses that used
- * to be scattered across notifications and the auto-heal policy:
+ * whole codebase shares:
  *
  *   1. An explicit project setting (`projects.default_branch`) — also the slot a
  *      provider-resolved value is cached into.
  *   2. The SCM provider API (`default_branch` / `mainbranch.name`), fetched from
  *      the run's remote URL and cached back onto the project row so later runs
  *      skip the call. A token-less or failing fetch simply falls through.
- *   3. The reporter's `metadata.defaultBranch` hint, kept for compatibility with
- *      users who set it today.
+ *   3. The reporter's `metadata.defaultBranch` hint.
  *   4. The most common branch among the project's runs.
  *   5. `'main'`, the documented last resort.
  *

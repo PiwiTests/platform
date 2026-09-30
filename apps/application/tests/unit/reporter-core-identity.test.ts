@@ -7,11 +7,10 @@ import * as reporter from '../../../../packages/reporter/src/internal/capture/lo
 import * as reporterSteps from '../../../../packages/reporter/src/internal/collect/step-analyzer';
 
 /**
- * Replaces the old reporter↔shared drift-guard test. The reporter now bundles
- * `@piwitests/core` instead of hand-mirroring it, so the guarantee we want is
- * *identity*: the reporter re-exports the exact core functions, with no local
- * copy that could drift. If someone re-implements one of these in the reporter,
- * the reference stops matching and this fails.
+ * The reporter bundles `@piwitests/core` rather than hand-mirroring it, so the
+ * guarantee we want is *identity*: the reporter re-exports the exact core
+ * functions, with no local copy that could drift. If someone re-implements one
+ * of these in the reporter, the reference stops matching and this fails.
  */
 describe('reporter re-exports @piwitests/core (no local re-implementation)', () => {
   test('locator-generation helpers are the same references as core', () => {

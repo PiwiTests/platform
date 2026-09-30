@@ -550,7 +550,7 @@ const breadcrumbItems = computed(() => [
             </div>
           </template>
 
-          <!-- Actions: the More menu the header used to carry -->
+          <!-- Actions: the More menu -->
           <template #actions>
             <UDropdownMenu :items="moreMenuItems">
               <UButton

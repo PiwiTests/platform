@@ -10,9 +10,9 @@ import { sha256Hex } from '#shared/utils/hash';
  * `test_runs_cases` by id — so a test failing identically across many runs
  * (or across browsers within one run) stores each payload a single time.
  *
- * Rows written before this table existed keep their inline columns; readers
- * must coalesce via {@link inlineCasePayloads} (payload content wins, inline
- * column is the fallback).
+ * A row may still carry a payload in its inline column instead; readers must
+ * coalesce via {@link inlineCasePayloads} (payload content wins, inline column
+ * is the fallback).
  */
 
 const ID_BATCH_SIZE = 500;
@@ -118,7 +118,7 @@ interface CasePayloadRefFields {
 /**
  * Return a copy of the row with `ariaSnapshot`/`ariaSnapshotJson`/`testSource`/
  * `testSourceFrames` coalesced from their content-addressed payloads, falling
- * back to the legacy inline columns for rows written before dedup existed.
+ * back to the inline columns for a row without a payload id.
  */
 export async function inlineCasePayloads<T extends CasePayloadRefFields>(db: DrizzleDB, row: T): Promise<T> {
   const contents = await resolveCasePayloadContents(db, [

@@ -640,9 +640,9 @@ if (route.query.tab === 'failure-groups') {
   }
 }
 
-// The former Insights, Since last pass and Compare tabs are one Changes tab;
-// the former Slow endpoints tab moved to the project page. Redirect their
-// deep-links so shared URLs and older links still land somewhere sensible.
+// Deep-links naming the insights, regression or compare tab open the Changes
+// tab, and endpoints opens the Tests tab (slow endpoints are on the project
+// page), so shared URLs land somewhere sensible.
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
   insights: 'changes',
   regression: 'changes',

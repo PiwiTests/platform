@@ -164,10 +164,10 @@ export function exposureFactorsFor(gap: DetectedGap, inputs: ExposureInputs): Ex
 
 /**
  * exposure = geometric mean of the four factors; gap score = exposure ×
- * confidence. The geometric mean keeps the documented factors but reads on the
- * same scale as one factor (`[0.1, 1]`), so a score no longer collapses toward
- * `0.1⁴` and `minScore` stays meaningful. It is a monotonic transform of the raw
- * product, so ranking among gaps of equal confidence is unchanged.
+ * confidence. The geometric mean reads on the same scale as one factor
+ * (`[0.1, 1]`), so a score does not collapse toward `0.1⁴` and `minScore` stays
+ * meaningful. It is a monotonic transform of the raw product, so it ranks gaps
+ * of equal confidence the same way the product would.
  */
 export function scoreGap(gap: DetectedGap, factors: ExposureFactors): number {
   const product = factors.churn * factors.age * factors.escapeHistory * factors.priority;
@@ -417,7 +417,7 @@ export function detectChangedUnreached(
   return gaps;
 }
 
-// ── M2 detectors (pure) ──────────────────────────────────────────────────────
+// ── Graph and outcome detectors (pure) ───────────────────────────────────────
 
 /** A control node and how the suite touches it. */
 export interface ControlReach {
@@ -982,7 +982,7 @@ export function detectAssertionLight(pages: AssertionLightPage[]): DetectedGap[]
   return gaps;
 }
 
-// ── M2 change-time detectors (pure) ──────────────────────────────────────────
+// ── Change-time detectors (pure) ─────────────────────────────────────────────
 
 /** A commit or ticket intent and whether any test matches its words. */
 export interface IntentInput {
@@ -1416,7 +1416,7 @@ export async function computeScenarioGaps(
     }
   }
 
-  // Breadth edges the M2 detectors read: contains (page → control), links
+  // Breadth edges the graph detectors read: contains (page → control), links
   // (page → page), triggers/loads (into a route) and checks (probe outcomes).
   const breadthEdges = await db
     .select({
@@ -2500,7 +2500,7 @@ export function subjectFromGapKey(key: string): GapSubject {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };
   }
-  // M1 keys: a raw route key or a file path.
+  // Untyped keys: a raw route key or a file path.
   if (/^[A-Z]+\s/.test(key)) return { kind: 'route', key };
   return { kind: 'file', key };
 }
