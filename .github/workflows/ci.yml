@@ -186,9 +186,7 @@ jobs:
         working-directory: ./packages/picker-dom
         run: npm run picker-dom:test:integration
 
-      # The reporter's flake-run and build-output specs load the built package,
-      # and the app's locator-generate-drift.test.ts compares the app copy of
-      # the locator helpers against the reporter's compiled one.
+      # The reporter's flake-run and build-output specs load the built package.
       - name: Build reporter
         working-directory: ./packages/reporter
         run: npm run reporter:build
