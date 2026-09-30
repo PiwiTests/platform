@@ -1,5 +1,5 @@
 /**
- * Server-probe fault classes (Test Map, level two) — the pure decisions the
+ * Server-probe fault classes — the pure decisions the
  * plugin applies to one signed request. Kept side-effect-free so each class is
  * unit-tested without a running server; the plugin owns the throwing, delaying
  * and outbound-call interception these describe.

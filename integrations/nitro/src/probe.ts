@@ -1,12 +1,11 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
- * Server-probe support (Piwi Test Map, level two). A probe run signs a fault
- * spec into the `X-Piwi-Probe` request header; the instrumentation verifies the
- * signature here and, when server probes are enabled, applies the fault inside
- * the request scope. In this release the header is only parsed and verified —
- * nothing is applied unless a project turns server probes on, which stays off by
- * default (see the README).
+ * Server-probe support. A probe run signs a fault spec into the `X-Piwi-Probe`
+ * request header; the instrumentation verifies the signature here and, when
+ * server probes are enabled (`PIWI_SERVER_PROBES=true`, off by default — see the
+ * README), applies the fault inside the request scope. With server probes off,
+ * the header is only parsed and verified.
  */
 
 /** A fault the probe run asks the server to apply to one request. */
