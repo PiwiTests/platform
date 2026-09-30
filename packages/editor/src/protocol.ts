@@ -11,10 +11,16 @@ export interface PiwiCommand {
   title: string;
   /**
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
-   * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.runCommand` (arguments: `[RunCommandArgs]`) or
-   * `piwi.copyText` (arguments: `[text]`).
+   * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
+   * `piwi.runCommand` (arguments: `[RunCommandArgs]`) or `piwi.copyText` (arguments: `[text]`).
    */
-  command: 'piwi.openInDashboard' | 'piwi.runTests' | 'piwi.openTrace' | 'piwi.runCommand' | 'piwi.copyText';
+  command:
+    | 'piwi.openInDashboard'
+    | 'piwi.runTests'
+    | 'piwi.openTrace'
+    | 'piwi.openScreenshot'
+    | 'piwi.runCommand'
+    | 'piwi.copyText';
   arguments: unknown[];
 }
 
@@ -31,10 +37,31 @@ export interface SummaryLine {
   status?: TestLineStatus;
   /** On a test's line: the 0-based line its `test(…)` call ends on, for the background of a failing test. */
   endLine?: number;
+  /** On the line of a test that failed in the latest run the service reads: where and why. */
+  failure?: TestFailure;
 }
 
 /** A test's latest result: `failed` when it failed in the latest run the service reads. */
 export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
+
+/**
+ * Where and why a test failed. The lines above `line` (the reason, the screenshot, the trace) are
+ * ordinary summary lines.
+ */
+export interface TestFailure {
+  /**
+   * 0-based line of this file the failure went through: the innermost frame of the error's stack within
+   * the test, else within this file, else the `test(…)` line.
+   */
+  line: number;
+  /** One line on why it failed. */
+  headline: string | null;
+  /** The error without its stack trace, shortened; null when the instance does not send it. */
+  message: string | null;
+  executionId: number;
+  /** The execution's page in the dashboard. */
+  url: string;
+}
 
 /** `piwi/fileSummary`: what to show above a file and above its test and locator lines. */
 export interface FileSummaryParams {
@@ -191,6 +218,15 @@ export interface TraceResult {
 }
 
 export const TRACE_REQUEST = 'piwi/trace';
+
+/** `piwi/screenshot`: download an execution's failure screenshot and return where it is, for the editor to open. */
+export type ScreenshotParams = TraceParams;
+
+export interface ScreenshotResult {
+  path: string;
+}
+
+export const SCREENSHOT_REQUEST = 'piwi/screenshot';
 
 /** The latest run on the checked-out branch of one workspace context. */
 export interface RunStatus {

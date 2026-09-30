@@ -29,6 +29,7 @@ import {
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  SCREENSHOT_REQUEST,
   TRACE_REQUEST,
   type DesktopResult,
   type EditorCredentials,
@@ -43,6 +44,8 @@ import {
   type StatusResult,
   type SummaryLine,
   type TestsForFile,
+  type ScreenshotParams,
+  type ScreenshotResult,
   type TraceParams,
   type TraceResult,
 } from '@piwitests/editor/protocol';
@@ -146,7 +149,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
 
-  // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails.
+  // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails, stronger on
+  // the line it failed at (the service's hover there says why).
   const gutterIcons = new Map(
     (['failed', 'flaky', 'passed', 'skipped'] as const).map((status) => [
       status,
@@ -162,7 +166,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  context.subscriptions.push(failingBackground, ...gutterIcons.values());
+  const failingLine = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('piwi.failingLineBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failingLineBackground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+  });
+  context.subscriptions.push(failingBackground, failingLine, ...gutterIcons.values());
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
     const tests = testDecorations(lines);
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
@@ -187,6 +197,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         tests
           .filter((t) => t.failingUntil !== null && t.line < document.lineCount)
           .map((t) => new vscode.Range(t.line, 0, Math.min(t.failingUntil!, document.lineCount - 1), 0)),
+      );
+      editor.setDecorations(
+        failingLine,
+        tests
+          .filter((t) => t.failingLine !== null && t.failingLine < document.lineCount)
+          .map((t) => document.lineAt(t.failingLine!).range),
       );
     }
   };
@@ -335,6 +351,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       runInTerminal(trace.cwd, trace.command);
+    }),
+    vscode.commands.registerCommand('piwi.openScreenshot', async (params: ScreenshotParams) => {
+      const shot = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Piwi: downloading the screenshot…' },
+        () => lc.sendRequest<ScreenshotResult | null>(SCREENSHOT_REQUEST, params),
+      );
+      if (!shot) {
+        void vscode.window.showWarningMessage('Piwi: this failure has no screenshot to open.');
+        return;
+      }
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(shot.path), {
+        preview: true,
+        viewColumn: vscode.ViewColumn.Beside,
+      });
     }),
     vscode.commands.registerCommand('piwi.copyMcpConfiguration', async () => {
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);

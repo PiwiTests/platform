@@ -16,7 +16,8 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
- * `skipped` or `unknown`), shown in the gutter with `title` as its tooltip, and `endLine` where its call ends.
+ * `skipped` or `unknown`), shown in the gutter with `title` as its tooltip, `endLine` where its call ends, and
+ * `failure` where and why it failed.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -24,6 +25,16 @@ data class SummaryLine(
     val command: PiwiCommand? = null,
     val status: String? = null,
     val endLine: Int? = null,
+    val failure: TestFailure? = null,
+)
+
+/** The line of the test a failure went through (0-based), and why it failed. */
+data class TestFailure(
+    val line: Int = 0,
+    val headline: String? = null,
+    val message: String? = null,
+    val executionId: Int = 0,
+    val url: String? = null,
 )
 
 data class FileSummary(val file: SummaryLine? = null, val lines: List<SummaryLine>? = null)
@@ -47,6 +58,8 @@ data class RunCommand(val cwd: String? = null, val command: String? = null, val 
 data class TraceParams(val uri: String, val executionId: Int)
 
 data class TraceResult(val path: String? = null, val cwd: String? = null, val command: String? = null)
+
+data class ScreenshotResult(val path: String? = null)
 
 data class ContextStatus(
     val root: String? = null,
@@ -160,6 +173,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/trace")
     fun trace(params: TraceParams): CompletableFuture<TraceResult?>
+
+    @JsonRequest("piwi/screenshot")
+    fun screenshot(params: TraceParams): CompletableFuture<ScreenshotResult?>
 
     @JsonRequest("piwi/mcp")
     fun mcp(): CompletableFuture<McpServersResult?>

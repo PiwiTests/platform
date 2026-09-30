@@ -25,6 +25,7 @@ import type {
   RenderStepsResult,
   RunCommand,
   RunStatusResult,
+  ScreenshotResult,
   StatusResult,
   TestsForFile,
   TraceResult,
@@ -51,7 +52,7 @@ const INDEX: LocatorIndex = {
   tests: [
     { id: 1, title: 'pays', file: 'tests/checkout.spec.ts', suite: [], status: 'passed' },
     { id: 2, title: 'pays by card', file: 'tests/checkout.spec.ts', suite: [], status: 'flaky' },
-    { id: 3, title: 'removes a row', file: 'tests/checkout.spec.ts', suite: [], status: 'failed' },
+    { id: 3, title: 'removes a row', file: 'tests/rows.spec.ts', suite: [], status: 'failed' },
   ],
   locators: [
     {
@@ -82,6 +83,19 @@ const PAGE_OBJECT = [
 ].join('\n');
 
 const SPEC = ["import { test } from '@playwright/test';", '', "test('pays', async ({ page }) => {});", ''].join('\n');
+
+/** The spec of the test that failed: through `checkout.row()` on line 7 (0-based 6), into the page object. */
+const FAILING_SPEC = [
+  "import { test } from '@playwright/test';",
+  "import { CheckoutPage } from './pages/checkout.page';",
+  '',
+  "test('removes a row', async ({ page }) => {",
+  '  const checkout = new CheckoutPage(page);',
+  "  await page.goto('/checkout');",
+  '  await checkout.row().click();',
+  '});',
+  '',
+].join('\n');
 
 const COMPONENT = '<template>\n  <button class="pay">\n    Pay now\n  </button>\n</template>\n';
 
@@ -134,6 +148,22 @@ beforeAll(async () => {
     }
     if (u === '/api/projects/7/test-cases?limit=1000') {
       return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
+    }
+    if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Frows.spec.ts') {
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              id: 3,
+              title: 'removes a row',
+              filePath: 'tests/rows.spec.ts',
+              status: 'failed',
+              totalRuns: 9,
+              passedRuns: 6,
+            },
+          ],
+        }),
+      );
     }
     if (u.startsWith('/api/projects/7/test-cases')) {
       return res.end(
@@ -192,11 +222,14 @@ beforeAll(async () => {
               testCaseId: 3,
               clusterId: 77,
               title: 'removes a row',
-              file: 'tests/checkout.spec.ts',
-              line: 3,
+              file: 'tests/rows.spec.ts',
+              line: 4,
               status: 'failed',
               headline: "locator('.cart-row').nth(2) was not found",
               location: '/ci/work/tests/pages/checkout.page.ts:5:21',
+              message:
+                "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
+              frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
               traces: ['traces/900.zip'],
               screenshot: 'shots/900.png',
             },
@@ -368,6 +401,7 @@ beforeAll(async () => {
   write('src/components/CheckoutButton.vue', COMPONENT);
   write('tests/pages/checkout.page.ts', PAGE_OBJECT);
   write('tests/checkout.spec.ts', SPEC);
+  write('tests/rows.spec.ts', FAILING_SPEC);
   write('src/unreached.ts', "export const x = 'y';\n");
   write('app/pages/checkout.vue', '<template><div /></template>\n');
   git('add', '.');
@@ -779,6 +813,65 @@ describe('the Piwi language server', () => {
     expect(page.file?.command).toMatchObject({ command: 'piwi.runTests', arguments: [{ testIds: [1, 2, 3] }] });
     const none = (await client.sendRequest('piwi/fileSummary', { uri: uri('src/unreached.ts') })) as FileSummary;
     expect(none).toEqual({ file: null, lines: [] });
+  });
+
+  test('marks where and why a test failed, with its evidence above the line', async () => {
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
+    const evidence = { uri: uri('tests/rows.spec.ts'), executionId: 900 };
+    expect(spec.lines).toEqual([
+      expect.objectContaining({
+        line: 3,
+        status: 'failed',
+        endLine: 7,
+        failure: {
+          line: 6,
+          headline: "locator('.cart-row').nth(2) was not found",
+          message:
+            "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
+          executionId: 900,
+          url: `${url}/test-run-cases/900`,
+        },
+      }),
+      {
+        line: 6,
+        title: "✗ locator('.cart-row').nth(2) was not found",
+        command: {
+          title: 'Open the failure in the dashboard',
+          command: 'piwi.openInDashboard',
+          arguments: [`${url}/test-run-cases/900`],
+        },
+      },
+      {
+        line: 6,
+        title: 'Screenshot',
+        command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
+      },
+      {
+        line: 6,
+        title: 'Trace',
+        command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
+      },
+    ]);
+
+    // The spec's line in the failing call chain shows the failure, with the message and the chain.
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/rows.spec.ts') },
+      position: { line: 6, character: 10 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    expect(hover.contents.value).toContain('```text\nError: locator.click: Timeout 5000ms exceeded.\nCall log:');
+    expect(hover.contents.value).toContain(
+      `Called from [checkout.page.ts:5](${uri('tests/pages/checkout.page.ts')}#L5) ← [rows.spec.ts:7](${uri('tests/rows.spec.ts')}#L7)`,
+    );
+    const elsewhere = await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/rows.spec.ts') },
+      position: { line: 5, character: 10 },
+    });
+    expect(elsewhere).toBeNull();
+
+    const shot = (await client.sendRequest('piwi/screenshot', evidence)) as ScreenshotResult;
+    expect(fs.readFileSync(shot.path, 'utf-8')).toBe('PK-stub');
+    expect(await client.sendRequest('piwi/screenshot', { ...evidence, executionId: 1 })).toBeNull();
   });
 
   test('lists the tests of a file and the command that runs them', async () => {

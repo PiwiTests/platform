@@ -78,6 +78,7 @@ import {
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
+  SCREENSHOT_REQUEST,
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
@@ -98,11 +99,14 @@ import {
   type RunCommand,
   type RunStatusResult,
   type RunSelectionParams,
+  type ScreenshotParams,
+  type ScreenshotResult,
   type SelectionsParams,
   type SelectionsResult,
   type RunTestsArgs,
   type StatusResult,
   type SummaryLine,
+  type TestFailure,
   type TestLineStatus,
   type TestsForFile,
   type TestsForFileParams,
@@ -168,6 +172,23 @@ function plural(n: number, one: string, many = `${one}s`): string {
 /** A catalog status as a test line shows it. */
 function testLineStatus(status: string | null | undefined): TestLineStatus {
   return status === 'passed' || status === 'failed' || status === 'flaky' || status === 'skipped' ? status : 'unknown';
+}
+
+/** Whether two absolute paths name the same file (case-insensitively on Windows). */
+function samePath(a: string, b: string): boolean {
+  return path.relative(a, b) === '';
+}
+
+function clip(text: string, max: number): string {
+  const line = text.split('\n')[0]!.trim();
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
+/** A Markdown code block around a text, its fence longer than any run of backticks in it. */
+function fenced(text: string): string {
+  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
+  const fence = '`'.repeat(longest + 1);
+  return `${fence}text\n${text}\n${fence}`;
 }
 
 function testCounts(tests: Array<{ status: string | null }>): string {
@@ -244,6 +265,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (located && at) return { file: located, line: at.line };
     const spec = resolveReportedFile(roots, f.file);
     return spec ? { file: spec, line: f.line ?? 1 } : null;
+  };
+
+  /** A failure's stack frames that are workspace files, innermost first; kept until the run is read again. */
+  const resolvedFrames = new WeakMap<BranchFailure, Array<{ file: string; line: number }>>();
+  const localFrames = (context: PiwiContext, f: BranchFailure): Array<{ file: string; line: number }> => {
+    const known = resolvedFrames.get(f);
+    if (known) return known;
+    const roots = [context.root, context.repoRoot];
+    const frames = (f.frames?.length ? f.frames : f.location ? [f.location] : []).flatMap((location) => {
+      const at = splitLocation(location);
+      const file = at ? resolveReportedFile(roots, at.file) : null;
+      return file && at ? [{ file, line: at.line }] : [];
+    });
+    resolvedFrames.set(f, frames);
+    return frames;
+  };
+
+  /**
+   * The 0-based line of `file` a failure went through: its innermost frame within `from`–`to` (the test),
+   * else within the file, else `from`.
+   */
+  const failureLine = (context: PiwiContext, f: BranchFailure, file: string, from: number, to: number): number => {
+    const here = localFrames(context, f)
+      .filter((frame) => samePath(frame.file, file))
+      .map((frame) => frame.line - 1);
+    return here.find((line) => line >= from && line <= to) ?? here[0] ?? from;
   };
 
   /** Rebuild the failure diagnostics of every context, and publish the files whose set changed. */
@@ -883,22 +930,40 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   connection.onHover(async (params): Promise<Hover | null> => {
-    const failures = (failureDiagnostics.get(params.textDocument.uri) ?? []).filter(
-      (d) => d.range.start.line === params.position.line,
-    );
+    const file = uriToPath(params.textDocument.uri);
+    const found = new Map<number, { context: PiwiContext; failure: BranchFailure }>();
+    for (const d of failureDiagnostics.get(params.textDocument.uri) ?? []) {
+      if (d.range.start.line !== params.position.line) continue;
+      const hit = failureOf(d.data as FailureData);
+      if (hit) found.set(hit.failure.executionId, hit);
+    }
+    // A line of the failing call chain (the test's own line calling a page object) shows the failure too.
+    const context = file ? contextFor(file) : null;
+    for (const failure of context?.failures?.failures ?? []) {
+      const through = localFrames(context!, failure).some(
+        (frame) => frame.line - 1 === params.position.line && samePath(frame.file, file!),
+      );
+      if (through && !found.has(failure.executionId)) found.set(failure.executionId, { context: context!, failure });
+    }
     const analysis = await hoverOfAnalysis(params);
-    if (!failures.length) return analysis;
+    if (!found.size) return analysis;
     const parts: string[] = [];
-    for (const d of failures) {
-      const found = failureOf(d.data as FailureData);
-      if (!found) continue;
-      const { context, failure } = found;
+    for (const { context, failure } of found.values()) {
       const shot = failure.screenshot ? await context.evidence(failure.screenshot) : null;
       const issues = await context.issuesOf(failure);
+      const message = failure.message?.trim();
+      const chain = localFrames(context, failure)
+        .slice(0, 5)
+        .map(
+          (frame) => `[${path.basename(frame.file)}:${frame.line}](${pathToFileURL(frame.file).href}#L${frame.line})`,
+        );
       parts.push(
         [
           `**CI failure** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · run #${context.failures?.run?.id ?? ''}`,
-          failure.headline ?? '',
+          message && message !== failure.headline
+            ? `${failure.headline ?? ''}\n\n${fenced(message)}`
+            : (failure.headline ?? ''),
+          chain.length > 1 ? `Called from ${chain.join(' ← ')}` : '',
           ...issues.map(
             (l) =>
               `Known issue: [${[l.key, l.title].filter(Boolean).join(' ').replace(/[[\]]/g, '') || l.url}](${l.url})${l.statusText ? ` · ${l.statusText}` : ''}`,
@@ -1003,7 +1068,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
       const casesByTitle = new Map(cases.map((c) => [c.title, c]));
-      const failingNow = new Set((context.failures?.failures ?? []).map((f) => f.testCaseId));
+      const failingNow = new Map<number, BranchFailure>();
+      for (const f of context.failures?.failures ?? [])
+        if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
+      /** The reason and the evidence of each failure, above its failing line: first on that line. */
+      const reasons: SummaryLine[] = [];
       lines.forEach((text, i) => {
         const m = TEST_CALL.exec(text);
         const found = m ? casesByTitle.get(m[2]!) : undefined;
@@ -1032,6 +1101,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ].join('')
           : '';
         const open = text.indexOf('(', m!.index);
+        const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
+        const failed = failingNow.get(found.id);
+        const failure: TestFailure | undefined = failed && {
+          line: failureLine(context, failed, file, i, endLine),
+          headline: failed.headline,
+          message: failed.message ?? null,
+          executionId: failed.executionId,
+          url: context.client!.executionUrl(failed.executionId),
+        };
         out.push({
           line: i,
           title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
@@ -1040,9 +1118,35 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: 'piwi.openInDashboard',
             arguments: [context.client!.testUrl(found.id)],
           },
-          status: failingNow.has(found.id) ? 'failed' : testLineStatus(found.status),
-          endLine: (open >= 0 ? callEndLine(lines, i, open) : null) ?? i,
+          status: failed ? 'failed' : testLineStatus(found.status),
+          endLine,
+          ...(failure ? { failure } : {}),
         });
+        if (!failed || !failure) return;
+        const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
+        reasons.push({
+          line: failure.line,
+          title: `✗ ${clip(failed.headline ?? 'Failed', 120)}`,
+          command: {
+            title: 'Open the failure in the dashboard',
+            command: 'piwi.openInDashboard',
+            arguments: [failure.url],
+          },
+        });
+        if (failed.screenshot) {
+          reasons.push({
+            line: failure.line,
+            title: 'Screenshot',
+            command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
+          });
+        }
+        if (failed.traces.length) {
+          reasons.push({
+            line: failure.line,
+            title: 'Trace',
+            command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
+          });
+        }
       });
       const fileLine: SummaryLine | null = cases.length
         ? {
@@ -1056,7 +1160,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: run(cases.map((c) => c.id)),
           }
         : null;
-      return { file: fileLine, lines: out.sort((a, b) => a.line - b.line) };
+      return { file: fileLine, lines: [...reasons, ...out].sort((a, b) => a.line - b.line) };
     }
 
     const repoRelative = relativeTo(context.repoRoot, file);
@@ -1198,6 +1302,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const trace = await context.evidence(failure.traces[failure.traces.length - 1]!);
       if (!trace) return null;
       return { path: trace, cwd: context.root, command: `npx playwright show-trace "${trace}"` };
+    }
+    return null;
+  });
+
+  connection.onRequest(SCREENSHOT_REQUEST, async (params: ScreenshotParams): Promise<ScreenshotResult | null> => {
+    const file = uriToPath(params.uri);
+    const candidates = [file ? contextFor(file) : null, ...contexts].filter((c): c is PiwiContext => !!c);
+    for (const context of candidates) {
+      const failure = context.failures?.failures.find((f) => f.executionId === params.executionId);
+      if (!failure?.screenshot) continue;
+      const shot = await context.evidence(failure.screenshot);
+      return shot ? { path: shot } : null;
     }
     return null;
   });

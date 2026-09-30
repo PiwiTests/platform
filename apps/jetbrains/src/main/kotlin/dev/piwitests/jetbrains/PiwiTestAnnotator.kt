@@ -18,8 +18,9 @@ import javax.swing.Icon
 
 /**
  * Each test's latest result on the test itself (`piwi/fileSummary`): an icon in the gutter, its
- * details as the tooltip and a click opening it in the dashboard, and a background over a failing
- * test. The summary is fetched outside the read action.
+ * details as the tooltip and a click opening it in the dashboard, a background over a failing
+ * test, and a stronger one on the line it failed at, with why as the tooltip. The summary is
+ * fetched outside the read action.
  */
 class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>() {
     class Target(val project: Project, val uri: String)
@@ -40,11 +41,11 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
 
     override fun apply(file: PsiFile, lines: List<SummaryLine>?, holder: AnnotationHolder) {
         val document = file.viewProvider.document ?: return
+        val text = document.charsSequence
         for (line in lines.orEmpty()) {
             if (line.line !in 0 until document.lineCount) continue
             val start = document.getLineStartOffset(line.line)
             val end = document.getLineEndOffset(line.line)
-            val text = document.charsSequence
             var first = start
             while (first < end && text[first].isWhitespace()) first++
             if (first == end) continue
@@ -52,11 +53,26 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 .range(TextRange(first, end))
                 .gutterIconRenderer(TestResultGutter(file.project, line))
                 .create()
+            val failure = line.failure?.takeIf { it.line in 0 until document.lineCount }
+            val failedAt = failure?.let { TextRange(document.getLineStartOffset(it.line), document.getLineEndOffset(it.line)) }
             if (line.status == "failed") {
                 val last = (line.endLine ?: line.line).coerceIn(line.line, document.lineCount - 1)
+                val test = TextRange(start, document.getLineEndOffset(last))
+                // Two backgrounds on one line have no set order: the test's goes around the failing line.
+                val parts = if (failedAt != null && test.contains(failedAt)) {
+                    listOf(TextRange(test.startOffset, failedAt.startOffset), TextRange(failedAt.endOffset, test.endOffset))
+                } else {
+                    listOf(test)
+                }
+                for (part in parts.filterNot { it.isEmpty }) {
+                    holder.newSilentAnnotation(HighlightSeverity.INFORMATION).range(part).textAttributes(FAILING_TEST).create()
+                }
+            }
+            if (failure != null && failedAt != null && !failedAt.isEmpty) {
                 holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
-                    .range(TextRange(start, document.getLineEndOffset(last)))
-                    .textAttributes(FAILING_TEST)
+                    .range(failedAt)
+                    .textAttributes(FAILING_LINE)
+                    .tooltip(Glue.failureTooltip(failure.headline, failure.message))
                     .create()
             }
         }
@@ -92,5 +108,8 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
     companion object {
         /** The background of a failing test: **Settings → Editor → Color Scheme → Piwi**, light red by default. */
         val FAILING_TEST: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_FAILING_TEST")
+
+        /** The line a failing test failed at, over its background: a stronger red by default. */
+        val FAILING_LINE: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_FAILING_LINE")
     }
 }

@@ -11,7 +11,7 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/failures`, `piwi/trace`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, the `piwi/setCredentials` notification and the
+  `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, the `piwi/setCredentials` notification and the
   `piwi/runStatusChanged` and `piwi/statusChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
   files only (the JetBrains IDEs).
@@ -20,6 +20,9 @@ clients stay thin and both editors give the same answers.
   Its failures are published as `ci-failure` diagnostics in every file they point to, merged with the analysis of
   open documents. On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
+  A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
+  the frames and the message in `branch-failures`), above which the reason, **Screenshot** and **Trace** are ordinary
+  summary lines; the hover on any line of that stack shows the message and the call chain.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.
@@ -29,7 +32,7 @@ clients stay thin and both editors give the same answers.
 ## Rules
 
 - **The protocol is a contract.** A client of an older version talks to this server, and a published client's
-  commands (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`) are named in `SummaryLine.command`. A change to `protocol.ts`
+  commands (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`) are named in `SummaryLine.command`. A change to `protocol.ts`
   lands with both clients in the same change, and a renamed request or command is a breaking change.
 - **Nothing blocks typing.** The project's indexes, failures, function catalog and vocabulary are fetched on the
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials`, and requests answer from them. What belongs to one

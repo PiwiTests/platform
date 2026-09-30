@@ -8,14 +8,17 @@ import com.intellij.openapi.options.colors.ColorDescriptor
 import com.intellij.openapi.options.colors.ColorSettingsPage
 import javax.swing.Icon
 
-/** **Settings → Editor → Color Scheme → Piwi**: the background of a failing test. */
+/** **Settings → Editor → Color Scheme → Piwi**: the background of a failing test, and of the line it failed at. */
 class PiwiColorSettingsPage : ColorSettingsPage {
     override fun getDisplayName(): String = "Piwi"
 
     override fun getIcon(): Icon? = null
 
     override fun getAttributeDescriptors(): Array<AttributesDescriptor> =
-        arrayOf(AttributesDescriptor("Failing test", PiwiTestAnnotator.FAILING_TEST))
+        arrayOf(
+            AttributesDescriptor("Failing test", PiwiTestAnnotator.FAILING_TEST),
+            AttributesDescriptor("Line it failed at", PiwiTestAnnotator.FAILING_LINE),
+        )
 
     override fun getColorDescriptors(): Array<ColorDescriptor> = ColorDescriptor.EMPTY_ARRAY
 
@@ -23,12 +26,13 @@ class PiwiColorSettingsPage : ColorSettingsPage {
 
     override fun getDemoText(): String =
         "<failing>test('pays', async ({ page }) => {\n" +
-            "  await page.getByRole('button', { name: 'Pay' }).click();\n" +
+            "  await page.goto('/checkout');\n" +
+            "  <line>await page.getByRole('button', { name: 'Pay' }).click();</line>\n" +
             "});</failing>\n\n" +
             "test('lists the cart', async ({ page }) => {\n" +
             "  await expect(page.getByRole('row')).toHaveCount(2);\n" +
             "});\n"
 
     override fun getAdditionalHighlightingTagToDescriptorMap(): Map<String, TextAttributesKey> =
-        mapOf("failing" to PiwiTestAnnotator.FAILING_TEST)
+        mapOf("failing" to PiwiTestAnnotator.FAILING_TEST, "line" to PiwiTestAnnotator.FAILING_LINE)
 }

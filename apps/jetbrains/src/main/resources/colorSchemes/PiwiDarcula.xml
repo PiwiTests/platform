@@ -5,4 +5,10 @@
       <option name="ERROR_STRIPE_COLOR" value="7a3b3b"/>
     </value>
   </option>
+  <option name="PIWI_FAILING_LINE">
+    <value>
+      <option name="BACKGROUND" value="5e2f31"/>
+      <option name="ERROR_STRIPE_COLOR" value="b04a4a"/>
+    </value>
+  </option>
 </list>

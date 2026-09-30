@@ -41,8 +41,9 @@ On a failure, the quick fixes are:
   agent.
 - **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
 
-Hover the line for the failure screenshot, and the tickets linked to the failure's cluster or test with their status.
-Without one, **File an issue** opens the cluster in the dashboard, where issues are created.
+Hover the line for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
+cluster or test with their status. Without one, **File an issue** opens the cluster in the dashboard, where issues are
+created.
 
 ## The status bar
 
@@ -60,19 +61,22 @@ Lines above the code (CodeLens):
 | An application file | the tests that reach it, from [code reach](/features/code-reach) | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
 
+In a failing test, the line it failed at (in the spec, the line that calls the page object) is tinted darker, with the
+reason, **Screenshot** and **Trace** above it.
+
 **Piwi: Run the tests that reach this file** runs them in a terminal, with the arguments `piwi run` would use;
 **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
 
 ## Timeouts
 
-A test whose `test.slow()` is no longer needed, or whose timeout is far above its p95, gets a note on its line with the
-time a tighter one saves on each failing run, and a quick fix: remove the `test.slow()`, or set `test.setTimeout` to the
+A test whose `test.slow()` is no longer needed, or whose timeout is far above its p95, gets a note on its line and a
+quick fix: remove the `test.slow()`, or set `test.setTimeout` to the
 suggested value.
 
 ## Completion
 
 - After `page.` (or `this.page.`) in a spec or a page object: the locator chains your suite already uses on the pages
-  this file's tests visit, most used first and brittle ones last, each with its test count, its pages and its stability.
+  this file's tests visit, most used first and brittle ones last.
 - At the start of a statement: the [functions](/features/test-functions) of your catalog whose URL pattern matches
   those pages, as a call with a placeholder per parameter.
 - In a `piwi:` annotation: the types (`piwi:owner`, `piwi:priority`, `piwi:feature`, `piwi:link`), then the owners your
@@ -124,8 +128,7 @@ cursor:
    [`piwi codegen --body`](/reference/cli#codegen), with the project's functions and the locators its tests already
    use.
 
-The editor listens on the loopback interface only (VS Code on its own port, a JetBrains IDE on its built-in server),
-and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
+The editor listens on the loopback interface only, and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
 the one that paired receives.
 
 ## JetBrains IDEs
@@ -137,9 +140,8 @@ files; the rest is native:
 
 - **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
   failures, since the IDE highlights open files only. Double-click
-  one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
-  opens in the Run tool window.
-- **Code Vision** shows the lines above files and locators; each test's result is in the gutter.
+  one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link.
+- **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
 - **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this
   file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI

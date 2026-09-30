@@ -202,6 +202,13 @@ describe('the tests of a file', () => {
           title: 'passed 1/4 · failed',
           status: 'failed',
           endLine: 6,
+          failure: {
+            line: 5,
+            headline: 'not found',
+            message: null,
+            executionId: 90,
+            url: 'http://piwi/test-run-cases/90',
+          },
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',
@@ -215,10 +222,18 @@ describe('the tests of a file', () => {
         status: 'failed',
         line: 3,
         failingUntil: 6,
+        failingLine: 5,
         hover: '**Piwi**: failing · passed 1/4 · failed',
         dashboardUrl: 'http://piwi/test-cases/9',
       },
-      { status: 'passed', line: 8, failingUntil: null, hover: '**Piwi**: passing · passed 4/4', dashboardUrl: null },
+      {
+        status: 'passed',
+        line: 8,
+        failingUntil: null,
+        failingLine: null,
+        hover: '**Piwi**: passing · passed 4/4',
+        dashboardUrl: null,
+      },
     ]);
   });
 
