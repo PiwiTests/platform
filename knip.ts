@@ -27,8 +27,9 @@ const config: KnipConfig = {
         'server/database/schema.*.ts',
       ],
       ignore: ['public/**'],
-      // Provided by Nuxt.
-      ignoreDependencies: ['vue', 'h3', 'nitropack'],
+      // `vue`, `h3` and `nitropack` come with Nuxt; Nuxt Icon loads the installed `@iconify-json/*`
+      // collections; `nuxt typecheck` runs `vue-tsc`.
+      ignoreDependencies: ['vue', 'h3', 'nitropack', '@iconify-json/lucide', '@iconify-json/simple-icons', 'vue-tsc'],
     },
     'apps/extension': {
       // The standalone bundles `scripts/build.mjs` builds, plus the HTML pages' scripts.
