@@ -199,10 +199,6 @@ onDebuggerLost((tabId, purposes) => {
   if (purposes.includes('viewport')) void clearTabViewport(tabId);
 });
 
-export function conditionsThroughDebugger(tabId: number): boolean {
-  return holdsDebugger(tabId, 'conditions');
-}
-
 /** Called when the conditions' session ends without being released: the person cancelled the bar. */
 export function onConditionsDebuggerLost(fallback: (tabId: number, reason: 'canceled' | 'lost') => void): void {
   onDebuggerLost((tabId, purposes, reason) => {

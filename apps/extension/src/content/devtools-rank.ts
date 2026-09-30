@@ -1,6 +1,5 @@
-import { tryParseLocatorChain } from '@piwitests/core/locator-chain';
+import { parseLocatorChain, tryParseLocatorChain } from '@piwitests/core/locator-chain';
 import { assessLocatorChain, type LocatorStabilityRuleId } from '@piwitests/core/locator-stability';
-import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { normalizeWhiteSpace } from './engine-aria.js';
 import { attachPanelShadow } from './panel-root.js';
 import {

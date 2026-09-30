@@ -82,10 +82,6 @@ export async function updateReplayState(change: (state: ReplayState) => ReplaySt
   return next;
 }
 
-export async function clearReplayState(): Promise<void> {
-  await sessionArea().remove(REPLAY_KEY);
-}
-
 /** A new replay of `steps` on `origin`, from its first step. */
 export function newReplayState(
   steps: PiwiSteps,
