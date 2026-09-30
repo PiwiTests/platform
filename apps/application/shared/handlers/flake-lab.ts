@@ -139,7 +139,10 @@ export interface FlakePlanOptions {
   commit?: string | null;
   source?: FlakeExperimentSource;
   machine?: string | null;
-  /** Runs of the control and of each arm; a verify plan defaults to the D9 count. */
+  /**
+   * Runs of the control and of each arm; a verify plan defaults to
+   * `flakeVerifyRuns` of the rate the test reproduced at.
+   */
   runs?: number | null;
   now?: Date;
 }
@@ -591,7 +594,7 @@ export function judgeReproduce(arms: FlakeArmResultInput[]): {
 
 /**
  * The verdict of a verify experiment: verified when the rerun arm had no
- * matching failure in at least the D9 number of runs for the rate it reproduced
+ * matching failure in at least `flakeVerifyRuns` runs for the rate it reproduced
  * at, still failing when it had one, inconclusive with too few runs. Pure.
  */
 function judgeVerify(
