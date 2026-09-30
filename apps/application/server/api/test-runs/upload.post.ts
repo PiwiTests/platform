@@ -528,7 +528,10 @@ export default eventHandler(async (event) => {
       };
     });
 
+    // Traces and attachments are keyed by the index of their case in the
+    // upload; a duplicate case the insert skipped has no execution to link to.
     const insertedRunCases = await persistRunCases(db, project.id, testRun.id, cases);
+    const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
     // Store trace files linked to their test run case, with content-addressed deduplication.
     // traceHashes may contain entries for indices where no file was uploaded (reporter
@@ -538,10 +541,9 @@ export default eventHandler(async (event) => {
     // Execution rows that got a trace this upload — evidence is derived from
     // them once all files are stored.
     const tracedCaseIds: number[] = [];
-    if (insertedRunCases.length > 0 && allTraceIndices.size > 0) {
+    if (executionByIndex.size > 0 && allTraceIndices.size > 0) {
       for (const index of allTraceIndices) {
-        if (index < 0 || index >= insertedRunCases.length) continue;
-        const inserted = insertedRunCases[index];
+        const inserted = executionByIndex.get(index);
         if (!inserted?.id) continue;
         const testRunsCaseId = inserted.id;
         const traceFile = traceFiles.get(index);
@@ -600,10 +602,9 @@ export default eventHandler(async (event) => {
     }
 
     // Store non-trace attachments (screenshots, videos, custom files) linked to test run cases
-    if (insertedRunCases.length > 0 && attachmentMeta.size > 0) {
+    if (executionByIndex.size > 0 && attachmentMeta.size > 0) {
       for (const [index, metaList] of attachmentMeta) {
-        if (index < 0 || index >= insertedRunCases.length) continue;
-        const inserted = insertedRunCases[index];
+        const inserted = executionByIndex.get(index);
         if (!inserted?.id) continue;
         const testRunsCaseId = inserted.id;
         const filesList = attachmentFiles.get(index) || [];

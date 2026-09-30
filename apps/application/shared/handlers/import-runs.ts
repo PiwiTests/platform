@@ -57,16 +57,17 @@ export async function toBytes(value: StorableBytes): Promise<Uint8Array> {
 /** What an import needs from its host runtime. */
 export interface ImportPort {
   /**
-   * Persist executions and return the inserted junction rows **in input
-   * order**, so files can be linked by position. The server and the demo have
-   * separate implementations of this already.
+   * Persist executions and return the inserted junction rows, each with the
+   * index of the case it came from, so files are linked by `inputIndex`. A case
+   * deduplicated on the junction's unique key returns no row. The server and
+   * the demo have separate implementations of this already.
    */
   persistRunCases(
     db: DrizzleDB,
     projectId: number,
     testRunId: number,
     cases: unknown[],
-  ): Promise<Array<{ id: number }>>;
+  ): Promise<Array<{ id: number; inputIndex: number }>>;
 
   /**
    * Write one file and report where it landed, or null if it could not be
@@ -276,61 +277,58 @@ export async function importBlobReportRun(
     parsed.cases.map((entry) => entry.case),
   );
 
-  // Files link by position, which only holds when every case produced a row. A
-  // repeatEach run collides on the junction's unique key and drops one; linking
-  // anyway would attach evidence to the wrong test.
-  const aligned = insertedCases.length === parsed.cases.length;
-  if (!aligned) {
+  // A repeatEach run collides on the junction's unique key and drops a case;
+  // the files of a dropped case have no execution to link to.
+  const executionByIndex = new Map(insertedCases.map((row) => [row.inputIndex, row.id]));
+  if (insertedCases.length < parsed.cases.length) {
     port.warn?.(
-      `${parsed.cases.length - insertedCases.length} of ${parsed.cases.length} executions were deduplicated; skipping file links for run #${run.id}`,
+      `${parsed.cases.length - insertedCases.length} of ${parsed.cases.length} executions were deduplicated in run #${run.id}; their files are not linked`,
     );
   }
 
   let traceCount = 0;
   let attachmentCount = 0;
 
-  if (aligned) {
-    for (const [index, entry] of parsed.cases.entries()) {
-      const testRunsCaseId = insertedCases[index]?.id;
-      if (!testRunsCaseId) continue;
+  for (const [index, entry] of parsed.cases.entries()) {
+    const testRunsCaseId = executionByIndex.get(index);
+    if (!testRunsCaseId) continue;
 
-      for (const staged of stagedTraces.get(index) ?? []) {
-        await db.insert(files).values({
-          testRunsCaseId,
-          testRunId: run.id,
-          type: 'trace',
-          path: staged.file.path,
-          size: staged.file.size,
-          blobId: staged.file.blobId ?? null,
-        });
-        traceCount++;
-      }
+    for (const staged of stagedTraces.get(index) ?? []) {
+      await db.insert(files).values({
+        testRunsCaseId,
+        testRunId: run.id,
+        type: 'trace',
+        path: staged.file.path,
+        size: staged.file.size,
+        blobId: staged.file.blobId ?? null,
+      });
+      traceCount++;
+    }
 
-      for (const ref of entry.attachments) {
-        const bytes = await readEntry(ref.entry);
-        if (!bytes) continue;
-        const stored = await port.storeFile({
-          projectId,
-          testRunId: run.id,
-          testRunsCaseId,
-          kind: 'attachment',
-          entryName: ref.entry,
-          bytes,
-        });
-        if (!stored) continue;
+    for (const ref of entry.attachments) {
+      const bytes = await readEntry(ref.entry);
+      if (!bytes) continue;
+      const stored = await port.storeFile({
+        projectId,
+        testRunId: run.id,
+        testRunsCaseId,
+        kind: 'attachment',
+        entryName: ref.entry,
+        bytes,
+      });
+      if (!stored) continue;
 
-        await db.insert(files).values({
-          testRunsCaseId,
-          testRunId: run.id,
-          type: 'attachment',
-          subtype: ref.name,
-          label: ref.contentType,
-          path: stored.path,
-          size: stored.size,
-          blobId: stored.blobId ?? null,
-        });
-        attachmentCount++;
-      }
+      await db.insert(files).values({
+        testRunsCaseId,
+        testRunId: run.id,
+        type: 'attachment',
+        subtype: ref.name,
+        label: ref.contentType,
+        path: stored.path,
+        size: stored.size,
+        blobId: stored.blobId ?? null,
+      });
+      attachmentCount++;
     }
   }
 
