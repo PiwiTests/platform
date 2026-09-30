@@ -12,7 +12,7 @@ import type { LocatorArg } from './artifact.js';
  * so a missing or misspelled parameter is a compile error. Placeholder names are
  * assumed brace-free (`{email}`, not `{a{b}}`).
  */
-export type ExtractParams<S extends string> = S extends `${string}{${infer Param}}${infer Rest}`
+type ExtractParams<S extends string> = S extends `${string}{${infer Param}}${infer Rest}`
   ? Param | ExtractParams<Rest>
   : never;
 

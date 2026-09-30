@@ -95,7 +95,7 @@ function overlaps(a: FlakeResultLine, b: FlakeResultLine): boolean {
 }
 
 /** The `alongside` or `after` condition of an arm, if any. */
-export function workerCondition(conditions: FlakeCondition[]): FlakeAlongsideCondition | FlakeAfterCondition | null {
+function workerCondition(conditions: FlakeCondition[]): FlakeAlongsideCondition | FlakeAfterCondition | null {
   for (const c of conditions) if (c.kind === 'alongside' || c.kind === 'after') return c;
   return null;
 }
@@ -231,8 +231,8 @@ export function verifyVerdict(arm: ArmCount, reproducedRate: number): VerifyVerd
   return flakeFixVerified(arm, reproducedRate) ? 'verified' : 'inconclusive';
 }
 
-export const EXIT_REPRODUCED = 0;
-export const EXIT_NOT_REPRODUCED = 1;
+const EXIT_REPRODUCED = 0;
+const EXIT_NOT_REPRODUCED = 1;
 export const EXIT_ERROR = 2;
 /** A bisect step that cannot judge its commit: the code `git bisect run` skips on. */
 export const EXIT_BISECT_SKIP = 125;

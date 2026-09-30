@@ -145,7 +145,7 @@ export interface ProjectContext {
 }
 
 /** The converter's options for these arguments. */
-export function codegenOptions(args: CodegenArgs, steps: PiwiSteps, project: ProjectContext | null): CodegenOptions {
+function codegenOptions(args: CodegenArgs, steps: PiwiSteps, project: ProjectContext | null): CodegenOptions {
   return {
     title: args.title ?? steps.title ?? undefined,
     testImport: args.testImport ?? undefined,

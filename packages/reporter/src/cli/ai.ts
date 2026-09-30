@@ -124,7 +124,7 @@ export function buildResolveInvocation(argv: string[], env: NodeJS.ProcessEnv): 
 }
 
 /** `piwi ai resolve` — run the suite in resolve mode so misses get authored + committed. */
-export function runResolve(argv: string[], env: NodeJS.ProcessEnv): number {
+function runResolve(argv: string[], env: NodeJS.ProcessEnv): number {
   if (!env.PIWI_DASHBOARD_URL) {
     console.error('piwi ai resolve: set PIWI_DASHBOARD_URL (the authoring server) before resolving.');
     return EXIT_ERROR;

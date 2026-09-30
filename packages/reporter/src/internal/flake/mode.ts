@@ -149,7 +149,7 @@ export function cdpCommandFor(condition: FlakeCondition): { method: string; para
 }
 
 /** The route action a `delay` or `fail` condition performs. */
-export function conditionRouteAction(condition: FlakeCondition): RouteAction | null {
+function conditionRouteAction(condition: FlakeCondition): RouteAction | null {
   if (condition.kind === 'delay') return { kind: 'delay', ms: condition.ms };
   if (condition.kind === 'fail')
     return 'abort' in condition ? { kind: 'abort' } : { kind: 'status', status: condition.status };

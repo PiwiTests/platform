@@ -89,7 +89,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
 }
 
 /** Distinct-test run counts (one entry per test, not per attempt). */
-export interface RunCounts {
+interface RunCounts {
   totalTests: number;
   passedTests: number;
   failedTests: number;

@@ -14,7 +14,7 @@ const PIWI_MODULE = '@piwitests/reporter';
  * screenshot are what the dashboard derives the DOM snapshot, full stack, full
  * network and visual diff from without the capture fixtures.
  */
-export const CAPTURE_DEFAULTS = {
+const CAPTURE_DEFAULTS = {
   screenshot: 'only-on-failure',
   trace: 'retain-on-failure',
 } as const;

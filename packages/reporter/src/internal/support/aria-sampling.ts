@@ -22,7 +22,7 @@ export function ariaSampleIdentity(filePath: string, title: string): string {
 }
 
 /** Temp-file path holding the sample set, keyed by project so runs don't collide. */
-export function getAriaSampleFilePath(projectName: string): string {
+function getAriaSampleFilePath(projectName: string): string {
   return path.join(os.tmpdir(), `piwi-dashboard-aria-sample-${hashForProject(projectName)}.json`);
 }
 

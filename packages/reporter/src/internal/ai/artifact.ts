@@ -34,7 +34,7 @@ export interface StructuredLocator {
 }
 
 /** How a postcondition is asserted after a flow (the oracle, D4). */
-export type PostconditionAssert = 'visible' | 'hidden' | 'attached' | 'url';
+type PostconditionAssert = 'visible' | 'hidden' | 'attached' | 'url';
 
 export interface Postcondition {
   assert: PostconditionAssert;
