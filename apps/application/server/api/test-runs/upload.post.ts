@@ -19,6 +19,7 @@ import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { resolveIngestProject } from '../../utils/ingest-project';
 import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { formatBytes } from '#shared/utils/format-bytes';
@@ -229,34 +230,12 @@ export default eventHandler(async (event) => {
   }
 
   if (!project) {
-    // Get or create project by name
-    const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName));
-    project = existingProjects[0];
-
-    if (project) {
-      if (!scopeAllows(scope, project.id)) {
-        throw apiError({ statusCode: 403, message: 'No access to this project' });
-      }
-    } else {
-      if (scope !== 'all') {
-        throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-      }
-      const result = await db
-        .insert(projects)
-        .values({
-          name: projectName,
-          description: (testRunData.projectDescription as string | null | undefined) || null,
-        })
-        .returning();
-      project = result[0];
-    }
-  }
-
-  if (!project) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create or retrieve project',
-    });
+    project = await resolveIngestProject(
+      db,
+      scope,
+      projectName,
+      testRunData.projectDescription as string | null | undefined,
+    );
   }
 
   // Create project directory in storage

@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { getDatabase } from '../../database';
-import { projects, testRuns } from '../../database/schema';
+import { testRuns } from '../../database/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { parseLocation } from '../../utils/parse-location';
@@ -10,7 +10,8 @@ import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { getProjectScope } from '../../utils/project-access';
+import { resolveIngestProject } from '../../utils/ingest-project';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 
@@ -58,34 +59,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
 
-  // Get or create project
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
-  let project = existingProjects[0];
-
-  if (project) {
-    if (!scopeAllows(scope, project.id)) {
-      throw apiError({ statusCode: 403, message: 'No access to this project' });
-    }
-  } else {
-    if (scope !== 'all') {
-      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-    }
-    const result = await db
-      .insert(projects)
-      .values({
-        name: body.projectName,
-        description: body.projectDescription || null,
-      })
-      .returning();
-    project = result[0];
-  }
-
-  if (!project) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create or retrieve project',
-    });
-  }
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
   const shardTotal = body.shardTotal as number | undefined;
   const instanceId = body.instanceId || null;
