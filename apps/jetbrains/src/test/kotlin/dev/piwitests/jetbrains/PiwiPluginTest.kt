@@ -51,10 +51,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
             assertEquals(EditorCredentials(null, null, null), service.credentials())
-            // The desktop app: a project only, no address and no key.
+            // A project only, no address and no key.
             service.saveCredentials("", "Shop", "pd_ignored")
             assertEquals(EditorCredentials(null, null, "Shop"), service.credentials())
+            // The desktop app, chosen on this machine: what is saved for the instance stays.
+            service.useDesktop("Mugs")
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs"), service.credentials())
+            service.useInstance()
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs"), service.credentials())
+            service.useDesktop(null)
             service.disconnect()
+            assertEquals(EditorCredentials(null, null, null), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
         } finally {
@@ -293,6 +300,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     Thread.sleep(100)
                 }
                 assertEquals("Acme Mugs", status?.contexts?.single()?.projectName)
+                assertEquals(NamedInstance(stub.url, "environment"), status?.contexts?.single()?.instance)
+                assertEquals(null, status?.desktopUrl)
 
                 // The latest run is read after the indexes: wait for it too.
                 var runs: RunStatusResult? = null

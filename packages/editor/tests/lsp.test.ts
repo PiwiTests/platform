@@ -842,6 +842,52 @@ describe('the desktop app', () => {
   });
 });
 
+describe('the desktop app chosen with Connect', () => {
+  test('comes before the instance the environment names, which the status keeps, and says so', async () => {
+    const desktopFile = path.join(dir, '.desktop-chosen.json');
+    fs.writeFileSync(desktopFile, JSON.stringify({ url, token: 'pd_desktop', projects: [{ id: 7, path: dir }] }));
+    // The team's instance, not reachable from here.
+    const team = 'http://127.0.0.1:9';
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopChosen = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: team, PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+    });
+    const chosenClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const notified: StatusResult[] = [];
+    chosenClient.onNotification('piwi/statusChanged', (s: StatusResult) => {
+      notified.push(s);
+    });
+    chosenClient.listen();
+    try {
+      await chosenClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await chosenClient.sendNotification('initialized', {});
+      const before = await waitFor(() => notified.find((s) => s.contexts[0]?.problem));
+      expect(before.contexts[0]).toMatchObject({ source: 'environment', serverUrl: team, connected: false });
+      expect(before.desktopUrl).toBe(url);
+
+      await chosenClient.sendNotification('piwi/setCredentials', { desktop: true });
+      const after = await waitFor(() => notified.find((s) => s.contexts[0]?.connected));
+      expect(after.contexts[0]).toMatchObject({
+        source: 'desktop',
+        serverUrl: url,
+        projectName: 'Acme Mugs',
+        instance: { serverUrl: team, source: 'environment' },
+      });
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopChosen();
+      chosenClient.dispose();
+    }
+  });
+});
+
 describe('the bundle', () => {
   test('answers initialize over stdio', async (ctx) => {
     const bundle = path.join(__dirname, '..', 'dist', 'piwi-language-server.cjs');

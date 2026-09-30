@@ -1,5 +1,8 @@
 package dev.piwitests.jetbrains
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import java.io.IOException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
@@ -106,15 +109,16 @@ object Glue {
      * The status bar text: the latest run on the checked-out branch, or what keeps the service from reading it.
      * A null status means the service has not started: it starts with the first file of the project opened.
      */
-    fun statusView(status: StatusResult?, runs: RunStatusResult?): StatusView {
+    fun statusView(status: StatusResult?, runs: RunStatusResult?, desktopChosen: Boolean = false): StatusView {
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
+        val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else "\n$it" }
         val connected = contexts.firstOrNull { it.connected }
-            ?: return StatusView("Piwi: connect", contexts.first().problem ?: "Not connected", null, StatusAction.CONNECT)
+            ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "")
-        val from = connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: ""
+        val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
         val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet$from", null, StatusAction.NONE)
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
             "${r.flakyTests} flaky, ${r.skippedTests} skipped$from"
@@ -143,21 +147,108 @@ object Glue {
     }
 
     /** One sentence on the connection, for the tool window and the settings page. */
-    fun connectionSummary(status: StatusResult?): String {
+    fun connectionSummary(status: StatusResult?, desktopChosen: Boolean = false): String {
         if (status == null) return NOT_STARTED
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return "No Playwright config found in this project."
+        val hint = desktopHint(status, desktopChosen).let { if (it.isEmpty()) "" else " $it" }
         val c = contexts.firstOrNull { it.connected }
-            ?: return "Not connected. " + (contexts.first().problem ?: "")
+            ?: return "Not connected. " + (contexts.first().problem ?: "") + hint
         val branch = c.branch?.let { " on $it" } ?: ""
-        return "Connected to ${c.projectName ?: "Piwi"}$branch at ${c.serverUrl}, from ${sourceLabel(c.source)}."
+        return "Connected to ${c.projectName ?: "Piwi"}$branch at ${c.serverUrl}, from ${sourceLabel(c.source)}.$hint"
+    }
+
+    /**
+     * A sentence on the desktop app when it is not in use: it runs and Connect can switch to it,
+     * or it was chosen and does not run. Empty otherwise.
+     */
+    fun desktopHint(status: StatusResult?, desktopChosen: Boolean): String = when {
+        status == null || status.contexts.orEmpty().any { it.source == "desktop" } -> ""
+        status.desktopUrl != null -> "The Piwi desktop app runs on this machine: Connect to use it."
+        desktopChosen -> "The Piwi desktop app, chosen with Connect, is not running."
+        else -> ""
     }
 
     /** What Disconnect asks before forgetting the saved connection; null when nothing is saved. */
-    fun disconnectQuestion(serverUrl: String, project: String): String? = when {
-        serverUrl.isNotBlank() -> "Forget $serverUrl, the project, and the API key saved for it?"
-        project.isNotBlank() -> "Forget the project $project saved for the desktop app?"
-        else -> null
+    fun disconnectQuestion(serverUrl: String, project: String, desktop: Boolean = false): String? {
+        val parts = buildList {
+            if (serverUrl.isNotBlank()) add("$serverUrl, the project, and the API key saved for it")
+            else if (project.isNotBlank()) add("the project $project saved for the desktop app")
+            if (desktop) add("the choice of the desktop app")
+        }
+        return if (parts.isEmpty()) null else "Forget ${parts.joinToString(", and ")}?"
+    }
+
+    enum class ConnectTarget { DESKTOP, INSTANCE, OTHER }
+
+    /** A connection Connect offers when the desktop app runs. */
+    data class ConnectChoice(val target: ConnectTarget, val label: String, val detail: String, val serverUrl: String?, val inUse: Boolean)
+
+    /**
+     * What Connect offers when the desktop app runs: the app, the instance the environment, the
+     * `.env` or the settings name (the app does not replace it: either is one choice away), and
+     * another instance.
+     */
+    fun connectChoices(status: StatusResult?, desktop: DesktopResult, savedUrl: String): List<ConnectChoice> {
+        val contexts = status?.contexts.orEmpty()
+        val context = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull()
+        val usesDesktop = context?.source == "desktop"
+        val choices = mutableListOf(
+            ConnectChoice(
+                ConnectTarget.DESKTOP,
+                "The Piwi desktop app, at ${desktop.url}",
+                desktop.linked?.let { "Runs on this machine; this folder is linked there to the project ${it.name}." }
+                    ?: "Runs on this machine: no address or key needed.",
+                null,
+                usesDesktop,
+            ),
+        )
+        val named = context?.instance?.serverUrl?.let { it to context.instance.source }
+            ?: normalizeServerUrl(savedUrl)?.let { it to "editor" }
+        if (named != null && named.first != desktop.url) {
+            val (url, source) = named
+            choices += ConnectChoice(ConnectTarget.INSTANCE, url, "From ${sourceLabel(source)}.", url, !usesDesktop && context?.serverUrl == url)
+        }
+        choices += ConnectChoice(ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false)
+        return choices
+    }
+
+    /** The desktop app's discovery file: its address, its token, and the folders linked to its projects. */
+    data class DesktopDiscovery(val url: String, val token: String, val links: List<Pair<Int, String>>)
+
+    /** Where the desktop app publishes its discovery file while it runs: `PIWI_DESKTOP_CONFIG`, else `~/.piwi/desktop.json`. */
+    fun desktopConfigPath(env: Map<String, String>, home: String?): Path? =
+        env["PIWI_DESKTOP_CONFIG"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+            ?: home?.let { Path.of(it, ".piwi", "desktop.json") }
+
+    /** The running desktop app, from its discovery file's text; null when it is not one. */
+    fun parseDesktopDiscovery(text: String?): DesktopDiscovery? {
+        val json = runCatching { JsonParser.parseString(text ?: return null) as? JsonObject }.getOrNull() ?: return null
+        fun string(o: JsonObject, key: String) =
+            o.get(key)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString?.ifBlank { null }
+        val url = string(json, "url") ?: return null
+        val token = string(json, "token") ?: return null
+        val links = (json.get("projects") as? JsonArray)?.mapNotNull { entry ->
+            val link = entry as? JsonObject ?: return@mapNotNull null
+            val id = link.get("id")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt ?: return@mapNotNull null
+            string(link, "path")?.let { id to it }
+        }.orEmpty()
+        return DesktopDiscovery(url.trimEnd('/'), token, links)
+    }
+
+    /**
+     * The project the desktop app links to a folder: the linked folder that holds `dir`, or one
+     * inside it; the deepest wins.
+     */
+    fun linkedDesktopProject(links: List<Pair<Int, String>>, dir: Path?): Int? {
+        val folder = dir?.toAbsolutePath()?.normalize() ?: return null
+        return links
+            .filter { (_, path) ->
+                val linked = runCatching { Path.of(path).toAbsolutePath().normalize() }.getOrNull()
+                linked != null && (folder.startsWith(linked) || linked.startsWith(folder))
+            }
+            .maxByOrNull { it.second.length }
+            ?.first
     }
 
     /** An instance URL as it is stored: trimmed, without trailing slashes; null when it is not an http(s) URL. */

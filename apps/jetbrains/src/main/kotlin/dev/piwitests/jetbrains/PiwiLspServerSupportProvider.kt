@@ -107,4 +107,9 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     fun runStatusChanged(@Suppress("UNUSED_PARAMETER") status: RunStatusResult) {
         project.service<PiwiProjectService>().refreshStatus()
     }
+
+    @JsonNotification("piwi/statusChanged")
+    fun statusChanged(@Suppress("UNUSED_PARAMETER") status: StatusResult) {
+        project.service<PiwiProjectService>().refreshStatus()
+    }
 }

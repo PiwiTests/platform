@@ -96,8 +96,8 @@ export interface StatusResult {
     connected: boolean;
     serverUrl: string | null;
     /**
-     * Where `serverUrl` came from, in the fixed order: the environment, the
-     * workspace `.env`, the desktop app, or the editor's own settings.
+     * Where `serverUrl` came from: the environment, the workspace `.env`, the
+     * editor's own settings, or the desktop app.
      */
     source: ConnectionSource | null;
     projectId: number | null;
@@ -107,10 +107,25 @@ export interface StatusResult {
     reachedFiles: number;
     /** Why it is not connected, in one sentence. */
     problem: string | null;
+    /**
+     * The instance the environment, the workspace `.env` or the editor's
+     * settings name, in use or not: Connect offers it beside the desktop app.
+     * Null when none does.
+     */
+    instance?: { serverUrl: string; source: ConnectionSource } | null;
   }>;
+  /** The address of the desktop app running on this machine; null when it does not run. */
+  desktopUrl?: string | null;
 }
 
 export const STATUS_REQUEST = 'piwi/status';
+
+/**
+ * `piwi/statusChanged` (notification, server to client): what `piwi/status`
+ * answers changed, such as a connection, a project, or the desktop app starting
+ * or quitting; carries `StatusResult`.
+ */
+export const STATUS_NOTIFICATION = 'piwi/statusChanged';
 
 /**
  * `piwi/desktop`: the desktop app running on this machine, for Connect to offer
@@ -130,13 +145,22 @@ export const REFRESH_REQUEST = 'piwi/refresh';
 
 /**
  * `piwi/setCredentials` (notification): the connection the editor's own
- * settings hold, the API key from its secret store. Applied after the
- * environment, the workspace `.env` and the desktop app.
+ * settings hold, the API key from its secret store. `serverUrl` comes after
+ * the environment and the workspace `.env`, and before the desktop app; with
+ * `desktop`, the desktop app comes first while it runs.
  */
 export interface EditorCredentials {
   serverUrl?: string | null;
   apiKey?: string | null;
   project?: string | null;
+  /**
+   * Read the desktop app while it runs, before every other source: the choice
+   * made with Connect, kept on this machine only. The other sources count again
+   * when the app quits.
+   */
+  desktop?: boolean | null;
+  /** The desktop app's project with `desktop`; without one, the project linked there to the folder. */
+  desktopProject?: string | null;
 }
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';

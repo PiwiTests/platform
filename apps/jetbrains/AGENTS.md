@@ -33,10 +33,16 @@ with the project's Node.js interpreter.
   `apps/application`; a change to the query or the answer changes both.
 - `Protocol.kt` mirrors `packages/editor/src/protocol.ts` for lsp4j; `Glue.kt` is the pure half, tested without an IDE.
 - **Connect** (`PiwiConnect.kt`) asks the instance whether it needs a key, then signs in with the browser (the device
-  authorization Piwi Picker uses, `/api/extension/connect`) or takes a pasted key, then the project. It runs from
+  authorization Piwi Picker uses, `/api/extension/connect`) or takes a pasted key, then the project. When the desktop
+  app runs, it first lists the app beside the instance the project names (`Glue.connectChoices`). It runs from
   **Settings → Tools → Piwi** (`PiwiConfigurable.kt`), the tool window's toolbar and **Tools → Piwi**.
+- `PiwiProjectService.desktop()` asks the service (`piwi/desktop`) and, while the service has not started, reads the
+  app's discovery file itself (`Glue.parseDesktopDiscovery`, `Glue.linkedDesktopProject`): Connect finds the app
+  before any file is opened.
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
-  (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key.
+  (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
+  choice of the desktop app and its project live in `.idea/workspace.xml` (`PiwiLocalSettings`), on this machine
+  only; choosing the app never touches the instance, its project or its key.
 
 ## Rules
 

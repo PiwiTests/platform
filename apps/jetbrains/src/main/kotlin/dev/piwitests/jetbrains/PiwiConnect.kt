@@ -15,12 +15,14 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.ui.components.JBRadioButton
 import com.intellij.ui.dsl.builder.panel
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import javax.swing.ButtonGroup
 import javax.swing.JComponent
 
 /** The instance's side of Connect: its projects, and the browser sign-in (an RFC 8628 device authorization). */
@@ -84,29 +86,24 @@ object PiwiConnectFlow {
 
     fun run(project: Project, presetUrl: String? = null): Boolean {
         val service = project.service<PiwiProjectService>()
-        // The desktop app running on this machine needs no address or sign-in: offer it first.
-        val desktop = service.server()?.let { server ->
-            request(project, "Looking for the Piwi desktop app…") {
-                server.desktop().awaitCancellably(PiwiProjectService.TIMEOUT_SECONDS * 1000)
-            }
-        }?.takeIf { it.url != null }
+        service.local().desktopOffered = true
+        // The desktop app running on this machine needs no address or sign-in: offer it first,
+        // beside the instance the project names, so either is one choice away.
+        val desktop = request(project, "Looking for the Piwi desktop app…") { service.desktop() }?.takeIf { it.url != null }
         val preset = Glue.normalizeServerUrl(presetUrl)
         if (desktop != null && (preset == null || preset == desktop.url)) {
             if (preset == desktop.url) return useDesktop(project, desktop)
-            when (
-                Messages.showDialog(
-                    project,
-                    "The Piwi desktop app runs on this machine at ${desktop.url}." +
-                        (desktop.linked?.let { " It links this folder to the project ${it.name}." } ?: ""),
-                    TITLE,
-                    arrayOf("Use the Desktop App", "Another Instance…", Messages.getCancelButton()),
-                    0,
-                    AllIcons.General.Information,
-                )
-            ) {
-                0 -> return useDesktop(project, desktop)
-                1 -> Unit
-                else -> return false
+            val dialog = ChooseConnectionDialog(project, Glue.connectChoices(service.status, desktop, service.settings().serverUrl))
+            if (!dialog.showAndGet()) return false
+            val choice = dialog.picked() ?: return false
+            when (choice.target) {
+                Glue.ConnectTarget.DESKTOP -> return useDesktop(project, desktop)
+                Glue.ConnectTarget.INSTANCE -> {
+                    service.useInstance()
+                    PiwiCommands.notify(project, "Connected to ${choice.serverUrl}.")
+                    return true
+                }
+                Glue.ConnectTarget.OTHER -> Unit
             }
         }
         val url = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
@@ -144,21 +141,33 @@ object PiwiConnectFlow {
         return true
     }
 
+    /** Use the desktop app, once it is found running: the offer's action, from the event thread. */
+    fun useDesktop(project: Project): Boolean {
+        val service = project.service<PiwiProjectService>()
+        val desktop = request(project, "Looking for the Piwi desktop app…") { service.desktop() }?.takeIf { it.url != null }
+        if (desktop == null) {
+            Messages.showInfoMessage(project, "The Piwi desktop app is not running.", TITLE)
+            return false
+        }
+        return useDesktop(project, desktop)
+    }
+
     /**
-     * Use the desktop app: no address and no key are saved, so the editor reads them from the app
-     * while it runs. The project is the one linked there to this folder, else the one picked here.
+     * Use the desktop app: it comes first while it runs, with its own address and token, and the
+     * instance the project names stays saved for when it does not. The project is the one linked
+     * there to this folder, else the one picked here.
      */
     private fun useDesktop(project: Project, desktop: DesktopResult): Boolean {
         val service = project.service<PiwiProjectService>()
         val linked = desktop.linked
         if (linked != null) {
-            service.saveCredentials("", "", null)
+            service.useDesktop(null)
             PiwiCommands.notify(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
             return true
         }
         val names = desktop.projects.orEmpty().map { it.name }
         if (names.isEmpty()) {
-            service.saveCredentials("", "", null)
+            service.useDesktop(null)
             Messages.showInfoMessage(
                 project,
                 "The desktop app has no project yet. Import or send a run to it, then link this folder on the project's page there.",
@@ -166,10 +175,10 @@ object PiwiConnectFlow {
             )
             return true
         }
-        val dialog = ChooseProjectDialog(project, names, service.settings().project.takeIf { it in names } ?: names.first())
+        val dialog = ChooseProjectDialog(project, names, service.local().desktopProject.takeIf { it in names } ?: names.first())
         if (!dialog.showAndGet()) return false
         val picked = dialog.picked() ?: return false
-        service.saveCredentials("", picked, null)
+        service.useDesktop(picked)
         PiwiCommands.notify(
             project,
             "Connected to the desktop app, project $picked. Link this folder on the project's page there to skip this step.",
@@ -181,7 +190,7 @@ object PiwiConnectFlow {
     fun disconnect(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()
         val settings = service.settings()
-        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project) ?: return false
+        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) ?: return false
         if (Messages.showYesNoDialog(project, question, "Piwi: Disconnect", null) != Messages.YES) return false
         service.disconnect()
         return true
@@ -302,6 +311,27 @@ object PiwiConnectFlow {
         }
         Messages.showErrorDialog(project, "Could not connect${url?.let { " to $it" } ?: ""}: $reason", TITLE)
         return null
+    }
+
+    /** The connections Connect offers when the desktop app runs, one radio button each. */
+    private class ChooseConnectionDialog(project: Project, private val choices: List<Glue.ConnectChoice>) : DialogWrapper(project) {
+        private val buttons = choices.map { JBRadioButton(if (it.inUse) "${it.label} (in use)" else it.label) }
+
+        init {
+            title = TITLE
+            val group = ButtonGroup()
+            buttons.forEach(group::add)
+            // The one not in use: Connect is run to change something.
+            (buttons.getOrNull(choices.indexOfFirst { !it.inUse }) ?: buttons.firstOrNull())?.isSelected = true
+            init()
+        }
+
+        fun picked(): Glue.ConnectChoice? = choices.getOrNull(buttons.indexOfFirst { it.isSelected })
+
+        override fun createCenterPanel(): JComponent = panel {
+            row { label("Read this project from:") }
+            buttons.forEachIndexed { i, button -> row { cell(button).comment(choices[i].detail) } }
+        }
     }
 
     private class ChooseProjectDialog(project: Project, names: List<String>, current: String) : DialogWrapper(project) {

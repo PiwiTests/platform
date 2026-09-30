@@ -31,14 +31,18 @@ class ConnectAction : AnAction() {
     }
 }
 
-/** Piwi: Disconnect — forget this project's saved instance and project, and the key saved for that instance. */
+/**
+ * Piwi: Disconnect — forget this project's saved instance and project, the key saved for that
+ * instance, and the choice of the desktop app.
+ */
 class DisconnectAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        val project = e.project
-        val settings = e.project?.service<PiwiProjectService>()?.settings()
-        e.presentation.isEnabled = settings != null && Glue.disconnectQuestion(settings.serverUrl, settings.project) != null
+        val service = e.project?.service<PiwiProjectService>()
+        val settings = service?.settings()
+        e.presentation.isEnabled = settings != null &&
+            Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) != null
     }
 
     override fun actionPerformed(e: AnActionEvent) {

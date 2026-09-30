@@ -82,6 +82,7 @@ import {
   RUN_ARGS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
+  STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   type DesktopResult,
@@ -512,9 +513,33 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
   };
 
+  const currentStatus = (): StatusResult => ({
+    contexts: contexts.map((c) => ({
+      root: c.root,
+      connected: !!c.index && !c.problem,
+      serverUrl: c.client?.connection.serverUrl ?? null,
+      source: c.source,
+      projectId: c.project?.id ?? null,
+      projectName: c.project?.name ?? null,
+      branch: c.branch ?? c.index?.defaultBranch ?? null,
+      locators: c.index?.locators.length ?? 0,
+      reachedFiles: c.codeIndex?.files.length ?? 0,
+      problem: c.problem,
+      instance: c.instance,
+    })),
+    desktopUrl: readDesktopDiscovery(env)?.url ?? null,
+  });
+
+  let lastStatus = '';
   async function refreshAll(): Promise<void> {
     await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
     runChanged();
+    const next = currentStatus();
+    const serialized = JSON.stringify(next);
+    if (serialized !== lastStatus) {
+      lastStatus = serialized;
+      void connection.sendNotification(STATUS_NOTIFICATION, next);
+    }
     for (const document of documents.all()) schedule(document, 0);
   }
 
@@ -1086,23 +1111,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { cwd: context.root, args, command: command || `npx playwright test ${args.join(' ')}` };
   });
 
-  connection.onRequest(
-    STATUS_REQUEST,
-    (): StatusResult => ({
-      contexts: contexts.map((c) => ({
-        root: c.root,
-        connected: !!c.index && !c.problem,
-        serverUrl: c.client?.connection.serverUrl ?? null,
-        source: c.source,
-        projectId: c.project?.id ?? null,
-        projectName: c.project?.name ?? null,
-        branch: c.branch ?? c.index?.defaultBranch ?? null,
-        locators: c.index?.locators.length ?? 0,
-        reachedFiles: c.codeIndex?.files.length ?? 0,
-        problem: c.problem,
-      })),
-    }),
-  );
+  connection.onRequest(STATUS_REQUEST, (): StatusResult => currentStatus());
 
   connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
 

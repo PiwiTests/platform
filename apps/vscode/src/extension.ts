@@ -26,6 +26,7 @@ import {
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
+  STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   TRACE_REQUEST,
@@ -59,6 +60,7 @@ import {
 } from './connect';
 import {
   DOCUMENT_PATTERN,
+  connectChoices,
   disconnectQuestion,
   indentBlock,
   mcpConfiguration,
@@ -73,6 +75,13 @@ const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
+/**
+ * The desktop app chosen with Connect, its project, and whether it was offered:
+ * workspace state, on this machine only, never in a file the team shares.
+ */
+const DESKTOP_CHOSEN = 'piwi.desktop';
+const DESKTOP_PROJECT = 'piwi.desktopProject';
+const DESKTOP_OFFERED = 'piwi.desktopOffered';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -89,7 +98,10 @@ type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers
 let client: LanguageClient | null = null;
 let sendListener: SendListener | null = null;
 
-/** The connection saved in the editor: the workspace's instance and project, and that instance's key. */
+/**
+ * The connection saved in the editor: the workspace's instance and project, that instance's key,
+ * and whether this machine reads the desktop app first.
+ */
 async function credentials(context: vscode.ExtensionContext): Promise<EditorCredentials> {
   const settings = vscode.workspace.getConfiguration('piwi');
   const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl')) ?? null;
@@ -97,7 +109,15 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     serverUrl,
     project: settings.get<string>('project') || null,
     apiKey: serverUrl ? ((await context.secrets.get(apiKeySecret(serverUrl))) ?? null) : null,
+    desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
+    desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
   };
+}
+
+/** Hand the saved connection to the service and have it read everything again. */
+async function applyCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
 }
 
 /**
@@ -135,7 +155,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const updateStatus = async (runs?: RunStatusResult) => {
     const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
     const runStatus = runs ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
-    const view = statusBarView(status, runStatus);
+    const view = statusBarView(status, runStatus, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
     statusItem.text = view.text;
     statusItem.tooltip = view.tooltip;
     statusUrl = view.url;
@@ -145,6 +165,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusItem.show();
     void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
     lensesChanged.fire();
+    if (status) void offerDesktop(context, lc, status);
     const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
     const serialized = JSON.stringify(servers?.servers ?? []);
     if (serialized !== lastServers) {
@@ -357,6 +378,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (runs: RunStatusResult) => void updateStatus(runs)),
+    lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
   );
   await lc.start();
   await updateStatus();
@@ -418,28 +440,22 @@ async function offerMcp(context: vscode.ExtensionContext, servers: McpServersRes
  */
 async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
-  // The desktop app running on this machine needs no address or sign-in: offer it first.
+  await context.workspaceState.update(DESKTOP_OFFERED, true);
+  // The desktop app running on this machine needs no address or sign-in: offer it first,
+  // beside the instance the workspace names, so either is one pick away.
   const desktop = await lc
     .sendRequest<DesktopResult>(DESKTOP_REQUEST)
     .then((d) => (d.url ? d : null))
     .catch(() => null);
   if (desktop) {
+    const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
     const choice = await vscode.window.showQuickPick(
-      [
-        {
-          label: '$(device-desktop) Use the Piwi desktop app',
-          description: desktop.url ?? '',
-          detail: desktop.linked
-            ? `This folder is linked there to the project ${desktop.linked.name}.`
-            : 'It runs on this machine; no address or key needed.',
-          desktop: true,
-        },
-        { label: '$(globe) Another instance…', detail: 'A Piwi server, by its address.', desktop: false },
-      ],
-      { title: 'Piwi: Connect', placeHolder: 'Connect to', ignoreFocusOut: true },
+      connectChoices(status, desktop, normalizeServerUrl(settings.get<string>('serverUrl')) ?? null),
+      { title: 'Piwi: Connect', placeHolder: 'Read this workspace from', ignoreFocusOut: true },
     );
     if (!choice) return false;
-    if (choice.desktop) return useDesktop(context, lc, desktop);
+    if (choice.target === 'desktop') return useDesktop(context, lc, desktop);
+    if (choice.target === 'instance' && choice.serverUrl) return useInstance(context, lc, choice.serverUrl);
   }
   const input = await vscode.window.showInputBox({
     title: 'Piwi: Connect',
@@ -497,8 +513,8 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   await settings.update('project', project || undefined, vscode.ConfigurationTarget.Workspace);
   if (apiKey) await context.secrets.store(apiKeySecret(base), apiKey);
   else await context.secrets.delete(apiKeySecret(base));
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
-  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  await context.workspaceState.update(DESKTOP_CHOSEN, undefined);
+  await applyCredentials(context, lc);
   const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
   // The environment and a workspace `.env` come before the settings.
   const first = status?.contexts.find(
@@ -519,15 +535,15 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
 }
 
 /**
- * Use the desktop app: no address and no key are saved, so the service reads them from the
- * app while it runs. The project is the one linked there to this folder, else the one picked.
+ * Use the desktop app on this machine: it comes first while it runs, and the instance the
+ * workspace names stays saved for when it does not. The project is the one linked there to
+ * this folder, else the one picked.
  */
 async function useDesktop(
   context: vscode.ExtensionContext,
   lc: LanguageClient,
   desktop: DesktopResult,
 ): Promise<boolean> {
-  const settings = vscode.workspace.getConfiguration('piwi');
   let project: string | undefined;
   if (!desktop.linked && desktop.projects.length) {
     const picked = await vscode.window.showQuickPick(
@@ -541,10 +557,10 @@ async function useDesktop(
     if (!picked) return false;
     project = picked.label;
   }
-  await settings.update('serverUrl', undefined, vscode.ConfigurationTarget.Workspace);
-  await settings.update('project', project, vscode.ConfigurationTarget.Workspace);
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
-  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  await context.workspaceState.update(DESKTOP_CHOSEN, true);
+  await context.workspaceState.update(DESKTOP_PROJECT, project);
+  await context.workspaceState.update(DESKTOP_OFFERED, true);
+  await applyCredentials(context, lc);
   const name = desktop.linked?.name ?? project;
   void vscode.window.showInformationMessage(
     name
@@ -554,11 +570,52 @@ async function useDesktop(
   return true;
 }
 
-/** Piwi: Disconnect — forget the workspace's instance and project, and the key saved for that instance. */
+/** Read the instance the environment, the `.env` or the settings name again, rather than the desktop app. */
+async function useInstance(context: vscode.ExtensionContext, lc: LanguageClient, serverUrl: string): Promise<boolean> {
+  await context.workspaceState.update(DESKTOP_CHOSEN, undefined);
+  await applyCredentials(context, lc);
+  void vscode.window.showInformationMessage(`Piwi: connected to ${serverUrl}.`);
+  return true;
+}
+
+let offeringDesktop = false;
+
+/**
+ * Once per workspace: when the desktop app runs while another instance is in use, offer to read
+ * the workspace from the app. The other instance stays saved, one Piwi: Connect away.
+ */
+async function offerDesktop(context: vscode.ExtensionContext, lc: LanguageClient, status: StatusResult): Promise<void> {
+  if (!status.desktopUrl || offeringDesktop || context.workspaceState.get<boolean>(DESKTOP_OFFERED)) return;
+  const current = status.contexts.find((c) => c.connected) ?? status.contexts[0];
+  if (!current?.serverUrl || current.source === 'desktop') return;
+  offeringDesktop = true;
+  try {
+    await context.workspaceState.update(DESKTOP_OFFERED, true);
+    const choice = await vscode.window.showInformationMessage(
+      `Piwi: the desktop app runs on this machine. Read this workspace from it rather than ${current.serverUrl}? ` +
+        'Piwi: Connect switches back.',
+      'Use the desktop app',
+    );
+    if (!choice) return;
+    const desktop = await lc.sendRequest<DesktopResult>(DESKTOP_REQUEST).catch(() => null);
+    if (desktop?.url) await useDesktop(context, lc, desktop);
+  } finally {
+    offeringDesktop = false;
+  }
+}
+
+/**
+ * Piwi: Disconnect — forget the workspace's instance and project, the key saved for that instance,
+ * and the choice of the desktop app.
+ */
 async function disconnect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
   const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl'));
-  const question = disconnectQuestion(serverUrl, settings.get<string>('project') || null);
+  const question = disconnectQuestion(
+    serverUrl,
+    settings.get<string>('project') || null,
+    !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN),
+  );
   if (!question) {
     void vscode.window.showInformationMessage('Piwi: nothing is saved in the settings.');
     return false;
@@ -568,8 +625,9 @@ async function disconnect(context: vscode.ExtensionContext, lc: LanguageClient):
   if (serverUrl) await context.secrets.delete(apiKeySecret(serverUrl));
   await settings.update('serverUrl', undefined, vscode.ConfigurationTarget.Workspace);
   await settings.update('project', undefined, vscode.ConfigurationTarget.Workspace);
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
-  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  await context.workspaceState.update(DESKTOP_CHOSEN, undefined);
+  await context.workspaceState.update(DESKTOP_PROJECT, undefined);
+  await applyCredentials(context, lc);
   return true;
 }
 

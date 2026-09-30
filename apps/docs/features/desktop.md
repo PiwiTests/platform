@@ -68,7 +68,9 @@ name it would report under and checks the setup (a Playwright config, Playwright
 anything missing is a warning, and `npx @piwitests/reporter init` in the folder fixes it. The link to the folder
 stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
 **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders, and
-[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set.
+[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set. The
+[editor extensions](/features/editor-connection#with-the-desktop-app) open on the project linked to the folder they
+have open, with nothing to set up, beside a shared instance if the workspace names one.
 
 ## Running tests from the app
 

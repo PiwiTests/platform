@@ -19,6 +19,7 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
 
 The extension reads the connection the reporter uses: `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` in
 the environment or the workspace `.env`, then the Piwi desktop app. Otherwise run **Piwi: Connect**; the API key goes
-to VS Code's secret storage.
+to VS Code's secret storage. When the desktop app runs beside a shared instance, **Piwi: Connect** switches between
+them, and keeps both.
 
 See [the editors page](https://piwitests.dev/features/editors) for everything it shows.

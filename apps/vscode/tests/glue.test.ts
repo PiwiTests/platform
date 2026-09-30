@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import type { RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
-import { disconnectQuestion, mcpConfiguration, sourceLabel, statusBarView } from '../src/glue';
+import type { DesktopResult, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
+import { connectChoices, disconnectQuestion, mcpConfiguration, sourceLabel, statusBarView } from '../src/glue';
 
 const connected: StatusResult = {
   contexts: [
@@ -116,9 +116,71 @@ describe('Piwi: Disconnect', () => {
     );
     expect(disconnectQuestion(null, 'Shop')).toBe('forget the project Shop saved for the desktop app?');
     expect(disconnectQuestion(null, null)).toBeNull();
+    expect(disconnectQuestion(null, null, true)).toBe('forget the choice of the desktop app?');
+    expect(disconnectQuestion('https://piwi.corp', 'Shop', true)).toBe(
+      'forget https://piwi.corp, the project, and the API key saved for it, and the choice of the desktop app?',
+    );
   });
 
   test('the desktop app is named as a source', () => {
     expect(sourceLabel('desktop')).toBe('the Piwi desktop app');
+  });
+});
+
+describe('the desktop app beside another instance', () => {
+  const desktop: DesktopResult = {
+    url: 'http://127.0.0.1:3000',
+    projects: [{ id: 3, name: 'Shop' }],
+    linked: { id: 3, name: 'Shop' },
+  };
+  const team = { ...connected, desktopUrl: 'http://127.0.0.1:3000' };
+  team.contexts = [{ ...connected.contexts[0]!, instance: { serverUrl: 'http://piwi', source: 'dotenv' } }];
+
+  test('Connect offers the app, the instance the workspace names, and another one', () => {
+    expect(connectChoices(team, desktop, null)).toEqual([
+      {
+        target: 'desktop',
+        label: '$(device-desktop) The Piwi desktop app',
+        description: 'http://127.0.0.1:3000',
+        detail: 'Runs on this machine; this folder is linked there to the project Shop.',
+        serverUrl: null,
+      },
+      {
+        target: 'instance',
+        label: '$(server) http://piwi',
+        description: 'in use',
+        detail: 'From the workspace .env.',
+        serverUrl: 'http://piwi',
+      },
+      {
+        target: 'other',
+        label: '$(globe) Another instance…',
+        description: '',
+        detail: 'A Piwi server, by its address.',
+        serverUrl: null,
+      },
+    ]);
+  });
+
+  test('with the app in use, Connect still offers the instance to go back to', () => {
+    const onDesktop: StatusResult = {
+      ...team,
+      contexts: [{ ...team.contexts[0]!, serverUrl: 'http://127.0.0.1:3000', source: 'desktop' }],
+    };
+    const [app, instance] = connectChoices(onDesktop, desktop, null);
+    expect(app).toMatchObject({ description: 'http://127.0.0.1:3000 · in use' });
+    expect(instance).toMatchObject({ target: 'instance', serverUrl: 'http://piwi', description: '' });
+    // Only saved in the settings: offered from there.
+    const saved = { ...onDesktop, contexts: [{ ...onDesktop.contexts[0]!, instance: null }] };
+    expect(connectChoices(saved, desktop, 'https://piwi.corp')[1]).toMatchObject({
+      serverUrl: 'https://piwi.corp',
+      detail: 'From the Piwi settings.',
+    });
+  });
+
+  test('the status bar says when the app runs unused, or was chosen and does not run', () => {
+    expect(statusBarView(team, run({})).tooltip).toMatch(/desktop app runs on this machine: Piwi: Connect to use it/);
+    expect(statusBarView(connected, run({}), true).tooltip).toMatch(/chosen with Piwi: Connect, is not running/);
+    expect(statusBarView(connected, run({})).tooltip).not.toMatch(/desktop/);
   });
 });

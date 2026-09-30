@@ -12,7 +12,7 @@ clients stay thin and both editors give the same answers.
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/trace`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, the `piwi/setCredentials` notification and the
-  `piwi/runStatusChanged` notification it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/runStatusChanged` and `piwi/statusChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
   files only (the JetBrains IDEs).
 - The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); its failures are
@@ -32,11 +32,17 @@ clients stay thin and both editors give the same answers.
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials`, and requests answer from them. What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
   fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it.
-- **The connection order is fixed**: the environment, the workspace `.env`, the editor's own settings (what Connect
-  saved: explicit, so it comes before an app that only runs), then the desktop app's discovery file
-  (`resolveContextConnection`). With the desktop app, the project is `PIWI_PROJECT_NAME`, the editor's, else the one
-  the app links to the folder holding the Playwright config (`projects` in `~/.piwi/desktop.json`); the service
-  watches that file, and `piwi/desktop` tells Connect what the app offers. The reporter keeps its own order. The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
+- **The connection order is fixed** (`resolveContextConnection`): the desktop app while it runs when the editor
+  chose it (`desktop` in `piwi/setCredentials`, kept on the user's machine: the app is theirs, so their choice comes
+  first); then the named instance (`namedInstance`): the environment, the workspace `.env`, the editor's own settings
+  (what Connect saved: explicit, so it comes before an app that only runs); then the desktop app's discovery file.
+  The desktop app sits beside a shared instance, never replaces it: `piwi/status` keeps the named instance
+  (`instance`) and says whether the app runs (`desktopUrl`), so Connect offers both. With the app chosen, the project
+  is `desktopProject`, else the one the app links to the folder holding the Playwright config (`projects` in
+  `~/.piwi/desktop.json`), else `PIWI_PROJECT_NAME`; reached because nothing else names an instance, it is
+  `PIWI_PROJECT_NAME`, the editor's, else the linked one. The service watches that file, `piwi/statusChanged` tells
+  the client when the app starts or quits, and `piwi/desktop` tells Connect what the app offers. A context that
+  changes instance forgets everything read from the other one. The reporter keeps its own order. The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
   client for its agent.
 - Nothing from the workspace is sent to the instance but file paths it already stores.
 

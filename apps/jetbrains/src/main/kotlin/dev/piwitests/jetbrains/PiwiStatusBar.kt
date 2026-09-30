@@ -50,7 +50,7 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
 
     override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
-    private fun view() = project.service<PiwiProjectService>().let { Glue.statusView(it.status, it.runs) }
+    private fun view() = project.service<PiwiProjectService>().let { Glue.statusView(it.status, it.runs, it.local().desktop) }
 
     override fun getText(): String = view().text
 

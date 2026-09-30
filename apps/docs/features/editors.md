@@ -16,8 +16,9 @@ differently.
 Install **Piwi** from the extensions view (`piwitests.piwi`) or from **Settings → Plugins** in a JetBrains IDE. It
 starts on a workspace that holds a Playwright config, and reads the connection the reporter already uses: the
 `PIWI_*` variables in the environment or the workspace `.env`, or the [desktop app](/features/desktop). Otherwise,
-run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and sign in with the browser:
-[Editor connection](./editor-connection) has the steps.
+run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and sign in with the browser. Connect also
+switches between the desktop app and a shared instance, keeping both: [Editor connection](./editor-connection) has
+the steps.
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
