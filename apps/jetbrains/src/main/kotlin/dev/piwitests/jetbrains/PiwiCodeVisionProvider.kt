@@ -9,7 +9,6 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiFile
-import java.util.concurrent.TimeUnit
 
 /**
  * The lines above a file, a test and a locator (`piwi/fileSummary`): the
@@ -32,11 +31,9 @@ class PiwiCodeVisionProvider : DaemonBoundCodeVisionProvider {
         val virtualFile = file.virtualFile ?: return emptyList()
         if (!PiwiLspServerSupportProvider.isSupported(virtualFile)) return emptyList()
         val server = project.service<PiwiProjectService>().server() ?: return emptyList()
-        val summary = try {
-            server.fileSummary(UriParams(virtualFile.toNioPath().toUri().toString())).get(3, TimeUnit.SECONDS)
-        } catch (_: Exception) {
-            null
-        } ?: return emptyList()
+        // The daemon computes this in a read action: the wait gives way to a write action.
+        val summary = server.fileSummary(UriParams(virtualFile.toNioPath().toUri().toString())).awaitCancellably(3_000)
+            ?: return emptyList()
         val document = editor.document
         return (listOfNotNull(summary.file) + summary.lines.orEmpty()).mapNotNull { line ->
             if (line.line < 0 || line.line >= document.lineCount || line.title.isNullOrBlank()) return@mapNotNull null

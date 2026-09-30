@@ -131,8 +131,9 @@ the one that paired receives.
 ## JetBrains IDEs
 
 The plugin starts the editor service with the project's Node.js interpreter (**Settings → Languages & Frameworks →
-Node.js**) when you open a file of the project. The IDE's LSP client shows the warnings, quick fixes and hover in open files as described above; the rest
-is drawn natively:
+Node.js**) once it finds a Playwright config within four folders of the project's (in Rider, the solution's) or of its
+Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP client shows warnings, quick fixes and hover in open
+files; the rest is native:
 
 - **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
   failures, since the IDE highlights open files only. Double-click

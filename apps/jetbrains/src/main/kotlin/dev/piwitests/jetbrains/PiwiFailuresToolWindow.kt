@@ -113,4 +113,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         render()
         service.refreshStatus()
     }
+
+    companion object {
+        const val ID = "Piwi"
+    }
 }

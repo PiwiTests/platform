@@ -3,6 +3,8 @@ package dev.piwitests.jetbrains
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.nio.file.Files
+import java.nio.file.Path
 
 class GlueTest {
     private val connected = StatusResult(
@@ -186,5 +188,62 @@ class GlueTest {
     @Test
     fun `the desktop app is named as a source`() {
         assertEquals("the Piwi desktop app", Glue.sourceLabel("desktop"))
+    }
+
+    private fun tree(vararg files: String): Path {
+        val dir = Files.createTempDirectory("piwi-glue").toRealPath()
+        for (file in files) {
+            val path = dir.resolve(file)
+            Files.createDirectories(path.parent)
+            Files.writeString(path, "")
+        }
+        return dir
+    }
+
+    @Test
+    fun `a Rider solution's files are in the folder above its idea folder`() {
+        assertEquals("C:/src/Shop", Glue.projectFolder("C:\\src\\Shop\\.idea\\.idea.Shop"))
+        assertEquals("/home/me/Shop", Glue.projectFolder("/home/me/Shop/.idea/.idea.Shop.dir/"))
+        assertEquals("/home/me/shop", Glue.projectFolder("/home/me/shop"))
+    }
+
+    @Test
+    fun `folders inside another one are searched with it`() {
+        fun path(p: String) = Path.of(p).toAbsolutePath()
+        assertEquals(
+            listOf(path("/w/shop"), path("/elsewhere")),
+            Glue.outermost(listOf(path("/w/shop"), path("/w/shop/src/Api"), path("/w/shop"), path("/elsewhere"))),
+        )
+    }
+
+    @Test
+    fun `finds the configs down to four levels, past dependencies and hidden folders`() {
+        val dir = tree(
+            "playwright.config.ts",
+            "apps/web/e2e/tests/playwright.config.mjs",
+            "a/b/c/d/e/playwright.config.ts",
+            "node_modules/pkg/playwright.config.js",
+            ".cache/playwright.config.ts",
+            "src/Shop/bin/playwright.config.txt",
+        )
+        assertEquals(listOf(dir, dir.resolve("apps/web/e2e/tests")), Glue.playwrightConfigDirs(listOf(dir)))
+    }
+
+    @Test
+    fun `a solution in a subfolder finds the tests beside it in the repository`() {
+        val repo = tree(".git/HEAD", "backend/Shop.sln", "e2e/playwright.config.ts")
+        val found = Glue.findPlaywright(listOf(repo.resolve("backend"), repo.resolve("backend/.idea/.idea.Shop")), null)
+        assertEquals(Glue.PlaywrightSearch(listOf(repo), listOf(repo.resolve("e2e"))), found)
+        // The project's own folders come first: a config there keeps the search to them.
+        val backend = repo.resolve("backend")
+        Files.writeString(backend.resolve("playwright.config.ts"), "")
+        assertEquals(Glue.PlaywrightSearch(listOf(backend), listOf(backend)), Glue.findPlaywright(listOf(backend), null))
+    }
+
+    @Test
+    fun `a repository in the home folder is not searched`() {
+        val home = tree(".git/HEAD", "work/other/playwright.config.ts", "work/shop/Shop.sln")
+        val shop = home.resolve("work/shop")
+        assertEquals(Glue.PlaywrightSearch(listOf(shop), emptyList()), Glue.findPlaywright(listOf(shop), home))
     }
 }

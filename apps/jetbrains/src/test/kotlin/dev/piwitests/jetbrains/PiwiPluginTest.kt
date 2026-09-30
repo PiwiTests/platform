@@ -110,6 +110,45 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals("# Failing test: pays", copied)
     }
 
+    /** The project's Playwright configs are searched for on disk, and the service's workspace is the folders searched. */
+    fun testFindsThePlaywrightConfigsAndHandsTheirFoldersToTheService() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val base = File(project.basePath!!)
+        val config = File(base, "e2e/playwright.config.ts").apply { parentFile.mkdirs() }
+        try {
+            config.writeText("export default {};\n")
+            service.searchPlaywright()
+            assertTrue(service.hasPlaywrightConfig())
+            assertEquals(listOf(base.toPath().resolve("e2e")), service.playwrightConfigDirs())
+            assertEquals(listOf(base.toPath()), service.searchRoots())
+            val folders = PiwiLspServerDescriptor(project).createInitializeParams().workspaceFolders
+            assertEquals(service.searchRoots(), folders.map { java.nio.file.Path.of(java.net.URI(it.uri)) })
+        } finally {
+            config.delete()
+            service.searchPlaywright()
+        }
+        assertFalse(service.hasPlaywrightConfig())
+    }
+
+    /** A read action waiting on the service gives way as soon as the platform cancels it: typing never waits on it. */
+    fun testAWaitOnTheServiceEndsWhenCanceled() {
+        val never = CompletableFuture<String>()
+        assertNull(never.awaitCancellably(50))
+        assertEquals("ok", CompletableFuture.completedFuture("ok").awaitCancellably(50))
+        val indicator = com.intellij.openapi.progress.EmptyProgressIndicator()
+        val waited = com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread<Throwable?> {
+            try {
+                com.intellij.openapi.progress.ProgressManager.getInstance().runProcess({ never.awaitCancellably(20_000) }, indicator)
+                null
+            } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+                e
+            }
+        }
+        Thread.sleep(100)
+        indicator.cancel()
+        assertTrue(waited.get(5, TimeUnit.SECONDS) is com.intellij.openapi.progress.ProcessCanceledException)
+    }
+
     fun testServesTheFilesTheServiceReads() {
         for (name in listOf("Checkout.vue", "checkout.page.ts", "Index.cshtml", "Cart.razor", "Strings.resx", "en.json")) {
             assertTrue(name, PiwiLspServerSupportProvider.isSupported(myFixture.addFileToProject("src/$name", "").virtualFile))

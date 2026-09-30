@@ -1,4 +1,5 @@
-<idea-plugin>
+<!-- Installed, updated and removed with a restart: the IDE never unloads it in place, with its service running. -->
+<idea-plugin require-restart="true">
     <id>dev.piwitests.piwi</id>
     <name>Piwi</name>
     <vendor url="https://piwitests.dev">Piwi</vendor>
@@ -23,6 +24,7 @@
     <depends>JavaScript</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="dev.piwitests.jetbrains.PiwiStartupActivity"/>
         <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>

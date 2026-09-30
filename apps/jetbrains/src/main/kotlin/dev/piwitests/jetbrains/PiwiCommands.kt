@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.google.gson.Gson
 import com.google.gson.JsonElement
+import com.intellij.execution.ExecutionException
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.KillableColoredProcessHandler
@@ -67,18 +68,24 @@ object PiwiCommands {
         }
     }
 
-    /** Run a command line in the Run tool window, in `cwd`. */
+    /** Run a command line in the Run tool window, in `cwd`: the process starts off the event thread. */
     fun run(project: Project, cwd: String, command: String) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
             if (parts[0] != "node") parts[0] = "${parts[0]}.cmd"
         }
-        ApplicationManager.getApplication().invokeLater {
-            val handler = KillableColoredProcessHandler(
-                GeneralCommandLine(parts).withWorkDirectory(cwd).withCharset(Charsets.UTF_8),
-            )
-            RunContentExecutor(project, handler).withTitle("Piwi").withActivateToolWindow(true).run()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val handler = try {
+                KillableColoredProcessHandler(GeneralCommandLine(parts).withWorkDirectory(cwd).withCharset(Charsets.UTF_8))
+            } catch (e: ExecutionException) {
+                notify(project, "Could not run ${parts[0]}: ${e.message}", NotificationType.ERROR)
+                return@executeOnPooledThread
+            }
+            ApplicationManager.getApplication().invokeLater {
+                if (project.isDisposed) handler.destroyProcess()
+                else RunContentExecutor(project, handler).withTitle("Piwi").withActivateToolWindow(true).run()
+            }
         }
     }
 

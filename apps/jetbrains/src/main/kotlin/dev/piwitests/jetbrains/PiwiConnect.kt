@@ -85,8 +85,11 @@ object PiwiConnectFlow {
     fun run(project: Project, presetUrl: String? = null): Boolean {
         val service = project.service<PiwiProjectService>()
         // The desktop app running on this machine needs no address or sign-in: offer it first.
-        val desktop = service.server()?.let { server -> request(project, "Looking for the Piwi desktop app…") { server.desktop().orNull() } }
-            ?.takeIf { it.url != null }
+        val desktop = service.server()?.let { server ->
+            request(project, "Looking for the Piwi desktop app…") {
+                server.desktop().awaitCancellably(PiwiProjectService.TIMEOUT_SECONDS * 1000)
+            }
+        }?.takeIf { it.url != null }
         val preset = Glue.normalizeServerUrl(presetUrl)
         if (desktop != null && (preset == null || preset == desktop.url)) {
             if (preset == desktop.url) return useDesktop(project, desktop)

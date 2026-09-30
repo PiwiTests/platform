@@ -7,6 +7,7 @@ import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.Lsp4jClient
 import com.intellij.platform.lsp.api.LspServer
@@ -15,11 +16,17 @@ import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCommandsSupport
 import org.eclipse.lsp4j.Command
+import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Starts the editor service for projects that hold a Playwright config, on the files it reads. */
+/**
+ * Starts the editor service for projects that hold a Playwright config, on the files it reads.
+ * Until the search for configs started with the project ends, it starts nothing: the search
+ * starts the service for the files already open.
+ */
 class PiwiLspServerSupportProvider : LspServerSupportProvider {
     override fun fileOpened(project: Project, file: VirtualFile, serverStarter: LspServerSupportProvider.LspServerStarter) {
         if (!isSupported(file) || !project.service<PiwiProjectService>().hasPlaywrightConfig()) return
@@ -40,9 +47,21 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         if (!Files.isRegularFile(server)) throw ExecutionException("The Piwi editor service is missing: $server")
         val interpreter = NodeJsInterpreterManager.getInstance(project).interpreter
         val node = (interpreter as? NodeJsLocalInterpreter)?.interpreterSystemDependentPath ?: "node"
+        val folder = project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toString() ?: project.basePath
         return GeneralCommandLine(node, server.toString(), "--stdio")
-            .withWorkDirectory(project.basePath)
+            .withWorkDirectory(folder)
             .withCharset(Charsets.UTF_8)
+    }
+
+    /** The workspace is the folders the plugin searched for Playwright configs: the service searches them again. */
+    override fun createInitializeParams(): InitializeParams = super.createInitializeParams().apply {
+        val roots = project.service<PiwiProjectService>().searchRoots()
+        if (roots.isEmpty()) return@apply
+        val files = LocalFileSystem.getInstance()
+        workspaceFolders = roots.map { root ->
+            val uri = files.findFileByNioFile(root)?.let { getFileUri(it) } ?: root.toUri().toString()
+            WorkspaceFolder(uri, root.fileName?.toString() ?: root.toString())
+        }
     }
 
     /**
