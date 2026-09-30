@@ -3,7 +3,8 @@
  * Severity and a Team, and whose Resolve transition requires a Resolution: the
  * fields endpoint reads the create screen, a create that leaves one empty is
  * refused before Jira is called, the project settings keep a default, the create
- * dialog asks for the rest and files the issue with both, a refusal Jira names
+ * dialog asks for the rest and for a field Jira refused, takes typed tags and
+ * labels, and files the issue with them, a refusal Jira names
  * is final and creating again replaces it, and the MCP tool names what is
  * missing and takes loosely typed values. Then the fix transition: the settings
  * check it against an open issue and keep its resolution, a verified fix moves
@@ -41,8 +42,9 @@ function uniqueFailureTag(): string {
 const SEVERITY = 'customfield_10050';
 const TEAM = 'customfield_10001';
 const SQUAD = 'customfield_10060';
+const TAGS = 'customfield_10070';
 
-/** The Bug type's create screen: Severity and Team are required, Components and Squad are not. */
+/** The Bug type's create screen: Severity and Team are required, Components, Squad and Tags are not. */
 const BUG_SCREEN = [
   { fieldId: 'project', name: 'Project', required: true, schema: { type: 'project', system: 'project' } },
   { fieldId: 'issuetype', name: 'Issue type', required: true, schema: { type: 'issuetype', system: 'issuetype' } },
@@ -72,6 +74,12 @@ const BUG_SCREEN = [
     allowedValues: [{ id: '10200', name: 'Checkout' }],
   },
   { fieldId: SQUAD, name: 'Squad', required: false, schema: { type: 'string' } },
+  {
+    fieldId: TAGS,
+    name: 'Tags',
+    required: false,
+    schema: { type: 'array', items: 'string', custom: 'com.atlassian.jira.plugin.system.customfieldtypes:labels' },
+  },
 ];
 
 interface MockJira {
@@ -80,6 +88,8 @@ interface MockJira {
   creates: Record<string, unknown>[];
   /** A workflow validator the create screen does not show: Squad must be set. */
   requireSquad: boolean;
+  /** Another such validator: Tags must be set. */
+  requireTags: boolean;
   /** Every transition made, in order. */
   moves: { key: string; id: string; fields: Record<string, unknown> | null }[];
 }
@@ -119,7 +129,13 @@ const DONE_TRANSITIONS = [
 
 /** A mock Jira Cloud REST v3 that checks the Bug type's required fields the way Jira does. */
 function startMockJira(port: number): MockJira {
-  const state: MockJira = { server: null as unknown as http.Server, creates: [], requireSquad: false, moves: [] };
+  const state: MockJira = {
+    server: null as unknown as http.Server,
+    creates: [],
+    requireSquad: false,
+    requireTags: false,
+    moves: [],
+  };
   let counter = 300;
   /** Issues created, newest last, with whether each is done. */
   const issues: { key: string; done: boolean }[] = [];
@@ -187,6 +203,7 @@ function startMockJira(port: number): MockJira {
         if (!fields[SEVERITY]) errors[SEVERITY] = 'Severity is required.';
         if (!fields[TEAM]) errors[TEAM] = 'Team is required.';
         if (state.requireSquad && !fields[SQUAD]) errors[SQUAD] = 'Squad is required.';
+        if (state.requireTags && !(fields[TAGS] as string[] | undefined)?.length) errors[TAGS] = 'Tags is required.';
         if (Object.keys(errors).length) return send({ errorMessages: [], errors }, 400);
         state.creates.push(fields);
         counter++;
@@ -352,26 +369,52 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
   });
 
   test('the create dialog asks for what is still required and files the issue with it', async ({ page }) => {
-    await page.goto(`/failure-clusters/${clusters.dialog}`);
-    const open = page.locator('[data-shot="cluster-create-issue"]').first();
-    await expect(open).toBeVisible({ timeout: 30_000 });
-    await open.click();
-    const dialog = page.getByRole('dialog');
-    const asked = dialog.locator('[data-shot="create-issue-fields"]');
-    await expect(asked).toBeVisible({ timeout: 15_000 });
+    mock.requireTags = true;
+    try {
+      await page.goto(`/failure-clusters/${clusters.dialog}`);
+      const open = page.locator('[data-shot="cluster-create-issue"]').first();
+      await expect(open).toBeVisible({ timeout: 30_000 });
+      await open.click();
+      const dialog = page.getByRole('dialog');
+      const asked = dialog.locator('[data-shot="create-issue-fields"]');
+      await expect(asked).toBeVisible({ timeout: 15_000 });
 
-    // Severity comes from the project default; Team is still empty.
-    await expect(asked.locator(`[data-field-id="${SEVERITY}"]`)).toContainText('Major');
-    await expect(dialog.getByTestId('create-issue-missing')).toHaveText('Jira still needs Team.');
-    const create = dialog.getByRole('button', { name: 'Create', exact: true });
-    await expect(create).toBeDisabled();
+      // Severity comes from the project default; Team is still empty.
+      await expect(asked.locator(`[data-field-id="${SEVERITY}"]`)).toContainText('Major');
+      await expect(dialog.getByTestId('create-issue-missing')).toHaveText('Jira still needs Team.');
+      const create = dialog.getByRole('button', { name: 'Create', exact: true });
+      await expect(create).toBeDisabled();
 
-    await asked.locator(`[data-field-id="${TEAM}"] input`).fill('team-checkout');
-    await expect(dialog.getByTestId('create-issue-missing')).toBeHidden();
-    await create.click();
-    await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();
+      await asked.locator(`[data-field-id="${TEAM}"] input`).fill('team-checkout');
+      await expect(dialog.getByTestId('create-issue-missing')).toBeHidden();
 
-    expect(mock.creates.at(-1)).toMatchObject({ [SEVERITY]: { id: '10101' }, [TEAM]: 'team-checkout' });
+      // A typed label or tag is kept once "Create" is picked, not dropped.
+      const chip = (scope: typeof dialog, text: string) =>
+        scope.locator('[data-slot="tagsItemText"]').filter({ hasText: text });
+      await dialog.getByTestId('create-issue-labels').fill('checkout-flow');
+      await page.getByRole('option', { name: 'Create "checkout-flow"' }).click();
+      await expect(chip(dialog, 'checkout-flow')).toBeVisible();
+
+      // Jira refuses the create over Tags, so the dialog asks for it.
+      await create.click();
+      const tags = asked.locator(`[data-field-id="${TAGS}"]`);
+      await expect(tags).toBeVisible({ timeout: 15_000 });
+      await tags.locator('input').fill('smoke');
+      await page.getByRole('option', { name: 'Create "smoke"' }).click();
+      await expect(chip(tags, 'smoke')).toBeVisible();
+
+      await create.click();
+      await expect(page.getByText(/PROJ-\d+ created/).first()).toBeVisible();
+
+      expect(mock.creates.at(-1)).toMatchObject({
+        [SEVERITY]: { id: '10101' },
+        [TEAM]: 'team-checkout',
+        [TAGS]: ['smoke'],
+        labels: expect.arrayContaining(['checkout-flow']),
+      });
+    } finally {
+      mock.requireTags = false;
+    }
   });
 
   test('a refusal Jira names is final, and creating again replaces it', async ({ request }) => {

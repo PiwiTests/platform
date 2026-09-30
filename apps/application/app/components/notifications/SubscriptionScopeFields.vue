@@ -5,6 +5,8 @@
  * any characters (`release/*`). An empty field matches every branch or
  * environment.
  */
+import { withTypedValue } from '~/utils/text-format';
+
 const branches = defineModel<string[]>('branches', { required: true });
 const environments = defineModel<string[]>('environments', { required: true });
 
@@ -18,17 +20,12 @@ const props = defineProps<{
 const branchItems = computed(() => [...new Set([...(props.knownBranches ?? []), ...branches.value])]);
 const environmentItems = computed(() => [...new Set([...(props.knownEnvironments ?? []), ...environments.value])]);
 
-function withName(list: string[], text: string): string[] {
-  const name = text.trim();
-  return name && !list.includes(name) ? [...list, name] : list;
-}
-
 function addBranch(text: string) {
-  branches.value = withName(branches.value, text);
+  branches.value = withTypedValue(branches.value, text);
 }
 
 function addEnvironment(text: string) {
-  environments.value = withName(environments.value, text);
+  environments.value = withTypedValue(environments.value, text);
 }
 </script>
 

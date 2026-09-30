@@ -8,6 +8,7 @@
  */
 import { parseRawFieldValue, textToDocument, type FieldValue, type TrackerField } from '#shared/integrations/fields';
 import type { TrackerUserOption } from '#shared/integrations/types';
+import { withTypedValue } from '~/utils/text-format';
 
 const props = defineProps<{
   field: TrackerField;
@@ -72,6 +73,10 @@ const tags = computed({
   get: () => (Array.isArray(model.value?.value) ? (model.value!.value as string[]) : []),
   set: (list: string[]) => (list.length ? set(list, list.join(', ')) : set(null, '')),
 });
+
+function addTag(text: string) {
+  tags.value = withTypedValue(tags.value, text);
+}
 
 // ── People, searched among the project's assignable users ─────────────────────
 const people = ref<TrackerUserOption[]>([]);
@@ -175,6 +180,7 @@ const rawPlaceholder = computed(() => RAW_PLACEHOLDERS[props.field.typeName] ?? 
     create-item
     placeholder="Add values"
     class="w-full"
+    @create="addTag"
   />
   <UTextarea v-else-if="field.kind === 'text'" v-model="text" :rows="2" autoresize class="w-full" />
   <UInput v-else-if="field.kind === 'number'" v-model="text" type="number" class="w-full" />
