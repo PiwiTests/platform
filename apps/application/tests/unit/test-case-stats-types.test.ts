@@ -24,8 +24,11 @@ const sqliteDb = drizzle(client, { schema });
  */
 const TEXT_AGGREGATE = /^\(?\s*(select\s+)?(count|sum|avg|case)\b/i;
 const TIMESTAMP_AGGREGATE = /^max\(.*"created_at"\)$/i;
+/** Every statement the PostgreSQL-style database ran. */
+const pgQueries: string[] = [];
 const pgLikeDb = drizzleProxy(
   async (query, params, method) => {
+    pgQueries.push(query);
     const result = await client.execute({ sql: query, args: params as InValue[] });
     const rows = result.rows.map((row) =>
       result.columns.map((column, i) => {
@@ -39,6 +42,20 @@ const pgLikeDb = drizzleProxy(
   },
   { schema },
 );
+
+/** The word that follows each `FROM ( … )` derived table: its alias, or the next keyword. */
+function derivedTableAliases(query: string): string[] {
+  const aliases: string[] = [];
+  for (const match of query.matchAll(/\bFROM\s*\(/gi)) {
+    let end = match.index + match[0].length - 1;
+    for (let depth = 0; end < query.length; end++) {
+      if (query[end] === '(') depth++;
+      else if (query[end] === ')' && --depth === 0) break;
+    }
+    aliases.push(/^\s*(?:AS\s+)?(\w*)/i.exec(query.slice(end + 1))![1]!);
+  }
+  return aliases;
+}
 
 const MINUTE = 60_000;
 const NOW = Date.now();
@@ -133,5 +150,14 @@ describe.each([
   test('the green ARIA samples a test is due', async () => {
     const { tests } = await getAriaSampling(database() as never, 2, NOW);
     expect(tests.map((t) => t.title).sort()).toEqual(['never', 'stale']);
+  });
+});
+
+describe('test case SQL', () => {
+  // PostgreSQL before 16 rejects a subquery in FROM without an alias.
+  test('names every derived table', async () => {
+    pgQueries.length = 0;
+    await getTestCase(pgLikeDb as never, 1);
+    expect(pgQueries.flatMap(derivedTableAliases)).toEqual(['recent']);
   });
 });

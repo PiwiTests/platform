@@ -88,7 +88,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
               AND ${notLabExecution(testRunsCases.testRunId)}
             ORDER BY ${testRunsCases.createdAt} DESC
             LIMIT 10
-          ) WHERE s = 'passed' AND r > 0
+          ) AS recent WHERE s = 'passed' AND r > 0
         )`.mapWith(Number),
         avgDuration: sql<number>`AVG(${testRunsCases.duration})`.mapWith(Number),
         lastRunAt: sql<Date>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
