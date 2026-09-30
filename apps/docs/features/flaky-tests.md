@@ -102,7 +102,8 @@ The usual approach is `--grep-invert @quarantine`: the test stops running, nothi
 list only grows.
 
 **A quarantined test in Piwi keeps running and keeps reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
-`--max-failed`, `--require-tag` and `--require-selection` checks and nothing else. That single difference is what makes the exit possible:
+`--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and nothing
+else. That single difference is what makes the exit possible:
 
 - Passing executions after quarantine (one per attempt per browser project) accumulate as a **streak**; one failure
   resets it.
