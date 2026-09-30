@@ -929,6 +929,8 @@ const moreMenuItems = computed(() => {
               v-if="!projCapHidden('notifications')"
               :project-id="parseInt(projectId)"
               :project-label="project?.label || project?.name"
+              :known-branches="availableBranches"
+              :known-environments="availableEnvironments"
             />
             <UButton
               v-if="!projCapHidden('quality-reports')"

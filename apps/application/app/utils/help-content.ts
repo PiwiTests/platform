@@ -623,8 +623,8 @@ export const HELP_TOPICS = {
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
     title: 'Project notifications',
-    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert.',
-    doc: 'features/notifications#subscriptions',
+    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert, and optionally the branches and environments to hear about — `*` matches any characters, as in `release/*`.',
+    doc: 'features/notifications#branches-and-environments',
   },
 
   // ── Settings ──────────────────────────────────────────────────────────

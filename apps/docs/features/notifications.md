@@ -91,13 +91,25 @@ Admins can mark a channel **global** so it is available to all users, and mark a
 
 ## Subscriptions
 
-A subscription controls *what* is delivered and *how*. The project **bell** creates one for that project — a channel and one or more of the events above, delivered in real time. **Settings → Notifications** lists them, and mutes one for 7 days or removes it.
+A subscription controls *what* is delivered and *how*. The project **bell** creates one for that project — a channel, one or more of the events above and, optionally, the branches and environments it covers, delivered in real time. **Settings → Notifications** lists them with their filters, and mutes one for 7 days or removes it.
+
+### Branches and environments
+
+The bell offers the branches and environments the project's runs reported, and takes a typed name too: `*` matches
+any characters, so `release/*` covers every release branch. A subscription delivers only events from runs on one of
+its branches **and** in one of its environments; a run that reported no branch (or environment) matches none, and an
+empty list matches every run. The filters apply to every event that comes from a run: the `run.*` events,
+`flakiness.spike`, `perf.regression`, the `cluster.*` events and `bug.looks_fixed`. `diagnosis.completed` and
+`auto_heal.pr_opened` are not filtered.
+
+### Through the API
 
 The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
-- **Filters**: for run events, by branch, status or **owner** (only when the run broke a test that team owns; see
-  [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold` (a 0–1 rate) and `perfRegressionPct`.
+- **Filters**: `branches` and `environments` as above; for run events, status or **owner** (only when the run broke a
+  test that team owns; see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold` (a 0–1 rate) and
+  `perfRegressionPct`.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
   **one combined message** per email, Slack or Teams channel.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.
