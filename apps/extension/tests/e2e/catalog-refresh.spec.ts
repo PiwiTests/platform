@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions } from './fixtures.js';
 
 /**
  * A function added in the dashboard after the options page saved still reaches
@@ -76,7 +76,7 @@ test.describe.serial('catalog refresh', () => {
     // An extension page can message the background worker, exactly as the
     // content-script panels do via `requestCatalogRefresh`.
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     await page.evaluate(
       (url) =>
         new Promise<void>((resolve) => {
@@ -132,7 +132,7 @@ test.describe.serial('catalog refresh', () => {
   }) => {
     catalog = [entry(1, 'login')];
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     await page.evaluate(
       (url) =>
         new Promise<void>((resolve) => {
@@ -169,7 +169,7 @@ test.describe.serial('catalog refresh', () => {
     extensionId,
   }) => {
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     await page.evaluate(
       () =>
         new Promise<void>((resolve) => {

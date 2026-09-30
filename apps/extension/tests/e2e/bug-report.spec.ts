@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
-import { test, expect, extensionWorker, launchWithExtension } from './fixtures.js';
+import { test, expect, extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
 import { readStoredEvents, stubChromeStorage } from './recording-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
@@ -468,7 +468,7 @@ test.describe('Report a bug', () => {
 
       // The popup's start message, sent from an extension page.
       const extensionPage = await context.newPage();
-      await extensionPage.goto(`chrome-extension://${extensionId}/options.html`);
+      await openOptions(extensionPage, extensionId);
       const started = await extensionPage.evaluate(
         ({ origin, tab }) =>
           chrome.runtime.sendMessage({

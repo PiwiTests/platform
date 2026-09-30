@@ -1079,3 +1079,6 @@ void getDesktopSettings().then((desktop) => {
 renderLanguageSelect();
 void loadInitial();
 void renderEditorPairing();
+
+// Every listener is attached from here on; the e2e specs wait for `html[data-ready]` before they interact.
+document.documentElement.dataset.ready = 'true';
