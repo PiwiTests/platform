@@ -483,8 +483,9 @@ re-positions each drawn one. Keep every interaction proportional to what changed
 
 ### Sharding
 
-- **runLabel** is detected from CI env vars by `MetadataCollector.detectCiRunLabel()` (reporter) and `detectCiRunLabel()`
-  (helpers); users override via `PiwiDashboardOptions.runLabel`; `createGlobalSetup` applies it too.
+- **runLabel** comes from `resolveRunLabel` (`packages/reporter/src/internal/support/ci.ts`), used by the reporter and
+  `createGlobalSetup` alike: `PiwiDashboardOptions.runLabel` as is, else the CI pipeline id from env vars (GitHub adds
+  the run attempt), plus the CI job id for a run that is not sharded, so parallel jobs of a pipeline stay apart.
 - When `runLabel` is set, `computeInstanceId(projectName, runLabel)` replaces the `hostname|projectName` key so all
   shards share one instanceId.
 - A shard's identity is Playwright's `config.shard`, or the `i/n` in `PIWI_SHARD` that `piwi run --shard` sets because it

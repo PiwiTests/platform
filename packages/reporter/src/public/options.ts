@@ -222,7 +222,12 @@ export interface PiwiDashboardOptions {
   // ── Run metadata ───────────────────────────────────────────────────────────
   /** Additional report types to upload. Each entry can specify `type`, optional `dir`, and optional `label`. */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
-  /** Stable label that ties shards together (e.g. CI run ID). Auto-detected from CI env; override if needed. */
+  /**
+   * Stable label that ties shards together (e.g. CI run ID). Auto-detected from
+   * CI env, with the CI job's id added for a run that is not sharded; a label
+   * set here is used as it is. Override it when your CI is not detected, or to
+   * keep matrix legs that report to one project apart.
+   */
   runLabel?: string;
   /** Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` */
   environment?: string;

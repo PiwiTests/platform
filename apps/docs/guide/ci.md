@@ -95,7 +95,8 @@ steps:
 How the merge works:
 
 1. Each shard derives a **run label**, a stable identifier for the CI pipeline, from the provider's build id
-   (`GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the systems listed above).
+   (`GITHUB_RUN_ID` with `GITHUB_RUN_ATTEMPT`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the
+   systems listed above). A re-run of a GitHub Actions workflow is a new attempt, so it starts a new run.
 2. Shards sharing a run label **and** a `projectName` resolve to the same run when streaming.
 3. Each shard streams independently; the run stays `running` until the **last** shard calls finish.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
@@ -114,6 +115,31 @@ If your CI isn't detected, set the label yourself to anything common to all shar
   runLabel: process.env.BUILD_TAG || 'my-custom-label',
 }]
 ```
+
+### Parallel jobs in one pipeline
+
+A job that is not sharded adds the CI job's own id to its run label (`GITHUB_JOB`, `CI_JOB_ID`, `CIRCLE_BUILD_NUM`,
+`TRAVIS_JOB_ID`, `SYSTEM_JOBID`, `BUILDKITE_JOB_ID`, `BITBUCKET_STEP_UUID`, `SEMAPHORE_JOB_ID`, `APPVEYOR_JOB_ID`),
+so two jobs of one pipeline that report to the same `projectName`, such as a GitLab `e2e:chrome` and `e2e:firefox`,
+stay two runs. Every leg of a GitHub Actions matrix shares one `GITHUB_JOB`, and Jenkins, TeamCity and Drone expose
+no per-job id. When such jobs report to the same project, give each its own label: otherwise jobs that are not
+sharded cancel each other's runs, and sharded ones merge into a single run. Put the matrix values in
+`PIWI_RUN_LABEL`. A configured label is used as it is, so the shards of each leg still merge with each other:
+
+```yaml
+strategy:
+  matrix:
+    browser: [chromium, firefox]
+    shard: [1, 2, 3]
+steps:
+  - run: npx playwright test --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
+    env:
+      PIWI_DASHBOARD_URL: https://piwi.example.com
+      PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
+      PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.browser }}
+```
+
+Giving each leg its own `projectName` separates them as well.
 
 ## Watching a run while CI is still going
 
