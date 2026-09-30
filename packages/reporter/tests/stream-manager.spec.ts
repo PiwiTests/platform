@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -7,6 +7,7 @@ import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
+import { HttpError } from '../src/internal/transport/http-client.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import type { CompleteStreamEvent } from '../src/types/wire.js';
 
@@ -428,7 +429,7 @@ describe('StreamManager buffer bounding', () => {
     const q = (sm as any).pendingEvents;
     expect(q.bytes).toBeLessThanOrEqual(50_000);
     expect(q.droppedCount).toBeGreaterThan(0);
-    expect(sm.bufferLostResults).toBe(false); // only step events were shed
+    expect(sm.lostResults).toBe(false); // only step events were shed
     clearTimers(sm);
   });
 
@@ -437,7 +438,7 @@ describe('StreamManager buffer bounding', () => {
     for (let i = 0; i < 20; i++) {
       sm.queueEvent({ type: 'complete', title: `c${i}`, pad: 'x'.repeat(2000) } as any);
     }
-    expect(sm.bufferLostResults).toBe(true);
+    expect(sm.lostResults).toBe(true);
     const q = (sm as any).pendingEvents;
     expect(q.droppedByType.complete).toBeGreaterThan(0);
     clearTimers(sm);
@@ -450,5 +451,150 @@ describe('StreamManager buffer bounding', () => {
     }
     await expect(sm.drain()).resolves.toBeUndefined();
     expect((sm as any).pendingEvents.isEmpty).toBe(true);
+  });
+});
+
+describe('StreamManager request sizing', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  const SERVER_LIMIT = 10 * 1024 * 1024;
+
+  function bigComplete(title: string, bytes: number): CompleteStreamEvent {
+    return { ...completeEvent(title), error: 'x'.repeat(bytes) };
+  }
+
+  function makeManager(
+    postJSON: (url: string, body: any) => Promise<any>,
+    buffer = new StreamBuffer(projectName),
+  ): StreamManager {
+    const http = {
+      postJSON,
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      buffer,
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+    return sm;
+  }
+
+  it('splits a large backlog into requests under the server limit, in order', async () => {
+    const bodySizes: number[] = [];
+    const sent: string[] = [];
+    const sm = makeManager(async (_url, body) => {
+      bodySizes.push(Buffer.byteLength(JSON.stringify(body)));
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    const titles = Array.from({ length: 30 }, (_, i) => `t${i}`);
+    for (const title of titles) sm.queueEvent(bigComplete(title, 500_000));
+
+    await sm.drain();
+
+    expect(sent).toEqual(titles);
+    expect(bodySizes.length).toBeGreaterThan(1);
+    for (const size of bodySizes) expect(size).toBeLessThan(SERVER_LIMIT);
+    expect(sm.lostResults).toBe(false);
+  });
+
+  it('splits a batch the server refuses as too large and still delivers every event', async () => {
+    const sent: string[] = [];
+    const sm = makeManager(async (_url, body) => {
+      if (body.testCases.length > 2) throw new HttpError(413);
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    const titles = ['a', 'b', 'c', 'd', 'e'];
+    for (const title of titles) sm.queueEvent(completeEvent(title));
+
+    await sm.drain();
+
+    expect(sent).toEqual(titles);
+    expect(sm.lostResults).toBe(false);
+  });
+
+  it('drops a lone event the server refuses as too large, keeps streaming the rest, and flags the result as lost', async () => {
+    let calls = 0;
+    const sent: string[] = [];
+    const sm = makeManager(async (_url, body) => {
+      calls++;
+      if (body.testCases.some((e: any) => e.title === 'huge')) throw new HttpError(413);
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    sm.queueEvent(completeEvent('a'));
+    sm.queueEvent(completeEvent('huge'));
+    sm.queueEvent(completeEvent('b'));
+
+    await sm.drain();
+
+    expect(sent).toEqual(['a', 'b']);
+    expect(calls).toBeLessThan(10);
+    expect(sm.lostResults).toBe(true);
+  });
+
+  it('never sends an event larger than the server limit', async () => {
+    const sent: string[] = [];
+    const sm = makeManager(async (_url, body) => {
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    sm.queueEvent(bigComplete('oversized', SERVER_LIMIT + 1));
+    sm.queueEvent(completeEvent('after'));
+
+    await sm.drain();
+
+    expect(sent).toEqual(['after']);
+    expect(sm.lostResults).toBe(true);
+  });
+
+  it('a dropped progress event does not flag lost results', async () => {
+    const sm = makeManager(async () => ({}));
+    sm.queueEvent({ type: 'step-end', title: 'step', pad: 'x'.repeat(SERVER_LIMIT + 1) } as any);
+    await sm.drain();
+    expect(sm.lostResults).toBe(false);
+  });
+
+  describe('when the drain gives up', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function drainAgainstDeadServer(events: any[]): Promise<{ sm: StreamManager; buffer: StreamBuffer }> {
+      const buffer = new StreamBuffer(projectName);
+      buffer.bindRun(1);
+      const sm = makeManager(async () => {
+        throw new Error('connect ECONNREFUSED');
+      }, buffer);
+      for (const event of events) sm.queueEvent(event);
+      const drained = sm.drain();
+      await vi.runAllTimersAsync();
+      await drained;
+      return { sm, buffer };
+    }
+
+    it('flags undelivered results so the run is not finalized without them', async () => {
+      const { sm, buffer } = await drainAgainstDeadServer([completeEvent('undelivered')]);
+      expect(sm.lostResults).toBe(true);
+      expect(buffer.load().map((e) => e.title)).toEqual(['undelivered']);
+    });
+
+    it('does not flag lost results when only progress events are left', async () => {
+      const { sm } = await drainAgainstDeadServer([{ type: 'step-end', title: 'step' }]);
+      expect(sm.lostResults).toBe(false);
+    });
   });
 });

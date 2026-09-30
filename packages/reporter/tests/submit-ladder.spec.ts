@@ -361,6 +361,58 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(submitBody.testCases.length).toBe(4);
   });
 
+  it('a result too large for /events keeps the stream going and re-sends the full run via /submit', async () => {
+    const streamed: string[] = [];
+    let finishHit = false;
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        // A request-size limit in front of the dashboard, like a reverse proxy's.
+        if (Buffer.byteLength(req.body) > 1024 * 1024) return textRes(res, 413, 'too large');
+        streamed.push(...JSON.parse(req.body).testCases.map((e: any) => `${e.type}:${e.title}`));
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/1/finish') {
+        finishHit = true;
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        jsonRes(res, 200, { runId: 1, projectId: 2 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+    });
+    const suite = fakeSuite();
+    const tests = ['small-1', 'huge', 'small-2'].map((t) => fakeTestCase({ title: t, parent: suite }));
+    suite.allTests = () => tests;
+    reporter.onBegin(fakeConfig(), suite);
+    for (const test of tests) {
+      const huge = test.title === 'huge';
+      const result = fakeResult({ status: huge ? 'failed' : 'passed', workerIndex: 0 });
+      if (huge) result.errors = [{ message: 'x'.repeat(2 * 1024 * 1024) }];
+      reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+      reporter.onTestEnd(test, result);
+    }
+    await reporter.onEnd({ status: 'failed' } as any);
+
+    expect(streamed).toContain('complete:small-1');
+    expect(streamed).toContain('complete:small-2');
+    expect(streamed).not.toContain('complete:huge');
+    expect(finishHit).toBe(false);
+    expect(submitBody.testCases.map((tc: any) => tc.title)).toEqual(['small-1', 'huge', 'small-2']);
+  });
+
   it('401 with no auth propagates (does not fall back) and saves a recovery copy', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {
@@ -430,7 +482,7 @@ describe('RunSubmitter local copies', () => {
       enabled: true,
       runId: 1,
       token: 'tok',
-      bufferLostResults: false,
+      lostResults: false,
       uploadRemaining: async () => {},
       discardBuffered: vi.fn(),
       ...overrides,
@@ -462,7 +514,7 @@ describe('RunSubmitter local copies', () => {
     server = await startServer((req, res) =>
       req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 2 }) : textRes(res, 404, 'nope'),
     );
-    const sm = streamSession({ bufferLostResults: true });
+    const sm = streamSession({ lostResults: true });
     await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
     expect(urlsHit(server)).toEqual(['/api/test-runs/submit']);
     expect(sm.discardBuffered).toHaveBeenCalledOnce();
