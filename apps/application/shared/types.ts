@@ -51,8 +51,6 @@ export type TestRunStatus =
 // match both via `FAILED_STATUS_KEYS` (shared/utils/test-counts.ts).
 export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout' | 'didnotrun';
 
-export type ClusterStatus = 'open' | 'resolved' | 'ignored';
-
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
 export enum Role {
@@ -124,21 +122,7 @@ export interface TestCasePayload {
   blockedBy?: string | null;
 }
 
-// ── Test run counters ─────────────────────────────────────────────────────────
-
-export interface TestRunCounters {
-  totalTests: number;
-  passedTests: number;
-  failedTests: number;
-  skippedTests: number;
-  didNotRunTests?: number;
-  flakyTests?: number;
-  duration?: number;
-}
-
 // ── Submit (JSON) payload ─────────────────────────────────────────────────────
-
-export type FlakyRootCause = 'timing' | 'network' | 'assertion' | 'environment' | 'other';
 
 /** Who asked for a run to be kept forever: a person, the reporter at ingest, or a release marker. */
 export type KeepSource = 'user' | 'reporter' | 'marker';
@@ -323,9 +307,3 @@ export interface AppManifest {
 
 /** Where a declared manifest came from — it decides the graph node origin. */
 export type ManifestSource = 'instrumentation' | 'committed' | 'openapi';
-
-/** The body of `PUT /api/projects/:id/surface/manifest`. */
-export interface SurfaceManifestUpload {
-  source: ManifestSource;
-  manifest: AppManifest;
-}

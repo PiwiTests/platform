@@ -1278,74 +1278,6 @@ export type DesktopMcpToolName = (typeof DESKTOP_MCP_TOOL_DEFS)[number]['name'];
 // [] values are omitted from the JSON). These are the shapes agents receive, not
 // the shapes the DB queries return.
 
-/** Run summary returned by list_runs, get_project.runs, list_projects.latestRun. */
-export interface McpRunSummary {
-  id: number;
-  status: string;
-  startedAt: string;
-  duration?: number;
-  total?: number;
-  passed?: number;
-  failed?: number;
-  flaky?: number;
-  skipped?: number;
-  didNotRun?: number;
-  env?: string;
-  label?: string;
-  branch?: string;
-  commit?: string;
-}
-
-/** Per-execution case record returned by get_run.cases, list_failed_cases, get_test_case.recentExecutions. */
-export interface McpCaseSummary {
-  executionId: number;
-  testCaseId: number;
-  title: string;
-  filePath: string;
-  status: string;
-  duration?: number;
-  retries?: number;
-  /** One-line explanation of the failure, derived from the error text. */
-  headline?: string | null;
-  error?: string | null;
-  clusterId?: number;
-  browser?: string;
-  worker?: number;
-  line?: number;
-  runId?: number;
-  runStatus?: string;
-  startedAt?: string;
-  /** Lock names this execution held (best effort; none from blob imports). */
-  locks?: string[] | null;
-}
-
-/** Project summary returned by list_projects. */
-export interface McpProjectSummary {
-  id: number;
-  name: string;
-  label?: string;
-  description?: string;
-  totalRuns?: number;
-  totalTestCases?: number;
-  tags?: string[];
-  latestRun?: Partial<McpRunSummary> | null;
-}
-
-/** Failure cluster summary returned by list_clusters. */
-export interface McpClusterSummary {
-  id: number;
-  signature: string;
-  errorType?: string;
-  selector?: string;
-  status: string;
-  occurrences: number;
-  affectedTests?: number;
-  firstSeenRunId?: number;
-  lastSeenRunId?: number;
-  lastSeenStatus?: string;
-  sampleError?: string;
-}
-
 /** Flaky test item returned by list_flaky_tests. */
 export interface McpFlakyTestItem {
   testCaseId: number;
@@ -1374,20 +1306,5 @@ export interface McpAffectedTestCase {
   title: string;
   filePath: string;
   runCount: number;
-  testRunsCaseId?: number;
-}
-
-/** Locator healing entry in get_cluster.locatorHealing. */
-export interface McpLocatorHealingEntry {
-  testCaseId: number;
-  title: string;
-  testRunsCaseId: number;
-  source: string;
-  failingLocator?: { method: string; args: Record<string, unknown> };
-  recommendation?: unknown; // LocatorFixRecommendation with dropNulls applied
-  alternativesCount: number;
-  /** True when the stored name-derived alternatives look broken by a rename (see LocatorHealingResult). */
-  priorNameMayBeStale?: boolean;
-  /** When the recommended fix now passes at this call site, that later run's id (see LocatorHealingResult). */
-  healedInRunId?: number;
+  executionId?: number;
 }

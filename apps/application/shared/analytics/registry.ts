@@ -82,7 +82,6 @@ export const statsOptionsSchema = z.object({
 });
 
 export const METRIC_DISPLAYS = ['stat', 'line', 'bar', 'table', 'heatmap'] as const;
-export type MetricDisplay = (typeof METRIC_DISPLAYS)[number];
 
 const DIMENSION_IDS = DIMENSIONS.map((d) => d.id) as [DimensionId, ...DimensionId[]];
 
@@ -135,7 +134,6 @@ export const metricOptionsSchema = z.object({
 });
 
 export const LIST_SOURCES = ['runs', 'failure-clusters', 'flaky-tests', 'scenario-gaps'] as const;
-export type ListSource = (typeof LIST_SOURCES)[number];
 
 export const listOptionsSchema = z.object({
   /** What the list shows, matching the scope: runs, failure causes, flaky tests or scenario gaps. */
@@ -178,10 +176,6 @@ export const moversOptionsSchema = z.object({
 });
 
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
-export type ListOptions = z.infer<typeof listOptionsSchema>;
-export type MarkersOptions = z.infer<typeof markersOptionsSchema>;
-export type TextOptions = z.infer<typeof textOptionsSchema>;
-export type SingleProjectOptions = z.infer<typeof singleProjectOptionsSchema>;
 export type MetricOptions = z.infer<typeof metricOptionsSchema>;
 
 export const ANALYTICS_WIDGETS = [

@@ -178,22 +178,6 @@ export interface IssueDraft {
   existing: ExistingIssueCandidate[];
 }
 
-/** The body `POST issues` accepts — the draft with a person's edits. */
-export interface CreateIssueRequest {
-  entityType: IssueEntityType;
-  entityId: number;
-  connectionId: number;
-  title: string;
-  projectKey: string;
-  issueType: string;
-  labels?: string[];
-  assignee?: string | null;
-  locale?: IssueLocale;
-  include?: Partial<IssueIncludeOptions>;
-  /** Values for tracker fields, over the project's field defaults. */
-  fields?: FieldValues;
-}
-
 /** A field a create was refused over: its id, its display name and, from the tracker, why. */
 export interface IssueFieldProblem {
   id: string;
