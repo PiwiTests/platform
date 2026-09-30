@@ -79,27 +79,29 @@ const selectedExecId = computed(() =>
 );
 const isLatestOccurrence = computed(() => selectedExecId.value === latestExecId.value);
 
+// Server-rendered fetches carry the viewer's session.
+const requestFetch = useRequestFetch();
 const { data: execution } = await useAsyncData<Record<string, unknown> | null>(
-  'cluster-selected-exec',
+  `cluster-selected-exec-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<Record<string, unknown>>(`/api/test-run-cases/${selectedExecId.value}`)
+      ? requestFetch<Record<string, unknown>>(`/api/test-run-cases/${selectedExecId.value}`)
       : Promise.resolve(null),
   { watch: [selectedExecId] },
 );
 const { data: execTraces } = await useAsyncData<TraceInfo[]>(
-  'cluster-selected-traces',
+  `cluster-selected-traces-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<{ items: TraceInfo[] }>(`/api/test-run-cases/${selectedExecId.value}/traces`).then((r) => r.items)
+      ? requestFetch<{ items: TraceInfo[] }>(`/api/test-run-cases/${selectedExecId.value}/traces`).then((r) => r.items)
       : Promise.resolve([]),
   { default: (): TraceInfo[] => [], watch: [selectedExecId] },
 );
 const { data: cluesData } = await useAsyncData<FailureCluesResult>(
-  'cluster-selected-clues',
+  `cluster-selected-clues-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<FailureCluesResult>(`/api/test-run-cases/${selectedExecId.value}/clues`)
+      ? requestFetch<FailureCluesResult>(`/api/test-run-cases/${selectedExecId.value}/clues`)
       : Promise.resolve({ clues: [], story: null, failureAt: null }),
   { default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }), watch: [selectedExecId] },
 );

@@ -676,7 +676,8 @@ const membersChanged = computed(() => {
 watch(
   () => project.value?.id,
   async (newId) => {
-    if (!newId || !isAdmin.value) return;
+    // The member editor loads in the browser only; the server render leaves it empty.
+    if (!import.meta.client || !newId || !isAdmin.value) return;
     try {
       const [membersData, usersData] = await Promise.all([
         $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`),
