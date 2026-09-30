@@ -1,3 +1,4 @@
+import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import { waitForHydration } from './utils';
@@ -204,5 +205,79 @@ test.describe.serial('project URL patterns', () => {
     await card.getByLabel('Tests’ path prefix').first().fill('/shop/*');
     await expect(card.getByText('A plain path, such as /app')).toBeVisible();
     await expect(card.getByRole('button', { name: 'Save patterns' })).toBeDisabled();
+  });
+});
+
+/**
+ * A suite whose Playwright config sets no baseURL: the editor reads the full
+ * addresses its tests opened with page.goto, and says why it has nothing to
+ * suggest while there are none.
+ */
+test.describe.serial('project URL patterns without a baseURL', () => {
+  let projectId: number;
+
+  const submit = async (request: APIRequestContext, steps: unknown[]) => {
+    const res = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.URL_PATTERNS_GOTO,
+        status: 'passed',
+        environment: 'qa',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [
+          { title: 'opens the cart', status: 'passed', duration: 100, location: 'tests/cart.spec.ts:3:1', steps },
+        ],
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    return ((await res.json()) as { projectId: number }).projectId;
+  };
+
+  test.beforeAll(async ({ request }) => {
+    projectId = await submit(request, [{ title: 'Click', category: 'action', duration: 5 }]);
+    await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
+  });
+
+  test('the Settings tab says why it has nothing to suggest', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    await expect(card.getByText('No pattern yet. Add one.', { exact: true })).toBeVisible();
+    await expect(card.getByTestId('url-pattern-no-suggestions')).toContainText(
+      'no recent run recorded a Playwright baseURL or opened a full address with page.goto',
+    );
+    await expect(card.getByTestId('url-pattern-suggestions')).toBeHidden();
+  });
+
+  test('a page.goto to a full address is suggested with the run’s environment', async ({ page, request }) => {
+    await submit(request, [
+      { title: 'Navigate', category: 'navigation', duration: 5, params: { url: 'https://goto.shop.example/cart' } },
+    ]);
+    const suggestions = (await (await request.get(`/api/projects/${projectId}/url-patterns/suggestions`)).json()) as {
+      items: Array<{ pattern: string; environment: string | null; sources: string[] }>;
+      covered: number;
+    };
+    expect(suggestions.items.map((s) => [s.pattern, s.environment, s.sources])).toEqual([
+      ['https://goto.shop.example/**', 'qa', ['navigation']],
+    ]);
+
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    await expect(card.getByText('From page.goto calls')).toBeVisible();
+    await card.getByRole('button', { name: 'Add https://goto.shop.example/**' }).click();
+    await expect(card.getByLabel('Environment')).toHaveValue('qa');
+    await card.getByRole('button', { name: 'Save patterns' }).click();
+    await expect(page.getByText('URL patterns saved', { exact: true })).toBeVisible();
+
+    await page.reload();
+    await waitForHydration(page);
+    await expect(card.getByTestId('url-pattern-no-suggestions')).toHaveText(
+      'Every site the suite visited already has a pattern.',
+    );
   });
 });

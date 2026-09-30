@@ -190,6 +190,7 @@ export const PROJECT = {
   UNRELATED: 'unrelated',
   UPLOAD_TEST: 'upload-test-project',
   URL_PATTERNS_AUTH: 'url-patterns-auth-test',
+  URL_PATTERNS_GOTO: 'url-patterns-goto-test',
   URL_PATTERNS: 'url-patterns-test',
 } as const;
 

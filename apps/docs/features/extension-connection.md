@@ -58,13 +58,15 @@ Each project keeps its own list in its **Settings** tab, under **Browser extensi
   path; the site's root becomes `/app`. With both set, the one replaces the other (`/app` on the site, `/v2` in the
   tests), and a page outside the path prefix is left as it is.
 
-The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the pages of the
-[Test Map](./scenario-gaps) and the absolute pages its locators ran on. A `baseURL` comes with the environment its runs
-were reported with (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), and the suggestions
-are grouped by it. The newest few runs of every environment are read, so a nightly production suite is suggested beside
-a staging one that runs on every push. **Add** puts a suggestion in the list with its environment, **Add all** every
-suggestion of that environment; **Save patterns** stores them. Editing the list takes the administrator role, like the
-rest of the project's settings.
+The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the full addresses
+its tests opened with `page.goto` in runs whose Playwright config sets no `baseURL`, the pages of the
+[Test Map](./scenario-gaps) and the absolute pages its locators ran on. A site a run visited comes with the environment
+the run was reported with (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), and the
+suggestions are grouped by it. The newest few runs of every environment are read, so a nightly production suite is
+suggested beside a staging one that runs on every push. **Add** puts a suggestion in the list with its environment,
+**Add all** every suggestion of that environment; **Save patterns** stores them. When there is nothing to suggest, the
+editor says why: every site already has a pattern, or no recent run recorded a `baseURL` or opened a full address.
+Editing the list takes the administrator role, like the rest of the project's settings.
 
 ### Which project applies
 

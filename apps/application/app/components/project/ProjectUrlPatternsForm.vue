@@ -6,7 +6,7 @@
  * were reported with.
  */
 import { parsePathPrefix } from '@piwitests/core/page-key';
-import type { UrlPatternItem, UrlPatternSuggestion } from '#shared/handlers/url-patterns';
+import type { UrlPatternItem, UrlPatternSuggestion, UrlPatternSuggestions } from '#shared/handlers/url-patterns';
 
 const props = defineProps<{ projectId: number }>();
 
@@ -23,12 +23,14 @@ const toast = useToast();
 const rows = ref<Row[]>([]);
 const saved = ref('');
 const suggestions = ref<UrlPatternSuggestion[]>([]);
+const covered = ref(0);
 const loading = ref(true);
 const saving = ref(false);
 let nextKey = 1;
 
 const SOURCE_LABELS: Record<UrlPatternSuggestion['sources'][number], string> = {
   'base-url': 'base URL',
+  navigation: 'page.goto calls',
   'test-map': 'Test Map pages',
   'locator-pages': 'locator pages',
 };
@@ -111,11 +113,12 @@ async function load() {
   try {
     const [list, suggested] = await Promise.all([
       $fetch<{ items: UrlPatternItem[] }>(`/api/projects/${props.projectId}/url-patterns`),
-      $fetch<{ items: UrlPatternSuggestion[] }>(`/api/projects/${props.projectId}/url-patterns/suggestions`),
+      $fetch<UrlPatternSuggestions>(`/api/projects/${props.projectId}/url-patterns/suggestions`),
     ]);
     rows.value = toRows(list.items);
     saved.value = snapshot(rows.value);
     suggestions.value = suggested.items;
+    covered.value = suggested.covered;
   } catch (error) {
     toast.add({ title: 'Couldn’t load the URL patterns', description: errorMessage(error), color: 'error' });
   } finally {
@@ -190,7 +193,9 @@ watch(() => props.projectId, load, { immediate: true });
     <LoadingState v-if="loading" text="Loading…" />
 
     <UForm v-else :state="{ rows }" class="space-y-4" @submit="save">
-      <p v-if="rows.length === 0" class="text-sm text-muted">No pattern yet. Add one, or pick a suggestion below.</p>
+      <p v-if="rows.length === 0" class="text-sm text-muted">
+        No pattern yet. Add one{{ shownSuggestions.length > 0 ? ', or pick a suggestion below' : '' }}.
+      </p>
 
       <ol v-else class="space-y-3">
         <li
@@ -310,6 +315,15 @@ watch(() => props.projectId, load, { immediate: true });
           </ul>
         </section>
       </div>
+
+      <p v-else-if="suggestions.length === 0" class="text-xs text-muted" data-testid="url-pattern-no-suggestions">
+        <template v-if="covered > 0">Every site the suite visited already has a pattern.</template>
+        <template v-else>
+          Nothing to suggest: no recent run recorded a Playwright <span class="font-mono">baseURL</span> or opened a
+          full address with <span class="font-mono">page.goto</span>. Set <span class="font-mono">use.baseURL</span> in
+          your Playwright config to get suggestions.
+        </template>
+      </p>
 
       <div class="flex flex-wrap justify-between gap-2">
         <UButton label="Add a pattern" color="neutral" variant="outline" @click="addRow()" />

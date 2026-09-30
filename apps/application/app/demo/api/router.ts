@@ -2656,7 +2656,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/url-patterns\/suggestions$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { items: await suggestUrlPatterns(await getDemoDb(), +m[1]!) };
+      return suggestUrlPatterns(await getDemoDb(), +m[1]!);
     },
   },
   {
