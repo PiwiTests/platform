@@ -80,7 +80,7 @@ export class StreamManager {
 
   /**
    * @param httpClient  HTTP client for server communication.
-   * @param streamBuffer On-disk buffer for crash-safe event persistence.
+   * @param streamBuffer On-disk buffer for the run's undelivered events.
    * @param recovery    Crash-recovery handler for uploading stale payloads on startup.
    * @param uploader    Uploader for per-test-case file uploads.
    * @param fileHandler File-discovery helper for finding traces and attachments.
@@ -229,6 +229,7 @@ export class StreamManager {
         this._runId = response.runId;
         this._token = response.streamToken;
         this._enabled = true;
+        this.streamBuffer.bindRun(response.runId);
         this.logger.info(`Streaming enabled. Run ID: ${response.runId}`);
         if (this.options.serverUrl) {
           this.logger.info(`Watch live: ${runUrl(this.options.serverUrl, response.runId)}`);
@@ -442,6 +443,11 @@ export class StreamManager {
       // last delivery attempt, so nothing may stay scheduled past it.
       this.clearRetryTimer();
     }
+  }
+
+  /** Delete the run's on-disk event buffer. Called once the run's results reached the server. */
+  discardBuffered(): void {
+    this.streamBuffer.clear();
   }
 
   // Emit a single summary when buffer pressure shed events, so a full disk or a

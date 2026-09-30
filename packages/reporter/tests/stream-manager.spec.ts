@@ -6,15 +6,20 @@ import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
+import { hashForProject } from '../src/internal/support/instance-id.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import type { CompleteStreamEvent } from '../src/types/wire.js';
 
 const projectName = 'piwi-stream-test-' + process.pid;
+const projectHash = hashForProject(projectName);
 
 function cleanup(): void {
   const tmp = os.tmpdir();
   for (const f of fs.readdirSync(tmp)) {
-    if (f.startsWith('piwi-dashboard-stream-') || f.startsWith('piwi-dashboard-recovery-')) {
+    if (
+      f.startsWith(`piwi-dashboard-stream-${projectHash}`) ||
+      f.startsWith(`piwi-dashboard-recovery-${projectHash}`)
+    ) {
       try {
         fs.unlinkSync(path.join(tmp, f));
       } catch {
@@ -183,6 +188,7 @@ describe('StreamManager batching & drain', () => {
     // On the next drain, after a failed flush + retry, the buffered events
     // should be loaded back and re-sent.
     const buffer = new StreamBuffer(projectName);
+    buffer.bindRun(1);
     buffer.append([completeEvent('buffered-1')]);
 
     let seen: any[] = [];
@@ -217,7 +223,91 @@ describe('StreamManager batching & drain', () => {
     sm.queueEvent(completeEvent('queued-1'));
     await sm.drain();
     // After retry, the buffered event should be among those sent.
-    expect(seen.some((e: any) => e.title === 'buffered-1'), `seen: ${JSON.stringify(seen)}`).toBeTruthy();
+    expect(
+      seen.some((e: any) => e.title === 'buffered-1'),
+      `seen: ${JSON.stringify(seen)}`,
+    ).toBeTruthy();
+  });
+});
+
+describe('StreamManager run-scoped buffer', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  it("never replays another run's buffered events into the run it opened", async () => {
+    // Leftovers of run 1, as a drain that gave up would leave them.
+    const previous = new StreamBuffer(projectName);
+    previous.bindRun(1);
+    previous.append([completeEvent('run-1-leftover')]);
+
+    const sent: string[] = [];
+    const http = {
+      async postJSON(url: string, body: any) {
+        if (url === '/api/test-runs/start') return { runId: 2, streamToken: 'tok-2' };
+        if (url === '/api/test-runs/2/events') sent.push(...body.testCases.map((e: any) => e.title));
+        return {};
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions({ streamingBatchSize: 100, streamingBatchDelay: 60000 }),
+    );
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await sm.startPromise;
+    expect(sm.runId).toBe(2);
+
+    sm.queueEvent(completeEvent('run-2-event'));
+    await sm.drain();
+
+    expect(sent).toEqual(['run-2-event']);
+    expect(previous.load().map((e) => e.title)).toEqual(['run-1-leftover']);
+  });
+
+  it('holds nothing and writes nothing until a run is bound', () => {
+    const buffer = new StreamBuffer(projectName);
+    buffer.append([completeEvent('unbound')]);
+    expect(buffer.load()).toEqual([]);
+    expect(fs.readdirSync(os.tmpdir()).some((f) => f.startsWith(`piwi-dashboard-stream-${projectHash}`))).toBe(false);
+  });
+
+  it("discardBuffered deletes the run's buffer file", () => {
+    const buffer = new StreamBuffer(projectName);
+    buffer.bindRun(7);
+    buffer.append([completeEvent('leftover')]);
+    const sm = new StreamManager(
+      {} as any,
+      buffer,
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions(),
+    );
+    sm.discardBuffered();
+    expect(buffer.load()).toEqual([]);
+  });
+
+  it("clearStale removes the project's stale buffer files of every run and keeps fresh ones", () => {
+    const stale = new StreamBuffer(projectName);
+    stale.bindRun(1);
+    stale.append([completeEvent('stale')]);
+    const fresh = new StreamBuffer(projectName);
+    fresh.bindRun(2);
+    fresh.append([completeEvent('fresh')]);
+    const staleFile = path.join(os.tmpdir(), `piwi-dashboard-stream-${projectHash}-1.jsonl`);
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(staleFile, threeHoursAgo, threeHoursAgo);
+
+    new StreamBuffer(projectName).clearStale();
+
+    expect(fs.existsSync(staleFile)).toBe(false);
+    expect(fresh.load().map((e) => e.title)).toEqual(['fresh']);
   });
 });
 

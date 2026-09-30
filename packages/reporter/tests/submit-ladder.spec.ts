@@ -1,8 +1,14 @@
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
+import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-submitter.js';
+import { HttpClient } from '../src/internal/transport/http-client.js';
+import { Uploader } from '../src/internal/submit/uploader.js';
+import { CrashRecovery } from '../src/internal/streaming/crash-recovery.js';
+import { FileHandler } from '../src/internal/files/file-handler.js';
+import { Logger } from '../src/internal/support/logger.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import {
   startServer,
@@ -381,5 +387,92 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     const recovered = JSON.parse(fs.readFileSync(recoveryFilePath(projectName), 'utf8'));
     expect(recovered.projectName).toBe(projectName);
     expect(recovered.testCases[0].title).toBe('auth-fail-test');
+  });
+});
+
+describe('RunSubmitter local copies', () => {
+  let server: FakeServer;
+  const projectName = 'piwi-submitter-' + process.pid;
+
+  beforeEach(() => cleanupProjectArtifacts(projectName));
+  afterEach(async () => {
+    if (server) await server.close();
+    cleanupProjectArtifacts(projectName);
+  });
+
+  function collectedRun(serverUrl: string): CollectedRun {
+    return {
+      options: { serverUrl, projectName, uploadReport: false, uploadTraces: false },
+      testCases: [],
+      startTime: new Date().toISOString(),
+      playwrightVersion: null,
+      reporterVersion: null,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      timedOutTests: 0,
+      didNotRunTests: 0,
+      metadata: {},
+      instanceId: 'instance',
+      shardInfo: null,
+      setupSteps: [],
+      isFullRun: true,
+      filterDetails: null,
+    };
+  }
+
+  function streamSession(overrides: Record<string, unknown> = {}) {
+    return {
+      startPromise: null,
+      drain: async () => {},
+      auth: null,
+      enabled: true,
+      runId: 1,
+      token: 'tok',
+      bufferLostResults: false,
+      uploadRemaining: async () => {},
+      discardBuffered: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  function submitter(url: string, sm: ReturnType<typeof streamSession>): RunSubmitter {
+    const logger = new Logger(false);
+    const http = new HttpClient(url, logger);
+    return new RunSubmitter(
+      http,
+      new Uploader(http, new FileHandler(logger), logger),
+      new CrashRecovery(projectName, logger),
+      sm as any,
+      logger,
+    );
+  }
+
+  it("discards the run's buffered live events once /finish succeeds", async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/1/finish' ? jsonRes(res, 200, {}) : textRes(res, 404, 'nope'),
+    );
+    const sm = streamSession();
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(sm.discardBuffered).toHaveBeenCalledOnce();
+  });
+
+  it("discards the run's buffered live events once the batch submit succeeds", async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 2 }) : textRes(res, 404, 'nope'),
+    );
+    const sm = streamSession({ bufferLostResults: true });
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(urlsHit(server)).toEqual(['/api/test-runs/submit']);
+    expect(sm.discardBuffered).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the buffered live events when no rung reaches the server', async () => {
+    server = await startServer((_req, res) => textRes(res, 500, 'down'));
+    const sm = streamSession();
+    await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+    expect(sm.discardBuffered).not.toHaveBeenCalled();
+    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(true);
   });
 });

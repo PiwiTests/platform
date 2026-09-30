@@ -259,7 +259,7 @@ export class RunSubmitter {
       await this.httpClient.postJSON(`/api/test-runs/${sm.runId}/finish`, finishBody, auth);
 
       this.logger.info(`Successfully finalized streaming run #${sm.runId}`);
-      this.recovery.clear();
+      this.dropLocalCopies();
 
       if (this.hasReports(run)) {
         try {
@@ -291,7 +291,7 @@ export class RunSubmitter {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
       const response = await this.uploader.uploadWithFiles(payload, this.reportOptions(run), auth);
-      this.recovery.clear();
+      this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) {
@@ -314,7 +314,7 @@ export class RunSubmitter {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
       const response = await this.uploader.uploadJSON(payload, auth);
-      this.recovery.clear();
+      this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       // If the server returned 401 and no auth was configured, this is a
@@ -333,6 +333,12 @@ export class RunSubmitter {
       // The ladder is exhausted; nothing to surface to CI.
       return { done: true, output: null };
     }
+  }
+
+  /** The run reached the server: drop the recovery copy and the run's buffered live events. */
+  private dropLocalCopies(): void {
+    this.recovery.clear();
+    this.streamManager?.discardBuffered();
   }
 
   /**
