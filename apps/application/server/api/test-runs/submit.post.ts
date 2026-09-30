@@ -3,7 +3,7 @@ import { getDatabase } from '../../database';
 import { projects, testRuns } from '../../database/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { parseLocation } from '../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';

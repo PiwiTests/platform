@@ -3,7 +3,7 @@ import { getDatabase } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
-import { parseLocation } from '../../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { readShardTokensFromMeta } from '../../../utils/shard-tokens';
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';

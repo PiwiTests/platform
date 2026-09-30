@@ -11,7 +11,7 @@ import { uploadDirectory } from '../../utils/storage-helpers';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
 import { tmpdir } from 'os';
 import { rm, mkdir, readdir } from 'fs/promises';
-import { parseLocation } from '../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { sanitizeMetadata } from '../../utils/sanitize';
