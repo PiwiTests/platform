@@ -122,12 +122,3 @@ export function shouldAct(state: ProbeState, match: 'all' | number): boolean {
   state.matches += 1;
   return match === 'all' || state.matches === Math.max(1, match);
 }
-
-/**
- * Decide whether this matching request is the one to mutate: only after the
- * first navigation, and only the Nth match (default the first). Advances the
- * match counter, so it returns true exactly once per test.
- */
-export function shouldMutate(state: ProbeState, item: { nth?: number }): boolean {
-  return shouldAct(state, item.nth ?? 1);
-}

@@ -130,7 +130,7 @@ export class MetadataCollector {
     if (options.customData) metadata.customData = options.customData;
 
     if (options.collectScmInfo) {
-      const scm = this.collectScmInfo(options);
+      const scm = this.collectScmInfo();
       if (scm) metadata.scm = scm;
     }
 
@@ -237,7 +237,7 @@ export class MetadataCollector {
     return { suitePath, suiteConfig };
   }
 
-  private collectScmInfo(_options: any): Record<string, string> | undefined {
+  private collectScmInfo(): Record<string, string> | undefined {
     const scm: Record<string, string> = {};
     let gitBranch: string | undefined;
     try {
