@@ -135,8 +135,8 @@ export async function releaseConditionsDebugger(tabId: number): Promise<void> {
 }
 
 /**
- * The viewports set on tabs from the popup, one per tab id, in session storage
- * so the popup can say so and offer to undo it.
+ * The viewports set on tabs from the DevTools panel, one per tab id, in session
+ * storage so the panel can say so and offer to undo it.
  */
 export const TAB_VIEWPORT_KEY = 'piwiTabViewport';
 

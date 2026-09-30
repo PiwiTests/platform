@@ -91,8 +91,8 @@ export async function discardRecording(): Promise<void> {
  *
  * The popup can't do it itself: `chrome.permissions.request` shows a prompt
  * that takes focus and closes the popup on a first-time grant, tearing down the
- * code that awaited the grant before it can message the worker — which is why a
- * first recording used to need a second click. The popup writes this intent
+ * code that awaited the grant before it can message the worker, so a first
+ * recording would need a second click. The popup writes this intent
  * inside the same click, then `chrome.permissions.onAdded` in the worker reads
  * it back when the grant lands (see `decideRecordIntent`).
  */
@@ -171,10 +171,10 @@ export function decideRecordIntent(
  * Serializes appends within one document.
  *
  * An append is read-modify-write against a single storage key, and every DOM
- * listener fired one independently: two events landing together both read the
- * same array, both wrote their own copy, and whichever finished second silently
- * discarded the other's event. A click racing a `change`, or a keydown racing a
- * pending input, was enough.
+ * listener fires one independently: two events landing together would both read
+ * the same array, both write their own copy, and whichever finished second
+ * would discard the other's event. A click racing a `change`, or a keydown
+ * racing a pending input, is enough.
  *
  * Per-document, which is where the bursts happen — the recorder attaches to the
  * main frame of each page, and a user interacts with one page at a time. Two

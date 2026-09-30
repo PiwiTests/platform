@@ -29,7 +29,7 @@ import {
  * method, its URL without query values and its status: never a header or a
  * body. The session is held while the recording runs, and let go when it
  * stops; in Firefox, or when attaching fails or is cancelled, the main-world
- * script (`bug-evidence-main.ts`) does the work, as it always has.
+ * script (`bug-evidence-main.ts`) does the work.
  */
 
 interface Collector {

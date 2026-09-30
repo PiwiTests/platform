@@ -126,8 +126,8 @@ async function highlightActiveTool(): Promise<void> {
  * Reports the *actual* binding for the pick shortcut rather than the one the
  * manifest suggests. A browser only assigns `suggested_key` when it is free —
  * another extension (or, on Firefox, the built-in Network Monitor) already
- * holding Ctrl+Shift+E means ours is silently left unbound, and hardcoding the
- * hint made that look like the extension was broken.
+ * holding Ctrl+Shift+E means ours is silently left unbound, and a hardcoded
+ * hint would make that look like the extension was broken.
  */
 async function renderPickShortcutHint(): Promise<void> {
   const el = document.getElementById('pick-shortcut');
@@ -388,8 +388,8 @@ function requestRecording(mode: RecordingMode): void {
     return;
   }
   // Park the intent so the background can still start the recording if this
-  // popup is torn down when the prompt takes focus — the first-time grant that
-  // used to leave the recorder needing a second click. Fire-and-forget: it must
+  // popup is torn down when the prompt takes focus on a first-time grant, so
+  // the recorder does not need a second click. Fire-and-forget: it must
   // not delay the request above, and `startRecordingFlow` still starts things
   // directly whenever the popup does survive.
   void setRecordIntent({ originPattern, tabId, mode });

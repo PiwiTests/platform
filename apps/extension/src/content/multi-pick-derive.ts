@@ -16,8 +16,8 @@ export interface PatternResult {
 }
 
 /**
- * Derive a repeating-list locator pattern from 2-3 similar picked elements
- * (A7): a shared base locator, then per element either `.filter({ hasText })`
+ * Derive a repeating-list locator pattern from 2-3 similar picked elements:
+ * a shared base locator, then per element either `.filter({ hasText })`
  * using the shortest prefix of its own text that's unique among every
  * element sharing that base right now, or — when no prefix of its text is
  * unique (identical/empty rows) — `.nth(index)`, flagged `indexBased` so the
@@ -31,7 +31,7 @@ export interface PatternResult {
 export function derivePattern(picked: Element[], maps: DomRoleMaps): PatternResult {
   // Every tag with an entry in tagRoles, not just the handful with an
   // obvious role — a picked <tr> or <li> needs to find its role-mates (role
-  // 'row'/'listitem') to build the pool. Mirrors pick.ts's ROLE_SOURCES.
+  // 'row'/'listitem') to build the pool. Mirrors ROLE_SOURCES in verified-locators.ts.
   const ROLE_CANDIDATES = [...new Set(['[role]', 'input', 'select', ...Object.keys(maps.tagRoles)])].join(',');
 
   // Matches @piwitests/core's own `esc()` — every other generated locator in

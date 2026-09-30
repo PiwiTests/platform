@@ -5,7 +5,7 @@ export function isValidPickName(name: string): boolean {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name);
 }
 
-/** A Playwright POM-style class, one `readonly` field per named pick, matching the plan's own example shape. */
+/** A Playwright POM-style class, one `readonly` field per named pick. */
 export function renderFixture(picks: SessionPick[]): string {
   const fields = picks.map((p) => `  readonly ${p.name} = this.page.${p.locator};`).join('\n');
   return [
@@ -19,7 +19,7 @@ export function renderFixture(picks: SessionPick[]): string {
   ].join('\n');
 }
 
-/** A table shareable in a PR description or issue (C7) — GitHub-flavored Markdown renders it directly. */
+/** A table shareable in a PR description or issue — GitHub-flavored Markdown renders it directly. */
 export function renderMarkdown(picks: SessionPick[]): string {
   const header = '| Name | Locator | Page |\n|---|---|---|';
   const rows = picks.map((p) => `| ${p.name} | \`${p.locator}\` | ${p.pageUrl} |`);

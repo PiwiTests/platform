@@ -13,7 +13,7 @@ export interface LintFinding {
 
 /**
  * Find every interactive element that would score badly as a Playwright
- * locator target right now (A9): no locator but a positional one finds it
+ * locator target right now: no locator but a positional one finds it
  * alone — no test id, no name that tells it apart, and no unique structural
  * anchor either. The ranking and its check against the page are the Pick
  * results' own (`rankElement`, `checkLocators`), read as a pass/fail signal
