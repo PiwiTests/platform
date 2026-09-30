@@ -165,6 +165,28 @@ test.describe.serial('Project test-cases catalog', () => {
     await expect(catalog(page).getByText('No test cases match your filters.')).toBeVisible();
   });
 
+  test('values that arrive after the typing still complete on Enter', async ({ page }) => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      (url) => url.pathname.endsWith('/test-cases/facets'),
+      async (route) => {
+        await held;
+        await route.continue();
+      },
+    );
+    await page.goto(`/projects/${projectId}/test-cases`);
+    await waitForHydration(page);
+
+    await searchBox(page).click();
+    await searchBox(page).pressSequentially('file:login');
+    await expect(page.getByRole('option')).toHaveCount(0);
+    release();
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await page.keyboard.press('Enter');
+    await expect(searchBox(page)).toHaveValue('file:tests/auth/login.spec.ts ');
+  });
+
   test('links filtering by tag or owner open with the matching search', async ({ page }) => {
     await page.goto(`/projects/${projectId}/test-cases?tags=smoke`);
     await waitForHydration(page);

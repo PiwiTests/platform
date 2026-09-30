@@ -72,16 +72,19 @@ const optionId = (index: number) => `${uid}-suggestion-${index}`;
 
 // Typing a qualifier's value highlights the best match, so Enter or Tab takes
 // it; a bare word keeps no highlight, so Enter never swaps the word for a filter.
-watch([query, caret], () => {
+function defaultActive(): number {
   const c = completion.value;
-  activeIndex.value = c.field && c.value.trim() !== '' && c.suggestions.length > 0 ? 0 : -1;
+  return c.field && c.value.trim() !== '' && c.suggestions.length > 0 ? 0 : -1;
+}
+watch([query, caret], () => {
+  activeIndex.value = defaultActive();
 });
-watch(
-  () => suggestions.value.length,
-  (count) => {
-    if (activeIndex.value >= count) activeIndex.value = count - 1;
-  },
-);
+// Values can arrive after the typing (a catalog fetches them on focus) or
+// change under it (a live run): keep the highlight, or give it one.
+watch(suggestions, (list) => {
+  if (activeIndex.value >= list.length) activeIndex.value = list.length - 1;
+  else if (activeIndex.value < 0) activeIndex.value = defaultActive();
+});
 
 if (props.findShortcut) useFindShortcut(inputEl);
 
@@ -265,55 +268,57 @@ function onOpenChange(value: boolean) {
     </template>
 
     <template #content>
-      <div
-        :id="listboxId"
-        role="listbox"
-        :aria-label="`${label}: suggestions`"
-        class="max-h-72 overflow-y-auto"
-        :class="suggestions.length > 0 ? 'p-1' : 'pt-2'"
-      >
-        <p v-if="listingQualifiers" class="px-2 pt-1 pb-1 text-xs text-muted" aria-hidden="true">Filter by</p>
+      <!-- A press anywhere in the list keeps the focus, and so the list, in the box. -->
+      <div @mousedown.prevent>
         <div
-          v-for="(suggestion, index) in suggestions"
-          :id="optionId(index)"
-          :key="suggestionKey(suggestion)"
-          role="option"
-          :aria-selected="index === activeIndex"
-          class="flex items-center gap-2 min-w-0 rounded-md px-2 py-1.5 text-sm cursor-pointer select-none"
-          :class="index === activeIndex ? 'bg-elevated' : 'hover:bg-elevated/60'"
-          @mousedown.prevent
-          @mousemove="activeIndex = index"
-          @click="choose(index)"
+          :id="listboxId"
+          role="listbox"
+          :aria-label="`${label}: suggestions`"
+          class="max-h-72 overflow-y-auto"
+          :class="suggestions.length > 0 ? 'p-1' : 'pt-2'"
         >
-          <template v-if="suggestion.kind === 'field'">
-            <span class="font-mono text-highlighted shrink-0"
-              >{{ completion.negated ? '-' : '' }}{{ suggestion.key }}:</span
-            >
-            <span class="text-xs text-muted truncate">{{ suggestion.description }}</span>
-          </template>
-          <template v-else>
-            <span class="font-mono min-w-0 truncate">
-              <span class="text-muted">{{ completion.negated ? '-' : '' }}{{ suggestion.key }}:</span>
-              <span class="text-highlighted"
-                ><SearchHighlight :text="suggestion.value" :patterns="[completion.value]"
-              /></span>
-            </span>
-            <span
-              class="ml-auto shrink-0 text-xs text-muted tabular-nums"
-              :title="`${suggestion.count} ${suggestion.count === 1 ? 'test' : 'tests'}`"
-              >{{ suggestion.count }}</span
-            >
-          </template>
+          <p v-if="listingQualifiers" class="px-2 pt-1 pb-1 text-xs text-muted" aria-hidden="true">Filter by</p>
+          <div
+            v-for="(suggestion, index) in suggestions"
+            :id="optionId(index)"
+            :key="suggestionKey(suggestion)"
+            role="option"
+            :aria-selected="index === activeIndex"
+            class="flex items-center gap-2 min-w-0 rounded-md px-2 py-1.5 text-sm cursor-pointer select-none"
+            :class="index === activeIndex ? 'bg-elevated' : 'hover:bg-elevated/60'"
+            @mousemove="activeIndex = index"
+            @click="choose(index)"
+          >
+            <template v-if="suggestion.kind === 'field'">
+              <span class="font-mono text-highlighted shrink-0"
+                >{{ completion.negated ? '-' : '' }}{{ suggestion.key }}:</span
+              >
+              <span class="text-xs text-muted truncate">{{ suggestion.description }}</span>
+            </template>
+            <template v-else>
+              <span class="font-mono min-w-0 truncate">
+                <span class="text-muted">{{ completion.negated ? '-' : '' }}{{ suggestion.key }}:</span>
+                <span class="text-highlighted"
+                  ><SearchHighlight :text="suggestion.value" :patterns="[completion.value]"
+                /></span>
+              </span>
+              <span
+                class="ml-auto shrink-0 text-xs text-muted tabular-nums"
+                :title="`${suggestion.count} ${suggestion.count === 1 ? 'test' : 'tests'}`"
+                >{{ suggestion.count }}</span
+              >
+            </template>
+          </div>
         </div>
+        <p v-if="hint" class="px-3 pb-2 text-xs text-muted">
+          <span class="font-mono text-highlighted">{{ hint.key }}:</span> {{ hint.description }}, matched anywhere in it
+          — <span class="font-mono">*</span> stands for any characters.
+        </p>
+        <p class="hidden sm:block border-t border-default px-3 py-1.5 text-xs text-muted">
+          <span class="font-mono">-</span> excludes · <span class="font-mono">"…"</span> keeps spaces ·
+          <span class="font-mono">*</span> matches anything
+        </p>
       </div>
-      <p v-if="hint" class="px-3 pb-2 text-xs text-muted">
-        <span class="font-mono text-highlighted">{{ hint.key }}:</span> {{ hint.description }}, matched anywhere in it —
-        <span class="font-mono">*</span> stands for any characters.
-      </p>
-      <p class="hidden sm:block border-t border-default px-3 py-1.5 text-xs text-muted">
-        <span class="font-mono">-</span> excludes · <span class="font-mono">"…"</span> keeps spaces ·
-        <span class="font-mono">*</span> matches anything
-      </p>
     </template>
   </UPopover>
 </template>
