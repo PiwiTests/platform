@@ -41,6 +41,7 @@ beforeAll(async () => {
     { id: 1, name: 'Team mail', type: 'email', config: { address: 'team@example.test' }, userId: null },
     { id: 2, name: 'Slack', type: 'slack', config: { webhookUrl: 'https://hooks.example.test/x' }, userId: null },
     { id: 3, name: 'My mail', type: 'email', config: { address: 'me@example.test' }, userId: 11 },
+    { id: 4, name: 'Admin mail', type: 'email', config: { address: 'boss@example.test' }, userId: 10 },
   ]);
   const run = (projectId: number, daysAgo: number, passed: number) =>
     db.insert(schema.testRuns).values({
@@ -107,6 +108,50 @@ describe('report schedules', () => {
     expect(view.dashboardName).toBe('Executive');
     expect(new Date(view.nextRunAt!).getUTCDay()).toBe(1);
     expect(view.channels.map((c) => c.name)).toEqual(['Team mail', 'Slack']);
+  });
+
+  test("each channel names who receives it and whose it is; another person's address shows to administrators", async () => {
+    const reporter = { id: 11, isAdmin: false, authEnabled: true };
+    const administrator = { id: 10, isAdmin: true, authEnabled: true };
+    const ctx = { channels: await channels(), access: 'all' as const, timeZone: 'UTC', now: NOW };
+    const created = await reports.createReportSchedule(
+      db as any,
+      reports.parseScheduleBody(reports.reportScheduleInputSchema, {
+        name: 'Mine',
+        dashboard: 'executive',
+        cadence: 'daily',
+        at: '08:00',
+        channelIds: [3, 1],
+      }),
+      { ...ctx, actor: reporter },
+    );
+    expect(created.mine).toBe(true);
+    expect(created.ownerName).toBe('reporter');
+    expect(created.channels.map((c) => [c.recipient, c.owner])).toEqual([
+      ['Email to me@example.test', { kind: 'viewer' }],
+      ['Email to team@example.test', { kind: 'global' }],
+    ]);
+
+    // An administrator reads whose each channel is, and may add their own to the reporter's schedule.
+    const edited = await reports.updateReportSchedule(
+      db as any,
+      created.id,
+      reports.parseScheduleBody(reports.reportSchedulePatchSchema, { channelIds: [3, 4] }),
+      { ...ctx, actor: administrator },
+    );
+    expect(edited.mine).toBe(false);
+    expect(edited.ownerName).toBe('reporter');
+    expect(edited.channels.map((c) => [c.recipient, c.owner])).toEqual([
+      ['Email to me@example.test', { kind: 'user', name: 'reporter' }],
+      ['Email to boss@example.test', { kind: 'viewer' }],
+    ]);
+
+    // The reporter sees whose the administrator's channel is, not its address.
+    const seen = await reports.getReportSchedule(db as any, created.id, reporter, await channels());
+    expect(seen.channels.map((c) => [c.recipient, c.owner])).toEqual([
+      ['Email to me@example.test', { kind: 'viewer' }],
+      ["Email to admin's address", { kind: 'user', name: 'admin' }],
+    ]);
   });
 
   test('a partial update keeps the scope and the comparison it does not name', async () => {
