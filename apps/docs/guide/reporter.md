@@ -234,12 +234,10 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 
 **Connection errors.** Check that `serverUrl` answers from where the tests run, and run with `PIWI_VERBOSE=true` for
 the full request trace. A run the reporter could not deliver (dashboard down, or a 401 because no credential was set)
-is not lost: its results are saved locally and submitted on the next run for the same project, without traces or
-attachments. When streaming is interrupted mid-run, the reporter buffers the events and keeps retrying, then falls back
-to a batch submit at the end. The end-of-run work has a time budget,
-[`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default): when a
-dashboard stops answering, the reporter saves the results the same way once the budget runs out, so the CI job is not
-held until its own timeout.
+is saved locally and submitted on the project's next run, without traces or attachments. An interrupted stream is
+retried, then sent as a batch.
+[`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
+an unresponsive dashboard does not hold the CI job.
 
 ## Related
 

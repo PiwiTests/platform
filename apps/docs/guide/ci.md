@@ -40,8 +40,8 @@ jobs:
           PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
 ```
 
-`actions/checkout` fetches a shallow clone by default. That's fine: Piwi reads diffs from your Git host's API
-([Source control](./source-control)), not from the checkout, so no `fetch-depth` change is required.
+The shallow clone `actions/checkout` makes is fine: Piwi reads diffs from your Git host's API
+([Source control](./source-control)), not from the checkout.
 
 ## GitLab CI
 
@@ -59,8 +59,7 @@ e2e:
 ## Other systems
 
 Jenkins, CircleCI, Azure DevOps, Travis, Buildkite, TeamCity, Bitbucket, Semaphore, AppVeyor and Drone
-are recognized too — set the same two variables however your system exposes them. Nothing about the
-reporter is platform-specific; unrecognized CI just means less auto-filled metadata.
+are recognized too; set the same two variables. An unrecognized CI only means less auto-filled metadata.
 
 ## What gets detected
 
@@ -73,9 +72,9 @@ Without any configuration, the reporter records:
 - **Environment**: the Playwright version, and each test's browser and viewport.
 - **Shard index**: from Playwright's own `--shard` config.
 
-[Test metadata](/reference/test-metadata#scm-information-git) lists the variables each field comes from. Set
-`PIWI_BRANCH` (and `PIWI_BASE_BRANCH`) to override the resolved branches for a CI setup the detection does not cover,
-or turn a collector off with `collectScmInfo: false` or `collectCiInfo: false`.
+[Test metadata](/reference/test-metadata#scm-information-git) lists the variables each field comes from.
+`PIWI_BRANCH` and `PIWI_BASE_BRANCH` override the resolved branches; `collectScmInfo: false` or
+`collectCiInfo: false` turns a collector off.
 
 ## Sharding
 
@@ -118,38 +117,24 @@ If your CI isn't detected, set the label yourself to anything common to all shar
 
 ### Parallel jobs in one pipeline
 
-A job that is not sharded adds the CI job's own id to its run label (`GITHUB_JOB`, `CI_JOB_ID`, `CIRCLE_BUILD_NUM`,
-`TRAVIS_JOB_ID`, `SYSTEM_JOBID`, `BUILDKITE_JOB_ID`, `BITBUCKET_STEP_UUID`, `SEMAPHORE_JOB_ID`, `APPVEYOR_JOB_ID`),
-so two jobs of one pipeline that report to the same `projectName`, such as a GitLab `e2e:chrome` and `e2e:firefox`,
-stay two runs. Every leg of a GitHub Actions matrix shares one `GITHUB_JOB`, and Jenkins, TeamCity and Drone expose
-no per-job id. When such jobs report to the same project, give each its own label: otherwise jobs that are not
-sharded cancel each other's runs, and sharded ones merge into a single run. Put the matrix values in
-`PIWI_RUN_LABEL`. A configured label is used as it is, so the shards of each leg still merge with each other:
+A job that is not sharded adds the CI job's id (`GITHUB_JOB`, `CI_JOB_ID`, …) to its run label, so a GitLab
+`e2e:chrome` and `e2e:firefox` reporting to one `projectName` stay two runs. The legs of a GitHub Actions matrix
+share one job id, and Jenkins, TeamCity and Drone expose none: give each leg its own label, or its own `projectName`.
+A configured label is used as it is, so the shards of a leg still merge:
 
 ```yaml
-strategy:
-  matrix:
-    browser: [chromium, firefox]
-    shard: [1, 2, 3]
-steps:
-  - run: npx playwright test --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
-    env:
-      PIWI_DASHBOARD_URL: https://piwi.example.com
-      PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
-      PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.browser }}
+PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.browser }}
 ```
-
-Giving each leg its own `projectName` separates them as well.
 
 ## Watching a run while CI is still going
 
-Streaming is on by default: the run appears when the suite starts and fills in test by test, so you can read a
-failure's trace before the pipeline is done. See [Reporter → Live streaming](./reporter#live-streaming).
+Streaming is on by default: the run fills in test by test, so a failure's trace is readable before the pipeline
+ends ([Live streaming](./reporter#live-streaming)).
 
 ## Getting the run URL back out of CI
 
-The reporter surfaces the run URL wherever a later pipeline step can pick it up. All of it is best-effort: a
-failure in any channel is logged and never fails your run.
+Later pipeline steps can pick up the run URL. Every channel is best-effort: a failure is logged and never fails
+your run.
 
 **Always** — one line per failed test, printed the moment its final attempt fails, then a
 `View run: <url>` line once the run lands:
@@ -159,9 +144,8 @@ failure in any channel is logged and never fails your run.
 [Piwi Dashboard] View run: https://piwi.example.com/test-runs/42
 ```
 
-Between the title and the link is the failure **headline**, the one-line explanation the dashboard builds from the
-Playwright error (see [Your first failure](./first-failure)). The per-test link opens the failing execution's page,
-even while the run is still going.
+Between the title and the link is the failure's one-line [headline](./first-failure). The per-test link opens the
+failing execution's page, even while the run is still going.
 
 **GitHub Actions (automatic)** — step outputs, a job summary listing the failed tests with their links
 (20 at most, the rest counted as "+N more"), and a `::notice::` annotation:
@@ -205,15 +189,13 @@ e2e:
 
 ## Pull-request feedback
 
-Piwi can post the result on the pull request instead: a summary comment that separates new failures from pre-existing
-ones, and a commit status. A failure cluster can also re-run its tests in CI from the dashboard. Both are described on
-[Pull-request feedback & re-run](/features/pr-feedback).
+Piwi can post a summary comment (new failures apart from pre-existing ones) and a commit status on the pull request,
+and re-run a failure cluster's tests in CI: see [Pull-request feedback & re-run](/features/pr-feedback).
 
 ## Blocking a merge
 
-`npx playwright test` exits non-zero when anything failed. A merge policy usually asks harder questions (*did this
-change break something that was working*, *did a critical test fail*), and those need the run history, so the
-dashboard evaluates them.
+`npx playwright test` exits non-zero when anything failed. Questions such as *did this change break something that
+was working* need the run history, so the dashboard evaluates them.
 
 ```yaml
 - run: npx playwright test
@@ -242,13 +224,12 @@ evaluate the policy, prints every violation, and exits.
 | `--fail-on-flaky` | This run contains any flaky test (passed only after a retry) — stricter than `--max-new-flaky`, which only counts tests *newly* flaky |
 
 At least one rule is required — an empty policy is rejected rather than passing. Exit codes are part of the contract:
-**0** satisfied, **1** violated, **2** could not evaluate. A gate that cannot run never reports success, so a
-misconfigured pipeline fails loudly instead of waving every merge through.
+**0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline fails instead of passing.
 
 Three behaviors worth knowing:
 
-- **A quarantined test's failure does not count** toward `--max-failed`, `--require-tag` or `--require-selection`, and
-  the gate reports how many it excluded.
+- **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
+  `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
 
 - **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
   for.
@@ -258,14 +239,14 @@ Three behaviors worth knowing:
 
 ## Notifying people instead
 
-To tell the team when main goes red, configure a [notification subscription](/features/notifications) on the
-dashboard instead: the alerting rules stay in one place rather than in every pipeline.
+To tell the team when main goes red, use a [notification subscription](/features/notifications): the rules live
+in one place, not in every pipeline.
 
 ## Troubleshooting
 
 **Results don't appear.** Check the CI log for the reporter's own output; run with `PIWI_VERBOSE=true`
-for the full request trace. The usual causes are an unreachable `PIWI_DASHBOARD_URL` from the runner's
-network, or a missing API key against an instance with authentication enabled.
+for the full request trace. The usual causes are a `PIWI_DASHBOARD_URL` the runner cannot
+reach, or a missing API key while authentication is on.
 
 **Shards create several runs instead of one.** The run label wasn't detected, the shards disagree on
 `projectName`, or streaming is off. Set `runLabel` explicitly.
