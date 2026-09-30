@@ -173,6 +173,73 @@ object Glue {
     }
 
     /**
+     * What the dashboard's Open in IDE asks (`/api/piwi/open`): a file of a run, as a path relative to the
+     * run's working directory or an absolute one, at an optional 1-based line and column. `root` is the
+     * working directory when the dashboard knows it (its workspace root setting, the desktop app's linked
+     * folder), tried first. With `check`, the IDE only says whether one of its open projects holds the file.
+     * `piwiProject` names the Piwi project, which picks the IDE project connected to it when several hold the file.
+     */
+    sealed class OpenRequest {
+        data class File(
+            val path: String,
+            val line: Int?,
+            val column: Int?,
+            val check: Boolean,
+            val piwiProject: String?,
+            val root: String? = null,
+        ) : OpenRequest()
+
+        data class Refused(val error: String) : OpenRequest()
+    }
+
+    const val MAX_OPEN_PATH = 4096
+
+    /** Why a path given to Open in IDE is refused, or null when it is acceptable. */
+    private fun refusedPath(name: String, path: String): String? = when {
+        path.length > MAX_OPEN_PATH -> "$name is at most $MAX_OPEN_PATH characters"
+        '\u0000' in path -> "$name must not contain a NUL character"
+        // A UNC path would make the IDE reach a network share (and send the user's credentials to it).
+        path.startsWith("//") -> "network paths are not supported"
+        path.split('/').any { it == ".." } -> "$name must not contain '..'"
+        else -> null
+    }
+
+    /** Read the query of an open request; a missing line or column means none. */
+    fun parseOpenRequest(query: Map<String, List<String>>): OpenRequest {
+        fun last(name: String) = query[name]?.lastOrNull()?.trim()?.ifEmpty { null }
+        val path = last("file")?.replace('\\', '/') ?: return OpenRequest.Refused("file is required")
+        refusedPath("file", path)?.let { return OpenRequest.Refused(it) }
+        val root = last("root")?.replace('\\', '/')
+        if (root != null) {
+            refusedPath("root", root)?.let { return OpenRequest.Refused(it) }
+            if (!isAbsolutePath(root)) return OpenRequest.Refused("root must be an absolute path")
+        }
+        val line = last("line")
+        val lineNumber = line?.toIntOrNull()
+        if (line != null && (lineNumber == null || lineNumber < 1)) return OpenRequest.Refused("line must be a positive integer")
+        val column = last("column")
+        val columnNumber = column?.toIntOrNull()
+        if (column != null && (columnNumber == null || columnNumber < 1)) return OpenRequest.Refused("column must be a positive integer")
+        // `?check` and `?check=1` ask for a check; `?check=0` does not.
+        val check = query["check"]?.lastOrNull()?.trim()?.let { it != "0" && it != "false" } ?: query.containsKey("check")
+        return OpenRequest.File(path, lineNumber, columnNumber, check, last("project"), root)
+    }
+
+    /** Whether a path, with forward slashes, is absolute: `/home/me/a.ts` or `C:/me/a.ts`. */
+    fun isAbsolutePath(path: String): Boolean = path.startsWith("/") || Regex("^[A-Za-z]:/").containsMatchIn(path)
+
+    /**
+     * The files to look for, in order: an absolute path as is; a relative one under each root
+     * (the directories a run's paths may start from), each root once.
+     */
+    fun candidatePaths(path: String, roots: List<String>): List<String> {
+        val file = path.replace('\\', '/')
+        if (isAbsolutePath(file)) return listOf(file)
+        val relative = file.replace(Regex("^(\\./)+"), "").trimStart('/')
+        return roots.map { it.replace('\\', '/').trimEnd('/') }.filter { it.isNotEmpty() }.distinct().map { "$it/$relative" }
+    }
+
+    /**
      * A block of code re-indented to sit at a line indented with `indent`: its common
      * leading indentation removed, then `indent` added to every line after the first.
      */

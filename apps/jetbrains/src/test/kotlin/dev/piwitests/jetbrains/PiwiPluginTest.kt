@@ -152,6 +152,66 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
     }
 
+    /** The dashboard's Open in IDE finds a run's file in the open project and opens it at its line, through the built-in server. */
+    fun testTheDashboardOpensAFileAtItsLine() {
+        // The light test project's content is in memory: the files the dashboard asks for are on disk, under its directory.
+        val base = File(project.basePath!!)
+        File(base, "tests").mkdirs()
+        File(base, "tests/checkout.spec.ts").writeText("import { test } from '@playwright/test';\n\ntest('pays', async () => {\n  await pay();\n});\n")
+        File(base, "e2e/tests").mkdirs()
+        File(base, "e2e/tests/login.spec.ts").writeText("test('signs in', async () => {});\n")
+        val outside = FileUtil.createTempDirectory("piwi-outside", null)
+        File(outside, "tests").mkdirs()
+        File(outside, "tests/secret.spec.ts").writeText("secret\n")
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val client = java.net.http.HttpClient.newHttpClient()
+        fun get(query: String): java.net.http.HttpResponse<String> {
+            val future = client.sendAsync(
+                java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiOpenHandler.PATH}?$query"))
+                    .header("Origin", "http://127.0.0.1:3000")
+                    .GET()
+                    .build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString(),
+            )
+            val deadline = System.currentTimeMillis() + 20_000
+            while (!future.isDone && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            return future.get(1, TimeUnit.SECONDS)
+        }
+        fun json(response: java.net.http.HttpResponse<String>) = com.google.gson.JsonParser.parseString(response.body()).asJsonObject
+
+        assertEquals(400, get("line=3").statusCode())
+        val missing = get("file=tests/nowhere.spec.ts&check")
+        assertEquals(missing.body(), 404, missing.statusCode())
+        assertEquals(false, json(missing).get("found").asBoolean)
+        assertEquals("http://127.0.0.1:3000", missing.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+
+        // The dashboard's root, the run's working directory, is tried first; a root outside the project opens nothing.
+        val fromRoot = get("file=tests/login.spec.ts&check&root=" + java.net.URLEncoder.encode(File(base, "e2e").path, Charsets.UTF_8))
+        assertEquals(fromRoot.body(), 200, fromRoot.statusCode())
+        val escaped = get("file=tests/secret.spec.ts&check&root=" + java.net.URLEncoder.encode(outside.path, Charsets.UTF_8))
+        assertEquals(escaped.body(), 404, escaped.statusCode())
+
+        val checked = get("file=tests/checkout.spec.ts&line=4&column=9&check")
+        assertEquals(checked.body(), 200, checked.statusCode())
+        assertEquals(false, json(checked).get("opened").asBoolean)
+        assertNull(com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).selectedTextEditor?.virtualFile?.takeIf { it.name == "checkout.spec.ts" })
+
+        val opened = get("file=tests/checkout.spec.ts&line=4&column=9")
+        assertEquals(opened.body(), 200, opened.statusCode())
+        assertEquals(true, json(opened).get("opened").asBoolean)
+        assertEquals(
+            FileUtil.toSystemIndependentName(File(base, "tests/checkout.spec.ts").canonicalPath),
+            FileUtil.toSystemIndependentName(File(json(opened).get("file").asString).canonicalPath),
+        )
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val editor = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).selectedTextEditor
+        assertEquals("checkout.spec.ts", editor?.virtualFile?.name)
+        assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
+    }
+
     /** The service the plugin bundles, started with the descriptor's command line, answers in the protocol classes. */
     fun testTheBundledServiceAnswersThroughTheDescriptor() {
         val stub = StubInstance()
