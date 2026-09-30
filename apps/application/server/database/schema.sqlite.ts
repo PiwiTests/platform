@@ -1087,7 +1087,7 @@ export const healActions = sqliteTable(
     runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     dedupeKey: text('dedupe_key').notNull(),
     kind: text('kind').notNull().default('open-pr'),
-    status: text('status').notNull().default('pending'), // 'pending' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     payload: text('payload', { mode: 'json' }).notNull(),
     result: text('result', { mode: 'json' }),

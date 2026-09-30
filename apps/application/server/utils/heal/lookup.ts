@@ -19,7 +19,7 @@ export interface HealActionChip {
 }
 
 /** Actions worth surfacing — an open PR, or one still on its way. */
-const LIVE_STATUSES: HealActionStatus[] = ['opened', 'pending'];
+const LIVE_STATUSES: HealActionStatus[] = ['opened', 'pending', 'processing'];
 
 async function liveActionsForProject(db: DbClient, projectId: number) {
   return db

@@ -1097,7 +1097,7 @@ export const healActions = pgTable(
     runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
     dedupeKey: text('dedupe_key').notNull(),
     kind: text('kind').notNull().default('open-pr'),
-    status: text('status').notNull().default('pending'), // 'pending' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped'
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped'
     attempts: integer('attempts').notNull().default(0),
     payload: jsonb('payload').notNull(),
     result: jsonb('result'),
