@@ -66,11 +66,6 @@ export default eventHandler(async (event) => {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
   });
 
-  if (event.method === 'OPTIONS') {
-    setResponseStatus(event, 204);
-    return null;
-  }
-
   // Authenticate using the same API-key / session mechanism as the REST API,
   // then resolve the caller's project scope. Every tool honors this scope so a
   // non-admin key can only read the projects it is assigned to — the same
