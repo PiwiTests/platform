@@ -4,6 +4,24 @@ import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
+import { stripAnsi } from '#shared/error-parse';
+import { parseLocation } from '#shared/parse-location';
+import {
+  RUN_SEARCH_FIELDS,
+  collectTestSearchValues,
+  compileTestSearch,
+  parseTestSearch,
+  testSearchHighlights,
+  type TestSearchSubject,
+} from '#shared/test-search';
+import {
+  compareFileOrder,
+  compareRunOrder,
+  describeGroupKeys,
+  fileGroupKey,
+  fileGroupRows,
+  type TestPosition,
+} from '~/utils/test-list-order';
 
 /** Cluster id → its display name and triage status, for the row chip and the
  *  cluster group header. Supplied by the page from the failure-groups payload. */
@@ -46,32 +64,68 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
 // Filter state is owned by the parent page so it survives tab switches.
 const testCaseSearch = defineModel<string>('search', { default: '' });
 const activeStatuses = defineModel<string[]>('activeStatuses', { default: () => [] });
-const testCaseBrowserFilter = defineModel<string>('browserFilter', { default: 'all' });
-/** Selected test tags (stored form, no leading `@`); a test must carry every one. */
-const testCaseTagFilter = defineModel<string[]>('tagFilter', { default: () => [] });
 
 const showNewRegressionsOnly = ref(false);
 const showNewFlakyOnly = ref(false);
-const testCaseLockFilter = ref('all');
-
-/** Lock names present anywhere in this run, for the lock filter dropdown. */
-const testCaseLockOptions = computed(() => {
-  const locks = new Set<string>();
-  for (const tc of props.testCases) for (const lock of tc.locks ?? []) locks.add(lock);
-  const items = [{ label: 'All locks', value: 'all' }];
-  for (const lock of [...locks].sort()) items.push({ label: lock, value: lock });
-  return items;
-});
 
 /** True when at least one execution in the run carries a lock. */
 const hasAnyLocks = computed(() => props.testCases.some((tc) => (tc.locks?.length ?? 0) > 0));
 
-/** Tags present anywhere in this run, for the tag filter; shown with their `@`. */
-const testCaseTagOptions = computed(() => {
-  const tags = new Set<string>();
-  for (const tc of props.testCases) for (const tag of tc.tags ?? []) tags.add(tag);
-  return [...tags].sort().map((tag) => ({ label: `@${tag}`, value: tag }));
-});
+// ── Search ──────────────────────────────────────────────────────────────────
+// The search box's language (`file:`, `describe:`, `tag:`, `browser:`, `-…`)
+// is shared with the project catalog; here it runs in memory over the run.
+const parsedSearch = computed(() => parseTestSearch(testCaseSearch.value, RUN_SEARCH_FIELDS));
+const searchMatcher = computed(() => compileTestSearch(parsedSearch.value));
+const searchHighlights = computed(() =>
+  parsedSearch.value.terms.length > 0 ? testSearchHighlights(parsedSearch.value) : null,
+);
+
+// What search, sort and grouping read from an execution, built once per row
+// object (a live row is replaced by a new object when it changes).
+const subjectCache = new WeakMap<TestCaseResult, TestSearchSubject>();
+function searchSubject(tc: TestCaseResult): TestSearchSubject {
+  let subject = subjectCache.get(tc);
+  if (!subject) {
+    subject = {
+      title: tc.title,
+      suitePath: tc.suitePath ?? [],
+      filePath: tc.filePath || tc.location ? positionOf(tc).filePath : null,
+      error: tc.error ? stripAnsi(tc.error) : null,
+      tags: tc.tags ?? [],
+      locks: tc.locks ?? [],
+      browser: tc.browser?.projectName ?? null,
+      owner: tc.testMeta?.owner ?? null,
+      priority: tc.testMeta?.priority ?? null,
+      feature: tc.testMeta?.feature ?? null,
+    };
+    subjectCache.set(tc, subject);
+  }
+  return subject;
+}
+
+const positionCache = new WeakMap<TestCaseResult, TestPosition>();
+function positionOf(tc: TestCaseResult): TestPosition {
+  let position = positionCache.get(tc);
+  if (!position) {
+    const parsed = tc.location ? parseLocation(tc.location) : null;
+    // A retried test is listed by its final attempt; it ran first when its first attempt did.
+    const starts = [tc.startedAt, ...(tc.attempts ?? []).map((a) => a.startedAt)].filter(
+      (t): t is number => typeof t === 'number' && t > 0,
+    );
+    position = {
+      filePath: tc.filePath || parsed?.filePath || 'unknown',
+      suitePath: tc.suitePath ?? [],
+      line: parsed?.line ?? null,
+      column: parsed?.column ?? null,
+      startedAt: starts.length > 0 ? Math.min(...starts) : null,
+    };
+    positionCache.set(tc, position);
+  }
+  return position;
+}
+
+/** Every value the search qualifiers can take in this run, for completion. */
+const searchValues = computed(() => collectTestSearchValues(props.testCases.map(searchSubject), RUN_SEARCH_FIELDS));
 
 const STATUS_OPTIONS = [
   { label: 'Passed', value: 'passed' },
@@ -87,17 +141,6 @@ function toggleStatus(value: string) {
     ? activeStatuses.value.filter((s) => s !== value)
     : [...activeStatuses.value, value];
 }
-
-const testCaseBrowserOptions = computed(() => {
-  const browsers = new Set<string>();
-  for (const tc of props.testCases) {
-    const name = tc.browser?.projectName;
-    if (name) browsers.add(name);
-  }
-  const items = [{ label: 'All browsers', value: 'all' }];
-  for (const b of [...browsers].sort()) items.push({ label: b, value: b });
-  return items;
-});
 
 function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
@@ -115,80 +158,18 @@ const filteredTestCases = computed<TestCaseResult[]>(() => {
   if (activeStatuses.value.length > 0) {
     cases = cases.filter((tc) => activeStatuses.value.some((s) => matchesStatus(tc, s)));
   }
-  if (testCaseBrowserFilter.value !== 'all') {
-    cases = cases.filter((tc) => tc.browser?.projectName === testCaseBrowserFilter.value);
-  }
-  if (testCaseTagFilter.value.length > 0) {
-    cases = cases.filter((tc) => testCaseTagFilter.value.every((tag) => (tc.tags ?? []).includes(tag)));
-  }
-  if (testCaseSearch.value) {
-    // Search matches the title, the path AND the error text, so a failure is
-    // findable by what broke, not only by which test broke.
-    const query = testCaseSearch.value.toLowerCase();
-    cases = cases.filter(
-      (tc) =>
-        tc.title.toLowerCase().includes(query) ||
-        tc.location?.toLowerCase().includes(query) ||
-        tc.error?.toLowerCase().includes(query),
-    );
+  if (parsedSearch.value.terms.length > 0) {
+    // A free word looks in the title, the describe blocks, the path AND the
+    // error text, so a failure is findable by what broke, not only by which test broke.
+    const matches = searchMatcher.value;
+    cases = cases.filter((tc) => matches(searchSubject(tc)));
   }
   if (showNewRegressionsOnly.value) cases = cases.filter((tc) => tc.isNewRegression);
   if (showNewFlakyOnly.value) cases = cases.filter((tc) => tc.isNewFlaky);
-  if (testCaseLockFilter.value !== 'all') {
-    cases = cases.filter((tc) => (tc.locks ?? []).includes(testCaseLockFilter.value));
-  }
   return cases;
 });
 
-// ── Sort (inside each group) ────────────────────────────────────────────────
-const SORT_NATURAL = 'natural';
-const sortKey = ref<string>(SORT_NATURAL);
-const sortDir = ref<'asc' | 'desc'>('asc');
-
 const failedCount = computed(() => props.testCases.filter((tc) => isFailedStatus(tc.status)).length);
-
-const sortOptions = computed(() => [
-  { label: failedCount.value > 0 ? 'Failures first' : 'Run order', value: SORT_NATURAL },
-  { label: 'Title', value: 'title' },
-  { label: 'Status', value: 'status' },
-  { label: 'Duration', value: 'duration' },
-  { label: 'Worker', value: 'workerIndex' },
-  { label: 'Retries', value: 'retries' },
-  { label: 'Wasted', value: 'wastedTimeMs' },
-]);
-
-function sortValue(tc: TestCaseResult, key: string): string | number {
-  switch (key) {
-    case 'title':
-      return tc.title ?? '';
-    case 'status':
-      return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
-    case 'duration':
-      return tc.duration ?? 0;
-    case 'workerIndex':
-      return tc.workerIndex ?? -1;
-    case 'retries':
-      return tc.retries ?? 0;
-    case 'wastedTimeMs':
-      return tc.wastedTimeMs ?? 0;
-    default:
-      return '';
-  }
-}
-
-function sortCases(cases: TestCaseResult[]): TestCaseResult[] {
-  if (sortKey.value === SORT_NATURAL) {
-    if (failedCount.value === 0) return cases;
-    return [...cases].sort((a, b) => failureFirstCompare(a.status, b.status));
-  }
-  const dir = sortDir.value === 'asc' ? 1 : -1;
-  return [...cases].sort((a, b) => {
-    const va = sortValue(a, sortKey.value);
-    const vb = sortValue(b, sortKey.value);
-    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-    return String(va).localeCompare(String(vb)) * dir;
-  });
-}
 
 // ── Grouping ────────────────────────────────────────────────────────────────
 const { raw: storedGroup, set: setGroup } = useGroupByCookie('run-tests', [
@@ -217,6 +198,104 @@ const groupByItems = computed(() => [
   ...(hasAnyLocks.value ? [{ label: 'Lock', value: 'lock' }] : []),
   { label: 'None', value: 'none' },
 ]);
+const groupedByFile = computed(() => groupBy.value === 'file' || groupBy.value === 'file-describe');
+/** The describe blocks are on the row unless the grouping shows them as headers. */
+const showSuitePath = computed(() => groupBy.value !== 'file-describe');
+
+// ── Sort (inside each group) ────────────────────────────────────────────────
+// Run order is when each test first started; file order is where it is
+// declared. Until a sort is picked, the file groupings read in file order and
+// the others in run order.
+type SortKey =
+  | 'run'
+  | 'file'
+  | 'failures'
+  | 'title'
+  | 'status'
+  | 'duration'
+  | 'workerIndex'
+  | 'retries'
+  | 'wastedTimeMs';
+/** The direction each sort starts in: the slowest, most retried and most wasteful first. */
+const SORT_DIRECTIONS: Record<SortKey, 'asc' | 'desc'> = {
+  run: 'asc',
+  file: 'asc',
+  failures: 'asc',
+  title: 'asc',
+  status: 'asc',
+  duration: 'desc',
+  workerIndex: 'asc',
+  retries: 'desc',
+  wastedTimeMs: 'desc',
+};
+const SORT_OPTIONS: Array<{ label: string; value: SortKey }> = [
+  { label: 'Run order', value: 'run' },
+  { label: 'File order', value: 'file' },
+  { label: 'Failures first', value: 'failures' },
+  { label: 'Title', value: 'title' },
+  { label: 'Status', value: 'status' },
+  { label: 'Duration', value: 'duration' },
+  { label: 'Worker', value: 'workerIndex' },
+  { label: 'Retries', value: 'retries' },
+  { label: 'Wasted', value: 'wastedTimeMs' },
+];
+const chosenSort = ref<SortKey | null>(null);
+const sortDir = ref<'asc' | 'desc'>('asc');
+const sortKey = computed<SortKey>({
+  get: () => chosenSort.value ?? (groupedByFile.value ? 'file' : 'run'),
+  set: (value) => {
+    chosenSort.value = value;
+    sortDir.value = SORT_DIRECTIONS[value];
+  },
+});
+/** The sort follows where tests sit, so describe blocks sit among the tests by position. */
+const positionalSort = computed(() => sortKey.value === 'run' || sortKey.value === 'file');
+
+function sortValue(tc: TestCaseResult, key: SortKey): string | number {
+  switch (key) {
+    case 'title':
+      return tc.title ?? '';
+    case 'status':
+      return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
+    case 'duration':
+      return tc.duration ?? 0;
+    case 'workerIndex':
+      return tc.workerIndex ?? -1;
+    case 'retries':
+      return tc.retries ?? 0;
+    case 'wastedTimeMs':
+      return tc.wastedTimeMs ?? 0;
+    default:
+      return '';
+  }
+}
+
+const runOrder = (a: TestCaseResult, b: TestCaseResult) =>
+  compareRunOrder(positionOf(a), positionOf(b)) || a.executionId - b.executionId;
+
+const compareCases = computed<(a: TestCaseResult, b: TestCaseResult) => number>(() => {
+  const key = sortKey.value;
+  const dir = sortDir.value === 'asc' ? 1 : -1;
+  switch (key) {
+    case 'run':
+      return (a, b) => runOrder(a, b) * dir;
+    case 'file':
+      return (a, b) => (compareFileOrder(positionOf(a), positionOf(b)) || runOrder(a, b)) * dir;
+    case 'failures':
+      return (a, b) => failureFirstCompare(a.status, b.status) || runOrder(a, b);
+    default:
+      return (a, b) => {
+        const va = sortValue(a, key);
+        const vb = sortValue(b, key);
+        const order = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
+        return order * dir || runOrder(a, b);
+      };
+  }
+});
+
+function sortCases(cases: TestCaseResult[]): TestCaseResult[] {
+  return [...cases].sort(compareCases.value);
+}
 
 // The quiet buckets (passed, skipped, fixme, didn't run) start collapsed; every other
 // group starts open. A user click flips a group from its default; a filter
@@ -231,20 +310,14 @@ const DEFAULT_COLLAPSED_BUCKETS = new Set([
 const userToggled = ref(new Set<string>());
 const hasFilter = computed(
   () =>
-    testCaseSearch.value !== '' ||
+    parsedSearch.value.terms.length > 0 ||
     activeStatuses.value.length > 0 ||
-    testCaseBrowserFilter.value !== 'all' ||
-    testCaseTagFilter.value.length > 0 ||
-    testCaseLockFilter.value !== 'all' ||
     showNewRegressionsOnly.value ||
     showNewFlakyOnly.value,
 );
 function clearFilters() {
   testCaseSearch.value = '';
   activeStatuses.value = [];
-  testCaseBrowserFilter.value = 'all';
-  testCaseTagFilter.value = [];
-  testCaseLockFilter.value = 'all';
   showNewRegressionsOnly.value = false;
   showNewFlakyOnly.value = false;
 }
@@ -274,6 +347,8 @@ interface GroupHeaderItem {
   filePath?: string | null;
   /** Nesting depth for the File + Describe grouping (0 = file). */
   depth?: number;
+  /** Which search matches to mark in the label: a file's or a describe block's. */
+  labelField?: 'file' | 'describe';
 }
 interface TestItem {
   kind: 'test';
@@ -308,77 +383,30 @@ const rows = computed<Row[]>(() => {
 
   const out: Row[] = [];
 
-  if (groupBy.value === 'file') {
-    const byFile = new Map<string, TestCaseResult[]>();
-    for (const tc of cases) {
-      const fp = tc.filePath ?? 'unknown';
-      if (!byFile.has(fp)) byFile.set(fp, []);
-      byFile.get(fp)!.push(tc);
-    }
-    for (const [filePath, fileCases] of [...byFile.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-      const key = `file:${filePath}`;
-      out.push({
-        kind: 'group',
-        key,
-        label: filePath,
-        count: fileCases.length,
-        icon: 'i-lucide-file-code-2',
-        filePath,
-        stats: computeStats(fileCases),
-      });
-      if (isOpen(key)) for (const tc of sortCases(fileCases)) out.push({ kind: 'test', key: `t${tc.executionId}`, tc });
-    }
-    return out;
-  }
-
-  if (groupBy.value === 'file-describe') {
-    const byFile = new Map<string, TestCaseResult[]>();
-    for (const tc of cases) {
-      const fp = tc.filePath ?? 'unknown';
-      if (!byFile.has(fp)) byFile.set(fp, []);
-      byFile.get(fp)!.push(tc);
-    }
-    // Recurse the describe hierarchy: a group per suitePath segment, then the
-    // tests declared directly at this level. Sort applies within each level.
-    const addLevel = (levelCases: TestCaseResult[], filePath: string, parentSuite: string[], depth: number) => {
-      const parentLen = parentSuite.length;
-      const direct = levelCases.filter((t) => (t.suitePath ?? []).length === parentLen);
-      const nested = levelCases.filter((t) => (t.suitePath ?? []).length > parentLen);
-      const groups = new Map<string, TestCaseResult[]>();
-      for (const t of nested) {
-        const seg = (t.suitePath ?? [])[parentLen]!;
-        if (!groups.has(seg)) groups.set(seg, []);
-        groups.get(seg)!.push(t);
-      }
-      for (const [seg, groupTests] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-        const groupPath = [...parentSuite, seg];
-        const key = `describe:${filePath}\x1f${groupPath.join('\x1f')}`;
+  if (groupedByFile.value) {
+    for (const row of fileGroupRows(cases, {
+      describe: groupBy.value === 'file-describe',
+      position: positionOf,
+      compare: compareCases.value,
+      positional: positionalSort.value,
+      isOpen,
+      testKey: (tc) => `t${tc.executionId}`,
+    })) {
+      if (row.kind === 'test') {
+        out.push({ kind: 'test', key: row.key, tc: row.test, depth: row.depth });
+      } else {
         out.push({
           kind: 'group',
-          key,
-          label: seg,
-          count: groupTests.length,
-          icon: 'i-lucide-folder',
-          depth,
-          stats: computeStats(groupTests),
+          key: row.key,
+          label: row.label,
+          count: row.tests.length,
+          icon: row.isFile ? 'i-lucide-file-code-2' : 'i-lucide-folder',
+          filePath: row.isFile ? row.filePath : null,
+          stats: computeStats(row.tests),
+          depth: row.depth,
+          labelField: row.isFile ? 'file' : 'describe',
         });
-        if (isOpen(key)) addLevel(groupTests, filePath, groupPath, depth + 1);
       }
-      for (const tc of sortCases(direct)) out.push({ kind: 'test', key: `t${tc.executionId}`, tc, depth });
-    };
-    for (const [filePath, fileCases] of [...byFile.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-      const key = `file:${filePath}`;
-      out.push({
-        kind: 'group',
-        key,
-        label: filePath,
-        count: fileCases.length,
-        icon: 'i-lucide-file-code-2',
-        filePath,
-        stats: computeStats(fileCases),
-        depth: 0,
-      });
-      if (isOpen(key)) addLevel(fileCases, filePath, [], 1);
     }
     return out;
   }
@@ -469,17 +497,13 @@ const groupKeysByExecution = computed(() => {
   const map = new Map<number, string[]>();
   if (groupBy.value === 'none') return map;
   for (const tc of filteredTestCases.value) {
-    const fp = tc.filePath ?? 'unknown';
     if (groupBy.value === 'lock') {
       const locks = tc.locks ?? [];
       map.set(tc.executionId, locks.length ? locks.map((l) => `lock:${l}`) : ['lock:none']);
     } else if (groupBy.value === 'file') {
-      map.set(tc.executionId, [`file:${fp}`]);
+      map.set(tc.executionId, [fileGroupKey(positionOf(tc).filePath)]);
     } else if (groupBy.value === 'file-describe') {
-      const keys = [`file:${fp}`];
-      const sp = tc.suitePath ?? [];
-      for (let i = 1; i <= sp.length; i++) keys.push(`describe:${fp}\x1f${sp.slice(0, i).join('\x1f')}`);
-      map.set(tc.executionId, keys);
+      map.set(tc.executionId, describeGroupKeys(positionOf(tc)));
     } else if (isFailedStatus(tc.status)) {
       map.set(tc.executionId, [tc.failureClusterId != null ? `cluster:${tc.failureClusterId}` : 'cluster:none']);
     } else {
@@ -668,62 +692,16 @@ defineExpose({ scrollToCase });
 
 <template>
   <div class="flex flex-col min-h-0">
-    <!-- Filters, in two rows: text and the run's dimensions, then outcomes.
-         How the rows are grouped and sorted sits on the list's own header. -->
+    <!-- Filters, in two rows: the search (words and file:, describe:, tag:,
+         browser:… qualifiers), then outcomes. How the rows are grouped and
+         sorted sits on the list's own header. -->
     <div class="mb-3 shrink-0 space-y-2">
-      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <UInput
-          v-model="testCaseSearch"
-          placeholder="Search title, path, error…"
-          icon="i-lucide-search"
-          size="sm"
-          class="w-full sm:w-auto sm:flex-1 sm:min-w-48"
-        />
-        <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-          <USelect
-            v-model="testCaseBrowserFilter"
-            :items="testCaseBrowserOptions"
-            size="sm"
-            class="w-full sm:w-36"
-            aria-label="Filter by browser"
-          />
-          <USelectMenu
-            v-if="testCaseTagOptions.length > 0"
-            v-model="testCaseTagFilter"
-            :items="testCaseTagOptions"
-            value-key="value"
-            multiple
-            size="sm"
-            class="w-full sm:w-36"
-            aria-label="Filter by tag"
-            title="Show the tests carrying every selected tag"
-          >
-            <template #default>
-              <div class="flex items-center gap-1.5 min-w-0">
-                <UIcon
-                  name="i-lucide-tag"
-                  class="size-3.5 shrink-0"
-                  :class="testCaseTagFilter.length ? 'text-primary' : 'text-dimmed'"
-                />
-                <span v-if="testCaseTagFilter.length === 0" class="text-muted">All tags</span>
-                <span v-else-if="testCaseTagFilter.length === 1" class="truncate font-mono">
-                  @{{ testCaseTagFilter[0] }}
-                </span>
-                <span v-else>{{ testCaseTagFilter.length }} tags</span>
-              </div>
-            </template>
-          </USelectMenu>
-          <USelect
-            v-if="hasAnyLocks"
-            v-model="testCaseLockFilter"
-            :items="testCaseLockOptions"
-            icon="i-lucide-lock"
-            size="sm"
-            class="w-full sm:w-36"
-            aria-label="Filter by lock"
-          />
-        </div>
-      </div>
+      <TestSearchInput
+        v-model="testCaseSearch"
+        :fields="RUN_SEARCH_FIELDS"
+        :values="searchValues"
+        placeholder="Search tests, or filter with file:, describe:, tag:…"
+      />
 
       <div class="flex flex-wrap items-center gap-1">
         <StatusFilterChip
@@ -844,7 +822,7 @@ defineExpose({ scrollToCase });
             <span class="text-xs text-muted">Sort</span>
             <USelect
               v-model="sortKey"
-              :items="sortOptions"
+              :items="SORT_OPTIONS"
               size="xs"
               class="min-w-0 flex-1 sm:w-32 sm:flex-none"
               aria-label="Sort tests by"
@@ -853,7 +831,7 @@ defineExpose({ scrollToCase });
               size="xs"
               variant="outline"
               color="neutral"
-              :disabled="sortKey === 'natural'"
+              :disabled="sortKey === 'failures'"
               :icon="sortDir === 'asc' ? 'i-lucide-arrow-up-narrow-wide' : 'i-lucide-arrow-down-wide-narrow'"
               :title="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
               :aria-label="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
@@ -887,6 +865,8 @@ defineExpose({ scrollToCase });
                       item.tc.tags,
                       item.tc.locks,
                       liveStep(item.tc)?.title,
+                      showSuitePath,
+                      item.tc.suitePath,
                     ]
                   : [item.label, item.count, item.triageStatus]
               "
@@ -903,6 +883,7 @@ defineExpose({ scrollToCase });
                 :cluster-id="item.clusterId"
                 :stats="item.stats"
                 :file-path="item.filePath"
+                :highlight="item.labelField ? searchHighlights?.[item.labelField] : null"
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleGroup(item.key)"
@@ -918,6 +899,8 @@ defineExpose({ scrollToCase });
                 :live-step="liveStep(item.tc)"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
+                :suite-path="showSuitePath ? item.tc.suitePath : null"
+                :highlight="searchHighlights"
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleRow(item.tc)"

@@ -9,6 +9,7 @@ import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { HELP_TOPICS } from '~/utils/help-content';
 import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
+import { TEST_SEARCH_FIELD_DEFS } from '#shared/test-search';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import { headingAnchor, sidebars } from '../../../docs/.vitepress/navigation';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
@@ -408,6 +409,29 @@ describe('hand-written reference pages match the code', () => {
     const section = sectionOf(page, 'Failure inbox');
     for (const key of keys) {
       expect(section, `${page} does not list the failure inbox key \`${key}\``).toContain(`\`${key}\``);
+    }
+    // The test lists' search box: Ctrl+F reaches it, and the keys its keydown handler takes.
+    const lists = sectionOf(page, 'Test lists');
+    expect(read('apps/application/app/composables/useFindShortcut.ts')).toContain("!== 'f'");
+    expect(lists, `${page} does not list the Ctrl + F find shortcut`).toContain('`Ctrl` + `F`');
+    const search = read('apps/application/app/components/shared/TestSearchInput.vue');
+    const searchHandler = /function onKeydown[\s\S]*?\n}\n/.exec(search)?.[0] ?? '';
+    const KEY_NAMES: Record<string, string> = { ArrowDown: '↓', ArrowUp: '↑', Escape: 'Esc' };
+    const searchKeys = [...searchHandler.matchAll(/case '(\w+)':/g)].map((m) => KEY_NAMES[m[1]!] ?? m[1]!);
+    expect(searchKeys.length, 'no keys found in the test search keydown handler').toBeGreaterThan(0);
+    for (const key of searchKeys) {
+      expect(lists, `${page} does not list the test search key \`${key}\``).toContain(`\`${key}\``);
+    }
+  });
+
+  test('every test search qualifier is on the Test search page', () => {
+    const page = sectionOf('apps/docs/reference/test-search.md', 'Qualifiers');
+    for (const def of TEST_SEARCH_FIELD_DEFS) {
+      for (const key of [def.key, ...def.aliases]) {
+        expect(page, `apps/docs/reference/test-search.md does not name the qualifier \`${key}:\``).toContain(
+          `\`${key}:\``,
+        );
+      }
     }
   });
 

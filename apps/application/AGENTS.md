@@ -311,6 +311,12 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   bold frozen header) and save them with `useDesktopDownload().saveBlob`, since a download link does nothing in
   the desktop shell. CSV stays only for machine consumers (the API `format=csv`, `/api/rollups`, the CLI).
   Page code imports the renderer lazily (`await import(...)`).
+- **Test lists search and order one way.** A list of tests searches with `TestSearchInput` and the language in
+  `#shared/test-search` (in memory with `compileTestSearch`, in SQL with `testSearchConditions` from
+  `#shared/utils/test-search-sql`), marks matches with `SearchHighlight`, and orders and groups its rows with
+  `app/utils/test-list-order.ts` (run order, file order, File + Describe). Never add a second search syntax, a separate
+  tag / lock / browser filter control next to it, or another describe-tree builder. A new qualifier is an entry in
+  `TEST_SEARCH_FIELD_DEFS` plus its row in `apps/docs/reference/test-search.md` (the drift test checks the page).
 - Add a `title` attribute to any control whose purpose is not obvious from its label.
 - **Clickable source paths**: render any repo-relative path or `file:line[:col]` with `OpenInIdeLink`, never a bare
   `<span>`/`<code>`. Pass `filePath` (+ `line`/`column`) or `location`, and thread `projectKey` (the Piwi project **id**)

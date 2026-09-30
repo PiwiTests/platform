@@ -19,7 +19,16 @@ test.describe.serial('Run page Tests tab', () => {
     await page.getByRole('option', { name: label }).click();
   }
 
+  async function selectSort(page: import('@playwright/test').Page, label: string) {
+    await page.getByRole('combobox', { name: 'Sort tests by' }).click();
+    await page.getByRole('option', { name: label, exact: true }).click();
+  }
+
+  const searchBox = (page: import('@playwright/test').Page) => page.getByRole('combobox', { name: 'Search tests' });
+
   async function submitRun(request: APIRequestContext) {
+    // The tests started in the reverse of their file order, so run order and file order differ.
+    const startedAt = Date.now() - 60_000;
     const response = await retryPost(request, '/api/test-runs/submit', {
       data: {
         projectName: PROJECT.RUN_PAGE_FILTERS,
@@ -38,6 +47,7 @@ test.describe.serial('Run page Tests tab', () => {
             location: 'tests/auth.spec.ts:10:5',
             suitePath: ['Authentication'],
             error: loginTimeout(30000),
+            startedAt: startedAt + 3000,
           },
           {
             title: 'login via modal',
@@ -46,6 +56,7 @@ test.describe.serial('Run page Tests tab', () => {
             location: 'tests/auth.spec.ts:30:5',
             suitePath: ['Authentication'],
             error: loginTimeout(15000),
+            startedAt: startedAt + 2000,
           },
           {
             title: 'cart shows items',
@@ -53,8 +64,15 @@ test.describe.serial('Run page Tests tab', () => {
             duration: 2000,
             location: 'tests/cart.spec.ts:12:5',
             error: cartAssertion,
+            startedAt: startedAt + 1000,
           },
-          { title: 'homepage loads', status: 'passed', duration: 900, location: 'tests/home.spec.ts:5:5' },
+          {
+            title: 'homepage loads',
+            status: 'passed',
+            duration: 900,
+            location: 'tests/home.spec.ts:5:5',
+            startedAt,
+          },
         ],
       },
       timeout: 20000,
@@ -76,17 +94,20 @@ test.describe.serial('Run page Tests tab', () => {
     loginClusterId = loginHeader.failureClusterId;
   });
 
-  test('the None grouping lists failures first with their error text and a cluster chip', async ({ page }) => {
+  test('the None grouping lists the tests in run order, with their error text and a cluster chip', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
     await selectGroup(page, 'None');
 
-    // Failure-first default order, stable within each status.
-    await expect(visibleTitles(page)).toHaveCount(4);
-    await expect(visibleTitles(page).nth(0)).toHaveText('login via header');
-    await expect(visibleTitles(page).nth(1)).toHaveText('login via modal');
-    await expect(visibleTitles(page).nth(2)).toHaveText('cart shows items');
-    await expect(visibleTitles(page).nth(3)).toHaveText('homepage loads');
+    // Run order: when each test started.
+    await expect(visibleTitles(page)).toHaveText([
+      'homepage loads',
+      'cart shows items',
+      'login via modal',
+      'login via header',
+    ]);
+    // Outside the File + Describe grouping, the describe block is named before the title.
+    await expect(page.getByText(/Authentication ›/).filter({ visible: true })).toHaveCount(2);
 
     // The one-line headline under each failed title, with the raw error as its tooltip.
     const loginHeadline = page
@@ -103,7 +124,30 @@ test.describe.serial('Run page Tests tab', () => {
     // A cluster chip on every failing row links to the cluster page.
     const clusterLinks = page.locator('a[href^="/failure-clusters/"]:visible');
     await expect(clusterLinks).toHaveCount(3, { timeout: 15000 });
-    await expect(clusterLinks.first()).toHaveAttribute('href', `/failure-clusters/${loginClusterId}`);
+    await expect(page.locator(`a[href="/failure-clusters/${loginClusterId}"]:visible`)).toHaveCount(2);
+  });
+
+  test('the sort puts the tests in file order, or the failures first', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await selectGroup(page, 'None');
+
+    await selectSort(page, 'File order');
+    await expect(visibleTitles(page)).toHaveText([
+      'login via header',
+      'login via modal',
+      'cart shows items',
+      'homepage loads',
+    ]);
+
+    // The failing tests first, each part in run order.
+    await selectSort(page, 'Failures first');
+    await expect(visibleTitles(page)).toHaveText([
+      'cart shows items',
+      'login via modal',
+      'login via header',
+      'homepage loads',
+    ]);
   });
 
   test('the cluster grouping is the default on a red run and hides passing tests under a group', async ({ page }) => {
@@ -128,10 +172,16 @@ test.describe.serial('Run page Tests tab', () => {
     await selectGroup(page, 'File + Describe');
 
     // The two auth tests share a describe block, so a nested "Authentication"
-    // group header appears (under its file) with both tests beneath it.
+    // group header appears (under its file) with both tests beneath it, in the
+    // order they are declared; the rows do not repeat the block's name.
     await expect(page.getByText('Authentication', { exact: true })).toBeVisible({ timeout: 15000 });
-    await expect(visibleTitles(page).filter({ hasText: 'login via header' })).toHaveCount(1);
-    await expect(visibleTitles(page).filter({ hasText: 'login via modal' })).toHaveCount(1);
+    await expect(visibleTitles(page)).toHaveText([
+      'login via header',
+      'login via modal',
+      'cart shows items',
+      'homepage loads',
+    ]);
+    await expect(page.getByText(/Authentication ›/).filter({ visible: true })).toHaveCount(0);
   });
 
   test('the count bar filters the list and switches to the Tests tab from another tab', async ({ page }) => {
@@ -159,9 +209,68 @@ test.describe.serial('Run page Tests tab', () => {
     await waitForHydration(page);
 
     // "0 items" only appears in the cart assertion's error, never in a title.
-    await page.getByPlaceholder('Search title').fill('0 items');
+    await searchBox(page).fill('"0 items"');
     await expect(visibleTitles(page)).toHaveCount(1);
     await expect(visibleTitles(page).first()).toHaveText('cart shows items');
+  });
+
+  test('a qualifier searches one field, completed from the run’s own values', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    // An empty box lists the qualifiers.
+    await searchBox(page).click();
+    await expect(page.getByRole('option', { name: /^describe:/ })).toBeVisible();
+
+    // A qualifier lists the values it can take; Enter takes the highlighted one.
+    await searchBox(page).pressSequentially('file:ca');
+    await expect(page.getByRole('option')).toHaveCount(1);
+    await expect(page.getByRole('option').first()).toContainText('tests/cart.spec.ts');
+    await page.keyboard.press('Enter');
+    await expect(searchBox(page)).toHaveValue('file:tests/cart.spec.ts ');
+    await expect(visibleTitles(page)).toHaveText(['cart shows items']);
+
+    // A title-only search skips the word in the file path.
+    await searchBox(page).fill('title:auth');
+    await expect(visibleTitles(page)).toHaveCount(0);
+    await searchBox(page).fill('describe:authentication');
+    await expect(visibleTitles(page)).toHaveCount(2);
+  });
+
+  test('a minus excludes, and the matches are marked in the rows', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await selectGroup(page, 'None');
+
+    await searchBox(page).fill('login -modal');
+    await expect(visibleTitles(page)).toHaveText(['login via header']);
+    await expect(visibleTitles(page).first().locator('mark')).toHaveText('login');
+
+    await searchBox(page).fill('-describe:authentication');
+    await expect(visibleTitles(page)).toHaveText(['homepage loads', 'cart shows items']);
+  });
+
+  test('Ctrl+F focuses the search, and a second press is left to the browser', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.evaluate(() => {
+      const presses: boolean[] = [];
+      (window as unknown as { findPresses: boolean[] }).findPresses = presses;
+      window.addEventListener(
+        'keydown',
+        (event) => {
+          if (event.key === 'f' && event.ctrlKey) setTimeout(() => presses.push(event.defaultPrevented));
+        },
+        true,
+      );
+    });
+
+    await page.keyboard.press('Control+f');
+    await expect(searchBox(page)).toBeFocused();
+    await page.keyboard.press('Control+f');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { findPresses: boolean[] }).findPresses))
+      .toEqual([true, false]);
   });
 
   test('?tab=failure-groups redirects to the Tests tab with the cluster grouping', async ({ page }) => {
@@ -262,19 +371,15 @@ test.describe.serial('Run page status segments and tag filter', () => {
     await expect(visibleTitles(page).first()).toHaveText('orders list');
   });
 
-  test('the tag filter keeps the tests carrying every selected tag', async ({ page }) => {
+  test('the tag: qualifier keeps the tests carrying every tag it names', async ({ page }) => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    const tagFilter = page.getByRole('button', { name: 'Filter by tag' });
-    await tagFilter.click();
-    await page.getByRole('option', { name: '@smoke' }).click();
-    await page.keyboard.press('Escape');
+    const search = page.getByRole('combobox', { name: 'Search tests' });
+    await search.fill('tag:smoke');
     await expect(visibleTitles(page)).toHaveCount(3);
 
-    await tagFilter.click();
-    await page.getByRole('option', { name: '@api' }).click();
-    await page.keyboard.press('Escape');
+    await search.fill('tag:smoke tag:@api');
     await expect(visibleTitles(page)).toHaveCount(1);
     await expect(visibleTitles(page).first()).toHaveText('refund email');
   });

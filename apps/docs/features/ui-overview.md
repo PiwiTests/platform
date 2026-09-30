@@ -45,8 +45,9 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over every run; select two runs and
   **Compare** to see [what changed](./run-changes) between them, or select any number and
   [delete them](/operate/storage#storage-management).
-- **Tests**: every test case with its pass rate and last run, filterable by status, tag, lock, owner and priority, and
-  groupable by spec file ([test metadata](/reference/test-metadata)).
+- **Tests**: every test case with its pass rate and last run, in file order, with the
+  [test search](/reference/test-search) (title, describe block, file, tag, lock, owner, priority, feature) and a status
+  filter, and groupable by file, or by file and describe block.
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
   [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
 - **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the
@@ -69,8 +70,9 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
 results stream in live. The tabs:
 
-- **Tests**: every execution with its failure headline, grouped by cluster (the default on a red run), file, describe
-  block or [lock](/reference/test-metadata#test-locks), with bulk triage.
+- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
+  file, describe block or [lock](/reference/test-metadata#test-locks), with the same
+  [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
   distribution ([Slow tests & wasted time](./slow-tests)).

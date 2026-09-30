@@ -182,6 +182,7 @@ export const referenceSidebar: SidebarGroup[] = [
       { text: 'Configuration generator', link: '/reference/configuration/generator' },
       { text: 'Reporter options', link: '/reference/reporter-options' },
       { text: 'Test metadata', link: '/reference/test-metadata' },
+      { text: 'Test search', link: '/reference/test-search' },
       { text: 'Clue rules', link: '/reference/clues' },
       { text: 'Locator stability rules', link: '/reference/locator-stability' },
       { text: 'Piwi CLI', link: '/reference/cli' },

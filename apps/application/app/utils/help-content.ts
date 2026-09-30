@@ -388,8 +388,8 @@ export const HELP_TOPICS = {
   },
   'project.test-cases': {
     title: 'Tests',
-    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs. Search by title or file, filter by status, tag or lock, and group by spec file to see each file’s health. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
-    doc: 'features/ui-overview#project-detail',
+    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
+    doc: 'reference/test-search',
   },
   'project.members': {
     title: 'Project access',
@@ -465,8 +465,8 @@ export const HELP_TOPICS = {
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status (test.skip() and test.fixme() skips apart), browser, tag, lock, new regressions and newly flaky.',
-    doc: 'features/ui-overview#test-run-detail',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as file:, describe:, tag: or browser: search one field, and a leading - excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none; filter by status (test.skip() and test.fixme() skips apart), new regressions and newly flaky.',
+    doc: 'reference/test-search',
   },
   'run.changes': {
     title: 'Changes',

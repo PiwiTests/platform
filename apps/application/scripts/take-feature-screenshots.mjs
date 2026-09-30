@@ -2199,8 +2199,8 @@ const SCENES = [
       await settle();
       await shoot('fixme-filter');
       await page.getByRole('button', { name: '1 fixme' }).first().click();
-      await page.getByRole('button', { name: 'Filter by tag' }).click();
-      await page.getByRole('option', { name: '@critical' }).click();
+      await page.getByRole('combobox', { name: 'Search tests' }).fill('tag:critical');
+      await page.keyboard.press('Escape');
       await settle();
       await shoot('tag-filter');
     },
@@ -2216,25 +2216,62 @@ const SCENES = [
   },
   {
     name: 'run-skip-kinds-mobile',
-    description: 'Run page at phone width: the two skipped greys and the tag filter in the wrapped toolbar',
+    description: 'Run page at phone width: the two skipped greys and the search box above the wrapped status chips',
     route: '/test-runs/2',
     viewport: { width: 390, height: 1400 },
   },
   {
     name: 'catalog-filters',
-    description: 'Project Tests catalog: the two filter rows, and the list header grouping by file with a filter on',
+    description:
+      'Project Tests catalog: the search box and status chips, and the list header grouping by file and describe block with a filter on',
     route: '/projects/1?tab=tests',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
       await shoot('flat', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
       await page.getByRole('combobox', { name: 'Group tests by' }).click();
-      await page.getByRole('option', { name: 'File' }).click();
+      await page.getByRole('option', { name: 'File + Describe' }).click();
       await page.getByRole('button', { name: 'Skipped', exact: true }).click();
       await settle();
       await shoot('grouped-filtered', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
       // Leave the group-by cookie as the next capture expects it.
       await page.getByRole('combobox', { name: 'Group tests by' }).click();
       await page.getByRole('option', { name: 'None' }).click();
+    },
+  },
+  {
+    name: 'test-search',
+    description:
+      'Run Tests tab search: the qualifiers on focus, a file: value completed, the matches marked in the list, and the same box on the project catalog',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      const search = page.getByRole('combobox', { name: 'Search tests' });
+      await page.keyboard.press('Control+f');
+      await search.waitFor();
+      await shoot('qualifiers');
+      await page.keyboard.type('file:car');
+      await page.getByRole('option').first().waitFor();
+      await shoot('completion');
+      await page.keyboard.press('Enter');
+      await page.keyboard.type('discount');
+      await page.keyboard.press('Escape');
+      await settle();
+      await shoot('highlighted');
+      await page.goto(page.url().replace(/\/test-runs\/.*$/, '/projects/1?tab=tests&q=describe%3ACart'));
+      await settle();
+      await shoot('catalog', { of: '[data-shot="test-cases-catalog"]', pad: 12 });
+    },
+  },
+  {
+    name: 'test-search-mobile',
+    description: 'Run Tests tab at phone width: the search box completing a describe: value above the status chips',
+    route: '/test-runs/2',
+    viewport: { width: 390, height: 1100 },
+    async run({ page, shoot }) {
+      await page.getByRole('combobox', { name: 'Search tests' }).click();
+      await page.keyboard.type('describe:');
+      await page.getByRole('option').first().waitFor();
+      await shoot();
     },
   },
   {

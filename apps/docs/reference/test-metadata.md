@@ -56,7 +56,7 @@ The reporter also records browser project configs, worker count, the global time
 
 The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName`, `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
 
-In the dashboard UI, the test run detail page shows a browser icon and project name as the first column of the test cases table, and you can filter by browser using the dropdown above the table.
+In the dashboard UI, every row of a run's Tests tab shows the browser icon, and `browser:chromium` in its [search](/reference/test-search) narrows the list to one project.
 
 ### Suite hierarchy (describe blocks)
 
@@ -84,8 +84,8 @@ Tags are stored twice: on the execution (`test_runs_cases.tags`, what that run s
 it was written — filter for `smoke` or `@smoke` and you get the same rows. Removing a tag from a spec clears it on the
 next run that reports the test.
 
-Tags drive the tag filter on a project's **Test cases** tab, the same filter on the flaky leaderboard, and the
-`requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
+Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
+leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
 
 ### Test locks
 
@@ -100,8 +100,8 @@ test.describe('payments', { lock: ['database', 'external-api'] }, () => { /* eve
 
 The reporter reads the lock names and sends them as `locks`, stored on the execution (`test_runs_cases.locks`) and
 denormalized onto the test case (`test_cases.locks`, the latest declaration) — the same treatment as tags. They power
-the [Timeline tab's lock lanes and *Locks* table](/features/ui-overview#test-run-detail), the lock filter and *Group by lock*
-on the Tests tabs, lock badges on every test row, and two [clues](/features/evidence#clues) (a lock's previous holder failed;
+the [Timeline tab's lock lanes and *Locks* table](/features/ui-overview#test-run-detail), the `lock:` search qualifier on
+the Tests tabs and *Group by lock* on a run's, lock badges on every test row, and two [clues](/features/evidence#clues) (a lock's previous holder failed;
 a lock was held on two shards at once).
 
 Capture is **best effort**. Playwright exposes locks only to an in-process reporter — there is no public API property,
@@ -141,8 +141,8 @@ test(
 | `piwi:link` | An absolute `http(s)` URL; other schemes are dropped rather than stored |
 | `piwi:bug` | The id of the Piwi bug report the test reproduces (`37` or `#37`); written by the spec a [bug report](/features/report-a-bug) generates |
 
-Metadata shows as badges next to the test wherever it is listed, is filterable by owner and priority on the **Test
-cases** tab, and is carried into [pull-request feedback](/features/pr-feedback) so a failure comment names the team
+Metadata shows as badges next to the test wherever it is listed, is searchable with `owner:`, `priority:` and `feature:`
+on the Tests tabs ([test search](/reference/test-search)), and is carried into [pull-request feedback](/features/pr-feedback) so a failure comment names the team
 that owns it. Unknown `piwi:` fields and unparseable values are ignored — a typo costs you the field, not the run.
 
 The values are also re-validated server-side, because a payload can reach the ingest API without passing through the

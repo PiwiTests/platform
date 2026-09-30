@@ -182,6 +182,12 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   the pure `splitDuration`), `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`, `LocatorCode` (a locator
   expression syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`), `ErrorText` (error text with
   its ANSI colors rendered — a one-line `line` preview for lists and cells, or the full `block`).
+- **Test lists** — `TestRow` + `TestRowGroup` (one test or group header, read the same in every list),
+  `TestSearchInput` (the search box of the run and project Tests tabs: qualifiers, completion of the term under the
+  caret, Ctrl+F through `useFindShortcut`) and `SearchHighlight` (marks what a search matched). The language lives in
+  `shared/test-search.ts` — parser, in-memory matcher, highlight ranges, completion — with its SQL form in
+  `shared/utils/test-search-sql.ts` for the paged catalog; run and file order and the File / File + Describe rows in
+  `app/utils/test-list-order.ts`.
 - **Navigation & actions** — `NavbarActions` (every `UDashboardNavbar` `#right` group; labels collapse to icons below
   `xl`), `BreadcrumbNav` (drop-in for `UBreadcrumb` and the page title of every detail page — the navbar never
   repeats it; only the current crumb truncates, middle levels hide below `2xl`, ancestors collapse into a dropdown
