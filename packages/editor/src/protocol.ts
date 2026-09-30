@@ -112,6 +112,19 @@ export interface StatusResult {
 
 export const STATUS_REQUEST = 'piwi/status';
 
+/**
+ * `piwi/desktop`: the desktop app running on this machine, for Connect to offer
+ * it: its address, the projects its token opens, and the one linked there to
+ * the folder of the first Playwright config. `url` is null when it does not run.
+ */
+export interface DesktopResult {
+  url: string | null;
+  projects: Array<{ id: number; name: string }>;
+  linked: { id: number; name: string } | null;
+}
+
+export const DESKTOP_REQUEST = 'piwi/desktop';
+
 /** `piwi/refresh`: fetch every index again now. */
 export const REFRESH_REQUEST = 'piwi/refresh';
 

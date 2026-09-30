@@ -51,6 +51,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
             assertEquals(EditorCredentials(null, null, null), service.credentials())
+            // The desktop app: a project only, no address and no key.
+            service.saveCredentials("", "Shop", "pd_ignored")
+            assertEquals(EditorCredentials(null, null, "Shop"), service.credentials())
+            service.disconnect()
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
         } finally {
@@ -200,6 +204,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 }
                 assertEquals(41, runs?.contexts?.single()?.run?.id)
                 assertEquals("Piwi: 1 failing", Glue.statusView(status, runs).text)
+
+                // No desktop app runs here: Connect offers none.
+                assertEquals(null, server.desktop().get(5, TimeUnit.SECONDS)?.url)
 
                 val failure = server.failures().get(5, TimeUnit.SECONDS)?.items?.single()
                 assertEquals(File(dir, "tests/pages/checkout.page.ts").toURI().toString().replace("file:/", "file:///"), failure?.uri)

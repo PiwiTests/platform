@@ -84,7 +84,30 @@ object PiwiConnectFlow {
 
     fun run(project: Project, presetUrl: String? = null): Boolean {
         val service = project.service<PiwiProjectService>()
-        val url = Glue.normalizeServerUrl(presetUrl) ?: askUrl(project, service.settings().serverUrl) ?: return false
+        // The desktop app running on this machine needs no address or sign-in: offer it first.
+        val desktop = service.server()?.let { server -> request(project, "Looking for the Piwi desktop app…") { server.desktop().orNull() } }
+            ?.takeIf { it.url != null }
+        val preset = Glue.normalizeServerUrl(presetUrl)
+        if (desktop != null && (preset == null || preset == desktop.url)) {
+            if (preset == desktop.url) return useDesktop(project, desktop)
+            when (
+                Messages.showDialog(
+                    project,
+                    "The Piwi desktop app runs on this machine at ${desktop.url}." +
+                        (desktop.linked?.let { " It links this folder to the project ${it.name}." } ?: ""),
+                    TITLE,
+                    arrayOf("Use the Desktop App", "Another Instance…", Messages.getCancelButton()),
+                    0,
+                    AllIcons.General.Information,
+                )
+            ) {
+                0 -> return useDesktop(project, desktop)
+                1 -> Unit
+                else -> return false
+            }
+        }
+        val url = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
+        if (desktop != null && url == desktop.url) return useDesktop(project, desktop)
         val needsKey = request(project, "Reaching $url…") { PiwiInstance.needsKey(url) } ?: return false
         val key = if (needsKey) askKey(project, url) ?: return false else null
         val projects = request(project, "Listing the projects of $url…") { PiwiInstance.projects(url, key.orEmpty()) } ?: return false
@@ -102,9 +125,9 @@ object PiwiConnectFlow {
         if (!dialog.showAndGet()) return false
         val picked = dialog.picked() ?: return false
         service.saveCredentials(url, picked, key)
-        // The environment, a `.env` and the desktop app come before these settings.
+        // The environment and a `.env` come before these settings.
         val first = service.status?.contexts.orEmpty().firstOrNull {
-            it.source != null && it.source != "editor" && it.serverUrl != url
+            (it.source == "environment" || it.source == "dotenv") && it.serverUrl != url
         }
         if (first != null) {
             PiwiCommands.notify(
@@ -115,6 +138,49 @@ object PiwiConnectFlow {
         } else {
             PiwiCommands.notify(project, "Connected to $picked on $url.")
         }
+        return true
+    }
+
+    /**
+     * Use the desktop app: no address and no key are saved, so the editor reads them from the app
+     * while it runs. The project is the one linked there to this folder, else the one picked here.
+     */
+    private fun useDesktop(project: Project, desktop: DesktopResult): Boolean {
+        val service = project.service<PiwiProjectService>()
+        val linked = desktop.linked
+        if (linked != null) {
+            service.saveCredentials("", "", null)
+            PiwiCommands.notify(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
+            return true
+        }
+        val names = desktop.projects.orEmpty().map { it.name }
+        if (names.isEmpty()) {
+            service.saveCredentials("", "", null)
+            Messages.showInfoMessage(
+                project,
+                "The desktop app has no project yet. Import or send a run to it, then link this folder on the project's page there.",
+                TITLE,
+            )
+            return true
+        }
+        val dialog = ChooseProjectDialog(project, names, service.settings().project.takeIf { it in names } ?: names.first())
+        if (!dialog.showAndGet()) return false
+        val picked = dialog.picked() ?: return false
+        service.saveCredentials("", picked, null)
+        PiwiCommands.notify(
+            project,
+            "Connected to the desktop app, project $picked. Link this folder on the project's page there to skip this step.",
+        )
+        return true
+    }
+
+    /** Forget the saved connection after asking; returns whether it did. */
+    fun disconnect(project: Project): Boolean {
+        val service = project.service<PiwiProjectService>()
+        val settings = service.settings()
+        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project) ?: return false
+        if (Messages.showYesNoDialog(project, question, "Piwi: Disconnect", null) != Messages.YES) return false
+        service.disconnect()
         return true
     }
 

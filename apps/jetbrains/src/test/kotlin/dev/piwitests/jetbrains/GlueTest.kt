@@ -138,4 +138,16 @@ class GlueTest {
             Glue.indentBlock("  await page.goto('/cart');\n  await page.getByRole('button').click();\n", "    "),
         )
     }
+
+    @Test
+    fun `Disconnect asks about what is saved, and nothing when nothing is`() {
+        assertEquals("Forget https://piwi.corp, the project, and the API key saved for it?", Glue.disconnectQuestion("https://piwi.corp", "Shop"))
+        assertEquals("Forget the project Shop saved for the desktop app?", Glue.disconnectQuestion("", "Shop"))
+        assertEquals(null, Glue.disconnectQuestion("", ""))
+    }
+
+    @Test
+    fun `the desktop app is named as a source`() {
+        assertEquals("the Piwi desktop app", Glue.sourceLabel("desktop"))
+    }
 }

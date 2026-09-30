@@ -99,6 +99,11 @@ data class SelectionsResult(val items: List<SelectionItem>? = null)
 
 data class RunSelectionParams(val uri: String, val key: String)
 
+data class ProjectRef(val id: Int = 0, val name: String = "")
+
+/** `piwi/desktop`: the desktop app running on this machine; `url` is null when it does not run. */
+data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>? = null, val linked: ProjectRef? = null)
+
 data class EditorCredentials(val serverUrl: String? = null, val apiKey: String? = null, val project: String? = null)
 
 /** The service's custom requests beside the language server protocol. */
@@ -135,6 +140,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/runSelection")
     fun runSelection(params: RunSelectionParams): CompletableFuture<RunCommand?>
+
+    @JsonRequest("piwi/desktop")
+    fun desktop(): CompletableFuture<DesktopResult?>
 
     @JsonRequest("piwi/refresh")
     fun refresh(): CompletableFuture<Any?>

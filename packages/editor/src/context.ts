@@ -51,10 +51,54 @@ function readDotEnv(dir: string): Record<string, string> {
   }
 }
 
+/** Where the desktop app publishes its address, token and folder links while it runs. */
+export function desktopConfigPath(env: Record<string, string | undefined>): string {
+  return env.PIWI_DESKTOP_CONFIG || path.join(os.homedir(), '.piwi', 'desktop.json');
+}
+
+export interface DesktopDiscovery {
+  url: string;
+  token: string;
+  /** The projects linked to a folder on this machine in the desktop app. */
+  projects: Array<{ id: number; path: string }>;
+}
+
+/** The running desktop app, from its discovery file; null when it does not run. */
+export function readDesktopDiscovery(env: Record<string, string | undefined>): DesktopDiscovery | null {
+  const discovery = readJson(desktopConfigPath(env)) as { url?: unknown; token?: unknown; projects?: unknown } | null;
+  if (!discovery || typeof discovery.url !== 'string' || typeof discovery.token !== 'string') return null;
+  const projects = Array.isArray(discovery.projects)
+    ? discovery.projects.flatMap((p: { id?: unknown; path?: unknown }) =>
+        typeof p?.id === 'number' && typeof p.path === 'string' && p.path ? [{ id: p.id, path: p.path }] : [],
+      )
+    : [];
+  return { url: discovery.url.replace(/\/+$/, ''), token: discovery.token, projects };
+}
+
+function isInside(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+/**
+ * The project the desktop app links to this context's folder: the linked folder
+ * that holds the Playwright config, or one inside it; the deepest wins.
+ */
+export function linkedDesktopProject(desktop: DesktopDiscovery | null, root: string): number | null {
+  const matches = (desktop?.projects ?? [])
+    .filter((p) => isInside(root, p.path) || isInside(p.path, root))
+    .sort((a, b) => b.path.length - a.path.length);
+  return matches[0]?.id ?? null;
+}
+
 /**
  * The connection of a context: the environment, then the workspace `.env`
- * (the config's directory, then the repository root), then the desktop app's
- * discovery file, then the editor's own settings.
+ * (the config's directory, then the repository root), then the instance saved
+ * with Connect in the editor, then the desktop app running on this machine.
+ * The editor's saved choice comes before the desktop app: it is explicit, the
+ * app is only running. With the desktop app, the project is the one named by
+ * `PIWI_PROJECT_NAME` or saved in the editor, else the one linked there to
+ * this folder.
  */
 export function resolveContextConnection(
   root: string,
@@ -62,33 +106,39 @@ export function resolveContextConnection(
   env: Record<string, string | undefined>,
   editor: EditorCredentials,
 ): (PiwiConnection & { source: ConnectionSource }) | null {
-  const discovery = readJson(env.PIWI_DESKTOP_CONFIG || path.join(os.homedir(), '.piwi', 'desktop.json')) as {
-    url?: unknown;
-    token?: unknown;
-  } | null;
-  const desktop =
-    discovery && typeof discovery.url === 'string' && typeof discovery.token === 'string'
-      ? { url: discovery.url, token: discovery.token }
-      : null;
+  const desktop = readDesktopDiscovery(env);
   const dotEnv = { ...readDotEnv(repoRoot), ...readDotEnv(root) };
-  const found = resolvePiwiConnection({ env, dotEnv, desktop });
-  if (found) {
+  const namedProject = env.PIWI_PROJECT_NAME || dotEnv.PIWI_PROJECT_NAME || '';
+  const linked = () => {
+    const id = linkedDesktopProject(desktop, root);
+    return id === null ? '' : String(id);
+  };
+  if (env.PIWI_DASHBOARD_URL || dotEnv.PIWI_DASHBOARD_URL) {
+    const found = resolvePiwiConnection({ env, dotEnv, desktop })!;
     // The key saved in the editor belongs to the server it was saved for: a URL
-    // from the environment, a workspace `.env` or the desktop app never gets it.
+    // from the environment or a workspace `.env` never gets another's.
     const editorUrl = editor.serverUrl?.replace(/\/+$/, '');
     return {
       serverUrl: found.serverUrl,
       apiKey: found.apiKey ?? (editorUrl === found.serverUrl ? (editor.apiKey ?? null) : null),
-      project: found.project || editor.project || '',
-      source: env.PIWI_DASHBOARD_URL ? 'environment' : dotEnv.PIWI_DASHBOARD_URL ? 'dotenv' : 'desktop',
+      project: found.project || editor.project || (desktop?.url === found.serverUrl ? linked() : ''),
+      source: env.PIWI_DASHBOARD_URL ? 'environment' : 'dotenv',
     };
   }
-  if (!editor.serverUrl) return null;
+  if (editor.serverUrl) {
+    return {
+      serverUrl: editor.serverUrl.replace(/\/+$/, ''),
+      apiKey: editor.apiKey ?? null,
+      project: editor.project || namedProject,
+      source: 'editor',
+    };
+  }
+  if (!desktop) return null;
   return {
-    serverUrl: editor.serverUrl.replace(/\/+$/, ''),
-    apiKey: editor.apiKey ?? null,
-    project: editor.project ?? '',
-    source: 'editor',
+    serverUrl: desktop.url,
+    apiKey: desktop.token,
+    project: namedProject || editor.project || linked(),
+    source: 'desktop',
   };
 }
 
@@ -178,7 +228,10 @@ export class PiwiContext {
     this.source = connection.source;
     try {
       if (!connection.project) {
-        this.problem = 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.';
+        this.problem =
+          connection.source === 'desktop'
+            ? "No project linked to this folder in the Piwi desktop app: link it on the project's page there, or run Piwi: Connect."
+            : 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.';
         return;
       }
       if (!this.project || this.project.name !== connection.project) {

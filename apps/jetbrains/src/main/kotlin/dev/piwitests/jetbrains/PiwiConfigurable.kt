@@ -4,7 +4,6 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
-import com.intellij.openapi.ui.Messages
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.bindText
@@ -26,9 +25,9 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
         val content = panel {
             row {
                 text(
-                    "The Piwi instance this project reads its test history from. PIWI_DASHBOARD_URL in the environment, " +
-                        "the workspace .env and the Piwi desktop app come first, in that order: these settings are used " +
-                        "when none of them names an instance.",
+                    "The Piwi instance this project reads its test history from. PIWI_DASHBOARD_URL in the environment " +
+                        "or the workspace .env comes first; then these settings; then the Piwi desktop app while it runs, " +
+                        "with the project linked there to this folder.",
                     maxLineLength = 90,
                 )
             }
@@ -47,7 +46,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     textField()
                         .bindText({ settings.project }, { settings.project = it.trim() })
                         .columns(COLUMNS_LARGE)
-                        .comment("The project's name on the instance")
+                        .comment("The project's name on the instance; empty with the desktop app uses the folder's link")
                 }
                 row("API key:") {
                     key = text("").component
@@ -99,15 +98,6 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     }
 
     private fun disconnect() {
-        val url = service.settings().serverUrl.ifBlank { return }
-        val answer = Messages.showYesNoDialog(
-            project,
-            "Forget $url, the project, and the API key saved for it?",
-            "Piwi: Disconnect",
-            null,
-        )
-        if (answer != Messages.YES) return
-        service.disconnect()
-        reset()
+        if (PiwiConnectFlow.disconnect(project)) reset()
     }
 }

@@ -105,10 +105,10 @@ function write(file: string, text: string): string {
 
 const uri = (file: string) => pathToFileURL(path.join(dir, file)).href;
 
-async function waitFor<T>(read: () => T | undefined, ms = 5000): Promise<T> {
+async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, ms = 5000): Promise<T> {
   const start = Date.now();
   for (;;) {
-    const value = read();
+    const value = await read();
     if (value !== undefined) return value;
     if (Date.now() - start > ms) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 20));
@@ -793,6 +793,52 @@ describe('the Piwi language server', () => {
       args: ['tests/checkout.spec.ts:3'],
       command: 'npx playwright test tests/checkout.spec.ts:3',
     });
+  });
+});
+
+describe('the desktop app', () => {
+  test('is picked up when it starts, with the project linked to the folder, and offered to Connect', async () => {
+    const desktopFile = path.join(dir, '.desktop.json');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopDesktop = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+      desktopWatchMs: 20,
+    });
+    const desktopClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    desktopClient.listen();
+    try {
+      await desktopClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await desktopClient.sendNotification('initialized', {});
+      const before = await waitFor(async () => {
+        const s = (await desktopClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts[0]?.problem ? s : undefined;
+      });
+      expect(before.contexts[0]).toMatchObject({ connected: false, source: null });
+      expect(await desktopClient.sendRequest('piwi/desktop')).toEqual({ url: null, projects: [], linked: null });
+
+      fs.writeFileSync(desktopFile, JSON.stringify({ url, token: 'pd_desktop', projects: [{ id: 7, path: dir }] }));
+      const after = await waitFor(async () => {
+        const s = (await desktopClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts[0]?.connected ? s : undefined;
+      });
+      expect(after.contexts[0]).toMatchObject({ source: 'desktop', projectName: 'Acme Mugs', serverUrl: url });
+      expect(await desktopClient.sendRequest('piwi/desktop')).toEqual({
+        url,
+        projects: [{ id: 7, name: 'Acme Mugs' }],
+        linked: { id: 7, name: 'Acme Mugs' },
+      });
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopDesktop();
+      desktopClient.dispose();
+    }
   });
 });
 

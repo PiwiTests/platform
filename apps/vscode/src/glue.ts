@@ -104,6 +104,13 @@ export function sourceLabel(source: ConnectionSource | null | undefined): string
   }
 }
 
+/** What Piwi: Disconnect asks before forgetting the saved connection; null when nothing is saved. */
+export function disconnectQuestion(serverUrl: string | null, project: string | null): string | null {
+  if (serverUrl) return `forget ${serverUrl}, the project, and the API key saved for it?`;
+  if (project) return `forget the project ${project} saved for the desktop app?`;
+  return null;
+}
+
 /** A VS Code `mcp.json` holding Piwi's servers, for editors without the MCP provider API. */
 export function mcpConfiguration(servers: McpServerDefinition[]): string {
   const entries = servers.map((s, i) => [
