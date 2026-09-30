@@ -24,7 +24,17 @@ export interface SummaryLine {
   line: number;
   title: string;
   command?: PiwiCommand;
+  /**
+   * On a test's line: its latest result, which the clients show in the gutter, with `title`
+   * as its tooltip, rather than as text above the line. Absent on other lines.
+   */
+  status?: TestLineStatus;
+  /** On a test's line: the 0-based line its `test(…)` call ends on, for the background of a failing test. */
+  endLine?: number;
 }
+
+/** A test's latest result: `failed` when it failed in the latest run the service reads. */
+export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
 
 /** `piwi/fileSummary`: what to show above a file and above its test and locator lines. */
 export interface FileSummaryParams {
@@ -96,8 +106,8 @@ export interface StatusResult {
     connected: boolean;
     serverUrl: string | null;
     /**
-     * Where `serverUrl` came from, in the fixed order: the environment, the
-     * workspace `.env`, the desktop app, or the editor's own settings.
+     * Where `serverUrl` came from: the environment, the workspace `.env`, the
+     * editor's own settings, or the desktop app.
      */
     source: ConnectionSource | null;
     projectId: number | null;
@@ -107,10 +117,25 @@ export interface StatusResult {
     reachedFiles: number;
     /** Why it is not connected, in one sentence. */
     problem: string | null;
+    /**
+     * The instance the environment, the workspace `.env` or the editor's
+     * settings name, in use or not: Connect offers it beside the desktop app.
+     * Null when none does.
+     */
+    instance?: { serverUrl: string; source: ConnectionSource } | null;
   }>;
+  /** The address of the desktop app running on this machine; null when it does not run. */
+  desktopUrl?: string | null;
 }
 
 export const STATUS_REQUEST = 'piwi/status';
+
+/**
+ * `piwi/statusChanged` (notification, server to client): what `piwi/status`
+ * answers changed, such as a connection, a project, or the desktop app starting
+ * or quitting; carries `StatusResult`.
+ */
+export const STATUS_NOTIFICATION = 'piwi/statusChanged';
 
 /**
  * `piwi/desktop`: the desktop app running on this machine, for Connect to offer
@@ -130,13 +155,22 @@ export const REFRESH_REQUEST = 'piwi/refresh';
 
 /**
  * `piwi/setCredentials` (notification): the connection the editor's own
- * settings hold, the API key from its secret store. Applied after the
- * environment, the workspace `.env` and the desktop app.
+ * settings hold, the API key from its secret store. `serverUrl` comes after
+ * the environment and the workspace `.env`, and before the desktop app; with
+ * `desktop`, the desktop app comes first while it runs.
  */
 export interface EditorCredentials {
   serverUrl?: string | null;
   apiKey?: string | null;
   project?: string | null;
+  /**
+   * Read the desktop app while it runs, before every other source: the choice
+   * made with Connect, kept on this machine only. The other sources count again
+   * when the app quits.
+   */
+  desktop?: boolean | null;
+  /** The desktop app's project with `desktop`; without one, the project linked there to the folder. */
+  desktopProject?: string | null;
 }
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
@@ -164,6 +198,11 @@ export interface RunStatus {
   root: string;
   /** The branch whose runs are read; null reads the newest run of any branch. */
   branch: string | null;
+  /**
+   * The branch checked out in the workspace. When it has no run yet, `branch` is the
+   * project's default branch, or null for the newest run of any branch.
+   */
+  checkedOut?: string | null;
   run: {
     id: number;
     status: string;

@@ -8,14 +8,16 @@
     <ul>
       <li>the failures of the latest CI run on the checked-out branch, at their failing lines, with the
           recommended locator heal as a quick fix, the trace and the screenshot one action away;</li>
-      <li>the tests behind each locator line and each application file, and each test's pass rate;</li>
+      <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
+          line and each application file;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
       <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant;</li>
       <li>locators and recorded flows sent from the Piwi Picker browser extension, inserted at the caret;</li>
       <li>the source paths clicked in the dashboard, opened at their line in the project that holds them.</li>
     </ul>
     It reads the connection the Piwi reporter uses (the environment, the workspace <code>.env</code>, the Piwi desktop
-    app); otherwise connect under <b>Settings → Tools → Piwi</b>, signing in with the browser.
+    app); otherwise connect under <b>Settings → Tools → Piwi</b>, signing in with the browser. The Piwi desktop app sits
+    beside a shared instance: <b>Connect</b> switches between them, keeping both.
     Works in WebStorm, IntelliJ IDEA Ultimate, Rider and the other IDEs with the LSP API and JavaScript support.
     ]]></description>
 
@@ -27,6 +29,10 @@
         <postStartupActivity implementation="dev.piwitests.jetbrains.PiwiStartupActivity"/>
         <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
+        <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestAnnotator"/>
+        <colorSettingsPage implementation="dev.piwitests.jetbrains.PiwiColorSettingsPage"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/PiwiDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/PiwiDarcula.xml"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
         <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
@@ -42,9 +48,9 @@
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
                     icon="AllIcons.General.User"
-                    description="Choose the Piwi instance, sign in or paste an API key, and pick the project"/>
+                    description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
             <action id="Piwi.Disconnect" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
-                    description="Forget this project's Piwi instance, project and the API key saved for it"/>
+                    description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
             <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Refresh"
                     icon="AllIcons.Actions.Refresh"
                     description="Fetch the indexes and the latest run again"/>

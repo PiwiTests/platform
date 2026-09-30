@@ -137,15 +137,27 @@
         "piwi.serverUrl": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The Piwi instance. `PIWI_DASHBOARD_URL` in the environment or the workspace `.env` comes first; then this setting; then the Piwi desktop app while it runs. Run **Piwi: Connect** to sign in with the browser: the API key goes to the editor's secret storage, saved for this instance only."
+          "markdownDescription": "The Piwi instance. `PIWI_DASHBOARD_URL` in the environment or the workspace `.env` comes first; then this setting; then the Piwi desktop app while it runs. Run **Piwi: Connect** to sign in with the browser: the API key goes to the editor's secret storage, saved for this instance only. Choosing the desktop app with **Piwi: Connect** puts it first while it runs, on this machine only, and keeps this setting for when it does not."
         },
         "piwi.project": {
           "type": "string",
           "default": "",
-          "description": "The project's name or id on the instance. Empty with the desktop app: the project linked there to this folder."
+          "description": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder."
         }
       }
     },
+    "colors": [
+      {
+        "id": "piwi.failingTestBackground",
+        "description": "The background of a test that failed in the latest run Piwi reads.",
+        "defaults": {
+          "dark": "#f8514926",
+          "light": "#f851491a",
+          "highContrast": "#f8514940",
+          "highContrastLight": "#f8514926"
+        }
+      }
+    ],
     "mcpServerDefinitionProviders": [
       {
         "id": "piwi.mcp",

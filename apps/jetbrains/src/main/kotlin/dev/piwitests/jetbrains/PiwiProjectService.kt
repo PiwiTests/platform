@@ -1,8 +1,12 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
@@ -10,6 +14,7 @@ import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.service
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.BaseProjectDirectories.Companion.getBaseDirectories
@@ -19,6 +24,7 @@ import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.platform.lsp.api.LspServerManager
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
@@ -26,14 +32,32 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 /**
- * The instance and project this project reports to, when the environment, `.env` and the
- * desktop app name none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key
- * is not here but in the password safe, per instance.
+ * The instance and project this project reports to, when the environment and `.env` name
+ * none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in
+ * the password safe, per instance.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiSettings", storages = [Storage("piwi.xml")])
 class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
     data class State(var serverUrl: String = "", var project: String = "")
+
+    private var state = State()
+
+    override fun getState(): State = state
+
+    override fun loadState(state: State) {
+        this.state = state
+    }
+}
+
+/**
+ * What this machine keeps for the project, in `.idea/workspace.xml`, never in a file the
+ * team shares: the desktop app chosen with Connect, its project, and whether it was offered.
+ */
+@Service(Service.Level.PROJECT)
+@State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
+class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
+    data class State(var desktop: Boolean = false, var desktopProject: String = "", var desktopOffered: Boolean = false)
 
     private var state = State()
 
@@ -125,15 +149,23 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     fun settings(): PiwiSettings.State = project.getService(PiwiSettings::class.java).state
 
-    /** The connection saved in the IDE: this project's instance and project, and that instance's key. */
+    fun local(): PiwiLocalSettings.State = project.getService(PiwiLocalSettings::class.java).state
+
+    /**
+     * The connection saved in the IDE: this project's instance and project, that instance's key,
+     * and whether this machine reads the desktop app first.
+     */
     fun credentials(): EditorCredentials {
         forgetSharedKey()
         val settings = settings()
+        val local = local()
         val url = settings.serverUrl.ifBlank { null }
         return EditorCredentials(
             serverUrl = url,
             project = settings.project.ifBlank { null },
             apiKey = url?.let { PasswordSafe.instance.getPassword(credentialAttributes(it)) },
+            desktop = local.desktop,
+            desktopProject = local.desktopProject.ifBlank { null },
         )
     }
 
@@ -141,24 +173,69 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun hasApiKey(serverUrl: String): Boolean =
         serverUrl.isNotBlank() && !PasswordSafe.instance.getPassword(credentialAttributes(serverUrl)).isNullOrEmpty()
 
-    /** Save the connection, and hand it to the service; a null key forgets the instance's key. */
+    /**
+     * Save the instance and project, and hand them to the service; a null key forgets the
+     * instance's key. The instance is read rather than the desktop app from then on.
+     */
     fun saveCredentials(serverUrl: String, projectName: String, apiKey: String?) {
         val url = Glue.normalizeServerUrl(serverUrl) ?: serverUrl.trim()
         val settings = settings()
         settings.serverUrl = url
         settings.project = projectName.trim()
-        // No address: the desktop app, whose token the service reads from its discovery file.
         if (url.isNotBlank()) PasswordSafe.instance.setPassword(credentialAttributes(url), apiKey?.trim()?.ifBlank { null })
+        local().desktop = false
         sendCredentials()
     }
 
-    /** Forget this project's instance and project, and that instance's key. */
+    /**
+     * Read the desktop app first while it runs, on `projectName`, or with none on the project
+     * linked there to the folder. The saved instance stays, for when the app does not run.
+     */
+    fun useDesktop(projectName: String?) {
+        val local = local()
+        local.desktop = true
+        local.desktopProject = projectName?.trim().orEmpty()
+        local.desktopOffered = true
+        sendCredentials()
+    }
+
+    /** Read the instance the environment, the `.env` or the settings name again, rather than the desktop app. */
+    fun useInstance() {
+        local().desktop = false
+        sendCredentials()
+    }
+
+    /** Forget this project's instance and project, that instance's key, and the choice of the desktop app. */
     fun disconnect() {
         val settings = settings()
         if (settings.serverUrl.isNotBlank()) PasswordSafe.instance.setPassword(credentialAttributes(settings.serverUrl), null)
         settings.serverUrl = ""
         settings.project = ""
+        local().desktop = false
+        local().desktopProject = ""
         sendCredentials()
+    }
+
+    /**
+     * The desktop app running on this machine, as the service's `piwi/desktop` answers it; read
+     * here from its discovery file while the service has not started (it starts with the first
+     * file opened). Blocks on the network: never on the event thread.
+     */
+    fun desktop(): DesktopResult {
+        server()?.desktop()?.awaitCancellably(TIMEOUT_SECONDS * 1000)?.let { return it }
+        val discovery = readDesktopDiscovery() ?: return DesktopResult()
+        val projects = runCatching { PiwiInstance.projects(discovery.url, discovery.token) }.getOrDefault(emptyList())
+            .map { ProjectRef(it.id, it.name) }
+        val linked = Glue.linkedDesktopProject(discovery.links, playwrightConfigDirs().firstOrNull())
+        return DesktopResult(discovery.url, projects, projects.firstOrNull { it.id == linked })
+    }
+
+    /** The desktop app's address while it runs, from the service's status or its discovery file; reads the disk. */
+    fun desktopUrl(): String? = status?.desktopUrl ?: readDesktopDiscovery()?.url
+
+    private fun readDesktopDiscovery(): Glue.DesktopDiscovery? {
+        val file = Glue.desktopConfigPath(System.getenv(), System.getProperty("user.home")) ?: return null
+        return Glue.parseDesktopDiscovery(runCatching { Files.readString(file) }.getOrNull())
     }
 
     /**
@@ -189,11 +266,39 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun refreshStatus() {
         ApplicationManager.getApplication().executeOnPooledThread {
             val server = server()
+            val before = runs
             status = server?.status()?.orNull()
             runs = server?.runStatus()?.orNull()
             failures = server?.failures()?.orNull()?.items.orEmpty()
-            ApplicationManager.getApplication().invokeLater({ listeners.forEach { it() } }, project.disposed)
+            ApplicationManager.getApplication().invokeLater({
+                listeners.forEach { it() }
+                // Another run: the gutter, the backgrounds and Code Vision of the open files show it.
+                if (runs != before) DaemonCodeAnalyzer.getInstance(project).restart()
+            }, project.disposed)
+            offerDesktop(status)
         }
+    }
+
+    /**
+     * Once per project: when the desktop app runs while another instance is in use, offer to read
+     * the project from the app. The other instance stays saved, one Connect away.
+     */
+    @Synchronized
+    private fun offerDesktop(status: StatusResult?) {
+        val local = local()
+        if (status?.desktopUrl == null || local.desktopOffered) return
+        val contexts = status.contexts.orEmpty()
+        val current = contexts.firstOrNull { it.connected } ?: contexts.firstOrNull() ?: return
+        if (current.source == "desktop" || current.serverUrl == null) return
+        local.desktopOffered = true
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(
+                "The Piwi desktop app runs on this machine. Read this project from it rather than ${current.serverUrl}? " +
+                    "Connect switches back.",
+                NotificationType.INFORMATION,
+            )
+            .addAction(NotificationAction.createSimpleExpiring("Use the Desktop App") { PiwiConnectFlow.useDesktop(project) })
+            .notify(project)
     }
 
     override fun dispose() {

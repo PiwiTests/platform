@@ -15,23 +15,46 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.ui.components.JBRadioButton
 import com.intellij.ui.dsl.builder.panel
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import javax.swing.ButtonGroup
 import javax.swing.JComponent
 
 /** The instance's side of Connect: its projects, and the browser sign-in (an RFC 8628 device authorization). */
 object PiwiInstance {
     private val gson = Gson()
+    // HTTP/1.1: over plain http, the default HTTP/2 asks the server to upgrade (`Upgrade: h2c`), and a
+    // Node server that takes upgrades for its WebSockets, such as `nuxt dev`, drops the request.
     private val http: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
 
+    /** For an instance on this machine: the IDE's proxy settings never apply to it. */
+    private val loopback: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(Duration.ofSeconds(10))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .proxy(HttpClient.Builder.NO_PROXY)
+        .build()
+
     class HttpStatus(val status: Int) : Exception("the instance answered $status")
+
+    /** No address of the instance answered. */
+    class Unreachable(tried: List<String>) : Exception(
+        "nothing answers at ${tried.first()}" +
+            (if (tried.size > 1) " (nor at ${tried.drop(1).joinToString(" or ")})" else "") +
+            ". Is the instance running, on that port?",
+    )
+
+    /** Where the instance answered, and whether it asks for a key. */
+    data class Reached(val url: String, val needsKey: Boolean)
 
     data class ProjectItem(val id: Int = 0, val name: String = "")
     private data class Menu(val items: List<ProjectItem>? = null)
@@ -49,14 +72,28 @@ object PiwiInstance {
     fun projects(url: String, key: String?): List<ProjectItem> =
         gson.fromJson(send(url, "/api/projects/menu", key, null), Menu::class.java)?.items.orEmpty()
 
-    /** Whether the instance asks for a key: it lists its projects to anyone when authentication is off. */
-    fun needsKey(url: String): Boolean =
-        try {
-            projects(url, null)
-            false
-        } catch (e: HttpStatus) {
-            if (e.status == 401 || e.status == 403) true else throw e
+    /**
+     * The instance's address and whether it asks for a key: it lists its projects to anyone when
+     * authentication is off. An instance on this machine is tried on every loopback address
+     * (`Glue.loopbackAlternatives`): a server started on `localhost` may listen on one of them only,
+     * `::1` on Windows, while Java connects to the first address the name resolves to.
+     */
+    fun reach(url: String): Reached {
+        val tried = Glue.loopbackAlternatives(url)
+        for (base in tried) {
+            try {
+                projects(base, null)
+                return Reached(base, false)
+            } catch (e: HttpStatus) {
+                if (e.status == 401 || e.status == 403) return Reached(base, true) else throw e
+            } catch (e: java.io.IOException) {
+                // Only an address nothing listens on moves to the next one; any other failure is the instance's.
+                val notListening = e is java.net.SocketException || e is java.net.http.HttpConnectTimeoutException
+                if (tried.size == 1 || !notListening) throw e
+            }
         }
+        throw Unreachable(tried)
+    }
 
     fun startSignIn(url: String, editor: String, os: String): SignIn =
         gson.fromJson(send(url, "/api/extension/connect", null, gson.toJson(mapOf("editor" to editor, "os" to os))), SignIn::class.java)
@@ -68,7 +105,8 @@ object PiwiInstance {
         val request = HttpRequest.newBuilder(URI("$url$path")).timeout(Duration.ofSeconds(15))
         if (json == null) request.GET() else request.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(json))
         if (!key.isNullOrEmpty()) request.header("X-API-Key", key)
-        val response = http.send(request.build(), HttpResponse.BodyHandlers.ofString())
+        val client = if (Glue.isLoopback(url)) loopback else http
+        val response = client.send(request.build(), HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) throw HttpStatus(response.statusCode())
         return response.body()
     }
@@ -84,35 +122,33 @@ object PiwiConnectFlow {
 
     fun run(project: Project, presetUrl: String? = null): Boolean {
         val service = project.service<PiwiProjectService>()
-        // The desktop app running on this machine needs no address or sign-in: offer it first.
-        val desktop = service.server()?.let { server ->
-            request(project, "Looking for the Piwi desktop app…") {
-                server.desktop().awaitCancellably(PiwiProjectService.TIMEOUT_SECONDS * 1000)
-            }
-        }?.takeIf { it.url != null }
+        service.local().desktopOffered = true
+        // The desktop app running on this machine needs no address or sign-in: offer it first,
+        // beside the instance the project names, so either is one choice away.
+        val desktop = request(project, "Looking for the Piwi desktop app…") { service.desktop() }?.takeIf { it.url != null }
         val preset = Glue.normalizeServerUrl(presetUrl)
         if (desktop != null && (preset == null || preset == desktop.url)) {
             if (preset == desktop.url) return useDesktop(project, desktop)
-            when (
-                Messages.showDialog(
-                    project,
-                    "The Piwi desktop app runs on this machine at ${desktop.url}." +
-                        (desktop.linked?.let { " It links this folder to the project ${it.name}." } ?: ""),
-                    TITLE,
-                    arrayOf("Use the Desktop App", "Another Instance…", Messages.getCancelButton()),
-                    0,
-                    AllIcons.General.Information,
-                )
-            ) {
-                0 -> return useDesktop(project, desktop)
-                1 -> Unit
-                else -> return false
+            val dialog = ChooseConnectionDialog(project, Glue.connectChoices(service.status, desktop, service.settings().serverUrl))
+            if (!dialog.showAndGet()) return false
+            val choice = dialog.picked() ?: return false
+            when (choice.target) {
+                Glue.ConnectTarget.DESKTOP -> return useDesktop(project, desktop)
+                Glue.ConnectTarget.INSTANCE -> {
+                    service.useInstance()
+                    PiwiCommands.notify(project, "Connected to ${choice.serverUrl}.")
+                    return true
+                }
+                Glue.ConnectTarget.OTHER -> Unit
             }
         }
-        val url = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
+        val typed = preset ?: askUrl(project, service.settings().serverUrl) ?: return false
+        if (desktop != null && typed == desktop.url) return useDesktop(project, desktop)
+        val reached = request(project, "Reaching $typed…") { PiwiInstance.reach(typed) } ?: return false
+        // The address that answered: on this machine, it may be another loopback address than the one typed.
+        val url = reached.url
         if (desktop != null && url == desktop.url) return useDesktop(project, desktop)
-        val needsKey = request(project, "Reaching $url…") { PiwiInstance.needsKey(url) } ?: return false
-        val key = if (needsKey) askKey(project, url) ?: return false else null
+        val key = if (reached.needsKey) askKey(project, url) ?: return false else null
         val projects = request(project, "Listing the projects of $url…") { PiwiInstance.projects(url, key.orEmpty()) } ?: return false
         if (projects.isEmpty()) {
             service.saveCredentials(url, "", key)
@@ -144,21 +180,33 @@ object PiwiConnectFlow {
         return true
     }
 
+    /** Use the desktop app, once it is found running: the offer's action, from the event thread. */
+    fun useDesktop(project: Project): Boolean {
+        val service = project.service<PiwiProjectService>()
+        val desktop = request(project, "Looking for the Piwi desktop app…") { service.desktop() }?.takeIf { it.url != null }
+        if (desktop == null) {
+            Messages.showInfoMessage(project, "The Piwi desktop app is not running.", TITLE)
+            return false
+        }
+        return useDesktop(project, desktop)
+    }
+
     /**
-     * Use the desktop app: no address and no key are saved, so the editor reads them from the app
-     * while it runs. The project is the one linked there to this folder, else the one picked here.
+     * Use the desktop app: it comes first while it runs, with its own address and token, and the
+     * instance the project names stays saved for when it does not. The project is the one linked
+     * there to this folder, else the one picked here.
      */
     private fun useDesktop(project: Project, desktop: DesktopResult): Boolean {
         val service = project.service<PiwiProjectService>()
         val linked = desktop.linked
         if (linked != null) {
-            service.saveCredentials("", "", null)
+            service.useDesktop(null)
             PiwiCommands.notify(project, "Connected to the desktop app, project ${linked.name} (linked to this folder).")
             return true
         }
         val names = desktop.projects.orEmpty().map { it.name }
         if (names.isEmpty()) {
-            service.saveCredentials("", "", null)
+            service.useDesktop(null)
             Messages.showInfoMessage(
                 project,
                 "The desktop app has no project yet. Import or send a run to it, then link this folder on the project's page there.",
@@ -166,10 +214,10 @@ object PiwiConnectFlow {
             )
             return true
         }
-        val dialog = ChooseProjectDialog(project, names, service.settings().project.takeIf { it in names } ?: names.first())
+        val dialog = ChooseProjectDialog(project, names, service.local().desktopProject.takeIf { it in names } ?: names.first())
         if (!dialog.showAndGet()) return false
         val picked = dialog.picked() ?: return false
-        service.saveCredentials("", picked, null)
+        service.useDesktop(picked)
         PiwiCommands.notify(
             project,
             "Connected to the desktop app, project $picked. Link this folder on the project's page there to skip this step.",
@@ -181,7 +229,7 @@ object PiwiConnectFlow {
     fun disconnect(project: Project): Boolean {
         val service = project.service<PiwiProjectService>()
         val settings = service.settings()
-        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project) ?: return false
+        val question = Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) ?: return false
         if (Messages.showYesNoDialog(project, question, "Piwi: Disconnect", null) != Messages.YES) return false
         service.disconnect()
         return true
@@ -298,10 +346,34 @@ object PiwiConnectFlow {
     private fun <T> failed(project: Project, url: String?, e: Exception): T? {
         val reason = when {
             e is PiwiInstance.HttpStatus && (e.status == 401 || e.status == 403) -> "the instance refused the key (${e.status})"
+            e is java.net.ConnectException -> "nothing answers there. Is the instance running, on that port?"
+            e is java.net.http.HttpConnectTimeoutException -> "no answer within 10 seconds"
+            e is java.net.UnknownHostException -> "unknown host ${e.message ?: ""}".trim()
             else -> e.message ?: e.javaClass.simpleName
         }
         Messages.showErrorDialog(project, "Could not connect${url?.let { " to $it" } ?: ""}: $reason", TITLE)
         return null
+    }
+
+    /** The connections Connect offers when the desktop app runs, one radio button each. */
+    private class ChooseConnectionDialog(project: Project, private val choices: List<Glue.ConnectChoice>) : DialogWrapper(project) {
+        private val buttons = choices.map { JBRadioButton(if (it.inUse) "${it.label} (in use)" else it.label) }
+
+        init {
+            title = TITLE
+            val group = ButtonGroup()
+            buttons.forEach(group::add)
+            // The one not in use: Connect is run to change something.
+            (buttons.getOrNull(choices.indexOfFirst { !it.inUse }) ?: buttons.firstOrNull())?.isSelected = true
+            init()
+        }
+
+        fun picked(): Glue.ConnectChoice? = choices.getOrNull(buttons.indexOfFirst { it.isSelected })
+
+        override fun createCenterPanel(): JComponent = panel {
+            row { label("Read this project from:") }
+            buttons.forEachIndexed { i, button -> row { cell(button).comment(choices[i].detail) } }
+        }
     }
 
     private class ChooseProjectDialog(project: Project, names: List<String>, current: String) : DialogWrapper(project) {

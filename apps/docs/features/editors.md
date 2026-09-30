@@ -7,7 +7,7 @@ lang: en-US
 # Editor extensions
 
 The Piwi extension for VS Code (and Cursor, VSCodium) and the Piwi plugin for the JetBrains IDEs with the LSP API
-(WebStorm, IntelliJ IDEA Ultimate, Rider, from 2023.3) bring what the dashboard knows about your suite to the line you
+(WebStorm, IntelliJ IDEA Ultimate, Rider, from 2024.1) bring what the dashboard knows about your suite to the line you
 are editing. Both run the same editor service; [JetBrains IDEs](#jetbrains-ides) lists what the plugin draws
 differently.
 
@@ -25,9 +25,9 @@ compared with your files locally.
 
 ## CI failures in the Problems panel
 
-The failures of the latest run on the checked-out branch are errors in the Problems panel, at the line that failed:
-the call in the error's stack when that file is in your workspace (often a page object), else the `test(…)` line. The
-message is the failure's one-line headline. The run is read every minute, every 15 seconds while it runs.
+The failures of the latest run on the checked-out branch (else the default branch) are errors in the Problems panel,
+at the line that failed: the call in the error's stack when that file is in your workspace (often a page
+object), else the `test(…)` line. The message is the failure's headline. The run is read every minute.
 
 On a failure, the quick fixes are:
 
@@ -55,7 +55,7 @@ Lines above the code (CodeLens):
 
 | File | What it shows | Click |
 |---|---|---|
-| A spec | the tests Piwi knows in it; above each `test(…)`, how often it passed, its [flaky](/features/flaky-tests) score, CI minutes wasted and root cause, its quarantine and the passes left before release, and the selections that include it | opens the test in the dashboard |
+| A spec | the tests Piwi knows in it; beside each `test(…)`, its latest result in the gutter, a failing test's body tinted, and on hover how often it passed, its [flaky](/features/flaky-tests) score and root cause, its quarantine, and its selections | opens the test in the dashboard |
 | A page object or spec | above each locator line, the tests using it, their actions, and how many fail or are flaky | runs those tests |
 | An application file | the tests that reach it, from [code reach](/features/code-reach) | runs those tests |
 | A page file (Nuxt `pages/**`) | the tests acting on that page, its locators and how many are brittle | runs those tests |
@@ -139,7 +139,7 @@ files; the rest is native:
   failures, since the IDE highlights open files only. Double-click
   one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link. The trace
   opens in the Run tool window.
-- **Code Vision** shows the lines above files, tests and locators; click one to run what it names.
+- **Code Vision** shows the lines above files and locators; each test's result is in the gutter.
 - **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this
   file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI

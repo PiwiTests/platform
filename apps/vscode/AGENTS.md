@@ -9,7 +9,9 @@ Studio Marketplace and Open VSX). Read [`../../AGENTS.md`](../../AGENTS.md) and
 A thin client of the editor service. `npm run vscode:build` builds the service's bundle and copies it to
 `dist/piwi-language-server.cjs`, beside the extension's own bundle (`dist/extension.cjs`, esbuild, `vscode` external).
 
-- `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens and
+- `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's
+  line as a gutter icon from `media/`, its details in a hover, and the `piwi.failingTestBackground` color over a
+  failing test: `testDecorations` in `src/glue.ts`) and
   `piwi/runStatus` in the status bar, implements the commands the service names (`piwi.openInDashboard`,
   `piwi.runTests`, `piwi.openTrace`), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
@@ -28,7 +30,11 @@ A thin client of the editor service. `npm run vscode:build` builds the service's
   (`piwi.apiKey <url>`, `apiKeySecret` in `src/connect.ts`): workspace settings, which a repository may commit, never
   select another instance's key.
 - **Piwi: Connect** (`src/connect.ts`, no VS Code API) asks the instance whether it needs a key, then signs in with the
-  browser (the device authorization Piwi Picker uses) or takes a pasted key, then the project.
+  browser (the device authorization Piwi Picker uses) or takes a pasted key, then the project. When the desktop app
+  runs, it first lists the app beside the instance the workspace names (`connectChoices` in `src/glue.ts`).
+- The choice of the desktop app and its project live in `workspaceState` (`piwi.desktop`, `piwi.desktopProject`), on
+  this machine only: choosing the app never touches `piwi.serverUrl`, `piwi.project` or the key, so switching back is
+  one pick.
 - Command ids are part of the protocol: renaming one is a breaking change for the service.
 
 ## Workflow

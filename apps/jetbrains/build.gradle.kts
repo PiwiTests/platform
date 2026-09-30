@@ -28,7 +28,7 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
-        // The oldest supported platform (2023.3) bundles Kotlin 1.9.
+        // The oldest supported platform (2024.1) bundles Kotlin 1.9.
         apiVersion.set(KotlinVersion.KOTLIN_1_9)
         languageVersion.set(KotlinVersion.KOTLIN_1_9)
     }
@@ -39,7 +39,7 @@ dependencies {
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
         bundledPlugin("JavaScript")
-        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Platform, providers.gradleProperty("platformTestFrameworkVersion").get())
     }
 }
 
@@ -73,6 +73,8 @@ intellijPlatform {
         }
     }
     buildSearchableOptions = false
+    // Kotlin sources and no GUI forms: nothing for the bytecode instrumenter to add.
+    instrumentCode = false
 }
 
 tasks {
@@ -89,5 +91,9 @@ tasks {
     }
     test {
         systemProperty("piwi.editor.server", languageServer.asFile.absolutePath)
+    }
+    // WebStorm 2024.1's Swagger plugin declares a test service whose class ships with its own tests only.
+    prepareTestSandbox {
+        disabledPlugins.add("com.intellij.swagger")
     }
 }

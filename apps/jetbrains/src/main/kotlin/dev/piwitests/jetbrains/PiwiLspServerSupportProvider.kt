@@ -7,6 +7,7 @@ import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.lsp.api.Lsp4jClient
@@ -15,12 +16,18 @@ import com.intellij.platform.lsp.api.LspServerNotificationsHandler
 import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCommandsSupport
+import com.intellij.platform.lsp.api.lsWidget.LspServerWidgetItem
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
+import org.eclipse.lsp4j.services.LanguageServer
+import java.lang.ref.WeakReference
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Collections
+import java.util.WeakHashMap
+import java.util.concurrent.CompletableFuture
 
 /**
  * Starts the editor service for projects that hold a Playwright config, on the files it reads.
@@ -33,7 +40,13 @@ class PiwiLspServerSupportProvider : LspServerSupportProvider {
         serverStarter.ensureServerStarted(PiwiLspServerDescriptor(project))
     }
 
+    /** The service's entry in the Language Services widget: Piwi's icon, and the gear that opens **Settings → Tools → Piwi**. */
+    override fun createLspServerWidgetItem(lspServer: LspServer, currentFile: VirtualFile?): LspServerWidgetItem =
+        LspServerWidgetItem(lspServer, currentFile, ICON, PiwiConfigurable::class.java)
+
     companion object {
+        private val ICON = IconLoader.getIcon("/icons/piwi.svg", PiwiLspServerSupportProvider::class.java)
+
         fun isSupported(file: VirtualFile): Boolean =
             file.isInLocalFileSystem && (file.extension?.lowercase() ?: "") in Glue.SUPPORTED_EXTENSIONS
     }
@@ -89,22 +102,37 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 }
 
+/** The lsp4j proxy of a running service, with the service's own requests; null until it runs. */
+fun LspServer.piwiServer(): PiwiLanguageServer? = Lsp4jAccess.server(this) as? PiwiLanguageServer
+
 /**
- * The lsp4j proxy of a running service. The accessor is declared on `LspServer` in
- * the oldest supported platform and on a super-interface of it in later ones, so it
- * is looked up at run time.
+ * The lsp4j proxy of a running service. The platform hands it only to a request's sender, so it
+ * is taken from a `sendRequestSync` that sends nothing: the platform runs the sender while the
+ * service runs, and waits for it. Kept per server.
  */
-fun LspServer.piwiServer(): PiwiLanguageServer? =
-    try {
-        LspServer::class.java.getMethod("getLsp4jServer").invoke(this) as? PiwiLanguageServer
-    } catch (_: ReflectiveOperationException) {
-        null
+object Lsp4jAccess {
+    private val found = Collections.synchronizedMap(WeakHashMap<LspServer, WeakReference<LanguageServer>>())
+
+    fun server(server: LspServer): LanguageServer? {
+        found[server]?.get()?.let { return it }
+        var captured: LanguageServer? = null
+        server.sendRequestSync<Any?>(1_000) { lsp4j ->
+            captured = lsp4j
+            CompletableFuture.completedFuture(null)
+        }
+        return captured?.also { found[server] = WeakReference(it) }
     }
+}
 
 /** Receives the service's notifications beside the protocol's. */
 class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val project: Project) : Lsp4jClient(handler) {
     @JsonNotification("piwi/runStatusChanged")
     fun runStatusChanged(@Suppress("UNUSED_PARAMETER") status: RunStatusResult) {
+        project.service<PiwiProjectService>().refreshStatus()
+    }
+
+    @JsonNotification("piwi/statusChanged")
+    fun statusChanged(@Suppress("UNUSED_PARAMETER") status: StatusResult) {
         project.service<PiwiProjectService>().refreshStatus()
     }
 }

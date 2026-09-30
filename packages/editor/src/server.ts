@@ -48,6 +48,7 @@ import {
   breakMessage,
   breaksByAnchor,
   breaksOfChange,
+  callEndLine,
   filePages,
   functionSnippet,
   functionSuggestions,
@@ -82,6 +83,7 @@ import {
   RUN_ARGS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
+  STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   type DesktopResult,
@@ -101,6 +103,7 @@ import {
   type RunTestsArgs,
   type StatusResult,
   type SummaryLine,
+  type TestLineStatus,
   type TestsForFile,
   type TestsForFileParams,
   type RunCommandArgs,
@@ -160,6 +163,11 @@ function toEditorTest(context: PiwiContext, t: LocatorIndexTest): EditorTest {
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** A catalog status as a test line shows it. */
+function testLineStatus(status: string | null | undefined): TestLineStatus {
+  return status === 'passed' || status === 'failed' || status === 'flaky' || status === 'skipped' ? status : 'unknown';
 }
 
 function testCounts(tests: Array<{ status: string | null }>): string {
@@ -257,7 +265,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
-          message: `${f.headline ?? 'Failed'} (${f.title}, run #${context.failures!.run!.id})`,
+          message: `${f.headline ?? 'Failed'} (${f.title}, run #${context.failures!.run!.id}${
+            context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''
+          })`,
           data: { root: context.root, executionId: f.executionId } satisfies FailureData,
         });
       }
@@ -277,6 +287,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         return {
           root: c.root,
           branch: c.runBranch,
+          checkedOut: c.checkedOutBranch,
           run: run
             ? {
                 id: run.id,
@@ -512,9 +523,33 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
   };
 
+  const currentStatus = (): StatusResult => ({
+    contexts: contexts.map((c) => ({
+      root: c.root,
+      connected: !!c.index && !c.problem,
+      serverUrl: c.client?.connection.serverUrl ?? null,
+      source: c.source,
+      projectId: c.project?.id ?? null,
+      projectName: c.project?.name ?? null,
+      branch: c.branch ?? c.index?.defaultBranch ?? null,
+      locators: c.index?.locators.length ?? 0,
+      reachedFiles: c.codeIndex?.files.length ?? 0,
+      problem: c.problem,
+      instance: c.instance,
+    })),
+    desktopUrl: readDesktopDiscovery(env)?.url ?? null,
+  });
+
+  let lastStatus = '';
   async function refreshAll(): Promise<void> {
     await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
     runChanged();
+    const next = currentStatus();
+    const serialized = JSON.stringify(next);
+    if (serialized !== lastStatus) {
+      lastStatus = serialized;
+      void connection.sendNotification(STATUS_NOTIFICATION, next);
+    }
     for (const document of documents.all()) schedule(document, 0);
   }
 
@@ -968,6 +1003,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
       const casesByTitle = new Map(cases.map((c) => [c.title, c]));
+      const failingNow = new Set((context.failures?.failures ?? []).map((f) => f.testCaseId));
       lines.forEach((text, i) => {
         const m = TEST_CALL.exec(text);
         const found = m ? casesByTitle.get(m[2]!) : undefined;
@@ -995,6 +1031,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               flaky.rootCause ? ` · ${flaky.rootCause}` : '',
             ].join('')
           : '';
+        const open = text.indexOf('(', m!.index);
         out.push({
           line: i,
           title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
@@ -1003,6 +1040,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: 'piwi.openInDashboard',
             arguments: [context.client!.testUrl(found.id)],
           },
+          status: failingNow.has(found.id) ? 'failed' : testLineStatus(found.status),
+          endLine: (open >= 0 ? callEndLine(lines, i, open) : null) ?? i,
         });
       });
       const fileLine: SummaryLine | null = cases.length
@@ -1086,23 +1125,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { cwd: context.root, args, command: command || `npx playwright test ${args.join(' ')}` };
   });
 
-  connection.onRequest(
-    STATUS_REQUEST,
-    (): StatusResult => ({
-      contexts: contexts.map((c) => ({
-        root: c.root,
-        connected: !!c.index && !c.problem,
-        serverUrl: c.client?.connection.serverUrl ?? null,
-        source: c.source,
-        projectId: c.project?.id ?? null,
-        projectName: c.project?.name ?? null,
-        branch: c.branch ?? c.index?.defaultBranch ?? null,
-        locators: c.index?.locators.length ?? 0,
-        reachedFiles: c.codeIndex?.files.length ?? 0,
-        problem: c.problem,
-      })),
-    }),
-  );
+  connection.onRequest(STATUS_REQUEST, (): StatusResult => currentStatus());
 
   connection.onRequest(RUN_STATUS_REQUEST, (): RunStatusResult => runStatus());
 

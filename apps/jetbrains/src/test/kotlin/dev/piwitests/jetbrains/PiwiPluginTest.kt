@@ -33,6 +33,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
             com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
                 .any { it.instanceClass == PiwiConfigurable::class.java.name },
         )
+        // Registered on JavaScript, the annotator serves its dialects too: a spec is TypeScript.
+        val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
+        assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
+        assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
         for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
@@ -51,10 +55,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
             assertEquals(EditorCredentials(null, null, null), service.credentials())
-            // The desktop app: a project only, no address and no key.
+            // A project only, no address and no key.
             service.saveCredentials("", "Shop", "pd_ignored")
             assertEquals(EditorCredentials(null, null, "Shop"), service.credentials())
+            // The desktop app, chosen on this machine: what is saved for the instance stays.
+            service.useDesktop("Mugs")
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs"), service.credentials())
+            service.useInstance()
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs"), service.credentials())
+            service.useDesktop(null)
             service.disconnect()
+            assertEquals(EditorCredentials(null, null, null), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
         } finally {
@@ -89,7 +100,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         server.start()
         val url = "http://127.0.0.1:${server.address.port}"
         try {
-            assertTrue(PiwiInstance.needsKey(url))
+            assertEquals(PiwiInstance.Reached(url, needsKey = true), PiwiInstance.reach(url))
             val signIn = PiwiInstance.startSignIn(url, "WebStorm", "Linux")
             assertEquals("BCDF-GHJK", signIn.userCode)
             assertEquals(5, signIn.interval)
@@ -98,6 +109,60 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val approved = PiwiInstance.pollSignIn(url, signIn.deviceCode)
             assertEquals("approved", approved.status)
             assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, approved.apiKey).map { it.name })
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    /**
+     * An instance on this machine answers on whichever loopback address it listens on: this one listens on
+     * 127.0.0.1 only, so `[::1]` is refused (or has no IPv6 at all) and Connect keeps the address that answered.
+     */
+    fun testReachesAnInstanceOnTheOtherLoopbackAddress() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            val bytes = """{"items":[{"id":7,"name":"Acme Mugs"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val port = server.address.port
+        try {
+            assertEquals(PiwiInstance.Reached("http://127.0.0.1:$port", false), PiwiInstance.reach("http://[::1]:$port"))
+            assertEquals(PiwiInstance.Reached("http://localhost:$port", false), PiwiInstance.reach("http://localhost:$port"))
+        } finally {
+            server.stop(0)
+        }
+        val refused = try {
+            PiwiInstance.reach("http://localhost:$port")
+            null
+        } catch (e: PiwiInstance.Unreachable) {
+            e
+        }
+        assertEquals(
+            "nothing answers at http://localhost:$port (nor at http://127.0.0.1:$port or http://[::1]:$port). " +
+                "Is the instance running, on that port?",
+            refused?.message,
+        )
+    }
+
+    /** An instance that drops a request asking to upgrade, as `nuxt dev` does: Connect never asks. */
+    fun testReachesAnInstanceThatDropsUpgradeRequests() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            if (exchange.requestHeaders.containsKey("Upgrade")) {
+                exchange.close()
+                return@createContext
+            }
+            val bytes = """{"items":[{"id":7,"name":"Acme Mugs"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val url = "http://127.0.0.1:${server.address.port}"
+        try {
+            assertEquals(PiwiInstance.Reached(url, false), PiwiInstance.reach(url))
+            assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, null).map { it.name })
         } finally {
             server.stop(0)
         }
@@ -293,6 +358,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     Thread.sleep(100)
                 }
                 assertEquals("Acme Mugs", status?.contexts?.single()?.projectName)
+                assertEquals(NamedInstance(stub.url, "environment"), status?.contexts?.single()?.instance)
+                assertEquals(null, status?.desktopUrl)
 
                 // The latest run is read after the indexes: wait for it too.
                 var runs: RunStatusResult? = null

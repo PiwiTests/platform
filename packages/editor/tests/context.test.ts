@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { linkedDesktopProject, readDesktopDiscovery, resolveContextConnection } from '../src/context';
+import { linkedDesktopProject, namedInstance, readDesktopDiscovery, resolveContextConnection } from '../src/context';
 
 const dirs: string[] = [];
 function workspace(dotEnv?: string): string {
@@ -120,6 +120,41 @@ describe('the desktop app', () => {
       project: '7',
       source: 'dotenv',
     });
+  });
+
+  test('chosen with Connect, comes before the workspace .env and the saved instance while it runs', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://piwi.team\nPIWI_PROJECT_NAME=Shop\n');
+    const env = desktopApp([{ id: 7, path: root }]);
+    expect(resolveContextConnection(root, root, env, { ...saved, desktop: true })).toEqual({
+      serverUrl: 'http://127.0.0.1:3000',
+      apiKey: 'pd_desktop',
+      project: '7',
+      source: 'desktop',
+    });
+    // The instance the workspace names stays known, to go back to.
+    expect(namedInstance(root, root, env, { ...saved, desktop: true })).toMatchObject({
+      serverUrl: 'https://piwi.team',
+      source: 'dotenv',
+    });
+  });
+
+  test('chosen, its project is the one picked with Connect, else the linked one, else PIWI_PROJECT_NAME', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://piwi.team\nPIWI_PROJECT_NAME=Shop\n');
+    const linked = desktopApp([{ id: 7, path: root }]);
+    const chosen = { desktop: true, project: 'Shop E2E' };
+    expect(resolveContextConnection(root, root, linked, { ...chosen, desktopProject: 'Mugs' })?.project).toBe('Mugs');
+    expect(resolveContextConnection(root, root, linked, chosen)?.project).toBe('7');
+    expect(resolveContextConnection(root, root, desktopApp([]), chosen)?.project).toBe('Shop');
+  });
+
+  test('chosen but not running, leaves the connection to the other sources', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://piwi.team\n');
+    expect(resolveContextConnection(root, root, env, { desktop: true })).toMatchObject({
+      serverUrl: 'https://piwi.team',
+      source: 'dotenv',
+    });
+    const plain = workspace();
+    expect(resolveContextConnection(plain, plain, env, { desktop: true })).toBeNull();
   });
 
   test('reads only well-formed links, and the deepest link wins', () => {

@@ -14,7 +14,17 @@ data class UriParams(val uri: String)
 
 data class PiwiCommand(val title: String? = null, val command: String? = null, val arguments: List<Any?>? = null)
 
-data class SummaryLine(val line: Int = 0, val title: String? = null, val command: PiwiCommand? = null)
+/**
+ * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
+ * `skipped` or `unknown`), shown in the gutter with `title` as its tooltip, and `endLine` where its call ends.
+ */
+data class SummaryLine(
+    val line: Int = 0,
+    val title: String? = null,
+    val command: PiwiCommand? = null,
+    val status: String? = null,
+    val endLine: Int? = null,
+)
 
 data class FileSummary(val file: SummaryLine? = null, val lines: List<SummaryLine>? = null)
 
@@ -50,9 +60,14 @@ data class ContextStatus(
     val locators: Int = 0,
     val reachedFiles: Int = 0,
     val problem: String? = null,
+    /** The instance the environment, the `.env` or the settings name, in use or not; Connect offers it beside the desktop app. */
+    val instance: NamedInstance? = null,
 )
 
-data class StatusResult(val contexts: List<ContextStatus>? = null)
+data class NamedInstance(val serverUrl: String? = null, val source: String? = null)
+
+/** `piwi/status`; `desktopUrl` is the desktop app running on this machine, null when it does not run. */
+data class StatusResult(val contexts: List<ContextStatus>? = null, val desktopUrl: String? = null)
 
 data class RunInfo(
     val id: Int = 0,
@@ -66,7 +81,14 @@ data class RunInfo(
     val url: String? = null,
 )
 
-data class RunStatus(val root: String? = null, val branch: String? = null, val run: RunInfo? = null, val failures: Int = 0)
+/** The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run. */
+data class RunStatus(
+    val root: String? = null,
+    val branch: String? = null,
+    val run: RunInfo? = null,
+    val failures: Int = 0,
+    val checkedOut: String? = null,
+)
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
@@ -104,7 +126,17 @@ data class ProjectRef(val id: Int = 0, val name: String = "")
 /** `piwi/desktop`: the desktop app running on this machine; `url` is null when it does not run. */
 data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>? = null, val linked: ProjectRef? = null)
 
-data class EditorCredentials(val serverUrl: String? = null, val apiKey: String? = null, val project: String? = null)
+/**
+ * `piwi/setCredentials`: the instance saved in the IDE, and, with `desktop`, the desktop app first while it runs,
+ * on the project `desktopProject` names, else the one linked there to the folder.
+ */
+data class EditorCredentials(
+    val serverUrl: String? = null,
+    val apiKey: String? = null,
+    val project: String? = null,
+    val desktop: Boolean = false,
+    val desktopProject: String? = null,
+)
 
 /** The service's custom requests beside the language server protocol. */
 interface PiwiLanguageServer : LanguageServer {

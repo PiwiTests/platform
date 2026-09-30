@@ -22,10 +22,6 @@ class PiwiCodeVisionProvider : DaemonBoundCodeVisionProvider {
     override val defaultAnchor: CodeVisionAnchorKind = CodeVisionAnchorKind.Top
     override val relativeOrderings: List<CodeVisionRelativeOrdering> = listOf(CodeVisionRelativeOrdering.CodeVisionRelativeOrderingFirst)
 
-    @Deprecated("The platform calls computeForEditor(editor, file)")
-    @Suppress("OVERRIDE_DEPRECATION")
-    override fun computeForEditor(editor: Editor): List<Pair<TextRange, CodeVisionEntry>> = emptyList()
-
     override fun computeForEditor(editor: Editor, file: PsiFile): List<Pair<TextRange, CodeVisionEntry>> {
         val project = editor.project ?: return emptyList()
         val virtualFile = file.virtualFile ?: return emptyList()
@@ -35,7 +31,8 @@ class PiwiCodeVisionProvider : DaemonBoundCodeVisionProvider {
         val summary = server.fileSummary(UriParams(virtualFile.toNioPath().toUri().toString())).awaitCancellably(3_000)
             ?: return emptyList()
         val document = editor.document
-        return (listOfNotNull(summary.file) + summary.lines.orEmpty()).mapNotNull { line ->
+        // A test's line is drawn in the gutter (PiwiTestAnnotator), not as text above it.
+        return (listOfNotNull(summary.file) + summary.lines.orEmpty().filter { it.status == null }).mapNotNull { line ->
             if (line.line < 0 || line.line >= document.lineCount || line.title.isNullOrBlank()) return@mapNotNull null
             val range = TextRange(document.getLineStartOffset(line.line), document.getLineEndOffset(line.line))
             val entry = ClickableTextCodeVisionEntry(line.title, id, { _, _ ->

@@ -183,11 +183,95 @@ class GlueTest {
         assertEquals("Forget https://piwi.corp, the project, and the API key saved for it?", Glue.disconnectQuestion("https://piwi.corp", "Shop"))
         assertEquals("Forget the project Shop saved for the desktop app?", Glue.disconnectQuestion("", "Shop"))
         assertEquals(null, Glue.disconnectQuestion("", ""))
+        assertEquals("Forget the choice of the desktop app?", Glue.disconnectQuestion("", "", desktop = true))
+        assertEquals(
+            "Forget https://piwi.corp, the project, and the API key saved for it, and the choice of the desktop app?",
+            Glue.disconnectQuestion("https://piwi.corp", "Shop", desktop = true),
+        )
+    }
+
+    @Test
+    fun `an instance on this machine is tried on every loopback address`() {
+        assertEquals(
+            listOf("http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"),
+            Glue.loopbackAlternatives("http://localhost:3000"),
+        )
+        assertEquals(listOf("http://127.0.0.1:3000/piwi", "http://[::1]:3000/piwi"), Glue.loopbackAlternatives("http://127.0.0.1:3000/piwi"))
+        assertEquals(listOf("https://LOCALHOST", "https://127.0.0.1", "https://[::1]"), Glue.loopbackAlternatives("https://LOCALHOST"))
+        assertEquals(listOf("http://localhost.example.com:3000"), Glue.loopbackAlternatives("http://localhost.example.com:3000"))
+        assertEquals(listOf("https://piwi.corp"), Glue.loopbackAlternatives("https://piwi.corp"))
+        assertEquals(true, Glue.isLoopback("http://[::1]:3000"))
+        assertEquals(false, Glue.isLoopback("http://127.0.0.10:3000"))
     }
 
     @Test
     fun `the desktop app is named as a source`() {
         assertEquals("the Piwi desktop app", Glue.sourceLabel("desktop"))
+    }
+
+    private val desktop = DesktopResult("http://127.0.0.1:3000", listOf(ProjectRef(3, "Shop")), ProjectRef(3, "Shop"))
+
+    private val team = StatusResult(
+        listOf(connected.contexts!!.single().copy(instance = NamedInstance("http://piwi", "dotenv"))),
+        desktopUrl = "http://127.0.0.1:3000",
+    )
+
+    @Test
+    fun `Connect offers the desktop app, the instance the project names, and another one`() {
+        assertEquals(
+            listOf(
+                Glue.ConnectChoice(
+                    Glue.ConnectTarget.DESKTOP,
+                    "The Piwi desktop app, at http://127.0.0.1:3000",
+                    "Runs on this machine; this folder is linked there to the project Shop.",
+                    null,
+                    false,
+                ),
+                Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "http://piwi", "From the workspace .env.", "http://piwi", true),
+                Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
+            ),
+            Glue.connectChoices(team, desktop, ""),
+        )
+        // With the app in use, the instance is still one choice away; saved only in the settings, it comes from there.
+        val onDesktop = StatusResult(
+            listOf(team.contexts!!.single().copy(serverUrl = "http://127.0.0.1:3000", source = "desktop", instance = null)),
+            desktopUrl = "http://127.0.0.1:3000",
+        )
+        val choices = Glue.connectChoices(onDesktop, desktop, "https://piwi.corp/")
+        assertEquals(listOf(true, false, false), choices.map { it.inUse })
+        assertEquals("https://piwi.corp" to "From Settings → Tools → Piwi.", choices[1].serverUrl to choices[1].detail)
+        // Before the service starts: the app and the instance saved here.
+        assertEquals(3, Glue.connectChoices(null, desktop, "https://piwi.corp").size)
+    }
+
+    @Test
+    fun `the status says when the desktop app runs unused, or was chosen and does not run`() {
+        assertEquals(
+            "Connected to Acme on main at http://piwi, from the workspace .env. " +
+                "The Piwi desktop app runs on this machine: Connect to use it.",
+            Glue.connectionSummary(team),
+        )
+        assertEquals(
+            "The Piwi desktop app, chosen with Connect, is not running.",
+            Glue.statusView(connected, runs(passed), desktopChosen = true).tooltip.lines().last(),
+        )
+        assertEquals("", Glue.desktopHint(connected, desktopChosen = false))
+    }
+
+    @Test
+    fun `reads the desktop app's discovery file, and the deepest linked folder wins`() {
+        val discovery = Glue.parseDesktopDiscovery(
+            """{"url":"http://127.0.0.1:3000/","token":"pd_x","projects":[{"id":"3","path":"/a"},{"id":5},""" +
+                """{"id":6,"path":"/w"},{"id":8,"path":"/w/app"}]}""",
+        )
+        assertEquals(Glue.DesktopDiscovery("http://127.0.0.1:3000", "pd_x", listOf(6 to "/w", 8 to "/w/app")), discovery)
+        assertEquals(8, Glue.linkedDesktopProject(discovery!!.links, Path.of("/w/app/tests")))
+        assertEquals(6, Glue.linkedDesktopProject(discovery.links, Path.of("/w/other")))
+        assertEquals(null, Glue.linkedDesktopProject(discovery.links, Path.of("/elsewhere")))
+        assertEquals(null, Glue.parseDesktopDiscovery("""{"url":"http://127.0.0.1:3000"}"""))
+        assertEquals(null, Glue.parseDesktopDiscovery("not json"))
+        assertEquals(Path.of("/tmp/d.json"), Glue.desktopConfigPath(mapOf("PIWI_DESKTOP_CONFIG" to "/tmp/d.json"), "/home/me"))
+        assertEquals(Path.of("/home/me", ".piwi", "desktop.json"), Glue.desktopConfigPath(emptyMap(), "/home/me"))
     }
 
     private fun tree(vararg files: String): Path {
