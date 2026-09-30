@@ -95,7 +95,8 @@ export interface UserPickResult {
 // so nothing is captured — but Playwright's error still names the locator
 // (`Locator: …`) and its call site, which is enough to run the picker.
 
-const ANSI_RE = /\[[0-9;]*m/g;
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
 /**
  * Parse a Playwright locator expression into `{ method, args }` for its leaf —

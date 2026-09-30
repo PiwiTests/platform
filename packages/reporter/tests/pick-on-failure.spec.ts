@@ -173,7 +173,7 @@ describe('deriveFailedLocator', () => {
   });
 
   it('strips ANSI colour codes from the error before matching', () => {
-    const colored = `[2mLocator:[22m getByText('Pay now')`;
+    const colored = `\x1b[2mLocator:\x1b[22m getByText('Pay now')`;
     const testInfo = { errors: [{ message: colored }] } as never;
     expect(deriveFailedLocator(testInfo)).toEqual({ method: 'getByText', args: ['Pay now'], location: null });
   });
