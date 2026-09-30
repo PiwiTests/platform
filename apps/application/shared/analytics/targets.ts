@@ -116,10 +116,6 @@ export function readProjectTargets(raw: unknown): ProjectTargets {
   return out;
 }
 
-export function hasTargets(targets: ProjectTargets): boolean {
-  return TARGET_DEFS.some((d) => targets[d.key] !== undefined);
-}
-
 /** The target definition of a metric, when the metric carries one. */
 export function targetDefForMetric(metric: MetricId): TargetDef | undefined {
   return TARGET_DEFS.find((d) => d.metric === metric);
@@ -151,10 +147,4 @@ export interface ProjectTargetVerdict {
   actual: number | null;
   /** Null when the period has nothing to judge the target on. */
   met: boolean | null;
-}
-
-/** How a target reads in one short phrase: "≥ 98%", "≤ 5 days". */
-export function targetPhrase(def: Pick<TargetDef, 'direction' | 'suffix'>, target: number): string {
-  const sign = def.direction === 'min' ? '≥' : '≤';
-  return def.suffix === '%' ? `${sign} ${target}%` : `${sign} ${target} ${def.suffix}`;
 }

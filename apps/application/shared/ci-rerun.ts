@@ -51,8 +51,6 @@ export interface CiRerunSettings {
   bitbucket?: BitbucketRerunTarget;
 }
 
-export const DEFAULT_CI_RERUN: CiRerunSettings = { enabled: false };
-
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
 /** Merge a partial (possibly untrusted) payload onto the defaults, dropping empties. */

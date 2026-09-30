@@ -15,7 +15,7 @@ export function flakeVerdictWord(verdict: string | null): string {
 }
 
 /** A p-value as the lab prints it. */
-export function formatFlakePValue(p: number | null): string {
+function formatFlakePValue(p: number | null): string {
   if (p == null) return '';
   return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
 }

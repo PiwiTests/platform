@@ -1296,11 +1296,6 @@ export function envVarsByCategory(category: PiwiEnvVarCategory): PiwiEnvVarName[
   return (Object.keys(PIWI_ENV_VARS) as PiwiEnvVarName[]).filter((name) => PIWI_ENV_VARS[name].category === category);
 }
 
-/** Whether a var is a real runtime setting (excludes build/test-harness vars). */
-export function isRuntimeSetting(name: PiwiEnvVarName): boolean {
-  return !getEnvVarMeta(name).runtimeOnly;
-}
-
 /** Numeric semver comparison (missing segments count as 0). */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((part) => Number.parseInt(part, 10) || 0);

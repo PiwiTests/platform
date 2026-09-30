@@ -364,14 +364,6 @@ export async function fetchContextProjects(db: DrizzleDB, ctx: AnalyticsContext)
   return rows;
 }
 
-export async function fetchScopedProjects(
-  db: DrizzleDB,
-  scope: AnalyticsScope,
-  access: ProjectAccess,
-): Promise<ScopedProject[]> {
-  return fetchContextProjects(db, await getAnalyticsContext(db, scope, access));
-}
-
 export async function fetchTagsByProject(
   db: DrizzleDB,
   projectIds: number[],

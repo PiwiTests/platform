@@ -58,11 +58,6 @@ export interface AnalyticsScope {
   locale?: string;
 }
 
-/** The legacy presets of the period picker, in days. */
-export const ANALYTICS_PERIODS = [7, 30, 90, 365] as const;
-
-export const DEFAULT_ANALYTICS_DAYS = 30;
-
 /** "All time" is expressed as a 10-year window so the bucket math needs no special case. */
 export const MAX_ANALYTICS_DAYS = ALL_TIME_DAYS;
 
