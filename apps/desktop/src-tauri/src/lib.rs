@@ -871,8 +871,8 @@ fn ide_launcher_args(
 
 /// A launcher command the webview may spawn: a bare executable name, looked up on
 /// the PATH and in the IDEs' install folders. No path separators, whitespace or
-/// shell metacharacters, so a stray call can neither point at an arbitrary binary
-/// nor smuggle in extra arguments.
+/// shell metacharacters, so a stray call can neither name a binary by path nor
+/// smuggle in extra arguments; any bare name found in those places passes.
 fn is_safe_launcher_command(command: &str) -> bool {
     !command.is_empty()
         && command.len() <= 64
@@ -887,9 +887,9 @@ fn is_safe_launcher_command(command: &str) -> bool {
 
 /// Open a source file in a local IDE by spawning its command-line launcher
 /// (`code --goto …`, `rider --line …`). The desktop shell does this natively, so
-/// it works without a `vscode://`/`jetbrains://` protocol handler, JetBrains
-/// Toolbox, an open-project name to match or "allow unsigned requests" — the
-/// reasons the URL schemes are unreliable, on Rider especially.
+/// it needs no `vscode://`/`jetbrains://` protocol handler, JetBrains Toolbox,
+/// open-project name to match or "allow unsigned requests", which the URL
+/// schemes depend on.
 ///
 /// Resolves `true` when the launcher started, `false` when no IDE installed it
 /// where the shell looks (so the webview can fall back to a URL scheme), and
@@ -1522,9 +1522,7 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Piwi Dashboard (click to open)")
                 .menu(&menu)
-                // Left-click opens the window; right-click shows the menu. Without
-                // this a left-click did nothing, so the tray looked inert (and on
-                // Windows the icon hides in the overflow area by default).
+                // Left-click opens the window; right-click shows the menu.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -1709,7 +1707,7 @@ mod tests {
     fn tooltip_composes_run_progress_unread_and_idle() {
         // Idle: nothing to say.
         assert_eq!(compose_tooltip(0, None, None), "Piwi Dashboard (click to open)");
-        // Unread only, matching the pre-run-progress behaviour.
+        // Unread only, no run in flight.
         assert_eq!(compose_tooltip(2, None, None), "Piwi Dashboard — 2 unread");
         assert_eq!(
             compose_tooltip(2, Some("acme-web: failure"), None),

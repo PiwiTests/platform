@@ -11,11 +11,9 @@
 // The webview only ever names a project and a commit window, or for a lab session
 // a test case id and bounded numbers; `git` is invoked through a fixed set of
 // subcommands with validated arguments (SHAs match `^[0-9a-f]{7,40}$`, worktree
-// paths are canonicalized and must sit under the worktrees dir), and the user's
-// own start command — when the config has no `webServer` — is read from the
-// stored settings, never passed in at run time. A lab session reads the commit
-// of the test's latest failure from the bundled server itself, and builds the
-// `piwi flake` arguments and environment here.
+// paths are canonicalized and must sit under the worktrees dir). A lab session
+// reads the commit of the test's latest failure from the bundled server itself,
+// and builds the `piwi flake` arguments and environment here.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -629,7 +627,7 @@ fn browser_cached(app: &AppHandle, browser: &str) -> bool {
 }
 
 /// Spawn a std process, stream its output as run events, record its pid for stop,
-/// and return its exit code. Runs to completion on the calling (blocking) task.
+/// and return its exit code. Blocks the calling task until the process exits.
 fn run_std_streaming(
     app: &AppHandle,
     id: u32,
