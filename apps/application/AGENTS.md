@@ -418,6 +418,12 @@ from `createScmProvider` / `scmProviderForUrl` (or the pure link helpers from `#
 `tests/unit/scm-single-source.test.ts` scans `server`, `shared`, `app` and `types` for provider host literals and the
 union outside an explicit allow-list, so a new home for either is a visible diff to that list.
 
+On the desktop app with no SCM token, `createScmProvider` returns a `LocalGitProvider` (`server/utils/scm/local-git.ts`)
+for a project linked to a clone of the repository: it reads history with git in that folder and wraps the host's own
+provider for the rest. A method added to `ScmProvider` must be added there too — a read tries git first and falls back
+to the host, anything else is passed to the host. The base class's no-op defaults compile without it, and would
+silently turn the feature off on the desktop app.
+
 ### Failure clustering & fingerprints
 
 The grouping key is `computeErrorFingerprint` (`shared/error-fingerprint.ts`) over error type + normalized message +

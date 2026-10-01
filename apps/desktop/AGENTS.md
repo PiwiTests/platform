@@ -30,8 +30,10 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
 - **The reporter discovery file is a cross-package contract.** The shell publishes `{ url, token, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit; `@piwitests/reporter` reads it from `src/internal/config/desktop.ts`,
-  `src-tauri/src/mcp_stdio.rs` resolves the app's address from it on every message, and the editor service
-  (`packages/editor/src/context.ts`) picks the project linked to the workspace from it. They ship separately, so
+  `src-tauri/src/mcp_stdio.rs` resolves the app's address from it on every message, the editor service
+  (`packages/editor/src/context.ts`) picks the project linked to the workspace from it, and the bundled server
+  (`apps/application/server/utils/desktop-links.ts`) reads a project's linked folder from it to read its git history
+  locally, trusting the file only when its token is the server's own `PIWI_DESKTOP_TOKEN`. They ship separately, so
   changing the path or the shape means changing all of them; a new field is fine, since every reader ignores the
   ones it does not know.
 - **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its

@@ -135,6 +135,15 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       detail: `${where} is not a host Piwi reads (GitHub, GitLab and Bitbucket are)`,
     };
   }
+  if (scm.localGit && !scm.error) {
+    return {
+      ...known,
+      kind: 'fetch-failed',
+      text,
+      detail: 'the folder linked to this project does not have these commits: fetch them there, or add an access token',
+      needsToken: !scm.hasToken,
+    };
+  }
   if (scm.error || !scm.hasToken) {
     const what = scm.error ? `${host} did not return the changes` : `${host} returned no changes`;
     return {
