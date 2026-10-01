@@ -206,6 +206,7 @@ describe('Brazilian Portuguese', () => {
     expect(
       portuguese.evidence({
         screenshots: 1,
+        stepShots: 0,
         consoleErrors: 1234,
         consoleWarnings: 0,
         failedRequests: 2,

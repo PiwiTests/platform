@@ -184,6 +184,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
       c.screenshots > 0
         ? plural(c.screenshots, 'captura de pantalla', 'capturas de pantalla')
         : 'ninguna captura de pantalla',
+      ...(c.stepShots > 0 ? [plural(c.stepShots, 'captura de paso', 'capturas de pasos')] : []),
       ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'error de consola', 'errores de consola')] : []),
       ...(c.consoleWarnings > 0
         ? [plural(c.consoleWarnings, 'advertencia de consola', 'advertencias de consola')]

@@ -2635,6 +2635,20 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Screenshot of each step ($count$)",
+    "description": "Report a bug, finished report: checkbox, on by default, that keeps in the report the screenshot of the page as each step began. $count$ is how many were taken.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "The page as each step began, for whoever plays a step by hand. They show the whole page: leave them out if it shows what should not be shared.",
+    "description": "Report a bug, finished report: under the step screenshots checkbox, what they are for and why to leave them out."
+  },
   "bug_nothingMarked": {
     "message": "Nothing is marked as wrong, so the test would pass. Record again and use \"$mark$\".",
     "description": "Report a bug, finished report: warning when no step says what is wrong. $mark$ is the name of the “Mark what’s wrong” button.",

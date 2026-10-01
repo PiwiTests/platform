@@ -2181,6 +2181,18 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Capture de chaque étape ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "La page au début de chaque étape, pour qui rejoue une étape à la main. Elles montrent toute la page : décochez la case si elle montre ce qui ne doit pas être partagé."
+  },
   "bug_nothingMarked": {
     "message": "Rien n’est marqué comme incorrect : le test réussirait. Enregistrez à nouveau et utilisez « $mark$ ».",
     "placeholders": {

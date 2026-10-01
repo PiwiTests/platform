@@ -9,6 +9,8 @@ import {
   bugReportMarkdown,
   NO_SCREENSHOT_TAKEN,
   specFileName,
+  stepViewIds,
+  withoutStepShots,
 } from '../../src/content/bug-report-files.js';
 import {
   addBugScreenshot,
@@ -118,6 +120,33 @@ describe('assembleBugReport', () => {
     });
     expect(withNote.evidence.screenshotNote).toBe('no grant');
     expect(specFileName(withNote)).toBe('bug-on-cart.spec.ts');
+  });
+
+  it('keeps the screenshot of each step the worker kept, named after the step, and leaves them out on request', () => {
+    const view = (id: string) => ({ id, box: { x: 1, y: 2, width: 3, height: 4 } });
+    const events = [
+      ev({ kind: 'navigate', value: `${ORIGIN}/cart`, timestamp: 1 }),
+      ev({ kind: 'click', target: null, timestamp: 2, view: view('v1') }),
+      ev({ kind: 'click', target: null, timestamp: 3, view: view('gone') }),
+    ];
+    expect(stepViewIds(events)).toEqual(['v1', 'gone']);
+    const views = [
+      { id: 'v1', dataUrl: 'data:image/jpeg;base64,AAEC', takenAt: 7, viewport: { width: 800, height: 600 } },
+    ];
+    const report = assembleBugReport({ events, startedAt: 1, evidence, screenshots: [], context, views });
+    expect(report.evidence.stepShots).toEqual([
+      { step: 1, file: 'steps/002.jpg', box: view('v1').box, viewport: { width: 800, height: 600 }, takenAt: 7 },
+    ]);
+    const images = new Map([['steps/002.jpg', views[0]!.dataUrl]]);
+    const names = bugReportEntries(report, [], undefined, images).map((e) => e.name);
+    expect(names).toContain('steps/002.jpg');
+    expect(withoutStepShots(report).evidence).not.toHaveProperty('stepShots');
+    expect(bugReportEntries(withoutStepShots(report), [], undefined, images).map((e) => e.name)).not.toContain(
+      'steps/002.jpg',
+    );
+    expect(assembleBugReport({ events, startedAt: 1, evidence, screenshots: [], context }).evidence).not.toHaveProperty(
+      'stepShots',
+    );
   });
 
   it('puts the steps, the test, the Markdown, the evidence and the screenshots in the archive', () => {

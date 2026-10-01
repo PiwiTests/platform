@@ -3,10 +3,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import {
+  clickInShadow,
   debuggerAttached,
   expect,
   expectText,
   finished,
+  panelNode,
+  type DomNode,
   replayState,
   startReplay,
   step,
@@ -92,34 +95,6 @@ const SIZED = `<!doctype html><html><head><meta charset="utf-8"></head><body><ou
 
 test.use({ pages: { '/lab': LAB, '/clicks': CLICKS, '/sized': SIZED } });
 
-type DomNode = {
-  backendNodeId: number;
-  nodeName: string;
-  nodeValue?: string;
-  attributes?: string[];
-  children?: DomNode[];
-  shadowRoots?: DomNode[];
-};
-
-/** The first node of the page, closed shadow roots included, that `match` accepts. */
-async function panelNode(page: Page, match: (node: DomNode) => boolean): Promise<number | null> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    const { root } = (await cdp.send('DOM.getDocument', { depth: -1, pierce: true })) as { root: DomNode };
-    const find = (node: DomNode): number | null => {
-      if (match(node)) return node.backendNodeId;
-      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
-        const found = find(child);
-        if (found) return found;
-      }
-      return null;
-    };
-    return find(root);
-  } finally {
-    await cdp.detach();
-  }
-}
-
 const hasAttribute = (name: string) => (node: DomNode) => {
   const attrs = node.attributes ?? [];
   for (let i = 0; i < attrs.length; i += 2) if (attrs[i] === name) return true;
@@ -132,22 +107,6 @@ async function chooseInReplayPanel(page: Page, file: string): Promise<void> {
   expect(backendNodeId).not.toBeNull();
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('DOM.setFileInputFiles', { files: [file], backendNodeId: backendNodeId! });
-  await cdp.detach();
-}
-
-/** Clicks the replay panel's button reading `label`. */
-async function clickInReplayPanel(page: Page, label: string): Promise<void> {
-  const backendNodeId = await panelNode(
-    page,
-    (node) => node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === label),
-  );
-  expect(backendNodeId).not.toBeNull();
-  const cdp = await page.context().newCDPSession(page);
-  const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: backendNodeId! });
-  await cdp.send('Runtime.callFunctionOn', {
-    objectId: object.objectId!,
-    functionDeclaration: 'function () { this.click(); }',
-  });
   await cdp.detach();
 }
 
@@ -219,7 +178,7 @@ test('a file step can be skipped, and the verdict says the step was left out', a
   const page = await startReplay(control, context, site, doc, '/lab');
   await expect.poll(async () => (await replayState(worker)).position, { timeout: 45_000 }).toBe(1);
   await expect.poll(() => panelNode(page, hasAttribute('data-piwi-replay-file')), { timeout: 20_000 }).not.toBeNull();
-  await clickInReplayPanel(page, 'Skip this step');
+  await clickInShadow(page, 'Skip this step');
   const state = await finished(worker);
   expect(state.results.map((r) => r.status)).toEqual(['done', 'skipped']);
 });

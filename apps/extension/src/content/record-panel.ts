@@ -6,6 +6,7 @@ import {
   type RecordedTarget,
   type RecordedStep,
   type StepAssertion,
+  type StepView,
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
@@ -25,6 +26,7 @@ import {
 } from '../shared/recording-storage.js';
 import { getBugEvidence, setBugEvidenceFields } from '../shared/bug-storage.js';
 import {
+  captureStepView,
   currentBugContext,
   outlineAround,
   renderBugFinishPanel,
@@ -872,10 +874,94 @@ function stopCapture(): void {
   g.__piwiRecordCapture?.abort();
   g.__piwiRecordCapture = undefined;
   g.__piwiBugRelayFlush = undefined;
+  stopViews();
   g.__piwiRecordPaused = false;
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   removeRecordingFrame();
+}
+
+/**
+ * A bug recording's screenshots of the page as each step begins (see
+ * `background/step-views.ts`). Once the page has been still for
+ * `VIEW_SETTLE_MS` after a step, the recorder asks for the view the next step
+ * begins from; an action that comes before one is taken asks for its own as it
+ * starts. Each action keeps the view's id and its element's box.
+ */
+const VIEW_SETTLE_MS = 600;
+
+interface PendingView {
+  id: string;
+  /** An action began from it already. */
+  used: boolean;
+}
+
+let viewsOn = false;
+let currentView: PendingView | null = null;
+let viewTimer: ReturnType<typeof setTimeout> | null = null;
+let viewCount = 0;
+/** The field typed in last and the view its typing began from: the rest of the typing keeps it. */
+let typing: { field: Element; view: StepView | undefined } | null = null;
+
+function requestView(hide: boolean): PendingView {
+  const view = { id: `${Date.now().toString(36)}-${(viewCount++).toString(36)}`, used: false };
+  currentView = view;
+  void captureStepView(view.id, viewportNow(), hide);
+  return view;
+}
+
+function scheduleView(): void {
+  if (!viewsOn) return;
+  if (viewTimer != null) clearTimeout(viewTimer);
+  viewTimer = setTimeout(() => {
+    viewTimer = null;
+    // A pick or a dialog of the bug panel is open: the page it shows is not the next step's.
+    if (capturePaused()) return scheduleView();
+    requestView(true);
+  }, VIEW_SETTLE_MS);
+}
+
+/** On a page the recording reaches, the first view is taken at once: the page as its first step begins. */
+function startViews(): void {
+  viewsOn = true;
+  requestView(true);
+}
+
+function stopViews(): void {
+  viewsOn = false;
+  if (viewTimer != null) clearTimeout(viewTimer);
+  viewTimer = null;
+}
+
+function boxOf(el: Element): StepView['box'] {
+  const r = el.getBoundingClientRect();
+  return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+}
+
+/** The view an action begins from, with its element's box: the settled one if no action used it, else one taken now. */
+function viewForAction(el: Element | null): StepView | undefined {
+  typing = null;
+  if (!viewsOn) return undefined;
+  const view = currentView && !currentView.used ? currentView : requestView(false);
+  view.used = true;
+  scheduleView();
+  return { id: view.id, box: el ? boxOf(el) : null };
+}
+
+/** The same view, with no element marked: a hover step's element is not the one clicked. */
+function withoutBox(view: StepView | undefined): StepView | undefined {
+  return view ? { id: view.id, box: null } : undefined;
+}
+
+/** Typing in the same field goes on from the view its first keystroke took. */
+function viewForTyping(field: Element): StepView | undefined {
+  if (typing?.field === field) {
+    scheduleView();
+    return typing.view;
+  }
+  const view = viewForAction(field);
+  typing = { field, view };
+  return view;
 }
 
 function attachListeners(): void {
@@ -938,10 +1024,12 @@ function attachListeners(): void {
       const raw = e.target;
       if (!(raw instanceof Element)) return;
       const { el, target, hovers } = clickTarget(raw, e.timeStamp, e.detail > 0);
-      for (const hover of hovers) captureEvent(buildEvent('hover', null, { target: hover }));
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
+      // A checkbox or a radio is recorded by its `change`, which takes the view.
+      const view = hovers.length > 0 || (kind !== 'checkbox' && kind !== 'radio') ? viewForAction(el) : undefined;
+      for (const hover of hovers) captureEvent(buildEvent('hover', null, { target: hover, view: withoutBox(view) }));
       if (kind === 'checkbox' || kind === 'radio') return; // the resulting `change` event records this one
-      captureEvent(buildEvent('click', el, { target }));
+      captureEvent(buildEvent('click', el, { target, view }));
     },
     opts,
   );
@@ -968,6 +1056,7 @@ function attachListeners(): void {
           target: fieldTarget(el),
           value: passwordField ? null : el.value,
           isPasswordField: passwordField,
+          view: viewForTyping(el),
         }),
       );
     },
@@ -983,13 +1072,15 @@ function attachListeners(): void {
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
       const kind = classifyInputKind(el.tagName, typeAttr);
       if (kind === 'checkbox' || kind === 'radio') {
-        captureEvent(buildEvent('change', el, { inputType: kind, checked: (el as HTMLInputElement).checked }));
+        const checked = (el as HTMLInputElement).checked;
+        captureEvent(buildEvent('change', el, { inputType: kind, checked, view: viewForAction(el) }));
       } else if (kind === 'select') {
-        captureEvent(buildEvent('change', el, { inputType: 'select', value: (el as HTMLSelectElement).value }));
+        const value = (el as HTMLSelectElement).value;
+        captureEvent(buildEvent('change', el, { inputType: 'select', value, view: viewForAction(el) }));
       } else if (el instanceof HTMLInputElement && el.type === 'file') {
         // The names of the chosen files, one per line: never their content, which stays on this computer.
         const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
-        captureEvent(buildEvent('files', el, { value: names.join('\n') }));
+        captureEvent(buildEvent('files', el, { value: names.join('\n'), view: viewForAction(el) }));
       }
     },
     opts,
@@ -1002,7 +1093,7 @@ function attachListeners(): void {
       const raw = e.target;
       if (!(raw instanceof Element)) return;
       const el = nearestActionable(raw);
-      captureEvent(buildEvent('dblclick', el));
+      captureEvent(buildEvent('dblclick', el, { view: viewForAction(el) }));
     },
     opts,
   );
@@ -1022,7 +1113,8 @@ function attachListeners(): void {
       const source = dragged;
       dragged = null;
       if (!source || !e.isTrusted || capturePaused() || withinOwnUi(e) || !(e.target instanceof Element)) return;
-      captureEvent(buildEvent('drop', source, { dropTarget: deriveRecordedTarget(nearestActionable(e.target)) }));
+      const dropTarget = deriveRecordedTarget(nearestActionable(e.target));
+      captureEvent(buildEvent('drop', source, { dropTarget, view: viewForAction(source) }));
     },
     opts,
   );
@@ -1038,7 +1130,8 @@ function attachListeners(): void {
       // sends them: their target is often the page itself, which no locator names.
       const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
       const onPage = !focused || focused === document.body || focused === document.documentElement;
-      captureEvent(buildEvent('keydown', key === 'Escape' || shortcut || onPage ? null : focused, { value: key }));
+      const el = key === 'Escape' || shortcut || onPage ? null : focused;
+      captureEvent(buildEvent('keydown', el, { value: key, view: viewForAction(el) }));
     },
     opts,
   );
@@ -1225,7 +1318,10 @@ async function initRecordPanel(): Promise<void> {
   attachListeners();
   installStopListener();
   const capture = recorderGlobals().__piwiRecordCapture;
-  if (viewport && capture) watchViewport(viewport, capture.signal);
+  if (viewport && capture) {
+    watchViewport(viewport, capture.signal);
+    startViews();
+  }
   if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
     startPageRelay(state.bugToken);
   }

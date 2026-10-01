@@ -22,6 +22,7 @@ A `.piwibug` file is a zip archive, its entries stored without compression:
 | `bug-report.md` | The report as Markdown, in the language Piwi Picker shows |
 | `evidence.json` | The evidence and the context; see below |
 | `screenshots/<n>-<moment>.png` | Up to three screenshots: `marked` (a step marked as wrong), `finish` or `manual` |
+| `steps/<nnn>.jpg` | The page as step `<nnn>` began (`steps/001.jpg` for the first), as wide as the viewport in CSS pixels, 1,280 at most; up to 100 |
 
 The `mimetype` entry is stored first and uncompressed, as EPUB and OpenDocument files do, so its text sits at a fixed
 place at the start of the file. Piwi reads a file by that content, never by its name: renamed to `.zip`, to look
@@ -61,11 +62,13 @@ holding `steps.json` and `evidence.json` without the `mimetype` entry is read to
 | `console` | Console errors and warnings, uncaught errors and unhandled rejections, at most 100; `consoleDropped` counts the rest |
 | `requests` | Requests that failed or answered 400 or more: method, path with query values removed, status; at most 100 |
 | `screenshots` | Each screenshot's file, the step it was taken after (0-based) and when |
+| `stepShots` | Optional: for each step with a screenshot, its `step` (0-based), its `file`, the `box` of the step's element on it (`x`, `y`, `width`, `height` in CSS pixels from the top left corner, or null) and the `viewport` it shows |
 | `screenshotNote` | Why there is no screenshot, when there is none |
 | `outline` | An outline of the page in the YAML form of an ARIA snapshot, built by Piwi Picker, at most 400 lines |
 
 Everything in `evidence.json` is checked when a file is read: a list past its limit is cut, an entry that does not fit
-its shape is dropped, and a screenshot is kept only when its name is one the table above allows. The steps are checked
+its shape is dropped, and a screenshot is kept only when its name is one the table above allows; a step screenshot,
+only when it is named after its step. The steps are checked
 as a [steps file](/reference/steps-format#checks) is, and a file whose steps fail that check is refused.
 
 ## Related

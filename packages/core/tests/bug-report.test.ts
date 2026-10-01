@@ -16,6 +16,7 @@ import {
   renderBugSpec,
   reportedRequestUrl,
   specRunVerdict,
+  stepShotFile,
   summarizeEvidence,
   type BugReport,
 } from '../src/bug-report';
@@ -404,6 +405,53 @@ describe('bug report archive', () => {
       errors: ['steps.json: not valid JSON'],
     });
     expect(bugReportFromFiles({ steps: '{}', evidence: '{' }).ok).toBe(false);
+  });
+});
+
+describe('step screenshots', () => {
+  const view = (id: string) => ({ id, box: { x: 10, y: 20, width: 100, height: 30 } });
+
+  test('a step keeps the view of the event it starts from, which a steps document leaves out', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'navigate', value: `${ORIGIN}/cart`, timestamp: 1 }),
+      ev({ kind: 'input', target: coupon, value: 'S', timestamp: 2, view: view('a') }),
+      ev({ kind: 'input', target: coupon, value: 'SP', timestamp: 3, view: view('b') }),
+      ev({ kind: 'click', target: apply, timestamp: 4, view: view('c') }),
+      ev({ kind: 'click', target: apply, timestamp: 5, view: view('d') }),
+      ev({ kind: 'dblclick', target: apply, timestamp: 6, view: view('e') }),
+    ]);
+    expect(steps.map((step) => step.view?.id ?? null)).toEqual([null, 'a', 'c']);
+    const doc = toStepsDocument(buildSession(steps, 1));
+    expect(doc.steps.some((step) => 'view' in step)).toBe(false);
+  });
+
+  test('a report reads its step screenshots back, one per step, named after the step, and counts them', () => {
+    const report = couponReport();
+    const shot = (step: number, file = stepShotFile(step)) => ({
+      step,
+      file,
+      box: { x: 1, y: 2, width: 3, height: 4 },
+      viewport: { width: 1280, height: 720 },
+      takenAt: 9,
+    });
+    expect(stepShotFile(0)).toBe('steps/001.jpg');
+    const parsed = parseBugReport({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        stepShots: [shot(2), shot(1), shot(1), shot(3, '../steps/004.jpg'), { ...shot(4), box: 'x', viewport: null }],
+      },
+    });
+    expect(parsed.ok && parsed.report.evidence.stepShots).toEqual([
+      shot(1),
+      shot(2),
+      { ...shot(4), box: null, viewport: null },
+    ]);
+    expect(parseBugReport(report).ok && parseBugReport(report)).not.toHaveProperty('report.evidence.stepShots');
+    if (!parsed.ok) return;
+    expect(summarizeEvidence(parsed.report.evidence)).toBe(
+      '1 screenshot · 3 step screenshots · 1 console error · 1 failed request · page outline',
+    );
   });
 });
 

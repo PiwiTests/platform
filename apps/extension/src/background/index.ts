@@ -55,6 +55,7 @@ import {
   releaseReplayTab,
 } from './cdp-replay.js';
 import { debuggerAvailable, tabsHolding } from './debugger.js';
+import { clearViewsWithRecording, handleGetStepViews, handleStepView } from './step-views.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -311,6 +312,9 @@ onBugDebuggerLost(async () => {
   const { grantedOriginPattern, active } = await getRecordingState();
   if (active) await notifyRecorderTabs(grantedOriginPattern, undefined, { type: 'piwi-bug-debugger-lost' });
 });
+
+// A bug recording's step screenshots go with it.
+clearViewsWithRecording();
 
 chrome.permissions.onAdded.addListener((permissions) => {
   void handlePermissionAdded(permissions.origins ?? []);
@@ -931,6 +935,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-bug-step-view') {
+    // Answered once the screenshot is taken, before it is kept: the recorder hides its panel until then.
+    void handleStepView(message, sender.tab, (ok) => sendResponse({ ok }));
+    return true;
+  }
+  if (message?.type === 'piwi-bug-step-views') {
+    void handleGetStepViews(message).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-send-to-editor') {

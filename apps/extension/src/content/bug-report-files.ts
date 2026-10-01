@@ -1,18 +1,22 @@
-import { sessionFromEvents, type RawCaptureEvent } from '@piwitests/core/recording';
+import { sessionFromEvents, type RawCaptureEvent, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { bugPhrases, type BugPhrases } from '@piwitests/core/bug-phrases';
 import {
+  BUG_EVIDENCE_LIMITS,
   BUG_REPORT_FILES,
   BUG_REPORT_MEDIA_TYPE,
   BUG_REPORT_VERSION,
   bugTitle,
   renderBugMarkdown,
   renderBugSpec,
+  stepShotFile,
   type BugContext,
   type BugReport,
   type BugScreenshot,
+  type BugStepShot,
 } from '@piwitests/core/bug-report';
 import type { StoredBugEvidence, StoredBugScreenshot } from '../shared/bug-storage.js';
+import type { StoredStepView } from '../shared/step-views.js';
 import { createZip, dataUrlBytes, type ZipEntry } from '../shared/zip.js';
 
 /** The note a report carries when no screenshot was taken and nothing said why. */
@@ -22,16 +26,48 @@ export function screenshotFile(shot: Pick<StoredBugScreenshot, 'moment'>, index:
   return `screenshots/${index + 1}-${shot.moment}.png`;
 }
 
-/** The report a bug recording makes: its steps as a steps document, its evidence and its context. */
+/** The screenshot of the page as each step began that the worker kept, with its image, at most one per step. */
+export function stepShotsOf(
+  steps: RecordedStep[],
+  views: StoredStepView[],
+): Array<{ shot: BugStepShot; dataUrl: string }> {
+  const byId = new Map(views.map((view) => [view.id, view]));
+  return steps
+    .flatMap((step, i) => {
+      const view = step.view ? byId.get(step.view.id) : undefined;
+      if (!view) return [];
+      const shot = {
+        step: i,
+        file: stepShotFile(i),
+        box: step.view!.box,
+        viewport: view.viewport,
+        takenAt: view.takenAt,
+      };
+      return [{ shot, dataUrl: view.dataUrl }];
+    })
+    .slice(0, BUG_EVIDENCE_LIMITS.stepShots);
+}
+
+/** The ids of the views a recording's steps began from, for the worker to hand back. */
+export function stepViewIds(events: RawCaptureEvent[]): string[] {
+  return [...new Set(events.flatMap((event) => (event.view ? [event.view.id] : [])))];
+}
+
+/**
+ * The report a bug recording makes: its steps as a steps document, its
+ * evidence and its context, with the screenshot of each step among `views`.
+ */
 export function assembleBugReport(input: {
   events: RawCaptureEvent[];
   startedAt: number;
   evidence: StoredBugEvidence;
   screenshots: StoredBugScreenshot[];
   context: BugContext;
+  views?: StoredStepView[];
 }): BugReport {
   const { evidence } = input;
   const session = sessionFromEvents(input.events, input.startedAt);
+  const stepShots = stepShotsOf(session.steps, input.views ?? []).map((s) => s.shot);
   const screenshots: BugScreenshot[] = input.screenshots.map((shot, i) => ({
     file: screenshotFile(shot, i),
     step: shot.step,
@@ -49,6 +85,7 @@ export function assembleBugReport(input: {
       screenshots,
       screenshotNote: screenshots.length > 0 ? null : (evidence.screenshotNote ?? NO_SCREENSHOT_TAKEN),
       outline: evidence.outline,
+      ...(stepShots.length > 0 ? { stepShots } : {}),
     },
     context: input.context,
   };
@@ -84,15 +121,23 @@ export function bugReportMarkdown(report: BugReport, language: ReportLanguage = 
   return renderBugMarkdown({ ...report, evidence }, language.phrases);
 }
 
+/** The report without its step screenshots, as the reporter chose to share it. */
+export function withoutStepShots(report: BugReport): BugReport {
+  const { stepShots: _stepShots, ...evidence } = report.evidence;
+  return { ...report, evidence };
+}
+
 /**
  * Every file of the report's archive: its media type first, then the steps
  * document, the failing test, the Markdown in `language`, the evidence with
- * the context, and the screenshots.
+ * the context, the screenshots, and the screenshot of each step its evidence
+ * names, from `stepImages` (data URLs by file name).
  */
 export function bugReportEntries(
   report: BugReport,
   screenshots: StoredBugScreenshot[],
   language: ReportLanguage = ENGLISH_REPORT,
+  stepImages: ReadonlyMap<string, string> = new Map(),
 ): ZipEntry[] {
   return [
     { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
@@ -104,6 +149,10 @@ export function bugReportEntries(
       data: `${JSON.stringify({ v: report.v, context: report.context, evidence: report.evidence }, null, 2)}\n`,
     },
     ...screenshots.map((shot, i) => ({ name: screenshotFile(shot, i), data: dataUrlBytes(shot.dataUrl) })),
+    ...(report.evidence.stepShots ?? []).flatMap((shot) => {
+      const dataUrl = stepImages.get(shot.file);
+      return dataUrl ? [{ name: shot.file, data: dataUrlBytes(dataUrl) }] : [];
+    }),
   ];
 }
 
@@ -112,6 +161,10 @@ export function bugReportArchive(
   report: BugReport,
   screenshots: StoredBugScreenshot[],
   language: ReportLanguage = ENGLISH_REPORT,
+  stepImages: ReadonlyMap<string, string> = new Map(),
 ): Uint8Array {
-  return createZip(bugReportEntries(report, screenshots, language), new Date(report.context.time || Date.now()));
+  return createZip(
+    bugReportEntries(report, screenshots, language, stepImages),
+    new Date(report.context.time || Date.now()),
+  );
 }

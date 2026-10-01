@@ -2181,6 +2181,18 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Captura de cada paso ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "La página al empezar cada paso, para quien reproduce un paso a mano. Muestran toda la página: déjalas fuera si muestra lo que no debe compartirse."
+  },
   "bug_nothingMarked": {
     "message": "No hay nada marcado como incorrecto, así que la prueba pasaría. Vuelve a grabar y usa «$mark$».",
     "placeholders": {

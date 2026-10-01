@@ -200,8 +200,17 @@ describe('Spanish', () => {
     };
     expect(summarizeEvidence(one, spanish)).toBe('1 captura de pantalla');
     expect(
-      spanish.evidence({ screenshots: 2, consoleErrors: 1, consoleWarnings: 2, failedRequests: 2, outline: false }),
-    ).toBe('2 capturas de pantalla · 1 error de consola · 2 advertencias de consola · 2 solicitudes fallidas');
+      spanish.evidence({
+        screenshots: 2,
+        stepShots: 1,
+        consoleErrors: 1,
+        consoleWarnings: 2,
+        failedRequests: 2,
+        outline: false,
+      }),
+    ).toBe(
+      '2 capturas de pantalla · 1 captura de paso · 1 error de consola · 2 advertencias de consola · 2 solicitudes fallidas',
+    );
   });
 
   test('writes a whole report in Spanish, with no English template left', () => {

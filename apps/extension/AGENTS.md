@@ -329,6 +329,16 @@ tell it from any other zip. Readers go by content, never by name: Replay and the
 it, before its `navigate`, and the size a resize settles at); `normalizeSteps` skips them and `sessionFromEvents` turns
 them into the steps document's `viewports`, by the first step recorded at or after each.
 
+**A screenshot of each step.** The recorder asks the worker for a view of the page (`piwi-bug-step-view`, under an id
+it makes up) as it starts on a page and once the page has been still for `VIEW_SETTLE_MS` after an action, with its
+surfaces hidden; an action with no unused view left asks for its own as it starts. Each action event keeps the view's
+id and its element's box (`view`, which `normalizeSteps` carries to the step and `toStepsDocument` leaves out). The
+worker (`background/step-views.ts`) takes it through the recording's debugging session, or `captureVisibleTab` under
+`activeTab`, and keeps it as a JPEG as wide as the viewport in CSS pixels in its own IndexedDB
+(`shared/step-views.ts`: a content script's IndexedDB is the page's, and session storage cannot hold a hundred
+screenshots); the finish panel asks for them back (`piwi-bug-step-views`) and writes `evidence.stepShots` and
+`steps/<nnn>.jpg`, unless the reporter leaves them out. A recording that starts or is discarded clears them.
+
 **Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
 in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors
 from the page's first script, `Network` every request that failed or answered 400 or more (documents, scripts and

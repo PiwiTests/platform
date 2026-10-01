@@ -207,8 +207,17 @@ describe('German', () => {
     );
     expect(summarizeEvidence(emptyBugEvidence(), german)).toBe('kein Screenshot');
     expect(
-      german.evidence({ screenshots: 1, consoleErrors: 1, consoleWarnings: 2, failedRequests: 1234, outline: false }),
-    ).toBe('1 Screenshot · 1 Konsolenfehler · 2 Konsolenwarnungen · 1.234 fehlgeschlagene Anfragen');
+      german.evidence({
+        screenshots: 1,
+        stepShots: 12,
+        consoleErrors: 1,
+        consoleWarnings: 2,
+        failedRequests: 1234,
+        outline: false,
+      }),
+    ).toBe(
+      '1 Screenshot · 12 Schritt-Screenshots · 1 Konsolenfehler · 2 Konsolenwarnungen · 1.234 fehlgeschlagene Anfragen',
+    );
   });
 
   test('writes a whole report in German, with no English template left', () => {

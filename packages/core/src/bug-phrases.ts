@@ -54,6 +54,8 @@ export type BugExpectation =
 /** What a report holds besides its steps, counted for its one-line summary. */
 interface BugEvidenceCounts {
   screenshots: number;
+  /** Screenshots of the page as each step began. */
+  stepShots: number;
   consoleErrors: number;
   consoleWarnings: number;
   failedRequests: number;

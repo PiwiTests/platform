@@ -2181,6 +2181,18 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Screenshot jedes Schritts ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "Die Seite zu Beginn jedes Schritts, für alle, die einen Schritt von Hand ausführen. Sie zeigen die ganze Seite: Lassen Sie sie weg, wenn diese zeigt, was nicht geteilt werden soll."
+  },
   "bug_nothingMarked": {
     "message": "Nichts ist als Fehler markiert, also würde der Test bestehen. Zeichnen Sie erneut auf und verwenden Sie „$mark$“.",
     "placeholders": {

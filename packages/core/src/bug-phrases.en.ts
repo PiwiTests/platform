@@ -141,6 +141,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
   evidence: (c) =>
     [
       c.screenshots > 0 ? plural(c.screenshots, 'screenshot') : 'no screenshot',
+      ...(c.stepShots > 0 ? [plural(c.stepShots, 'step screenshot')] : []),
       ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'console error')] : []),
       ...(c.consoleWarnings > 0 ? [plural(c.consoleWarnings, 'console warning')] : []),
       ...(c.failedRequests > 0 ? [plural(c.failedRequests, 'failed request')] : []),

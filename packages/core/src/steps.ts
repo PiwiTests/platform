@@ -91,7 +91,7 @@ function toAbsolute(url: string, origin: string | null): string {
   return origin && url.startsWith('/') ? `${origin}${url}` : url;
 }
 
-/** A recording as a steps document. The recorder's per-page element keys stay behind; they mean nothing outside it. */
+/** A recording as a steps document. The recorder's per-page element keys and step views stay behind; they mean nothing outside it. */
 export function toStepsDocument(
   session: RecordedSession,
   meta: { title?: string | null; note?: string | null } = {},
@@ -103,7 +103,7 @@ export function toStepsDocument(
     origin,
     recordedAt: session.startedAt,
     note: meta.note ?? null,
-    steps: session.steps.map((step) => ({
+    steps: session.steps.map(({ view: _view, ...step }) => ({
       ...step,
       target: step.target ? withoutElementKey(step.target) : null,
       ...(step.dropTarget ? { dropTarget: withoutElementKey(step.dropTarget) } : {}),

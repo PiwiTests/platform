@@ -101,6 +101,24 @@ export interface RecordedTarget {
   elementKey?: string | null;
 }
 
+/** A box on the page, in CSS pixels from the viewport's top left corner. */
+export interface ViewportBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The screenshot a bug recording took of the page as a step began, by the id
+ * the recorder gave it, and where the step's element was on it. Kept by the
+ * recorder only: a steps document never holds it.
+ */
+export interface StepView {
+  id: string;
+  box: ViewportBox | null;
+}
+
 /** One recorded, already-normalized user action. */
 export interface RecordedStep {
   action: StepAction;
@@ -119,6 +137,8 @@ export interface RecordedStep {
   assertion?: StepAssertion;
   /** Where a `dragTo` step drops what it drags; set on `dragTo` steps only. */
   dropTarget?: RecordedTarget | null;
+  /** The page as the step began, in a bug recording; see {@link StepView}. */
+  view?: StepView;
 }
 
 /**
@@ -170,6 +190,8 @@ export interface RawCaptureEvent {
   dropTarget?: RecordedTarget | null;
   /** The page's viewport size, on a `viewport` event: when the recording starts, and after a resize. */
   viewport?: { width: number; height: number };
+  /** The page as the action began, in a bug recording; see {@link StepView}. */
+  view?: StepView;
 }
 
 /**
@@ -259,7 +281,10 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
     pageUrl: string;
     timestamp: number;
     redacted: boolean;
+    view?: StepView;
   } | null = null;
+  /** The view of the event a step comes from, when the recorder took one. */
+  const viewOf = (view: StepView | undefined): { view?: StepView } => (view ? { view } : {});
   let sawFirstGoto = false;
 
   function flushPendingFill(): void {
@@ -271,6 +296,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
       redacted: pendingFill.redacted,
       pageUrl: pendingFill.pageUrl,
       timestamp: pendingFill.timestamp,
+      ...viewOf(pendingFill.view),
     });
     pendingFill = null;
   }
@@ -309,6 +335,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
         redacted: ev.isPasswordField,
+        ...viewOf(ev.view),
       };
       continue;
     }
@@ -324,6 +351,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
@@ -338,6 +366,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
           redacted: false,
           pageUrl: ev.pageUrl,
           timestamp: ev.timestamp,
+          ...viewOf(ev.view),
         });
         continue;
       }
@@ -349,6 +378,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
           redacted: false,
           pageUrl: ev.pageUrl,
           timestamp: ev.timestamp,
+          ...viewOf(ev.view),
         });
         continue;
       }
@@ -365,6 +395,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
         assertion: { ...ev.assertion },
       });
       continue;
@@ -381,15 +412,18 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
 
     if (ev.kind === 'dblclick') {
       flushPendingFill();
+      // The page as the first of the clicks it replaces began.
+      let view = ev.view;
       for (let i = 0; i < 2; i++) {
         const prev = steps[steps.length - 1];
-        if (prev?.action === 'click' && sameTarget(prev.target, ev.target)) steps.pop();
+        if (prev?.action === 'click' && sameTarget(prev.target, ev.target)) view = steps.pop()!.view ?? view;
       }
       steps.push({
         action: 'dblclick',
@@ -398,6 +432,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(view),
       });
       continue;
     }
@@ -412,6 +447,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
@@ -426,6 +462,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
         dropTarget: ev.dropTarget,
       });
       continue;
@@ -455,6 +492,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }

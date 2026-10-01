@@ -1,4 +1,7 @@
-import { debuggerAttached, expect, tabIdOf, test } from './trusted-site.js';
+import { readFile } from 'node:fs/promises';
+import { isBugReportArchive } from '@piwitests/core/bug-report';
+import { clickInShadow, debuggerAttached, expect, tabIdOf, test } from './trusted-site.js';
+import { readStoredZip } from '../zip-reader.js';
 
 /**
  * Report a bug in Chrome, where the evidence comes through the debugging
@@ -91,4 +94,92 @@ test('collects the console, failed requests and screenshots through the debuggin
 
   await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
   expect(await debuggerAttached(worker, tabId)).toBe(false);
+});
+
+test('keeps a screenshot of the page as each step began, with its element, in the .piwibug', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/first`);
+  const tabId = await tabIdOf(worker, `${site}/first`);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  // How many views the worker keeps: each page's first is taken as the recorder starts there.
+  const kept = () =>
+    worker.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const open = indexedDB.open('piwi-step-views');
+          open.onsuccess = () => {
+            const db = open.result;
+            if (!db.objectStoreNames.contains('recording')) return resolve(0);
+            const count = db.transaction('recording').objectStore('recording').count();
+            count.onsuccess = () => resolve(count.result);
+          };
+          open.onerror = () => resolve(0);
+        }),
+    );
+  await expect.poll(kept).toBe(1);
+  const link = (await page.getByRole('link', { name: 'Next' }).boundingBox())!;
+  await page.getByRole('link', { name: 'Next' }).click();
+  await page.waitForURL('**/second');
+  await expect.poll(kept).toBe(2);
+  await page.locator('#load').click();
+
+  type Click = { kind: string; view?: { id: string; box: { x: number; y: number; width: number; height: number } } };
+  const clicks = async () =>
+    (
+      (await worker.evaluate(
+        async () => ((await chrome.storage.session.get('piwiRecording')).piwiRecording as { events: unknown[] }).events,
+      )) as Click[]
+    ).filter((e) => e.kind === 'click');
+  await expect.poll(async () => (await clicks()).length).toBe(2);
+  const [first, second] = await clicks();
+  expect(first!.view!.box).toEqual({
+    x: Math.round(link.x),
+    y: Math.round(link.y),
+    width: Math.round(link.width),
+    height: Math.round(link.height),
+  });
+  expect(first!.view!.id).not.toBe(second!.view!.id);
+  type View = { id: string; dataUrl: string; viewport: { width: number; height: number } | null };
+  const views = () =>
+    control.evaluate(
+      (ids) => chrome.runtime.sendMessage({ type: 'piwi-bug-step-views', ids }) as Promise<View[]>,
+      [first!.view!.id, second!.view!.id],
+    );
+  await expect.poll(async () => (await views()).length).toBe(2);
+  const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  for (const view of await views()) {
+    expect(view.dataUrl.startsWith('data:image/jpeg;base64,')).toBe(true);
+    expect(view.viewport).toEqual(size);
+    // As wide as the viewport in CSS pixels, whatever the screen's pixel ratio.
+    const width = await control.evaluate(
+      async (url) => (await createImageBitmap(await (await fetch(url)).blob())).width,
+      view.dataUrl,
+    );
+    expect(width).toBe(Math.min(size.width, 1280));
+  }
+
+  await clickInShadow(page, 'Finish');
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
+  const download = page.waitForEvent('download');
+  await clickInShadow(page, 'Download .piwibug');
+  const archive = new Uint8Array(await readFile((await (await download).path())!));
+  expect(isBugReportArchive(archive)).toBe(true);
+  const files = readStoredZip(archive);
+  expect([...files.keys()].filter((name) => name.startsWith('steps/'))).toEqual(['steps/002.jpg', 'steps/003.jpg']);
+  const evidence = JSON.parse(new TextDecoder().decode(files.get('evidence.json')));
+  expect(evidence.evidence.stepShots.map((s: { step: number; file: string }) => [s.step, s.file])).toEqual([
+    [1, 'steps/002.jpg'],
+    [2, 'steps/003.jpg'],
+  ]);
+  expect(evidence.evidence.stepShots[0].box).toEqual(first!.view!.box);
 });

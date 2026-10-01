@@ -170,3 +170,47 @@ export async function debuggerAttached(worker: Worker, tabId: number): Promise<b
 export async function tabIdOf(worker: Worker, url: string): Promise<number> {
   return worker.evaluate(async (u) => (await chrome.tabs.query({ url: `${u}*` }))[0]!.id!, url);
 }
+
+export interface DomNode {
+  backendNodeId: number;
+  nodeName: string;
+  nodeValue?: string;
+  attributes?: string[];
+  children?: DomNode[];
+  shadowRoots?: DomNode[];
+}
+
+/** The first node of the page, closed shadow roots included, that `match` accepts. */
+export async function panelNode(page: Page, match: (node: DomNode) => boolean): Promise<number | null> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = (await cdp.send('DOM.getDocument', { depth: -1, pierce: true })) as { root: DomNode };
+    const find = (node: DomNode): number | null => {
+      if (match(node)) return node.backendNodeId;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+        const found = find(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    return find(root);
+  } finally {
+    await cdp.detach();
+  }
+}
+
+/** Clicks the button reading `label`, in the page or one of the extension's closed shadow roots. */
+export async function clickInShadow(page: Page, label: string): Promise<void> {
+  const backendNodeId = await panelNode(
+    page,
+    (node) => node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === label),
+  );
+  expect(backendNodeId, `a button reading "${label}"`).not.toBeNull();
+  const cdp = await page.context().newCDPSession(page);
+  const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: backendNodeId! });
+  await cdp.send('Runtime.callFunctionOn', {
+    objectId: object.objectId!,
+    functionDeclaration: 'function () { this.click(); }',
+  });
+  await cdp.detach();
+}
