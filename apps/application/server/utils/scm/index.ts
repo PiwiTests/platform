@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { GitHubProvider } from './GitHubProvider';
 import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
+import { localGitProvider, type LocalGitProvider } from './local-git';
 import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
@@ -72,14 +73,22 @@ export function scmProviderForUrl(
  * Instantiate the correct provider, loading the SCM token from:
  * 1. Per-project scmToken (if projectId is provided)
  * 2. Global scm_token app setting (fallback)
+ *
+ * On the desktop app with no token, a project linked to a clone of the
+ * repository reads its history with local git in that folder, and asks the host
+ * only for what the clone does not have (see {@link localGitProvider}).
  */
 export async function createScmProvider(
   repositoryUrl: string,
   db: DbClient,
   projectId?: number,
-): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | null> {
+): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | LocalGitProvider | null> {
   const token = await resolveScmToken(db, projectId);
-  return scmProviderForUrl(repositoryUrl, token);
+  const hosted = scmProviderForUrl(repositoryUrl, token);
+  if (hosted && !token && projectId) {
+    return (await localGitProvider(projectId, repositoryUrl, hosted)) ?? hosted;
+  }
+  return hosted;
 }
 
 /**

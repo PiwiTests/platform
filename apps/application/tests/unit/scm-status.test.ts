@@ -87,6 +87,14 @@ describe('describeScmStatus', () => {
     expect(status.detail).toBe('GitHub did not return the changes: a private repository needs an access token');
   });
 
+  test('a range the desktop app’s linked clone lacks asks to fetch it there first', () => {
+    const status = describeScmStatus(scm({ hasToken: false, localGit: true }));
+    expect(status).toMatchObject({ kind: 'fetch-failed', needsToken: true });
+    expect(status.detail).toBe(
+      'the folder linked to this project does not have these commits: fetch them there, or add an access token',
+    );
+  });
+
   test('a failed fetch with a token does not ask for another', () => {
     const status = describeScmStatus(scm({ error: 'GitHub API 502' }));
     expect(status.needsToken).toBe(false);

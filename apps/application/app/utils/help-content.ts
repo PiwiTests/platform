@@ -403,7 +403,7 @@ export const HELP_TOPICS = {
   },
   'project.scm-token': {
     title: 'Repository access token',
-    text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
+    text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted. On the desktop app, a project linked to a clone of its repository reads them with git instead, without a token.',
     doc: 'guide/source-control',
   },
   'case.stability-trend': {

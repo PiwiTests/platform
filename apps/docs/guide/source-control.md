@@ -38,7 +38,16 @@ the field shows that one is stored. Leave the field empty to keep it. To remove 
 or click **Remove stored token** under the project field.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
-A private repository needs one.
+A private repository needs one, except on the desktop app with a linked folder (below).
+
+### On the desktop app
+
+The [desktop app](/features/desktop) needs no token for the read features. When a project is
+[linked to a folder](/features/desktop#projects-from-local-folders) that is a clone of the repository (one of its
+remotes points at the run's remote URL), Piwi reads the commits, diffs and files with `git` in that folder, on your
+machine. A commit or branch the clone does not have is asked of the host as above, so run `git fetch` in the folder to
+see commits pushed since your last fetch. With a token set, the host is read instead, as on a server, and the write
+features always need one.
 
 ### Which repository
 
@@ -67,8 +76,8 @@ section is absent, it says why.
 - **No commits or diff.** The cluster's **What changed** line and the coverage name the cause: no commit or repository
   URL on the run (the reporter reads both from the Git checkout the tests run in, the URL from its `origin` remote), a
   host Piwi does not read, no SCM token, or the host's error. A 404 from GitHub on a private repository means the token
-  cannot see it. While the diff is missing, the line still links the range on the host's compare page and copies the
-  `git log` command for it.
+  cannot see it. On the desktop app, it says when the linked folder does not have the commits yet. While the diff is
+  missing, the line still links the range on the host's compare page and copies the `git log` command for it.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
   run falls back to the last run where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on

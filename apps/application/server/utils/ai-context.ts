@@ -23,6 +23,7 @@ import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
@@ -2390,6 +2391,7 @@ async function scmInvestigationSections(
         scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl);
         try {
           const provider = await createScmProvider(regression.commitRange.repositoryUrl, db, cluster.projectId);
+          scmCov.localGit = provider instanceof LocalGitProvider;
           const fromSha = baseCommitOverride ?? regression.commitRange.fromSha;
           if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride;
           const changes = provider ? await provider.fetchChanges(fromSha, regression.commitRange.toSha) : null;
@@ -2462,6 +2464,7 @@ async function scmInvestigationSections(
 
         try {
           const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+          scmCov.localGit = provider instanceof LocalGitProvider;
           const changes = provider ? await provider.fetchChanges(baseCommitOverride, currentCommit) : null;
           if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
             // Score and sort files by relevance
@@ -2547,6 +2550,7 @@ async function scmInvestigationSections(
 
           try {
             const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+            scmCov.localGit = provider instanceof LocalGitProvider;
             const changes = provider ? await provider.fetchChanges(lastPassCommit, currentCommit) : null;
             if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
               const scored = scoreFilesByRelevance(changes.files, signals);

@@ -23,7 +23,7 @@ Every outbound connection Piwi can make:
 | Destination | When | Carries |
 |---|---|---|
 | Your AI provider | Only if you configure [AI diagnosis](/features/ai-diagnosis) | The diagnosis context: error text, failing steps, test and related source files, console and network entries, page (ARIA/DOM) snapshots, server logs, the relevant git diff, and up to five failure screenshots by default (`PIWI_AI_MAX_IMAGES=0` sends none). [AI-step](/features/ai-steps) authoring sends masked page snapshots |
-| Your git host | Whenever runs report a GitHub, GitLab or Bitbucket remote (the reporter records `origin` by default) | Without a token: anonymous public-API reads of the repository's default branch and its CODEOWNERS. With a token: commits, diffs and files, plus the PR comments, commit statuses, heal branches and CI re-runs of the features you turn on |
+| Your git host | Whenever runs report a GitHub, GitLab or Bitbucket remote (the reporter records `origin` by default) | Without a token: anonymous public-API reads of the repository's default branch and its CODEOWNERS; the desktop app reads a project's linked clone with `git` instead, and asks the host only for a commit the clone lacks. With a token: commits, diffs and files, plus the PR comments, commit statuses, heal branches and CI re-runs of the features you turn on |
 | A URL you attach as a link | When someone adds a link to a run, test or cluster | A request for its title (the git host's API for an issue or PR link) |
 | Your issue tracker (Jira) | Only if you [connect it](/features/issue-tracking) | Issue reads, and the issues and comments you file |
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
