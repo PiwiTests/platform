@@ -98,6 +98,15 @@ export default defineNuxtConfig({
     },
   },
 
+  // The light/dark/system choice lives in a cookie, read by the server for the
+  // first render and shared by every port on the host (the desktop app picks a
+  // free one when its preferred port is taken).
+  colorMode: {
+    storage: 'cookie',
+    storageKey: 'piwi-color-mode',
+    cookieAttrs: { maxAge: 60 * 60 * 24 * 365, path: '/', sameSite: 'lax' },
+  },
+
   components: {
     dirs: [{ path: '~/components', pathPrefix: false }],
   },

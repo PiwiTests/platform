@@ -410,8 +410,8 @@ function reportNoRepositoryCluster(request, base) {
 /** Surfaces a scene can be captured against. */
 const MODES = ['web', 'desktop'];
 
-/** localStorage key `@nuxtjs/color-mode` reads the stored theme preference from. */
-const COLOR_MODE_KEY = 'nuxt-color-mode';
+/** Cookie `@nuxtjs/color-mode` reads the stored light/dark preference from (`colorMode` in nuxt.config.ts). */
+const COLOR_MODE_COOKIE = 'piwi-color-mode';
 
 /** Stroke widths of the split seam, authored against a 1280px-wide capture. */
 const SEAM_REFERENCE_WIDTH = 1280;
@@ -3770,7 +3770,12 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
 
   /** Store a theme preference and reload so the app boots already in it. */
   const setColorMode = async (mode) => {
-    await page.evaluate(([key, value]) => window.localStorage.setItem(key, value), [COLOR_MODE_KEY, mode]);
+    await page.evaluate(
+      ([key, value]) => {
+        document.cookie = `${key}=${value}; path=/; max-age=31536000; samesite=lax`;
+      },
+      [COLOR_MODE_COOKIE, mode],
+    );
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForHydration(page);
     await settle();
