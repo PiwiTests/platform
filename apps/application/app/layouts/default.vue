@@ -171,7 +171,7 @@ function projectStatusBadgeProps({
   ui: { linkTrailingBadgeSize: () => string; linkTrailingBadge: () => string };
 }) {
   return {
-    run: item.value ? latestRunByItemValue.value.get(item.value) : undefined,
+    run: (item.value ? latestRunByItemValue.value.get(item.value) : undefined) ?? null,
     badge: item.badge as BadgeProps,
     size: ui.linkTrailingBadgeSize() as BadgeProps['size'],
     badgeClass: ui.linkTrailingBadge(),
