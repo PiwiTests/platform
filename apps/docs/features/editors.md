@@ -13,7 +13,8 @@ differently.
 
 ## Install and connect
 
-Install **Piwi** from the extensions view (`piwitests.piwi`) or from **Settings → Plugins** in a JetBrains IDE. It
+Install **Piwi** from the extensions view (`piwitests.piwi`) or, in a JetBrains IDE, from the
+**[JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)** (**Settings → Plugins**). It
 starts on a workspace that holds a Playwright config, and reads the connection the reporter already uses: the
 `PIWI_*` variables in the environment or the workspace `.env`, or the [desktop app](/features/desktop). Otherwise,
 run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and sign in with the browser:
@@ -133,10 +134,10 @@ the one that paired receives.
 
 ## JetBrains IDEs
 
-The plugin starts the editor service with the project's Node.js interpreter (**Settings → Languages & Frameworks →
-Node.js**) once it finds a Playwright config within four folders of the project's (in Rider, the solution's) or of its
-Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP client shows warnings, quick fixes and hover in open
-files; the rest is native:
+The [plugin](https://plugins.jetbrains.com/plugin/34674-piwi) starts the editor service with the project's Node.js
+interpreter (**Settings → Languages & Frameworks → Node.js**) once it finds a Playwright config within four folders of
+the project's (in Rider, the solution's) or of its Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP
+client shows warnings, quick fixes and hover in open files; the rest is native:
 
 - **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
   failures, since the IDE highlights open files only. Double-click

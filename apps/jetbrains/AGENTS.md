@@ -1,8 +1,10 @@
 # JetBrains plugin — agent guide
 
 Rules for working inside `apps/jetbrains/` (the Piwi plugin for WebStorm, IntelliJ IDEA Ultimate, Rider and the other
-JetBrains IDEs with the LSP API, published as `dev.piwitests.piwi`). Read [`../../AGENTS.md`](../../AGENTS.md) and
-[`../../packages/editor/AGENTS.md`](../../packages/editor/AGENTS.md) first.
+JetBrains IDEs with the LSP API, published as `dev.piwitests.piwi` on the
+[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) by `publish-jetbrains.yml` on each release
+tag). Read [`../../AGENTS.md`](../../AGENTS.md) and [`../../packages/editor/AGENTS.md`](../../packages/editor/AGENTS.md)
+first.
 
 ## What it is
 

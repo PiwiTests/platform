@@ -26,8 +26,9 @@ tests behind each locator, the heal as a quick fix — install the
 ## JetBrains IDEs: the Piwi plugin
 
 With the [Piwi plugin](./editors#jetbrains-ides) installed in Rider, WebStorm,
-IntelliJ IDEA Ultimate or another JetBrains IDE, clicking a path opens it there
-with **nothing to set up**:
+IntelliJ IDEA Ultimate or another JetBrains IDE (from **Settings → Plugins**, or
+**[the JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**),
+clicking a path opens it there with **nothing to set up**:
 
 - The dashboard asks every JetBrains IDE running, on its built-in server
   (ports 63342 to 63361: a second IDE running takes the next free port). The IDE
