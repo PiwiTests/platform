@@ -524,6 +524,28 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 - **MCP.** `list_resource_findings` and `get_resource_profile`; the fix plan carries the same edit as the quick fix.
 - **Local strict mode.** `PIWI_LEAK_CHECK=fail` turns a test's own leak into a fixture-teardown error on that test;
   `close` closes it and reports `leaked (closed by Piwi)`.
+- **Timelines** (optional). Both timelines already draw time on the run's clock. Censuses and samples are epoch
+  milliseconds from the reporter's machine, like the tests' start times, so resources line up with the bars without
+  translation (one clock per shard, placed by shard as the rows are).
+  - *The run's workers timeline* (a row per worker, a bar per test). A leaked object becomes a hatched **tail** on
+    its worker's row, from the end of the test that opened it (of its describe block, for a `beforeAll` object) to
+    its close or the worker's exit; the hover gives the opening line, the held time and the CPU it used after its
+    test, and a click opens the finding. Under each row, a thin **open pages** step line counts the contexts and pages
+    open at each test boundary: a staircase over a worker's tests is a leak you can see, a sawtooth is normal. With
+    the run sampler, a **CPU and memory band** under each row draws the worker's subtree (cores busy, PSS), and a
+    strip above the rows draws the machine's CPU pressure and steal, with a mark where the container hit its memory
+    limit. A leaked page's renderer that keeps a core busy past its test's bar, and the tests that ran on a starved
+    machine, are then visible without a table. A new worker process (already drawn) shows where memory came back.
+  - *The execution's failure timeline* (lanes for steps, console, network, backend, dialogs). A **resources** lane
+    marks when the test opened or closed a context, page or popup and spans each one's life inside the test, ending
+    with what was still open; a chip says how many pages earlier tests left open in the worker when this one started.
+    Behind the lanes, the **CPU band** of the worker's subtree and the machine's pressure over the test's span, with
+    the failure moment on top, answers "was it starved when it timed out?" next to the `cpu-starved` clue.
+  - Data: the lane reads the births and closes of the test's own census (a few objects, stored with the execution);
+    the tails read `resource_occurrences`; the step line reads the open counts at each boundary; the bands need
+    per-worker series, two values every two seconds, about 14,400 numbers for an hour-long run on four workers. A live
+    run draws tails and open pages as tests end, and the bands once it finishes. Without the fixtures only the bands
+    remain; outside Linux the bands are as coarse as [2.7](#27-platforms) says.
 
 ## Part 5 — Further out, each with an entry condition
 
@@ -570,6 +592,7 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 | 4 | Finding history and fix verification, gate policies, the pull-request line, MCP tools | CI and agents |
 | 5 | The clue, the flake suspect and the `hold` condition, editor diagnostics and quick fixes | failures and the editor |
 | 6 | The waste findings of Part 3 | the Waste section |
+| 7 (optional, after 3) | Tails, the open-pages line and the CPU and memory bands on the run's workers timeline; the resources lane and the CPU band on the execution's failure timeline | the timelines |
 
 ## File-by-file checklist
 
@@ -619,6 +642,15 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
   `@piwitests/core/flake-plan` (`hold`).
 - `packages/editor/src/analysis.ts`, `server.ts`: diagnostic, hover, quick fixes.
 - The waste findings, each with a unit test on stored fixtures.
+
+### PR 7 — the timelines (optional)
+
+- `apps/application/app/composables/useTimelineModel.ts`, `app/components/run/WorkersTimeline.vue` and
+  `run/timeline/`: tails, the open-pages line, the bands and the pressure strip.
+- `apps/application/shared/failure-timeline.ts` (a `resources` lane, built by the server route and the demo mirror
+  alike), `FailureTimelineCard.vue`, `TimelineTypeFilter.vue`; demo seed rows.
+- Storage: the per-worker series in the run's profile, and the census births and closes in the execution's
+  `resources`.
 
 ## Verification
 
