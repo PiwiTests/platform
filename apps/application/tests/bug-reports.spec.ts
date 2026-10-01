@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
-import { couponBugReport, TINY_PNG } from './utils/bug-report-sample';
+import { couponBugReport, TINY_JPEG, TINY_PNG } from './utils/bug-report-sample';
 
 // A bug report sent the way Piwi Picker sends it, its pages, its spec, and the
 // lifecycle the runs of its committed test drive.
@@ -56,6 +56,41 @@ test.describe.serial('Bug reports', () => {
 
     const list = await (await request.get(`/api/projects/${projectId}/bug-reports?status=open`)).json();
     expect(list.items.map((i: { id: number }) => i.id)).toContain(reportId);
+  });
+
+  test('keeps the screenshot of each step that came, and serves it', async ({ request }) => {
+    const base = couponBugReport('Step screenshots kept');
+    const shot = (step: number) => ({
+      step,
+      file: `steps/${String(step + 1).padStart(3, '0')}.jpg`,
+      box: { x: 10, y: 20, width: 30, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      takenAt: 1,
+    });
+    const report = { ...base, evidence: { ...base.evidence, stepShots: [shot(1), shot(2)] } };
+    const form = new FormData();
+    form.append('report', JSON.stringify(report));
+    form.append('stepShot', new Blob([TINY_JPEG], { type: 'image/jpeg' }), '002.jpg');
+    const response = await request.post(`/api/projects/${projectId}/bug-reports`, { multipart: form });
+    expect(response.status()).toBe(201);
+    const { id } = (await response.json()) as { id: number };
+
+    // Only the step whose screenshot came keeps one.
+    const stored = await (await request.get(`/api/bug-reports/${id}`)).json();
+    expect(stored.evidence.stepShots).toEqual([shot(1)]);
+    const image = await request.get(`/api/bug-reports/${id}/step-shots/1`);
+    expect(image.headers()['content-type']).toBe('image/jpeg');
+    expect(Buffer.from(await image.body()).equals(TINY_JPEG)).toBe(true);
+    expect((await request.get(`/api/bug-reports/${id}/step-shots/2`)).status()).toBe(404);
+
+    const notJpeg = new FormData();
+    notJpeg.append('report', JSON.stringify(report));
+    notJpeg.append('stepShot', new Blob([TINY_PNG], { type: 'image/jpeg' }), '002.jpg');
+    expect((await request.post(`/api/projects/${projectId}/bug-reports`, { multipart: notJpeg })).status()).toBe(400);
+
+    // The extension sends step screenshots only to an instance that says it takes them.
+    const intake = await (await request.get(`/api/projects/${projectId}/bug-reports/intake`)).json();
+    expect(intake.stepShots).toBe(100);
   });
 
   test('a body that is not a bug report, or a screenshot that is not a PNG, is refused', async ({ request }) => {

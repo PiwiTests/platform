@@ -79,6 +79,7 @@ export default eventHandler(async (event) => {
     language: null,
     createdBy: user.id || null,
     screenshots: read.screenshots,
+    stepShots: read.stepShots,
   });
   setResponseStatus(event, 201);
   return { id, url: `/bug-reports/${id}` };

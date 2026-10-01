@@ -1145,8 +1145,9 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
         return;
       }
       openSendPreview({
-        report: withoutStepShots(report()),
+        report: report(),
         screenshots,
+        stepImages,
         target: { ...target, project: target.project },
         css: PANEL_CSS,
       });

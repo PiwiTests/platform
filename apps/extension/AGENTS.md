@@ -346,7 +346,10 @@ records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diver
 hand-over is in the replay's state, so it waits on the page the person's own action loads. A replay keeps its step
 screenshots in the worker's IndexedDB too: the start message carries the images of a chosen `.piwibug` (`views`), the
 recording's view ids (`recordingViews`), or asks to keep the last replay's (`keepViews`, Replay again); anything else
-clears them.
+clears them. For a report from the connected instance, the worker fetches a step's screenshot only when that step is
+handed over (`fetchBugReportStepShot`). **Send to Piwi** sends the step screenshots as `stepShot` parts only to an
+instance whose intake says how many it takes (`stepShots`): an older one refuses a send with more files than it
+expects.
 
 **Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
 in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors

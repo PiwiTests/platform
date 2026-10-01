@@ -11,15 +11,26 @@ import { apiError } from './api-error';
 import { openArchive } from './archive-reader';
 
 export const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
 
 export function isPng(bytes: Buffer): boolean {
   return bytes.subarray(0, 8).equals(PNG_SIGNATURE);
 }
 
+export function isJpeg(bytes: Buffer): boolean {
+  return bytes.subarray(0, 3).equals(JPEG_SIGNATURE);
+}
+
+/** Where a report's file is stored: `screenshots/1-marked.png` and `steps/002.jpg` keep their folder under the report's. */
+export function bugReportFilePath(id: number, file: string): string {
+  return `${bugReportStorageDir(id)}/${file.replace(/^screenshots\//, '')}`;
+}
+
 /**
  * Stores `report` and the screenshots that came with it, keyed by the file
- * names its evidence gives them (`screenshots/1-marked.png`). A screenshot the
- * evidence names but that did not come is left out of the stored evidence.
+ * names its evidence gives them (`screenshots/1-marked.png`, and
+ * `steps/002.jpg` for the screenshot of a step). A screenshot the evidence
+ * names but that did not come is left out of the stored evidence.
  */
 export async function storeBugReport(
   db: DrizzleDB,
@@ -29,16 +40,27 @@ export async function storeBugReport(
     language: string | null;
     createdBy: number | null;
     screenshots: Map<string, Buffer>;
+    stepShots?: Map<string, Buffer>;
   },
 ): Promise<{ id: number }> {
-  const files = input.report.evidence.screenshots.flatMap((shot) => {
+  const screenshots = input.report.evidence.screenshots.flatMap((shot) => {
     const bytes = input.screenshots.get(shot.file);
     return bytes ? [{ shot, bytes }] : [];
   });
+  const stepShots = (input.report.evidence.stepShots ?? []).flatMap((shot) => {
+    const bytes = input.stepShots?.get(shot.file);
+    return bytes ? [{ shot, bytes }] : [];
+  });
+  const { stepShots: _sent, ...evidence } = input.report.evidence;
   const report: BugReport = {
     ...input.report,
-    evidence: { ...input.report.evidence, screenshots: files.map((f) => f.shot) },
+    evidence: {
+      ...evidence,
+      screenshots: screenshots.map((f) => f.shot),
+      ...(stepShots.length > 0 ? { stepShots: stepShots.map((f) => f.shot) } : {}),
+    },
   };
+  const files = [...screenshots, ...stepShots];
   const { id } = await insertBugReport(db, {
     projectId: input.projectId,
     report,
@@ -50,8 +72,7 @@ export async function storeBugReport(
     const dir = bugReportStorageDir(id);
     try {
       await storage.mkdir(dir);
-      for (const { shot, bytes } of files)
-        await storage.writeFile(`${dir}/${shot.file.replace(/^screenshots\//, '')}`, bytes);
+      for (const { shot, bytes } of files) await storage.writeFile(bugReportFilePath(id, shot.file), bytes);
     } catch (err) {
       await deleteBugReport(db, id);
       await storage.deleteDirectory(dir).catch(() => undefined);
@@ -69,7 +90,7 @@ export async function storeBugReport(
  */
 export async function readBugReportArchive(
   data: Buffer,
-): Promise<{ report: BugReport; screenshots: Map<string, Buffer> } | null> {
+): Promise<{ report: BugReport; screenshots: Map<string, Buffer>; stepShots: Map<string, Buffer> } | null> {
   let archive;
   try {
     archive = openArchive(data);
@@ -94,5 +115,14 @@ export async function readBugReportArchive(
     const bytes = await archive.readEntry(shot.file);
     if (bytes && bytes.length <= BUG_REPORT_LIMITS.screenshotBytes && isPng(bytes)) screenshots.set(shot.file, bytes);
   }
-  return { report: parsed.report, screenshots };
+  const stepShots = new Map<string, Buffer>();
+  let stepShotsBytes = 0;
+  for (const shot of parsed.report.evidence.stepShots ?? []) {
+    const bytes = await archive.readEntry(shot.file);
+    if (!bytes || bytes.length > BUG_REPORT_LIMITS.stepShotBytes || !isJpeg(bytes)) continue;
+    stepShotsBytes += bytes.length;
+    if (stepShotsBytes > BUG_REPORT_LIMITS.stepShotsBytes) break;
+    stepShots.set(shot.file, bytes);
+  }
+  return { report: parsed.report, screenshots, stepShots };
 }

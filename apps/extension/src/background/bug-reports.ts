@@ -52,12 +52,14 @@ export interface SendTargetAnswer {
   firstSend: boolean;
   /** What the project does with its tracker; null when it files nowhere or the tab maps to no project. */
   intake: BugReportIntake | null;
+  /** How many step screenshots the instance takes with a report; 0 when it takes none. */
+  stepShots: number;
 }
 
 /** Where Send to Piwi would send a report from this tab, for the finish panel and its preview. */
 export async function handleBugSendTarget(tab: chrome.tabs.Tab | undefined): Promise<SendTargetAnswer> {
   const target = await targetFor(tab);
-  if (!target) return { connected: false, project: null, instance: null, firstSend: false, intake: null };
+  if (!target) return { connected: false, project: null, instance: null, firstSend: false, intake: null, stepShots: 0 };
   const stored = await chrome.storage.local.get(SEND_EXPLAINED_KEY);
   const intake = target.project ? await fetchBugReportIntake(target.settings, target.project.projectId) : null;
   return {
@@ -66,6 +68,7 @@ export async function handleBugSendTarget(tab: chrome.tabs.Tab | undefined): Pro
     instance: instanceHost(target.settings),
     firstSend: stored[SEND_EXPLAINED_KEY] !== true,
     intake: intake?.tracker ? intake : null,
+    stepShots: intake?.stepShots ?? 0,
   };
 }
 
@@ -75,7 +78,7 @@ export type SendBugReportAnswer =
 
 /** Sends the report the reporter confirmed in the preview, as it was shown. */
 export async function handleSendBugReport(
-  message: { report?: unknown; language?: unknown; screenshots?: unknown; createIssue?: unknown },
+  message: { report?: unknown; language?: unknown; screenshots?: unknown; stepShots?: unknown; createIssue?: unknown },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<SendBugReportAnswer> {
   const target = await targetFor(tab);
@@ -89,12 +92,22 @@ export async function handleSendBugReport(
       ? [{ name: s.name, bytes: dataUrlBytes(s.dataUrl) }]
       : [];
   });
+  const stepShots = (Array.isArray(message.stepShots) ? message.stepShots : []).flatMap((shot: unknown) => {
+    const s = shot as { name?: unknown; dataUrl?: unknown };
+    return typeof s.name === 'string' &&
+      /^\d{3}\.jpg$/.test(s.name) &&
+      typeof s.dataUrl === 'string' &&
+      s.dataUrl.startsWith('data:image/jpeg;base64,')
+      ? [{ name: s.name, bytes: dataUrlBytes(s.dataUrl) }]
+      : [];
+  });
   try {
     const sent = await sendBugReport(target.settings, target.project.projectId, {
       report: parsed.report,
       language: typeof message.language === 'string' ? message.language : null,
       createIssue: message.createIssue === true,
       screenshots,
+      stepShots,
     });
     await chrome.storage.local.set({ [SEND_EXPLAINED_KEY]: true });
     return { ok: true, ...sent };

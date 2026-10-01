@@ -86,9 +86,10 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // CSP, not JSON — the browser demo renders snapshots through its own handler.
   'GET /api/test-run-cases/:id/dom-snapshot-frame',
   // Bug reports arrive from Piwi Picker as a multipart upload with PNG
-  // screenshots kept in server storage; the demo has neither.
+  // screenshots and JPEG step screenshots kept in server storage; the demo has neither.
   'POST /api/projects/:id/bug-reports',
   'GET /api/bug-reports/:id/screenshots/:index',
+  'GET /api/bug-reports/:id/step-shots/:step',
 ]);
 
 // ── Derive all server routes from the file system ────────────────────────

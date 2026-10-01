@@ -45,6 +45,11 @@ export type BugReproductionVerdict = (typeof BUG_REPRODUCTION_VERDICTS)[number];
 export const BUG_REPORT_LIMITS = {
   screenshots: 3,
   screenshotBytes: 5 * 1024 * 1024,
+  /** Screenshots of the page as each step began: JPEGs, at most one per step. */
+  stepShots: 100,
+  stepShotBytes: 1024 * 1024,
+  /** All of a report's step screenshots together. */
+  stepShotsBytes: 32 * 1024 * 1024,
   jsonBytes: 1024 * 1024,
 } as const;
 

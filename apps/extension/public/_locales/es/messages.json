@@ -2312,6 +2312,15 @@
       }
     }
   },
+  "bug_sendStepShots": {
+    "message": "Captura de cada paso: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "bug_sendConsole": {
     "message": "Errores y advertencias de la consola: $count$",
     "placeholders": {

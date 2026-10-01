@@ -4,6 +4,7 @@ import { readBugReportArchive } from '../../server/utils/bug-report-store';
 import { buildZip } from '../../server/utils/trace-zip';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 
 const steps = {
   v: 1,
@@ -23,6 +24,7 @@ const evidence = {
       { file: 'screenshots/1-marked.png', step: 0, moment: 'marked', takenAt: 2 },
       { file: 'screenshots/2-finish.png', step: null, moment: 'finish', takenAt: 3 },
     ],
+    stepShots: [{ step: 0, file: 'steps/001.jpg', box: null, viewport: { width: 800, height: 600 }, takenAt: 2 }],
   },
 };
 
@@ -40,11 +42,13 @@ describe('readBugReportArchive', () => {
         entry('evidence.json', JSON.stringify(evidence)),
         entry('screenshots/1-marked.png', PNG),
         entry('screenshots/2-finish.png', 'not a png'),
+        entry('steps/001.jpg', JPEG),
       ]),
     );
     expect(read?.report.steps.title).toBe('Coupon not applied');
     expect(read?.report.context.pageKey).toBe('/cart');
     expect([...read!.screenshots.keys()]).toEqual(['screenshots/1-marked.png']);
+    expect([...read!.stepShots.keys()]).toEqual(['steps/001.jpg']);
   });
 
   test('reads a zip saved before the media type entry, by its files', async () => {

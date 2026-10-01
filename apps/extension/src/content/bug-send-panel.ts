@@ -3,7 +3,8 @@ import type { StoredBugScreenshot } from '../shared/bug-storage.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { t, tn, uiLanguage } from '../shared/i18n.js';
 import { attachPanelShadow } from './panel-root.js';
-import { defaultSendChoices, reportToSend, screenshotsToSend, type SendChoices } from './bug-send.js';
+import { withoutStepShots } from './bug-report-files.js';
+import { defaultSendChoices, reportToSend, screenshotsToSend, stepShotsToSend, type SendChoices } from './bug-send.js';
 
 /** Where the background worker would send a report from this tab (`piwi-bug-send-target`). */
 export interface SendTarget {
@@ -13,6 +14,8 @@ export interface SendTarget {
   firstSend: boolean;
   /** What the project does with its tracker, when it files anywhere. */
   intake?: { tracker: 'jira' | null; projectKey: string | null; canCreate: boolean; fileEvery: boolean } | null;
+  /** How many step screenshots the instance takes with a report; 0, or absent, when it takes none. */
+  stepShots?: number;
 }
 
 export const SEND_DIALOG_HOST_ID = '__piwi_bug_send_host';
@@ -25,7 +28,7 @@ export async function sendTarget(): Promise<SendTarget> {
   } catch {
     // An older worker, or none: not connected.
   }
-  return { connected: false, project: null, instance: null, firstSend: false, intake: null };
+  return { connected: false, project: null, instance: null, firstSend: false, intake: null, stepShots: 0 };
 }
 
 const SEND_CSS = `
@@ -50,10 +53,15 @@ const SEND_CSS = `
 export function openSendPreview(opts: {
   report: BugReport;
   screenshots: StoredBugScreenshot[];
+  /** The step screenshots, as data URLs by archive file name. */
+  stepImages: ReadonlyMap<string, string>;
   target: SendTarget & { project: { id: number; label: string } };
   css: string;
 }): void {
-  const { report, screenshots, target } = opts;
+  const { screenshots, stepImages, target } = opts;
+  // An instance that takes no step screenshot gets the report without them.
+  const takesStepShots = (target.stepShots ?? 0) > 0 && stepImages.size > 0;
+  const report = takesStepShots ? opts.report : withoutStepShots(opts.report);
   document.getElementById(SEND_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = SEND_DIALOG_HOST_ID;
@@ -119,6 +127,7 @@ export function openSendPreview(opts: {
   const { evidence } = report;
   if (evidence.screenshots.length > 0)
     box(t('bug_sendScreenshots', { count: evidence.screenshots.length }), 'screenshots');
+  if (evidence.stepShots?.length) box(t('bug_sendStepShots', { count: evidence.stepShots.length }), 'stepShots');
   if (evidence.console.length > 0) box(t('bug_sendConsole', { count: evidence.console.length }), 'console');
   if (evidence.requests.length > 0) box(t('bug_sendRequests', { count: evidence.requests.length }), 'requests');
   if (evidence.outline) box(t('bug_sendOutline'), 'outline');
@@ -207,6 +216,7 @@ export function openSendPreview(opts: {
           language: uiLanguage(),
           createIssue,
           screenshots: screenshotsToSend(screenshots, choices),
+          stepShots: stepShotsToSend(report, stepImages, choices),
         });
       } catch (e) {
         answer = { ok: false, error: e instanceof Error ? e.message : String(e) };

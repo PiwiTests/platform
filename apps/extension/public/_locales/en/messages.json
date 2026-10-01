@@ -2789,6 +2789,16 @@
       }
     }
   },
+  "bug_sendStepShots": {
+    "message": "Screenshot of each step: $count$",
+    "description": "Send to Piwi preview: checkbox for the screenshot of the page as each step began. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
   "bug_sendConsole": {
     "message": "Console errors and warnings: $count$",
     "description": "Send to Piwi preview: checkbox. $count$ is a number.",

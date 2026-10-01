@@ -353,6 +353,8 @@ export interface BugReportSend {
   /** Ask for an issue in the project's tracker. */
   createIssue: boolean;
   screenshots: Array<{ name: string; bytes: Uint8Array }>;
+  /** The screenshot of each step, as JPEGs named as `evidence.stepShots` names them (`002.jpg`). */
+  stepShots?: Array<{ name: string; bytes: Uint8Array }>;
 }
 
 /** The multipart parts of a bug report, as the instance reads them. */
@@ -361,6 +363,7 @@ const BUG_REPORT_PARTS = {
   language: 'language',
   createIssue: 'createIssue',
   screenshot: 'screenshot',
+  stepShot: 'stepShot',
 } as const;
 
 /** Why the instance answered a request the way it did, as a sentence to show. */
@@ -392,6 +395,9 @@ export async function sendBugReport(
   if (send.createIssue) form.append(BUG_REPORT_PARTS.createIssue, String(true));
   for (const shot of send.screenshots) {
     form.append(BUG_REPORT_PARTS.screenshot, new Blob([shot.bytes as BlobPart], { type: 'image/png' }), shot.name);
+  }
+  for (const shot of send.stepShots ?? []) {
+    form.append(BUG_REPORT_PARTS.stepShot, new Blob([shot.bytes as BlobPart], { type: 'image/jpeg' }), shot.name);
   }
   let res: Response;
   try {
@@ -426,11 +432,13 @@ export interface BugReportIntake {
   projectKey: string | null;
   canCreate: boolean;
   fileEvery: boolean;
+  /** How many step screenshots a send may carry; 0 from an instance that takes none. */
+  stepShots: number;
 }
 
 /** The intake, or no tracker when the instance cannot say (an older one, or unreachable). */
 export async function fetchBugReportIntake(settings: ConnectionSettings, projectId: number): Promise<BugReportIntake> {
-  const none: BugReportIntake = { tracker: null, projectKey: null, canCreate: false, fileEvery: false };
+  const none: BugReportIntake = { tracker: null, projectKey: null, canCreate: false, fileEvery: false, stepShots: 0 };
   try {
     const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports/intake`, {
       headers: authHeaders(settings),
@@ -443,6 +451,7 @@ export async function fetchBugReportIntake(settings: ConnectionSettings, project
       projectKey: typeof body.projectKey === 'string' ? body.projectKey : null,
       canCreate: body.canCreate === true,
       fileEvery: body.fileEvery === true,
+      stepShots: Number.isInteger(body.stepShots) && (body.stepShots as number) > 0 ? (body.stepShots as number) : 0,
     };
   } catch {
     return none;
@@ -488,6 +497,48 @@ export async function fetchBugReportSteps(settings: ConnectionSettings, id: numb
   if (!res.ok) throw new Error(await refusal(res));
   const body = (await res.json()) as { title?: unknown; steps?: unknown };
   return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
+}
+
+/**
+ * The screenshot of one step of a report on the instance, with where its
+ * element was and the viewport it shows: its entry in the report's
+ * `evidence.stepShots`, and the JPEG. Null when the report has none for that
+ * step, or the instance keeps no step screenshots.
+ */
+export async function fetchBugReportStepShot(
+  settings: ConnectionSettings,
+  id: number,
+  step: number,
+): Promise<{
+  dataUrl: string;
+  box: { x: number; y: number; width: number; height: number } | null;
+  viewport: { width: number; height: number } | null;
+} | null> {
+  const base = normalizeBaseUrl(settings.instanceUrl);
+  try {
+    const detail = await fetch(`${base}/api/bug-reports/${id}`, { headers: authHeaders(settings), signal: timeout() });
+    if (!detail.ok) return null;
+    const body = (await detail.json()) as {
+      evidence?: { stepShots?: Array<{ step?: unknown; box?: unknown; viewport?: unknown }> };
+    };
+    const shot = body.evidence?.stepShots?.find((s) => s.step === step);
+    if (!shot) return null;
+    const image = await fetch(`${base}/api/bug-reports/${id}/step-shots/${step}`, {
+      headers: authHeaders(settings),
+      signal: timeout(),
+    });
+    if (!image.ok || image.headers.get('content-type') !== 'image/jpeg') return null;
+    const bytes = new Uint8Array(await image.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return {
+      dataUrl: `data:image/jpeg;base64,${btoa(binary)}`,
+      box: (shot.box as { x: number; y: number; width: number; height: number } | null) ?? null,
+      viewport: (shot.viewport as { width: number; height: number } | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** A reproduction of a report, as Share result sends it. */

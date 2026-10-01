@@ -11,6 +11,9 @@ import {
   type ReplayStepView,
   type StoredStepView,
 } from '../shared/step-views.js';
+import { getConnectionSettings } from '../shared/connection-settings.js';
+import { fetchBugReportStepShot } from '../shared/piwi-client.js';
+import { getReplayState } from '../shared/replay-storage.js';
 import { captureThroughDebugger } from './cdp-evidence.js';
 
 /**
@@ -160,8 +163,23 @@ export async function prepareReplayViews(message: {
   await setReplayViews(views).catch(() => undefined);
 }
 
-/** The screenshot of a replayed step, for the person the replay hands it to; null when the report has none. */
+/**
+ * The screenshot of a replayed step, for the person the replay hands it to:
+ * the one the replay was started with, or, for a report from the connected
+ * instance, the one the instance keeps, fetched only for a step handed over.
+ * Null when the report has none.
+ */
 export async function handleReplayStepView(message: { step?: unknown }): Promise<ReplayStepView | null> {
   const step = stepOf(message.step);
-  return step == null ? null : getReplayView(step).catch(() => null);
+  if (step == null) return null;
+  const kept = await getReplayView(step).catch(() => null);
+  if (kept) return kept;
+  const replay = await getReplayState();
+  const settings = await getConnectionSettings();
+  if (!replay?.bugReportId || !settings.instanceUrl.trim()) return null;
+  const shot = await fetchBugReportStepShot(settings, replay.bugReportId, step);
+  if (!shot) return null;
+  const box = boxOf(shot.box);
+  const view = { step, dataUrl: shot.dataUrl, box, viewport: viewportOf(shot.viewport) };
+  return view.dataUrl.length <= REPLAY_VIEW_MAX_LENGTH ? view : null;
 }
