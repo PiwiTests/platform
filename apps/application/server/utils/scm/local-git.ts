@@ -20,14 +20,15 @@ import { desktopLinkedFolder } from '../desktop-links';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 import type { ScmProviderName } from '#shared/scm-urls';
 
+// The demo's service worker bundles this module through `createScmProvider` and
+// has no `process`: read it inside functions only, never at module level.
+
 /** Cap on what one git command may print; past it the output is cut and the command stopped. */
 const MAX_GIT_OUTPUT_BYTES = 32 * 1024 * 1024;
 /** Cap on the patch text of one diff. Files past it keep their counts but carry no patch. */
 const MAX_LOCAL_PATCH_BYTES = 8 * 1024 * 1024;
 /** Most commits a range lists; past it, the newest are kept. */
 const MAX_RANGE_COMMITS = 250;
-
-const isWindows = process.platform === 'win32';
 
 interface GitOutput {
   ok: boolean;
@@ -52,6 +53,7 @@ let cachedGit: string | undefined;
  */
 function resolveGitBinary(): string | null {
   if (cachedGit) return cachedGit;
+  const isWindows = process.platform === 'win32';
   const name = isWindows ? 'git.exe' : 'git';
   const extra = isWindows
     ? [
