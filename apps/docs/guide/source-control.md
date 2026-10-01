@@ -30,8 +30,9 @@ logged, and the feature shows nothing rather than failing a run.
 ## Set the token
 
 - **Instance-wide**: **Settings → AI → Repository access**. Every project uses it unless it has its own.
-- **Per project**: the project's edit page, field **SCM token**. It overrides the instance-wide token for that
-  project. Prefer one per project for write access: an instance-wide write token can write everywhere it reaches.
+- **Per project**: the **Source control** section of the project's **Settings** tab, field **SCM token**. It overrides
+  the instance-wide token for that project. Prefer one per project for write access: an instance-wide write token can
+  write everywhere it reaches.
 
 A token is stored encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general) and never returned by the API;
 the field shows that one is stored. Leave the field empty to keep it. To remove it, save the instance-wide field empty,

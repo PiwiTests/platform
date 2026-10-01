@@ -350,7 +350,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
   });
 
   test('the project settings keep a default for a required field', async ({ page, request }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
     const block = page.locator('[data-shot="binding-jira-fields"]');
     // The section loads after the page hydrates, then reads the screen from Jira.
     await expect(block.getByText('Jira requires these fields for this issue type')).toBeVisible({ timeout: 30_000 });
@@ -497,7 +497,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     page,
     request,
   }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
     const binding = page.locator('[data-shot="project-integration-binding"]');
     await expect(binding.getByText('Keep the ticket honest')).toBeVisible({ timeout: 30_000 });
     await binding.getByRole('switch', { name: 'Transition on fix' }).click();
@@ -522,7 +522,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
   });
 
   test('the project settings offer only the ticket contents Piwi builds', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=issue-tracker`);
     const binding = page.locator('[data-shot="project-integration-binding"]');
     await expect(binding.getByText('What the ticket carries')).toBeVisible({ timeout: 30_000 });
 

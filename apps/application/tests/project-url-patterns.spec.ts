@@ -116,7 +116,7 @@ test.describe.serial('project URL patterns', () => {
 
   test('the Settings tab adds every suggestion of an environment with its environment', async ({ page, request }) => {
     await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
 
     const card = page.locator('[data-shot="project-url-patterns"]');
@@ -138,7 +138,7 @@ test.describe.serial('project URL patterns', () => {
 
   test('the Settings tab adds a suggestion and saves the list', async ({ page, request }) => {
     await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
 
     const card = page.locator('[data-shot="project-url-patterns"]');
@@ -185,7 +185,7 @@ test.describe.serial('project URL patterns', () => {
   });
 
   test('the editor flags a pattern without a scheme and does not save it', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await card.getByRole('button', { name: 'Add a pattern' }).click();
@@ -195,7 +195,7 @@ test.describe.serial('project URL patterns', () => {
   });
 
   test('the editor flags a refused path prefix of either kind and does not save it', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await card.getByLabel('Path prefix', { exact: true }).first().fill('/app?lang=fr');
@@ -250,7 +250,7 @@ test.describe.serial('project URL patterns without a baseURL', () => {
   });
 
   test('the Settings tab says why it has nothing to suggest', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await expect(card.getByText('No pattern yet. Add one.', { exact: true })).toBeVisible();
@@ -272,7 +272,7 @@ test.describe.serial('project URL patterns without a baseURL', () => {
       ['https://goto.shop.example/**', 'qa', ['navigation']],
     ]);
 
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await expect(card.getByText('From page.goto calls')).toBeVisible();
@@ -305,7 +305,7 @@ test.describe.serial('project URL patterns without a baseURL', () => {
       ['https://merged.shop.example/**', 'qa', ['network']],
     ]);
 
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await expect(card.getByText('From network requests')).toBeVisible();

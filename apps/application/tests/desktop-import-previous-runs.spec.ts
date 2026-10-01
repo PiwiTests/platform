@@ -183,7 +183,7 @@ test.describe('Desktop import of previous runs', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: importResponse() });
     });
 
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=local-folder`);
     await waitForHydration(page);
 
     await page.getByRole('button', { name: 'Choose folder…' }).click();

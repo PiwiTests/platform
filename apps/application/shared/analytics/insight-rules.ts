@@ -535,7 +535,7 @@ const targetMissed: InsightRule = {
             id: `target-missed:${t.projectId}:${t.key}`,
             // A pass rate target missed by more than 5 points is critical; the rest warn.
             severity: t.metric === 'test-pass-rate' && t.target - (t.actual ?? 0) > 5 ? 'critical' : 'warning',
-            to: `/projects/${t.projectId}?tab=settings`,
+            to: `/projects/${t.projectId}?tab=settings&section=targets`,
             projectId: t.projectId,
           },
         ),
