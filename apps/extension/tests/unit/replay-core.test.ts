@@ -10,7 +10,8 @@ import {
   verdictText,
   type Observation,
 } from '../../src/content/replay-core.js';
-import { readStepsFile } from '../../src/content/steps-file.js';
+import { readReportFile, readStepsFile } from '../../src/content/steps-file.js';
+import { BUG_REPORT_MEDIA_TYPE, emptyBugEvidence } from '@piwitests/core/bug-report';
 import { createZip } from '../../src/shared/zip.js';
 import { setBrowserLanguage } from './setup-i18n.js';
 
@@ -179,6 +180,69 @@ describe('replayVerdict', () => {
       kind: 'stopped',
       step: 1,
     });
+  });
+});
+
+describe('readReportFile', () => {
+  const doc = toStepsDocument({
+    steps: [
+      {
+        action: 'goto',
+        target: null,
+        value: 'https://staging.test/cart',
+        redacted: false,
+        pageUrl: 'https://staging.test/cart',
+        timestamp: 0,
+      },
+      {
+        action: 'press',
+        target: null,
+        value: 'Enter',
+        redacted: false,
+        pageUrl: 'https://staging.test/cart',
+        timestamp: 1,
+      },
+    ],
+    startedAt: 0,
+    startUrl: 'https://staging.test/cart',
+  });
+  const shot = {
+    step: 1,
+    file: 'steps/002.jpg',
+    box: { x: 1, y: 2, width: 3, height: 4 },
+    viewport: { width: 800, height: 600 },
+    takenAt: 5,
+  };
+
+  it('reads the screenshot of each step a .piwibug holds, and none from a steps.json', async () => {
+    const archive = createZip([
+      { name: 'mimetype', data: BUG_REPORT_MEDIA_TYPE },
+      { name: 'steps.json', data: JSON.stringify(doc) },
+      {
+        name: 'evidence.json',
+        data: JSON.stringify({ v: 1, context: {}, evidence: { ...emptyBugEvidence(), stepShots: [shot] } }),
+      },
+      { name: 'steps/002.jpg', data: new Uint8Array([0xff, 0xd8, 0xff]) },
+    ]);
+    expect(await readReportFile('bug.piwibug', archive)).toEqual({
+      steps: doc,
+      views: [{ step: 1, dataUrl: 'data:image/jpeg;base64,/9j/', box: shot.box, viewport: shot.viewport }],
+    });
+    const json = new TextEncoder().encode(JSON.stringify(doc));
+    expect(await readReportFile('steps.json', json)).toEqual({ steps: doc, views: [] });
+  });
+
+  it('reads the steps alone when the evidence cannot be read or an image is missing', async () => {
+    const noImage = createZip([
+      { name: 'steps.json', data: JSON.stringify(doc) },
+      { name: 'evidence.json', data: JSON.stringify({ v: 1, context: {}, evidence: { stepShots: [shot] } }) },
+    ]);
+    expect((await readReportFile('bug.zip', noImage)).views).toEqual([]);
+    const badEvidence = createZip([
+      { name: 'steps.json', data: JSON.stringify(doc) },
+      { name: 'evidence.json', data: '{' },
+    ]);
+    expect(await readReportFile('bug.zip', badEvidence)).toEqual({ steps: doc, views: [] });
   });
 });
 

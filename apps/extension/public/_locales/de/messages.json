@@ -2857,6 +2857,75 @@
   "replay_fileSkipped": {
     "message": "Übersprungen: Es wurde keine Datei gewählt."
   },
+  "replay_handOverWhy": {
+    "message": "Schritt $step$ ließ sich hier nicht abspielen. $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "No element matches getByRole('button', { name: 'Apply' })."
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverShot": {
+    "message": "Die Seite zu Beginn von Schritt $step$, sein Element umrandet",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverHow": {
+    "message": "Führen Sie ihn selbst auf der Seite aus, wie der Screenshot zeigt, und fahren Sie dann fort."
+  },
+  "replay_handOverHowNoShot": {
+    "message": "Führen Sie ihn selbst auf der Seite aus und fahren Sie dann fort."
+  },
+  "replay_handOverDone": {
+    "message": "Erledigt, weiter"
+  },
+  "replay_handOverSkip": {
+    "message": "Diesen Schritt überspringen"
+  },
+  "replay_handOverStop": {
+    "message": "Hier abbrechen"
+  },
+  "replay_doneByHand": {
+    "message": "Von Hand ausgeführt."
+  },
+  "replay_stepSkipped": {
+    "message": "Übersprungen."
+  },
+  "replay_byHand_one": {
+    "message": "$count$ Schritt von Hand ausgeführt: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_byHand_other": {
+    "message": "$count$ Schritte von Hand ausgeführt: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3, 5"
+      }
+    }
+  },
   "replay_fileChosen": {
     "message": "Hier gewählt: $files$",
     "placeholders": {

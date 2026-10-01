@@ -3415,6 +3415,86 @@
     "message": "Skipped: no file was chosen.",
     "description": "Replay panel, under a file step the person skipped."
   },
+  "replay_handOverWhy": {
+    "message": "Step $step$ could not be played here. $reason$",
+    "description": "Replay panel: a step the replay could not play, handed to the person. $step$ is its number, $reason$ why it could not be played, a sentence from the replay_reason* messages.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "No element matches getByRole('button', { name: 'Apply' })."
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverShot": {
+    "message": "The page as step $step$ began, its element outlined",
+    "description": "Replay panel: alternative text of the screenshot of a step handed to the person. $step$ is its number.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverHow": {
+    "message": "Do it yourself on the page, as the screenshot shows, then continue.",
+    "description": "Replay panel: under the screenshot of a step handed to the person, what to do."
+  },
+  "replay_handOverHowNoShot": {
+    "message": "Do it yourself on the page, then continue.",
+    "description": "Replay panel: what to do with a step handed to the person when the report has no screenshot of it."
+  },
+  "replay_handOverDone": {
+    "message": "I did it, continue",
+    "description": "Replay panel: button the person clicks once they did the handed-over step on the page; the replay goes on with the next step."
+  },
+  "replay_handOverSkip": {
+    "message": "Skip this step",
+    "description": "Replay panel: button that leaves the handed-over step out and goes on with the next one."
+  },
+  "replay_handOverStop": {
+    "message": "Stop here",
+    "description": "Replay panel: button that ends the replay at the handed-over step, which then could not reach the bug."
+  },
+  "replay_doneByHand": {
+    "message": "Done by hand.",
+    "description": "Replay panel: under a step the person did by hand when the replay could not play it."
+  },
+  "replay_stepSkipped": {
+    "message": "Skipped.",
+    "description": "Replay panel: under a step the person chose to skip when the replay could not play it."
+  },
+  "replay_byHand_one": {
+    "message": "$count$ step played by hand: $steps$.",
+    "description": "Replay panel: under the verdict, the steps the person played by hand. $steps$ lists their numbers, such as 3, 5.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_byHand_other": {
+    "message": "$count$ steps played by hand: $steps$.",
+    "description": "Replay panel: under the verdict, the steps the person played by hand. $steps$ lists their numbers, such as 3, 5.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3, 5"
+      }
+    }
+  },
   "replay_fileChosen": {
     "message": "Chosen here: $files$",
     "description": "Replay panel, under a file step: the files the person chose for it. $files$ is the quoted names.",

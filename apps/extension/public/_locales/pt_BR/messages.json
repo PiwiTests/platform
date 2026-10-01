@@ -2857,6 +2857,75 @@
   "replay_fileSkipped": {
     "message": "Pulada: nenhum arquivo foi escolhido."
   },
+  "replay_handOverWhy": {
+    "message": "O passo $step$ não pôde ser reproduzido aqui. $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "No element matches getByRole('button', { name: 'Apply' })."
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverShot": {
+    "message": "A página no início do passo $step$, com o elemento destacado",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverHow": {
+    "message": "Faça-o você mesmo na página, como mostra a captura, e depois continue."
+  },
+  "replay_handOverHowNoShot": {
+    "message": "Faça-o você mesmo na página e depois continue."
+  },
+  "replay_handOverDone": {
+    "message": "Feito, continuar"
+  },
+  "replay_handOverSkip": {
+    "message": "Pular este passo"
+  },
+  "replay_handOverStop": {
+    "message": "Parar aqui"
+  },
+  "replay_doneByHand": {
+    "message": "Feito à mão."
+  },
+  "replay_stepSkipped": {
+    "message": "Pulado."
+  },
+  "replay_byHand_one": {
+    "message": "$count$ passo feito à mão: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_byHand_other": {
+    "message": "$count$ passos feitos à mão: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3, 5"
+      }
+    }
+  },
   "replay_fileChosen": {
     "message": "Escolhido aqui: $files$",
     "placeholders": {

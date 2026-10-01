@@ -339,6 +339,15 @@ worker (`background/step-views.ts`) takes it through the recording's debugging s
 screenshots); the finish panel asks for them back (`piwi-bug-step-views`) and writes `evidence.stepShots` and
 `steps/<nnn>.jpg`, unless the reporter leaves them out. A recording that starts or is discarded clears them.
 
+**A step a replay cannot play goes to the person.** When a step finds no element (or not the one it needs), the flow is
+on another page, or its action fails, `replay-panel.ts` sets `ReplayState.handOver` and shows why, the step in words
+and its screenshot, outlined where the recording found its element (`piwi-replay-step-view`): **I did it, continue**
+records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diverged` and ends the replay. The
+hand-over is in the replay's state, so it waits on the page the person's own action loads. A replay keeps its step
+screenshots in the worker's IndexedDB too: the start message carries the images of a chosen `.piwibug` (`views`), the
+recording's view ids (`recordingViews`), or asks to keep the last replay's (`keepViews`, Replay again); anything else
+clears them.
+
 **Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
 in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors
 from the page's first script, `Network` every request that failed or answered 400 or more (documents, scripts and

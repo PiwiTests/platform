@@ -2,6 +2,7 @@ import { installPickerOverlay, removePickerOverlay, highlightLocator, LOCATOR_SY
 import {
   normalizeSteps,
   sessionFromEvents,
+  stepViews,
   VALUE_MATCHERS,
   type AssertionMatcher,
   type RawCaptureEvent,
@@ -1124,6 +1125,8 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
           origin: location.origin,
           stepMode: false,
           inject: true,
+          // The replay shows a step it hands to the person as the recording saw it.
+          recordingViews: stepViews(sessionFromEvents(state.events, startedAt).steps),
         });
       } catch (e) {
         response = { ok: false, error: e instanceof Error ? e.message : String(e) };

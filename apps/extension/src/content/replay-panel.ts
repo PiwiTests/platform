@@ -2,7 +2,14 @@ import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInWords } from
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
-import { normalizeSteps, sessionFromEvents, type RecordedStep, type StepViewport } from '@piwitests/core/recording';
+import {
+  normalizeSteps,
+  sessionFromEvents,
+  stepViews,
+  type RecordedStep,
+  type StepView,
+  type StepViewport,
+} from '@piwitests/core/recording';
 import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
@@ -66,7 +73,8 @@ import {
   waitForPageReady,
   waitForStepReady,
 } from './replay-actions.js';
-import { readStepsFile } from './steps-file.js';
+import { readReportFile } from './steps-file.js';
+import type { ReplayStepView } from '../shared/step-views.js';
 import { attachPanelShadow } from './panel-root.js';
 import { openDesktopRun } from './desktop-run-panel.js';
 import { shareable, shareResultRow } from './share-result.js';
@@ -108,6 +116,10 @@ const STYLE = `
   .note { color: #9ca3af; font-size: 11px; padding-left: 20px; }
   .tag { color: #9ca3af; font-size: 10.5px; margin-left: auto; padding-left: 6px; white-space: nowrap; }
   .ask { border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: rgba(124,58,237,.16); }
+  .ask .what { font-weight: 600; margin: 4px 0; overflow-wrap: anywhere; }
+  .shot { position: relative; display: inline-block; max-width: 100%; margin: 4px 0; line-height: 0; }
+  .shot img { display: block; max-width: 100%; max-height: 220px; border-radius: 4px; border: 1px solid rgba(128,128,128,.4); }
+  .shot .mark { position: absolute; border: 2px solid #f59e0b; border-radius: 3px; box-shadow: 0 0 0 2px rgba(245,158,11,.35); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
     border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
@@ -176,12 +188,23 @@ async function waitForPage(url: string, timeout: number, startPage: ReplayState[
 // ---------------------------------------------------------------------------
 // Talking to the background script
 
+/**
+ * Where a replay's step screenshots come from: the images a report's file
+ * holds, the recording's own by view id, or the running replay's, when it
+ * plays again.
+ */
+type ReplayViews =
+  | { views: ReplayStepView[] }
+  | { recordingViews: Array<StepView & { step: number }> }
+  | { keepViews: true };
+
 /** Starts a replay; `startOn` is the page it starts on instead of opening the first recorded one. */
 async function startReplay(
   steps: PiwiSteps,
   stepMode: boolean,
   startOn: string | null,
   bugReportId: number | null = null,
+  views: ReplayViews | null = null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = (await chrome.runtime.sendMessage({
@@ -192,6 +215,7 @@ async function startReplay(
       inject: false,
       startOn,
       bugReportId,
+      ...views,
     })) as { ok: boolean; error?: string } | undefined;
     return response ?? { ok: false, error: t('common_workerNoAnswer') };
   } catch (e) {
@@ -256,6 +280,7 @@ function glyph(result: ReplayStepResult | undefined, current: boolean): string {
   switch (result?.status) {
     case 'done':
     case 'passed':
+    case 'manual':
       return '✓';
     case 'failed':
       return '✗';
@@ -292,6 +317,12 @@ function hudRoot(): ShadowRoot {
   document.documentElement.appendChild(host);
   hud = { host, root: attachPanelShadow(host, { mode: 'closed', delegatesFocus: true }) };
   return hud.root;
+}
+
+/** Which steps the person played by hand, under the verdict; null when none. */
+function byHandText(results: ReplayStepResult[]): string | null {
+  const steps = results.flatMap((r, i) => (r?.status === 'manual' ? [formatNumber(i + 1)] : []));
+  return steps.length > 0 ? tn('replay_byHand', steps.length, { steps: steps.join(', ') }) : null;
 }
 
 /** What the panel says of the viewport: the recorded one, set on the tab, or how it differs from the tab's. */
@@ -383,7 +414,10 @@ function renderHud(
       detail.className = 'detail';
       detail.textContent = result.detail;
       list.appendChild(detail);
-    } else if (result?.detail && (result.status === 'skipped' || step.action === 'setInputFiles')) {
+    } else if (
+      result?.detail &&
+      (result.status === 'skipped' || result.status === 'manual' || step.action === 'setInputFiles')
+    ) {
       const note = document.createElement('div');
       note.className = 'note';
       note.textContent = result.detail;
@@ -392,6 +426,8 @@ function renderHud(
   });
   box.appendChild(list);
   if (!done && filePrompt) box.appendChild(filePromptBox(filePrompt));
+  const handed = handOver;
+  if (!done && handed && steps[handed.step]) box.appendChild(handOverBox(handed, steps[handed.step]!));
 
   const controls = document.createElement('div');
   controls.className = 'row';
@@ -446,6 +482,13 @@ function renderHud(
         how.textContent = driverText(state.driver);
         box2.appendChild(how);
       }
+      const byHand = byHandText(state.results);
+      if (byHand) {
+        const note = document.createElement('div');
+        note.className = 'sub';
+        note.textContent = byHand;
+        box2.appendChild(note);
+      }
       box.appendChild(box2);
       if (state.bugReportId && shareable(verdict.kind)) {
         box.appendChild(
@@ -492,6 +535,7 @@ function renderHud(
               state.stepMode,
               state.startPage?.actual ?? null,
               state.bugReportId ?? null,
+              { keepViews: true },
             );
             if (response.ok) void runReplay();
           })();
@@ -516,7 +560,13 @@ function renderHud(
 async function recordResult(state: ReplayState, index: number, result: ReplayStepResult): Promise<ReplayState> {
   const results = state.results.slice();
   results[index] = result;
-  const next: ReplayState = { ...state, results, position: index + 1, cursor: cursor?.position() ?? state.cursor };
+  const next: ReplayState = {
+    ...state,
+    results,
+    position: index + 1,
+    cursor: cursor?.position() ?? state.cursor,
+    handOver: null,
+  };
   await setReplayState(next);
   return next;
 }
@@ -772,6 +822,129 @@ async function checkAssertion(state: ReplayState, step: RecordedStep): Promise<R
   }
 }
 
+type HandOverAnswer = 'done' | 'skip' | 'stop';
+
+/** The step the replay handed to the person: why, the page as it began, and what answers it. */
+interface HandOver {
+  step: number;
+  reason: string;
+  view: ReplayStepView | null;
+  answer: (answer: HandOverAnswer) => void;
+}
+
+let handOver: HandOver | null = null;
+
+/** The screenshot of a step the replay hands over, from the worker; null when the report has none. */
+async function replayStepView(step: number): Promise<ReplayStepView | null> {
+  try {
+    const view = (await chrome.runtime.sendMessage({ type: 'piwi-replay-step-view', step })) as ReplayStepView | null;
+    return view && typeof view.dataUrl === 'string' && view.dataUrl.startsWith('data:image/') ? view : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The page as a handed-over step began, its element outlined where the recording found it. */
+function shotFigure(view: ReplayStepView, step: number): HTMLElement {
+  const figure = document.createElement('div');
+  figure.className = 'shot';
+  const img = document.createElement('img');
+  img.src = view.dataUrl;
+  img.alt = t('replay_handOverShot', { step: formatNumber(step + 1) });
+  figure.appendChild(img);
+  const { box, viewport } = view;
+  if (box && viewport && box.width > 0 && box.height > 0) {
+    const mark = document.createElement('div');
+    mark.className = 'mark';
+    const pct = (n: number, of: number) => `${Math.max(0, Math.min(100, (n / of) * 100))}%`;
+    mark.style.left = pct(box.x, viewport.width);
+    mark.style.top = pct(box.y, viewport.height);
+    mark.style.width = pct(box.width, viewport.width);
+    mark.style.height = pct(box.height, viewport.height);
+    figure.appendChild(mark);
+  }
+  return figure;
+}
+
+/** What the panel shows while a step waits for the person: why, the step in words, its screenshot, and the answers. */
+function handOverBox(handed: HandOver, step: RecordedStep): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'ask';
+  box.setAttribute('role', 'group');
+  box.setAttribute('data-piwi-replay-hand-over', '');
+  const why = document.createElement('div');
+  why.textContent = t('replay_handOverWhy', { step: formatNumber(handed.step + 1), reason: handed.reason });
+  const what = document.createElement('div');
+  what.className = 'what';
+  what.textContent = stepWords(step);
+  box.append(why, what);
+  if (handed.view) box.appendChild(shotFigure(handed.view, handed.step));
+  const how = document.createElement('div');
+  how.className = 'sub';
+  how.textContent = t(handed.view ? 'replay_handOverHow' : 'replay_handOverHowNoShot');
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.append(
+    button(t('replay_handOverDone'), () => handed.answer('done'), 'primary'),
+    button(t('replay_handOverSkip'), () => handed.answer('skip')),
+    button(t('replay_handOverStop'), () => handed.answer('stop')),
+  );
+  box.append(how, row);
+  return box;
+}
+
+/**
+ * A step the replay could not play goes to the person: the panel shows why,
+ * the step in words and the page as it began, its element outlined, and waits
+ * for them to do it on the page, skip it, or stop. The replay's state keeps
+ * the hand-over, so it waits on the page the person's action loads too.
+ * Answers null when the replay was stopped meanwhile.
+ */
+async function handOverStep(
+  state: ReplayState,
+  index: number,
+  reason: string,
+): Promise<{ answer: HandOverAnswer; state: ReplayState } | null> {
+  const current =
+    state.handOver?.step === index
+      ? state
+      : ((await updateReplayState((s) => ({ ...s, position: index, handOver: { step: index, reason } }))) ?? state);
+  cursor?.outline(null);
+  const view = await replayStepView(index);
+  const chosen = new Promise<HandOverAnswer>((resolve) => {
+    handOver = { step: index, reason, view, answer: resolve };
+  });
+  renderHud(current);
+  try {
+    for (;;) {
+      const answer = await Promise.race([chosen, waitForRelease().then(() => 'woken' as const)]);
+      const latest = await getReplayState();
+      if (!latest || latest.status === 'stopped') return null;
+      if (answer !== 'woken') return { answer, state: latest };
+      renderHud(latest);
+    }
+  } finally {
+    handOver = null;
+  }
+}
+
+/** Hands a step to the person and records what they did; false when the replay ends there. */
+async function playByHand(state: ReplayState, index: number, reason: string): Promise<boolean> {
+  const handed = await handOverStep(state, index, reason);
+  if (!handed) return true;
+  if (handed.answer === 'done') {
+    await recordResult(handed.state, index, { status: 'manual', detail: t('replay_doneByHand') });
+    return true;
+  }
+  if (handed.answer === 'skip') {
+    await recordResult(handed.state, index, { status: 'skipped', detail: t('replay_stepSkipped') });
+    return true;
+  }
+  await recordResult(handed.state, index, { status: 'diverged', detail: reason });
+  await finish((await getReplayState())!, false);
+  return false;
+}
+
 /** How long the page gets to lay out again after its viewport changes. */
 const VIEWPORT_LAYOUT_MS = 150;
 
@@ -892,6 +1065,12 @@ async function runReplay(): Promise<void> {
         renderHud(state);
       }
 
+      // A step handed to the person on the page before still waits for them here.
+      if (state.handOver?.step === index) {
+        if (!(await playByHand(state, index, state.handOver.reason))) return;
+        continue;
+      }
+
       if (step.action === 'goto' && index === 0 && state.startPage) {
         const actual = state.startPage.actual;
         await recordResult(state, index, { status: 'done', detail: t('replay_startedHere') });
@@ -920,8 +1099,8 @@ async function runReplay(): Promise<void> {
 
       if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage))) {
         const reason = t('replay_reasonOtherPage', { expected: pathOf(step.pageUrl), actual: pathOf(location.href) });
-        await recordResult(state, index, { status: 'diverged', detail: reason });
-        return void (await finish((await getReplayState())!, false));
+        if (!(await playByHand(state, index, reason))) return;
+        continue;
       }
 
       await waitForStepReady();
@@ -940,14 +1119,14 @@ async function runReplay(): Promise<void> {
       const resolved =
         step.action === 'press' && !step.target ? ({ ok: true, element: null } as const) : await resolveForAction(step);
       if (!resolved.ok) {
-        await recordResult(state, index, { status: 'diverged', detail: resolved.reason });
-        return void (await finish((await getReplayState())!, false));
+        if (!(await playByHand(state, index, resolved.reason))) return;
+        continue;
       }
       const dropOn =
         step.action === 'dragTo' ? await resolveForAction(step, ACTION_TIMEOUT_MS, dropLocatorFor(step)) : null;
       if (dropOn && !dropOn.ok) {
-        await recordResult(state, index, { status: 'diverged', detail: dropOn.reason });
-        return void (await finish((await getReplayState())!, false));
+        if (!(await playByHand(state, index, dropOn.reason))) return;
+        continue;
       }
       if (state.stepMode) {
         if (resolved.element) {
@@ -986,14 +1165,12 @@ async function runReplay(): Promise<void> {
       const advanced = await recordResult(state, index, { status: 'done', detail: null, driver });
       const worked = await act(step, resolved.element, dropOn?.ok ? dropOn.element : null);
       if (!worked.ok) {
+        // Back on the step, which the person does or skips.
         const latest = (await getReplayState()) ?? advanced;
-        await setReplayState({
-          ...latest,
-          results: Object.assign(latest.results.slice(), {
-            [index]: { status: 'diverged', detail: worked.reason ?? t('replay_reasonActionFailed'), driver },
-          }),
-        });
-        return void (await finish((await getReplayState())!, false));
+        const back = { ...latest, position: index, results: latest.results.slice(0, index) };
+        await setReplayState(back);
+        if (!(await playByHand(back, index, worked.reason ?? t('replay_reasonActionFailed')))) return;
+        continue;
       }
       if (worked.driver !== driver) {
         await updateReplayState((s) => ({
@@ -1011,20 +1188,27 @@ async function runReplay(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Choosing what to replay
 
-/** The bug report recorded in this browser and not discarded yet, as steps. */
-async function lastRecordedReport(): Promise<PiwiSteps | null> {
+/** A report to replay, and where its step screenshots come from. */
+interface ChosenReport {
+  steps: PiwiSteps;
+  views: ReplayViews | null;
+}
+
+/** The bug report recorded in this browser and not discarded yet, as steps, with its step screenshots. */
+async function lastRecordedReport(): Promise<ChosenReport | null> {
   try {
     const recording = await getRecordingState();
     if (recording.active || recording.events.length === 0 || recordingMode(recording) !== 'bug') return null;
     const steps = normalizeSteps(recording.events);
     if (steps.length === 0) return null;
-    return toStepsDocument(sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp));
+    const session = sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp);
+    return { steps: toStepsDocument(session), views: { recordingViews: stepViews(session.steps) } };
   } catch {
     return null;
   }
 }
 
-function openChooser(lastReport: PiwiSteps | null): void {
+function openChooser(lastReport: ChosenReport | null): void {
   document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = REPLAY_DIALOG_HOST_ID;
@@ -1055,6 +1239,8 @@ function openChooser(lastReport: PiwiSteps | null): void {
   let chosen: PiwiSteps | null = null;
   /** The instance's report the steps came from, when they did. */
   let chosenReportId: number | null = null;
+  /** Where the chosen report's step screenshots come from. */
+  let chosenViews: ReplayViews | null = null;
   const summary = document.createElement('div');
   summary.className = 'sub';
   summary.style.marginTop = '6px';
@@ -1069,9 +1255,10 @@ function openChooser(lastReport: PiwiSteps | null): void {
   startBox.type = 'checkbox';
   const startText = document.createElement('span');
   startLabel.append(startBox, startText);
-  const describe = (steps: PiwiSteps, reportId: number | null = null) => {
+  const describe = (steps: PiwiSteps, reportId: number | null = null, views: ReplayViews | null = null) => {
     chosen = steps;
     chosenReportId = reportId;
+    chosenViews = views;
     const first = steps.steps[0];
     startLabel.hidden = first?.action !== 'goto';
     startBox.checked = false;
@@ -1083,7 +1270,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
   };
 
   if (lastReport) {
-    const use = button(t('replay_useRecorded'), () => describe(lastReport));
+    const use = button(t('replay_useRecorded'), () => describe(lastReport.steps, null, lastReport.views));
     use.style.marginTop = '10px';
     panel.appendChild(use);
   }
@@ -1097,12 +1284,15 @@ function openChooser(lastReport: PiwiSteps | null): void {
     if (!picked) return;
     void picked
       .arrayBuffer()
-      .then((buffer) => readStepsFile(picked.name, new Uint8Array(buffer)))
-      .then(describe, (e: unknown) => {
-        chosen = null;
-        summary.textContent = '';
-        message.textContent = e instanceof Error ? e.message : String(e);
-      });
+      .then((buffer) => readReportFile(picked.name, new Uint8Array(buffer)))
+      .then(
+        ({ steps, views }) => describe(steps, null, { views }),
+        (e: unknown) => {
+          chosen = null;
+          summary.textContent = '';
+          message.textContent = e instanceof Error ? e.message : String(e);
+        },
+      );
   });
   const fileLabel = document.createElement('div');
   fileLabel.className = 'sub';
@@ -1181,7 +1371,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
         }
         const steps = chosen;
         const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
-        void startReplay(steps, stepBox.checked, startOn, chosenReportId).then((response) => {
+        void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews).then((response) => {
           if (!response.ok) {
             message.textContent = response.error ?? t('common_replayStartFailed');
             return;

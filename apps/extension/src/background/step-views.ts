@@ -1,10 +1,14 @@
 import { BUG_EVIDENCE_LIMITS } from '@piwitests/core/bug-report';
+import type { ViewportBox } from '@piwitests/core/recording';
 import { getRecordingState, recordingMode, RECORDING_KEY, type RecordingState } from '../shared/recording-storage.js';
 import {
   clearRecordingViews,
   countRecordingViews,
   getRecordingViews,
+  getReplayView,
   putRecordingView,
+  setReplayViews,
+  type ReplayStepView,
   type StoredStepView,
 } from '../shared/step-views.js';
 import { captureThroughDebugger } from './cdp-evidence.js';
@@ -99,4 +103,65 @@ export function clearViewsWithRecording(): void {
     const previous = change.oldValue as RecordingState | undefined;
     if (!next || next.startedAt !== previous?.startedAt) void clearRecordingViews().catch(() => undefined);
   });
+}
+
+/** The step screenshots a replay can show, at most one per step of a steps document. */
+const REPLAY_VIEWS_MAX = 200;
+/** The largest image a replay keeps for a step, in characters of its data URL. */
+const REPLAY_VIEW_MAX_LENGTH = 4 * 1024 * 1024;
+
+function boxOf(v: unknown): ViewportBox | null {
+  const b = v as Partial<ViewportBox> | null;
+  return b && [b.x, b.y, b.width, b.height].every((n) => typeof n === 'number' && Number.isFinite(n))
+    ? { x: b.x!, y: b.y!, width: b.width!, height: b.height! }
+    : null;
+}
+
+function stepOf(v: unknown): number | null {
+  return Number.isInteger(v) && (v as number) >= 0 && (v as number) < REPLAY_VIEWS_MAX ? (v as number) : null;
+}
+
+/**
+ * The screenshots the replay starting now shows for the steps it hands to the
+ * person: images read from the report's file (`views`), the recording's own
+ * by view id (`recordingViews`), or the running replay's when it plays again
+ * (`keepViews`). A replay started with none clears the last one's.
+ */
+export async function prepareReplayViews(message: {
+  views?: unknown;
+  recordingViews?: unknown;
+  keepViews?: unknown;
+}): Promise<void> {
+  if (message.keepViews === true) return;
+  let views: ReplayStepView[] = [];
+  if (Array.isArray(message.views)) {
+    views = message.views.slice(0, REPLAY_VIEWS_MAX).flatMap((v: unknown) => {
+      const view = v as { step?: unknown; dataUrl?: unknown; box?: unknown; viewport?: unknown } | null;
+      const step = stepOf(view?.step);
+      const dataUrl = view?.dataUrl;
+      if (step == null || typeof dataUrl !== 'string' || dataUrl.length > REPLAY_VIEW_MAX_LENGTH) return [];
+      if (!/^data:image\/(jpeg|png);base64,/.test(dataUrl)) return [];
+      return [{ step, dataUrl, box: boxOf(view!.box), viewport: viewportOf(view!.viewport) }];
+    });
+  } else if (Array.isArray(message.recordingViews)) {
+    const refs = message.recordingViews.slice(0, REPLAY_VIEWS_MAX).flatMap((v: unknown) => {
+      const ref = v as { step?: unknown; id?: unknown; box?: unknown } | null;
+      const step = stepOf(ref?.step);
+      return step != null && typeof ref?.id === 'string' && VIEW_ID.test(ref.id)
+        ? [{ step, id: ref.id, box: boxOf(ref.box) }]
+        : [];
+    });
+    const kept = new Map((await getRecordingViews(refs.map((r) => r.id)).catch(() => [])).map((v) => [v.id, v]));
+    views = refs.flatMap((ref) => {
+      const view = kept.get(ref.id);
+      return view ? [{ step: ref.step, dataUrl: view.dataUrl, box: ref.box, viewport: view.viewport }] : [];
+    });
+  }
+  await setReplayViews(views).catch(() => undefined);
+}
+
+/** The screenshot of a replayed step, for the person the replay hands it to; null when the report has none. */
+export async function handleReplayStepView(message: { step?: unknown }): Promise<ReplayStepView | null> {
+  const step = stepOf(message.step);
+  return step == null ? null : getReplayView(step).catch(() => null);
 }

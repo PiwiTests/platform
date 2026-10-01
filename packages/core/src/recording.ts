@@ -535,6 +535,11 @@ export function viewportsForSteps(steps: RecordedStep[], events: RawCaptureEvent
   return out;
 }
 
+/** The view each step began from, by step: the steps a bug recording took a screenshot for. */
+export function stepViews(steps: RecordedStep[]): Array<StepView & { step: number }> {
+  return steps.flatMap((s, step) => (s.view ? [{ step, id: s.view.id, box: s.view.box }] : []));
+}
+
 /** A recording's session from its raw events: its steps, and the viewport sizes it recorded when there are any. */
 export function sessionFromEvents(events: RawCaptureEvent[], startedAt: number): RecordedSession {
   const session = buildSession(normalizeSteps(events), startedAt);

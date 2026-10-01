@@ -55,7 +55,13 @@ import {
   releaseReplayTab,
 } from './cdp-replay.js';
 import { debuggerAvailable, tabsHolding } from './debugger.js';
-import { clearViewsWithRecording, handleGetStepViews, handleStepView } from './step-views.js';
+import {
+  clearViewsWithRecording,
+  handleGetStepViews,
+  handleReplayStepView,
+  handleStepView,
+  prepareReplayViews,
+} from './step-views.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -748,6 +754,9 @@ async function handleStartReplay(
     inject?: unknown;
     startOn?: unknown;
     bugReportId?: unknown;
+    views?: unknown;
+    recordingViews?: unknown;
+    keepViews?: unknown;
   },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -772,6 +781,7 @@ async function handleStartReplay(
     const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage, bugReportId);
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
+    await prepareReplayViews(message);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
     await releaseReplayDebugger();
     await unregisterScripts(REPLAY_SCRIPT_IDS);
@@ -944,6 +954,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-bug-step-views') {
     void handleGetStepViews(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-step-view') {
+    void handleReplayStepView(message).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-send-to-editor') {

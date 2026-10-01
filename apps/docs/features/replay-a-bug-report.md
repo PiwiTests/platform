@@ -30,14 +30,26 @@ visible, enabled and still. The replay ends with one of three answers:
 - **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 50", and the panel says
   whether that is the value reported.
 - **Not reproduced**: every expected result holds here.
-- **Could not reach the bug**: a step found no element, several, or a disabled one, or the flow ended on another page.
-  The data, the login or a flag differ here.
+- **Could not reach the bug**: a step could not be played (it found no element, several, or a disabled one, or the
+  flow ended on another page) and you stopped there. The data, the login or a flag differ here.
 
 Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
 "POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
 the site it ran on, after showing what it sends.
 
 **Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.
+
+## When a step cannot be played
+
+A step Replay cannot play is handed to you rather than ending the replay. The panel says why, names the step in words
+and, when the report has [a screenshot of each step](./report-a-bug#evidence), shows the page as it began there, the
+element outlined. Do it yourself on the page, then choose:
+
+- **I did it, continue**: the replay goes on with the next step, even when your action loaded another page.
+- **Skip this step**: it goes on without it.
+- **Stop here**: it ends there, and says it could not reach the bug.
+
+Under the answer, the panel lists the steps played by hand.
 
 ## Trusted input
 
