@@ -77,9 +77,9 @@ test('bug: coupon not applied to the total', {
 });
 ```
 
-Two project settings shape it, under **Generated specs** in the project's settings: the folder bug specs go to
-(`tests/bugs` by default) and the module `test` and `expect` are imported from, such as `../fixtures` when your tests
-use fixtures of their own.
+Two project settings shape it, under **Generated specs** in the **Source control** section of the project's **Settings**
+tab: the folder bug specs go to (`tests/bugs` by default) and the module `test` and `expect` are imported from, such as
+`../fixtures` when your tests use fixtures of their own.
 
 From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once, so you
 see the bug before you fix it.

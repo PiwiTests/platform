@@ -358,8 +358,18 @@ export interface ProjectWithTestRuns {
   createdAt: Date;
   updatedAt: Date;
   testRuns: TestRunSummary[];
+  diagnosisInstructions?: string | null;
+  aiLanguage?: string | null;
+  hasScmToken?: boolean;
+  defaultBranch?: string | null;
+  openApiUrl?: string | null;
+  serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
+  /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
+  ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>

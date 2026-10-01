@@ -111,9 +111,9 @@ dashboard, export it as a [quality report](./quality-reports) instead.
 
 ## Targets
 
-A project can carry **targets**, set in its **Settings** tab: a test pass rate to reach, and limits on
-flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to
-fix. Each one is optional. Over the period a dashboard shows, a target is **met** or **missed**:
+A project can carry **targets**, set in the **Targets** section of its **Settings** tab: a test pass rate to reach, and
+limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix.
+Each one is optional. Over the period a dashboard shows, a target is **met** or **missed**:
 
 - the headline tiles mark each number that has a target, met or missed, with one project in scope;
 - the portfolio's **Targets** column counts the targets each project meets;

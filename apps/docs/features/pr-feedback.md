@@ -61,8 +61,8 @@ trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, 
 the cluster's retry arguments (`file:line` specs, `--project` when they share one) and links to the run it started. The
 last dispatch (when, by whom, and a link) shows under the Test evidence header.
 
-It is **off by default** and configured per project on the project's edit page, under **CI re-run**. Turn it on and
-fill in the block for your provider:
+It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
+under **CI re-run**. Turn it on and fill in the block for your provider:
 
 | Provider | Target you configure | Token scope |
 |---|---|---|

@@ -96,9 +96,9 @@ Each role's form in **Settings → AI** has a **Test connection** button that ch
 Set a **response language** and every free-text field a person reads (summary, root cause, evidence, fix description and
 AI-generated cluster titles) comes back in that language, while code, locators, paths and error text stay verbatim. Set
 it instance-wide in Settings → AI (or [`PIWI_AI_LANGUAGE`](/reference/configuration), e.g. `French`, which locks the
-field), and override it per project under Project → Settings. This is what makes a French ticket's *Most likely* section
-French: the ticket's copy follows the [destination's language](/features/issue-tracking#language) and the prose follows
-this setting. Unset, responses are in English.
+field), and override it per project under Project → Settings → AI diagnosis. This is what makes a French ticket's *Most
+likely* section French: the ticket's copy follows the [destination's language](/features/issue-tracking#language) and
+the prose follows this setting. Unset, responses are in English.
 
 ## Context limits (and token cost)
 

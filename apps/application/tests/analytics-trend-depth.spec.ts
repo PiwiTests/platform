@@ -49,7 +49,7 @@ test.describe.serial('Analytics trend depth', () => {
   });
 
   test('the Settings tab saves targets, and PATCH clears them with null', async ({ page, request }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=targets`);
     // Typed before hydration, the values are reset and Save submits the form natively.
     await waitForHydration(page);
     const form = page.locator('[data-shot="project-targets"]');

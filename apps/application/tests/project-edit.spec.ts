@@ -80,26 +80,65 @@ test.describe.serial('Project Edit Tests', () => {
     await page.goto(`/projects/${projectId}/edit`);
 
     await page.waitForURL(new RegExp(`/projects/${projectId}\\?tab=settings`));
-    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible();
   });
 
   test('should keep the anchor when redirecting the edit route', async ({ page }) => {
     await page.goto(`/projects/${projectId}/edit#local-folder`);
 
     await page.waitForURL(new RegExp(`/projects/${projectId}\\?tab=settings#local-folder`));
-    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible();
   });
 
   test('should display edit form', async ({ page }) => {
     await page.goto(`/projects/${projectId}?tab=settings`);
 
     // Check form is visible
-    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible();
 
     // Check that form fields are present
     await expect(page.locator('input').first()).toBeVisible();
     await expect(page.locator('textarea').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
+  });
+
+  test('the section menu opens one section at a time and keeps it in the URL', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
+
+    const sections = page.getByRole('navigation', { name: 'Settings sections' });
+    await sections.getByRole('button', { name: 'Source control' }).click();
+    await expect(page).toHaveURL(/[?&]section=source-control/);
+    await expect(page.getByRole('heading', { name: 'Source control', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toHaveCount(0);
+
+    // Reloading keeps the section; leaving the tab drops it from the URL.
+    await page.reload();
+    await waitForHydration(page);
+    await expect(page.getByRole('heading', { name: 'Source control', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /^Runs/ }).click();
+    await expect(page).not.toHaveURL(/[?&]section=/);
+  });
+
+  test('a section saves only its own fields', async ({ page, request }) => {
+    await request.patch(`/api/projects/${projectId}`, { data: { label: 'Kept label', defaultBranch: null } });
+    await page.goto(`/projects/${projectId}?tab=settings&section=source-control`);
+    await waitForHydration(page);
+
+    const save = page.getByRole('button', { name: 'Save changes' });
+    await expect(save).toBeDisabled();
+    await page.getByPlaceholder('e.g. main').fill('trunk');
+    const patched = page.waitForResponse(
+      (r) => r.url().includes(`/api/projects/${projectId}`) && r.request().method() === 'PATCH',
+    );
+    await save.click();
+    const body = (await patched).request().postDataJSON();
+    expect(body.defaultBranch).toBe('trunk');
+    expect(body).not.toHaveProperty('label');
+
+    const project = await (await request.get(`/api/projects/${projectId}`)).json();
+    expect(project.defaultBranch).toBe('trunk');
+    expect(project.label).toBe('Kept label');
   });
 
   test('should display custom label in project list', async ({ page, request }) => {
@@ -148,6 +187,6 @@ test.describe.serial('Project Edit Tests', () => {
     await page.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Edit' }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=settings`));
-    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible();
   });
 });
