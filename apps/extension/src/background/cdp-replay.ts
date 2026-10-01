@@ -14,6 +14,7 @@ import {
 } from '../shared/cdp-input.js';
 import { getReplayState } from '../shared/replay-storage.js';
 import { restoreTabViewport } from './cdp-conditions.js';
+import { emulateCssViewport, onTabZoomChange, type CssViewport } from './viewport-emulation.js';
 import {
   acquireDebugger,
   debuggerAvailable,
@@ -36,8 +37,13 @@ let isMac: Promise<boolean> | null = null;
 
 /** The replay each tab's session was attached for. */
 const replayOfTab = new Map<number, string>();
-/** The tabs a replay set the viewport of, given back their size when it lets them go. */
-const sizedTabs = new Set<number>();
+/** The viewport a replay set on each tab, in CSS pixels: set again when the tab's zoom changes, given back when the replay lets the tab go. */
+const sizedTabs = new Map<number, CssViewport>();
+
+onTabZoomChange((tabId) => {
+  const size = sizedTabs.get(tabId);
+  if (size && holdsDebugger(tabId, 'replay')) void emulateCssViewport(tabId, size).catch(() => undefined);
+});
 /** The widest and tallest viewport a replay sets, in CSS pixels, as a steps document allows. */
 const VIEWPORT_MAX = 10_000;
 /** Replays whose session ended without them (the person cancelled the bar): they go on with the page's events. */
@@ -213,13 +219,8 @@ export async function handleReplayViewport(
     return { ok: false, error: 'not attached' };
   }
   try {
-    await sendCommand(tab.id, 'Emulation.setDeviceMetricsOverride', {
-      width,
-      height,
-      deviceScaleFactor: 0,
-      mobile: false,
-    });
-    sizedTabs.add(tab.id);
+    await emulateCssViewport(tab.id, { width, height });
+    sizedTabs.set(tab.id, { width, height });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

@@ -62,8 +62,8 @@ step.
 
 A report names the files a step chose but never carries them: Replay asks you to choose them, or to skip the step.
 
-With trusted input, each step plays at the viewport size it was recorded at, and the tab gets its own size back when
-the replay ends. Otherwise the panel says when the window's size differs from the recorded one, so you can resize it.
+With trusted input, each step plays at the viewport size it was recorded at, in CSS pixels whatever your zoom, and the
+tab gets its own size back when the replay ends. Otherwise the panel says when the window's size differs from the recorded one, so you can resize it.
 
 ## Running it with Playwright
 

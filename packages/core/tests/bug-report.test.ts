@@ -187,6 +187,12 @@ describe('bug report', () => {
     expect(md).toContain('1. Go to `/cart?session=abc`\n   - Viewport from this step: 1280×800');
     expect(md).toMatch(/\n3\. .*\n {3}- Viewport from this step: 390×844/);
     expect(renderBugMarkdown(report, bugPhrases('fr'))).toContain('Fenêtre à partir de cette étape\u00a0: 390×844');
+    const zoomed: BugReport = {
+      ...report,
+      steps: { ...report.steps, viewports: [{ step: 0, width: 1024, height: 576, zoom: 1.25 }] },
+    };
+    expect(renderBugMarkdown(zoomed)).toContain('   - Viewport from this step: 1024×576, at 125% zoom');
+    expect(renderBugMarkdown(zoomed, bugPhrases('fr'))).toContain('1024×576, zoom à 125\u202f%');
     const { code } = renderBugSpec(report);
     expect(code).toContain('await page.setViewportSize({ width: 1280, height: 800 });');
     expect(code).toContain('await page.setViewportSize({ width: 390, height: 844 });');

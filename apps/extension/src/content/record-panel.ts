@@ -1234,14 +1234,28 @@ const VIEWPORT_SETTLE_MS = 400;
 interface ViewportSize {
   width: number;
   height: number;
+  /** The browser's zoom factor, when it is not 100%. */
+  zoom?: number;
 }
 
 function viewportNow(): ViewportSize {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
+/** The page's viewport size and the tab's zoom, which only the background worker can read. */
+async function viewportWithZoom(): Promise<ViewportSize> {
+  const size = viewportNow();
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-tab-zoom' })) as { zoom?: unknown } | undefined;
+    const zoom = answer?.zoom;
+    return typeof zoom === 'number' && Number.isFinite(zoom) && zoom > 0 && zoom !== 1 ? { ...size, zoom } : size;
+  } catch {
+    return size;
+  }
+}
+
 function sameSize(a: ViewportSize | null, b: ViewportSize): boolean {
-  return !!a && a.width === b.width && a.height === b.height;
+  return !!a && a.width === b.width && a.height === b.height && (a.zoom ?? 1) === (b.zoom ?? 1);
 }
 
 /** The last viewport size the recording holds. */
@@ -1260,7 +1274,7 @@ function lastRecordedViewport(events: RawCaptureEvent[]): ViewportSize | null {
  */
 async function recordPageViewport(state: RecordingState): Promise<ViewportSize> {
   const last = lastRecordedViewport(state.events);
-  const now = viewportNow();
+  const now = await viewportWithZoom();
   if (sameSize(last, now)) return last!;
   await appendRecordingEvent(buildEvent('viewport', null, { viewport: now }));
   return now;
@@ -1276,10 +1290,11 @@ function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
       if (timer != null) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        const size = viewportNow();
-        if (sameSize(last, size)) return;
-        last = size;
-        captureEvent(buildEvent('viewport', null, { viewport: size }));
+        void viewportWithZoom().then((size) => {
+          if (sameSize(last, size)) return;
+          last = size;
+          captureEvent(buildEvent('viewport', null, { viewport: size }));
+        });
       }, VIEWPORT_SETTLE_MS);
     },
     { signal },

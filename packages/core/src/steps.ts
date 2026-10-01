@@ -37,6 +37,8 @@ export const STEPS_LIMITS = {
   viewports: 50,
   /** The widest and tallest viewport, in CSS pixels. */
   viewportSize: 10_000,
+  /** The browser's zoom factors a viewport may name, as browsers allow them. */
+  zoom: { min: 0.25, max: 5 },
 } as const;
 
 export interface PiwiSteps {
@@ -253,9 +255,17 @@ function checkViewports(c: Checker, v: unknown, stepCount: number): StepViewport
       if (!Number.isInteger(size) || (size as number) < 1 || (size as number) > STEPS_LIMITS.viewportSize)
         return c.fail(`${at}.${name}`, `must be a whole number of pixels from 1 to ${STEPS_LIMITS.viewportSize}`);
     }
+    const { zoom } = entry;
+    if (zoom != null && (typeof zoom !== 'number' || !(zoom >= STEPS_LIMITS.zoom.min && zoom <= STEPS_LIMITS.zoom.max)))
+      return c.fail(`${at}.zoom`, `must be a zoom factor from ${STEPS_LIMITS.zoom.min} to ${STEPS_LIMITS.zoom.max}`);
     const last = out[out.length - 1];
     if (last && last.step >= (step as number)) return c.fail(`${at}.step`, 'must come after the step before it');
-    out.push({ step: step as number, width: width as number, height: height as number });
+    out.push({
+      step: step as number,
+      width: width as number,
+      height: height as number,
+      ...(zoom != null && zoom !== 1 ? { zoom: zoom as number } : {}),
+    });
   });
   return out;
 }

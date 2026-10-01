@@ -183,3 +183,35 @@ test('keeps a screenshot of the page as each step began, with its element, in th
   ]);
   expect(evidence.evidence.stepShots[0].box).toEqual(first!.view!.box);
 });
+
+test('keeps the zoom of the tab with the viewport size, which already holds it', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/first`);
+  const tabId = await tabIdOf(worker, `${site}/first`);
+  await worker.evaluate(async (id) => chrome.tabs.setZoom(id, 1.25), tabId);
+  await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1.25);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  const viewports = () =>
+    worker.evaluate(async () =>
+      (
+        (await chrome.storage.session.get('piwiRecording')).piwiRecording as {
+          events: Array<{ kind: string; viewport?: unknown }>;
+        }
+      ).events
+        .filter((e) => e.kind === 'viewport')
+        .map((e) => e.viewport),
+    );
+  await expect.poll(viewports).toEqual([{ ...size, zoom: 1.25 }]);
+  await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
+});

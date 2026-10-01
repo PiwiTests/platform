@@ -137,6 +137,8 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
 
 const number = (n: number): string => new Intl.NumberFormat('es').format(n);
 /** Spanish puts only 1 in the singular. */
+/** A zoom factor as a percentage, such as `125%`. */
+const percent = (zoom: number): string => `${Math.round(zoom * 100)}\u00a0%`;
 const plural = (n: number, one: string, many: string): string => `${number(n)} ${n === 1 ? one : many}`;
 const ofTotal = (shown: number, total: number | null): string =>
   `${number(shown)}${total != null ? ` de ${number(total)}` : ''}`;
@@ -201,7 +203,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
     noSteps: 'No se grabó ningún paso.',
     actual: (v) => `Resultado: ${v}`,
     note: (text) => `Nota: ${text}`,
-    viewport: (size) => `Ventana desde este paso: ${size}`,
+    viewport: (size, zoom) => `Ventana desde este paso: ${size}${zoom != null ? `, con zoom al ${percent(zoom)}` : ''}`,
     expectedHeading: 'Resultado esperado y obtenido',
     nothingMarked: 'No se marcó nada como incorrecto.',
     expectedLine: (step, expectation, actual) =>

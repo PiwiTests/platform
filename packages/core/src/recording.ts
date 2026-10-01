@@ -144,12 +144,16 @@ export interface RecordedStep {
 /**
  * The size of the page's viewport from the step at `step` on, in CSS pixels,
  * as `page.setViewportSize` sets it. A recording's first one, at step 0, is
- * the size it was recorded at; the others follow a resize.
+ * the size it was recorded at; the others follow a resize. The browser's zoom
+ * is already in the size (at 200%, a 1280-pixel window is 640 CSS pixels
+ * wide); `zoom` keeps the factor itself when it was not 100%.
  */
 export interface StepViewport {
   step: number;
   width: number;
   height: number;
+  /** The browser's zoom factor, such as 1.25; absent at 100%. */
+  zoom?: number;
 }
 
 export interface RecordedSession {
@@ -188,8 +192,8 @@ export interface RawCaptureEvent {
   assertion?: StepAssertion;
   /** Where a `drop` event's element was dropped; its `target` is the element dragged. */
   dropTarget?: RecordedTarget | null;
-  /** The page's viewport size, on a `viewport` event: when the recording starts, and after a resize. */
-  viewport?: { width: number; height: number };
+  /** The page's viewport size, on a `viewport` event: when the recording starts, and after a resize; with the zoom when not 100%. */
+  viewport?: { width: number; height: number; zoom?: number };
   /** The page as the action began, in a bug recording; see {@link StepView}. */
   view?: StepView;
 }
@@ -525,12 +529,13 @@ export function viewportsForSteps(steps: RecordedStep[], events: RawCaptureEvent
   for (const e of sizes) {
     const step = steps.findIndex((s) => s.timestamp >= e.timestamp);
     if (step < 0) continue;
-    byStep.set(step, { step, width: e.viewport!.width, height: e.viewport!.height });
+    const { width, height, zoom } = e.viewport!;
+    byStep.set(step, { step, width, height, ...(zoom != null && zoom !== 1 ? { zoom } : {}) });
   }
   const out: StepViewport[] = [];
   for (const v of [...byStep.values()].sort((a, b) => a.step - b.step)) {
     const last = out[out.length - 1];
-    if (!last || last.width !== v.width || last.height !== v.height) out.push(v);
+    if (!last || last.width !== v.width || last.height !== v.height || (last.zoom ?? 1) !== (v.zoom ?? 1)) out.push(v);
   }
   return out;
 }

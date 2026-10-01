@@ -414,7 +414,7 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
   doc.steps.forEach((step, i) => {
     out.push(`${i + 1}. ${describeStepInWords(step, phrases)}`);
     const viewport = viewportAt.get(i);
-    if (viewport) out.push(`   - ${words.viewport(`${viewport.width}×${viewport.height}`)}`);
+    if (viewport) out.push(`   - ${words.viewport(`${viewport.width}×${viewport.height}`, viewport.zoom ?? null)}`);
     const a = step.action === 'assert' ? step.assertion : undefined;
     if (a?.actual != null && a.actual !== a.expected) out.push(`   - ${words.actual(phrases.quote(line(a.actual)))}`);
     if (a?.note?.trim()) out.push(`   - ${words.note(line(a.note))}`);

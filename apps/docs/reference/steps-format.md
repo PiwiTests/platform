@@ -97,9 +97,13 @@ started at, then each size the window settled at after a resize. Each entry name
 ```json
 "viewports": [
   { "step": 0, "width": 1280, "height": 720 },
-  { "step": 3, "width": 390, "height": 664 }
+  { "step": 3, "width": 390, "height": 664, "zoom": 1.5 }
 ]
 ```
+
+The browser's zoom is already in the size: at 200%, a 1,280-pixel window is 640 CSS pixels wide, and the page lays out
+for 640. `zoom` keeps the factor itself when it was not 100%, for whoever reads the report; the spec sets the size as
+it is.
 
 The spec sets each one with `await page.setViewportSize({ width, height });`, the first before the first page opens
 and the others before the step they apply from. A function call from the project's catalog never stands for steps a
@@ -118,7 +122,8 @@ A file is checked in full before anything uses it, and every problem found is re
 - A redacted step never keeps a value.
 - A `hover` or `dblclick` step needs a target and never keeps a value; a `setInputFiles` step needs a target; a
   `dragTo` step needs a target and a `dropTarget`, and never keeps a value.
-- A viewport names a step the file has, after the one before it, with a whole width and height from 1 to 10,000.
+- A viewport names a step the file has, after the one before it, with a whole width and height from 1 to 10,000, and
+  a `zoom` from 0.25 to 5 when it has one.
 - Limits: 200 steps, 50 viewports, 10 alternatives per target, 2,000 characters for values, expected values, URLs and notes, 500 for
   titles, names, texts and locators, and 5 MB for the file.
 

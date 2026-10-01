@@ -269,6 +269,32 @@ describe('viewports', () => {
     ]);
   });
 
+  test('keeps the browser zoom with a size when it was not 100%, and a zoom change as a change', () => {
+    const steps = timed();
+    const zoomed = (timestamp: number, zoom: number) => ({
+      ...sized(timestamp, 1024, 640),
+      viewport: { width: 1024, height: 640, zoom },
+    });
+    expect(viewportsForSteps(steps, [zoomed(5, 1.25), zoomed(15, 1), zoomed(25, 1)])).toEqual([
+      { step: 0, width: 1024, height: 640, zoom: 1.25 },
+      { step: 1, width: 1024, height: 640 },
+    ]);
+    const doc = toStepsDocument({
+      ...buildSession(recording(), 100),
+      viewports: [{ step: 0, width: 1024, height: 640, zoom: 1.25 }],
+    });
+    const parsed = parseSteps(JSON.stringify(doc));
+    expect(parsed.ok && parsed.steps.viewports).toEqual([{ step: 0, width: 1024, height: 640, zoom: 1.25 }]);
+    expect(parseSteps({ ...doc, viewports: [{ step: 0, width: 10, height: 10, zoom: 9 }] })).toEqual({
+      ok: false,
+      errors: ['viewports[0].zoom: must be a zoom factor from 0.25 to 5'],
+    });
+    // The size already holds the zoom: the spec sets it as it is.
+    expect(renderSpec(sessionFromSteps(doc)).code).toContain(
+      'await page.setViewportSize({ width: 1024, height: 640 });',
+    );
+  });
+
   test('a session from events keeps them, and none when the recording took no size', () => {
     const navigate = { ...sized(10, 0, 0), kind: 'navigate' as const, viewport: undefined, value: `${ORIGIN}/cart` };
     const events = [sized(9, 1280, 800), navigate];

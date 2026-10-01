@@ -115,12 +115,15 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
   `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
   the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin; it also sets
   the viewport the steps were recorded at, `piwi-replay-viewport`, and gives the tab its size back, or the popup's
-  viewport, as it lets go) and a bug
-  recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded), the
+  viewport, as it lets go) and a bug recording (`cdp-evidence.ts`, the tab the report starts in, let go when the
+  recording stops or is discarded), the
   DevTools panel's conditions (`cdp-conditions.ts`, held while any condition or throttling is on) and a viewport set in
   the tab from the popup (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
   another still holds ends its own emulation first (`Fetch.disable`, network and CPU back to normal,
   `Emulation.clearDeviceMetricsOverride`). Nothing stays attached in the background.
+- **A viewport is set in CSS pixels, through `emulateCssViewport`** (`viewport-emulation.ts`). The protocol's size is
+  divided by the browser's zoom (a 400-pixel override leaves the page 320 at 125%), so it is scaled by the tab's zoom
+  and set again when that changes (`onTabZoomChange`); never send `Emulation.setDeviceMetricsOverride` directly.
 - **Every feature has today's path as its fallback, and says so in plain words.** Firefox has no `chrome.debugger`
   (`debuggerAvailable()` is false); attaching can be refused (another debugger, a policy, a page Chrome protects);
   the person can click Cancel on the bar (`onDetach` with `canceled_by_user`, heard through `onDebuggerLost`). The

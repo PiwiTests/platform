@@ -269,3 +269,23 @@ test('plays the steps at the viewport they were recorded at, then gives the tab 
   // Back to the window's size: not the size Playwright emulates, which the cleared override takes away too.
   await expect.poll(() => page.evaluate(() => `${innerWidth}×${innerHeight}`)).not.toMatch(/^(390×664|800×600)$/);
 });
+
+test('plays at the recorded size in CSS pixels whatever the zoom of the tab replaying it', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  // Zoom is kept per site: at 125% here, the replayed tab opens zoomed too.
+  const other = await context.newPage();
+  await other.goto(`${site}/sized`);
+  await worker.evaluate(async (id) => chrome.tabs.setZoom(id, 1.25), await tabIdOf(worker, `${site}/sized`));
+  await other.close();
+  const doc = {
+    ...stepsDoc('Zoomed', site, [step('goto', '/sized', { value: '/sized' }), expectText('/sized', 'size', '390×664')]),
+    viewports: [{ step: 0, width: 390, height: 664 }],
+  };
+  await startReplay(control, context, site, doc, '/sized');
+  const state = await finished(worker);
+  expect(state.results.map((r) => r.status)).toEqual(['done', 'passed']);
+});

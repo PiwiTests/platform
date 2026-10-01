@@ -55,6 +55,7 @@ import {
   releaseReplayTab,
 } from './cdp-replay.js';
 import { debuggerAvailable, tabsHolding } from './debugger.js';
+import { tabZoom } from './viewport-emulation.js';
 import {
   clearViewsWithRecording,
   handleGetStepViews,
@@ -891,6 +892,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-replay-input') {
     void handleReplayInput(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-tab-zoom') {
+    // The zoom of the sender's tab, which a bug recording keeps with each viewport size.
+    const tabId = sender.tab?.id;
+    void (tabId != null ? tabZoom(tabId) : Promise.resolve(1)).then((zoom) => sendResponse({ zoom }));
     return true;
   }
   if (message?.type === 'piwi-replay-viewport') {
