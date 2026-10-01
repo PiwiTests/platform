@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
 import type { PiwiSteps } from '@piwitests/core/steps';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
 
 /**
  * The real extension on a local site, granted the site's origin as a person
@@ -85,7 +85,7 @@ export const test = base.extend<Fixtures>({
   },
   control: async ({ context, worker }, use) => {
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+    await openOptions(page, new URL(worker.url()).host);
     await use(page);
   },
 });

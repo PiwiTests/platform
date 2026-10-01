@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions } from './fixtures.js';
 
 /**
  * The real background worker fetching a project's locator index from a
@@ -60,7 +60,7 @@ test('the worker fetches, caches and revalidates a project’s locator index', a
   requests = [];
   locators = ["getByRole('button', { name: 'Pay' })"];
   const page = await context.newPage();
-  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  await openOptions(page, extensionId);
   await page.evaluate(
     (url) =>
       chrome.storage.local.set({
@@ -116,7 +116,7 @@ test('the worker fetches, caches and revalidates a project’s locator index', a
 test('the worker asks for a branch and caches it apart from the default branch', async ({ context, extensionId }) => {
   requests = [];
   const page = await context.newPage();
-  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  await openOptions(page, extensionId);
   await page.evaluate(
     (url) =>
       chrome.storage.local.set({

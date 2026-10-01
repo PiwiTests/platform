@@ -78,7 +78,9 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   **Piwi**; the patterns kept in this browser, a table whose **Save** keeps only them; a folded **Add a site** form);
   **Desktop app** (below); **Send to editor**. Same plain TypeScript + DOM approach as the popup. Opened via
   `chrome.runtime.openOptionsPage()`, or as `options.html#add=<pattern>` from the popup's **Add this site**, which
-  opens the Add a site form, never linked to from a content script.
+  opens the Add a site form, never linked to from a content script. `main.ts` awaits the language catalog and the
+  stored settings before it attaches a listener, then sets `html[data-ready]`: an e2e spec opens the page with
+  `openOptions` (`tests/e2e/fixtures.ts`), and calls `optionsReady` after a `reload()`, before it clicks anything.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
 
 **A momentary tool must claim the page through `src/shared/tool-session.ts`.** `startTool(id,

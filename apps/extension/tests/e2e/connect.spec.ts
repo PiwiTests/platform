@@ -1,7 +1,7 @@
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions, optionsReady } from './fixtures.js';
 
 /**
  * Connecting in one step, end to end against a stub instance that speaks the
@@ -156,7 +156,7 @@ test.describe.serial('connect in one step', () => {
     patterns = [{ pattern: `${baseUrl}/shop/**`, environment: 'staging' }];
 
     const options = await context.newPage();
-    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(options, extensionId);
     await grantPermissions(options);
     await options.getByLabel('Address of your Piwi instance').fill(baseUrl);
 
@@ -199,6 +199,7 @@ test.describe.serial('connect in one step', () => {
     // Opening the settings again reads the patterns again.
     patterns.push({ pattern: `${baseUrl}/admin/**`, environment: null });
     await options.reload();
+    await optionsReady(options);
     await expect(options.locator('#server-mappings .server-row')).toHaveCount(2);
     await expect(options.locator('#connected-as')).toHaveText('Connected as Ada Lovelace.');
   });
@@ -206,7 +207,7 @@ test.describe.serial('connect in one step', () => {
   test('a site the popup offers is added to the instance from the settings', async ({ context, extensionId }) => {
     const options = await context.newPage();
     // A connected browser whose instance has no pattern yet.
-    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(options, extensionId);
     await options.evaluate(
       async ({ baseUrl, apiKey }) => {
         await chrome.storage.local.set({
@@ -228,7 +229,7 @@ test.describe.serial('connect in one step', () => {
     // What the popup's "Add this site" opens: a new settings tab with the pattern in its address.
     await options.close();
     const settings = await context.newPage();
-    await settings.goto(`chrome-extension://${extensionId}/options.html#add=${encodeURIComponent(`${site}/**`)}`);
+    await openOptions(settings, extensionId, `#add=${encodeURIComponent(`${site}/**`)}`);
     await grantPermissions(settings);
 
     await expect(settings.locator('#add-site')).toBeVisible();

@@ -6,7 +6,7 @@ import type { BrowserContext, Page, Worker } from '@playwright/test';
 import { buildSession, normalizeSteps, type RawCaptureEvent, type RecordedStep } from '@piwitests/core/recording';
 import { renderSpec, stepLocator } from '@piwitests/core/codegen';
 import { toStepsDocument } from '@piwitests/core/steps';
-import { test, expect, extensionWorker, launchWithExtension } from './fixtures.js';
+import { test, expect, extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -95,7 +95,7 @@ async function routePages(context: BrowserContext): Promise<void> {
 /** An extension page, whose messages reach the background script as the popup's do. */
 async function controlPage(context: BrowserContext, worker: Worker): Promise<Page> {
   const page = await context.newPage();
-  await page.goto(`chrome-extension://${worker.url().split('/')[2]}/options.html`);
+  await openOptions(page, worker.url().split('/')[2]!);
   return page;
 }
 

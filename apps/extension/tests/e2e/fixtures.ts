@@ -1,4 +1,4 @@
-import { test as base, chromium, type BrowserContext, type Worker } from '@playwright/test';
+import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -92,6 +92,20 @@ export async function extensionWorker(context: BrowserContext): Promise<Worker> 
   }
   if (!sw) throw new Error("the extension's service worker never registered within 45s");
   return sw;
+}
+
+/**
+ * Opens the settings page (`hash` such as `#add=…`) and waits for {@link optionsReady}: `goto` resolves on `load`,
+ * which can come before `src/options/main.ts` has finished its top-level awaits and attached its listeners.
+ */
+export async function openOptions(page: Page, extensionId: string, hash = ''): Promise<void> {
+  await page.goto(`chrome-extension://${extensionId}/options.html${hash}`);
+  await optionsReady(page);
+}
+
+/** Waits until the settings page marks `html[data-ready]`, once every listener is attached; after a `reload()` too. */
+export async function optionsReady(page: Page): Promise<void> {
+  await page.locator('html[data-ready]').waitFor({ state: 'attached' });
 }
 
 export const test = base.extend<{ context: BrowserContext; extensionId: string; browserLanguage: string | undefined }>({

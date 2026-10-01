@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions, optionsReady } from './fixtures.js';
 
 /**
  * Pairing with the desktop app from the settings: Pair asks the app, whose
@@ -74,7 +74,7 @@ test.beforeEach(() => {
 
 /** Answers the settings page's host-permission requests as granted: the prompt cannot be clicked from a test. */
 async function openSettings(page: Page, extensionId: string): Promise<void> {
-  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  await openOptions(page, extensionId);
   await page.evaluate(() => {
     chrome.permissions.request = (async () => true) as typeof chrome.permissions.request;
     chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
@@ -111,6 +111,7 @@ test.describe('Pair with the desktop app', () => {
 
     // Opening the settings again says so; Unpair forgets it.
     await page.reload();
+    await optionsReady(page);
     await expect(card.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
     await page.evaluate(() => {
       chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
