@@ -5,6 +5,7 @@ import { parsePathPrefix, type PathPrefixProblem } from '@piwitests/core/page-ke
 import {
   graphNodes,
   locatorUsages,
+  networkRequests,
   projects,
   projectUrlPatterns,
   testRuns,
@@ -204,7 +205,7 @@ export async function listVisibleUrlPatterns(db: DrizzleDB, scope: 'all' | Set<n
   return rows.map((r) => ({ ...r, projectLabel: r.projectLabel || r.projectName }));
 }
 
-export type UrlPatternSuggestionSource = 'base-url' | 'navigation' | 'test-map' | 'locator-pages';
+export type UrlPatternSuggestionSource = 'base-url' | 'navigation' | 'network' | 'test-map' | 'locator-pages';
 
 export interface UrlPatternSuggestion {
   pattern: string;
@@ -230,6 +231,8 @@ const SUGGESTION_ROWS = 2000;
 const NAVIGATION_RUNS = 6;
 const NAVIGATION_RUNS_PER_ENVIRONMENT = 2;
 const NAVIGATION_CASES_PER_RUN = 20;
+const PAGE_LOAD_RUNS = 12;
+const PAGE_LOAD_RUNS_PER_ENVIRONMENT = 4;
 
 function runEnvironment(environment: string | null): string | null {
   const trimmed = environment?.trim();
@@ -290,18 +293,22 @@ function stepList(steps: unknown): unknown[] {
 }
 
 /**
- * The runs whose `page.goto` steps feed the suggestions: the newest two per
- * environment of the runs that recorded no `baseURL`, whose tests open full
- * addresses rather than paths.
+ * The newest `perEnvironment` runs of each environment, `max` in all: the runs
+ * that recorded no `baseURL` whose `page.goto` steps and page loads feed the
+ * suggestions.
  */
-function navigationRuns<T extends { environment: string | null }>(runs: T[]): T[] {
+function newestRunsPerEnvironment<T extends { environment: string | null }>(
+  runs: T[],
+  max: number,
+  perEnvironmentMax: number,
+): T[] {
   const perEnvironment = new Map<string, number>();
   const picked: T[] = [];
   for (const run of runs) {
-    if (picked.length >= NAVIGATION_RUNS) break;
+    if (picked.length >= max) break;
     const environment = runEnvironment(run.environment) ?? '';
     const count = perEnvironment.get(environment) ?? 0;
-    if (count >= NAVIGATION_RUNS_PER_ENVIRONMENT) continue;
+    if (count >= perEnvironmentMax) continue;
     picked.push(run);
     perEnvironment.set(environment, count + 1);
   }
@@ -310,12 +317,13 @@ function navigationRuns<T extends { environment: string | null }>(runs: T[]): T[
 
 /**
  * One `https://host/**` pattern per origin the project's suite visited: the
- * Playwright `baseURL` of its runs and its own route origins, the full
- * addresses its tests opened with `page.goto` when a run recorded no
- * `baseURL`, the URL of each page node of the Test Map, and each absolute page
- * its locators ran on. An origin a run visited carries the environment the run
- * was reported with. Origins an existing pattern already covers are left out
- * and counted in `covered`.
+ * Playwright `baseURL` of its runs and its own route origins, then, for a run
+ * that recorded no `baseURL`, the full addresses its tests opened with
+ * `page.goto` and the pages it loaded (its `document` network requests), the
+ * URL of each page node of the Test Map, and each absolute page its locators
+ * ran on. An origin a run visited carries the environment the run was
+ * reported with. Origins an existing pattern already covers are left out and
+ * counted in `covered`.
  */
 export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Promise<UrlPatternSuggestions> {
   const byOrigin = new Map<
@@ -361,7 +369,7 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
   }
 
   const navigated = await Promise.all(
-    navigationRuns(withoutBaseUrl).map(async (run) => {
+    newestRunsPerEnvironment(withoutBaseUrl, NAVIGATION_RUNS, NAVIGATION_RUNS_PER_ENVIRONMENT).map(async (run) => {
       const cases = await db
         .select({ steps: testRunsCases.steps })
         .from(testRunsCases)
@@ -374,6 +382,32 @@ export async function suggestUrlPatterns(db: DrizzleDB, projectId: number): Prom
     }),
   );
   for (const run of navigated) for (const origin of run.origins) add(origin, 'navigation', run.environment);
+
+  // A page load keeps the full address when the test opened a path: the case of
+  // a run merged from blob reports, which Playwright writes without the baseURL.
+  // More runs than for `page.goto`: without the capture fixtures, only a failed
+  // test's trace records them.
+  const loadRuns = newestRunsPerEnvironment(withoutBaseUrl, PAGE_LOAD_RUNS, PAGE_LOAD_RUNS_PER_ENVIRONMENT);
+  if (loadRuns.length > 0) {
+    const environments = new Map(loadRuns.map((run) => [run.id, runEnvironment(run.environment)]));
+    const loads = await db
+      .selectDistinct({ testRunId: networkRequests.testRunId, url: networkRequests.url })
+      .from(networkRequests)
+      .where(
+        and(inArray(networkRequests.testRunId, [...environments.keys()]), eq(networkRequests.resourceType, 'document')),
+      )
+      .orderBy(desc(networkRequests.testRunId))
+      .limit(SUGGESTION_ROWS);
+    const origins = new Map<number, Set<string>>();
+    for (const load of loads) {
+      const origin = urlOrigin(load.url);
+      if (!origin) continue;
+      let seen = origins.get(load.testRunId);
+      if (!seen) origins.set(load.testRunId, (seen = new Set()));
+      seen.add(origin);
+    }
+    for (const [runId, seen] of origins) for (const origin of seen) add(origin, 'network', environments.get(runId));
+  }
 
   const pageNodes = await db
     .select({ attrs: graphNodes.attrs })

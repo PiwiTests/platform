@@ -254,6 +254,55 @@ describe('suggestions', () => {
     ]);
   });
 
+  test('a run with no baseURL is read for the pages it loaded, one vote per run and site', async () => {
+    const runs = await db
+      .insert(schema.testRuns)
+      .values([
+        { projectId: shop, status: 'passed', environment: 'qa', startTime: new Date(Date.now() - 120_000) },
+        { projectId: shop, status: 'passed', environment: 'qa', startTime: new Date(Date.now() - 60_000) },
+        {
+          projectId: shop,
+          status: 'passed',
+          startTime: new Date(),
+          metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://shop.test' } }] } },
+        },
+      ] as Array<typeof schema.testRuns.$inferInsert>)
+      .returning();
+    const testCaseId = (
+      await db.insert(schema.testCases).values({ projectId: shop, title: 'buys', filePath: 'buy.spec.ts' }).returning()
+    )[0]!.id;
+    const cases = await db
+      .insert(schema.testRunsCases)
+      .values(runs.map((run) => ({ testRunId: run.id, testCaseId, status: 'passed' })))
+      .returning();
+    const load = (index: number, url: string | null, resourceType = 'document') => ({
+      testRunsCaseId: cases[index]!.id,
+      testRunId: runs[index]!.id,
+      method: 'GET',
+      url,
+      normalizedUrl: url ?? '',
+      status: 200,
+      resourceType,
+    });
+    await db.insert(schema.networkRequests).values([
+      load(0, 'https://qa.shop.test/cart'),
+      load(0, 'https://qa.shop.test/pay'),
+      load(1, 'https://qa.shop.test/'),
+      load(1, 'https://login.shop.test/authorize'),
+      // An API call, an unknown address and a run with a baseURL name no site.
+      load(1, 'https://api.shop.test/items', 'fetch'),
+      load(1, null),
+      load(2, 'https://other.shop.test/'),
+    ]);
+
+    const { items } = await suggestUrlPatterns(anyDb(), shop);
+    expect(items.map((s) => [s.origin, s.environment, s.sources, s.hits])).toEqual([
+      ['https://qa.shop.test', 'qa', ['network'], 2],
+      ['https://login.shop.test', 'qa', ['network'], 1],
+      ['https://shop.test', null, ['base-url'], 1],
+    ]);
+  });
+
   test('a navigation step names its site by params, subtitle or title', () => {
     expect(stepNavigationUrl({ category: 'navigation', params: { url: 'https://a.test/x' } })).toBe('https://a.test/x');
     expect(stepNavigationUrl({ category: 'navigation', subtitle: 'https://b.test/' })).toBe('https://b.test/');

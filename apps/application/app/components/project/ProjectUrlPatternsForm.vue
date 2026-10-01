@@ -31,6 +31,7 @@ let nextKey = 1;
 const SOURCE_LABELS: Record<UrlPatternSuggestion['sources'][number], string> = {
   'base-url': 'base URL',
   navigation: 'page.goto calls',
+  network: 'network requests',
   'test-map': 'Test Map pages',
   'locator-pages': 'locator pages',
 };
@@ -319,9 +320,10 @@ watch(() => props.projectId, load, { immediate: true });
       <p v-else-if="suggestions.length === 0" class="text-xs text-muted" data-testid="url-pattern-no-suggestions">
         <template v-if="covered > 0">Every site the suite visited already has a pattern.</template>
         <template v-else>
-          Nothing to suggest: no recent run recorded a Playwright <span class="font-mono">baseURL</span> or opened a
-          full address with <span class="font-mono">page.goto</span>. Set <span class="font-mono">use.baseURL</span> in
-          your Playwright config to get suggestions.
+          Nothing to suggest: no recent run recorded a Playwright <span class="font-mono">baseURL</span>, opened a full
+          address with <span class="font-mono">page.goto</span> or kept the network requests of a page it loaded. Set
+          <span class="font-mono">use.baseURL</span> in your Playwright config to get suggestions. Runs merged from blob
+          reports never carry it: Playwright leaves it out of them.
         </template>
       </p>
 

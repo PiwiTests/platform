@@ -209,14 +209,14 @@ test.describe.serial('project URL patterns', () => {
 });
 
 /**
- * A suite whose Playwright config sets no baseURL: the editor reads the full
- * addresses its tests opened with page.goto, and says why it has nothing to
- * suggest while there are none.
+ * A suite whose runs record no baseURL: the editor reads the full addresses its
+ * tests opened with page.goto and the pages they loaded, and says why it has
+ * nothing to suggest while there are none.
  */
 test.describe.serial('project URL patterns without a baseURL', () => {
   let projectId: number;
 
-  const submit = async (request: APIRequestContext, steps: unknown[]) => {
+  const submit = async (request: APIRequestContext, steps: unknown[], networkRequests?: unknown[]) => {
     const res = await request.post('/api/test-runs/submit', {
       data: {
         projectName: PROJECT.URL_PATTERNS_GOTO,
@@ -229,7 +229,14 @@ test.describe.serial('project URL patterns without a baseURL', () => {
         failedTests: 0,
         skippedTests: 0,
         testCases: [
-          { title: 'opens the cart', status: 'passed', duration: 100, location: 'tests/cart.spec.ts:3:1', steps },
+          {
+            title: 'opens the cart',
+            status: 'passed',
+            duration: 100,
+            location: 'tests/cart.spec.ts:3:1',
+            steps,
+            networkRequests,
+          },
         ],
       },
     });
@@ -248,7 +255,7 @@ test.describe.serial('project URL patterns without a baseURL', () => {
     const card = page.locator('[data-shot="project-url-patterns"]');
     await expect(card.getByText('No pattern yet. Add one.', { exact: true })).toBeVisible();
     await expect(card.getByTestId('url-pattern-no-suggestions')).toContainText(
-      'no recent run recorded a Playwright baseURL or opened a full address with page.goto',
+      'no recent run recorded a Playwright baseURL, opened a full address with page.goto or kept the network requests of a page it loaded',
     );
     await expect(card.getByTestId('url-pattern-suggestions')).toBeHidden();
   });
@@ -279,5 +286,28 @@ test.describe.serial('project URL patterns without a baseURL', () => {
     await expect(card.getByTestId('url-pattern-no-suggestions')).toHaveText(
       'Every site the suite visited already has a pattern.',
     );
+  });
+
+  test('a page the tests loaded is suggested when they opened a path only', async ({ page, request }) => {
+    // A run merged from blob reports: no baseURL, and `page.goto('/orders')` names no site.
+    await submit(
+      request,
+      [{ title: 'Navigate', category: 'navigation', duration: 5, params: { url: '/orders' } }],
+      [
+        { method: 'GET', url: 'https://merged.shop.example/orders', status: 200, resourceType: 'document' },
+        { method: 'GET', url: 'https://api.merged.shop.example/orders', status: 200, resourceType: 'fetch' },
+      ],
+    );
+    const suggestions = (await (await request.get(`/api/projects/${projectId}/url-patterns/suggestions`)).json()) as {
+      items: Array<{ pattern: string; environment: string | null; sources: string[] }>;
+    };
+    expect(suggestions.items.map((s) => [s.pattern, s.environment, s.sources])).toEqual([
+      ['https://merged.shop.example/**', 'qa', ['network']],
+    ]);
+
+    await page.goto(`/projects/${projectId}?tab=settings`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    await expect(card.getByText('From network requests')).toBeVisible();
   });
 });
