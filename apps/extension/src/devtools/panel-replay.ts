@@ -40,6 +40,7 @@ function glyph(result: ReplayStepResult | undefined, current: boolean): string {
   switch (result?.status) {
     case 'done':
     case 'passed':
+    case 'manual':
       return '✓';
     case 'failed':
       return '✗';

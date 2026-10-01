@@ -2842,6 +2842,88 @@ const SCENES = [
     viewport: { width: 375, height: 1100 },
   },
   {
+    name: 'bug-report-step-shots',
+    description: 'A bug report’s evidence: the page as each step began, the step’s element outlined',
+    tags: ['desktop'],
+    viewport: { width: 1280, height: 1000 },
+    async prepare({ base, request }) {
+      // A report sent as Piwi Picker sends one, with a screenshot of each step: committed docs images stand in.
+      const target = (role, name, testId = null) => ({
+        tagName: role === 'textbox' ? 'input' : 'button',
+        role,
+        accessibleName: name,
+        testId,
+        text: null,
+        alternatives: [
+          testId
+            ? { locator: `getByTestId('${testId}')`, method: 'getByTestId', score: 100 }
+            : { locator: `getByRole('${role}', { name: '${name}' })`, method: 'getByRole', score: 90 },
+        ],
+      });
+      const at = (step) => ({ redacted: false, pageUrl: '/cart', timestamp: step });
+      const steps = [
+        { action: 'goto', target: null, value: '/cart', ...at(0) },
+        { action: 'click', target: target('button', 'Failure clusters'), value: null, ...at(1) },
+        { action: 'fill', target: target('textbox', 'Search'), value: 'checkout', ...at(2) },
+        { action: 'click', target: target('button', 'Network'), value: null, ...at(3) },
+      ];
+      // Each box is where the step's element is in its image, in the image's pixels.
+      const images = [
+        { step: 1, png: 'flaky-tests.png', box: { x: 472, y: 196, width: 146, height: 28 } },
+        { step: 2, png: 'failure-clusters-tab.png', box: { x: 16, y: 72, width: 207, height: 32 } },
+        { step: 3, png: 'execution-locators.png', box: { x: 580, y: 64, width: 114, height: 32 } },
+      ];
+      const form = new FormData();
+      const stepShots = [];
+      for (const image of images) {
+        const source = join(__dirname, '..', '..', 'docs', 'public', 'screenshots', image.png);
+        const { data, info } = await sharp(readFileSync(source))
+          .jpeg({ quality: 60 })
+          .toBuffer({ resolveWithObject: true });
+        const file = `steps/${String(image.step + 1).padStart(3, '0')}.jpg`;
+        stepShots.push({
+          step: image.step,
+          file,
+          box: image.box,
+          viewport: { width: info.width, height: info.height },
+          takenAt: image.step,
+        });
+        form.append('stepShot', new Blob([data], { type: 'image/jpeg' }), file.replace(/^steps\//, ''));
+      }
+      const report = {
+        v: 1,
+        steps: {
+          v: 1,
+          title: 'Search results lose their filter',
+          origin: 'https://shop.example',
+          recordedAt: 0,
+          note: null,
+          steps,
+        },
+        evidence: {
+          console: [],
+          consoleDropped: 0,
+          requests: [],
+          requestsDropped: 0,
+          screenshots: [],
+          screenshotNote: 'none was taken',
+          outline: null,
+          stepShots,
+        },
+        context: { origin: 'https://shop.example', pageKey: '/cart', path: '/cart', time: Date.now() },
+      };
+      form.append('report', JSON.stringify(report));
+      const sent = await request.post(`${base}/api/projects/1/bug-reports`, { multipart: form });
+      this.reportId = (await sent.json()).id;
+    },
+    async run({ page, goto, shoot }) {
+      await goto(`/bug-reports/${this.reportId}?tab=evidence`);
+      await shoot(undefined, { of: '[data-shot="bug-report-step-shots"]', pad: 12 });
+      await page.setViewportSize({ width: 390, height: 1600 });
+      await shoot('mobile', { of: '[data-shot="bug-report-step-shots"]', pad: 12 });
+    },
+  },
+  {
     name: 'bug-report-list',
     description: 'A project’s bug reports',
     tags: ['desktop'],

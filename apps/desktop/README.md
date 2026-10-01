@@ -28,11 +28,14 @@ channel, so a per-user install pulls a per-user update.
    processes die with the shell, so every way out — closing the window, the
    tray's Quit, or an update restart — asks for confirmation first while any
    of them is still running.
-5. Archives the OS hands to the app (drag & drop, "Open with", second-launch
+5. Files the OS hands to the app (drag & drop, "Open with", second-launch
    file arguments, macOS open events) are queued shell-side and drained by the
    dashboard over IPC (`desktop_take_pending_open_files` + a `piwi:open-files`
-   poke), which imports them by path through the desktop-only
-   `/api/desktop/import-local` route.
+   poke), which imports them by path through the desktop-only routes:
+   Playwright archives (`.zip`) through `/api/desktop/import-local`, and Piwi
+   Picker's bug reports (`.piwibug`, the app's own file type, associated in
+   `tauri.conf.json` with a macOS exported type) through
+   `/api/desktop/import-bug-report`.
 6. The dashboard's /mcp page can write the `piwi-desktop` MCP entry into detected
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites

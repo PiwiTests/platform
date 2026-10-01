@@ -54,6 +54,8 @@ export type BugExpectation =
 /** What a report holds besides its steps, counted for its one-line summary. */
 interface BugEvidenceCounts {
   screenshots: number;
+  /** Screenshots of the page as each step began. */
+  stepShots: number;
   consoleErrors: number;
   consoleWarnings: number;
   failedRequests: number;
@@ -75,6 +77,8 @@ interface BugReportPhrases {
   actual(value: string): string;
   /** Under a step: the reporter's note. */
   note(text: string): string;
+  /** Under a step: the viewport size the page has from that step on, such as `390×844`, and the browser's zoom when not 100% (`1.25`). */
+  viewport(size: string, zoom: number | null): string;
   expectedHeading: string;
   nothingMarked: string;
   /** A line of "Expected and actual": step number, the expectation, and what the page showed when known. */

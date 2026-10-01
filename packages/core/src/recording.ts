@@ -101,6 +101,24 @@ export interface RecordedTarget {
   elementKey?: string | null;
 }
 
+/** A box on the page, in CSS pixels from the viewport's top left corner. */
+export interface ViewportBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The screenshot a bug recording took of the page as a step began, by the id
+ * the recorder gave it, and where the step's element was on it. Kept by the
+ * recorder only: a steps document never holds it.
+ */
+export interface StepView {
+  id: string;
+  box: ViewportBox | null;
+}
+
 /** One recorded, already-normalized user action. */
 export interface RecordedStep {
   action: StepAction;
@@ -119,6 +137,23 @@ export interface RecordedStep {
   assertion?: StepAssertion;
   /** Where a `dragTo` step drops what it drags; set on `dragTo` steps only. */
   dropTarget?: RecordedTarget | null;
+  /** The page as the step began, in a bug recording; see {@link StepView}. */
+  view?: StepView;
+}
+
+/**
+ * The size of the page's viewport from the step at `step` on, in CSS pixels,
+ * as `page.setViewportSize` sets it. A recording's first one, at step 0, is
+ * the size it was recorded at; the others follow a resize. The browser's zoom
+ * is already in the size (at 200%, a 1280-pixel window is 640 CSS pixels
+ * wide); `zoom` keeps the factor itself when it was not 100%.
+ */
+export interface StepViewport {
+  step: number;
+  width: number;
+  height: number;
+  /** The browser's zoom factor, such as 1.25; absent at 100%. */
+  zoom?: number;
 }
 
 export interface RecordedSession {
@@ -126,11 +161,24 @@ export interface RecordedSession {
   startedAt: number;
   /** The very first page's URL — the only step that becomes an explicit `page.goto(...)` in codegen. */
   startUrl: string;
+  /** The viewport sizes the steps were recorded at, by the step each starts at; absent when none was recorded. */
+  viewports?: StepViewport[];
 }
 
 /** A raw capture event, as built by the extension's DOM listeners — one per meaningful browser event, before coalescing. */
 export interface RawCaptureEvent {
-  kind: 'click' | 'dblclick' | 'hover' | 'input' | 'change' | 'files' | 'drop' | 'keydown' | 'navigate' | 'assert';
+  kind:
+    | 'click'
+    | 'dblclick'
+    | 'hover'
+    | 'input'
+    | 'change'
+    | 'files'
+    | 'drop'
+    | 'keydown'
+    | 'navigate'
+    | 'assert'
+    | 'viewport';
   /** The element acted on or asserted about; null for a navigation and for a `toHaveURL` assertion. */
   target: RecordedTarget | null;
   /** Current field value (input/change), the key pressed (keydown), the new URL (navigate), or the chosen files' names, one per line (files). */
@@ -144,6 +192,10 @@ export interface RawCaptureEvent {
   assertion?: StepAssertion;
   /** Where a `drop` event's element was dropped; its `target` is the element dragged. */
   dropTarget?: RecordedTarget | null;
+  /** The page's viewport size, on a `viewport` event: when the recording starts, and after a resize; with the zoom when not 100%. */
+  viewport?: { width: number; height: number; zoom?: number };
+  /** The page as the action began, in a bug recording; see {@link StepView}. */
+  view?: StepView;
 }
 
 /**
@@ -233,7 +285,10 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
     pageUrl: string;
     timestamp: number;
     redacted: boolean;
+    view?: StepView;
   } | null = null;
+  /** The view of the event a step comes from, when the recorder took one. */
+  const viewOf = (view: StepView | undefined): { view?: StepView } => (view ? { view } : {});
   let sawFirstGoto = false;
 
   function flushPendingFill(): void {
@@ -245,11 +300,15 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
       redacted: pendingFill.redacted,
       pageUrl: pendingFill.pageUrl,
       timestamp: pendingFill.timestamp,
+      ...viewOf(pendingFill.view),
     });
     pendingFill = null;
   }
 
   for (const ev of events) {
+    // A viewport size is not a step: `viewportsForSteps` places it.
+    if (ev.kind === 'viewport') continue;
+
     if (ev.kind === 'navigate') {
       flushPendingFill();
       if (!sawFirstGoto) {
@@ -280,6 +339,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
         redacted: ev.isPasswordField,
+        ...viewOf(ev.view),
       };
       continue;
     }
@@ -295,6 +355,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
@@ -309,6 +370,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
           redacted: false,
           pageUrl: ev.pageUrl,
           timestamp: ev.timestamp,
+          ...viewOf(ev.view),
         });
         continue;
       }
@@ -320,6 +382,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
           redacted: false,
           pageUrl: ev.pageUrl,
           timestamp: ev.timestamp,
+          ...viewOf(ev.view),
         });
         continue;
       }
@@ -336,6 +399,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
         assertion: { ...ev.assertion },
       });
       continue;
@@ -352,15 +416,18 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
 
     if (ev.kind === 'dblclick') {
       flushPendingFill();
+      // The page as the first of the clicks it replaces began.
+      let view = ev.view;
       for (let i = 0; i < 2; i++) {
         const prev = steps[steps.length - 1];
-        if (prev?.action === 'click' && sameTarget(prev.target, ev.target)) steps.pop();
+        if (prev?.action === 'click' && sameTarget(prev.target, ev.target)) view = steps.pop()!.view ?? view;
       }
       steps.push({
         action: 'dblclick',
@@ -369,6 +436,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(view),
       });
       continue;
     }
@@ -383,6 +451,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
@@ -397,6 +466,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
         dropTarget: ev.dropTarget,
       });
       continue;
@@ -426,6 +496,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
@@ -444,4 +515,39 @@ export function buildSession(steps: RecordedStep[], startedAt: number): Recorded
   const firstGoto = steps.find((s) => s.action === 'goto');
   const startUrl = firstGoto?.value ?? steps[0]?.pageUrl ?? '';
   return { steps, startedAt, startUrl };
+}
+
+/**
+ * The viewport sizes of `viewport` events, by the step each applies from: the
+ * first step recorded at or after the size was. Of several sizes before one
+ * step the last counts, a size equal to the one before it is left out, and a
+ * size taken after the last step is dropped.
+ */
+export function viewportsForSteps(steps: RecordedStep[], events: RawCaptureEvent[]): StepViewport[] {
+  const sizes = events.filter((e) => e.kind === 'viewport' && e.viewport).sort((a, b) => a.timestamp - b.timestamp);
+  const byStep = new Map<number, StepViewport>();
+  for (const e of sizes) {
+    const step = steps.findIndex((s) => s.timestamp >= e.timestamp);
+    if (step < 0) continue;
+    const { width, height, zoom } = e.viewport!;
+    byStep.set(step, { step, width, height, ...(zoom != null && zoom !== 1 ? { zoom } : {}) });
+  }
+  const out: StepViewport[] = [];
+  for (const v of [...byStep.values()].sort((a, b) => a.step - b.step)) {
+    const last = out[out.length - 1];
+    if (!last || last.width !== v.width || last.height !== v.height || (last.zoom ?? 1) !== (v.zoom ?? 1)) out.push(v);
+  }
+  return out;
+}
+
+/** The view each step began from, by step: the steps a bug recording took a screenshot for. */
+export function stepViews(steps: RecordedStep[]): Array<StepView & { step: number }> {
+  return steps.flatMap((s, step) => (s.view ? [{ step, id: s.view.id, box: s.view.box }] : []));
+}
+
+/** A recording's session from its raw events: its steps, and the viewport sizes it recorded when there are any. */
+export function sessionFromEvents(events: RawCaptureEvent[], startedAt: number): RecordedSession {
+  const session = buildSession(normalizeSteps(events), startedAt);
+  const viewports = viewportsForSteps(session.steps, events);
+  return viewports.length > 0 ? { ...session, viewports } : session;
 }

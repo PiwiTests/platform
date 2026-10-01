@@ -2559,10 +2559,10 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/bug-reports\/intake$/,
-    // The demo has no tracker connection: a send files nowhere.
+    // The demo has no tracker connection: a send files nowhere, and it keeps no step screenshots.
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false };
+      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false, stepShots: 0 };
     },
   },
   {

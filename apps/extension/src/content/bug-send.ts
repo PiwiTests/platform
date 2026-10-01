@@ -5,6 +5,8 @@ import { screenshotFile } from './bug-report-files.js';
 /** What the reporter ticked in the Send to Piwi preview: one box per kind of evidence, and the typed values. */
 export interface SendChoices {
   screenshots: boolean;
+  /** The screenshot of each step. */
+  stepShots: boolean;
   console: boolean;
   requests: boolean;
   outline: boolean;
@@ -13,7 +15,7 @@ export interface SendChoices {
 }
 
 export function defaultSendChoices(): SendChoices {
-  return { screenshots: true, console: true, requests: true, outline: true, leaveOutValues: false };
+  return { screenshots: true, stepShots: true, console: true, requests: true, outline: true, leaveOutValues: false };
 }
 
 /** The screenshot note a report carries when the reporter left its screenshots out. */
@@ -57,8 +59,22 @@ export function reportToSend(report: BugReport, choices: SendChoices): BugReport
       screenshotNote:
         choices.screenshots || evidence.screenshots.length === 0 ? evidence.screenshotNote : SCREENSHOTS_LEFT_OUT,
       outline: choices.outline ? evidence.outline : null,
+      ...(choices.stepShots && evidence.stepShots?.length ? { stepShots: evidence.stepShots } : {}),
     },
   };
+}
+
+/** The step screenshots that go with the report, named as its `evidence.stepShots` names them, without their folder. */
+export function stepShotsToSend(
+  report: BugReport,
+  images: ReadonlyMap<string, string>,
+  choices: SendChoices,
+): Array<{ name: string; dataUrl: string }> {
+  if (!choices.stepShots) return [];
+  return (report.evidence.stepShots ?? []).flatMap((shot) => {
+    const dataUrl = images.get(shot.file);
+    return dataUrl ? [{ name: shot.file.replace(/^steps\//, ''), dataUrl }] : [];
+  });
 }
 
 /** The screenshots that go with the report, named as its `evidence.screenshots` names them. */

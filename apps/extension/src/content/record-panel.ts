@@ -6,6 +6,7 @@ import {
   type RecordedTarget,
   type RecordedStep,
   type StepAssertion,
+  type StepView,
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
@@ -25,6 +26,7 @@ import {
 } from '../shared/recording-storage.js';
 import { getBugEvidence, setBugEvidenceFields } from '../shared/bug-storage.js';
 import {
+  captureStepView,
   currentBugContext,
   outlineAround,
   renderBugFinishPanel,
@@ -872,10 +874,108 @@ function stopCapture(): void {
   g.__piwiRecordCapture?.abort();
   g.__piwiRecordCapture = undefined;
   g.__piwiBugRelayFlush = undefined;
+  stopViews();
   g.__piwiRecordPaused = false;
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   removeRecordingFrame();
+}
+
+/**
+ * A bug recording's screenshots of the page as each step begins (see
+ * `background/step-views.ts`). Once the page has been still for
+ * `VIEW_SETTLE_MS` after a step, the recorder asks for the view the next step
+ * begins from; an action that comes before one is taken asks for its own as it
+ * starts. Each action keeps the view's id and its element's box. A scroll or a
+ * resize moves the page under a view no action began from yet: it is taken
+ * again under its id, once the page settles or as the next action starts.
+ */
+const VIEW_SETTLE_MS = 600;
+
+interface PendingView {
+  id: string;
+  /** An action began from it already. */
+  used: boolean;
+  /** The page scrolled or resized since it was asked for. */
+  moved: boolean;
+}
+
+let viewsOn = false;
+let currentView: PendingView | null = null;
+let viewTimer: ReturnType<typeof setTimeout> | null = null;
+let viewCount = 0;
+/** The field typed in last and the view its typing began from: the rest of the typing keeps it. */
+let typing: { field: Element; view: StepView | undefined } | null = null;
+
+function requestView(hide: boolean): PendingView {
+  const id =
+    currentView && !currentView.used ? currentView.id : `${Date.now().toString(36)}-${(viewCount++).toString(36)}`;
+  const view = { id, used: false, moved: false };
+  currentView = view;
+  void captureStepView(view.id, viewportNow(), hide);
+  return view;
+}
+
+function scheduleView(): void {
+  if (!viewsOn) return;
+  if (viewTimer != null) clearTimeout(viewTimer);
+  viewTimer = setTimeout(() => {
+    viewTimer = null;
+    // A pick or a dialog of the bug panel is open: the page it shows is not the next step's.
+    if (capturePaused()) return scheduleView();
+    requestView(true);
+  }, VIEW_SETTLE_MS);
+}
+
+function pageMoved(): void {
+  if (currentView && !currentView.used) currentView.moved = true;
+  scheduleView();
+}
+
+/** On a page the recording reaches, the first view is taken at once: the page as its first step begins. */
+function startViews(signal: AbortSignal): void {
+  viewsOn = true;
+  requestView(true);
+  // Scrolls of the page and of any element in it; the recorder's own surfaces do not compose theirs.
+  document.addEventListener('scroll', pageMoved, { capture: true, passive: true, signal });
+  window.addEventListener('resize', pageMoved, { passive: true, signal });
+}
+
+function stopViews(): void {
+  viewsOn = false;
+  if (viewTimer != null) clearTimeout(viewTimer);
+  viewTimer = null;
+}
+
+function boxOf(el: Element): StepView['box'] {
+  const r = el.getBoundingClientRect();
+  return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+}
+
+/** The view an action begins from, with its element's box: the settled one if no action used it, else one taken now. */
+function viewForAction(el: Element | null): StepView | undefined {
+  typing = null;
+  if (!viewsOn) return undefined;
+  const view = currentView && !currentView.used && !currentView.moved ? currentView : requestView(false);
+  view.used = true;
+  scheduleView();
+  return { id: view.id, box: el ? boxOf(el) : null };
+}
+
+/** The same view, with no element marked: a hover step's element is not the one clicked. */
+function withoutBox(view: StepView | undefined): StepView | undefined {
+  return view ? { id: view.id, box: null } : undefined;
+}
+
+/** Typing in the same field goes on from the view its first keystroke took. */
+function viewForTyping(field: Element): StepView | undefined {
+  if (typing?.field === field) {
+    scheduleView();
+    return typing.view;
+  }
+  const view = viewForAction(field);
+  typing = { field, view };
+  return view;
 }
 
 function attachListeners(): void {
@@ -938,10 +1038,12 @@ function attachListeners(): void {
       const raw = e.target;
       if (!(raw instanceof Element)) return;
       const { el, target, hovers } = clickTarget(raw, e.timeStamp, e.detail > 0);
-      for (const hover of hovers) captureEvent(buildEvent('hover', null, { target: hover }));
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
+      // A checkbox or a radio is recorded by its `change`, which takes the view.
+      const view = hovers.length > 0 || (kind !== 'checkbox' && kind !== 'radio') ? viewForAction(el) : undefined;
+      for (const hover of hovers) captureEvent(buildEvent('hover', null, { target: hover, view: withoutBox(view) }));
       if (kind === 'checkbox' || kind === 'radio') return; // the resulting `change` event records this one
-      captureEvent(buildEvent('click', el, { target }));
+      captureEvent(buildEvent('click', el, { target, view }));
     },
     opts,
   );
@@ -968,6 +1070,7 @@ function attachListeners(): void {
           target: fieldTarget(el),
           value: passwordField ? null : el.value,
           isPasswordField: passwordField,
+          view: viewForTyping(el),
         }),
       );
     },
@@ -983,13 +1086,15 @@ function attachListeners(): void {
       const typeAttr = el instanceof HTMLInputElement ? el.type : null;
       const kind = classifyInputKind(el.tagName, typeAttr);
       if (kind === 'checkbox' || kind === 'radio') {
-        captureEvent(buildEvent('change', el, { inputType: kind, checked: (el as HTMLInputElement).checked }));
+        const checked = (el as HTMLInputElement).checked;
+        captureEvent(buildEvent('change', el, { inputType: kind, checked, view: viewForAction(el) }));
       } else if (kind === 'select') {
-        captureEvent(buildEvent('change', el, { inputType: 'select', value: (el as HTMLSelectElement).value }));
+        const value = (el as HTMLSelectElement).value;
+        captureEvent(buildEvent('change', el, { inputType: 'select', value, view: viewForAction(el) }));
       } else if (el instanceof HTMLInputElement && el.type === 'file') {
         // The names of the chosen files, one per line: never their content, which stays on this computer.
         const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
-        captureEvent(buildEvent('files', el, { value: names.join('\n') }));
+        captureEvent(buildEvent('files', el, { value: names.join('\n'), view: viewForAction(el) }));
       }
     },
     opts,
@@ -1002,7 +1107,7 @@ function attachListeners(): void {
       const raw = e.target;
       if (!(raw instanceof Element)) return;
       const el = nearestActionable(raw);
-      captureEvent(buildEvent('dblclick', el));
+      captureEvent(buildEvent('dblclick', el, { view: viewForAction(el) }));
     },
     opts,
   );
@@ -1022,7 +1127,8 @@ function attachListeners(): void {
       const source = dragged;
       dragged = null;
       if (!source || !e.isTrusted || capturePaused() || withinOwnUi(e) || !(e.target instanceof Element)) return;
-      captureEvent(buildEvent('drop', source, { dropTarget: deriveRecordedTarget(nearestActionable(e.target)) }));
+      const dropTarget = deriveRecordedTarget(nearestActionable(e.target));
+      captureEvent(buildEvent('drop', source, { dropTarget, view: viewForAction(source) }));
     },
     opts,
   );
@@ -1038,7 +1144,8 @@ function attachListeners(): void {
       // sends them: their target is often the page itself, which no locator names.
       const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
       const onPage = !focused || focused === document.body || focused === document.documentElement;
-      captureEvent(buildEvent('keydown', key === 'Escape' || shortcut || onPage ? null : focused, { value: key }));
+      const el = key === 'Escape' || shortcut || onPage ? null : focused;
+      captureEvent(buildEvent('keydown', el, { value: key, view: viewForAction(el) }));
     },
     opts,
   );
@@ -1135,6 +1242,82 @@ function startPageRelay(token: string): void {
   g.__piwiBugRelayFlush = startEvidenceRelay(token, capture.signal, scheduleHudRefresh);
 }
 
+/** How long the window keeps its size before a resize counts, so a drag records its end only. */
+const VIEWPORT_SETTLE_MS = 400;
+
+interface ViewportSize {
+  width: number;
+  height: number;
+  /** The browser's zoom factor, when it is not 100%. */
+  zoom?: number;
+}
+
+function viewportNow(): ViewportSize {
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+/** The page's viewport size and the tab's zoom, which only the background worker can read. */
+async function viewportWithZoom(): Promise<ViewportSize> {
+  const size = viewportNow();
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-tab-zoom' })) as { zoom?: unknown } | undefined;
+    const zoom = answer?.zoom;
+    return typeof zoom === 'number' && Number.isFinite(zoom) && zoom > 0 && zoom !== 1 ? { ...size, zoom } : size;
+  } catch {
+    return size;
+  }
+}
+
+function sameSize(a: ViewportSize | null, b: ViewportSize): boolean {
+  return !!a && a.width === b.width && a.height === b.height && (a.zoom ?? 1) === (b.zoom ?? 1);
+}
+
+/** The last viewport size the recording holds. */
+function lastRecordedViewport(events: RawCaptureEvent[]): ViewportSize | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const viewport = events[i]!.viewport;
+    if (events[i]!.kind === 'viewport' && viewport) return viewport;
+  }
+  return null;
+}
+
+/**
+ * A bug report keeps the viewport size its steps were played at: the page's
+ * size when the recording reaches it, if it differs from the last one kept.
+ * Answers the size kept last.
+ */
+async function recordPageViewport(state: RecordingState): Promise<ViewportSize> {
+  const last = lastRecordedViewport(state.events);
+  const now = await viewportWithZoom();
+  if (sameSize(last, now)) return last!;
+  await appendRecordingEvent(buildEvent('viewport', null, { viewport: now }));
+  return now;
+}
+
+/** Then each size the window settles at after a resize, until `signal` ends capture. */
+function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
+  let last = kept;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  window.addEventListener(
+    'resize',
+    () => {
+      if (timer != null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void viewportWithZoom().then((size) => {
+          if (sameSize(last, size)) return;
+          last = size;
+          captureEvent(buildEvent('viewport', null, { viewport: size }));
+        });
+      }, VIEWPORT_SETTLE_MS);
+    },
+    { signal },
+  );
+  signal.addEventListener('abort', () => {
+    if (timer != null) clearTimeout(timer);
+  });
+}
+
 async function initRecordPanel(): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
   // override loads alongside, so the HUD paints no later for it.
@@ -1155,6 +1338,8 @@ async function initRecordPanel(): Promise<void> {
     return;
   }
 
+  // The size comes before the page, so the first one is the size of the first step.
+  const viewport = recordingMode(state) === 'bug' ? await recordPageViewport(state) : null;
   // Seed this page's own URL so a mid-recording navigation's `RecordedStep`s
   // carry the right `pageUrl`; only the very first one across the whole
   // recording survives into a `page.goto()` — see `normalizeSteps`.
@@ -1162,6 +1347,10 @@ async function initRecordPanel(): Promise<void> {
   attachListeners();
   installStopListener();
   const capture = recorderGlobals().__piwiRecordCapture;
+  if (viewport && capture) {
+    watchViewport(viewport, capture.signal);
+    startViews(capture.signal);
+  }
   if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
     startPageRelay(state.bugToken);
   }

@@ -417,6 +417,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/report-a-bug',
       },
       {
+        title: 'Replay a bug report',
+        summary:
+          'Play a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
+        needs: ['extension'],
+        where: 'Browser extension → Replay a bug report',
+        doc: 'features/replay-a-bug-report',
+      },
+      {
         title: 'Bug reports',
         summary:
           'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',

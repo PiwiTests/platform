@@ -113,12 +113,17 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
 - **Attach only while a feature the person started needs it, and detach the moment it ends.** Every session goes
   through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
   `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
-  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin) and a bug
-  recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded), the
+  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin; it also sets
+  the viewport the steps were recorded at, `piwi-replay-viewport`, and gives the tab its size back, or the popup's
+  viewport, as it lets go) and a bug recording (`cdp-evidence.ts`, the tab the report starts in, let go when the
+  recording stops or is discarded), the
   DevTools panel's conditions (`cdp-conditions.ts`, held while any condition or throttling is on) and a viewport set in
   the tab from the popup (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
   another still holds ends its own emulation first (`Fetch.disable`, network and CPU back to normal,
   `Emulation.clearDeviceMetricsOverride`). Nothing stays attached in the background.
+- **A viewport is set in CSS pixels, through `emulateCssViewport`** (`viewport-emulation.ts`). The protocol's size is
+  divided by the browser's zoom (a 400-pixel override leaves the page 320 at 125%), so it is scaled by the tab's zoom
+  and set again when that changes (`onTabZoomChange`); never send `Emulation.setDeviceMetricsOverride` directly.
 - **Every feature has today's path as its fallback, and says so in plain words.** Firefox has no `chrome.debugger`
   (`debuggerAvailable()` is false); attaching can be refused (another debugger, a policy, a page Chrome protects);
   the person can click Cancel on the bar (`onDetach` with `canceled_by_user`, heard through `onDebuggerLost`). The
@@ -320,7 +325,39 @@ missing** checks its `getByRole` with the in-page engine and refuses an element 
 Evidence lives under its own `chrome.storage.session` keys (`bug-storage.ts`), not in
 `RecordingState`, which is rewritten on every keystroke. The report and its files are assembled
 by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMarkdown`,
-`renderBugSpec`); the zip is written by `shared/zip.ts`, stored without compression.
+`renderBugSpec`); the archive is written by `shared/zip.ts`, stored without compression, and downloaded as
+`.piwibug`: its first entry is `mimetype` holding `BUG_REPORT_MEDIA_TYPE`, which `isBugReportArchive` (core) reads to
+tell it from any other zip. Readers go by content, never by name: Replay and the desktop app take the same file named
+`.zip`. A bug recording also records `viewport` events (`record-panel.ts`: the page's size when the recording reaches
+it, before its `navigate`, and the size a resize settles at); `normalizeSteps` skips them and `sessionFromEvents` turns
+them into the steps document's `viewports`, by the first step recorded at or after each.
+
+**A screenshot of each step.** The recorder asks the worker for a view of the page (`piwi-bug-step-view`, under an id
+it makes up) as it starts on a page and once the page has been still for `VIEW_SETTLE_MS` after an action, with its
+surfaces hidden; an action with no unused view left asks for its own as it starts. Each action event keeps the view's
+id and its element's box (`view`, which `normalizeSteps` carries to the step and `toStepsDocument` leaves out), so the
+box only holds for the page the view shows: a scroll (of the page or any element) or a resize marks an unused view
+moved, and it is taken again under the same id, once the page settles or as the next action starts. The worker
+(`background/step-views.ts`) takes it through the recording's debugging session, or `captureVisibleTab` under
+`activeTab`, drops what the id held before (of two images under one id, the later-taken stays), and keeps it as a
+JPEG as wide as the viewport in CSS pixels in its own IndexedDB
+(`shared/step-views.ts`: a content script's IndexedDB is the page's, and session storage cannot hold a hundred
+screenshots); the finish panel asks for them back (`piwi-bug-step-views`) and writes `evidence.stepShots` and
+`steps/<nnn>.jpg`, unless the reporter leaves them out. A recording that starts or is discarded clears them.
+
+**A step a replay cannot play goes to the person.** When a step finds no element (or not the one it needs), the flow is
+on another page, or its action fails, `replay-panel.ts` sets `ReplayState.handOver` and shows why, the step in words
+and its screenshot, outlined where the recording found its element (`piwi-replay-step-view`): **I did it, continue**
+records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diverged` and ends the replay. The panel
+also lists the element's recorded locators (the replay's own first, three at most), and the cursor overlay marks the
+elements they find on the page (`FakeCursor.marks`), looked for again every `HAND_OVER_LOOK_MS` while the person acts. The
+hand-over is in the replay's state, so it waits on the page the person's own action loads. A replay keeps its step
+screenshots in the worker's IndexedDB too: the start message carries the images of a chosen `.piwibug` (`views`), the
+recording's view ids (`recordingViews`), or asks to keep the last replay's (`keepViews`, Replay again); anything else
+clears them. For a report from the connected instance, the worker fetches a step's screenshot only when that step is
+handed over (`fetchBugReportStepShot`). **Send to Piwi** sends the step screenshots as `stepShot` parts only to an
+instance whose intake says how many it takes (`stepShots`): an older one refuses a send with more files than it
+expects.
 
 **Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
 in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors

@@ -269,13 +269,16 @@ export function collectsThroughDebugger(tabId: number | undefined): boolean {
  * whether or not the popup was opened on it. Null when the tab has no session,
  * or the capture fails (a hidden tab may never paint).
  */
-export async function captureThroughDebugger(tabId: number): Promise<string | null> {
+export async function captureThroughDebugger(tabId: number, format: 'png' | 'jpeg' = 'png'): Promise<string | null> {
   if (!holdsDebugger(tabId, 'bug')) return null;
-  const capture = sendCommand<{ data?: string }>(tabId, 'Page.captureScreenshot', { format: 'png' });
+  const capture = sendCommand<{ data?: string }>(tabId, 'Page.captureScreenshot', {
+    format,
+    ...(format === 'jpeg' ? { quality: 85 } : {}),
+  });
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000));
   try {
     const result = await Promise.race([capture, timeout]);
-    return result?.data ? `data:image/png;base64,${result.data}` : null;
+    return result?.data ? `data:image/${format};base64,${result.data}` : null;
   } catch {
     return null;
   }

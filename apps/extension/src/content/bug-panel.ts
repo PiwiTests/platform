@@ -1,13 +1,18 @@
 import { installPickerOverlay, removePickerOverlay, highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import {
   normalizeSteps,
+  sessionFromEvents,
+  stepViews,
   VALUE_MATCHERS,
   type AssertionMatcher,
+  type RawCaptureEvent,
   type RecordedStep,
   type RecordedTarget,
   type StepAssertion,
 } from '@piwitests/core/recording';
 import {
+  BUG_REPORT_EXTENSION,
+  BUG_REPORT_MEDIA_TYPE,
   bugContextFrom,
   describeStepInWords,
   emptyBugEvidence,
@@ -25,9 +30,12 @@ import { createLocatorEngine } from './locator-engine.js';
 import { buildOutline, outlineRoot } from './bug-outline.js';
 import {
   assembleBugReport,
+  bugReportArchive,
   bugReportMarkdown,
-  bugReportZip,
   NO_SCREENSHOT_TAKEN,
+  stepShotsOf,
+  stepViewIds,
+  withoutStepShots,
   type ReportLanguage,
 } from './bug-report-files.js';
 import { codegenWarningText, interfacePhrases } from '../shared/core-words.js';
@@ -51,8 +59,9 @@ import {
   type StoredBugEvidence,
 } from '../shared/bug-storage.js';
 import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
-import { t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
+import { formatNumber, t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
 import type { RecordingState } from '../shared/recording-storage.js';
+import type { StoredStepView } from '../shared/step-views.js';
 import { attachPanelShadow } from './panel-root.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { activePathPrefixes } from '../shared/active-project.js';
@@ -132,8 +141,11 @@ const PANEL_CSS = `
   .evidence { font-size: 12px; color: #9ca3af; }
   .warn { color: #fca5a5; font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
   .local { color: #9ca3af; font-size: 11px; margin-top: 10px; }
+  label.keep { display: flex; align-items: center; gap: 6px; font-size: 12px; color: inherit; margin: 8px 0 2px; }
+  label.keep input { width: auto; margin: 0; }
   @media (prefers-color-scheme: light) {
     .sub, label, .step-idx, .evidence, .local { color: #6b7280; }
+    label.keep { color: inherit; }
     .message, .warn, .step-actual { color: #b91c1c; }
   }
 `;
@@ -214,6 +226,49 @@ export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', 
   }
   await setBugEvidenceFields({ screenshotNote: NO_SCREENSHOT_NOTE });
   return false;
+}
+
+/**
+ * Asks the background worker for a screenshot of the page as the next step
+ * begins, kept under `id` (see `background/step-views.ts`). With `hide`, the
+ * recorder's own surfaces are hidden until the screenshot is taken; an action
+ * that asks as it starts leaves them, rather than delay the page.
+ */
+export async function captureStepView(
+  id: string,
+  viewport: { width: number; height: number },
+  hide: boolean,
+): Promise<void> {
+  const ask = async () => {
+    try {
+      await chrome.runtime.sendMessage({ type: 'piwi-bug-step-view', id, viewport });
+    } catch {
+      // No screenshot for this step: the report goes without it.
+    }
+  };
+  if (!hide) return ask();
+  await withSurfacesHidden(async () => {
+    await nextFrame();
+    await nextFrame();
+    await ask();
+  });
+}
+
+/** The screenshots of the page as each step began that the worker kept for this recording. */
+async function keptStepViews(events: RawCaptureEvent[]): Promise<StoredStepView[]> {
+  const ids = stepViewIds(events);
+  if (ids.length === 0) return [];
+  try {
+    const views = (await chrome.runtime.sendMessage({ type: 'piwi-bug-step-views', ids })) as unknown;
+    return Array.isArray(views)
+      ? views.filter(
+          (v): v is StoredStepView =>
+            typeof v?.id === 'string' && typeof v?.dataUrl === 'string' && v.dataUrl.startsWith('data:image/jpeg;'),
+        )
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /** The context of this page for the report, its page keyed through the path prefixes of the site's URL mapping. */
@@ -911,18 +966,34 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   document.getElementById(PANEL_HOST_ID)?.remove();
   document.getElementById(FRAME_HOST_ID)?.remove();
 
-  const [evidence, screenshots] = await Promise.all([getBugEvidence(), getBugScreenshots()]);
+  const [evidence, screenshots, views] = await Promise.all([
+    getBugEvidence(),
+    getBugScreenshots(),
+    keptStepViews(state.events),
+  ]);
   const context = evidence.context ?? (await currentBugContext());
+  const startedAt = state.startedAt ?? state.events[0]?.timestamp ?? Date.now();
   let title = evidence.title ?? '';
-  const report = () =>
-    assembleBugReport({
+  /** The reporter keeps the step screenshots unless they leave them out. */
+  let keepStepShots = true;
+  const report = () => {
+    const assembled = assembleBugReport({
       events: state.events,
-      startedAt: state.startedAt ?? state.events[0]?.timestamp ?? Date.now(),
+      startedAt,
       evidence: { ...evidence, title },
       screenshots,
       context,
+      views,
     });
+    return keepStepShots ? assembled : withoutStepShots(assembled);
+  };
   const initial = report();
+  const stepImages = new Map(
+    stepShotsOf(sessionFromEvents(state.events, startedAt).steps, views).map(({ shot, dataUrl }) => [
+      shot.file,
+      dataUrl,
+    ]),
+  );
 
   const host = document.createElement('div');
   host.id = PANEL_HOST_ID;
@@ -970,8 +1041,26 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
-  summary.textContent = t('bug_attached', { summary: summarizeEvidence(initial.evidence, interfacePhrases()) });
+  const summarize = () => t('bug_attached', { summary: summarizeEvidence(report().evidence, interfacePhrases()) });
+  summary.textContent = summarize();
   panel.appendChild(summary);
+
+  if (stepImages.size > 0) {
+    const keep = document.createElement('label');
+    keep.className = 'keep';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = true;
+    box.addEventListener('change', () => {
+      keepStepShots = box.checked;
+      summary.textContent = summarize();
+    });
+    keep.append(box, t('bug_stepShots', { count: formatNumber(stepImages.size) }));
+    const hint = document.createElement('div');
+    hint.className = 'evidence';
+    hint.textContent = t('bug_stepShotsHint');
+    panel.append(keep, hint);
+  }
 
   const notes: string[] = [];
   if (expectedSteps(initial).length === 0) {
@@ -1008,13 +1097,15 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     t('bug_copyTestHint');
   action(t('bug_copyReport'), '', (b) => void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b)).title =
     t('bug_copyReportHint');
-  action(t('bug_downloadZip'), '', () => {
+  action(t('bug_downloadReport'), '', () => {
     const current = report();
     downloadBlob(
-      new Blob([bugReportZip(current, screenshots, reportLanguage()) as BlobPart], { type: 'application/zip' }),
-      `piwi-bug-${fileStamp(current.context.time)}.zip`,
+      new Blob([bugReportArchive(current, screenshots, reportLanguage(), stepImages) as BlobPart], {
+        type: BUG_REPORT_MEDIA_TYPE,
+      }),
+      `piwi-bug-${fileStamp(current.context.time)}.${BUG_REPORT_EXTENSION}`,
     );
-  }).title = t('bug_downloadZipHint');
+  }).title = t('bug_downloadReportHint');
 
   const controller = new AbortController();
   const closePanel = () => {
@@ -1034,6 +1125,8 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
           origin: location.origin,
           stepMode: false,
           inject: true,
+          // The replay shows a step it hands to the person as the recording saw it.
+          recordingViews: stepViews(sessionFromEvents(state.events, startedAt).steps),
         });
       } catch (e) {
         response = { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1054,6 +1147,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
       openSendPreview({
         report: report(),
         screenshots,
+        stepImages,
         target: { ...target, project: target.project },
         css: PANEL_CSS,
       });

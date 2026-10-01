@@ -53,6 +53,26 @@
         "description": "Playwright trace or blob report",
         "role": "Viewer",
         "mimeType": "application/zip"
+      },
+      {
+        "ext": [
+          "piwibug"
+        ],
+        "name": "Piwi bug report",
+        "description": "Bug report recorded with Piwi Picker",
+        "role": "Viewer",
+        "rank": "Owner",
+        "mimeType": "application/vnd.piwi.bug-report+zip",
+        "contentTypes": [
+          "io.piwitests.bug-report"
+        ],
+        "exportedType": {
+          "identifier": "io.piwitests.bug-report",
+          "conformsTo": [
+            "public.zip-archive",
+            "public.data"
+          ]
+        }
       }
     ],
     "resources": [

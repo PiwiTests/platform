@@ -2181,6 +2181,18 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Screenshot jedes Schritts ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "Die Seite zu Beginn jedes Schritts, für alle, die einen Schritt von Hand ausführen. Sie zeigen die ganze Seite: Lassen Sie sie weg, wenn diese zeigt, was nicht geteilt werden soll."
+  },
   "bug_nothingMarked": {
     "message": "Nichts ist als Fehler markiert, also würde der Test bestehen. Zeichnen Sie erneut auf und verwenden Sie „$mark$“.",
     "placeholders": {
@@ -2227,11 +2239,11 @@
   "bug_copyReportHint": {
     "message": "Der Bericht als Markdown, für ein Ticket oder eine Nachricht"
   },
-  "bug_downloadZip": {
-    "message": ".zip herunterladen"
+  "bug_downloadReport": {
+    "message": ".piwibug herunterladen"
   },
-  "bug_downloadZipHint": {
-    "message": "steps.json, der Test, der Bericht als Markdown, evidence.json und die Screenshots"
+  "bug_downloadReportHint": {
+    "message": "steps.json, der Test, der Bericht als Markdown, evidence.json und die Screenshots, in einem ZIP-Archiv"
   },
   "bug_replay": {
     "message": "Abspielen"
@@ -2297,6 +2309,15 @@
       "count": {
         "content": "$1",
         "example": "2"
+      }
+    }
+  },
+  "bug_sendStepShots": {
+    "message": "Screenshot jedes Schritts: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
       }
     }
   },
@@ -2458,6 +2479,28 @@
       "conditions": {
         "content": "$1",
         "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
+  "replay_viewportSet": {
+    "message": "Viewport $size$, wie aufgezeichnet",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Aufgezeichnet bei $recorded$, abgespielt bei $actual$: Passen Sie die Fenstergröße an, wenn die Seite davon abhängt",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
       }
     }
   },
@@ -2823,6 +2866,102 @@
   "replay_fileSkipped": {
     "message": "Übersprungen: Es wurde keine Datei gewählt."
   },
+  "replay_handOverWhy": {
+    "message": "Schritt $step$ ließ sich hier nicht abspielen. $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "No element matches getByRole('button', { name: 'Apply' })."
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverShot": {
+    "message": "Die Seite zu Beginn von Schritt $step$, sein Element umrandet",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverHow": {
+    "message": "Führen Sie ihn selbst auf der Seite aus, wie der Screenshot zeigt, und fahren Sie dann fort."
+  },
+  "replay_handOverHowNoShot": {
+    "message": "Führen Sie ihn selbst auf der Seite aus und fahren Sie dann fort."
+  },
+  "replay_handOverLocators": {
+    "message": "Sein Element, wie aufgezeichnet:"
+  },
+  "replay_handOverDropOn": {
+    "message": "Abgelegt auf:"
+  },
+  "replay_handOverFound_one": {
+    "message": "$count$ Element dieser Seite passt dazu: umrandet.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "replay_handOverFound_other": {
+    "message": "$count$ Elemente dieser Seite passen dazu: umrandet.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "replay_handOverNotFound": {
+    "message": "Keiner von ihnen findet es auf dieser Seite."
+  },
+  "replay_handOverDone": {
+    "message": "Erledigt, weiter"
+  },
+  "replay_handOverSkip": {
+    "message": "Diesen Schritt überspringen"
+  },
+  "replay_handOverStop": {
+    "message": "Hier abbrechen"
+  },
+  "replay_doneByHand": {
+    "message": "Von Hand ausgeführt."
+  },
+  "replay_stepSkipped": {
+    "message": "Übersprungen."
+  },
+  "replay_byHand_one": {
+    "message": "$count$ Schritt von Hand ausgeführt: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_byHand_other": {
+    "message": "$count$ Schritte von Hand ausgeführt: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3, 5"
+      }
+    }
+  },
   "replay_fileChosen": {
     "message": "Hier gewählt: $files$",
     "placeholders": {
@@ -2848,7 +2987,7 @@
     "message": "Den in diesem Browser aufgezeichneten Bug-Report verwenden"
   },
   "replay_chooseFile": {
-    "message": "Oder wählen Sie die .zip des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
+    "message": "Oder wählen Sie die .piwibug-Datei des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
   },
   "replay_fromPiwi": {
     "message": "Oder ein Bug-Report von $project$ auf Piwi:",
@@ -3027,7 +3166,7 @@
     "message": "Die Anfrage ist abgelaufen, bevor sie gestartet wurde."
   },
   "replay_fileLabel": {
-    "message": "Die .zip des Bug-Reports oder seine steps.json"
+    "message": "Die .piwibug-Datei des Bug-Reports oder seine steps.json"
   },
   "replay_untitled": {
     "message": "Bericht ohne Titel"
@@ -3086,11 +3225,11 @@
     "message": "Wählen Sie zuerst einen Bericht."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ enthält keine steps.json: Wählen Sie die von Piwi Picker gespeicherte .zip oder ihre steps.json.",
+    "message": "$file$ enthält keine steps.json: Wählen Sie die von Piwi Picker gespeicherte .piwibug-Datei oder ihre steps.json.",
     "placeholders": {
       "file": {
         "content": "$1",
-        "example": "bug.zip"
+        "example": "bug.piwibug"
       }
     }
   },

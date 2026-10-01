@@ -149,6 +149,8 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
 
 const number = (n: number): string => new Intl.NumberFormat('pt-BR').format(n);
 /** Brazilian Portuguese puts 0 and 1 in the singular. */
+/** A zoom factor as a percentage, such as `125%`. */
+const percent = (zoom: number): string => `${Math.round(zoom * 100)}%`;
 const plural = (n: number, one: string, many: string): string => `${number(n)} ${n < 2 ? one : many}`;
 const ofTotal = (shown: number, total: number | null): string =>
   `${number(shown)}${total != null ? ` de ${number(total)}` : ''}`;
@@ -195,6 +197,7 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
   evidence: (c) =>
     [
       c.screenshots > 0 ? plural(c.screenshots, 'captura de tela', 'capturas de tela') : 'nenhuma captura de tela',
+      ...(c.stepShots > 0 ? [plural(c.stepShots, 'captura de passo', 'capturas de passos')] : []),
       ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'erro de console', 'erros de console')] : []),
       ...(c.consoleWarnings > 0 ? [plural(c.consoleWarnings, 'aviso de console', 'avisos de console')] : []),
       ...(c.failedRequests > 0 ? [plural(c.failedRequests, 'requisição com falha', 'requisições com falha')] : []),
@@ -209,6 +212,8 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
     noSteps: 'Nenhum passo foi gravado.',
     actual: (v) => `Resultado: ${v}`,
     note: (text) => `Observação: ${text}`,
+    viewport: (size, zoom) =>
+      `Janela a partir deste passo: ${size}${zoom != null ? `, com zoom de ${percent(zoom)}` : ''}`,
     expectedHeading: 'Esperado e obtido',
     nothingMarked: 'Nada foi marcado como errado.',
     expectedLine: (step, expectation, actual) =>

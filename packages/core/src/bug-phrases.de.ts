@@ -148,6 +148,8 @@ const capitalize = (text: string): string => `${text.charAt(0).toLocaleUpperCase
 
 const number = (n: number): string => new Intl.NumberFormat('de-DE').format(n);
 /** German puts only 1 in the singular. */
+/** A zoom factor as a percentage, such as `125%`. */
+const percent = (zoom: number): string => `${Math.round(zoom * 100)}\u00a0%`;
 const plural = (n: number, one: string, many: string): string => `${number(n)} ${n === 1 ? one : many}`;
 const ofTotal = (shown: number, total: number | null): string =>
   `${number(shown)}${total != null ? ` von ${number(total)}` : ''}`;
@@ -195,6 +197,7 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
   evidence: (c) =>
     [
       c.screenshots > 0 ? plural(c.screenshots, 'Screenshot', 'Screenshots') : 'kein Screenshot',
+      ...(c.stepShots > 0 ? [plural(c.stepShots, 'Schritt-Screenshot', 'Schritt-Screenshots')] : []),
       ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'Konsolenfehler', 'Konsolenfehler')] : []),
       ...(c.consoleWarnings > 0 ? [plural(c.consoleWarnings, 'Konsolenwarnung', 'Konsolenwarnungen')] : []),
       ...(c.failedRequests > 0
@@ -211,6 +214,7 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
     noSteps: 'Es wurden keine Schritte aufgezeichnet.',
     actual: (v) => `Ergebnis: ${v}`,
     note: (text) => `Notiz: ${text}`,
+    viewport: (size, zoom) => `Viewport ab diesem Schritt: ${size}${zoom != null ? `, Zoom ${percent(zoom)}` : ''}`,
     expectedHeading: 'Erwartet und tatsächlich',
     nothingMarked: 'Nichts wurde als Fehler markiert.',
     expectedLine: (step, expectation, actual) =>

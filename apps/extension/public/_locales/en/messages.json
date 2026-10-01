@@ -2635,6 +2635,20 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Screenshot of each step ($count$)",
+    "description": "Report a bug, finished report: checkbox, on by default, that keeps in the report the screenshot of the page as each step began. $count$ is how many were taken.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "The page as each step began, for whoever plays a step by hand. They show the whole page: leave them out if it shows what should not be shared.",
+    "description": "Report a bug, finished report: under the step screenshots checkbox, what they are for and why to leave them out."
+  },
   "bug_nothingMarked": {
     "message": "Nothing is marked as wrong, so the test would pass. Record again and use \"$mark$\".",
     "description": "Report a bug, finished report: warning when no step says what is wrong. $mark$ is the name of the “Mark what’s wrong” button.",
@@ -2689,13 +2703,13 @@
     "message": "The report as Markdown, for a ticket or a message",
     "description": "Report a bug: tooltip of “Copy report”."
   },
-  "bug_downloadZip": {
-    "message": "Download .zip",
-    "description": "Report a bug, finished report: button that downloads every file of the report in one .zip archive."
+  "bug_downloadReport": {
+    "message": "Download .piwibug",
+    "description": "Report a bug, finished report: button that downloads every file of the report as one .piwibug file, a zip archive that Piwi Picker’s Replay and the Piwi desktop app open. “.piwibug” is a file extension, kept as it is."
   },
-  "bug_downloadZipHint": {
-    "message": "steps.json, the test, the report in Markdown, evidence.json and the screenshots",
-    "description": "Report a bug: tooltip of “Download .zip”: the files in the archive. File names are never translated."
+  "bug_downloadReportHint": {
+    "message": "steps.json, the test, the report in Markdown, evidence.json and the screenshots, in one zip archive",
+    "description": "Report a bug: tooltip of “Download .piwibug”: the files in the archive. File names are never translated."
   },
   "bug_replay": {
     "message": "Replay",
@@ -2772,6 +2786,16 @@
       "count": {
         "content": "$1",
         "example": "2"
+      }
+    }
+  },
+  "bug_sendStepShots": {
+    "message": "Screenshot of each step: $count$",
+    "description": "Send to Piwi preview: checkbox for the screenshot of the page as each step began. $count$ is a number.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
       }
     }
   },
@@ -2958,6 +2982,30 @@
       "conditions": {
         "content": "$1",
         "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
+  "replay_viewportSet": {
+    "message": "Viewport $size$, as recorded",
+    "description": "Replay panel: the replay set the tab's viewport to the size the steps were recorded at. $size$ is width×height in CSS pixels, such as 390×844.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Recorded at $recorded$, played at $actual$: resize the window if the page depends on its size",
+    "description": "Replay panel: the replay could not set the tab's viewport (no debugging protocol, as in Firefox) and the tab's size differs from the recorded one. $recorded$ and $actual$ are width×height in CSS pixels.",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
       }
     }
   },
@@ -3377,6 +3425,118 @@
     "message": "Skipped: no file was chosen.",
     "description": "Replay panel, under a file step the person skipped."
   },
+  "replay_handOverWhy": {
+    "message": "Step $step$ could not be played here. $reason$",
+    "description": "Replay panel: a step the replay could not play, handed to the person. $step$ is its number, $reason$ why it could not be played, a sentence from the replay_reason* messages.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "No element matches getByRole('button', { name: 'Apply' })."
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverShot": {
+    "message": "The page as step $step$ began, its element outlined",
+    "description": "Replay panel: alternative text of the screenshot of a step handed to the person. $step$ is its number.",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverHow": {
+    "message": "Do it yourself on the page, as the screenshot shows, then continue.",
+    "description": "Replay panel: under the screenshot of a step handed to the person, what to do."
+  },
+  "replay_handOverHowNoShot": {
+    "message": "Do it yourself on the page, then continue.",
+    "description": "Replay panel: what to do with a step handed to the person when the report has no screenshot of it."
+  },
+  "replay_handOverLocators": {
+    "message": "Its element, as recorded:",
+    "description": "Replay panel, step handed to the person: above the locators the step's element was recorded with, at most three."
+  },
+  "replay_handOverDropOn": {
+    "message": "Dropped on:",
+    "description": "Replay panel, a drag step handed to the person: above the locators of the element it was dropped on."
+  },
+  "replay_handOverFound_one": {
+    "message": "$count$ element on this page matches them: outlined.",
+    "description": "Replay panel, step handed to the person: how many elements of the page the recorded locators find now; they are outlined on the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "replay_handOverFound_other": {
+    "message": "$count$ elements on this page match them: outlined.",
+    "description": "Replay panel, step handed to the person: how many elements of the page the recorded locators find now; they are outlined on the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "replay_handOverNotFound": {
+    "message": "None of them finds it on this page.",
+    "description": "Replay panel, step handed to the person: none of the recorded locators finds an element on the page now."
+  },
+  "replay_handOverDone": {
+    "message": "I did it, continue",
+    "description": "Replay panel: button the person clicks once they did the handed-over step on the page; the replay goes on with the next step."
+  },
+  "replay_handOverSkip": {
+    "message": "Skip this step",
+    "description": "Replay panel: button that leaves the handed-over step out and goes on with the next one."
+  },
+  "replay_handOverStop": {
+    "message": "Stop here",
+    "description": "Replay panel: button that ends the replay at the handed-over step, which then could not reach the bug."
+  },
+  "replay_doneByHand": {
+    "message": "Done by hand.",
+    "description": "Replay panel: under a step the person did by hand when the replay could not play it."
+  },
+  "replay_stepSkipped": {
+    "message": "Skipped.",
+    "description": "Replay panel: under a step the person chose to skip when the replay could not play it."
+  },
+  "replay_byHand_one": {
+    "message": "$count$ step played by hand: $steps$.",
+    "description": "Replay panel: under the verdict, the steps the person played by hand. $steps$ lists their numbers, such as 3, 5.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_byHand_other": {
+    "message": "$count$ steps played by hand: $steps$.",
+    "description": "Replay panel: under the verdict, the steps the person played by hand. $steps$ lists their numbers, such as 3, 5.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3, 5"
+      }
+    }
+  },
   "replay_fileChosen": {
     "message": "Chosen here: $files$",
     "description": "Replay panel, under a file step: the files the person chose for it. $files$ is the quoted names.",
@@ -3406,8 +3566,8 @@
     "description": "Replay dialog button: replays the last bug report recorded with Piwi Picker in this browser."
   },
   "replay_chooseFile": {
-    "message": "Or choose the report’s .zip, or its steps.json, saved by Piwi Picker:",
-    "description": "Replay dialog, above the file field. “.zip” and “steps.json” are file names, kept as they are."
+    "message": "Or choose the report’s .piwibug, or its steps.json, saved by Piwi Picker:",
+    "description": "Replay dialog, above the file field. “.piwibug” and “steps.json” are file names, kept as they are."
   },
   "replay_fromPiwi": {
     "message": "Or a bug report of $project$ on Piwi:",
@@ -3614,7 +3774,7 @@
     "description": "Run with Playwright dialog: the request was not started in time, or the desktop app no longer knows it."
   },
   "replay_fileLabel": {
-    "message": "The bug report’s .zip, or its steps.json",
+    "message": "The bug report’s .piwibug, or its steps.json",
     "description": "Replay dialog: aria-label of the file field."
   },
   "replay_untitled": {
@@ -3682,12 +3842,12 @@
     "description": "Replay dialog error: Replay was clicked before a report was chosen."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ has no steps.json: choose the .zip saved by Piwi Picker, or its steps.json.",
-    "description": "Replay dialog error: the chosen .zip holds no steps.json. $file$ is the file’s name.",
+    "message": "$file$ has no steps.json: choose the .piwibug saved by Piwi Picker, or its steps.json.",
+    "description": "Replay dialog error: the chosen archive holds no steps.json. $file$ is the file’s name.",
     "placeholders": {
       "file": {
         "content": "$1",
-        "example": "bug.zip"
+        "example": "bug.piwibug"
       }
     }
   },

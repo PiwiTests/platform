@@ -2181,6 +2181,18 @@
       }
     }
   },
+  "bug_stepShots": {
+    "message": "Captura de cada paso ($count$)",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "bug_stepShotsHint": {
+    "message": "La página al empezar cada paso, para quien reproduce un paso a mano. Muestran toda la página: déjalas fuera si muestra lo que no debe compartirse."
+  },
   "bug_nothingMarked": {
     "message": "No hay nada marcado como incorrecto, así que la prueba pasaría. Vuelve a grabar y usa «$mark$».",
     "placeholders": {
@@ -2227,11 +2239,11 @@
   "bug_copyReportHint": {
     "message": "El informe en Markdown, para un ticket o un mensaje"
   },
-  "bug_downloadZip": {
-    "message": "Descargar el .zip"
+  "bug_downloadReport": {
+    "message": "Descargar el .piwibug"
   },
-  "bug_downloadZipHint": {
-    "message": "steps.json, la prueba, el informe en Markdown, evidence.json y las capturas de pantalla"
+  "bug_downloadReportHint": {
+    "message": "steps.json, la prueba, el informe en Markdown, evidence.json y las capturas de pantalla, en un archivo zip"
   },
   "bug_replay": {
     "message": "Reproducir"
@@ -2297,6 +2309,15 @@
       "count": {
         "content": "$1",
         "example": "2"
+      }
+    }
+  },
+  "bug_sendStepShots": {
+    "message": "Captura de cada paso: $count$",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
       }
     }
   },
@@ -2458,6 +2479,28 @@
       "conditions": {
         "content": "$1",
         "example": "Slow down GET **/api/cart by 2 s"
+      }
+    }
+  },
+  "replay_viewportSet": {
+    "message": "Ventana de $size$, como se grabó",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Grabado a $recorded$, reproducido a $actual$: cambia el tamaño de la ventana si la página depende de él",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
       }
     }
   },
@@ -2823,6 +2866,102 @@
   "replay_fileSkipped": {
     "message": "Omitido: no se eligió ningún archivo."
   },
+  "replay_handOverWhy": {
+    "message": "El paso $step$ no se pudo reproducir aquí. $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "No element matches getByRole('button', { name: 'Apply' })."
+      },
+      "step": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverShot": {
+    "message": "La página al empezar el paso $step$, con su elemento marcado",
+    "placeholders": {
+      "step": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "replay_handOverHow": {
+    "message": "Hazlo tú en la página, como muestra la captura, y luego continúa."
+  },
+  "replay_handOverHowNoShot": {
+    "message": "Hazlo tú en la página y luego continúa."
+  },
+  "replay_handOverLocators": {
+    "message": "Su elemento, tal como se grabó:"
+  },
+  "replay_handOverDropOn": {
+    "message": "Soltado en:"
+  },
+  "replay_handOverFound_one": {
+    "message": "$count$ elemento de esta página coincide con ellos: marcado.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "replay_handOverFound_other": {
+    "message": "$count$ elementos de esta página coinciden con ellos: marcados.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "replay_handOverNotFound": {
+    "message": "Ninguno de ellos lo encuentra en esta página."
+  },
+  "replay_handOverDone": {
+    "message": "Hecho, continuar"
+  },
+  "replay_handOverSkip": {
+    "message": "Omitir este paso"
+  },
+  "replay_handOverStop": {
+    "message": "Detener aquí"
+  },
+  "replay_doneByHand": {
+    "message": "Hecho a mano."
+  },
+  "replay_stepSkipped": {
+    "message": "Omitido."
+  },
+  "replay_byHand_one": {
+    "message": "$count$ paso hecho a mano: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "replay_byHand_other": {
+    "message": "$count$ pasos hechos a mano: $steps$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "steps": {
+        "content": "$2",
+        "example": "3, 5"
+      }
+    }
+  },
   "replay_fileChosen": {
     "message": "Elegido aquí: $files$",
     "placeholders": {
@@ -2848,7 +2987,7 @@
     "message": "Usar el informe de bug grabado en este navegador"
   },
   "replay_chooseFile": {
-    "message": "O elige el .zip del informe, o su steps.json, guardado por Piwi Picker:"
+    "message": "O elige el .piwibug del informe, o su steps.json, guardado por Piwi Picker:"
   },
   "replay_fromPiwi": {
     "message": "O un informe de bug de $project$ en Piwi:",
@@ -3027,7 +3166,7 @@
     "message": "La solicitud caducó antes de iniciarse."
   },
   "replay_fileLabel": {
-    "message": "El .zip del informe de bug, o su steps.json"
+    "message": "El .piwibug del informe de bug, o su steps.json"
   },
   "replay_untitled": {
     "message": "Informe sin título"
@@ -3086,11 +3225,11 @@
     "message": "Primero elige un informe."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ no contiene ningún steps.json: elige el .zip guardado por Piwi Picker, o su steps.json.",
+    "message": "$file$ no contiene ningún steps.json: elige el .piwibug guardado por Piwi Picker, o su steps.json.",
     "placeholders": {
       "file": {
         "content": "$1",
-        "example": "bug.zip"
+        "example": "bug.piwibug"
       }
     }
   },

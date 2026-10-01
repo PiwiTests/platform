@@ -3,10 +3,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import {
+  clickInShadow,
   debuggerAttached,
   expect,
   expectText,
   finished,
+  panelNode,
+  type DomNode,
   replayState,
   startReplay,
   step,
@@ -82,35 +85,15 @@ const CLICKS = `<!doctype html><html><body>
     b.addEventListener('click', (e) => (log.textContent += b.textContent + (e.isTrusted ? ' trusted; ' : ' script; ')));
 </script></body></html>`;
 
-test.use({ pages: { '/lab': LAB, '/clicks': CLICKS } });
+/** A page that shows its viewport's size. */
+const SIZED = `<!doctype html><html><head><meta charset="utf-8"></head><body><output data-testid="size"></output>
+<script>
+  const show = () => (document.querySelector('[data-testid="size"]').textContent = innerWidth + '×' + innerHeight);
+  show();
+  addEventListener('resize', show);
+</script></body></html>`;
 
-type DomNode = {
-  backendNodeId: number;
-  nodeName: string;
-  nodeValue?: string;
-  attributes?: string[];
-  children?: DomNode[];
-  shadowRoots?: DomNode[];
-};
-
-/** The first node of the page, closed shadow roots included, that `match` accepts. */
-async function panelNode(page: Page, match: (node: DomNode) => boolean): Promise<number | null> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    const { root } = (await cdp.send('DOM.getDocument', { depth: -1, pierce: true })) as { root: DomNode };
-    const find = (node: DomNode): number | null => {
-      if (match(node)) return node.backendNodeId;
-      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
-        const found = find(child);
-        if (found) return found;
-      }
-      return null;
-    };
-    return find(root);
-  } finally {
-    await cdp.detach();
-  }
-}
+test.use({ pages: { '/lab': LAB, '/clicks': CLICKS, '/sized': SIZED } });
 
 const hasAttribute = (name: string) => (node: DomNode) => {
   const attrs = node.attributes ?? [];
@@ -124,22 +107,6 @@ async function chooseInReplayPanel(page: Page, file: string): Promise<void> {
   expect(backendNodeId).not.toBeNull();
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('DOM.setFileInputFiles', { files: [file], backendNodeId: backendNodeId! });
-  await cdp.detach();
-}
-
-/** Clicks the replay panel's button reading `label`. */
-async function clickInReplayPanel(page: Page, label: string): Promise<void> {
-  const backendNodeId = await panelNode(
-    page,
-    (node) => node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === label),
-  );
-  expect(backendNodeId).not.toBeNull();
-  const cdp = await page.context().newCDPSession(page);
-  const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: backendNodeId! });
-  await cdp.send('Runtime.callFunctionOn', {
-    objectId: object.objectId!,
-    functionDeclaration: 'function () { this.click(); }',
-  });
   await cdp.detach();
 }
 
@@ -211,7 +178,7 @@ test('a file step can be skipped, and the verdict says the step was left out', a
   const page = await startReplay(control, context, site, doc, '/lab');
   await expect.poll(async () => (await replayState(worker)).position, { timeout: 45_000 }).toBe(1);
   await expect.poll(() => panelNode(page, hasAttribute('data-piwi-replay-file')), { timeout: 20_000 }).not.toBeNull();
-  await clickInReplayPanel(page, 'Skip this step');
+  await clickInShadow(page, 'Skip this step');
   const state = await finished(worker);
   expect(state.results.map((r) => r.status)).toEqual(['done', 'skipped']);
 });
@@ -274,4 +241,51 @@ test('after the debugging bar is cancelled, the replay goes on with the page’s
     ['passed', null],
   ]);
   expect(await debuggerAttached(worker, tabId)).toBe(false);
+});
+
+test('plays the steps at the viewport they were recorded at, then gives the tab its size back', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const doc = {
+    ...stepsDoc('Sized', site, [
+      step('goto', '/sized', { value: '/sized' }),
+      expectText('/sized', 'size', '800×600'),
+      expectText('/sized', 'size', '390×664'),
+    ]),
+    viewports: [
+      { step: 0, width: 800, height: 600 },
+      { step: 2, width: 390, height: 664 },
+    ],
+  };
+  const page = await startReplay(control, context, site, doc, '/sized');
+  const tabId = await tabIdOf(worker, `${site}/sized`);
+  const state = await finished(worker);
+  expect(state.results.map((r) => r.status)).toEqual(['done', 'passed', 'passed']);
+  expect((state as { viewport?: unknown }).viewport).toEqual({ width: 390, height: 664, set: true });
+  await expect.poll(() => debuggerAttached(worker, tabId)).toBe(false);
+  // Back to the window's size: not the size Playwright emulates, which the cleared override takes away too.
+  await expect.poll(() => page.evaluate(() => `${innerWidth}×${innerHeight}`)).not.toMatch(/^(390×664|800×600)$/);
+});
+
+test('plays at the recorded size in CSS pixels whatever the zoom of the tab replaying it', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  // Zoom is kept per site: at 125% here, the replayed tab opens zoomed too.
+  const other = await context.newPage();
+  await other.goto(`${site}/sized`);
+  await worker.evaluate(async (id) => chrome.tabs.setZoom(id, 1.25), await tabIdOf(worker, `${site}/sized`));
+  await other.close();
+  const doc = {
+    ...stepsDoc('Zoomed', site, [step('goto', '/sized', { value: '/sized' }), expectText('/sized', 'size', '390×664')]),
+    viewports: [{ step: 0, width: 390, height: 664 }],
+  };
+  await startReplay(control, context, site, doc, '/sized');
+  const state = await finished(worker);
+  expect(state.results.map((r) => r.status)).toEqual(['done', 'passed']);
 });

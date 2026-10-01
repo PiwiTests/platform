@@ -12,6 +12,7 @@ import {
   releaseDebugger,
   sendCommand,
 } from './debugger.js';
+import { emulateCssViewport, onTabZoomChange } from './viewport-emulation.js';
 
 /**
  * Slow down or fail a request, and throttle the whole page, through the
@@ -168,18 +169,26 @@ export async function setTabViewport(viewport: TabViewport): Promise<{ ok: true 
   const attached = await acquireDebugger(viewport.tabId, 'viewport');
   if (!attached.ok) return { ok: false, error: attached.error || attached.reason };
   try {
-    await sendCommand(viewport.tabId, 'Emulation.setDeviceMetricsOverride', {
-      width: viewport.width,
-      height: viewport.height,
-      deviceScaleFactor: 0,
-      mobile: false,
-    });
+    await emulateCssViewport(viewport.tabId, viewport);
     await updateViewports((current) => ({ ...current, [viewport.tabId]: viewport }));
     return { ok: true };
   } catch (err) {
     await releaseDebugger(viewport.tabId, 'viewport');
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * Sets the viewport the popup set on the tab again, when one is set: another
+ * feature that sized the tab meanwhile, such as a replay, hands it back.
+ * Answers whether one was set.
+ */
+export async function restoreTabViewport(tabId: number): Promise<boolean> {
+  const stored = (await chrome.storage.session.get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewports | undefined;
+  const viewport = stored?.[tabId];
+  if (!viewport || !holdsDebugger(tabId, 'viewport')) return false;
+  await emulateCssViewport(tabId, viewport).catch(() => undefined);
+  return true;
 }
 
 /** The tab back to its window's size, and the session let go when nothing else holds it. */
@@ -197,6 +206,11 @@ export async function clearTabViewport(tabId: number): Promise<void> {
 // A viewport whose session ended (the bar cancelled, the tab closed) is forgotten.
 onDebuggerLost((tabId, purposes) => {
   if (purposes.includes('viewport')) void clearTabViewport(tabId);
+});
+
+// The size set on a tab stays the same in CSS pixels when its zoom changes, unless a replay sizes it meanwhile.
+onTabZoomChange((tabId) => {
+  if (!holdsDebugger(tabId, 'replay')) void restoreTabViewport(tabId);
 });
 
 /** Called when the conditions' session ends without being released: the person cancelled the bar. */

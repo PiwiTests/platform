@@ -13,7 +13,7 @@
  */
 import { fileNames, renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
 import { mappedPageKey, normalizePathPrefix, normalizeRoute } from './page-key';
-import type { RecordedStep, RecordedTarget, StepAssertion } from './recording';
+import type { RecordedStep, RecordedTarget, StepAssertion, ViewportBox } from './recording';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from './steps';
 import {
   bugPhrases,
@@ -33,6 +33,8 @@ export const BUG_EVIDENCE_LIMITS = {
   console: 100,
   requests: 100,
   screenshots: 3,
+  /** Screenshots of the page as a step began, one per step at most. */
+  stepShots: 100,
   outlineLines: 400,
   /** Characters kept of one console message. */
   messageLength: 500,
@@ -68,6 +70,26 @@ export interface BugScreenshot {
   takenAt: number;
 }
 
+/**
+ * The page as a step began, for a person who plays that step by hand: a JPEG
+ * named after the step, the box of the step's element on it, and the viewport
+ * it shows, in CSS pixels.
+ */
+export interface BugStepShot {
+  /** The step it shows the page before (0-based). */
+  step: number;
+  /** File name inside the report's archive, `steps/001.jpg` for the first step. */
+  file: string;
+  box: ViewportBox | null;
+  viewport: { width: number; height: number } | null;
+  takenAt: number;
+}
+
+/** The archive file of a step's screenshot: `steps/001.jpg` for the first step. */
+export function stepShotFile(step: number): string {
+  return `steps/${String(step + 1).padStart(3, '0')}.jpg`;
+}
+
 export interface BugEvidence {
   console: BugConsoleEntry[];
   /** Entries past the limit, counted but not kept. */
@@ -77,6 +99,8 @@ export interface BugEvidence {
   screenshots: BugScreenshot[];
   /** Why a screenshot is missing, when one is. */
   screenshotNote: string | null;
+  /** The page as each step began, when the recording took them; absent from a report without any. */
+  stepShots?: BugStepShot[];
   /** An outline of the page in the YAML form of an ARIA snapshot, built by the extension; not Playwright's snapshot. */
   outline: string | null;
 }
@@ -350,6 +374,7 @@ export function summarizeEvidence(evidence: BugEvidence, phrases: BugPhrases = E
   const errors = evidence.console.filter((e) => e.level === 'error').length;
   return phrases.evidence({
     screenshots: evidence.screenshots.length,
+    stepShots: evidence.stepShots?.length ?? 0,
     consoleErrors: errors,
     consoleWarnings: evidence.console.length - errors,
     failedRequests: evidence.requests.length,
@@ -385,8 +410,11 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
 
   out.push(`## ${words.stepsHeading}`, '');
   if (doc.steps.length === 0) out.push(words.noSteps);
+  const viewportAt = new Map((doc.viewports ?? []).map((v) => [v.step, v]));
   doc.steps.forEach((step, i) => {
     out.push(`${i + 1}. ${describeStepInWords(step, phrases)}`);
+    const viewport = viewportAt.get(i);
+    if (viewport) out.push(`   - ${words.viewport(`${viewport.width}×${viewport.height}`, viewport.zoom ?? null)}`);
     const a = step.action === 'assert' ? step.assertion : undefined;
     if (a?.actual != null && a.actual !== a.expected) out.push(`   - ${words.actual(phrases.quote(line(a.actual)))}`);
     if (a?.note?.trim()) out.push(`   - ${words.note(line(a.note))}`);
@@ -543,6 +571,29 @@ function checkScreenshot(v: unknown): BugScreenshot | null {
   return { file: v.file, step, moment, takenAt: numberOf(v.takenAt) };
 }
 
+function sizeOf(v: unknown): { width: number; height: number } | null {
+  if (!isRecord(v)) return null;
+  const width = numberOf(v.width);
+  const height = numberOf(v.height);
+  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 ? { width, height } : null;
+}
+
+function checkStepShot(v: unknown): BugStepShot | null {
+  if (!isRecord(v) || typeof v.step !== 'number' || !Number.isInteger(v.step) || v.step < 0) return null;
+  if (v.file !== stepShotFile(v.step)) return null;
+  const b = isRecord(v.box) ? v.box : null;
+  const box =
+    b && [b.x, b.y, b.width, b.height].every((n) => typeof n === 'number' && Number.isFinite(n))
+      ? {
+          x: b.x as number,
+          y: b.y as number,
+          width: Math.max(0, b.width as number),
+          height: Math.max(0, b.height as number),
+        }
+      : null;
+  return { step: v.step, file: v.file, box, viewport: sizeOf(v.viewport), takenAt: numberOf(v.takenAt) };
+}
+
 function listOf<T>(v: unknown, limit: number, check: (entry: unknown) => T | null): T[] {
   if (!Array.isArray(v)) return [];
   return v.slice(0, limit).flatMap((entry) => {
@@ -562,7 +613,16 @@ function checkEvidence(v: unknown): BugEvidence {
     screenshots: listOf(v.screenshots, BUG_EVIDENCE_LIMITS.screenshots, checkScreenshot),
     screenshotNote: textOf(v.screenshotNote, BUG_EVIDENCE_LIMITS.messageLength),
     outline: outline ? outline.split('\n').slice(0, BUG_EVIDENCE_LIMITS.outlineLines).join('\n') : null,
+    ...stepShotsOf(v.stepShots),
   };
+}
+
+/** A report's step screenshots, one per step, in step order; none when it holds none. */
+function stepShotsOf(v: unknown): { stepShots?: BugStepShot[] } {
+  const shots = listOf(v, BUG_EVIDENCE_LIMITS.stepShots, checkStepShot)
+    .sort((a, b) => a.step - b.step)
+    .filter((shot, i, all) => i === 0 || all[i - 1]!.step !== shot.step);
+  return shots.length > 0 ? { stepShots: shots } : {};
 }
 
 function checkContext(v: unknown): BugContext {
@@ -598,6 +658,67 @@ function checkContext(v: unknown): BugContext {
     time: numberOf(c.time),
     extensionVersion: textOf(c.extensionVersion, 40),
   };
+}
+
+/**
+ * A bug report saved as a file is a zip archive with the `.piwibug` extension.
+ * Its first entry is `mimetype`, stored without compression and holding
+ * {@link BUG_REPORT_MEDIA_TYPE}, as EPUB and OpenDocument files do: whatever
+ * the file is named, its first bytes say what it is.
+ */
+export const BUG_REPORT_MEDIA_TYPE = 'application/vnd.piwi.bug-report+zip';
+export const BUG_REPORT_EXTENSION = 'piwibug';
+
+/** The files of a bug report archive, beside the spec and the screenshots. */
+export const BUG_REPORT_FILES = {
+  mediaType: 'mimetype',
+  steps: 'steps.json',
+  evidence: 'evidence.json',
+  markdown: 'bug-report.md',
+} as const;
+
+/** Whether `bytes` start as a bug report archive does: a stored `mimetype` entry holding the media type. */
+export function isBugReportArchive(bytes: Uint8Array): boolean {
+  const name = BUG_REPORT_FILES.mediaType;
+  const type = BUG_REPORT_MEDIA_TYPE;
+  const start = 30 + name.length;
+  if (bytes.length < start + type.length) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(0, true) !== 0x04034b50 || view.getUint16(8, true) !== 0) return false;
+  if (view.getUint16(26, true) !== name.length || view.getUint16(28, true) !== 0) return false;
+  if (view.getUint32(18, true) !== type.length) return false;
+  for (let i = 0; i < name.length; i++) if (bytes[30 + i] !== name.charCodeAt(i)) return false;
+  for (let i = 0; i < type.length; i++) if (bytes[start + i] !== type.charCodeAt(i)) return false;
+  return true;
+}
+
+/**
+ * Reads a bug report from the files of its archive: `steps.json`, and
+ * `evidence.json` (`{ v, context, evidence }`), null when the archive has
+ * none. Checked as {@link parseBugReport} checks a report.
+ */
+export function bugReportFromFiles(files: { steps: string; evidence: string | null }): ParseBugReportResult {
+  let steps: unknown;
+  try {
+    steps = JSON.parse(files.steps);
+  } catch {
+    return { ok: false, errors: [`${BUG_REPORT_FILES.steps}: not valid JSON`] };
+  }
+  let evidence: Record<string, unknown> = {};
+  if (files.evidence != null) {
+    try {
+      const parsed: unknown = JSON.parse(files.evidence);
+      if (isRecord(parsed)) evidence = parsed;
+    } catch {
+      return { ok: false, errors: [`${BUG_REPORT_FILES.evidence}: not valid JSON`] };
+    }
+  }
+  return parseBugReport({
+    v: evidence.v ?? BUG_REPORT_VERSION,
+    steps,
+    evidence: evidence.evidence,
+    context: evidence.context,
+  });
 }
 
 /**

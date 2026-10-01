@@ -11,8 +11,12 @@ import type { FallbackReason, ReplayDriver } from './cdp-input.js';
  */
 export const REPLAY_KEY = 'piwiReplay';
 
-/** `skipped`: a step the person chose to leave out, such as a file they did not choose. */
-type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped';
+/**
+ * `skipped`: a step the person chose to leave out, such as a file they did
+ * not choose. `manual`: a step the replay could not play, which the person
+ * did on the page.
+ */
+type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped' | 'manual';
 
 export interface ReplayStepResult {
   status: ReplayStepStatus;
@@ -57,6 +61,14 @@ export interface ReplayState {
    * page's events, it stays there.
    */
   driver?: { driver: ReplayDriver; reason: FallbackReason | null } | null;
+  /**
+   * The viewport the steps were recorded at from the current step on, when
+   * they say one, and whether the replay set it on the tab (it can only with
+   * trusted input).
+   */
+  viewport?: { width: number; height: number; set: boolean } | null;
+  /** The step the replay could not play and handed to the person, waiting for them, and why. */
+  handOver?: { step: number; reason: string } | null;
 }
 
 function isReplayState(value: unknown): value is ReplayState {

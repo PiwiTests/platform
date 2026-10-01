@@ -47,8 +47,22 @@ import {
   setTabViewport,
 } from './cdp-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
-import { handleReplayDriver, handleReplayInput, releaseReplayDebugger, releaseReplayTab } from './cdp-replay.js';
+import {
+  handleReplayDriver,
+  handleReplayInput,
+  handleReplayViewport,
+  releaseReplayDebugger,
+  releaseReplayTab,
+} from './cdp-replay.js';
 import { debuggerAvailable, tabsHolding } from './debugger.js';
+import { tabZoom } from './viewport-emulation.js';
+import {
+  clearViewsWithRecording,
+  handleGetStepViews,
+  handleReplayStepView,
+  handleStepView,
+  prepareReplayViews,
+} from './step-views.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -305,6 +319,9 @@ onBugDebuggerLost(async () => {
   const { grantedOriginPattern, active } = await getRecordingState();
   if (active) await notifyRecorderTabs(grantedOriginPattern, undefined, { type: 'piwi-bug-debugger-lost' });
 });
+
+// A bug recording's step screenshots go with it.
+clearViewsWithRecording();
 
 chrome.permissions.onAdded.addListener((permissions) => {
   void handlePermissionAdded(permissions.origins ?? []);
@@ -738,6 +755,9 @@ async function handleStartReplay(
     inject?: unknown;
     startOn?: unknown;
     bugReportId?: unknown;
+    views?: unknown;
+    recordingViews?: unknown;
+    keepViews?: unknown;
   },
   tab: chrome.tabs.Tab | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -762,6 +782,7 @@ async function handleStartReplay(
     const replay = newReplayState(parsed.steps, origin, message.stepMode === true, Date.now(), startPage, bugReportId);
     // A replay under a request condition says so, while it runs and in its verdict.
     const conditions = await conditionsFor(tab, tab.url);
+    await prepareReplayViews(message);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
     await releaseReplayDebugger();
     await unregisterScripts(REPLAY_SCRIPT_IDS);
@@ -873,6 +894,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void handleReplayInput(message, sender.tab).then(sendResponse);
     return true;
   }
+  if (message?.type === 'piwi-tab-zoom') {
+    // The zoom of the sender's tab, which a bug recording keeps with each viewport size.
+    const tabId = sender.tab?.id;
+    void (tabId != null ? tabZoom(tabId) : Promise.resolve(1)).then((zoom) => sendResponse({ zoom }));
+    return true;
+  }
+  if (message?.type === 'piwi-replay-viewport') {
+    void handleReplayViewport(message, sender.tab).then(sendResponse);
+    return true;
+  }
   if (message?.type === 'piwi-set-tab-viewport') {
     void handleSetTabViewport(message).then(sendResponse);
     return true;
@@ -921,6 +952,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-bug-step-view') {
+    // Answered once the screenshot is taken, before it is kept: the recorder hides its panel until then.
+    void handleStepView(message, sender.tab, (ok) => sendResponse({ ok }));
+    return true;
+  }
+  if (message?.type === 'piwi-bug-step-views') {
+    void handleGetStepViews(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-step-view') {
+    void handleReplayStepView(message).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-send-to-editor') {

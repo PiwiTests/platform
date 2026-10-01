@@ -6,6 +6,7 @@ import {
   reportToSend,
   SCREENSHOTS_LEFT_OUT,
   screenshotsToSend,
+  stepShotsToSend,
 } from '../../src/content/bug-send';
 
 function report(): BugReport {
@@ -51,6 +52,7 @@ describe('reportToSend', () => {
   test('leaves out each kind the reporter unticked', () => {
     const sent = reportToSend(report(), {
       screenshots: false,
+      stepShots: false,
       console: false,
       requests: false,
       outline: false,
@@ -88,5 +90,21 @@ describe('screenshotsToSend', () => {
       { name: '1-marked.png', dataUrl: 'data:image/png;base64,AA==' },
     ]);
     expect(screenshotsToSend(stored, { ...defaultSendChoices(), screenshots: false })).toEqual([]);
+  });
+});
+
+describe('stepShotsToSend', () => {
+  const shot = { step: 1, file: 'steps/002.jpg', box: null, viewport: null, takenAt: 1 };
+  const withShots = (): BugReport => ({ ...report(), evidence: { ...report().evidence, stepShots: [shot] } });
+  const images = new Map([['steps/002.jpg', 'data:image/jpeg;base64,/9j/']]);
+
+  test('sends the screenshot of each step the report names, without its folder, unless left out', () => {
+    expect(stepShotsToSend(withShots(), images, defaultSendChoices())).toEqual([
+      { name: '002.jpg', dataUrl: 'data:image/jpeg;base64,/9j/' },
+    ]);
+    const leftOut = { ...defaultSendChoices(), stepShots: false };
+    expect(stepShotsToSend(withShots(), images, leftOut)).toEqual([]);
+    expect(reportToSend(withShots(), leftOut).evidence).not.toHaveProperty('stepShots');
+    expect(reportToSend(withShots(), defaultSendChoices()).evidence.stepShots).toEqual([shot]);
   });
 });

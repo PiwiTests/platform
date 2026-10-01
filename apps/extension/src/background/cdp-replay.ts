@@ -13,6 +13,8 @@ import {
   type ReplayDriver,
 } from '../shared/cdp-input.js';
 import { getReplayState } from '../shared/replay-storage.js';
+import { restoreTabViewport } from './cdp-conditions.js';
+import { emulateCssViewport, onTabZoomChange, type CssViewport } from './viewport-emulation.js';
 import {
   acquireDebugger,
   debuggerAvailable,
@@ -35,6 +37,15 @@ let isMac: Promise<boolean> | null = null;
 
 /** The replay each tab's session was attached for. */
 const replayOfTab = new Map<number, string>();
+/** The viewport a replay set on each tab, in CSS pixels: set again when the tab's zoom changes, given back when the replay lets the tab go. */
+const sizedTabs = new Map<number, CssViewport>();
+
+onTabZoomChange((tabId) => {
+  const size = sizedTabs.get(tabId);
+  if (size && holdsDebugger(tabId, 'replay')) void emulateCssViewport(tabId, size).catch(() => undefined);
+});
+/** The widest and tallest viewport a replay sets, in CSS pixels, as a steps document allows. */
+const VIEWPORT_MAX = 10_000;
 /** Replays whose session ended without them (the person cancelled the bar): they go on with the page's events. */
 const lostReplays = new Map<string, FallbackReason>();
 
@@ -193,13 +204,42 @@ export async function handleReplayInput(
 }
 
 /**
- * The replay lets go of the tab: the file chooser opens again, since another
- * feature may keep the session, and the session is released.
+ * Sets the viewport the steps were recorded at on the replay's tab, through
+ * its session: only while the replay acts with trusted input, since without
+ * the protocol nothing can size a tab's page.
+ */
+export async function handleReplayViewport(
+  message: { replayId?: unknown; width?: unknown; height?: unknown },
+  tab: chrome.tabs.Tab | undefined,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { width, height } = message;
+  const size = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= VIEWPORT_MAX;
+  if (tab?.id == null || !size(width) || !size(height)) return { ok: false, error: 'bad request' };
+  if (!(await replayRunsIn(tab, message.replayId)) || !holdsDebugger(tab.id, 'replay')) {
+    return { ok: false, error: 'not attached' };
+  }
+  try {
+    await emulateCssViewport(tab.id, { width, height });
+    sizedTabs.set(tab.id, { width, height });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * The replay lets go of the tab: the file chooser opens again and the tab gets
+ * its size back, since another feature may keep the session, and the session
+ * is released.
  */
 export async function releaseReplayTab(tabId: number): Promise<void> {
   replayOfTab.delete(tabId);
+  const sized = sizedTabs.delete(tabId);
   if (holdsDebugger(tabId, 'replay')) {
     await sendCommand(tabId, 'Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined);
+    if (sized && !(await restoreTabViewport(tabId))) {
+      await sendCommand(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => undefined);
+    }
   }
   await releaseDebugger(tabId, 'replay');
 }

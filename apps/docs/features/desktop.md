@@ -119,7 +119,8 @@ enough clean runs, which tells when a flake started.
 ## Importing local files
 
 Drop a Playwright blob report or trace (`.zip`) on the window, or open one with **Open with → Piwi Dashboard**, and
-pick the project: the file is imported from disk, and several traces can form one run. Imports behave as on the [import page](/guide/importing-runs).
+pick the project: it is imported as on the [import page](/guide/importing-runs), several traces forming one run. A
+[`.piwibug`](/reference/bug-report-file) becomes a [bug report](./bug-reports).
 
 ## Connecting AI assistants
 

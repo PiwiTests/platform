@@ -9,6 +9,9 @@ import { clippedInShadows, openShadowRoots } from './shadow.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 const ORIGIN = 'https://replay-test.local';
+/** A screenshot stand-in, wide and short as a page's. */
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAIAAABM5OhcAAAAx0lEQVR42u3SMQ0AAAzDsPJHVlhFMWmHDSFKCgciAcbCWBgLjIWxMBYYC2NhLDAWxsJYYCyMhbHAWBgLY4GxMBbGAmNhLIwFxsJYGAuMhbEwFhgLY2EsMBbGwlhgLIyFscBYGAtjgbEwFsYCY2EsjAXGwlgYC4yFsTAWGAtjYSwwFsbCWGAsjIWxwFgYC2OBsTAWxgJjYSyMBcbCWBgLjIWxMBYYC2NhLDAWxsJYYCyMhbEwFhgLY2EsMBbGwlhgLIyFscBY/DbsGSW6o0IJdQAAAABJRU5ErkJggg==';
 
 /**
  * The replay script, driven the way `record.spec.ts` drives the recorder: the
@@ -269,17 +272,141 @@ test.describe('replay-panel.js', () => {
     );
   });
 
-  test('stops where the page differs, and says why', async ({ context }) => {
+  test('hands a step it cannot play to the person, and stops there when asked, saying why', async ({ context }) => {
+    await openShadowRoots(context);
     await routePages(context, 'broken');
     await stubChrome(context, running());
     const page = await context.newPage();
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText(
+      "Step 4 could not be played here. Nothing on this page matches getByTestId('add-to-cart').",
+      {
+        timeout: 20_000,
+      },
+    );
+    await expect(hud).toContainText('Click button "Apply coupon"');
+    await expect(hud).toContainText('Do it yourself on the page, then continue.');
+    await hud.getByRole('button', { name: 'Stop here' }).click();
     expect(await verdict(page)).toEqual({
       kind: 'diverged',
       step: 3,
       reason: "Nothing on this page matches getByTestId('add-to-cart').",
     });
+  });
+
+  test('goes on once the person did the step, showing them the page as it began', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'broken');
+    await stubChrome(context, running());
+    await stubWorker(context, {
+      'piwi-replay-step-view': {
+        step: 3,
+        dataUrl: PNG,
+        box: { x: 100, y: 50, width: 200, height: 25 },
+        viewport: { width: 1000, height: 500 },
+      },
+    });
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    const shot = hud.getByRole('img', { name: 'The page as step 4 began, its element outlined' });
+    await expect(shot).toBeVisible({ timeout: 20_000 });
+    await expect(hud).toContainText('Do it yourself on the page, as the screenshot shows, then continue.');
+    // Which element it is, as recorded, and that nothing on this page matches it.
+    await expect(hud.locator('.locs .piwi-loc')).toHaveText(["getByTestId('add-to-cart')"]);
+    await expect(hud).toContainText('None of them finds it on this page.');
+    // The element is outlined where the recording found it.
+    expect(
+      await hud
+        .locator('.shot .mark')
+        .evaluate((mark: HTMLElement) => [mark.style.left, mark.style.top, mark.style.width, mark.style.height]),
+    ).toEqual(['10%', '10%', '20%', '5%']);
+    expect(await clippedInShadows(page)).toEqual([]);
+    await hud.getByRole('button', { name: 'I did it, continue' }).click();
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
+    const state = await replayState(page);
+    expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'done', 'manual', 'failed']);
+    await expect(hud.getByRole('status')).toContainText('1 step played by hand: 4.');
+  });
+
+  test('waits on the page the person’s own action loads, then goes on from the next step', async ({ context }) => {
+    await openShadowRoots(context);
+    // The login page has no Log in button: the person gets to the dashboard their own way.
+    await context.route(`${ORIGIN}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      const body =
+        url.pathname === '/dashboard'
+          ? dashboard('buggy')
+          : `<!doctype html><html><body><input data-testid="username-field" aria-label="Username" /><a href="/dashboard">Go on</a></body></html>`;
+      await route.fulfill({ contentType: 'text/html', body });
+    });
+    await stubChrome(context, running());
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText('Step 3 could not be played here.', { timeout: 20_000 });
+    await page.getByRole('link', { name: 'Go on' }).click();
+    await page.waitForURL('**/dashboard');
+    // The step still waits for the person on the new page.
+    await expect(hud).toContainText('Step 3 could not be played here.');
+    await hud.getByRole('button', { name: 'I did it, continue' }).click();
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
+    const state = await replayState(page);
+    expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'manual', 'done', 'failed']);
+  });
+
+  test('outlines on the page the elements its recorded locators still find, as the page changes', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    // Two buttons answer to the recorded test id: the replay cannot tell which one, the person can.
+    await context.route(`${ORIGIN}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      const body =
+        url.pathname === '/dashboard'
+          ? `<!doctype html><html><body><button data-testid="add-to-cart">Apply coupon</button>
+             <button data-testid="add-to-cart" onclick="this.remove()">Apply coupon (gift)</button>
+             <output data-testid="cart-total">Total: 40</output></body></html>`
+          : LOGIN;
+      await route.fulfill({ contentType: 'text/html', body });
+    });
+    await stubChrome(context, running());
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    const marks = page.locator('#piwi-replay-cursor-host .mark');
+    await expect(hud).toContainText('2 elements on this page match them: outlined.', { timeout: 20_000 });
+    await expect(marks).toHaveCount(2);
+    const box = (await page.getByRole('button', { name: 'Apply coupon', exact: true }).boundingBox())!;
+    const first = (await marks.first().boundingBox())!;
+    expect(first.x).toBeCloseTo(box.x - 3, 0);
+    expect(first.width).toBeCloseTo(box.width + 6, 0);
+    // The page changes while the person acts: one button is gone, one outline with it.
+    await page.getByRole('button', { name: 'Apply coupon (gift)' }).click();
+    await expect(hud).toContainText('1 element on this page matches them: outlined.');
+    await expect(marks).toHaveCount(1);
+    await hud.getByRole('button', { name: 'I did it, continue' }).click();
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
+    await expect(marks).toHaveCount(0);
+  });
+
+  test('goes on without a step the person skips', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'broken');
+    await stubChrome(context, running());
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await hud.getByRole('button', { name: 'Skip this step' }).click({ timeout: 20_000 });
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
+    const state = await replayState(page);
+    expect(state.results[3]).toEqual({ status: 'skipped', detail: 'Skipped.' });
   });
 });
 
@@ -489,6 +616,10 @@ test.describe('replay-panel.js in French', () => {
     const page = await context.newPage();
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText('L’étape 4 n’a pas pu être rejouée ici.', { timeout: 20_000 });
+    expect(await clippedInShadows(page)).toEqual([]);
+    await hud.getByRole('button', { name: 'Arrêter ici' }).click();
     expect(await verdict(page)).toEqual({
       kind: 'diverged',
       step: 3,
@@ -513,7 +644,7 @@ test.describe('replay-panel.js in French', () => {
     await dialog.getByRole('button', { name: 'Rejouer' }).click();
     await expect(dialog.getByRole('alert')).toHaveText('Choisissez d’abord un rapport.');
 
-    const file = dialog.getByLabel('Le .zip du rapport de bug, ou son steps.json');
+    const file = dialog.getByLabel('Le .piwibug du rapport de bug, ou son steps.json');
     await file.setInputFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
     await expect(dialog.getByRole('alert')).toContainText('notes.json n’est pas un fichier d’étapes\u00a0:');
 
@@ -561,6 +692,10 @@ test.describe('replay-panel.js in German', () => {
     const page = await context.newPage();
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud.getByRole('button', { name: 'Hier abbrechen' })).toBeVisible({ timeout: 20_000 });
+    expect(await clippedInShadows(page)).toEqual([]);
+    await hud.getByRole('button', { name: 'Hier abbrechen' }).click();
     expect(await verdict(page)).toMatchObject({ kind: 'diverged' });
     await expect(page.locator('#piwi-replay-hud-host').getByRole('region')).toHaveAttribute('lang', 'de');
     await expect(page.locator('#piwi-replay-hud-host').getByRole('status')).toBeVisible();

@@ -119,10 +119,19 @@ struct DebugMode(bool);
 #[derive(Default)]
 struct PendingOpenFiles(Mutex<Vec<String>>);
 
-/// Keep only arguments that are real `.zip` files on disk; relative paths are
+/// The files the app opens: Playwright archives (`.zip`) and Piwi Picker's
+/// bug reports (`.piwibug`). The dashboard tells them apart by their content.
+const OPENED_EXTENSIONS: [&str; 2] = [".zip", ".piwibug"];
+
+fn is_opened_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    OPENED_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Keep only arguments that are real files the app opens; relative paths are
 /// resolved against the directory the launching process ran from.
-fn collect_zip_args<'a>(args: impl Iterator<Item = &'a str>, cwd: Option<&Path>) -> Vec<String> {
-    args.filter(|a| a.to_lowercase().ends_with(".zip"))
+fn collect_open_args<'a>(args: impl Iterator<Item = &'a str>, cwd: Option<&Path>) -> Vec<String> {
+    args.filter(|a| is_opened_file(a))
         .filter_map(|a| {
             let p = PathBuf::from(a);
             let abs = if p.is_absolute() { p } else { cwd?.join(p) };
@@ -1264,7 +1273,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // A second launch just focuses the running window (never a 2nd
             // server) — and forwards any archives it was asked to open.
-            queue_open_files(app, collect_zip_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
+            queue_open_files(app, collect_open_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
             if let Some(w) = app.get_webview_window("main") {
                 bring_to_front(&w);
             }
@@ -1613,7 +1622,7 @@ pub fn run() {
             let launch_cwd = std::env::current_dir().ok();
             queue_open_files(
                 app.handle(),
-                collect_zip_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
+                collect_open_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
             );
 
             // e2e builds: grant the Playwright plugin's result-callback command to
@@ -1666,7 +1675,7 @@ pub fn run() {
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
                     .map(|p| p.to_string_lossy().to_string())
-                    .filter(|p| p.to_lowercase().ends_with(".zip"))
+                    .filter(|p| is_opened_file(p))
                     .collect();
                 queue_open_files(app_handle, paths);
                 if let Some(w) = app_handle.get_webview_window("main") {
@@ -1680,9 +1689,9 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_log_line, compose_tooltip, debug_mode_requested, discovery_body, ide_launcher_args,
-        is_safe_launcher_command, is_truthy_flag, progress_bar_status, render_status_dot,
-        status_dot_color, write_new_download,
+        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
+        ide_launcher_args, is_safe_launcher_command, is_truthy_flag, progress_bar_status,
+        render_status_dot, status_dot_color, write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -1917,6 +1926,31 @@ mod tests {
         let _ = write_new_download(&dir, "a.txt", b"2").unwrap();
         let p3 = write_new_download(&dir, "a.txt", b"3").unwrap();
         assert_eq!(p3.file_name().unwrap(), "a (2).txt");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn opens_archives_and_bug_reports_that_exist() {
+        let dir = std::env::temp_dir().join(format!("piwi-open-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for name in ["run.zip", "bug.PIWIBUG", "notes.txt"] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        let args = [
+            "--devtools",
+            "run.zip",
+            "bug.PIWIBUG",
+            "notes.txt",
+            "missing.piwibug",
+        ];
+        let opened = collect_open_args(args.into_iter(), Some(dir.as_path()));
+        assert_eq!(
+            opened,
+            [
+                dir.join("run.zip").to_string_lossy().to_string(),
+                dir.join("bug.PIWIBUG").to_string_lossy().to_string(),
+            ]
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

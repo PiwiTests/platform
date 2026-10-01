@@ -124,7 +124,14 @@ test.describe.serial('Bug reports in Jira', () => {
 
   test('the intake says the project files nowhere until it is bound', async ({ request }) => {
     const intake = await (await request.get(`/api/projects/${projectId}/bug-reports/intake`)).json();
-    expect(intake).toEqual({ tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false });
+    expect(intake).toEqual({
+      tracker: null,
+      projectKey: null,
+      locale: null,
+      canCreate: false,
+      fileEvery: false,
+      stepShots: 100,
+    });
 
     const bound = await request.put(`/api/projects/${projectId}/integrations`, {
       data: { connectionId, projectKey: 'SHOP', issueType: '1', locale: 'fr' },
@@ -136,6 +143,7 @@ test.describe.serial('Bug reports in Jira', () => {
       locale: 'fr',
       canCreate: true,
       fileEvery: false,
+      stepShots: 100,
     });
   });
 
