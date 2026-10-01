@@ -37,6 +37,7 @@ function addEnvironment(text: string) {
         :items="branchItems"
         multiple
         create-item
+        open-on-click
         placeholder="Any branch"
         size="xs"
         class="w-full"
@@ -50,6 +51,7 @@ function addEnvironment(text: string) {
         :items="environmentItems"
         multiple
         create-item
+        open-on-click
         placeholder="Any environment"
         size="xs"
         class="w-full"
