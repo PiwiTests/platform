@@ -1,3 +1,4 @@
+import { BUG_REPORT_FILES } from '@piwitests/core/bug-report';
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
 import { t } from '../shared/i18n.js';
 import { readZipEntry } from '../shared/zip.js';
@@ -10,7 +11,7 @@ export async function readStepsFile(name: string, bytes: Uint8Array): Promise<Pi
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
   let text: string;
   if (isZip) {
-    const entry = await readZipEntry(bytes, 'steps.json');
+    const entry = await readZipEntry(bytes, BUG_REPORT_FILES.steps);
     if (!entry) throw new Error(t('replay_zipNoSteps', { file: name }));
     text = new TextDecoder().decode(entry);
   } else {

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
-import { bugContextFrom } from '@piwitests/core/bug-report';
+import { bugContextFrom, bugReportFromFiles, isBugReportArchive } from '@piwitests/core/bug-report';
 import { bugPhrases } from '@piwitests/core/bug-phrases';
 import {
   assembleBugReport,
+  bugReportArchive,
   bugReportEntries,
   bugReportMarkdown,
   NO_SCREENSHOT_TAKEN,
@@ -17,6 +18,7 @@ import {
   type StoredBugEvidence,
 } from '../../src/shared/bug-storage.js';
 import { BUG_RELAY, readRelayedEntry } from '../../src/shared/bug-relay.js';
+import { createZip, readZipEntry } from '../../src/shared/zip.js';
 
 function fakeChromeStorage() {
   const store: Record<string, unknown> = {};
@@ -129,14 +131,32 @@ describe('assembleBugReport', () => {
     });
     const entries = bugReportEntries(report, shots);
     expect(entries.map((e) => e.name)).toEqual([
+      'mimetype',
       'steps.json',
       'coupon-not-applied.spec.ts',
       'bug-report.md',
       'evidence.json',
       'screenshots/1-marked.png',
     ]);
-    expect([...(entries[4]!.data as Uint8Array)]).toEqual([0, 1, 2]);
-    expect(JSON.parse(entries[3]!.data as string)).toMatchObject({ v: 1, context: { pageKey: '/cart' } });
+    expect(entries[0]!.data).toBe('application/vnd.piwi.bug-report+zip');
+    expect([...(entries[5]!.data as Uint8Array)]).toEqual([0, 1, 2]);
+    expect(JSON.parse(entries[4]!.data as string)).toMatchObject({ v: 1, context: { pageKey: '/cart' } });
+  });
+
+  it('writes an archive whose first bytes say it is a bug report, read back as the same report', async () => {
+    const report = assembleBugReport({
+      events: [ev({ kind: 'navigate', value: `${ORIGIN}/cart` })],
+      startedAt: 1,
+      evidence,
+      screenshots: [],
+      context,
+    });
+    const archive = bugReportArchive(report, []);
+    expect(isBugReportArchive(archive)).toBe(true);
+    expect(isBugReportArchive(createZip([{ name: 'steps.json', data: '{}' }]))).toBe(false);
+    const text = async (name: string) => new TextDecoder().decode((await readZipEntry(archive, name))!);
+    const read = bugReportFromFiles({ steps: await text('steps.json'), evidence: await text('evidence.json') });
+    expect(read).toEqual({ ok: true, report });
   });
 });
 
@@ -170,8 +190,8 @@ describe('bugReportMarkdown', () => {
     expect(markdown).toContain('# Bug sur /cart');
     expect(markdown).toContain('2. La page devrait être `/thanks`');
     expect(markdown).toContain('Aucune capture d’écran\u00a0: aucune n’a été prise');
-    const [steps, spec] = bugReportEntries(report(), [], french);
-    const [englishSteps, englishSpec] = bugReportEntries(report(), []);
+    const [, steps, spec] = bugReportEntries(report(), [], french);
+    const [, englishSteps, englishSpec] = bugReportEntries(report(), []);
     expect(steps).toEqual(englishSteps);
     expect(spec).toEqual(englishSpec);
   });

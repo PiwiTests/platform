@@ -1,4 +1,4 @@
-import { describeStepInWords } from '@piwitests/core/bug-report';
+import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInWords } from '@piwitests/core/bug-report';
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
@@ -1032,7 +1032,7 @@ function openChooser(lastReport: PiwiSteps | null): void {
 
   const file = document.createElement('input');
   file.type = 'file';
-  file.accept = '.zip,.json,application/zip,application/json';
+  file.accept = `.${BUG_REPORT_EXTENSION},.zip,.json,${BUG_REPORT_MEDIA_TYPE},application/zip,application/json`;
   file.setAttribute('aria-label', t('replay_fileLabel'));
   file.addEventListener('change', () => {
     const picked = file.files?.[0];

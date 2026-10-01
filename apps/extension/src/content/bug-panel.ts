@@ -8,6 +8,8 @@ import {
   type StepAssertion,
 } from '@piwitests/core/recording';
 import {
+  BUG_REPORT_EXTENSION,
+  BUG_REPORT_MEDIA_TYPE,
   bugContextFrom,
   describeStepInWords,
   emptyBugEvidence,
@@ -25,8 +27,8 @@ import { createLocatorEngine } from './locator-engine.js';
 import { buildOutline, outlineRoot } from './bug-outline.js';
 import {
   assembleBugReport,
+  bugReportArchive,
   bugReportMarkdown,
-  bugReportZip,
   NO_SCREENSHOT_TAKEN,
   type ReportLanguage,
 } from './bug-report-files.js';
@@ -1008,13 +1010,15 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     t('bug_copyTestHint');
   action(t('bug_copyReport'), '', (b) => void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b)).title =
     t('bug_copyReportHint');
-  action(t('bug_downloadZip'), '', () => {
+  action(t('bug_downloadReport'), '', () => {
     const current = report();
     downloadBlob(
-      new Blob([bugReportZip(current, screenshots, reportLanguage()) as BlobPart], { type: 'application/zip' }),
-      `piwi-bug-${fileStamp(current.context.time)}.zip`,
+      new Blob([bugReportArchive(current, screenshots, reportLanguage()) as BlobPart], {
+        type: BUG_REPORT_MEDIA_TYPE,
+      }),
+      `piwi-bug-${fileStamp(current.context.time)}.${BUG_REPORT_EXTENSION}`,
     );
-  }).title = t('bug_downloadZipHint');
+  }).title = t('bug_downloadReportHint');
 
   const controller = new AbortController();
   const closePanel = () => {

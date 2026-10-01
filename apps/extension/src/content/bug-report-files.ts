@@ -2,6 +2,8 @@ import { buildSession, normalizeSteps, type RawCaptureEvent } from '@piwitests/c
 import { toStepsDocument } from '@piwitests/core/steps';
 import { bugPhrases, type BugPhrases } from '@piwitests/core/bug-phrases';
 import {
+  BUG_REPORT_FILES,
+  BUG_REPORT_MEDIA_TYPE,
   BUG_REPORT_VERSION,
   bugTitle,
   renderBugMarkdown,
@@ -83,8 +85,9 @@ export function bugReportMarkdown(report: BugReport, language: ReportLanguage = 
 }
 
 /**
- * Every file of the report's archive: the steps document, the failing test,
- * the Markdown in `language`, the evidence with the context, and the screenshots.
+ * Every file of the report's archive: its media type first, then the steps
+ * document, the failing test, the Markdown in `language`, the evidence with
+ * the context, and the screenshots.
  */
 export function bugReportEntries(
   report: BugReport,
@@ -92,18 +95,20 @@ export function bugReportEntries(
   language: ReportLanguage = ENGLISH_REPORT,
 ): ZipEntry[] {
   return [
-    { name: 'steps.json', data: `${JSON.stringify(report.steps, null, 2)}\n` },
+    { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
+    { name: BUG_REPORT_FILES.steps, data: `${JSON.stringify(report.steps, null, 2)}\n` },
     { name: specFileName(report), data: renderBugSpec(report).code },
-    { name: 'bug-report.md', data: bugReportMarkdown(report, language) },
+    { name: BUG_REPORT_FILES.markdown, data: bugReportMarkdown(report, language) },
     {
-      name: 'evidence.json',
+      name: BUG_REPORT_FILES.evidence,
       data: `${JSON.stringify({ v: report.v, context: report.context, evidence: report.evidence }, null, 2)}\n`,
     },
     ...screenshots.map((shot, i) => ({ name: screenshotFile(shot, i), data: dataUrlBytes(shot.dataUrl) })),
   ];
 }
 
-export function bugReportZip(
+/** The report's `.piwibug` archive. */
+export function bugReportArchive(
   report: BugReport,
   screenshots: StoredBugScreenshot[],
   language: ReportLanguage = ENGLISH_REPORT,

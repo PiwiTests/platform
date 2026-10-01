@@ -601,6 +601,67 @@ function checkContext(v: unknown): BugContext {
 }
 
 /**
+ * A bug report saved as a file is a zip archive with the `.piwibug` extension.
+ * Its first entry is `mimetype`, stored without compression and holding
+ * {@link BUG_REPORT_MEDIA_TYPE}, as EPUB and OpenDocument files do: whatever
+ * the file is named, its first bytes say what it is.
+ */
+export const BUG_REPORT_MEDIA_TYPE = 'application/vnd.piwi.bug-report+zip';
+export const BUG_REPORT_EXTENSION = 'piwibug';
+
+/** The files of a bug report archive, beside the spec and the screenshots. */
+export const BUG_REPORT_FILES = {
+  mediaType: 'mimetype',
+  steps: 'steps.json',
+  evidence: 'evidence.json',
+  markdown: 'bug-report.md',
+} as const;
+
+/** Whether `bytes` start as a bug report archive does: a stored `mimetype` entry holding the media type. */
+export function isBugReportArchive(bytes: Uint8Array): boolean {
+  const name = BUG_REPORT_FILES.mediaType;
+  const type = BUG_REPORT_MEDIA_TYPE;
+  const start = 30 + name.length;
+  if (bytes.length < start + type.length) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(0, true) !== 0x04034b50 || view.getUint16(8, true) !== 0) return false;
+  if (view.getUint16(26, true) !== name.length || view.getUint16(28, true) !== 0) return false;
+  if (view.getUint32(18, true) !== type.length) return false;
+  for (let i = 0; i < name.length; i++) if (bytes[30 + i] !== name.charCodeAt(i)) return false;
+  for (let i = 0; i < type.length; i++) if (bytes[start + i] !== type.charCodeAt(i)) return false;
+  return true;
+}
+
+/**
+ * Reads a bug report from the files of its archive: `steps.json`, and
+ * `evidence.json` (`{ v, context, evidence }`), null when the archive has
+ * none. Checked as {@link parseBugReport} checks a report.
+ */
+export function bugReportFromFiles(files: { steps: string; evidence: string | null }): ParseBugReportResult {
+  let steps: unknown;
+  try {
+    steps = JSON.parse(files.steps);
+  } catch {
+    return { ok: false, errors: [`${BUG_REPORT_FILES.steps}: not valid JSON`] };
+  }
+  let evidence: Record<string, unknown> = {};
+  if (files.evidence != null) {
+    try {
+      const parsed: unknown = JSON.parse(files.evidence);
+      if (isRecord(parsed)) evidence = parsed;
+    } catch {
+      return { ok: false, errors: [`${BUG_REPORT_FILES.evidence}: not valid JSON`] };
+    }
+  }
+  return parseBugReport({
+    v: evidence.v ?? BUG_REPORT_VERSION,
+    steps,
+    evidence: evidence.evidence,
+    context: evidence.context,
+  });
+}
+
+/**
  * Reads a bug report from outside (a request, a file): the steps through
  * `parseSteps`, and the evidence and context field by field, with every list
  * and text capped. Evidence that does not fit its shape is dropped rather

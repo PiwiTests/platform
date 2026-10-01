@@ -2227,11 +2227,11 @@
   "bug_copyReportHint": {
     "message": "O relatório em Markdown, para um ticket ou uma mensagem"
   },
-  "bug_downloadZip": {
-    "message": "Baixar o .zip"
+  "bug_downloadReport": {
+    "message": "Baixar o .piwibug"
   },
-  "bug_downloadZipHint": {
-    "message": "steps.json, o teste, o relatório em Markdown, evidence.json e as capturas de tela"
+  "bug_downloadReportHint": {
+    "message": "steps.json, o teste, o relatório em Markdown, evidence.json e as capturas de tela, num arquivo zip"
   },
   "bug_replay": {
     "message": "Reproduzir"
@@ -2848,7 +2848,7 @@
     "message": "Usar o relatório de bug gravado neste navegador"
   },
   "replay_chooseFile": {
-    "message": "Ou escolha o .zip do relatório, ou o steps.json dele, salvo pelo Piwi Picker:"
+    "message": "Ou escolha o .piwibug do relatório, ou o steps.json dele, salvo pelo Piwi Picker:"
   },
   "replay_fromPiwi": {
     "message": "Ou um relatório de bug de $project$ no Piwi:",
@@ -3027,7 +3027,7 @@
     "message": "A solicitação expirou antes de ser iniciada."
   },
   "replay_fileLabel": {
-    "message": "O .zip do relatório de bug, ou o steps.json dele"
+    "message": "O .piwibug do relatório de bug, ou o steps.json dele"
   },
   "replay_untitled": {
     "message": "Relatório sem título"
@@ -3086,11 +3086,11 @@
     "message": "Primeiro, escolha um relatório."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ não tem steps.json: escolha o .zip salvo pelo Piwi Picker, ou o steps.json dele.",
+    "message": "$file$ não tem steps.json: escolha o .piwibug salvo pelo Piwi Picker, ou o steps.json dele.",
     "placeholders": {
       "file": {
         "content": "$1",
-        "example": "bug.zip"
+        "example": "bug.piwibug"
       }
     }
   },

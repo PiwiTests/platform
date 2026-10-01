@@ -2227,11 +2227,11 @@
   "bug_copyReportHint": {
     "message": "El informe en Markdown, para un ticket o un mensaje"
   },
-  "bug_downloadZip": {
-    "message": "Descargar el .zip"
+  "bug_downloadReport": {
+    "message": "Descargar el .piwibug"
   },
-  "bug_downloadZipHint": {
-    "message": "steps.json, la prueba, el informe en Markdown, evidence.json y las capturas de pantalla"
+  "bug_downloadReportHint": {
+    "message": "steps.json, la prueba, el informe en Markdown, evidence.json y las capturas de pantalla, en un archivo zip"
   },
   "bug_replay": {
     "message": "Reproducir"
@@ -2848,7 +2848,7 @@
     "message": "Usar el informe de bug grabado en este navegador"
   },
   "replay_chooseFile": {
-    "message": "O elige el .zip del informe, o su steps.json, guardado por Piwi Picker:"
+    "message": "O elige el .piwibug del informe, o su steps.json, guardado por Piwi Picker:"
   },
   "replay_fromPiwi": {
     "message": "O un informe de bug de $project$ en Piwi:",
@@ -3027,7 +3027,7 @@
     "message": "La solicitud caducó antes de iniciarse."
   },
   "replay_fileLabel": {
-    "message": "El .zip del informe de bug, o su steps.json"
+    "message": "El .piwibug del informe de bug, o su steps.json"
   },
   "replay_untitled": {
     "message": "Informe sin título"
@@ -3086,11 +3086,11 @@
     "message": "Primero elige un informe."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ no contiene ningún steps.json: elige el .zip guardado por Piwi Picker, o su steps.json.",
+    "message": "$file$ no contiene ningún steps.json: elige el .piwibug guardado por Piwi Picker, o su steps.json.",
     "placeholders": {
       "file": {
         "content": "$1",
-        "example": "bug.zip"
+        "example": "bug.piwibug"
       }
     }
   },

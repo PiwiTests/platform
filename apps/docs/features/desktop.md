@@ -120,6 +120,10 @@ enough clean runs, which tells when a flake started.
 Drop a Playwright blob report or trace (`.zip`) on the window, or open one with **Open with → Piwi Dashboard**, and
 pick the project: the file is imported from disk, and several traces can form one run. Imports behave as on the [import page](/guide/importing-runs).
 
+A bug report saved by Piwi Picker (`.piwibug`, see [Report a bug](./report-a-bug#the-report)) opens the same
+way, and double-clicking one opens the app: it becomes one of the project's [bug reports](./bug-reports), with its
+screenshots, as if it had been sent with **Send to Piwi…**.
+
 ## Connecting AI assistants
 
 The app serves the [MCP server](/features/mcp) with three local tools a hosted instance cannot offer:

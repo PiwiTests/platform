@@ -1,6 +1,6 @@
 ---
 title: Report a bug
-description: "Record the steps to a bug in Piwi Picker, mark what is wrong, and get a failing Playwright test, a Markdown report and a zip with the evidence, with no Piwi instance."
+description: "Record the steps to a bug in Piwi Picker, mark what is wrong, and get a failing Playwright test, a Markdown report and a `.piwibug` file with the evidence, with no Piwi instance."
 lang: en-US
 ---
 
@@ -11,7 +11,7 @@ lang: en-US
 Reproduce a bug in your browser, say what the page should show, and get the test that proves it. **Report a bug** is
 a tool of the [Piwi Picker extension](./extension): it records your steps with the recorder, lets you mark what is
 wrong ("this should read Total: 45"), collects evidence from the page, and hands you a failing Playwright test, a
-Markdown report and a zip for the developer. Everything is built in your browser; nothing is sent anywhere unless you
+Markdown report and a `.piwibug` file for the developer. Everything is built in your browser; nothing is sent anywhere unless you
 send it to your [Piwi instance](./bug-reports).
 
 ## Recording the steps
@@ -83,8 +83,11 @@ tab and choose **Take a screenshot**.
   `test.fail()` and it guards the fix.
 - **Copy report** copies the report as Markdown, for an issue or a message: the steps in plain words, what was
   expected and what the page showed, the notes, the console entries, the failed requests and the outline.
-- **Download .zip** saves `steps.json` (a [steps file](/reference/steps-format)), the spec, `bug-report.md`,
-  `evidence.json` and the screenshots. A developer can render the steps for their own project with
+- **Download .piwibug** saves the report as one file: `steps.json` (a [steps file](/reference/steps-format)), the
+  spec, `bug-report.md`, `evidence.json` and the screenshots, in a zip archive whose first entry, `mimetype`, says it
+  is a bug report (`application/vnd.piwi.bug-report+zip`). Replay and the [desktop app](./desktop#importing-local-files)
+  open it; rename it to `.zip` to look inside, or to attach it where only known file types are accepted, such as a
+  GitHub issue: both read it whatever its name. A developer can render the steps for their own project with
   [`piwi codegen`](/reference/cli#codegen).
 
 Typed values stay as you typed them, except passwords, which are never recorded: the spec reads them from an
@@ -101,8 +104,8 @@ it does, then says whether the bug shows there. It suits the developer who recei
 own dev server, and the steps run there, with your session and your browser's developer tools at hand.
 
 - From the finished report, **Replay** plays it at once on the same site.
-- From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the `.zip`
-  or its `steps.json`, the report just recorded in this browser, or, connected, one of the project's reports on Piwi.
+- From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the `.piwibug`
+  (or the same file named `.zip`) or its `steps.json`, the report just recorded in this browser, or, connected, one of the project's reports on Piwi.
   The steps run on the tab's site, whichever site they were recorded on.
 
 Each element is found with the locator the failing test uses, and waited for as Playwright waits: exactly one match,

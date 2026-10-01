@@ -1,13 +1,16 @@
 import { describe, test, expect } from 'vitest';
 import ts from 'typescript';
 import {
+  BUG_REPORT_MEDIA_TYPE,
   BUG_REPORT_VERSION,
   bugContextFrom,
+  bugReportFromFiles,
   bugTitle,
   describeBrowser,
   describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
+  isBugReportArchive,
   parseBugReport,
   renderBugMarkdown,
   renderBugSpec,
@@ -330,6 +333,55 @@ describe('parseBugReport', () => {
     expect(parsed.report.evidence.outline!.split('\n')).toHaveLength(400);
     expect(parsed.report.context.origin).toBeNull();
     expect(parsed.report.context.path).toBeNull();
+  });
+});
+
+describe('bug report archive', () => {
+  /** The local header and data of one stored zip entry, as an archive starts. */
+  function firstEntry(name: string, data: string, method = 0): Uint8Array {
+    const nameBytes = new TextEncoder().encode(name);
+    const dataBytes = new TextEncoder().encode(data);
+    const out = new Uint8Array(30 + nameBytes.length + dataBytes.length);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint16(8, method, true);
+    view.setUint32(18, dataBytes.length, true);
+    view.setUint32(22, dataBytes.length, true);
+    view.setUint16(26, nameBytes.length, true);
+    out.set(nameBytes, 30);
+    out.set(dataBytes, 30 + nameBytes.length);
+    return out;
+  }
+
+  test('tells a bug report archive by its first entry, whatever the file is named', () => {
+    expect(isBugReportArchive(firstEntry('mimetype', BUG_REPORT_MEDIA_TYPE))).toBe(true);
+    expect(isBugReportArchive(firstEntry('mimetype', 'application/epub+zip'))).toBe(false);
+    expect(isBugReportArchive(firstEntry('mimetype', BUG_REPORT_MEDIA_TYPE, 8))).toBe(false);
+    expect(isBugReportArchive(firstEntry('steps.json', '{}'))).toBe(false);
+    expect(isBugReportArchive(new Uint8Array([0x50, 0x4b]))).toBe(false);
+  });
+
+  test('reads a report back from its steps.json and evidence.json', () => {
+    const report = couponReport();
+    const parsed = bugReportFromFiles({
+      steps: JSON.stringify(report.steps),
+      evidence: JSON.stringify({ v: report.v, context: report.context, evidence: report.evidence }),
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.report.steps).toEqual(report.steps);
+    expect(parsed.report.evidence.requests).toEqual(report.evidence.requests);
+    expect(parsed.report.context.pageKey).toBe(report.context.pageKey);
+  });
+
+  test('reads the steps alone, and refuses files that are not JSON', () => {
+    const parsed = bugReportFromFiles({ steps: JSON.stringify(couponReport().steps), evidence: null });
+    expect(parsed.ok && parsed.report.evidence).toEqual(emptyBugEvidence());
+    expect(bugReportFromFiles({ steps: '{', evidence: null })).toEqual({
+      ok: false,
+      errors: ['steps.json: not valid JSON'],
+    });
+    expect(bugReportFromFiles({ steps: '{}', evidence: '{' }).ok).toBe(false);
   });
 });
 

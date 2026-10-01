@@ -234,7 +234,7 @@ describe('readStepsFile', () => {
   it("says it in French, the file checker's own message kept in English", async () => {
     setBrowserLanguage('fr');
     await expect(readStepsFile('other.zip', createZip([{ name: 'a.txt', data: 'x' }]))).rejects.toThrow(
-      /^other\.zip ne contient pas de steps\.json\u00a0: choisissez le \.zip enregistré par Piwi Picker/,
+      /^other\.zip ne contient pas de steps\.json\u00a0: choisissez le \.piwibug enregistré par Piwi Picker/,
     );
     await expect(readStepsFile('notes.json', new TextEncoder().encode('{"a":1}'))).rejects.toThrow(
       /^notes\.json n’est pas un fichier d’étapes\u00a0: \S/,

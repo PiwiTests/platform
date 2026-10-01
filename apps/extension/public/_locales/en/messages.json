@@ -2689,13 +2689,13 @@
     "message": "The report as Markdown, for a ticket or a message",
     "description": "Report a bug: tooltip of “Copy report”."
   },
-  "bug_downloadZip": {
-    "message": "Download .zip",
-    "description": "Report a bug, finished report: button that downloads every file of the report in one .zip archive."
+  "bug_downloadReport": {
+    "message": "Download .piwibug",
+    "description": "Report a bug, finished report: button that downloads every file of the report as one .piwibug file, a zip archive that Piwi Picker’s Replay and the Piwi desktop app open. “.piwibug” is a file extension, kept as it is."
   },
-  "bug_downloadZipHint": {
-    "message": "steps.json, the test, the report in Markdown, evidence.json and the screenshots",
-    "description": "Report a bug: tooltip of “Download .zip”: the files in the archive. File names are never translated."
+  "bug_downloadReportHint": {
+    "message": "steps.json, the test, the report in Markdown, evidence.json and the screenshots, in one zip archive",
+    "description": "Report a bug: tooltip of “Download .piwibug”: the files in the archive. File names are never translated."
   },
   "bug_replay": {
     "message": "Replay",
@@ -3406,8 +3406,8 @@
     "description": "Replay dialog button: replays the last bug report recorded with Piwi Picker in this browser."
   },
   "replay_chooseFile": {
-    "message": "Or choose the report’s .zip, or its steps.json, saved by Piwi Picker:",
-    "description": "Replay dialog, above the file field. “.zip” and “steps.json” are file names, kept as they are."
+    "message": "Or choose the report’s .piwibug, or its steps.json, saved by Piwi Picker:",
+    "description": "Replay dialog, above the file field. “.piwibug” and “steps.json” are file names, kept as they are."
   },
   "replay_fromPiwi": {
     "message": "Or a bug report of $project$ on Piwi:",
@@ -3614,7 +3614,7 @@
     "description": "Run with Playwright dialog: the request was not started in time, or the desktop app no longer knows it."
   },
   "replay_fileLabel": {
-    "message": "The bug report’s .zip, or its steps.json",
+    "message": "The bug report’s .piwibug, or its steps.json",
     "description": "Replay dialog: aria-label of the file field."
   },
   "replay_untitled": {
@@ -3682,12 +3682,12 @@
     "description": "Replay dialog error: Replay was clicked before a report was chosen."
   },
   "replay_zipNoSteps": {
-    "message": "$file$ has no steps.json: choose the .zip saved by Piwi Picker, or its steps.json.",
-    "description": "Replay dialog error: the chosen .zip holds no steps.json. $file$ is the file’s name.",
+    "message": "$file$ has no steps.json: choose the .piwibug saved by Piwi Picker, or its steps.json.",
+    "description": "Replay dialog error: the chosen archive holds no steps.json. $file$ is the file’s name.",
     "placeholders": {
       "file": {
         "content": "$1",
-        "example": "bug.zip"
+        "example": "bug.piwibug"
       }
     }
   },

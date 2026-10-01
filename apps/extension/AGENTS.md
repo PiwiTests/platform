@@ -320,7 +320,10 @@ missing** checks its `getByRole` with the in-page engine and refuses an element 
 Evidence lives under its own `chrome.storage.session` keys (`bug-storage.ts`), not in
 `RecordingState`, which is rewritten on every keystroke. The report and its files are assembled
 by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMarkdown`,
-`renderBugSpec`); the zip is written by `shared/zip.ts`, stored without compression.
+`renderBugSpec`); the archive is written by `shared/zip.ts`, stored without compression, and downloaded as
+`.piwibug`: its first entry is `mimetype` holding `BUG_REPORT_MEDIA_TYPE`, which `isBugReportArchive` (core) reads to
+tell it from any other zip. Readers go by content, never by name: Replay and the desktop app take the same file named
+`.zip`.
 
 **Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
 in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors

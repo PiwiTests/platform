@@ -513,7 +513,7 @@ test.describe('replay-panel.js in French', () => {
     await dialog.getByRole('button', { name: 'Rejouer' }).click();
     await expect(dialog.getByRole('alert')).toHaveText('Choisissez d’abord un rapport.');
 
-    const file = dialog.getByLabel('Le .zip du rapport de bug, ou son steps.json');
+    const file = dialog.getByLabel('Le .piwibug du rapport de bug, ou son steps.json');
     await file.setInputFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
     await expect(dialog.getByRole('alert')).toContainText('notes.json n’est pas un fichier d’étapes\u00a0:');
 

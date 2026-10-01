@@ -11,7 +11,7 @@ import { stubChromeI18n } from './i18n-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
 import { readStoredZip } from '../zip-reader.js';
 import { engineBundle } from './engine-bundle.js';
-import { emptyBugEvidence, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
+import { emptyBugEvidence, isBugReportArchive, renderBugSpec, type BugReport } from '@piwitests/core/bug-report';
 import { parseSteps, type PiwiSteps } from '@piwitests/core/steps';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
 
@@ -158,7 +158,7 @@ test.describe('Report a bug', () => {
     expect(await hostPresent(page, 'piwi-record-hud-host')).toBe(false);
     expect(await hostPresent(page, 'piwi-record-frame-host')).toBe(false);
 
-    // Finish panel, in its closed shadow root: close, title, Copy failing test, Copy report, Download .zip.
+    // Finish panel, in its closed shadow root: close, title, Copy failing test, Copy report, Download .piwibug.
     await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await page.keyboard.type('Coupon not applied to the total');
@@ -200,9 +200,12 @@ test.describe('Report a bug', () => {
     await page.keyboard.press('Tab');
     await page.keyboard.press('Enter');
     const file = await download;
-    expect(file.suggestedFilename()).toMatch(/^piwi-bug-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.zip$/);
-    const files = readStoredZip(new Uint8Array(await readFile((await file.path())!)));
+    expect(file.suggestedFilename()).toMatch(/^piwi-bug-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}\.piwibug$/);
+    const archive = new Uint8Array(await readFile((await file.path())!));
+    expect(isBugReportArchive(archive)).toBe(true);
+    const files = readStoredZip(archive);
     expect([...files.keys()]).toEqual([
+      'mimetype',
       'steps.json',
       'coupon-not-applied-to-the-total.spec.ts',
       'bug-report.md',
@@ -381,7 +384,13 @@ test.describe('Report a bug', () => {
     expect(await panelLang(page, 'piwi-record-review-host', '.panel')).toBe('fr');
     await expect(review.getByText('Rapport de bug · 2 étapes')).toBeVisible();
     await expect(review.getByLabel('Titre')).toBeVisible();
-    for (const name of ['Copier le test en échec', 'Copier le rapport', 'Télécharger le .zip', 'Rejouer', 'Abandonner'])
+    for (const name of [
+      'Copier le test en échec',
+      'Copier le rapport',
+      'Télécharger le .piwibug',
+      'Rejouer',
+      'Abandonner',
+    ])
       await expect(review.getByRole('button', { name })).toBeVisible();
     await expect(review.getByText(/^Pas de capture d’écran\u00a0: Chrome ne laisse/)).toBeVisible();
     await expect(review.getByText('Tout reste dans ce navigateur\u00a0: rien n’est envoyé nulle part.')).toBeVisible();
