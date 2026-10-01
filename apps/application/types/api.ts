@@ -1476,6 +1476,8 @@ export interface DiagnosisContextCoverage {
     gitCommand?: string | null;
     /** Whether a repository access token is set for the project or the instance. */
     hasToken?: boolean;
+    /** The commits were read with git in the folder the desktop app links to the project, not from the host. */
+    localGit?: boolean;
   } | null;
   /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
   alreadyGreen?: boolean;

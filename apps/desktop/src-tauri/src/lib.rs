@@ -477,7 +477,8 @@ fn write_discovery_file(
 
 /// The discovery file's content: the address and token, and the projects linked
 /// to a folder on this machine, so an editor opened on one of those folders
-/// connects to its project with no setup. Readers ignore fields they do not know.
+/// connects to its project with no setup, and the bundled server reads a
+/// project's git history from its folder. Readers ignore fields they do not know.
 fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRecord>) -> serde_json::Value {
     let mut projects: Vec<(i64, &str)> = links
         .iter()

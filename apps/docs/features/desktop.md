@@ -67,8 +67,9 @@ A dashboard link opened in your browser opens in the app instead.
 name it would report under and checks the setup (a Playwright config, Playwright installed, the reporter wired in);
 anything missing is a warning, and `npx @piwitests/reporter init` in the folder fixes it. The link to the folder
 stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
-**Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders, and
-[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set.
+**Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders;
+[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
+of the repository serves its git history without an [SCM token](/guide/source-control#on-the-desktop-app).
 
 ## Running tests from the app
 
@@ -86,7 +87,7 @@ Playwright and the app's bundled Node. The first time, it asks you to link the p
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the dialog to fix the link.
 
 The run uses your project's own Playwright config, so its results come here like a run from your terminal, and the
-tray links to the new run. The **Local folder** checks show whether Playwright and the reporter are set up.
+tray links to the new run.
 
 ### Reproducing a failure and finding the breaking commit
 
