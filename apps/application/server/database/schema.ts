@@ -42,6 +42,8 @@ export const {
   bugReproductions,
   flakeExperiments,
   flakeArms,
+  resourceFindings,
+  resourceOccurrences,
   networkRequests,
   accountTokens,
   notificationChannels,

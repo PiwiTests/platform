@@ -80,6 +80,26 @@ capability, a leaky run in the demo seed and in the run simulator, and the docs.
   never used, listeners pile up on a worker-scoped page and a test leaves a server running. The run before it is clean,
   for comparison. The simulator's **Leaky run** replays the same story on `e2e-checkout`, from the same builder
   (`shared/demo/demo-resources.mjs`); its report lands with `finish`.
+
+**PR 4 built 2026-10-01**: finding history and fix verification, the gate's leak rules, the pull-request line, two MCP
+tools, and each finding's history on the Resources tab. What changed while building PR 4:
+
+- A finding's identity drops line numbers from where it was opened, so an edit above the line keeps its history; two
+  leaks in one file from the same fixture or call share it. The identity is plain JS
+  (`shared/resource-fingerprint.mjs`), so the demo seed writes the same rows the server does.
+- Runs are ordered by start time, not by id: an imported run can be older than runs stored before it.
+- A clean run vouches for a finding only when it is a full run of the default branch (a run with no branch counts as
+  one) whose report could have shown it: with the fixtures on, or any report for a probable leak. The first of the five
+  is recorded as the run that fixed it.
+- "New" is read against the base branch (the pull request's target, else the default branch) from the run's own report
+  and earlier runs' occurrences, so the gate and the comment do not wait for the run's history to be recorded.
+- `--max-leaks` and `--max-new-leaks` count leaked and probable findings, one per opening line. A leak rule on a run
+  that sent no resource report is a violation.
+- The pull-request comment lists new leaks only; idle pages and piling owners stay on the tab until PR 6's waste
+  findings.
+- The demo's three runs before the leaky one now carry the server a test leaves running, so that finding's history
+  spans four runs while the leaky run's own findings are new.
+- Not built: the daily rollups for analytics, and per-finding notifications.
 - The bench's `resources` rung measured +15 ms and +0 ms per test over `full` in two runs of four rounds (1.3% and
   0%), inside the 3% the Verification section sets.
 

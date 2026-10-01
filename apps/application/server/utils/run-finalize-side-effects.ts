@@ -10,12 +10,14 @@ import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { classifyRunFlakyTests } from '#shared/handlers/flaky-classify';
 import { isLabRun } from '#shared/handlers/probes';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
+import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
 
 /**
  * The finalize side effects for a finished run: the daily rollup of its cell,
- * regression signals, auto markers, flaky root causes, AI diagnosis,
- * notifications, pull-request feedback and auto-heal.
+ * regression signals, auto markers, flaky root causes, the history of its
+ * resource findings, AI diagnosis, notifications, pull-request feedback and
+ * auto-heal.
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the lab stamps are honored everywhere: a probe run or a
@@ -49,6 +51,9 @@ export function runFinalizeSideEffects(
   syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
   classifyRunFlakyTests(db, run.projectId, id).catch((e) =>
     console.error('[flaky-classify] classifyRunFlakyTests failed', e),
+  );
+  recordRunResourceFindings(db, id).catch((e) =>
+    console.error('[resource-findings] recordRunResourceFindings failed', e),
   );
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));

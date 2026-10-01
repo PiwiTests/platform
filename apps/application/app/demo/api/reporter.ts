@@ -58,6 +58,7 @@ import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
+import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
   normalizeTestLocks,
@@ -1098,6 +1099,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
       await syncAutoMarkersForRun(db, id).catch(() => {});
+      await recordRunResourceFindings(db, id).catch(() => {});
       await upsertDailyRollup(db, id).catch(() => {});
       publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
@@ -1183,6 +1185,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await recordRunResourceFindings(db, id).catch(() => {});
   await upsertDailyRollup(db, id).catch(() => {});
   publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 

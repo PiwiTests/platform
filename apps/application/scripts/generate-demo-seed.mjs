@@ -43,6 +43,7 @@ import {
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
+import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Overridable so concurrent callers (e.g. two unit test files regenerating in
@@ -1650,15 +1651,19 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   }
 }
 
-// ── Resources: a leaky run and a clean one (post-processing, rng-free) ─────────
+// ── Resources: a leaky run and its history (post-processing, rng-free) ──────
 // Web Dashboard's newest run is a leaky one: its login fixture opens a browser
 // context per test and never closes it, so every test after the first finds
-// the earlier tests' pages still open in its worker. The run before it closes
-// everything it opens, for comparison. Both carry what each execution cost and
-// the run's report, as the reporter sends them.
+// the earlier tests' pages still open in its worker. The three runs before it
+// close what they open, but one of their tests has left a server running in its
+// worker for a while. Each run carries what its executions cost and its report,
+// as the reporter sends them, and the findings' history is written as the
+// server records it on finish.
+const RESOURCE_FINDINGS = [];
+const RESOURCE_OCCURRENCES = [];
 {
   const webRuns = TEST_RUNS.filter((run) => run.project_id === 5).sort((a, b) => b.start_time - a.start_time);
-  for (const [index, run] of webRuns.slice(0, 2).entries()) {
+  for (const [index, run] of webRuns.slice(0, 4).entries()) {
     const leaky = index === 0;
     const lanes = new Map();
     for (const row of TEST_RUNS_CASES) {
@@ -1685,6 +1690,7 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
       parts: [
         demoResourceReport({
           leaky,
+          handle: true,
           wallMs: run.duration,
           workers: [...lanes.entries()]
             .sort((a, b) => a[0] - b[0])
@@ -1695,6 +1701,52 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
         }),
       ],
     };
+  }
+
+  // The history, oldest run first, as recordRunResourceFindings writes it.
+  const byFingerprint = new Map();
+  for (const run of webRuns.slice(0, 4).reverse()) {
+    for (const finding of run.resource_report.parts[0].findings) {
+      const fingerprint = resourceFingerprint(finding);
+      let row = byFingerprint.get(fingerprint);
+      if (!row) {
+        row = {
+          id: RESOURCE_FINDINGS.length + 1,
+          project_id: run.project_id,
+          fingerprint,
+          verdict: finding.verdict,
+          kind: finding.kind,
+          place: finding.where,
+          site: finding.site ?? null,
+          first_seen_run_id: run.id,
+          last_seen_run_id: run.id,
+          first_seen_at: run.start_time,
+          last_seen_at: run.start_time,
+          occurrences: 0,
+          status: 'open',
+          clean_runs: 0,
+          created_at: run.start_time,
+          updated_at: run.start_time,
+        };
+        byFingerprint.set(fingerprint, row);
+        RESOURCE_FINDINGS.push(row);
+      }
+      row.last_seen_run_id = run.id;
+      row.last_seen_at = run.start_time;
+      row.occurrences++;
+      row.updated_at = run.start_time;
+      RESOURCE_OCCURRENCES.push({
+        id: RESOURCE_OCCURRENCES.length + 1,
+        finding_id: row.id,
+        run_id: run.id,
+        branch: run.branch,
+        count: finding.count,
+        tests: finding.tests,
+        held_ms: finding.heldMs ?? null,
+        after_test_cpu_ms: finding.afterTestCpuMs ?? null,
+        pages: finding.pages ?? null,
+      });
+    }
   }
 }
 
@@ -3642,6 +3694,7 @@ const REBASE_SQL = [
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE failure_diagnosis_versions SET created_at = created_at + ${D};`,
@@ -4555,6 +4608,8 @@ const lines = [
   '-- Flake-lab experiments and their arms (references test_cases)',
   insert('flake_experiments', FLAKE_EXPERIMENTS),
   insert('flake_arms', FLAKE_ARMS),
+  insert('resource_findings', RESOURCE_FINDINGS),
+  insert('resource_occurrences', RESOURCE_OCCURRENCES),
   '',
   '-- Feature graph nodes (Test Map)',
   insert('graph_nodes', GRAPH_NODES),

@@ -56,6 +56,8 @@ Policy (at least one is required):
   --fail-on-new-cluster    Fail when this run introduced a new failure cluster
   --fail-on-flaky          Fail when this run contains any flaky test
   --require-selection <key>  Fail when a test the named selection matches did not run or failed
+  --max-leaks <n>          Fail when the run left more than n browsers, contexts or pages open (per opening line)
+  --max-new-leaks <n>      Fail when more than n of those were never seen on the base branch
 
 Warn-only (reported, never fails the build):
   --max-uncovered-changes <n>  Warn when more than n changed files have no observed test reach
@@ -125,6 +127,8 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
     failOnNewCluster: argv.includes('--fail-on-new-cluster'),
     failOnFlaky: argv.includes('--fail-on-flaky'),
     requireSelection: readOption(argv, '--require-selection'),
+    maxLeaks: readCount(argv, '--max-leaks'),
+    maxNewLeaks: readCount(argv, '--max-new-leaks'),
   };
 
   return {

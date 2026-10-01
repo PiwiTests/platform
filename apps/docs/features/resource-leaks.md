@@ -94,6 +94,25 @@ The reporter sends the findings with the run. A run that has them shows a **Reso
 The execution page's Performance tab shows what that one test cost and what it left open. A project that declines the
 **Resources** capability on the Setup page hides both, and the reporter's summary stays as it is.
 
+## In CI
+
+Each finding keeps a history across runs: the run it was first seen in and the runs that showed it. A leak is fixed once
+five full runs of the default branch, with the fixtures on, came without it, and reopens if it shows again. On the
+Resources tab each finding says whether it is new to the base branch (the pull request's target, else the default
+branch), or since which run it has been there.
+
+Three places read it:
+
+- [`piwi gate`](/guide/ci#blocking-a-merge): `--max-leaks <n>` fails when the run left more than `n`
+  objects open, counted per opening line; `--max-new-leaks <n>`, when more than `n` were never seen on the base branch.
+  A run that sent no resource report fails either rule rather than passing on silence.
+- The [pull-request comment](./pr-feedback) lists each leak the branch introduces under **Left open by this change**.
+- Agents read `list_resource_findings` and `get_resource_profile` over [MCP](/reference/mcp-tools).
+
+```bash
+npx @piwitests/reporter gate --max-new-leaks 0
+```
+
 ## Cost
 
 The ledger listens to the calls Playwright already reports and does its bookkeeping at the end of each test, adding

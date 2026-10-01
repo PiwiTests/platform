@@ -14,6 +14,8 @@ import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
+import type { WireResourceFinding } from '#shared/types';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -789,6 +791,46 @@ describe('demo examples hold in the seed', () => {
         ? { flakedAgainAt: firstRetryPassAfter(seededExecutions(testCaseId), mark.finishedAt) ? 'yes' : null }
         : null;
       expect(flakeLabTestState(experiments, fix), `${id}: the test's lab state`).toBe(want.lab);
+    }
+  });
+});
+
+// The seeded resource findings are what recordRunResourceFindings would write
+// from the seeded reports: one per identity, with the runs that showed it.
+describe('resource findings match the seeded reports', () => {
+  test('each finding is the identity of the findings its runs reported, and counts those runs', () => {
+    const runs = q(`select id, resource_report from test_runs where resource_report is not null`) as Array<{
+      id: number;
+      resource_report: string;
+    }>;
+    expect(runs.length).toBeGreaterThan(0);
+    const runsByFingerprint = new Map<string, number[]>();
+    for (const run of runs) {
+      const report = JSON.parse(run.resource_report) as { parts: Array<{ findings: WireResourceFinding[] }> };
+      for (const finding of report.parts.flatMap((part) => part.findings)) {
+        const fingerprint = resourceFingerprint(finding);
+        runsByFingerprint.set(fingerprint, [...(runsByFingerprint.get(fingerprint) ?? []), run.id]);
+      }
+    }
+    const findings = q(
+      `select id, fingerprint, occurrences, first_seen_run_id, last_seen_run_id from resource_findings`,
+    ) as Array<{
+      id: number;
+      fingerprint: string;
+      occurrences: number;
+      first_seen_run_id: number;
+      last_seen_run_id: number;
+    }>;
+    expect(findings.map((f) => f.fingerprint).sort()).toEqual([...runsByFingerprint.keys()].sort());
+    for (const finding of findings) {
+      const runIds = runsByFingerprint.get(finding.fingerprint)!;
+      expect(finding.occurrences, finding.fingerprint).toBe(runIds.length);
+      expect(finding.first_seen_run_id, finding.fingerprint).toBe(Math.max(...runIds));
+      expect(finding.last_seen_run_id, finding.fingerprint).toBe(Math.min(...runIds));
+      const occurrences = q(`select run_id from resource_occurrences where finding_id = ${finding.id}`) as Array<{
+        run_id: number;
+      }>;
+      expect(occurrences.map((o) => o.run_id).sort(), finding.fingerprint).toEqual([...runIds].sort());
     }
   });
 });

@@ -21,6 +21,10 @@ import {
   type FailureCluesResult,
 } from '#shared/handlers/test-cases';
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
+import { getRunResources } from '#shared/handlers/run-resources';
+import { isPassiveCapabilityDeclined } from '#shared/handlers/capabilities';
+import { latestOccurrences, listResourceFindings, runFindingsNovelty } from '#shared/handlers/resource-findings';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import {
   FlakePlanUnavailable,
   flakeCommand,
@@ -1526,6 +1530,83 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const summaries = (await getNetworkRequests(db, runId)) as any[] | null;
     if (!summaries) return null;
     return { endpoints: summaries.slice(0, 30).map((e: any) => dropNulls(e)) };
+  },
+
+  // ── list_resource_findings ─────────────────────────────────────────────────
+  async list_resource_findings(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    if (await isPassiveCapabilityDeclined(db, projectId, 'resources')) return { findings: [] };
+    const status = params.status === 'fixed' || params.status === 'all' ? params.status : 'open';
+    const verdict = typeof params.verdict === 'string' ? params.verdict : undefined;
+    const findings = await listResourceFindings(db, projectId, { status, verdict, limit: Number(params.limit) || 50 });
+    const last = await latestOccurrences(
+      db,
+      findings.map((f) => f.id),
+    );
+    return {
+      findings: findings.map((f) => {
+        const occurrence = last.get(f.id);
+        return dropNulls({
+          ...f,
+          fingerprint: undefined,
+          last: occurrence
+            ? dropNulls({
+                runId: occurrence.runId,
+                branch: occurrence.branch,
+                objects: occurrence.count,
+                tests: occurrence.tests,
+                heldMs: occurrence.heldMs,
+                afterTestCpuMs: occurrence.afterTestCpuMs,
+                pages: occurrence.pages,
+              })
+            : null,
+        });
+      }),
+    };
+  },
+
+  // ── get_resource_profile ───────────────────────────────────────────────────
+  async get_resource_profile(db, params, ctx) {
+    const runId = numericParam(params.runId, 'runId');
+    if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
+    const resources = await getRunResources(db, runId);
+    if (!resources) return null;
+    const novelty = resources.report ? await runFindingsNovelty(db, runId) : null;
+    const isNew = new Map((novelty?.findings ?? []).map((f) => [f.fingerprint, f.isNew]));
+    return {
+      baseBranch: novelty?.baseBranch ?? null,
+      shards: (resources.report?.parts ?? []).map((part) =>
+        dropNulls({
+          shardIndex: part.shardIndex,
+          counts: part.counts,
+          findings: part.findings.map((finding) => ({
+            ...finding,
+            isNew: isNew.get(resourceFingerprint(finding)) ?? null,
+          })),
+          machine: part.profile
+            ? {
+                platform: part.profile.platform,
+                wallMs: part.profile.wallMs,
+                ...part.profile.machine,
+                cpu: { ...part.profile.cpu, series: undefined },
+                memory: part.profile.memory,
+                disk: part.profile.disk,
+                notMeasured: part.profile.notMeasured,
+              }
+            : null,
+          openPagesByWorker: part.workers.map((w) => ({
+            worker: w.worker,
+            max: Math.max(0, ...w.openPages),
+            last: w.openPages[w.openPages.length - 1] ?? 0,
+          })),
+          artifactBytes: part.artifactBytes,
+          workerHealth: part.workerHealth,
+        }),
+      ),
+      measuredExecutions: resources.measuredExecutions,
+      costliest: resources.costliest.slice(0, 10).map((e) => dropNulls(e)),
+    };
   },
 
   // ── get_failure_groups ─────────────────────────────────────────────────────

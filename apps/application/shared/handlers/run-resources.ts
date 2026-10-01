@@ -1,6 +1,7 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { testRuns, testRunsCases, testCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { findingHistoryByFingerprint, runFindingsNovelty } from './resource-findings';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import {
   browserCpuMs,
@@ -37,8 +38,24 @@ export interface RunResourceExecution {
   leftOpen: number;
 }
 
+/** Where a finding of the run stands in its project's history. */
+export interface RunFindingHistory {
+  /** No earlier run of the base branch showed it. */
+  isNew: boolean;
+  /** The run it was first seen in, once recorded. */
+  firstSeenRunId: number | null;
+  /** Runs it showed in, this one included once recorded. */
+  runs: number;
+  /** It was fixed and came back in this run. */
+  reopened: boolean;
+}
+
 export interface RunResources {
   report: StoredResourceReport | null;
+  /** The branch a finding is new against: the pull request's target, else the default branch. */
+  baseBranch: string | null;
+  /** Each finding's history, by its identity (`#shared/resource-fingerprint.mjs`). */
+  history: Record<string, RunFindingHistory>;
   /** The executions that carried their cost, costliest first. */
   costliest: RunResourceExecution[];
   /** How many executions carried their cost. */
@@ -56,7 +73,7 @@ export async function getRunResources(db: DrizzleDB, runId: number): Promise<Run
     .where(eq(testRuns.id, runId));
   if (!run) return null;
   if (await isPassiveCapabilityDeclined(db, run.projectId, 'resources')) {
-    return { report: null, costliest: [], measuredExecutions: 0 };
+    return { report: null, baseBranch: null, history: {}, costliest: [], measuredExecutions: 0 };
   }
 
   const stored = readStoredResourceReport(run.resourceReport);
@@ -97,8 +114,27 @@ export async function getRunResources(db: DrizzleDB, runId: number): Promise<Run
   }
   executions.sort((a, b) => b.cpuMs - a.cpuMs);
 
+  const novelty = stored.parts.length > 0 ? await runFindingsNovelty(db, runId) : null;
+  const recorded = await findingHistoryByFingerprint(
+    db,
+    run.projectId,
+    (novelty?.findings ?? []).map((f) => f.fingerprint),
+  );
+  const history: Record<string, RunFindingHistory> = {};
+  for (const { fingerprint, isNew } of novelty?.findings ?? []) {
+    const row = recorded.get(fingerprint);
+    history[fingerprint] = {
+      isNew,
+      firstSeenRunId: row?.firstSeenRunId ?? null,
+      runs: row?.runs ?? 0,
+      reopened: row?.reopenedRunId === runId,
+    };
+  }
+
   return {
     report: stored.parts.length > 0 ? stored : null,
+    baseBranch: novelty?.baseBranch ?? null,
+    history,
     costliest: executions.slice(0, COSTLIEST_CAP),
     measuredExecutions: executions.length,
   };

@@ -53,6 +53,8 @@ import { isExpectedFailurePassed, looksFixedTests } from '#shared/status-classif
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
+import { runFindingsNovelty } from '#shared/handlers/resource-findings';
+import { isLeak } from '#shared/resource-fingerprint.mjs';
 
 /** Read the resolved settings, falling back to the (disabled) defaults. */
 export async function getPrFeedbackSettings(db: DbClient): Promise<PrFeedbackSettings> {
@@ -378,14 +380,20 @@ export async function postRunPrFeedback(
   // status) are dropped when the project declined `test-map`. The graph and its
   // `changes` edges are still written on ingest — a declined capability that
   // receives data reads active — this only withholds the PR surfaces.
-  const testMapDeclined = (await resolveProjectStates(db, run.projectId))['test-map'] === 'declined';
+  const states = await resolveProjectStates(db, run.projectId);
+  const testMapDeclined = states['test-map'] === 'declined';
   const effectiveChangeCoverage = testMapDeclined ? null : changeCoverage;
   summary.changeCoverage = effectiveChangeCoverage;
   summary.locatorBreaks = testMapDeclined ? null : locatorBreaks;
+  summary.newLeaks = states.resources === 'declined' ? null : await readNewLeaks(db, runId);
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
-  // cluster is news — that is the answer somebody was waiting for.
-  const quiet = settings.onlyOnFailure && summary.failedTests === 0 && (summary.fixedClusters?.length ?? 0) === 0;
+  // cluster or opened a new leak is news.
+  const quiet =
+    settings.onlyOnFailure &&
+    summary.failedTests === 0 &&
+    (summary.fixedClusters?.length ?? 0) === 0 &&
+    (summary.newLeaks?.leaks.length ?? 0) === 0;
 
   let commentPosted = false;
   if (settings.comment && branch && !quiet) {
@@ -420,6 +428,16 @@ export async function postRunPrFeedback(
   }
 
   return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };
+}
+
+/** The leaks of a run that its base branch never showed, or null when the run sent no resource report. */
+async function readNewLeaks(db: DbClient, runId: number): Promise<PrSummaryInput['newLeaks']> {
+  const novelty = await runFindingsNovelty(db, runId).catch(() => null);
+  if (!novelty) return null;
+  return {
+    baseBranch: novelty.baseBranch,
+    leaks: novelty.findings.filter((f) => f.isNew && isLeak(f.finding)).map((f) => f.finding),
+  };
 }
 
 /**

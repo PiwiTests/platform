@@ -8,7 +8,8 @@
 import type { WireExecutionResources } from '#shared/types';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { browserCpuMs, peakRssMb } from '#shared/resource-report';
-import { executionRoleFacts, formatCpuTime, formatSize } from '~/utils/resources';
+import { formatCpuTime, formatSize } from '#shared/resource-copy';
+import { executionRoleFacts } from '~/utils/resources';
 
 const props = defineProps<{
   resources: WireExecutionResources;

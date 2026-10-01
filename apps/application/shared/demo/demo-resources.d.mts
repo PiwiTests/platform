@@ -14,6 +14,7 @@ export declare function demoOpenPages(testsInWorker: number, leaky: boolean): nu
 
 export declare function demoResourceReport(input: {
   leaky?: boolean;
+  handle?: boolean;
   wallMs: number;
   workers: Array<{ worker: number; tests: number }>;
   fixtureFile: string;

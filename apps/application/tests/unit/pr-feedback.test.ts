@@ -494,3 +494,36 @@ describe('change coverage section', () => {
     expect(status.context).toBe('piwi/tests/change-coverage');
   });
 });
+
+describe('new leaks', () => {
+  test('lists each leak the base branch never showed, with the line that opened it', () => {
+    const body = buildPrComment(
+      summary({
+        newLeaks: {
+          baseBranch: 'main',
+          leaks: [
+            {
+              verdict: 'leaked',
+              kind: 'context',
+              where: 'tests/cart.spec.ts:12',
+              site: 'tests/cart.spec.ts:12',
+              scope: 'test',
+              tests: 4,
+              count: 4,
+              heldMs: 41_200,
+              untilWorkerEnd: true,
+            },
+          ],
+        },
+      }),
+    );
+    expect(body).toContain('#### 🟠 Left open by this change (1)\n\nNever seen on `main`.');
+    expect(body).toContain(
+      '- **Leaked context** · `tests/cart.spec.ts:12` · 4 contexts · 4 tests · open until the worker shut down (41.2 s past its test)',
+    );
+  });
+
+  test('adds nothing when the branch introduced no leak', () => {
+    expect(buildPrComment(summary({ newLeaks: { baseBranch: 'main', leaks: [] } }))).not.toContain('Left open');
+  });
+});

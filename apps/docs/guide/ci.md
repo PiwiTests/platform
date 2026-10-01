@@ -210,8 +210,8 @@ was working* need the run history, so the dashboard evaluates them.
     PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
 ```
 
-The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-run.json`), asks the dashboard to
-evaluate the policy, prints every violation, and exits.
+The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-run.json`) and prints every
+violation.
 
 | Rule | Fails the build when |
 |---|---|
@@ -222,8 +222,9 @@ evaluate the policy, prints every violation, and exits.
 | `--max-quarantined <n>` | More than `n` tests are [quarantined](/features/flaky-tests#quarantine-with-a-way-out) — a ceiling on quarantine debt |
 | `--fail-on-new-cluster` | This run introduced a failure cluster never seen before |
 | `--fail-on-flaky` | This run contains any flaky test (passed only after a retry) — stricter than `--max-new-flaky`, which only counts tests *newly* flaky |
+| `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
 
-At least one rule is required — an empty policy is rejected rather than passing. Exit codes are part of the contract:
+At least one rule is required. Exit codes are part of the contract:
 **0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline fails instead of passing.
 
 Three behaviors worth knowing:

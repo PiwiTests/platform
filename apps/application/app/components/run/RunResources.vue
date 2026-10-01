@@ -7,7 +7,9 @@
  */
 import type { RunResources } from '#shared/handlers/run-resources';
 import type { WireResourceFinding, WireResourceReport } from '#shared/types';
-import { findingView, formatCpuTime, formatSize, machineFacts, machineHead, resourceTotals } from '~/utils/resources';
+import { findingView, formatCpuTime, formatSize } from '#shared/resource-copy';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
+import { machineFacts, machineHead, resourceTotals } from '~/utils/resources';
 
 const props = defineProps<{
   runId: number;
@@ -51,6 +53,7 @@ const findings = computed(() =>
         label: view.label,
         where: view.where ? splitWhere(view.where, view.site) : null,
         facts: facts.join(' · '),
+        history: data.value?.history[resourceFingerprint(finding)] ?? null,
       };
     }),
   ),
@@ -184,6 +187,19 @@ const costliest = computed(() => data.value?.costliest ?? []);
               </template>
             </p>
             <p v-if="item.facts" class="text-xs text-muted mt-0.5 break-words">{{ item.facts }}</p>
+            <p v-if="item.history" class="text-xs text-muted mt-0.5" data-testid="finding-history">
+              <template v-if="item.history.reopened">Back after its fix</template>
+              <template v-else-if="item.history.isNew">
+                New: never seen on <span class="font-mono">{{ data?.baseBranch }}</span> before this run
+              </template>
+              <template v-else-if="item.history.firstSeenRunId && item.history.firstSeenRunId !== runId">
+                Since
+                <NuxtLink :to="`/test-runs/${item.history.firstSeenRunId}?tab=resources`" :class="SENTENCE_LINK_CLASS"
+                  >run #{{ item.history.firstSeenRunId }}</NuxtLink
+                >
+                · {{ item.history.runs }} runs
+              </template>
+            </p>
           </li>
         </ul>
         <p v-else-if="ledgerRan" class="text-sm text-highlighted leading-relaxed">

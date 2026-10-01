@@ -74,10 +74,9 @@ function busySeries(points, leaky) {
 
 /**
  * The findings of a leaky run. `fixtureFile` is where the suite's fixtures
- * live, `tests` how many tests used the leaking fixture, `handleTest` the test
- * that left a server running in its worker.
+ * live, `tests` how many tests used the leaking fixture.
  */
-function leakyFindings({ fixtureFile, tests, wallMs, handleTest }) {
+function leakyFindings({ fixtureFile, tests, wallMs }) {
   return [
     {
       verdict: 'leaked',
@@ -109,23 +108,29 @@ function leakyFindings({ fixtureFile, tests, wallMs, handleTest }) {
       count: 1,
       growth: { what: 'listeners', from: 2, to: 8, tests: 3 },
     },
-    {
-      verdict: 'handle',
-      kind: 'handle',
-      where: 'TCPServerWrap',
-      tests: 1,
-      count: 1,
-      detail: `"${handleTest.title}" (${handleTest.file})`,
-    },
   ];
+}
+
+/** The server `handleTest` leaves running in its worker, in a leaky run and in the runs before it. */
+function handleFinding(handleTest) {
+  return {
+    verdict: 'handle',
+    kind: 'handle',
+    where: 'TCPServerWrap',
+    tests: 1,
+    count: 1,
+    detail: `"${handleTest.title}" (${handleTest.file})`,
+  };
 }
 
 /**
  * The run's report. `workers` lists each worker with how many tests it ran;
- * `artifactBytes` is the sum of the executions' artifacts.
+ * `artifactBytes` is the sum of the executions' artifacts. `handle` adds the
+ * server a test leaves running, which a leaky run always has.
  */
 export function demoResourceReport({
   leaky = false,
+  handle = leaky,
   wallMs,
   workers,
   fixtureFile,
@@ -134,7 +139,10 @@ export function demoResourceReport({
   shardIndex = null,
 }) {
   const tests = workers.reduce((sum, w) => sum + w.tests, 0);
-  const findings = leaky ? leakyFindings({ fixtureFile, tests, wallMs, handleTest }) : [];
+  const findings = [
+    ...(leaky ? leakyFindings({ fixtureFile, tests, wallMs }) : []),
+    ...(handle ? [handleFinding(handleTest)] : []),
+  ];
   const counts = { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
   for (const finding of findings) counts[finding.verdict] += finding.verdict === 'idle' ? finding.count : 1;
   const seconds = wallMs / 1000;

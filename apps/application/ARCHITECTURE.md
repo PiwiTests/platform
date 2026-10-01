@@ -54,6 +54,7 @@ Tables, by area:
 | Identity           | `users`, `api_keys`, `account_tokens`, `project_assignments`                                                                  |
 | Notifications      | `notification_channels`, `subscriptions`, `notification_deliveries`                                                           |
 | Analytics          | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`                                     |
+| Resources          | `resource_findings`, `resource_occurrences`                                                                                   |
 
 Non-obvious ones:
 
@@ -74,6 +75,11 @@ Non-obvious ones:
   at query time.
 - **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
   for progressive retry (1/5/15/60/240 min).
+- **`resource_findings`** — one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict,
+  kind, scope and where it was opened, without line numbers), with the runs it was first and last seen in, ordered by
+  start time; `resource_occurrences` holds each run's showing with the run's branch. Written on finalize by
+  `shared/handlers/resource-findings.ts`, which also fixes a finding after five clean full runs of the default branch
+  and tells the gate and the pull-request comment which findings are new to the base branch.
 - **`entity_links`** — external URLs (Jira, GitHub…) attached to a run, execution or test case via three nullable FK
   columns with `ON DELETE CASCADE`, mirroring the `files` pattern. Provider auto-detected by `shared/link-detect.ts`.
 
