@@ -342,7 +342,9 @@ screenshots); the finish panel asks for them back (`piwi-bug-step-views`) and wr
 **A step a replay cannot play goes to the person.** When a step finds no element (or not the one it needs), the flow is
 on another page, or its action fails, `replay-panel.ts` sets `ReplayState.handOver` and shows why, the step in words
 and its screenshot, outlined where the recording found its element (`piwi-replay-step-view`): **I did it, continue**
-records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diverged` and ends the replay. The
+records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diverged` and ends the replay. The panel
+also lists the element's recorded locators (the replay's own first, three at most), and the cursor overlay marks the
+elements they find on the page (`FakeCursor.marks`), looked for again every `HAND_OVER_LOOK_MS` while the person acts. The
 hand-over is in the replay's state, so it waits on the page the person's own action loads. A replay keeps its step
 screenshots in the worker's IndexedDB too: the start message carries the images of a chosen `.piwibug` (`views`), the
 recording's view ids (`recordingViews`), or asks to keep the last replay's (`keepViews`, Replay again); anything else

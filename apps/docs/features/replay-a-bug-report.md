@@ -43,7 +43,9 @@ the site it ran on, after showing what it sends.
 
 A step Replay cannot play is handed to you rather than ending the replay. The panel says why, names the step in words
 and, when the report has [a screenshot of each step](./report-a-bug#evidence), shows the page as it began there, the
-element outlined. Do it yourself on the page, then choose:
+element outlined. It lists the locators the element was recorded with and outlines on the page every element they
+still find, such as two buttons where the recording saw one, as the page changes. Do it yourself on the page, then
+choose:
 
 - **I did it, continue**: the replay goes on with the next step, even when your action loaded another page.
 - **Skip this step**: it goes on without it.

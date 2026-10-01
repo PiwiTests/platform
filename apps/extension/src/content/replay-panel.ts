@@ -1,4 +1,5 @@
 import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInWords } from '@piwitests/core/bug-report';
+import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
@@ -98,6 +99,7 @@ interface ReplayGlobals {
 
 const STYLE = `
   ${SHARED_STYLE}
+  ${LOCATOR_SYNTAX_CSS}
   .box { background: #111827; color: #f9fafb; color-scheme: dark; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
     font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; hyphens: auto; }
   @media (prefers-color-scheme: light) {
@@ -120,6 +122,10 @@ const STYLE = `
   .shot { position: relative; display: inline-block; max-width: 100%; margin: 4px 0; line-height: 0; }
   .shot img { display: block; max-width: 100%; max-height: 220px; border-radius: 4px; border: 1px solid rgba(128,128,128,.4); }
   .shot .mark { position: absolute; border: 2px solid #f59e0b; border-radius: 3px; box-shadow: 0 0 0 2px rgba(245,158,11,.35); }
+  .locs { margin: 2px 0 4px; padding-left: 16px; font-size: 11px; }
+  .locs li { overflow-wrap: anywhere; }
+  .found { color: #fbbf24; }
+  @media (prefers-color-scheme: light) { .found { color: #b45309; } }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
     border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
@@ -830,6 +836,49 @@ interface HandOver {
   reason: string;
   view: ReplayStepView | null;
   answer: (answer: HandOverAnswer) => void;
+  /** How many elements of the page its recorded locators find now. */
+  found: number;
+}
+
+/** At most this many of an element's recorded locators are listed in the hand-over. */
+const HANDED_LOCATORS = 3;
+/** How often the elements a handed-over step is about are looked for again while the person acts. */
+const HAND_OVER_LOOK_MS = 400;
+
+/** The locators a step's element was recorded with: the one the replay looked for first, then the others. */
+function recordedLocators(step: RecordedStep): { element: string[]; dropOn: string[] } {
+  const listed = (first: string | null, target: RecordedStep['target'] | undefined) => [
+    ...new Set([first, ...(target?.alternatives ?? []).map((a) => a.locator)].filter((l): l is string => !!l)),
+  ];
+  return {
+    element: listed(locatorFor(step), step.target),
+    dropOn: step.action === 'dragTo' ? listed(dropLocatorFor(step), step.dropTarget) : [],
+  };
+}
+
+/** The elements of the page the listed locators of a step find now, its own and where it drops. */
+function recordedElements(step: RecordedStep): Element[] {
+  const { element, dropOn } = recordedLocators(step);
+  const listed = [...element.slice(0, HANDED_LOCATORS), ...dropOn.slice(0, HANDED_LOCATORS)];
+  return [...new Set(listed.flatMap((locator) => findAll(locator)))];
+}
+
+function locatorList(locators: string[]): HTMLElement {
+  const list = document.createElement('ul');
+  list.className = 'locs';
+  for (const locator of locators.slice(0, HANDED_LOCATORS)) {
+    const item = document.createElement('li');
+    const code = document.createElement('span');
+    code.className = 'piwi-loc';
+    code.innerHTML = highlightLocator(locator);
+    item.appendChild(code);
+    list.appendChild(item);
+  }
+  return list;
+}
+
+function foundText(found: number): string {
+  return found > 0 ? tn('replay_handOverFound', found) : t('replay_handOverNotFound');
 }
 
 let handOver: HandOver | null = null;
@@ -879,6 +928,28 @@ function handOverBox(handed: HandOver, step: RecordedStep): HTMLElement {
   what.textContent = stepWords(step);
   box.append(why, what);
   if (handed.view) box.appendChild(shotFigure(handed.view, handed.step));
+  // Which element it is, as the recording found it, and where it is on this page now.
+  const { element, dropOn } = recordedLocators(step);
+  if (element.length > 0) {
+    const label = document.createElement('div');
+    label.className = 'sub';
+    label.textContent = t('replay_handOverLocators');
+    box.append(label, locatorList(element));
+  }
+  if (dropOn.length > 0) {
+    const label = document.createElement('div');
+    label.className = 'sub';
+    label.textContent = t('replay_handOverDropOn');
+    box.append(label, locatorList(dropOn));
+  }
+  if (element.length > 0) {
+    const found = document.createElement('div');
+    found.className = 'sub found';
+    found.setAttribute('data-piwi-replay-found', '');
+    found.setAttribute('aria-live', 'polite');
+    found.textContent = foundText(handed.found);
+    box.appendChild(found);
+  }
   const how = document.createElement('div');
   how.className = 'sub';
   how.textContent = t(handed.view ? 'replay_handOverHow' : 'replay_handOverHowNoShot');
@@ -911,9 +982,22 @@ async function handOverStep(
       : ((await updateReplayState((s) => ({ ...s, position: index, handOver: { step: index, reason } }))) ?? state);
   cursor?.outline(null);
   const view = await replayStepView(index);
+  const step = sessionFromSteps(current.steps, current.origin).steps[index];
   const chosen = new Promise<HandOverAnswer>((resolve) => {
-    handOver = { step: index, reason, view, answer: resolve };
+    handOver = { step: index, reason, view, answer: resolve, found: 0 };
   });
+  // The elements the step is about, outlined on the page while the person acts, as the page changes.
+  const look = () => {
+    if (!handOver || !step) return;
+    const elements = recordedElements(step);
+    cursor?.marks(elements.map((e) => e.getBoundingClientRect()));
+    if (elements.length === handOver.found) return;
+    handOver.found = elements.length;
+    const line = hud?.root.querySelector('[data-piwi-replay-found]');
+    if (line) line.textContent = foundText(elements.length);
+  };
+  look();
+  const looking = setInterval(look, HAND_OVER_LOOK_MS);
   renderHud(current);
   try {
     for (;;) {
@@ -924,6 +1008,8 @@ async function handOverStep(
       renderHud(latest);
     }
   } finally {
+    clearInterval(looking);
+    cursor?.marks([]);
     handOver = null;
   }
 }

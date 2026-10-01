@@ -2894,6 +2894,33 @@
   "replay_handOverHowNoShot": {
     "message": "Faites-la vous-même sur la page, puis continuez."
   },
+  "replay_handOverLocators": {
+    "message": "Son élément, tel qu’enregistré :"
+  },
+  "replay_handOverDropOn": {
+    "message": "Déposé sur :"
+  },
+  "replay_handOverFound_one": {
+    "message": "$count$ élément de cette page leur correspond : entouré.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "replay_handOverFound_other": {
+    "message": "$count$ éléments de cette page leur correspondent : entourés.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "replay_handOverNotFound": {
+    "message": "Aucun d’eux ne le trouve sur cette page."
+  },
   "replay_handOverDone": {
     "message": "C’est fait, continuer"
   },

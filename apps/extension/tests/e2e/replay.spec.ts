@@ -315,6 +315,9 @@ test.describe('replay-panel.js', () => {
     const shot = hud.getByRole('img', { name: 'The page as step 4 began, its element outlined' });
     await expect(shot).toBeVisible({ timeout: 20_000 });
     await expect(hud).toContainText('Do it yourself on the page, as the screenshot shows, then continue.');
+    // Which element it is, as recorded, and that nothing on this page matches it.
+    await expect(hud.locator('.locs .piwi-loc')).toHaveText(["getByTestId('add-to-cart')"]);
+    await expect(hud).toContainText('None of them finds it on this page.');
     // The element is outlined where the recording found it.
     expect(
       await hud
@@ -354,6 +357,42 @@ test.describe('replay-panel.js', () => {
     expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
     const state = await replayState(page);
     expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'manual', 'done', 'failed']);
+  });
+
+  test('outlines on the page the elements its recorded locators still find, as the page changes', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    // Two buttons answer to the recorded test id: the replay cannot tell which one, the person can.
+    await context.route(`${ORIGIN}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      const body =
+        url.pathname === '/dashboard'
+          ? `<!doctype html><html><body><button data-testid="add-to-cart">Apply coupon</button>
+             <button data-testid="add-to-cart" onclick="this.remove()">Apply coupon (gift)</button>
+             <output data-testid="cart-total">Total: 40</output></body></html>`
+          : LOGIN;
+      await route.fulfill({ contentType: 'text/html', body });
+    });
+    await stubChrome(context, running());
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    const marks = page.locator('#piwi-replay-cursor-host .mark');
+    await expect(hud).toContainText('2 elements on this page match them: outlined.', { timeout: 20_000 });
+    await expect(marks).toHaveCount(2);
+    const box = (await page.getByRole('button', { name: 'Apply coupon', exact: true }).boundingBox())!;
+    const first = (await marks.first().boundingBox())!;
+    expect(first.x).toBeCloseTo(box.x - 3, 0);
+    expect(first.width).toBeCloseTo(box.width + 6, 0);
+    // The page changes while the person acts: one button is gone, one outline with it.
+    await page.getByRole('button', { name: 'Apply coupon (gift)' }).click();
+    await expect(hud).toContainText('1 element on this page matches them: outlined.');
+    await expect(marks).toHaveCount(1);
+    await hud.getByRole('button', { name: 'I did it, continue' }).click();
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
+    await expect(marks).toHaveCount(0);
   });
 
   test('goes on without a step the person skips', async ({ context }) => {

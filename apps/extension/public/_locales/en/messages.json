@@ -3457,6 +3457,38 @@
     "message": "Do it yourself on the page, then continue.",
     "description": "Replay panel: what to do with a step handed to the person when the report has no screenshot of it."
   },
+  "replay_handOverLocators": {
+    "message": "Its element, as recorded:",
+    "description": "Replay panel, step handed to the person: above the locators the step's element was recorded with, at most three."
+  },
+  "replay_handOverDropOn": {
+    "message": "Dropped on:",
+    "description": "Replay panel, a drag step handed to the person: above the locators of the element it was dropped on."
+  },
+  "replay_handOverFound_one": {
+    "message": "$count$ element on this page matches them: outlined.",
+    "description": "Replay panel, step handed to the person: how many elements of the page the recorded locators find now; they are outlined on the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "replay_handOverFound_other": {
+    "message": "$count$ elements on this page match them: outlined.",
+    "description": "Replay panel, step handed to the person: how many elements of the page the recorded locators find now; they are outlined on the page.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "replay_handOverNotFound": {
+    "message": "None of them finds it on this page.",
+    "description": "Replay panel, step handed to the person: none of the recorded locators finds an element on the page now."
+  },
   "replay_handOverDone": {
     "message": "I did it, continue",
     "description": "Replay panel: button the person clicks once they did the handed-over step on the page; the replay goes on with the next step."

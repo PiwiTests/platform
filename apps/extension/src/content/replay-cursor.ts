@@ -18,6 +18,8 @@ export interface FakeCursor {
   press(): Promise<void>;
   /** Outline a box on the page, in viewport pixels, until the next move. */
   outline(rect: { left: number; top: number; width: number; height: number } | null): void;
+  /** Mark the boxes of the elements a step handed to the person is about, until called again; none clears them. */
+  marks(rects: Array<{ left: number; top: number; width: number; height: number }>): void;
   position(): { x: number; y: number };
   remove(): void;
 }
@@ -57,7 +59,10 @@ export function createCursor(start: { x: number; y: number } | null): FakeCursor
     @keyframes ripple { from { transform: scale(.3); opacity: .9; } to { transform: scale(1.3); opacity: 0; } }
     .outline { position: fixed; border: 2px solid #7c3aed; border-radius: 4px; background: rgba(124,58,237,.08);
       pointer-events: none; transition: all ${still ? 0 : 150}ms; }
+    .mark { position: fixed; border: 2px dashed #f59e0b; border-radius: 4px; background: rgba(245,158,11,.1);
+      box-shadow: 0 0 0 2px rgba(245,158,11,.25); pointer-events: none; }
   `;
+  const marks = document.createElement('div');
   const outline = document.createElement('div');
   outline.className = 'outline';
   outline.hidden = true;
@@ -70,7 +75,7 @@ export function createCursor(start: { x: number; y: number } | null): FakeCursor
   const caption = document.createElement('div');
   caption.className = 'caption';
   cursor.appendChild(caption);
-  root.append(style, outline, cursor);
+  root.append(style, marks, outline, cursor);
 
   let x = start?.x ?? Math.round(window.innerWidth / 2);
   let y = start?.y ?? Math.round(window.innerHeight / 2);
@@ -110,6 +115,19 @@ export function createCursor(start: { x: number; y: number } | null): FakeCursor
       outline.style.top = `${rect.top - 3}px`;
       outline.style.width = `${rect.width + 6}px`;
       outline.style.height = `${rect.height + 6}px`;
+    },
+    marks(rects) {
+      marks.replaceChildren(
+        ...rects.map((rect) => {
+          const mark = document.createElement('div');
+          mark.className = 'mark';
+          mark.style.left = `${rect.left - 3}px`;
+          mark.style.top = `${rect.top - 3}px`;
+          mark.style.width = `${rect.width + 6}px`;
+          mark.style.height = `${rect.height + 6}px`;
+          return mark;
+        }),
+      );
     },
     position: () => ({ x, y }),
     remove: () => host.remove(),

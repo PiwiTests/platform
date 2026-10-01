@@ -2894,6 +2894,33 @@
   "replay_handOverHowNoShot": {
     "message": "Führen Sie ihn selbst auf der Seite aus und fahren Sie dann fort."
   },
+  "replay_handOverLocators": {
+    "message": "Sein Element, wie aufgezeichnet:"
+  },
+  "replay_handOverDropOn": {
+    "message": "Abgelegt auf:"
+  },
+  "replay_handOverFound_one": {
+    "message": "$count$ Element dieser Seite passt dazu: umrandet.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "replay_handOverFound_other": {
+    "message": "$count$ Elemente dieser Seite passen dazu: umrandet.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "replay_handOverNotFound": {
+    "message": "Keiner von ihnen findet es auf dieser Seite."
+  },
   "replay_handOverDone": {
     "message": "Erledigt, weiter"
   },
