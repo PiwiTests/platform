@@ -2863,14 +2863,15 @@ const SCENES = [
       const at = (step) => ({ redacted: false, pageUrl: '/cart', timestamp: step });
       const steps = [
         { action: 'goto', target: null, value: '/cart', ...at(0) },
-        { action: 'fill', target: target('textbox', 'Search'), value: 'checkout', ...at(1) },
-        { action: 'click', target: target('button', 'Failure clusters'), value: null, ...at(2) },
-        { action: 'click', target: target('button', 'Locators'), value: null, ...at(3) },
+        { action: 'click', target: target('button', 'Failure clusters'), value: null, ...at(1) },
+        { action: 'fill', target: target('textbox', 'Search'), value: 'checkout', ...at(2) },
+        { action: 'click', target: target('button', 'Network'), value: null, ...at(3) },
       ];
+      // Each box is where the step's element is in its image, in the image's pixels.
       const images = [
-        { step: 1, png: 'flaky-tests.png', box: { x: 300, y: 64, width: 380, height: 36 } },
-        { step: 2, png: 'failure-clusters-tab.png', box: { x: 476, y: 150, width: 132, height: 36 } },
-        { step: 3, png: 'execution-locators.png', box: { x: 300, y: 112, width: 120, height: 32 } },
+        { step: 1, png: 'flaky-tests.png', box: { x: 472, y: 196, width: 146, height: 28 } },
+        { step: 2, png: 'failure-clusters-tab.png', box: { x: 16, y: 72, width: 207, height: 32 } },
+        { step: 3, png: 'execution-locators.png', box: { x: 580, y: 64, width: 114, height: 32 } },
       ];
       const form = new FormData();
       const stepShots = [];
