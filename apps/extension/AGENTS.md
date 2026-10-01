@@ -335,9 +335,12 @@ them into the steps document's `viewports`, by the first step recorded at or aft
 **A screenshot of each step.** The recorder asks the worker for a view of the page (`piwi-bug-step-view`, under an id
 it makes up) as it starts on a page and once the page has been still for `VIEW_SETTLE_MS` after an action, with its
 surfaces hidden; an action with no unused view left asks for its own as it starts. Each action event keeps the view's
-id and its element's box (`view`, which `normalizeSteps` carries to the step and `toStepsDocument` leaves out). The
-worker (`background/step-views.ts`) takes it through the recording's debugging session, or `captureVisibleTab` under
-`activeTab`, and keeps it as a JPEG as wide as the viewport in CSS pixels in its own IndexedDB
+id and its element's box (`view`, which `normalizeSteps` carries to the step and `toStepsDocument` leaves out), so the
+box only holds for the page the view shows: a scroll (of the page or any element) or a resize marks an unused view
+moved, and it is taken again under the same id, once the page settles or as the next action starts. The worker
+(`background/step-views.ts`) takes it through the recording's debugging session, or `captureVisibleTab` under
+`activeTab`, drops what the id held before (of two images under one id, the later-taken stays), and keeps it as a
+JPEG as wide as the viewport in CSS pixels in its own IndexedDB
 (`shared/step-views.ts`: a content script's IndexedDB is the page's, and session storage cannot hold a hundred
 screenshots); the finish panel asks for them back (`piwi-bug-step-views`) and writes `evidence.stepShots` and
 `steps/<nnn>.jpg`, unless the reporter leaves them out. A recording that starts or is discarded clears them.

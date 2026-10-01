@@ -4,6 +4,7 @@ import { getRecordingState, recordingMode, RECORDING_KEY, type RecordingState } 
 import {
   clearRecordingViews,
   countRecordingViews,
+  deleteRecordingView,
   getRecordingViews,
   getReplayView,
   putRecordingView,
@@ -64,7 +65,9 @@ async function captureTab(tab: chrome.tabs.Tab): Promise<string | null> {
 
 /**
  * Takes the view the recorder asked for in its tab and keeps it, up to the
- * number of step screenshots a report keeps. `captured` is called once the
+ * number of step screenshots a report keeps. A view asked for again replaces
+ * the one kept under its id, which no longer shows the page: when the new one
+ * cannot be taken, the id is left with none. `captured` is called once the
  * screenshot is taken, before it is encoded and kept, so the recorder shows
  * its own surfaces again as soon as possible.
  */
@@ -77,13 +80,15 @@ export async function handleStepView(
   if (typeof id !== 'string' || !VIEW_ID.test(id) || tab?.id == null) return captured(false);
   const state = await getRecordingState();
   if (!state.active || recordingMode(state) !== 'bug') return captured(false);
+  await deleteRecordingView(id).catch(() => undefined);
   if ((await countRecordingViews().catch(() => Infinity)) >= BUG_EVIDENCE_LIMITS.stepShots) return captured(false);
+  const takenAt = Date.now();
   const shot = await captureTab(tab);
   captured(!!shot);
   if (!shot) return;
   const viewport = viewportOf(message.viewport);
   try {
-    await putRecordingView({ id, dataUrl: await viewJpeg(shot, viewport), takenAt: Date.now(), viewport });
+    await putRecordingView({ id, dataUrl: await viewJpeg(shot, viewport), takenAt, viewport });
   } catch (err) {
     console.warn('[Piwi Picker] step screenshot not kept:', err);
   }

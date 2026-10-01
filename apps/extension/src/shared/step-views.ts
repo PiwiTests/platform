@@ -19,6 +19,7 @@ export interface StoredStepView {
   id: string;
   /** A `data:image/jpeg;base64,…` URL. */
   dataUrl: string;
+  /** When the screenshot was taken: of two kept under one id, the later one stays. */
   takenAt: number;
   /** The viewport the screenshot shows, in CSS pixels. */
   viewport: { width: number; height: number } | null;
@@ -58,12 +59,32 @@ function done<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
+function completed(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB'));
+  });
+}
+
 async function store(name: string, mode: IDBTransactionMode): Promise<IDBObjectStore> {
   return (await open()).transaction(name, mode).objectStore(name);
 }
 
+/** Keeps the view, unless the one kept under its id was taken later. */
 export async function putRecordingView(view: StoredStepView): Promise<void> {
-  await done((await store(RECORDING, 'readwrite')).put(view));
+  const transaction = (await open()).transaction(RECORDING, 'readwrite');
+  const recording = transaction.objectStore(RECORDING);
+  const kept = recording.get(view.id);
+  kept.onsuccess = () => {
+    const earlier = kept.result as StoredStepView | undefined;
+    if (!earlier || earlier.takenAt <= view.takenAt) recording.put(view);
+  };
+  await completed(transaction);
+}
+
+export async function deleteRecordingView(id: string): Promise<void> {
+  await done((await store(RECORDING, 'readwrite')).delete(id));
 }
 
 export async function countRecordingViews(): Promise<number> {
@@ -88,11 +109,7 @@ export async function setReplayViews(views: ReplayStepView[]): Promise<void> {
   const replay = transaction.objectStore(REPLAY);
   replay.clear();
   for (const view of views) replay.put(view);
-  await new Promise<void>((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB'));
-  });
+  await completed(transaction);
 }
 
 export async function getReplayView(step: number): Promise<ReplayStepView | null> {

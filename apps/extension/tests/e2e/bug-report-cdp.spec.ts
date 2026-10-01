@@ -21,7 +21,13 @@ const SECOND = `<!doctype html><html><head><script>console.error('boot failed')<
   <button id="warn" onclick="console.error('after cancel')">Warn</button>
 </body></html>`;
 
-test.use({ pages: { '/first': FIRST, '/second': SECOND } });
+// Two blocks of color, a long scroll apart, with nothing drawn over them.
+const block = (id: string, color: string) =>
+  `<button id="${id}" aria-label="${id}" style="display:block;width:200px;height:120px;margin:40px;border:0;background:${color}"></button>`;
+const LONG = `<!doctype html><html><body style="margin:0">${block('top', '#00f')}
+  <div style="height:2000px"></div>${block('far', '#f00')}<div style="height:2000px"></div></body></html>`;
+
+test.use({ pages: { '/first': FIRST, '/second': SECOND, '/long': LONG } });
 
 interface Evidence {
   console: Array<{ level: string; source: string; message: string; page: string }>;
@@ -213,5 +219,88 @@ test('keeps the zoom of the tab with the viewport size, which already holds it',
         .map((e) => e.viewport),
     );
   await expect.poll(viewports).toEqual([{ ...size, zoom: 1.25 }]);
+  await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
+});
+
+test('takes the view again when the page scrolls, so each box sits on its element in the screenshot', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/long`);
+  const tabId = await tabIdOf(worker, `${site}/long`);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  const keptIds = () =>
+    worker.evaluate(
+      () =>
+        new Promise<string[]>((resolve) => {
+          const open = indexedDB.open('piwi-step-views');
+          open.onsuccess = () => {
+            const db = open.result;
+            if (!db.objectStoreNames.contains('recording')) return resolve([]);
+            const keys = db.transaction('recording').objectStore('recording').getAllKeys();
+            keys.onsuccess = () => resolve(keys.result as string[]);
+          };
+          open.onerror = () => resolve([]);
+        }),
+    );
+  await expect.poll(async () => (await keptIds()).length).toBe(1);
+  const [first] = await keptIds();
+
+  type Box = { x: number; y: number; width: number; height: number };
+  const clickViews = async () =>
+    (
+      (await worker.evaluate(
+        async () => ((await chrome.storage.session.get('piwiRecording')).piwiRecording as { events: unknown[] }).events,
+      )) as Array<{ kind: string; view?: { id: string; box: Box } }>
+    )
+      .filter((e) => e.kind === 'click')
+      .map((e) => e.view!);
+  // The color of the screenshot kept for a view, where the view's box says its element is.
+  const colorAt = async (view: { id: string; box: Box }) => {
+    const [kept] = (await control.evaluate(
+      (id) => chrome.runtime.sendMessage({ type: 'piwi-bug-step-views', ids: [id] }),
+      view.id,
+    )) as Array<{ dataUrl: string; viewport: { width: number } }>;
+    if (!kept) return 'none';
+    return control.evaluate(
+      async ({ dataUrl, width, box }) => {
+        const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = canvas.getContext('2d')!;
+        context.drawImage(bitmap, 0, 0);
+        const scale = bitmap.width / width;
+        const at = (n: number, size: number) => Math.round((n + size / 2) * scale);
+        const [r, g, b] = context.getImageData(at(box.x, box.width), at(box.y, box.height), 1, 1).data;
+        if (r! > 180 && g! < 90 && b! < 90) return 'red';
+        if (b! > 180 && r! < 90 && g! < 90) return 'blue';
+        return `rgb(${r}, ${g}, ${b})`;
+      },
+      { dataUrl: kept.dataUrl, width: kept.viewport.width, box: view.box },
+    );
+  };
+
+  // Scrolled down and clicked at once: the view taken at the top is taken again, under its id.
+  await page.evaluate(() => window.scrollTo(0, document.getElementById('far')!.offsetTop - 100));
+  await page.locator('#far').click();
+  await expect.poll(async () => (await clickViews()).length).toBe(1);
+  const [far] = await clickViews();
+  expect(far!.id).toBe(first);
+  await expect.poll(() => colorAt(far!)).toBe('red');
+
+  // Scrolled back up, and the page left to settle before the click.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(1500);
+  await page.locator('#top').click();
+  await expect.poll(async () => (await clickViews()).length).toBe(2);
+  const [, top] = await clickViews();
+  await expect.poll(() => colorAt(top!)).toBe('blue');
   await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
 });

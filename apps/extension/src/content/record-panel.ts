@@ -886,7 +886,9 @@ function stopCapture(): void {
  * `background/step-views.ts`). Once the page has been still for
  * `VIEW_SETTLE_MS` after a step, the recorder asks for the view the next step
  * begins from; an action that comes before one is taken asks for its own as it
- * starts. Each action keeps the view's id and its element's box.
+ * starts. Each action keeps the view's id and its element's box. A scroll or a
+ * resize moves the page under a view no action began from yet: it is taken
+ * again under its id, once the page settles or as the next action starts.
  */
 const VIEW_SETTLE_MS = 600;
 
@@ -894,6 +896,8 @@ interface PendingView {
   id: string;
   /** An action began from it already. */
   used: boolean;
+  /** The page scrolled or resized since it was asked for. */
+  moved: boolean;
 }
 
 let viewsOn = false;
@@ -904,7 +908,9 @@ let viewCount = 0;
 let typing: { field: Element; view: StepView | undefined } | null = null;
 
 function requestView(hide: boolean): PendingView {
-  const view = { id: `${Date.now().toString(36)}-${(viewCount++).toString(36)}`, used: false };
+  const id =
+    currentView && !currentView.used ? currentView.id : `${Date.now().toString(36)}-${(viewCount++).toString(36)}`;
+  const view = { id, used: false, moved: false };
   currentView = view;
   void captureStepView(view.id, viewportNow(), hide);
   return view;
@@ -921,10 +927,18 @@ function scheduleView(): void {
   }, VIEW_SETTLE_MS);
 }
 
+function pageMoved(): void {
+  if (currentView && !currentView.used) currentView.moved = true;
+  scheduleView();
+}
+
 /** On a page the recording reaches, the first view is taken at once: the page as its first step begins. */
-function startViews(): void {
+function startViews(signal: AbortSignal): void {
   viewsOn = true;
   requestView(true);
+  // Scrolls of the page and of any element in it; the recorder's own surfaces do not compose theirs.
+  document.addEventListener('scroll', pageMoved, { capture: true, passive: true, signal });
+  window.addEventListener('resize', pageMoved, { passive: true, signal });
 }
 
 function stopViews(): void {
@@ -942,7 +956,7 @@ function boxOf(el: Element): StepView['box'] {
 function viewForAction(el: Element | null): StepView | undefined {
   typing = null;
   if (!viewsOn) return undefined;
-  const view = currentView && !currentView.used ? currentView : requestView(false);
+  const view = currentView && !currentView.used && !currentView.moved ? currentView : requestView(false);
   view.used = true;
   scheduleView();
   return { id: view.id, box: el ? boxOf(el) : null };
@@ -1335,7 +1349,7 @@ async function initRecordPanel(): Promise<void> {
   const capture = recorderGlobals().__piwiRecordCapture;
   if (viewport && capture) {
     watchViewport(viewport, capture.signal);
-    startViews();
+    startViews(capture.signal);
   }
   if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
     startPageRelay(state.bugToken);
