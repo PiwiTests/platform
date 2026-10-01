@@ -11,9 +11,30 @@ every `close`, and their auto fixture tears down after Playwright's own `page` a
 position into a **ledger** of every object's birth, use and death, a **measured cost** per test and per run, and
 **findings** that name a call site, a fixture or a config line, each with its fix.
 
-**Status.** Proposed 2026-10-01. Nothing is built. A prototype of the ledger and of both samplers ran on Playwright
-1.63 against a deliberately leaky suite and a page closer to an application, and every metric source in Part 2 was
-read and timed on the same machine; the results are in [What we measured](#what-we-measured).
+**Status.** Proposed 2026-10-01. A prototype of the ledger and of both samplers ran on Playwright 1.63 against a
+deliberately leaky suite and a page closer to an application, and every metric source in Part 2 was read and timed on
+the same machine; the results are in [What we measured](#what-we-measured). **PR 1 built 2026-10-01**: the ledger in
+the capture fixtures and the dogfood mirror, the `piwi-resources` census, the verdicts and the end-of-run summary in the
+reporter (also written to the GitHub job summary), the fixture-free tier, `captureResources` and `leakCheck`, a
+Resource leaks docs page, and an integration suite where each leaky test must produce exactly its finding and the clean
+ones none. What changed while building PR 1:
+
+- The worker-end census is taken by the `piwiResources` worker fixture alone: it tears down after the `browser`
+  fixture, so it sees what the worker's shutdown closed, and no `close` wrapper is needed. Each worker appends it to
+  the file the reporter names in `PIWI_RESOURCES_RESULTS` before any worker starts.
+- An object a later test or hook of the same file closes is handed on, not leaked; one closed by a test of another
+  file is leaked. A describe-scope leak is held from the last test of the describe block of the test that ran its hook.
+- What a failed test left open is not judged: Playwright shuts the worker down right after it, and `fail` would add a
+  second error to a test that already failed.
+- A page is used when it navigates or loads, when it runs an `evaluate`-family call the test made, or when a locator is
+  built on it; Piwi's own reads are internal calls and never count.
+- Node handles are servers and file watchers (`TCPServerWrap`, `FSEventWrap`, `StatWatcher`): sockets, child
+  processes and timers move on every test with Playwright's own. A server reports a second handle until one timer tick
+  after it starts listening, so a test whose count grew is read again a tick later.
+- `leakCheck` judges a test when it ends, and Playwright exposes nothing there that tells a serial hand-over apart: a
+  test that hands what it opened to the next one fails under `fail` and loses it under `close`. D8's "never shared"
+  holds for `beforeAll` objects, which the gate leaves alone.
+- A warning annotation at each leak's line waits for PR 4, where only the leaks a branch introduces are flagged.
 
 ## What the reader gets
 

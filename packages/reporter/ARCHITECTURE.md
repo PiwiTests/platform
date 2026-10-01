@@ -15,7 +15,7 @@ change. Everything under **`src/internal/`** is private plumbing — change it f
 | `wrapConfig` | `public/config-wrapper.ts` | injects reporter + global setup into a PW config |
 | `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup` |
 | `resolveSelection` | `public/selection.ts` | resolves `PIWI_SELECTION` from an ESM config, returns a grep and stamps the run |
-| `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures type (types) |
+| `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures`, `PiwiWorkerFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures types (types) |
 | `piwiFixtures`, `extendPiwiFixtures` | `internal/capture/capture-fixtures.ts` → re-exported by `index.ts` | capture fixtures (imported from `@piwitests/reporter`) |
 
 Two **external contracts** beyond the npm API:
@@ -31,7 +31,9 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/capture-fixtures.ts`) so a capture ships a stub call rather
   than the probe's source, and the boxed stack prefix `internal/capture/quiet-capture.ts`
   adds for this package's `dist/` in each worker (so a wrapped action is located at the
-  test's line).
+  test's line), and the resource ledger's listener on each worker's Playwright
+  instrumentation, with its wrappers on the browser types' `launch`/`connect`
+  (`internal/capture/resource-ledger.ts`).
 
 ## Two processes, two paths
 
@@ -47,12 +49,22 @@ worker. They never share memory — they communicate through `piwi-*` testInfo a
   │  • console / aria snapshot │  ments     │     │ collects CollectedTestCase   │
   │  • locator snapshots       │ ─────────► │     ▼                              │
   │    (locator-healing.ts)    │            │ internal/submit/serializer.ts      │
-  └───────────────────────────┘            │   → WireTestCase / run body        │
+  │  • resource census         │            │   → WireTestCase / run body        │
+  │    (resource-ledger.ts)    │            │                                    │
+  └───────────────────────────┘            │                                    │
                                            │     ▼                              │
                                            │ internal/submit/run-submitter.ts   │
                                            │   the fallback ladder ▼            │
                                            └──────────────────────────────────┘
 ```
+
+The resource ledger also writes one file, as the lab modes do: a worker's last
+census, taken as its `piwiResources` worker fixture tears down, belongs to no test.
+The reporter names a temp file in `PIWI_RESOURCES_RESULTS` in `onBegin`, before
+any worker starts; each worker appends that census to it, and `onEnd` reads it
+back. `internal/collect/resource-verdicts.ts` stitches every census per worker
+into the findings the reporter prints; nothing about resources is sent to the
+server.
 
 ## The submit/fallback ladder (`internal/submit/run-submitter.ts`)
 
@@ -83,11 +95,14 @@ src/
     submit/     run-submitter, uploader, serializer
     transport/  http-client (+ HttpError)
     streaming/  stream-manager, stream-buffer, crash-recovery
-    collect/    metadata-collector, error-text
+    collect/    metadata-collector, error-text, resource-verdicts (the censuses
+                stitched into leaked, idle, piling-up and handle findings)
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
                 trace and stack locations — Playwright internals, feature-detected)
+                resource-ledger (the browsers, contexts, pages and API request
+                contexts each worker opens, and the census per test)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing

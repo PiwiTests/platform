@@ -174,6 +174,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/slow-tests',
       },
       {
+        title: 'Resource leaks',
+        summary:
+          'Browsers, contexts and pages your tests leave open or open for nothing, listed with the line that opened them.',
+        needs: ['fixtures'],
+        where: 'Reporter output; GitHub job summary',
+        doc: 'features/resource-leaks',
+      },
+      {
         title: 'AI diagnosis',
         summary:
           'An LLM explains a cluster against your actual diff, with a suggested patch validated against your source first.',

@@ -29,16 +29,33 @@ type Boxing = { set: SetBoxedStackPrefixes; prefixes: string[] };
 /** Resolved on first use; null when this Playwright offers no hook. */
 let boxing: Boxing | null | undefined;
 
+/** Resolved on first use; null when `playwright` cannot be found from here. */
+let resolvedPlaywrightPackageJson: string | null | undefined;
+
+/**
+ * The `package.json` of the `playwright` package the test runner uses, resolved
+ * through @playwright/test → playwright, the same path Playwright's own
+ * `require('playwright-core/…')` takes, so a module loaded from there is the
+ * instance the runner holds. Null when the layout is not one this can follow.
+ */
+export function resolvePlaywrightPackageJson(): string | null {
+  if (resolvedPlaywrightPackageJson !== undefined) return resolvedPlaywrightPackageJson;
+  try {
+    const testPackageJson = createRequire(__filename).resolve('@playwright/test/package.json');
+    resolvedPlaywrightPackageJson = createRequire(testPackageJson).resolve('playwright/package.json');
+  } catch {
+    resolvedPlaywrightPackageJson = null;
+  }
+  return resolvedPlaywrightPackageJson;
+}
+
 /** Find the hook, with Playwright's own package and this package's `dist/` as the first prefixes. */
 function resolveBoxing(): Boxing | null {
   try {
     const root = findOwnPackageJson(__dirname)?.root;
     if (!root) return null;
-    // Resolve through @playwright/test → playwright, the same path Playwright's
-    // own `require('playwright-core/…')` takes, so the module (and its prefix
-    // list) is the instance the test runner uses.
-    const testPackageJson = createRequire(__filename).resolve('@playwright/test/package.json');
-    const playwrightPackageJson = createRequire(testPackageJson).resolve('playwright/package.json');
+    const playwrightPackageJson = resolvePlaywrightPackageJson();
+    if (!playwrightPackageJson) return null;
     const requireFromPlaywright = createRequire(playwrightPackageJson);
     for (const [moduleId, pick] of BOXED_PREFIX_EXPORTS) {
       let set: unknown;

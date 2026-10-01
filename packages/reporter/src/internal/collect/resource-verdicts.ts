@@ -1,0 +1,579 @@
+import * as path from 'node:path';
+import type { TestStep } from '@playwright/test/reporter';
+import type {
+  LeakCheck,
+  ResourceBirth,
+  ResourceCensus,
+  ResourceClose,
+  ResourceKind,
+  ResourceTestRef,
+} from '../capture/resource-ledger.js';
+
+/**
+ * Turns the resource censuses the capture fixtures attach (`piwi-resources`)
+ * into findings: the objects left open after the scope that opened them, the
+ * pages opened and never used, the owners whose pages, listeners or route
+ * handlers pile up, and the Node handles a test left in its worker. Workers
+ * report facts; the verdicts are reached here, once every census is in, because
+ * only a later census can tell an object a test handed on (and a later test
+ * closed) from one nobody closed.
+ *
+ * Pure: the reporter feeds it the parsed censuses and the steps of tests that
+ * ran without the fixtures, and prints `formatResourceSummary`.
+ */
+
+export type FindingVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probable';
+
+export interface ResourceFinding {
+  verdict: FindingVerdict;
+  /** The object kind, `handle` for a Node handle. */
+  kind: ResourceKind | 'handle';
+  /** Where it was opened: `file:line`, a fixture, or a popup's trigger. */
+  where: string;
+  /** Leaked: the scope it outlived. */
+  scope?: 'test' | 'describe';
+  /** The tests involved. */
+  tests: number;
+  /** The objects (or the leaks, for handles) grouped in this finding. */
+  count: number;
+  /** Leaked: how long the longest one stayed open past its scope, in ms. */
+  heldMs?: number;
+  /** Leaked: at least one was still open when its worker shut down. */
+  untilWorkerEnd?: boolean;
+  /** Leaked contexts and browsers: the open pages that went with them. */
+  pages?: number;
+  /** Leaked: closed by `PIWI_LEAK_CHECK=close`. */
+  closedByPiwi?: boolean;
+  /** Piling: what grew, from how many to how many, over how many tests. */
+  growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
+  /** Free text: the describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
+  detail?: string;
+}
+
+export interface ResourceReport {
+  findings: ResourceFinding[];
+  counts: { leaked: number; idle: number; piling: number; handle: number; probable: number };
+}
+
+/** Lifecycle calls a test made outside any fixture, from its steps, for a run without the fixtures. */
+export interface LifecycleTally {
+  /** Spec file, relative, POSIX separators. */
+  file: string;
+  opened: Array<{ kind: 'context' | 'browser'; site: string | null }>;
+  closed: { context: number; browser: number };
+}
+
+export interface ResourceReportInput {
+  censuses: ResourceCensus[];
+  /** Per test id: the user fixtures its `Before Hooks` set up, `name (file:line)`. */
+  fixturesByTest?: Map<string, string[]>;
+  tallies?: LifecycleTally[];
+}
+
+interface Tracked {
+  worker: number;
+  birth: ResourceBirth;
+  bornCensus: ResourceCensus;
+  close: ResourceClose | null;
+  lastOpenAt: number | null;
+  used: boolean | undefined;
+  series: Array<{ pages?: number; listeners?: number; routes?: number }>;
+}
+
+const OPEN_STEP_TITLES: Record<string, 'context' | 'browser'> = {
+  'Create context': 'context',
+  'Launch persistent context': 'context',
+  'Launch browser': 'browser',
+  'Connect over CDP': 'browser',
+};
+const CLOSE_STEP_TITLES: Record<string, 'context' | 'browser'> = {
+  'Close context': 'context',
+  'Close browser': 'browser',
+};
+
+/** A census attachment's body, or null when it is not one this reporter reads. */
+export function parseResourceCensus(body: Buffer | string | undefined): ResourceCensus | null {
+  if (!body) return null;
+  try {
+    const value = JSON.parse(body.toString()) as Partial<ResourceCensus>;
+    if (value?.v !== 1 || !Array.isArray(value.born) || !Array.isArray(value.closed) || !Array.isArray(value.open)) {
+      return null;
+    }
+    if (typeof value.worker !== 'number' || typeof value.at !== 'number') return null;
+    return value as ResourceCensus;
+  } catch {
+    return null;
+  }
+}
+
+/** Every census line of the workers' shutdown file; malformed lines are skipped. */
+export function parseResourceResults(text: string): ResourceCensus[] {
+  return text
+    .split('\n')
+    .map((line) => (line.trim() ? parseResourceCensus(line) : null))
+    .filter((census): census is ResourceCensus => census !== null);
+}
+
+/** The user fixtures a test's `Before Hooks` set up: those with a location outside `node_modules`. */
+export function userFixturesOf(steps: TestStep[]): string[] {
+  const out: string[] = [];
+  const walk = (list: TestStep[]) => {
+    for (const step of list) {
+      const file = step.location?.file;
+      if (step.category === 'fixture' && file && !file.includes(`${path.sep}node_modules${path.sep}`)) {
+        const name = step.title.replace(/^(?:Fixture\s+|fixture:\s*)/, '').replace(/^"(.*)"$/, '$1');
+        if (!name.startsWith('piwi')) out.push(`${name} (${relativeFile(file)}:${step.location!.line})`);
+      }
+      walk(step.steps ?? []);
+    }
+  };
+  walk(steps);
+  return [...new Set(out)];
+}
+
+/** The browsers and contexts a test opened and closed outside any fixture, from its `pw:api` steps. */
+export function tallyLifecycleSteps(file: string, steps: TestStep[]): LifecycleTally {
+  const tally: LifecycleTally = { file, opened: [], closed: { context: 0, browser: 0 } };
+  const walk = (list: TestStep[]) => {
+    for (const step of list) {
+      // A fixture opens and closes its own objects, Playwright's among them.
+      if (step.category === 'fixture') continue;
+      if (step.category === 'pw:api') {
+        const opened = OPEN_STEP_TITLES[step.title];
+        const closed = CLOSE_STEP_TITLES[step.title];
+        if (opened) {
+          tally.opened.push({
+            kind: opened,
+            site: step.location ? `${relativeFile(step.location.file)}:${step.location.line}` : null,
+          });
+        }
+        if (closed) tally.closed[closed]++;
+      }
+      walk(step.steps ?? []);
+    }
+  };
+  walk(steps);
+  return tally;
+}
+
+function relativeFile(file: string): string {
+  return path.relative(process.cwd(), file).split(path.sep).join('/');
+}
+
+/** Stitch every worker's censuses and reach the verdicts. */
+export function buildResourceReport(input: ResourceReportInput): ResourceReport {
+  const findings: ResourceFinding[] = [];
+  const byWorker = new Map<number, ResourceCensus[]>();
+  for (const census of input.censuses) {
+    const list = byWorker.get(census.worker) ?? [];
+    list.push(census);
+    byWorker.set(census.worker, list);
+  }
+
+  const leaked: Array<{ tracked: Tracked; scope: 'test' | 'describe'; heldMs: number; untilWorkerEnd: boolean }> = [];
+  const idle: Tracked[] = [];
+  const all: Tracked[] = [];
+
+  for (const censuses of byWorker.values()) {
+    censuses.sort((a, b) => a.at - b.at);
+    const tracked = new Map<number, Tracked>();
+    for (const census of censuses) {
+      for (const birth of census.born) {
+        tracked.set(birth.id, {
+          worker: census.worker,
+          birth,
+          bornCensus: census,
+          close: null,
+          lastOpenAt: null,
+          used: undefined,
+          series: [],
+        });
+      }
+      for (const close of census.closed) {
+        const entry = tracked.get(close.id);
+        if (!entry) continue;
+        entry.close = close;
+        if (close.used !== undefined) entry.used = close.used;
+      }
+      for (const open of census.open) {
+        const entry = tracked.get(open.id);
+        if (!entry) continue;
+        entry.lastOpenAt = census.at;
+        if (open.used !== undefined) entry.used = open.used;
+        if (census.test) entry.series.push({ pages: open.pages, listeners: open.listeners, routes: open.routes });
+      }
+    }
+    const testCensuses = censuses.filter((census) => census.test !== null);
+    const workerEnded = censuses.some((census) => census.test === null);
+
+    for (const entry of tracked.values()) {
+      all.push(entry);
+      if (entry.birth.kind === 'page' && entry.used === false && !entry.bornCensus.test?.failed) idle.push(entry);
+      const verdict = leakVerdict(entry, testCensuses, workerEnded);
+      if (verdict) leaked.push({ tracked: entry, ...verdict });
+    }
+  }
+
+  findings.push(...groupLeaks(leaked, all));
+  findings.push(...pilingFindings(all));
+  findings.push(...handleFindings(byWorker));
+  findings.push(...groupIdle(idle, input.fixturesByTest ?? new Map()));
+  findings.push(...probableFindings(input.tallies ?? []));
+
+  const counts = { leaked: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
+  for (const finding of findings) counts[finding.verdict] += finding.verdict === 'idle' ? finding.count : 1;
+  return { findings, counts };
+}
+
+/** Whether a ref belongs to the same spec file as the object's birth: the scope hand-overs stay within. */
+function sameFile(birth: ResourceBirth, ref: { file: string } | null): boolean {
+  return !!ref && !!birth.test && ref.file === birth.test.file;
+}
+
+/**
+ * Whether a ref is a test of the describe block a hook object was opened in:
+ * the describe of the test that ran the hook, or the whole file for a hook at
+ * its top level.
+ */
+function insideBlock(birth: ResourceBirth, ref: ResourceTestRef | null): boolean {
+  if (!ref || !sameFile(birth, ref)) return false;
+  return birth.test!.suite.every((title, index) => ref.suite[index] === title);
+}
+
+/**
+ * The verdict on one object: leaked past its test, leaked past its describe
+ * block, or nothing. An object a test opened and a later test or hook of the
+ * same file closed was handed on, not leaked; one a worker-scoped fixture opened
+ * lives as long as the worker by design.
+ */
+function leakVerdict(
+  entry: Tracked,
+  testCensuses: ResourceCensus[],
+  workerEnded: boolean,
+): { scope: 'test' | 'describe'; heldMs: number; untilWorkerEnd: boolean } | null {
+  const { birth, close, bornCensus } = entry;
+  if (birth.reused || birth.phase === 'worker' || birth.fixture?.worker || !birth.test) return null;
+  if (birth.kind === 'context' && birth.implicit) return null;
+  // `PIWI_LEAK_CHECK=close` closed it at the end of its test: gone from that census, still a leak.
+  if (close?.byPiwi) return { scope: 'test', heldMs: 0, untilWorkerEnd: false };
+  const closedByShutdown = !!close && (close.phase === 'worker' || close.test === null);
+
+  if (birth.phase === 'beforeAll' || birth.phase === 'afterAll') {
+    if (close && !closedByShutdown && sameFile(birth, close.test)) return null;
+    // The block ended when a test outside it ran on this worker, or the worker shut down.
+    const ended =
+      workerEnded || testCensuses.some((census) => census.at >= bornCensus.at && !insideBlock(birth, census.test));
+    if (!ended) return null;
+    const lastInside = [...testCensuses].reverse().find((census) => insideBlock(birth, census.test));
+    const blockEnd = lastInside?.at ?? bornCensus.at;
+    const end = close?.at ?? entry.lastOpenAt ?? blockEnd;
+    return { scope: 'describe', heldMs: Math.max(0, end - blockEnd), untilWorkerEnd: !close || closedByShutdown };
+  }
+
+  // Born in a test's span: it outlived the test when it was open at the census closing that test.
+  if (bornCensus.test === null || bornCensus.test.id !== birth.test.id) return null;
+  // The test failed, so Playwright shut its worker down right after it.
+  if (bornCensus.test.failed) return null;
+  const openAtItsEnd = bornCensus.open.some((open) => open.id === birth.id);
+  if (!openAtItsEnd) return null;
+  // Closed later in its own test (a fixture tearing down after the census), or
+  // handed on to a later test or hook of the same file that closed it.
+  if (close && !closedByShutdown && (close.test?.id === birth.test.id || sameFile(birth, close.test))) return null;
+  const end = close?.at ?? entry.lastOpenAt ?? bornCensus.at;
+  return { scope: 'test', heldMs: Math.max(0, end - bornCensus.at), untilWorkerEnd: !close || closedByShutdown };
+}
+
+/** Where an object was opened, as the summary names it. */
+function whereOf(birth: ResourceBirth): string {
+  if (birth.opener !== undefined) {
+    return `popup${birth.trigger ? ` after ${birth.trigger}` : ''}${birth.site ? ` at ${birth.site}` : ''}`;
+  }
+  if (birth.fixture) {
+    const at = birth.site ?? birth.fixture.location;
+    return `fixture "${birth.fixture.title}"${at ? ` at ${at}` : ''}`;
+  }
+  return birth.site ?? 'an unknown line';
+}
+
+/** The key of an object across workers: ids restart in every worker process. */
+const keyOf = (worker: number, id: number) => `${worker}:${id}`;
+
+type Leak = { tracked: Tracked; scope: 'test' | 'describe'; heldMs: number; untilWorkerEnd: boolean };
+
+/**
+ * Group leaked objects by where they were opened. A page in a leaked context,
+ * and a context in a leaked browser, are folded into it; the context
+ * `browser.newPage()` opened for its page is folded into the page.
+ */
+function groupLeaks(leaked: Leak[], all: Tracked[]): ResourceFinding[] {
+  const leaks = new Map(leaked.map((leak) => [keyOf(leak.tracked.worker, leak.tracked.birth.id), leak]));
+  const tracked = new Map(all.map((entry) => [keyOf(entry.worker, entry.birth.id), entry]));
+  const groups = new Map<string, ResourceFinding & { testIds: Set<string> }>();
+  const groupKey = (leak: Leak) => `${leak.scope}|${leak.tracked.birth.kind}|${whereOf(leak.tracked.birth)}`;
+  for (const leak of leaked) {
+    const { birth } = leak.tracked;
+    if (birth.kind === 'context' && birth.implicit) continue;
+    if (foldTarget(leak.tracked, leaks, tracked)) continue;
+    const key = groupKey(leak);
+    const group = groups.get(key) ?? {
+      verdict: 'leaked' as const,
+      kind: birth.kind,
+      where: whereOf(birth),
+      scope: leak.scope,
+      tests: 0,
+      count: 0,
+      heldMs: 0,
+      untilWorkerEnd: false,
+      pages: 0,
+      testIds: new Set<string>(),
+      ...(leak.scope === 'describe' && birth.test?.suite.length
+        ? { detail: `beforeAll of "${birth.test.suite.join(' › ')}"` }
+        : {}),
+    };
+    group.count++;
+    if (birth.test) group.testIds.add(birth.test.id);
+    group.heldMs = Math.max(group.heldMs ?? 0, leak.heldMs);
+    group.untilWorkerEnd = group.untilWorkerEnd || leak.untilWorkerEnd;
+    if (leak.tracked.close?.byPiwi) group.closedByPiwi = true;
+    groups.set(key, group);
+  }
+  // Count the pages folded into each group.
+  for (const leak of leaked) {
+    if (leak.tracked.birth.kind !== 'page') continue;
+    const root = foldTarget(leak.tracked, leaks, tracked);
+    const group = root ? groups.get(groupKey(root)) : undefined;
+    if (group) group.pages = (group.pages ?? 0) + 1;
+  }
+  return [...groups.values()]
+    .map(({ testIds, ...finding }) => ({ ...finding, tests: testIds.size }))
+    .sort((a, b) => (a.scope === b.scope ? b.count - a.count : a.scope === 'test' ? -1 : 1));
+}
+
+/**
+ * The leaked ancestor an object folds into, if any: a page's leaked context, a
+ * context's leaked browser, walking through the context `browser.newPage()`
+ * opened for a page, which is never a finding of its own.
+ */
+function foldTarget(entry: Tracked, leaks: Map<string, Leak>, tracked: Map<string, Tracked>): Leak | null {
+  let parentId = entry.birth.parent;
+  while (parentId !== null) {
+    const key = keyOf(entry.worker, parentId);
+    const parent = tracked.get(key);
+    if (!parent) return null;
+    if (!(parent.birth.kind === 'context' && parent.birth.implicit)) return leaks.get(key) ?? null;
+    parentId = parent.birth.parent;
+  }
+  return null;
+}
+
+/** Group pages that ended unused by what opened them. */
+function groupIdle(idle: Tracked[], fixturesByTest: Map<string, string[]>): ResourceFinding[] {
+  const groups = new Map<string, ResourceFinding & { testIds: Set<string> }>();
+  for (const entry of idle) {
+    const { birth } = entry;
+    const fixtures = birth.test ? (fixturesByTest.get(birth.test.id) ?? []) : [];
+    const detail = birth.fixture && fixtures.length ? `set up with ${fixtures.join(', ')}` : undefined;
+    const where = whereOf(birth);
+    const key = `${where}|${detail ?? ''}`;
+    const group = groups.get(key) ?? {
+      verdict: 'idle' as const,
+      kind: 'page' as const,
+      where,
+      tests: 0,
+      count: 0,
+      testIds: new Set<string>(),
+      ...(detail ? { detail } : {}),
+    };
+    group.count++;
+    if (birth.test) group.testIds.add(birth.test.id);
+    groups.set(key, group);
+  }
+  return [...groups.values()]
+    .map(({ testIds, ...finding }) => ({ ...finding, tests: testIds.size }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** An open context whose pages, or an open page whose listeners or route handlers, grew test after test. */
+function pilingFindings(all: Tracked[]): ResourceFinding[] {
+  const out: ResourceFinding[] = [];
+  for (const entry of all) {
+    for (const what of ['pages', 'listeners', 'routes'] as const) {
+      const values = entry.series.map((point) => point[what]).filter((v): v is number => typeof v === 'number');
+      if (values.length < 3) continue;
+      const rising = values.every((value, i) => i === 0 || value >= values[i - 1]!);
+      const from = values[0]!;
+      const to = values[values.length - 1]!;
+      if (!rising || to - from < 2) continue;
+      out.push({
+        verdict: 'piling',
+        kind: entry.birth.kind,
+        where: whereOf(entry.birth),
+        tests: values.length,
+        count: 1,
+        growth: { what, from, to, tests: values.length },
+      });
+    }
+  }
+  return out.sort((a, b) => b.growth!.to - b.growth!.from - (a.growth!.to - a.growth!.from));
+}
+
+/** A tracked Node handle type that grew during a test and was still there when the next test started. */
+function handleFindings(byWorker: Map<number, ResourceCensus[]>): ResourceFinding[] {
+  const groups = new Map<string, ResourceFinding>();
+  for (const censuses of byWorker.values()) {
+    const ordered = censuses.filter((census) => census.test && census.handles).sort((a, b) => a.at - b.at);
+    for (let i = 0; i < ordered.length - 1; i++) {
+      const census = ordered[i]!;
+      const next = ordered[i + 1]!;
+      for (const [type, end] of Object.entries(census.handles!.end)) {
+        const grew = end - (census.handles!.start[type] ?? 0);
+        if (grew <= 0 || (next.handles!.start[type] ?? 0) < end) continue;
+        const test = census.test!;
+        const key = `${test.id}|${type}`;
+        const group = groups.get(key) ?? {
+          verdict: 'handle' as const,
+          kind: 'handle' as const,
+          where: type,
+          tests: 1,
+          count: 0,
+          detail: `"${test.title ?? ''}" (${test.file})`,
+        };
+        group.count += grew;
+        groups.set(key, group);
+      }
+    }
+  }
+  return [...groups.values()];
+}
+
+/** Without the fixtures: per spec file, more browsers or contexts opened than closed. */
+function probableFindings(tallies: LifecycleTally[]): ResourceFinding[] {
+  const byFile = new Map<string, LifecycleTally>();
+  for (const tally of tallies) {
+    const merged = byFile.get(tally.file) ?? { file: tally.file, opened: [], closed: { context: 0, browser: 0 } };
+    merged.opened.push(...tally.opened);
+    merged.closed.context += tally.closed.context;
+    merged.closed.browser += tally.closed.browser;
+    byFile.set(tally.file, merged);
+  }
+  const out: ResourceFinding[] = [];
+  for (const tally of byFile.values()) {
+    for (const kind of ['browser', 'context'] as const) {
+      const opened = tally.opened.filter((o) => o.kind === kind);
+      if (opened.length <= tally.closed[kind]) continue;
+      const sites = [...new Set(opened.map((o) => o.site ?? tally.file))];
+      out.push({
+        verdict: 'probable',
+        kind,
+        where: sites.join(', '),
+        tests: 0,
+        count: opened.length - tally.closed[kind],
+        detail: `${opened.length} opened, ${tally.closed[kind]} closed in ${tally.file}`,
+      });
+    }
+  }
+  return out;
+}
+
+/** `5.6 s`, `2 min 3 s`, `850 ms`. */
+export function formatHeld(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`;
+}
+
+const KIND_LABEL: Record<ResourceFinding['kind'], string> = {
+  browser: 'browser',
+  context: 'context',
+  page: 'page',
+  request: 'API context',
+  handle: 'handle',
+};
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Node's handle type names, as a reader knows them. */
+const HANDLE_LABEL: Record<string, string> = {
+  TCPServerWrap: 'server',
+  FSEventWrap: 'file watcher',
+  StatWatcher: 'file watcher',
+};
+
+/** One line per finding, most severe first. */
+function findingLine(finding: ResourceFinding): string {
+  const verdict = finding.verdict.padEnd(8);
+  const label =
+    finding.verdict === 'handle'
+      ? (HANDLE_LABEL[finding.where] ?? finding.where)
+      : finding.growth
+        ? finding.growth.what
+        : KIND_LABEL[finding.kind];
+  const kind = label.padEnd(11);
+  const parts: string[] = finding.verdict === 'handle' ? [] : [finding.where];
+  switch (finding.verdict) {
+    case 'leaked': {
+      if (finding.count > 1) parts.push(`${finding.count} ${KIND_LABEL[finding.kind]}s`);
+      if (finding.detail) parts.push(finding.detail);
+      if (finding.pages) parts.push(`with ${plural(finding.pages, 'page')}`);
+      if (finding.tests) parts.push(plural(finding.tests, 'test'));
+      const past = finding.scope === 'describe' ? 'its describe block' : 'its test';
+      if (finding.closedByPiwi) parts.push('closed by Piwi at the end of its test');
+      else if (finding.untilWorkerEnd)
+        parts.push(`open until the worker shut down (${formatHeld(finding.heldMs ?? 0)} past ${past})`);
+      else parts.push(`open ${formatHeld(finding.heldMs ?? 0)} past ${past}`);
+      break;
+    }
+    case 'idle':
+      parts.push(plural(finding.count, 'page'));
+      if (finding.tests) parts.push(plural(finding.tests, 'test'));
+      if (finding.detail) parts.push(finding.detail);
+      break;
+    case 'piling': {
+      const growth = finding.growth!;
+      const noun = growth.what === 'pages' ? 'open pages' : growth.what === 'routes' ? 'route handlers' : 'listeners';
+      parts.push(`${growth.from} → ${growth.to} ${noun} over ${growth.tests} tests`);
+      break;
+    }
+    case 'handle':
+      parts.push(`left running in the worker by ${finding.detail ?? 'a test'}`);
+      break;
+    case 'probable':
+      if (finding.detail) parts.push(finding.detail);
+      break;
+  }
+  return `  ${verdict} ${kind} ${parts.join(' · ')}`;
+}
+
+/**
+ * The end-of-run summary, without the logger prefix, or nothing when there is
+ * no finding. At most `maxLines` findings are listed; the rest are counted.
+ */
+export function formatResourceSummary(report: ResourceReport, leakCheck: LeakCheck, maxLines = 10): string[] {
+  if (report.findings.length === 0) return [];
+  const { counts } = report;
+  const head = [
+    counts.leaked ? plural(counts.leaked, 'leak') : '',
+    counts.idle ? `${plural(counts.idle, 'idle page')}` : '',
+    counts.piling ? `${counts.piling} piling up` : '',
+    counts.handle ? plural(counts.handle, 'handle') + ' left in workers' : '',
+    counts.probable ? plural(counts.probable, 'probable leak') : '',
+  ].filter(Boolean);
+  const lines = [`Resources: ${head.join(' · ')}`];
+  for (const finding of report.findings.slice(0, maxLines)) lines.push(findingLine(finding));
+  const rest = report.findings.length - maxLines;
+  if (rest > 0) lines.push(`  … and ${plural(rest, 'more finding')}`);
+  const testLeaks = report.findings.some((f) => f.verdict === 'leaked' && f.scope === 'test' && !f.closedByPiwi);
+  if (testLeaks && leakCheck === 'report') {
+    lines.push(
+      "Set leakCheck: 'fail' (PIWI_LEAK_CHECK=fail) to fail the tests that leave what they open, or 'close' to close it.",
+    );
+  }
+  if (counts.probable) {
+    lines.push(
+      'Probable leaks are counted from the steps alone; the capture fixtures (extendPiwiFixtures) make them exact.',
+    );
+  }
+  return lines;
+}
