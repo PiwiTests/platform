@@ -141,7 +141,7 @@ result does not hold, **not reproduced** when the test passes, or **diverged** a
 
 A developer with the extension connected finds the project's open reports in **Replay a bug report**, beside the file
 chooser: the report's steps play in their own tab, on their own dev server. See
-[Replaying a report](./report-a-bug#replaying-a-report).
+[Replay a bug report](./replay-a-bug-report).
 
 ## For agents
 
