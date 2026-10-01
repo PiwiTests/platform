@@ -57,6 +57,12 @@ export interface ReplayState {
    * page's events, it stays there.
    */
   driver?: { driver: ReplayDriver; reason: FallbackReason | null } | null;
+  /**
+   * The viewport the steps were recorded at from the current step on, when
+   * they say one, and whether the replay set it on the tab (it can only with
+   * trusted input).
+   */
+  viewport?: { width: number; height: number; set: boolean } | null;
 }
 
 function isReplayState(value: unknown): value is ReplayState {

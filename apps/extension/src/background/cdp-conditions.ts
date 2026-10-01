@@ -182,6 +182,24 @@ export async function setTabViewport(viewport: TabViewport): Promise<{ ok: true 
   }
 }
 
+/**
+ * Sets the viewport the popup set on the tab again, when one is set: another
+ * feature that sized the tab meanwhile, such as a replay, hands it back.
+ * Answers whether one was set.
+ */
+export async function restoreTabViewport(tabId: number): Promise<boolean> {
+  const stored = (await chrome.storage.session.get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewports | undefined;
+  const viewport = stored?.[tabId];
+  if (!viewport || !holdsDebugger(tabId, 'viewport')) return false;
+  await sendCommand(tabId, 'Emulation.setDeviceMetricsOverride', {
+    width: viewport.width,
+    height: viewport.height,
+    deviceScaleFactor: 0,
+    mobile: false,
+  }).catch(() => undefined);
+  return true;
+}
+
 /** The tab back to its window's size, and the session let go when nothing else holds it. */
 export async function clearTabViewport(tabId: number): Promise<void> {
   if (holdsDebugger(tabId, 'viewport')) {

@@ -145,7 +145,7 @@ test.describe('Report a bug', () => {
 
     // The picks and the dialogs recorded no step of their own.
     const events = await readStoredEvents(page);
-    expect(events.map((e) => e.kind)).toEqual(['navigate', 'input', 'click', 'assert', 'assert']);
+    expect(events.map((e) => e.kind)).toEqual(['viewport', 'navigate', 'input', 'click', 'assert', 'assert']);
 
     // To the next page, where the evidence script and the recorder attach again.
     await page.getByRole('link', { name: 'Checkout' }).click();
@@ -168,7 +168,9 @@ test.describe('Report a bug', () => {
     const spec = await readClipboard(page);
     expect(spec).toContain(`test('bug: coupon not applied to the total', {`);
     expect(spec).toContain(`tag: ['@bug'],`);
-    expect(spec).toContain(`await page.goto('/cart');`);
+    expect(spec).toMatch(
+      / {2}await page\.setViewportSize\(\{ width: \d+, height: \d+ \}\);\n {2}await page\.goto\('\/cart'\);/,
+    );
     expect(spec).toContain(`await page.getByRole('textbox', { name: 'Coupon' }).fill('SPRING10');`);
     expect(spec).toContain(
       `await expect(page.getByTestId('cart-total')).toHaveText('Total: 45'); // recorded: 'Total: 50'`,
@@ -332,7 +334,7 @@ test.describe('Report a bug', () => {
     await page.getByRole('button', { name: 'Apply' }).click();
     await expect
       .poll(async () => (await readStoredEvents(page)).map((e) => e.kind))
-      .toEqual(['navigate', 'input', 'click']);
+      .toEqual(['viewport', 'navigate', 'input', 'click']);
   });
 
   test('in French: the HUD, the dialogs and the finished report', async ({ context }) => {
@@ -543,6 +545,43 @@ test.describe('Report a bug', () => {
     } finally {
       await context.close();
     }
+  });
+
+  test('keeps the viewport the steps were played at, and the size a resize settles at, in the failing test', async ({
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    const start = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    await page.fill('#coupon', 'SPRING10');
+    // A drag through sizes records where it ends only.
+    await page.setViewportSize({ width: 500, height: 700 });
+    await page.setViewportSize({ width: 390, height: 664 });
+    const sizes = async () =>
+      (await readStoredEvents(page)).filter((e) => e.kind === 'viewport').map((e) => e.viewport);
+    await expect.poll(sizes).toEqual([start, { width: 390, height: 664 }]);
+    await page.getByRole('button', { name: 'Apply' }).click();
+    // The next page has the same size: nothing more is kept.
+    await page.getByRole('link', { name: 'Checkout' }).click();
+    await page.waitForURL('**/checkout');
+    await attachRecorder(page);
+    expect(await sizes()).toHaveLength(2);
+
+    await pressHudButton(page, 'finish');
+    await expect.poll(() => hostPresent(page, 'piwi-record-review-host')).toBe(true);
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => readClipboard(page)).toContain('test.fail();');
+    const spec = await readClipboard(page);
+    expect(spec).toContain(
+      `  await page.setViewportSize({ width: ${start.width}, height: ${start.height} });\n  await page.goto('/cart');`,
+    );
+    expect(spec).toMatch(
+      /setViewportSize\(\{ width: 390, height: 664 \}\);\n {2}await page\.getByRole\('button', \{ name: 'Apply' \}\)\.click\(\);/,
+    );
   });
 
   test('the outline has roles, names, states and values, never a password, and stops at 400 lines', async ({

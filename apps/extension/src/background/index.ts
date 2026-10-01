@@ -47,7 +47,13 @@ import {
   setTabViewport,
 } from './cdp-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
-import { handleReplayDriver, handleReplayInput, releaseReplayDebugger, releaseReplayTab } from './cdp-replay.js';
+import {
+  handleReplayDriver,
+  handleReplayInput,
+  handleReplayViewport,
+  releaseReplayDebugger,
+  releaseReplayTab,
+} from './cdp-replay.js';
 import { debuggerAvailable, tabsHolding } from './debugger.js';
 import {
   captureThroughDebugger,
@@ -871,6 +877,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-replay-input') {
     void handleReplayInput(message, sender.tab).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-viewport') {
+    void handleReplayViewport(message, sender.tab).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-set-tab-viewport') {

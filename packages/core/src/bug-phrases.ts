@@ -75,6 +75,8 @@ interface BugReportPhrases {
   actual(value: string): string;
   /** Under a step: the reporter's note. */
   note(text: string): string;
+  /** Under a step: the viewport size the page has from that step on, such as `390×844`. */
+  viewport(size: string): string;
   expectedHeading: string;
   nothingMarked: string;
   /** A line of "Expected and actual": step number, the expectation, and what the page showed when known. */

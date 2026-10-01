@@ -2461,6 +2461,28 @@
       }
     }
   },
+  "replay_viewportSet": {
+    "message": "Janela de $size$, como foi gravada",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Gravado em $recorded$, reproduzido em $actual$: redimensione a janela se a página depender do tamanho dela",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pausar"
   },

@@ -121,16 +121,40 @@ export interface RecordedStep {
   dropTarget?: RecordedTarget | null;
 }
 
+/**
+ * The size of the page's viewport from the step at `step` on, in CSS pixels,
+ * as `page.setViewportSize` sets it. A recording's first one, at step 0, is
+ * the size it was recorded at; the others follow a resize.
+ */
+export interface StepViewport {
+  step: number;
+  width: number;
+  height: number;
+}
+
 export interface RecordedSession {
   steps: RecordedStep[];
   startedAt: number;
   /** The very first page's URL — the only step that becomes an explicit `page.goto(...)` in codegen. */
   startUrl: string;
+  /** The viewport sizes the steps were recorded at, by the step each starts at; absent when none was recorded. */
+  viewports?: StepViewport[];
 }
 
 /** A raw capture event, as built by the extension's DOM listeners — one per meaningful browser event, before coalescing. */
 export interface RawCaptureEvent {
-  kind: 'click' | 'dblclick' | 'hover' | 'input' | 'change' | 'files' | 'drop' | 'keydown' | 'navigate' | 'assert';
+  kind:
+    | 'click'
+    | 'dblclick'
+    | 'hover'
+    | 'input'
+    | 'change'
+    | 'files'
+    | 'drop'
+    | 'keydown'
+    | 'navigate'
+    | 'assert'
+    | 'viewport';
   /** The element acted on or asserted about; null for a navigation and for a `toHaveURL` assertion. */
   target: RecordedTarget | null;
   /** Current field value (input/change), the key pressed (keydown), the new URL (navigate), or the chosen files' names, one per line (files). */
@@ -144,6 +168,8 @@ export interface RawCaptureEvent {
   assertion?: StepAssertion;
   /** Where a `drop` event's element was dropped; its `target` is the element dragged. */
   dropTarget?: RecordedTarget | null;
+  /** The page's viewport size, on a `viewport` event: when the recording starts, and after a resize. */
+  viewport?: { width: number; height: number };
 }
 
 /**
@@ -250,6 +276,9 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
   }
 
   for (const ev of events) {
+    // A viewport size is not a step: `viewportsForSteps` places it.
+    if (ev.kind === 'viewport') continue;
+
     if (ev.kind === 'navigate') {
       flushPendingFill();
       if (!sawFirstGoto) {
@@ -444,4 +473,33 @@ export function buildSession(steps: RecordedStep[], startedAt: number): Recorded
   const firstGoto = steps.find((s) => s.action === 'goto');
   const startUrl = firstGoto?.value ?? steps[0]?.pageUrl ?? '';
   return { steps, startedAt, startUrl };
+}
+
+/**
+ * The viewport sizes of `viewport` events, by the step each applies from: the
+ * first step recorded at or after the size was. Of several sizes before one
+ * step the last counts, a size equal to the one before it is left out, and a
+ * size taken after the last step is dropped.
+ */
+export function viewportsForSteps(steps: RecordedStep[], events: RawCaptureEvent[]): StepViewport[] {
+  const sizes = events.filter((e) => e.kind === 'viewport' && e.viewport).sort((a, b) => a.timestamp - b.timestamp);
+  const byStep = new Map<number, StepViewport>();
+  for (const e of sizes) {
+    const step = steps.findIndex((s) => s.timestamp >= e.timestamp);
+    if (step < 0) continue;
+    byStep.set(step, { step, width: e.viewport!.width, height: e.viewport!.height });
+  }
+  const out: StepViewport[] = [];
+  for (const v of [...byStep.values()].sort((a, b) => a.step - b.step)) {
+    const last = out[out.length - 1];
+    if (!last || last.width !== v.width || last.height !== v.height) out.push(v);
+  }
+  return out;
+}
+
+/** A recording's session from its raw events: its steps, and the viewport sizes it recorded when there are any. */
+export function sessionFromEvents(events: RawCaptureEvent[], startedAt: number): RecordedSession {
+  const session = buildSession(normalizeSteps(events), startedAt);
+  const viewports = viewportsForSteps(session.steps, events);
+  return viewports.length > 0 ? { ...session, viewports } : session;
 }

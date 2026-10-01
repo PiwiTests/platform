@@ -45,7 +45,9 @@ While a bug report records, Piwi Picker keeps:
   Playwright's ARIA snapshots use, at most 400 lines. Piwi Picker builds it from its own reading of the page, so it
   is an outline, not Playwright's snapshot. Password fields never show their value.
 - **Screenshots**, at each mark, at Finish and when you ask for one, three at most.
-- **The context**: the page, the browser and its version, the window size, the time and the extension's version.
+- **The context**: the page, the browser and its version, the time and the extension's version.
+- **The viewport size**: at the start, then after each resize. The failing test sets it with `page.setViewportSize`
+  before the step it applies from, so a bug seen on a narrow window reproduces at that width.
 
 The first 100 console entries and 100 failed requests are kept; the report counts the rest.
 

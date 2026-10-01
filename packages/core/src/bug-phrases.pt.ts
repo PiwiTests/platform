@@ -209,6 +209,7 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
     noSteps: 'Nenhum passo foi gravado.',
     actual: (v) => `Resultado: ${v}`,
     note: (text) => `Observação: ${text}`,
+    viewport: (size) => `Janela a partir deste passo: ${size}`,
     expectedHeading: 'Esperado e obtido',
     nothingMarked: 'Nada foi marcado como errado.',
     expectedLine: (step, expectation, actual) =>

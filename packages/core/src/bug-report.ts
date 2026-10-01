@@ -385,8 +385,11 @@ export function renderBugMarkdown(report: BugReport, phrases: BugPhrases = ENGLI
 
   out.push(`## ${words.stepsHeading}`, '');
   if (doc.steps.length === 0) out.push(words.noSteps);
+  const viewportAt = new Map((doc.viewports ?? []).map((v) => [v.step, v]));
   doc.steps.forEach((step, i) => {
     out.push(`${i + 1}. ${describeStepInWords(step, phrases)}`);
+    const viewport = viewportAt.get(i);
+    if (viewport) out.push(`   - ${words.viewport(`${viewport.width}×${viewport.height}`)}`);
     const a = step.action === 'assert' ? step.assertion : undefined;
     if (a?.actual != null && a.actual !== a.expected) out.push(`   - ${words.actual(phrases.quote(line(a.actual)))}`);
     if (a?.note?.trim()) out.push(`   - ${words.note(line(a.note))}`);

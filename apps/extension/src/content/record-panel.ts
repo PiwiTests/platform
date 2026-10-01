@@ -1135,6 +1135,67 @@ function startPageRelay(token: string): void {
   g.__piwiBugRelayFlush = startEvidenceRelay(token, capture.signal, scheduleHudRefresh);
 }
 
+/** How long the window keeps its size before a resize counts, so a drag records its end only. */
+const VIEWPORT_SETTLE_MS = 400;
+
+interface ViewportSize {
+  width: number;
+  height: number;
+}
+
+function viewportNow(): ViewportSize {
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+function sameSize(a: ViewportSize | null, b: ViewportSize): boolean {
+  return !!a && a.width === b.width && a.height === b.height;
+}
+
+/** The last viewport size the recording holds. */
+function lastRecordedViewport(events: RawCaptureEvent[]): ViewportSize | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const viewport = events[i]!.viewport;
+    if (events[i]!.kind === 'viewport' && viewport) return viewport;
+  }
+  return null;
+}
+
+/**
+ * A bug report keeps the viewport size its steps were played at: the page's
+ * size when the recording reaches it, if it differs from the last one kept.
+ * Answers the size kept last.
+ */
+async function recordPageViewport(state: RecordingState): Promise<ViewportSize> {
+  const last = lastRecordedViewport(state.events);
+  const now = viewportNow();
+  if (sameSize(last, now)) return last!;
+  await appendRecordingEvent(buildEvent('viewport', null, { viewport: now }));
+  return now;
+}
+
+/** Then each size the window settles at after a resize, until `signal` ends capture. */
+function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
+  let last = kept;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  window.addEventListener(
+    'resize',
+    () => {
+      if (timer != null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        const size = viewportNow();
+        if (sameSize(last, size)) return;
+        last = size;
+        captureEvent(buildEvent('viewport', null, { viewport: size }));
+      }, VIEWPORT_SETTLE_MS);
+    },
+    { signal },
+  );
+  signal.addEventListener('abort', () => {
+    if (timer != null) clearTimeout(timer);
+  });
+}
+
 async function initRecordPanel(): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
   // override loads alongside, so the HUD paints no later for it.
@@ -1155,6 +1216,8 @@ async function initRecordPanel(): Promise<void> {
     return;
   }
 
+  // The size comes before the page, so the first one is the size of the first step.
+  const viewport = recordingMode(state) === 'bug' ? await recordPageViewport(state) : null;
   // Seed this page's own URL so a mid-recording navigation's `RecordedStep`s
   // carry the right `pageUrl`; only the very first one across the whole
   // recording survives into a `page.goto()` — see `normalizeSteps`.
@@ -1162,6 +1225,7 @@ async function initRecordPanel(): Promise<void> {
   attachListeners();
   installStopListener();
   const capture = recorderGlobals().__piwiRecordCapture;
+  if (viewport && capture) watchViewport(viewport, capture.signal);
   if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
     startPageRelay(state.bugToken);
   }

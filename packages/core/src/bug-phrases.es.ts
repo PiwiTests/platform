@@ -200,6 +200,7 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
     noSteps: 'No se grabó ningún paso.',
     actual: (v) => `Resultado: ${v}`,
     note: (text) => `Nota: ${text}`,
+    viewport: (size) => `Ventana desde este paso: ${size}`,
     expectedHeading: 'Resultado esperado y obtenido',
     nothingMarked: 'No se marcó nada como incorrecto.',
     expectedLine: (step, expectation, actual) =>

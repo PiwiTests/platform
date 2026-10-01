@@ -17,7 +17,13 @@
  * the output is the plain recorder export; the options adapt it to a project
  * (its `test` import, `baseURL`, stable locators, URL checks, test details).
  */
-import { VALUE_MATCHERS, type RecordedSession, type RecordedStep, type RecordedTarget } from './recording';
+import {
+  VALUE_MATCHERS,
+  type RecordedSession,
+  type RecordedStep,
+  type RecordedTarget,
+  type StepViewport,
+} from './recording';
 import { matchFunctionAt, type TestFunctionEntry, type RankedFunctionMatch } from './function-match';
 import { renderLocatorChain, tryParseLocatorChain, type LocatorArg, type LocatorChain } from './locator-chain';
 import { assessLocatorChain, type LocatorStabilityLevel } from './locator-stability';
@@ -483,8 +489,15 @@ function samePage(a: string, b: string): boolean {
   return ka === null || kb === null || ka === kb;
 }
 
+/** `page.setViewportSize` for a viewport the steps were recorded at. */
+function viewportLine(viewport: StepViewport): string {
+  return `  await page.setViewportSize({ width: ${Math.round(viewport.width)}, height: ${Math.round(viewport.height)} });`;
+}
+
 export function renderSpec(session: RecordedSession, options: CodegenOptions = {}): CodegenResult {
   const { steps } = session;
+  /** The viewport each step starts at, when it changes there. */
+  const viewportAt = new Map((session.viewports ?? []).map((v) => [v.step, v]));
   const title = options.title ?? 'recorded flow';
   const catalog = (options.catalog ?? []).filter(callIdentifiersAreSafe);
   const ctx: RenderContext = {
@@ -524,6 +537,8 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   while (pos < steps.length) {
     const step = steps[pos]!;
 
+    const viewport = pos > 0 ? viewportAt.get(pos) : undefined;
+    if (viewport) bodyLines.push(viewportLine(viewport));
     stepStarts[pos] = bodyLines.length;
     if (step.action === 'goto') {
       bodyLines.push(...renderRawStep(step, pos, ctx));
@@ -532,7 +547,10 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
       continue;
     }
 
-    const match = catalog.length > 0 ? matchFunctionAt(steps, pos, catalog) : null;
+    const found = catalog.length > 0 ? matchFunctionAt(steps, pos, catalog) : null;
+    // A call cannot resize the page between the steps it stands for: those steps stay raw lines.
+    const match =
+      found && ![...viewportAt.keys()].some((at) => at > pos && at <= Math.max(...found.matchedIndices)) ? found : null;
     if (match) {
       bodyLines.push(renderFunctionCall(match));
       usedEntries.push(match.entry);
@@ -549,11 +567,14 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     pos++;
   }
 
-  let bodyOffset = 0;
-  if (!sawGoto && session.startUrl) {
-    bodyLines.unshift(`  await page.goto(${quote(urlForCode(session.startUrl, ctx))});`);
-    bodyOffset = 1;
-  }
+  // The size the steps were recorded at comes first, before the first page opens.
+  const start = viewportAt.get(0);
+  const opening = [
+    ...(start ? [viewportLine(start)] : []),
+    ...(!sawGoto && session.startUrl ? [`  await page.goto(${quote(urlForCode(session.startUrl, ctx))});`] : []),
+  ];
+  bodyLines.unshift(...opening);
+  const bodyOffset = opening.length;
 
   const importLines = renderImports(usedEntries);
   const instantiationLines = renderInstantiations(usedEntries);
@@ -577,7 +598,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   }
 
   const details = renderDetails(options);
-  const opening =
+  const testOpening =
     details.length > 0
       ? [`test(${quote(title)}, {`, ...details, `}, async ({ page }) => {`]
       : [`test(${quote(title)}, async ({ page }) => {`];
@@ -589,12 +610,12 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     `import { test, expect } from ${quote(options.testImport?.trim() || '@playwright/test')};`,
     ...importLines,
     ``,
-    ...opening,
+    ...testOpening,
     ...testBody,
     `});`,
     ``,
   ];
 
-  const header = 1 + importLines.length + 1 + opening.length;
+  const header = 1 + importLines.length + 1 + testOpening.length;
   return { code: lines.join('\n'), matchedSpans, warnings: ctx.warnings, stepLines: linesFrom(header) };
 }

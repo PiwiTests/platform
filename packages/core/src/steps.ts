@@ -21,6 +21,7 @@ import {
   type RecordedTarget,
   type StepAction,
   type StepAssertion,
+  type StepViewport,
 } from './recording';
 
 const STEPS_VERSION = 1;
@@ -33,6 +34,9 @@ export const STEPS_LIMITS = {
   valueLength: 2000,
   /** Titles, names, texts, locators. */
   textLength: 500,
+  viewports: 50,
+  /** The widest and tallest viewport, in CSS pixels. */
+  viewportSize: 10_000,
 } as const;
 
 export interface PiwiSteps {
@@ -44,6 +48,8 @@ export interface PiwiSteps {
   note: string | null;
   /** The steps, with `pageUrl` and a `goto`'s value as paths whenever they are on `origin`. */
   steps: RecordedStep[];
+  /** The viewport sizes the steps were recorded at, by the step each starts at; absent when none was recorded. */
+  viewports?: StepViewport[];
 }
 
 const ACTIONS: ReadonlySet<StepAction> = new Set([
@@ -104,6 +110,7 @@ export function toStepsDocument(
       pageUrl: toPath(step.pageUrl, origin),
       value: step.action === 'goto' && step.value ? toPath(step.value, origin) : step.value,
     })),
+    ...(session.viewports?.length ? { viewports: session.viewports.map((v) => ({ ...v })) } : {}),
   };
 }
 
@@ -120,7 +127,12 @@ export function sessionFromSteps(doc: PiwiSteps, origin: string | null = doc.ori
     value: step.action === 'goto' && step.value ? toAbsolute(step.value, origin) : step.value,
   }));
   const firstGoto = steps.find((s) => s.action === 'goto');
-  return { steps, startedAt: doc.recordedAt, startUrl: firstGoto?.value ?? steps[0]?.pageUrl ?? origin ?? '' };
+  return {
+    steps,
+    startedAt: doc.recordedAt,
+    startUrl: firstGoto?.value ?? steps[0]?.pageUrl ?? origin ?? '',
+    ...(doc.viewports?.length ? { viewports: doc.viewports } : {}),
+  };
 }
 
 export type ParseStepsResult = { ok: true; steps: PiwiSteps } | { ok: false; errors: string[] };
@@ -216,6 +228,38 @@ function checkAssertion(c: Checker, v: unknown, path: string): StepAssertion | u
   };
 }
 
+/** A document's viewport sizes: whole pixels within the limit, each on a step it has, in step order, one per step. */
+function checkViewports(c: Checker, v: unknown, stepCount: number): StepViewport[] {
+  if (v == null) return [];
+  if (!Array.isArray(v)) {
+    c.fail('viewports', 'must be a list');
+    return [];
+  }
+  if (v.length > STEPS_LIMITS.viewports) {
+    c.fail('viewports', `holds more than ${STEPS_LIMITS.viewports}`);
+    return [];
+  }
+  const out: StepViewport[] = [];
+  v.forEach((entry, i) => {
+    const at = `viewports[${i}]`;
+    if (!isObject(entry)) return c.fail(at, 'must be an object');
+    const { step, width, height } = entry;
+    if (!Number.isInteger(step) || (step as number) < 0 || (step as number) >= stepCount)
+      return c.fail(`${at}.step`, 'must be the index of a step');
+    for (const [name, size] of [
+      ['width', width],
+      ['height', height],
+    ] as const) {
+      if (!Number.isInteger(size) || (size as number) < 1 || (size as number) > STEPS_LIMITS.viewportSize)
+        return c.fail(`${at}.${name}`, `must be a whole number of pixels from 1 to ${STEPS_LIMITS.viewportSize}`);
+    }
+    const last = out[out.length - 1];
+    if (last && last.step >= (step as number)) return c.fail(`${at}.step`, 'must come after the step before it');
+    out.push({ step: step as number, width: width as number, height: height as number });
+  });
+  return out;
+}
+
 function checkStep(c: Checker, v: unknown, path: string): RecordedStep | null {
   if (!isObject(v)) {
     c.fail(path, 'must be an object');
@@ -296,6 +340,7 @@ export function parseSteps(input: unknown): ParseStepsResult {
     const originText = c.text(value.origin, 'origin', STEPS_LIMITS.textLength, true);
     const origin = originText ? originOf(originText) : null;
     if (originText && !origin) c.fail('origin', 'must be an http(s) origin');
+    const viewports = checkViewports(c, value.viewports, steps.length);
     doc = {
       v: STEPS_VERSION,
       title: c.text(value.title, 'title', STEPS_LIMITS.textLength, true),
@@ -303,6 +348,7 @@ export function parseSteps(input: unknown): ParseStepsResult {
       recordedAt: value.recordedAt == null ? 0 : c.number(value.recordedAt, 'recordedAt'),
       note: c.text(value.note, 'note', STEPS_LIMITS.valueLength, true),
       steps,
+      ...(viewports.length > 0 ? { viewports } : {}),
     };
   }
   return c.errors.length > 0 ? { ok: false, errors: c.errors } : { ok: true, steps: doc };

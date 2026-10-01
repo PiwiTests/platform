@@ -155,6 +155,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
     noSteps: 'No steps were recorded.',
     actual: (v) => `Actual: ${v}`,
     note: (text) => `Note: ${text}`,
+    viewport: (size) => `Viewport from this step: ${size}`,
     expectedHeading: 'Expected and actual',
     nothingMarked: 'Nothing was marked as wrong.',
     expectedLine: (step, expectation, actual) =>

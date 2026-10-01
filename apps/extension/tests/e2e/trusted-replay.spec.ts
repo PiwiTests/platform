@@ -82,7 +82,15 @@ const CLICKS = `<!doctype html><html><body>
     b.addEventListener('click', (e) => (log.textContent += b.textContent + (e.isTrusted ? ' trusted; ' : ' script; ')));
 </script></body></html>`;
 
-test.use({ pages: { '/lab': LAB, '/clicks': CLICKS } });
+/** A page that shows its viewport's size. */
+const SIZED = `<!doctype html><html><head><meta charset="utf-8"></head><body><output data-testid="size"></output>
+<script>
+  const show = () => (document.querySelector('[data-testid="size"]').textContent = innerWidth + '×' + innerHeight);
+  show();
+  addEventListener('resize', show);
+</script></body></html>`;
+
+test.use({ pages: { '/lab': LAB, '/clicks': CLICKS, '/sized': SIZED } });
 
 type DomNode = {
   backendNodeId: number;
@@ -274,4 +282,31 @@ test('after the debugging bar is cancelled, the replay goes on with the page’s
     ['passed', null],
   ]);
   expect(await debuggerAttached(worker, tabId)).toBe(false);
+});
+
+test('plays the steps at the viewport they were recorded at, then gives the tab its size back', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const doc = {
+    ...stepsDoc('Sized', site, [
+      step('goto', '/sized', { value: '/sized' }),
+      expectText('/sized', 'size', '800×600'),
+      expectText('/sized', 'size', '390×664'),
+    ]),
+    viewports: [
+      { step: 0, width: 800, height: 600 },
+      { step: 2, width: 390, height: 664 },
+    ],
+  };
+  const page = await startReplay(control, context, site, doc, '/sized');
+  const tabId = await tabIdOf(worker, `${site}/sized`);
+  const state = await finished(worker);
+  expect(state.results.map((r) => r.status)).toEqual(['done', 'passed', 'passed']);
+  expect((state as { viewport?: unknown }).viewport).toEqual({ width: 390, height: 664, set: true });
+  await expect.poll(() => debuggerAttached(worker, tabId)).toBe(false);
+  // Back to the window's size: not the size Playwright emulates, which the cleared override takes away too.
+  await expect.poll(() => page.evaluate(() => `${innerWidth}×${innerHeight}`)).not.toMatch(/^(390×664|800×600)$/);
 });

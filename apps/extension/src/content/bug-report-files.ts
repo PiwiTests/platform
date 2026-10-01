@@ -1,4 +1,4 @@
-import { buildSession, normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
+import { sessionFromEvents, type RawCaptureEvent } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { bugPhrases, type BugPhrases } from '@piwitests/core/bug-phrases';
 import {
@@ -31,7 +31,7 @@ export function assembleBugReport(input: {
   context: BugContext;
 }): BugReport {
   const { evidence } = input;
-  const session = buildSession(normalizeSteps(input.events), input.startedAt);
+  const session = sessionFromEvents(input.events, input.startedAt);
   const screenshots: BugScreenshot[] = input.screenshots.map((shot, i) => ({
     file: screenshotFile(shot, i),
     step: shot.step,

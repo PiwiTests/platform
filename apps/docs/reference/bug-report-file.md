@@ -17,7 +17,7 @@ A `.piwibug` file is a zip archive, its entries stored without compression:
 | Entry | What it holds |
 |---|---|
 | `mimetype` | `application/vnd.piwi.bug-report+zip`, always the first entry |
-| `steps.json` | The steps, as a [steps file](/reference/steps-format) |
+| `steps.json` | The steps, as a [steps file](/reference/steps-format), with the viewport sizes they were recorded at |
 | `<title>.spec.ts` | The failing test, named after the report's title, such as `coupon-not-applied.spec.ts` |
 | `bug-report.md` | The report as Markdown, in the language Piwi Picker shows |
 | `evidence.json` | The evidence and the context; see below |

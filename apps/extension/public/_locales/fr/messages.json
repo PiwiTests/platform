@@ -2461,6 +2461,28 @@
       }
     }
   },
+  "replay_viewportSet": {
+    "message": "Fenêtre en $size$, comme à l’enregistrement",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Enregistré en $recorded$, rejoué en $actual$ : redimensionnez la fenêtre si la page dépend de sa taille",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pause"
   },

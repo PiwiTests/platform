@@ -213,6 +213,18 @@ describe('renderSpec — with a catalog', () => {
     expect(matchedSpans).toEqual([{ startStep: 0, endStep: 2, functionName: 'login' }]);
   });
 
+  test('a call never stands for steps the viewport changes between, and one before its first step stays', () => {
+    const resized = { ...buildSession(loginSteps(), 0), viewports: [{ step: 1, width: 390, height: 844 }] };
+    const inside = renderSpec(resized, { catalog: [loginEntry] });
+    expect(inside.code).not.toContain('loginPage.login');
+    expect(inside.code).toContain('await page.setViewportSize({ width: 390, height: 844 });');
+    const before = { ...buildSession(loginSteps(), 0), viewports: [{ step: 0, width: 390, height: 844 }] };
+    const lines = renderSpec(before, { catalog: [loginEntry] }).code.split('\n');
+    const resize = lines.findIndex((l) => l.includes('setViewportSize'));
+    expect(resize).toBeGreaterThan(-1);
+    expect(resize).toBeLessThan(lines.findIndex((l) => l.includes('loginPage.login')));
+  });
+
   test('steps after a matched span that do not match anything stay raw', () => {
     const extra = step({ action: 'click', target: target({ accessibleName: 'Continue' }) });
     const session = buildSession([...loginSteps(), extra], 0);

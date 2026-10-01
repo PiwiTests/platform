@@ -2461,6 +2461,28 @@
       }
     }
   },
+  "replay_viewportSet": {
+    "message": "Viewport $size$, wie aufgezeichnet",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Aufgezeichnet bei $recorded$, abgespielt bei $actual$: Passen Sie die Fenstergröße an, wenn die Seite davon abhängt",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pause"
   },

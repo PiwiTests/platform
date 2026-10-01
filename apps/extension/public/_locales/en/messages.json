@@ -2961,6 +2961,30 @@
       }
     }
   },
+  "replay_viewportSet": {
+    "message": "Viewport $size$, as recorded",
+    "description": "Replay panel: the replay set the tab's viewport to the size the steps were recorded at. $size$ is width×height in CSS pixels, such as 390×844.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "390×844"
+      }
+    }
+  },
+  "replay_viewportDiffers": {
+    "message": "Recorded at $recorded$, played at $actual$: resize the window if the page depends on its size",
+    "description": "Replay panel: the replay could not set the tab's viewport (no debugging protocol, as in Firefox) and the tab's size differs from the recorded one. $recorded$ and $actual$ are width×height in CSS pixels.",
+    "placeholders": {
+      "actual": {
+        "content": "$1",
+        "example": "1280×720"
+      },
+      "recorded": {
+        "content": "$2",
+        "example": "390×844"
+      }
+    }
+  },
   "replay_pause": {
     "message": "Pause",
     "description": "Replay panel button that pauses the replay. Short."

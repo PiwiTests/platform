@@ -113,7 +113,9 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
 - **Attach only while a feature the person started needs it, and detach the moment it ends.** Every session goes
   through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
   `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
-  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin) and a bug
+  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin; it also sets
+  the viewport the steps were recorded at, `piwi-replay-viewport`, and gives the tab its size back, or the popup's
+  viewport, as it lets go) and a bug
   recording (`cdp-evidence.ts`, the tab the report starts in, let go when the recording stops or is discarded), the
   DevTools panel's conditions (`cdp-conditions.ts`, held while any condition or throttling is on) and a viewport set in
   the tab from the popup (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
@@ -323,7 +325,9 @@ by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report` (`renderBugMark
 `renderBugSpec`); the archive is written by `shared/zip.ts`, stored without compression, and downloaded as
 `.piwibug`: its first entry is `mimetype` holding `BUG_REPORT_MEDIA_TYPE`, which `isBugReportArchive` (core) reads to
 tell it from any other zip. Readers go by content, never by name: Replay and the desktop app take the same file named
-`.zip`.
+`.zip`. A bug recording also records `viewport` events (`record-panel.ts`: the page's size when the recording reaches
+it, before its `navigate`, and the size a resize settles at); `normalizeSteps` skips them and `sessionFromEvents` turns
+them into the steps document's `viewports`, by the first step recorded at or after each.
 
 **Evidence through the debugging protocol (Chrome and Edge).** A bug recording holds a session on the tab it starts
 in (`startBugDebugger`, `src/background/cdp-evidence.ts`): `Runtime` and `Log` give the console and uncaught errors

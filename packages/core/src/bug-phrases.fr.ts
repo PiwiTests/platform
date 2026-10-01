@@ -204,6 +204,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
     noSteps: 'Aucune étape n’a été enregistrée.',
     actual: (v) => `Résultat${NBSP}: ${v}`,
     note: (text) => `Note${NBSP}: ${text}`,
+    viewport: (size) => `Fenêtre à partir de cette étape${NBSP}: ${size}`,
     expectedHeading: 'Attendu et constaté',
     nothingMarked: 'Rien n’a été marqué comme incorrect.',
     expectedLine: (step, expectation, actual) =>

@@ -49,6 +49,7 @@ holds steps and not code, the same file can be rendered for different projects (
 | `recordedAt` | number | When the recording started, in milliseconds since 1970. |
 | `note` | string or null | Free text from whoever recorded it. |
 | `steps` | list | The steps, in order. |
+| `viewports` | list | Optional: the viewport sizes the steps were recorded at; see below. |
 
 URLs on `origin` are stored as paths (`/cart?from=mail`), so a spec rendered from the file can use the project's
 `baseURL` instead of the site the steps were recorded on.
@@ -88,6 +89,23 @@ An assertion states what the page should show:
 | `negated` | boolean | Written as `expect(…).not.…`. |
 | `note` | string or null | Written as a comment above the assertion. |
 
+## Viewports
+
+A [bug report](/features/report-a-bug) keeps the size of the page's viewport, in CSS pixels: the size the recording
+started at, then each size the window settled at after a resize. Each entry names the step it applies from:
+
+```json
+"viewports": [
+  { "step": 0, "width": 1280, "height": 720 },
+  { "step": 3, "width": 390, "height": 664 }
+]
+```
+
+The spec sets each one with `await page.setViewportSize({ width, height });`, the first before the first page opens
+and the others before the step they apply from. A function call from the project's catalog never stands for steps a
+resize falls between. Replay sets the tab's viewport the same way in Chrome and Edge. A file without `viewports` is
+played at whatever size the browser or the project has.
+
 ## Checks
 
 A file is checked in full before anything uses it, and every problem found is reported with its path
@@ -100,7 +118,8 @@ A file is checked in full before anything uses it, and every problem found is re
 - A redacted step never keeps a value.
 - A `hover` or `dblclick` step needs a target and never keeps a value; a `setInputFiles` step needs a target; a
   `dragTo` step needs a target and a `dropTarget`, and never keeps a value.
-- Limits: 200 steps, 10 alternatives per target, 2,000 characters for values, expected values, URLs and notes, 500 for
+- A viewport names a step the file has, after the one before it, with a whole width and height from 1 to 10,000.
+- Limits: 200 steps, 50 viewports, 10 alternatives per target, 2,000 characters for values, expected values, URLs and notes, 500 for
   titles, names, texts and locators, and 5 MB for the file.
 
 A recording saved before the format existed (`{ "steps", "startedAt", "startUrl" }`) is read too, and the old

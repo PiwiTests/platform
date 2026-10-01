@@ -19,6 +19,7 @@ import {
   summarizeEvidence,
   type BugReport,
 } from '../src/bug-report';
+import { bugPhrases } from '../src/bug-phrases';
 import { normalizeSteps, buildSession, type RawCaptureEvent, type RecordedTarget } from '../src/recording';
 import { parseSteps, toStepsDocument } from '../src/steps';
 
@@ -167,6 +168,27 @@ describe('bug report', () => {
     const { code } = renderBugSpec(couponReport(), { testImport: '../fixtures', expectFail: false });
     expect(code).toContain(`from '../fixtures';`);
     expect(code).not.toContain('test.fail()');
+  });
+
+  test('the Markdown and the spec give the viewport each step was played at', () => {
+    const base = couponReport();
+    const report: BugReport = {
+      ...base,
+      steps: {
+        ...base.steps,
+        viewports: [
+          { step: 0, width: 1280, height: 800 },
+          { step: 2, width: 390, height: 844 },
+        ],
+      },
+    };
+    const md = renderBugMarkdown(report);
+    expect(md).toContain('1. Go to `/cart?session=abc`\n   - Viewport from this step: 1280×800');
+    expect(md).toMatch(/\n3\. .*\n {3}- Viewport from this step: 390×844/);
+    expect(renderBugMarkdown(report, bugPhrases('fr'))).toContain('Fenêtre à partir de cette étape\u00a0: 390×844');
+    const { code } = renderBugSpec(report);
+    expect(code).toContain('await page.setViewportSize({ width: 1280, height: 800 });');
+    expect(code).toContain('await page.setViewportSize({ width: 390, height: 844 });');
   });
 
   test('the Markdown has the steps in words, expected and actual, the note and the evidence', () => {

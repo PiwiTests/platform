@@ -2,7 +2,7 @@ import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInWords } from
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
 import { pageKey } from '@piwitests/core/page-key';
-import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
+import { normalizeSteps, sessionFromEvents, type RecordedStep, type StepViewport } from '@piwitests/core/recording';
 import { sessionFromSteps, toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
@@ -294,6 +294,15 @@ function hudRoot(): ShadowRoot {
   return hud.root;
 }
 
+/** What the panel says of the viewport: the recorded one, set on the tab, or how it differs from the tab's. */
+function viewportText(viewport: ReplayState['viewport']): string | null {
+  if (!viewport) return null;
+  const recorded = `${viewport.width}×${viewport.height}`;
+  if (viewport.set) return t('replay_viewportSet', { size: recorded });
+  const actual = `${window.innerWidth}×${window.innerHeight}`;
+  return actual === recorded ? null : t('replay_viewportDiffers', { recorded, actual });
+}
+
 function renderHud(
   state: ReplayState,
   verdict: ReplayVerdict | null = null,
@@ -340,6 +349,13 @@ function renderHud(
       conditions: state.conditions.map(conditionText).join(' · '),
     });
     box.appendChild(conditions);
+  }
+  const sizeText = viewportText(state.viewport);
+  if (sizeText) {
+    const size = document.createElement('div');
+    size.className = 'sub';
+    size.textContent = sizeText;
+    box.appendChild(size);
   }
 
   const list = document.createElement('div');
@@ -756,6 +772,42 @@ async function checkAssertion(state: ReplayState, step: RecordedStep): Promise<R
   }
 }
 
+/** How long the page gets to lay out again after its viewport changes. */
+const VIEWPORT_LAYOUT_MS = 150;
+
+/** The viewport the steps were recorded at from step `index` on, when it changes there. */
+function viewportFrom(state: ReplayState, index: number): StepViewport | null {
+  return state.steps.viewports?.find((v) => v.step === index) ?? null;
+}
+
+/**
+ * Sets the viewport the steps were recorded at on the tab, through the
+ * debugging protocol when the replay acts with trusted input; otherwise the
+ * panel says how the tab's size differs.
+ */
+async function applyViewport(state: ReplayState, viewport: StepViewport): Promise<ReplayState> {
+  let set = false;
+  if (state.driver?.driver === 'cdp') {
+    try {
+      const answer = (await chrome.runtime.sendMessage({
+        type: 'piwi-replay-viewport',
+        replayId: state.id,
+        width: viewport.width,
+        height: viewport.height,
+      })) as { ok?: boolean } | undefined;
+      set = answer?.ok === true;
+    } catch {
+      set = false;
+    }
+  }
+  const next = await updateReplayState((s) => ({
+    ...s,
+    viewport: { width: viewport.width, height: viewport.height, set },
+  }));
+  if (set) await wait(VIEWPORT_LAYOUT_MS);
+  return next ?? state;
+}
+
 /** In step mode: waits for Next, then answers the state if the replay is still on this step and running. */
 async function waitForNext(index: number): Promise<ReplayState | null> {
   await waitForRelease();
@@ -833,6 +885,12 @@ async function runReplay(): Promise<void> {
       const index = state.position;
       const step = steps[index];
       if (!step) return void (await finish(state, false));
+
+      const viewport = viewportFrom(state, index);
+      if (viewport && (state.viewport?.width !== viewport.width || state.viewport?.height !== viewport.height)) {
+        state = await applyViewport(state, viewport);
+        renderHud(state);
+      }
 
       if (step.action === 'goto' && index === 0 && state.startPage) {
         const actual = state.startPage.actual;
@@ -960,7 +1018,7 @@ async function lastRecordedReport(): Promise<PiwiSteps | null> {
     if (recording.active || recording.events.length === 0 || recordingMode(recording) !== 'bug') return null;
     const steps = normalizeSteps(recording.events);
     if (steps.length === 0) return null;
-    return toStepsDocument(buildSession(steps, recording.startedAt ?? steps[0]!.timestamp));
+    return toStepsDocument(sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp));
   } catch {
     return null;
   }
