@@ -706,11 +706,12 @@ describe('flake lab experiments', () => {
 // Every docs page's demo example opens the entity it names, in the state its
 // sentence promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
 describe('demo examples hold in the seed', () => {
-  const EXPECT_KEYS = new Set(['testCase', 'project', 'cluster', 'diagnosis', 'fixLanded', 'lab']);
+  const EXPECT_KEYS = new Set(['testCase', 'project', 'cluster', 'run', 'diagnosis', 'fixLanded', 'lab', 'resources']);
   const ROUTE_ENTITIES = [
     { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
     { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
     { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
+    { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
   ] as const;
 
   test('ids are unique', () => {
@@ -728,7 +729,7 @@ describe('demo examples hold in the seed', () => {
     const opened = ROUTE_ENTITIES.map((r) => ({ key: r.key, match: r.pattern.exec(example.route) })).find(
       (r) => r.match,
     );
-    expect(opened, `${id}: route ${example.route} opens a test case, a project or a cluster`).toBeTruthy();
+    expect(opened, `${id}: route ${example.route} opens a test case, a project, a cluster or a run`).toBeTruthy();
     expect(want[opened!.key]?.id, `${id}: the route opens the ${opened!.key} it expects`).toBe(
       Number(opened!.match![1]),
     );
@@ -740,6 +741,21 @@ describe('demo examples hold in the seed', () => {
     if (want.project) {
       const [row] = q(`select name from projects where id = ${want.project.id}`);
       expect(row?.name, `${id}: project ${want.project.id}`).toBe(want.project.name);
+    }
+    if (want.run) {
+      const [row] = q(
+        `select p.name from test_runs r join projects p on p.id = r.project_id where r.id = ${want.run.id}`,
+      );
+      expect(row?.name, `${id}: run ${want.run.id}'s project`).toBe(want.run.project);
+    }
+    if (want.resources) {
+      expect(want.run, `${id}: resources needs a run`).toBeTruthy();
+      const [row] = q(`select resource_report from test_runs where id = ${want.run!.id}`);
+      const report = JSON.parse(String(row?.resource_report ?? 'null')) as {
+        parts: Array<{ counts: { leaked: number } }>;
+      } | null;
+      const leaks = (report?.parts ?? []).reduce((sum, part) => sum + part.counts.leaked, 0);
+      expect(leaks, `${id}: the run's report names a leak`).toBeGreaterThan(0);
     }
     if (want.cluster) {
       expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(

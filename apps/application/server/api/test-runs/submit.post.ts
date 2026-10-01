@@ -14,6 +14,7 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { mergeResourceReport, sanitizeResourceReport } from '#shared/resource-report';
 
 defineRouteMeta({
   openAPI: {
@@ -55,6 +56,8 @@ export default eventHandler(async (event) => {
       message: 'Missing required fields: projectName, status, startTime',
     });
   }
+
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
@@ -104,6 +107,9 @@ export default eventHandler(async (event) => {
           // Portable "max of two values": SQLite's scalar MAX(a,b) is an aggregate in
           // Postgres, so use a CASE expression that runs on both dialects.
           duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
+          ...(incomingResources && {
+            resourceReport: mergeResourceReport(existingRun.resourceReport, incomingResources),
+          }),
         })
         .where(eq(testRuns.id, existingRun.id));
       await applyReporterKeep(db, existingRun.id, body.keep);
@@ -142,6 +148,7 @@ export default eventHandler(async (event) => {
             pageInventory: testCase.pageInventory,
             locatorPages: testCase.locatorPages,
             codeReach: testCase.codeReach,
+            resources: testCase.resources ?? null,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
             dialogs: testCase.dialogs,
@@ -232,6 +239,7 @@ export default eventHandler(async (event) => {
       shardsFinished: isSharded ? 0 : undefined,
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? null,
+      resourceReport: incomingResources ? mergeResourceReport(null, incomingResources) : null,
     })
     .returning();
 
@@ -272,6 +280,7 @@ export default eventHandler(async (event) => {
         pageInventory?: unknown;
         locatorPages?: unknown;
         codeReach?: unknown;
+        resources?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
         dialogs?: unknown;
@@ -326,6 +335,7 @@ export default eventHandler(async (event) => {
           pageInventory: testCase.pageInventory,
           locatorPages: testCase.locatorPages,
           codeReach: testCase.codeReach,
+          resources: testCase.resources ?? null,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
           dialogs: testCase.dialogs,

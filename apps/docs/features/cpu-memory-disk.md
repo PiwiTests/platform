@@ -1,6 +1,6 @@
 ---
 title: CPU, memory & disk
-description: "What a test run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, printed by the reporter at the end of every run."
+description: "What a test run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, printed by the reporter at the end of every run and shown on the run's Resources tab."
 lang: en-US
 ---
 
@@ -10,8 +10,8 @@ lang: en-US
 
 A suite that got slower may be doing more, or may be waiting: for a CPU it shares with too many workers, for memory
 the container is about to run out of, for a disk filling with traces. The reporter samples the run's processes and
-the machine while the tests run and prints, at the end, what the run had and what it used of it. It needs no fixtures
-and no dashboard page; on GitHub Actions the same panel is added to the job summary.
+the machine while the tests run and prints, at the end, what the run had and what it used of it. It needs no fixtures;
+on GitHub Actions the same panel is added to the job summary, and the dashboard shows it on the run.
 
 ## The panel
 
@@ -66,6 +66,17 @@ A line lists what could not be measured on the machine, rather than printing a z
 each test's start and end; on Linux they add the CPU, the time waiting for a CPU and the peak memory of each browser
 process during the test, kept for each test with its census.
 
+## In the dashboard
+
+The reporter sends the panel with the run, which then shows a **Resources** tab: the machine each shard ran on, with
+the CPU busy over the run and the moment memory peaked, the same lines as the panel, and the [resource
+leaks](./resource-leaks#in-the-dashboard) found. Below them, the **costliest tests**: the tests whose worker and
+browser processes used the most CPU.
+
+With the capture fixtures, each execution also carries what its test cost, on its Performance tab: the CPU of the
+worker and of the browser processes it started, the largest of those processes, how busy the worker's event loop was,
+and the pages it found already open and left open. A test that found pages open paid for what an earlier one left.
+
 ## Cost
 
 The sampler runs on a timer in the reporter's process, which it never keeps alive: about 2 ms of CPU every second to
@@ -77,8 +88,7 @@ Turn it off, with the resource ledger, through `captureResources: false` (or `PI
 
 ## Limits
 
-- **Printed, not uploaded.** The panel is in the reporter's output and the GitHub job summary; the dashboard does not
-  store it.
+- The dashboard keeps 240 points of the CPU series, averaged from the samples of a longer run.
 - **Sampled.** A process that lives less than a second, or the last second of one that exits, can be missed; a run of a
   few seconds has few samples.
 - **The machine is shared.** Busy, waiting and free memory count every process on the machine, other jobs included;

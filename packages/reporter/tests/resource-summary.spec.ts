@@ -39,8 +39,12 @@ describe('the resource summary', () => {
     options: Record<string, unknown>,
     result: ReturnType<typeof fakeResult>,
     shutdown?: ResourceCensus,
+    onBody?: (body: any) => void,
   ): Promise<string[]> {
-    server = await startServer((_req, res) => jsonRes(res, 200, { runId: 1, projectId: 1 }));
+    server = await startServer((req, res) => {
+      if (onBody && req.body) onBody(JSON.parse(req.body));
+      jsonRes(res, 200, { runId: 1, projectId: 1 });
+    });
     const reporter = new PiwiDashboardReporter({
       serverUrl: server.url,
       projectName: 'piwi-resources-' + process.pid,
@@ -101,6 +105,35 @@ describe('the resource summary', () => {
     expect(lines.find((line) => line.startsWith('Machine: '))).toMatch(/^Machine: \d+ cores · /);
     expect(lines.find((line) => line.startsWith('  Disk     '))).toContain('3 MB of artifacts (traces 3 MB)');
     fs.rmSync(path.dirname(trace), { recursive: true, force: true });
+  });
+
+  it('sends the report with the run, and each execution its cost', async () => {
+    const bodies: any[] = [];
+    const attachments = [
+      {
+        name: ATTACHMENT_NAMES.resources,
+        contentType: 'application/json',
+        body: Buffer.from(
+          JSON.stringify({
+            ...leakyCensus(),
+            metrics: {
+              worker: { cpuMs: 40, involuntarySwitches: 2, loopUtilization: 0.2, loopDelayP99Ms: 12, loopDelayMaxMs: 20, heapUsedMb: 50, fds: 30 },
+            },
+            openAtStart: { contexts: 0, pages: 0 },
+            leftOpen: 1,
+          }),
+        ),
+      },
+    ];
+    await run({}, fakeResult({ attachments }), undefined, (body) => bodies.push(body));
+    const submitted = bodies.find((body) => body.testCases);
+    expect(submitted.resourceReport).toMatchObject({
+      v: 1,
+      counts: { leaked: 1 },
+      findings: [expect.objectContaining({ verdict: 'leaked', site: 'tests/cart.spec.ts:4' })],
+    });
+    expect(submitted.resourceReport.profile.machine.cores).toBeGreaterThan(0);
+    expect(submitted.testCases[0].resources).toMatchObject({ workerCpuMs: 40, leftOpen: 1 });
   });
 
   it('stays silent with captureResources: false, and tells no worker where to write', async () => {

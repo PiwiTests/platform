@@ -287,6 +287,23 @@ describe('ResourceLedger', () => {
     expect(second.census.open.map((o) => o.id)).toEqual([1]);
   });
 
+  it('counts what was open when a test started, and what it left open', async () => {
+    const fake = fakePlaywright();
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    ledger.testStarted(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    await (await browser.newContext()).newPage();
+    const first = await ledger.testEnded(info('t1'));
+    expect(first.census).toMatchObject({ openAtStart: { contexts: 0, pages: 0 }, leftOpen: 1 });
+
+    running(info('t2'));
+    ledger.testStarted(info('t2'));
+    const second = await ledger.testEnded(info('t2'));
+    expect(second.census).toMatchObject({ openAtStart: { contexts: 1, pages: 1 }, leftOpen: 0 });
+  });
+
   it('lists what the test itself left open, folding pages into their context and browser', async () => {
     const fake = fakePlaywright();
     const { ledger, running } = ledgerFor(fake);

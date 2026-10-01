@@ -58,6 +58,28 @@ and a `resources` rung in the bench. What changed while building PR 2:
   event loop and switches.
 - Not read yet: device I/O (`diskstats`, PSI `io`, `io.stat`), major faults and swap, descriptors of the browser
   processes, PSS by kind, bytes per page, CPU by role over CDP outside Linux, and `PIWI_CAPTURE_RESOURCES=full`.
+
+**PR 3 built 2026-10-01**: the wire, storage, the run's Resources tab, each execution's cost, the `resources`
+capability, a leaky run in the demo seed and in the run simulator, and the docs. What changed while building PR 3:
+
+- A run stores its report as one JSON value, `test_runs.resource_report`, with one part per reporter: a sharded run
+  gets one per shard, each measured on its own machine, and a retried finish replaces its shard's part. Finding rows
+  with fingerprints wait for PR 4, which needs them for the history; until then `shared/resource-report.ts` rebuilds
+  every incoming report field by field, bounded, and the server and the demo share it.
+- An execution stores its cost in `test_runs_cases.resources`: the worker's CPU, event loop, switches and heap, the
+  CPU, run-queue wait and peak RSS of each browser role (Linux), the pages already open when it started, what it left
+  open, and its artifact sizes.
+- The report travels with `finish` (and with a whole-run submit or upload), not as the run streams: the verdicts need
+  every census, including each worker's last. Each execution's cost travels with its test.
+- Bounded on the wire: 100 findings, most severe first, 240 points of the CPU series, 200 points of each worker's open
+  pages.
+- The execution's cost sits in its Performance evidence tab, above the Web Vitals.
+- `resources` is a passive-data capability, as the Test Map is: declining it hides the tab and the cost even though the
+  data still arrives.
+- The demo's leaky run is Web Dashboard's newest: a login fixture leaves a context open per test, a page fixture is
+  never used, listeners pile up on a worker-scoped page and a test leaves a server running. The run before it is clean,
+  for comparison. The simulator's **Leaky run** replays the same story on `e2e-checkout`, from the same builder
+  (`shared/demo/demo-resources.mjs`); its report lands with `finish`.
 - The bench's `resources` rung measured +15 ms and +0 ms per test over `full` in two runs of four rounds (1.3% and
   0%), inside the 3% the Verification section sets.
 

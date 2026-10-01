@@ -1,6 +1,6 @@
 ---
 title: Resource leaks
-description: "The browsers, contexts, pages and API request contexts your tests leave open or open for nothing, listed at the end of each run with the line that opened them."
+description: "The browsers, contexts, pages and API request contexts your tests leave open or open for nothing, listed at the end of each run and on its Resources tab, with the line that opened them."
 lang: en-US
 ---
 
@@ -80,6 +80,20 @@ The ledger is on whenever the fixtures are. Turn it off with `captureResources: 
 [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) or their variable: the test workers never see a plain
 reporter entry's options.
 
+## In the dashboard
+
+The reporter sends the findings with the run. A run that has them shows a **Resources** tab:
+
+- the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
+- the findings, each with the line or fixture that opened the object, a click from your editor;
+- **Open pages by worker**: how many pages each worker still had open at the end of each of its tests. A leak climbs
+  test after test, a clean worker stays flat;
+- the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
+- the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
+
+The execution page's Performance tab shows what that one test cost and what it left open. A project that declines the
+**Resources** capability on the Setup page hides both, and the reporter's summary stays as it is.
+
 ## Cost
 
 The ledger listens to the calls Playwright already reports and does its bookkeeping at the end of each test, adding
@@ -89,8 +103,7 @@ test that started a server waits one timer tick more at its end, so the server's
 
 ## Limits
 
-- **Printed, not uploaded.** The findings are in the reporter's output and the GitHub job summary; the dashboard does
-  not store them.
+- The dashboard keeps the first 100 findings of each run, most severe first.
 - **Playwright internals.** The ledger reads Playwright's instrumentation hooks, the runner's current test and fixture,
   and a few private fields (`_routes`, `_ownerPage`, `_opener`). The Playwright versions the reporter supports have them
   all, and each is checked before use: without the hooks the ledger stays off.
@@ -98,6 +111,12 @@ test that started a server waits one timer tick more at its end, so the server's
 - A page used only through calls the ledger does not count, a screenshot of a blank page for example, reads as idle.
 - Node handles are servers and file watchers only: sockets, timers and child processes move on every test, Playwright's
   own included.
+
+## Try it in the demo
+
+The [live demo](https://piwitests.dev/demo/) holds a leaky run, and its run simulator replays one: pick **Leaky run**.
+
+<DemoExamples />
 
 ## Related
 

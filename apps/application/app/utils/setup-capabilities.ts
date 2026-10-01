@@ -251,4 +251,13 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     icon: 'i-lucide-search-check',
     doc: 'features/flaky-tests',
   },
+  {
+    id: 'resources',
+    title: 'Resources',
+    summary:
+      'Browsers, contexts and pages a run left open, pages opened and never used, and what the run cost its machine: CPU by process, peak memory and disk.',
+    how: 'Automatic from reporter 0.44: every run sends what it cost, shown on its Resources tab. The findings need the capture fixtures.',
+    icon: 'i-lucide-cpu',
+    doc: 'features/resource-leaks',
+  },
 ];

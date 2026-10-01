@@ -76,7 +76,8 @@ export type SetupCapabilityId =
   | 'test-map'
   | 'server-probes'
   | 'bug-reports'
-  | 'flake-lab';
+  | 'flake-lab'
+  | 'resources';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -140,6 +141,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasReportSnapshots,
     hasBugReports,
     hasRetryPass,
+    hasResourceReport,
   ] = await Promise.all([
     exists(
       db,
@@ -299,6 +301,17 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             .where(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
             .limit(1),
     ),
+    // Resources: active once a reporter sent a run's resource report.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: testRuns.id })
+            .from(testRuns)
+            .where(and(eq(testRuns.projectId, pid), isNotNull(testRuns.resourceReport)))
+            .limit(1)
+        : db.select({ id: testRuns.id }).from(testRuns).where(isNotNull(testRuns.resourceReport)).limit(1),
+    ),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -331,6 +344,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'server-probes': hasServerProbes,
     'bug-reports': hasBugReports,
     'flake-lab': hasRetryPass,
+    resources: hasResourceReport,
   };
 }
 
@@ -364,6 +378,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'server-probes',
   'bug-reports',
   'flake-lab',
+  'resources',
 ];
 
 /**

@@ -4,7 +4,15 @@ import type { Serialize, Simplify } from 'nitropack/types';
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame, TestStepEventHook } from '#shared/types';
+import type {
+  Role,
+  FilterDetails,
+  KeepSource,
+  TestMetadata,
+  TestSourceFrame,
+  TestStepEventHook,
+  WireExecutionResources,
+} from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
@@ -452,6 +460,8 @@ export interface TestRunDetails {
   shardTotal?: number | null;
   shardsFinished?: number;
   isFullRun?: boolean;
+  /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
+  hasResources?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
@@ -893,6 +903,8 @@ export interface TestCaseResult {
   wastedTimeMs?: number | null;
   networkRequests?: NetworkRequest[] | null;
   webVitals?: WebVitals | null;
+  /** What the test cost its worker and browser processes, and what it found open or left open. */
+  resources?: WireExecutionResources | null;
   /** AI-step usage manifest: replayed artifacts + the prompts their locators compile from. */
   aiUsage?: { entries: string[]; intents?: AiStepIntent[] } | null;
   consoleLogs?: ConsoleEntry[] | null;

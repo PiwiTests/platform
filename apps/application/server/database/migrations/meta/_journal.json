@@ -666,6 +666,13 @@
       "when": 1790627189996,
       "tag": "0094_chief_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "6",
+      "when": 1790886126277,
+      "tag": "0095_silly_santa_claus",
+      "breakpoints": true
     }
   ]
 }

@@ -673,6 +673,13 @@
       "when": 1790627191689,
       "tag": "0095_smooth_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790886127929,
+      "tag": "0096_adorable_jubilee",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,8 @@
 import { monitorEventLoopDelay, performance, type EventLoopUtilization, type IntervalHistogram } from 'node:perf_hooks';
+import type { RoleCost } from '@piwitests/core/wire';
 import { ProcFs, descendantsOf, roleOf, type ProcessRole } from '../support/system-readers.js';
+
+export type { RoleCost };
 import { internalCall } from './quiet-capture.js';
 
 /**
@@ -10,15 +13,6 @@ import { internalCall } from './quiet-capture.js';
  * test. Plus, over the Chrome DevTools Protocol, the main-thread CPU and weight
  * of the pages that outlive their test. Every read is best-effort.
  */
-
-export interface RoleCost {
-  cpuMs: number;
-  /** Time runnable but waiting for a CPU. */
-  runWaitMs: number | null;
-  /** The largest process of the role during the test (its peak RSS). */
-  peakRssMb: number | null;
-  processes: number;
-}
 
 export interface TestMetrics {
   worker: {

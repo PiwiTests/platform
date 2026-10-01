@@ -105,6 +105,10 @@ export interface ResourceCensus {
   handles?: { start: Record<string, number>; end: Record<string, number> };
   /** What the test cost the worker and the browsers it started. */
   metrics?: TestMetrics;
+  /** Contexts and pages already open in the worker when the test started. */
+  openAtStart?: { contexts: number; pages: number };
+  /** Objects the test opened itself and left open (what `PIWI_LEAK_CHECK` judges). */
+  leftOpen?: number;
 }
 
 /** An object a test opened itself and left open: what `PIWI_LEAK_CHECK` fails or closes. */
@@ -339,6 +343,7 @@ export class ResourceLedger {
   private born: ResourceBirth[] = [];
   private closed: ResourceClose[] = [];
   private handlesAtStart: Record<string, number> = {};
+  private openAtStart: { contexts: number; pages: number } = { contexts: 0, pages: 0 };
   /** The test between `testStarted` and `testEnded`, for when Playwright's own test info cannot be read. */
   private window: ResourceTestRef | null = null;
   private listener: object | null = null;
@@ -407,6 +412,11 @@ export class ResourceLedger {
   testStarted(info: TestInfoLike): void {
     this.window = testRef(info);
     this.handlesAtStart = countHandles();
+    this.openAtStart = { contexts: 0, pages: 0 };
+    for (const entry of this.openEntries()) {
+      if (entry.birth.kind === 'page') this.openAtStart.pages++;
+      else if (entry.birth.kind === 'context') this.openAtStart.contexts++;
+    }
     this.readers.metrics?.start(this.sawBrowser);
   }
 
@@ -430,6 +440,10 @@ export class ResourceLedger {
     const handles = { start: this.handlesAtStart, end: await settledHandles(this.handlesAtStart) };
     const census = this.census(ref, handles, await this.readPages());
     if (metrics) census.metrics = metrics;
+    if (test) {
+      census.openAtStart = this.openAtStart;
+      if (!failed) census.leftOpen = leaks.length;
+    }
     this.window = null;
     return { census, leaks };
   }

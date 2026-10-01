@@ -13,6 +13,7 @@
  * no card at all.
  */
 import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
+import type { WireExecutionResources } from '#shared/types';
 import { isVideoFile } from '~/utils/text-format';
 import { getPerformanceHints } from '~/utils/performance-hints';
 import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state';
@@ -133,7 +134,10 @@ const screenHasData = computed(
 );
 const sourceHasData = computed(() => Boolean(testSourceFrames.value?.length || testSource.value || props.hasTrace));
 const stateHasData = computed(() => Boolean(pageState.value));
-const performanceHasData = computed(() => Boolean(webVitals.value) || performanceHints.value.length > 0);
+const resources = computed<WireExecutionResources | null>(() => props.testCase?.resources ?? null);
+const performanceHasData = computed(
+  () => Boolean(webVitals.value) || performanceHints.value.length > 0 || Boolean(resources.value),
+);
 const timelineHasData = computed(() => steps.value.length > 0);
 // Distinct locator uses in the stored steps — the same count the Locators tab lists.
 const locatorCount = computed(
@@ -587,6 +591,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           embedded
           :performance-hints="performanceHints"
           :web-vitals="webVitals"
+          :resources="resources"
           :state="webVitalsState"
         />
       </div>

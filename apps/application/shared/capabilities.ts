@@ -35,7 +35,8 @@ export type CapabilityId =
   | 'test-map'
   | 'server-probes'
   | 'bug-reports'
-  | 'flake-lab';
+  | 'flake-lab'
+  | 'resources';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -247,6 +248,16 @@ export const CAPABILITIES: CapabilityDef[] = [
     passiveData: true,
     since: '0.41.0',
     doc: 'features/flaky-tests',
+  },
+  {
+    id: 'resources',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'resources',
+    passiveData: true,
+    since: '0.44.0',
+    doc: 'features/resource-leaks',
   },
 ];
 

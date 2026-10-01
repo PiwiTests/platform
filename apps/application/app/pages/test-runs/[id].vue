@@ -616,6 +616,9 @@ const tabItems = computed(() => [
     value: 'workers',
     slot: 'workers',
   },
+  ...(testRun.value?.hasResources
+    ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]
+    : []),
 ]);
 
 const tabPanelClass: Record<string, string> = {
@@ -858,6 +861,15 @@ const moreMenuItems = computed(() => {
               :project-name="testRun?.project?.name"
             />
           </div>
+        </template>
+
+        <template #tab-resources>
+          <RunResources
+            :run-id="Number(runId)"
+            :project-key="testRun?.projectId"
+            :project-name="testRun?.project?.name"
+            :refresh-key="runRefreshKey"
+          />
         </template>
       </DetailPageLayout>
     </template>

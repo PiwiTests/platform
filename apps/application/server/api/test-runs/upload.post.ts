@@ -25,6 +25,7 @@ import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { mergeResourceReport, sanitizeResourceReport } from '#shared/resource-report';
 
 defineRouteMeta({
   openAPI: {
@@ -326,6 +327,7 @@ export default eventHandler(async (event) => {
 
   // Create or retrieve the test run
   let testRun: { id: number; projectId: number };
+  const incomingResources = sanitizeResourceReport(testRunData.resourceReport);
 
   if (attachingToExistingRun && existingTestRunId) {
     // Attach reports to an already-created streaming run — do not create a new run
@@ -357,6 +359,7 @@ export default eventHandler(async (event) => {
         reporterVersion: (testRunData.reporterVersion as string | null | undefined) || null,
         isFullRun: testRunData.isFullRun !== false ? 1 : 0,
         filterDetails: (testRunData.filterDetails as Record<string, unknown> | null | undefined) || null,
+        resourceReport: incomingResources ? mergeResourceReport(null, incomingResources) : null,
       })
       .returning();
 
@@ -457,6 +460,7 @@ export default eventHandler(async (event) => {
         pageInventory: testCase.pageInventory,
         locatorPages: testCase.locatorPages,
         codeReach: testCase.codeReach,
+        resources: testCase.resources ?? null,
         aiUsage: testCase.aiUsage,
         consoleLogs: testCase.consoleLogs,
         dialogs: testCase.dialogs,

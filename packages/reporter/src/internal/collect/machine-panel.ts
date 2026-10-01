@@ -1,4 +1,4 @@
-import type { ProcessRole } from '../support/system-readers.js';
+import type { ArtifactKind, ProcessRole, WorkerHealth } from '@piwitests/core/wire';
 import type { ResourceCensus } from '../capture/resource-ledger.js';
 import type { RunProfile } from './process-sampler.js';
 import { formatHeld } from './resource-verdicts.js';
@@ -10,21 +10,10 @@ import { formatHeld } from './resource-verdicts.js';
  * attached and, with the capture fixtures, the workers' own health.
  */
 
-export type ArtifactKind = 'trace' | 'video' | 'screenshot' | 'other';
+export type { ArtifactKind, WorkerHealth };
 
 /** Bytes of the files tests attached, by kind. */
 export type ArtifactBytes = Record<ArtifactKind, number>;
-
-/** The worker processes' health over the run's tests, from the censuses. */
-export interface WorkerHealth {
-  tests: number;
-  /** Mean share of each test's time the worker's event loop was busy. */
-  loopUtilization: number;
-  /** The worst test's p99 event-loop delay. */
-  loopDelayP99Ms: number;
-  /** Mean involuntary context switches of the worker per test. */
-  involuntarySwitchesPerTest: number;
-}
 
 /** The workers' health over the tests whose census carried their metrics; null without any. */
 export function workerHealthOf(censuses: ResourceCensus[]): WorkerHealth | null {

@@ -12,6 +12,7 @@ import {
   type CpuTicks,
   type ProcessRole,
 } from '../support/system-readers.js';
+import type { RoleUsage, WireRunProfile } from '@piwitests/core/wire';
 
 /**
  * The run sampler: what the run cost the machine, read from the operating
@@ -24,68 +25,10 @@ import {
  * What a platform cannot read is listed as not measured, never reported as zero.
  */
 
-export interface RoleUsage {
-  cpuMs: number;
-  /** Time runnable but waiting for a CPU; null where the platform cannot tell. */
-  runWaitMs: number | null;
-  processes: number;
-}
+export type { RoleUsage };
 
-export interface RunProfile {
-  platform: NodeJS.Platform;
-  wallMs: number;
-  machine: {
-    cores: number;
-    memoryBytes: number;
-    /** The container's memory limit, when it is below the machine's memory. */
-    memoryLimitBytes: number | null;
-    /** The container's CPU quota in cores, when it has one. */
-    cpuQuotaCores: number | null;
-  };
-  cpu: {
-    /** Share of the machine's CPU time spent busy over the run. */
-    busyPct: number | null;
-    iowaitPct: number | null;
-    /** CPU time the hypervisor took from this VM. */
-    stealPct: number | null;
-    /** Share of the run's wall time some task waited for a CPU (PSI). */
-    pressurePct: number | null;
-    /** Machine busy share per sample, in order. */
-    series: number[];
-    /** CPU time of the processes under the runner, by role; null when the tree is not measured. */
-    byRole: Partial<Record<ProcessRole, RoleUsage>> | null;
-    /** Time the container's CPU quota held the run back. */
-    throttledMs: number | null;
-  };
-  memory: {
-    /** How the tree's memory was counted: PSS splits shared pages, RSS counts them in each process. */
-    kind: 'pss' | 'rss' | null;
-    peakBytes: number | null;
-    /** When the peak was sampled, ms after the run started. */
-    peakAtMs: number | null;
-    largest: { role: ProcessRole; bytes: number } | null;
-    /** Processes counted by RSS because their PSS could not be read. */
-    rssFallbacks: number;
-    /** Share of the run's wall time some task waited for memory (PSI). */
-    pressurePct: number | null;
-    lowestAvailableBytes: number | null;
-    /** The container's peak, when the run raised it. */
-    containerPeakBytes: number | null;
-    /** Processes the container's OOM killer ended during the run. */
-    oomKills: number | null;
-  };
-  disk: {
-    /** The run's output directories and the browser profiles it created, at their largest. */
-    peakInUseBytes: number | null;
-    /** The walk stopped at its file cap, so the peak is at least this. */
-    peakInUseIsLowerBound: boolean;
-    lowestFreeBytes: number | null;
-    /** Browser profiles and artifact folders earlier runs left in the temp directory. */
-    leftoverBytes: number | null;
-  };
-  /** Metrics this platform or machine could not read. */
-  notMeasured: string[];
-}
+/** What a run cost the machine it ran on. */
+export type RunProfile = WireRunProfile;
 
 export interface SamplerOptions {
   /** The runner's process, whose descendants are the run's processes. */

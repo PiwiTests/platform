@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { ProcessRole } from '@piwitests/core/wire';
 
 /**
  * Readers for what the operating system knows about a run: processes, their
@@ -13,17 +14,7 @@ import * as path from 'node:path';
 /** Clock ticks per second of the CPU times in `/proc/<pid>/stat` (`USER_HZ`, 100 on Linux's user ABI). */
 const CLK_TCK = 100;
 
-/** What a process is for the run, from its command line. */
-export type ProcessRole =
-  | 'runner'
-  | 'worker'
-  | 'browser'
-  | 'renderer'
-  | 'gpu'
-  | 'utility'
-  | 'ffmpeg'
-  | 'webServer'
-  | 'other';
+export type { ProcessRole };
 
 export interface ProcStat {
   pid: number;

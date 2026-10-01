@@ -62,6 +62,7 @@ export const testRuns = sqliteTable(
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     setupSteps: text('setup_steps', { mode: 'json' }), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
+    resourceReport: text('resource_report', { mode: 'json' }), // { v: 1, parts: WireResourceReport[] } — one part per shard: resource findings and what the run cost its machine
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
@@ -456,6 +457,7 @@ export const testRunsCases = sqliteTable(
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
     wastedTimeMs: integer('wasted_time_ms'), // Aggregated ms spent in wait steps
     webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
+    resources: text('resources', { mode: 'json' }), // WireExecutionResources — what the execution cost its worker and browsers
     pageState: text('page_state', { mode: 'json' }), // URL/history/storage-keys/cookie-flags at test end (values never captured)
     aiUsage: text('ai_usage', { mode: 'json' }), // { entries: string[], intents?: {template,locator,kind}[] } — replayed AI-step artifacts + their prompts
     consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries

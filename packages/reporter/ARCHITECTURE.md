@@ -70,7 +70,10 @@ any worker starts; each worker appends that census to it, and `onEnd` reads it
 back. `internal/collect/resource-verdicts.ts` stitches every census per worker
 into the findings the reporter prints. The machine panel needs no worker: the
 run sampler reads the processes under the runner from the reporter's own
-process. Nothing about resources is sent to the server.
+process. `internal/collect/resource-wire.ts` projects what the server receives:
+each test's cost on its wire test case, and the bounded run report (findings,
+the run's profile, each worker's open pages) with the finish or the whole-run
+submit.
 
 ## The submit/fallback ladder (`internal/submit/run-submitter.ts`)
 
@@ -105,7 +108,7 @@ src/
                 stitched into leaked, idle, piling-up and handle findings),
                 process-sampler (the run's processes and the machine, sampled
                 from the reporter), machine-panel (the end-of-run CPU, memory
-                and disk lines)
+                and disk lines), resource-wire (what the server receives)
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,

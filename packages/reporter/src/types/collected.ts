@@ -15,6 +15,7 @@ import type {
   TestSourceFrame,
   TestStepEvent,
   LocatorPageUse,
+  WireExecutionResources,
   WireNetworkRequest,
 } from './wire.js';
 import type { LocatorSnapshot } from '../internal/capture/locator-healing.js';
@@ -114,6 +115,8 @@ export interface CollectedTestCase {
   locatorPages?: LocatorPageUse[];
   /** Parsed from `piwi-code-reach`: the repository-relative source files the test executed. */
   codeReach?: string[];
+  /** What the execution cost its worker and browsers, from its resource census. */
+  resources?: WireExecutionResources;
   /** Why a `didnotrun` case never executed; unset for tests that ran. */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */

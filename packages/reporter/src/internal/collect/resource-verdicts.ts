@@ -1,11 +1,11 @@
 import * as path from 'node:path';
 import type { TestStep } from '@playwright/test/reporter';
+import type { WireResourceFinding } from '@piwitests/core/wire';
 import type {
   LeakCheck,
   ResourceBirth,
   ResourceCensus,
   ResourceClose,
-  ResourceKind,
   ResourceTestRef,
 } from '../capture/resource-ledger.js';
 
@@ -22,35 +22,7 @@ import type {
  * ran without the fixtures, and prints `formatResourceSummary`.
  */
 
-export type FindingVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probable';
-
-export interface ResourceFinding {
-  verdict: FindingVerdict;
-  /** The object kind, `handle` for a Node handle. */
-  kind: ResourceKind | 'handle';
-  /** Where it was opened: `file:line`, a fixture, or a popup's trigger. */
-  where: string;
-  /** Leaked: the scope it outlived. */
-  scope?: 'test' | 'describe';
-  /** The tests involved. */
-  tests: number;
-  /** The objects (or the leaks, for handles) grouped in this finding. */
-  count: number;
-  /** Leaked: how long the longest one stayed open past its scope, in ms. */
-  heldMs?: number;
-  /** Leaked: at least one was still open when its worker shut down. */
-  untilWorkerEnd?: boolean;
-  /** Leaked contexts and browsers: the open pages that went with them. */
-  pages?: number;
-  /** Leaked: closed by `PIWI_LEAK_CHECK=close`. */
-  closedByPiwi?: boolean;
-  /** Leaked past its test: main-thread CPU its pages used after the test, over CDP (Chromium). */
-  afterTestCpuMs?: number;
-  /** Piling: what grew, from how many to how many, over how many tests. */
-  growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
-  /** Free text: the describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
-  detail?: string;
-}
+export type ResourceFinding = WireResourceFinding;
 
 export interface ResourceReport {
   findings: ResourceFinding[];
@@ -309,6 +281,11 @@ function afterTestCpu(entry: Tracked): number {
   return Math.max(0, readings[readings.length - 1]!.cpuMs - first.cpuMs);
 }
 
+/** The line that opened an object, or the fixture's, `file:line`. */
+function siteOf(birth: ResourceBirth): string | null {
+  return birth.site ?? birth.fixture?.location ?? null;
+}
+
 /** The key of an object across workers: ids restart in every worker process. */
 const keyOf = (worker: number, id: number) => `${worker}:${id}`;
 
@@ -333,6 +310,7 @@ function groupLeaks(leaked: Leak[], all: Tracked[]): ResourceFinding[] {
       verdict: 'leaked' as const,
       kind: birth.kind,
       where: whereOf(birth),
+      site: siteOf(birth),
       scope: leak.scope,
       tests: 0,
       count: 0,
@@ -400,6 +378,7 @@ function groupIdle(idle: Tracked[], fixturesByTest: Map<string, string[]>): Reso
       verdict: 'idle' as const,
       kind: 'page' as const,
       where,
+      site: siteOf(birth),
       tests: 0,
       count: 0,
       testIds: new Set<string>(),
@@ -429,6 +408,7 @@ function pilingFindings(all: Tracked[]): ResourceFinding[] {
         verdict: 'piling',
         kind: entry.birth.kind,
         where: whereOf(entry.birth),
+        site: siteOf(entry.birth),
         tests: values.length,
         count: 1,
         growth: { what, from, to, tests: values.length },

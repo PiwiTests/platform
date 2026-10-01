@@ -8,6 +8,7 @@ export interface DemoExampleExpect {
   testCase?: { id: number; title: string };
   project?: { id: number; name: string };
   cluster?: { id: number; story: string };
+  run?: { id: number; project: string };
   diagnosis?: 'with-patch' | 'none';
   fixLanded?: true;
   lab?:
@@ -19,6 +20,7 @@ export interface DemoExampleExpect {
     | 'inconclusive'
     | 'verified'
     | 'flaked-again';
+  resources?: 'leaky';
 }
 
 export interface DemoExample {

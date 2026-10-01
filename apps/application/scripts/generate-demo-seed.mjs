@@ -42,6 +42,7 @@ import {
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
+import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Overridable so concurrent callers (e.g. two unit test files regenerating in
@@ -1646,6 +1647,54 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
       if (row.started_at > cursor) shiftCase(row, cursor - row.started_at);
       cursor = row.started_at + (row.duration ?? 0) + SEED_WORKER_GAP_MS;
     }
+  }
+}
+
+// ── Resources: a leaky run and a clean one (post-processing, rng-free) ─────────
+// Web Dashboard's newest run is a leaky one: its login fixture opens a browser
+// context per test and never closes it, so every test after the first finds
+// the earlier tests' pages still open in its worker. The run before it closes
+// everything it opens, for comparison. Both carry what each execution cost and
+// the run's report, as the reporter sends them.
+{
+  const webRuns = TEST_RUNS.filter((run) => run.project_id === 5).sort((a, b) => b.start_time - a.start_time);
+  for (const [index, run] of webRuns.slice(0, 2).entries()) {
+    const leaky = index === 0;
+    const lanes = new Map();
+    for (const row of TEST_RUNS_CASES) {
+      if (row.test_run_id !== run.id || row.worker_index === null || row.status === 'didnotrun') continue;
+      const lane = lanes.get(row.worker_index) ?? [];
+      lane.push(row);
+      lanes.set(row.worker_index, lane);
+    }
+    let artifactBytes = 0;
+    for (const lane of lanes.values()) {
+      lane.sort((a, b) => a.started_at - b.started_at);
+      lane.forEach((row, position) => {
+        row.resources = demoExecutionResources({
+          seq: row.id,
+          durationMs: row.duration ?? 0,
+          openAtStart: position,
+          leaky,
+        });
+        artifactBytes += Object.values(row.resources.artifactBytes).reduce((sum, n) => sum + n, 0);
+      });
+    }
+    run.resource_report = {
+      v: 1,
+      parts: [
+        demoResourceReport({
+          leaky,
+          wallMs: run.duration,
+          workers: [...lanes.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([worker, lane]) => ({ worker, tests: lane.length })),
+          fixtureFile: 'tests/admin/fixtures.ts',
+          handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
+          artifactBytes,
+        }),
+      ],
+    };
   }
 }
 

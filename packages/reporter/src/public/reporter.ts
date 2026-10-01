@@ -57,6 +57,7 @@ import {
 import { Logger } from '../internal/support/logger.js';
 import { emitResourceSummary } from '../internal/support/ci-output.js';
 import { RunSampler } from '../internal/collect/process-sampler.js';
+import { executionResources, resourceReportWire } from '../internal/collect/resource-wire.js';
 import {
   artifactKind,
   emptyArtifacts,
@@ -65,7 +66,14 @@ import {
   type ArtifactBytes,
 } from '../internal/collect/machine-panel.js';
 import { FailureLinks, failureHeadline } from '../internal/support/failure-links.js';
-import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails, TestAnnotation } from '../types.js';
+import type {
+  CollectedTestCase,
+  StreamEvent,
+  SetupStep,
+  FilterDetails,
+  TestAnnotation,
+  WireResourceReport,
+} from '../types.js';
 
 /**
  * Relative `file:line:column` location string for a test, normalized to POSIX
@@ -139,6 +147,8 @@ export class PiwiDashboardReporter {
   private sampler: RunSampler | null = null;
   /** Bytes of the files the tests attached, by kind. */
   private artifactBytes: ArtifactBytes = emptyArtifacts();
+  /** The run's resource report for the dashboard, built in `onEnd`. */
+  private resourceReport: WireResourceReport | null = null;
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -521,7 +531,7 @@ export class PiwiDashboardReporter {
         }
       }
     }
-    if (this.enabled && this.options.captureResources !== false) this.collectResources(test, result);
+    if (this.enabled && this.options.captureResources !== false) this.collectResources(test, result, testCase);
 
     // The source files the test executed, when code reach is on.
     const reachAttachment =
@@ -588,11 +598,15 @@ export class PiwiDashboardReporter {
    * that ran without the capture fixtures, tally the browsers and contexts its
    * steps opened and closed.
    */
-  private collectResources(test: TestCase, result: TestResult): void {
+  private collectResources(test: TestCase, result: TestResult, testCase: CollectedTestCase): void {
+    const artifacts = emptyArtifacts();
     for (const file of result.attachments ?? []) {
       if (!file.path || INTERNAL_ATTACHMENT_NAMES.has(file.name)) continue;
       try {
-        this.artifactBytes[artifactKind(file.name, file.contentType)] += fs.statSync(file.path).size;
+        const kind = artifactKind(file.name, file.contentType);
+        const bytes = fs.statSync(file.path).size;
+        artifacts[kind] += bytes;
+        this.artifactBytes[kind] += bytes;
       } catch {
         // A file already moved or removed.
       }
@@ -601,6 +615,8 @@ export class PiwiDashboardReporter {
     const census = parseResourceCensus(attachment?.body);
     if (census) {
       this.resourceCensuses.push(census);
+      const resources = executionResources(census, artifacts);
+      if (resources) testCase.resources = resources;
       const leftIdle = census.closed.some((c) => c.used === false) || census.open.some((o) => o.used === false);
       if (leftIdle) this.fixturesByTest.set(test.id, userFixturesOf(result.steps ?? []));
       return;
@@ -630,18 +646,24 @@ export class PiwiDashboardReporter {
     }
     const lines: string[] = [];
     try {
-      if (censuses.length > 0 || this.lifecycleTallies.length > 0) {
-        const report = buildResourceReport({
-          censuses,
-          fixturesByTest: this.fixturesByTest,
-          tallies: this.lifecycleTallies,
-        });
-        lines.push(...formatResourceSummary(report, readLeakCheck(this.options.leakCheck)));
-      }
+      const report =
+        censuses.length > 0 || this.lifecycleTallies.length > 0
+          ? buildResourceReport({ censuses, fixturesByTest: this.fixturesByTest, tallies: this.lifecycleTallies })
+          : null;
+      if (report) lines.push(...formatResourceSummary(report, readLeakCheck(this.options.leakCheck)));
       if (profile) {
         lines.push(
           ...formatMachinePanel(profile, { artifacts: this.artifactBytes, workers: workerHealthOf(censuses) }),
         );
+      }
+      if (report || profile) {
+        this.resourceReport = resourceReportWire({
+          report,
+          profile,
+          censuses,
+          artifacts: this.artifactBytes,
+          shardIndex: this.shardInfo?.current ?? null,
+        });
       }
     } catch (error) {
       this.logger.debug(`Resource summary skipped: ${errorMessage(error)}`);
@@ -734,6 +756,7 @@ export class PiwiDashboardReporter {
           setupSteps: this.setupSteps,
           isFullRun: this.isFullRun,
           filterDetails: this.filterDetails,
+          resourceReport: this.resourceReport,
         },
         result,
       );

@@ -10,14 +10,15 @@
  * against the seed, so a seed change that moves an id fails there, naming the
  * example. The vocabulary is closed:
  *
- * - `testCase: { id, title }`, `project: { id, name }`, `cluster: { id, story }`:
- *   the entity the route opens (its id is the one in the route), by id and by
- *   what identifies it in the seed (a test title, a project name, a failure
- *   story key).
+ * - `testCase: { id, title }`, `project: { id, name }`, `cluster: { id, story }`,
+ *   `run: { id, project }`: the entity the route opens (its id is the one in the
+ *   route), by id and by what identifies it in the seed (a test title, a
+ *   project name, a failure story key, the run's project name).
  * - `diagnosis: 'with-patch' | 'none'`: the cluster has a completed stored AI
  *   diagnosis with a suggested patch, or no stored diagnosis at all.
  * - `fixLanded: true`: the cluster's fix has landed.
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
+ * - `resources: 'leaky'`: the run's resource report names at least one leak.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
@@ -64,6 +65,15 @@ export const DEMO_EXAMPLES = [
     shows: 'Where each flaky test of the project stands in the lab, and the command it needs next.',
     route: '/projects/3?tab=flake-lab',
     expect: { project: { id: 3, name: 'ui-components' } },
+  },
+  {
+    id: 'resources-leaky-run',
+    doc: 'features/resource-leaks',
+    title: 'Web Dashboard › the newest run’s Resources tab',
+    shows:
+      'A login fixture leaves a context open per test: each worker’s open pages climb test after test, and the machine runs short of CPU.',
+    route: '/test-runs/62?tab=resources',
+    expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
   },
 ];
 

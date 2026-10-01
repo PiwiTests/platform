@@ -73,6 +73,7 @@ import {
 } from '#shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '#shared/types';
 import { demoHttpError } from './http-error';
+import { mergeResourceReport, sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -419,6 +420,8 @@ export interface RunCaseInput {
   locatorPages?: unknown;
   /** The source files the test executed (code reach). */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers (`piwi-resources`). */
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -741,6 +744,7 @@ export async function persistRunCases(
       browserName: resolveBrowserName(c.browser),
       timeout: c.timeout ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
+      resources: sanitizeExecutionResources(c.resources),
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
@@ -974,6 +978,11 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+  // This reporter's resource report, folded into the other shards' already stored.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  const resourceUpdate = incomingResources
+    ? { resourceReport: mergeResourceReport(testRun.resourceReport, incomingResources) }
+    : {};
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
@@ -1005,6 +1014,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
+        ...resourceUpdate,
       })
       .where(eq(testRuns.id, id));
 
@@ -1152,6 +1162,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
+      ...resourceUpdate,
     })
     .where(eq(testRuns.id, id));
 

@@ -11,6 +11,7 @@ import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects
 import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { mergeResourceReport, sanitizeResourceReport } from '#shared/resource-report';
 
 defineRouteMeta({
   openAPI: {
@@ -103,6 +104,12 @@ export default eventHandler(async (event) => {
 
   const hasPendingUploads = body.hasPendingUploads === true;
 
+  // This reporter's resource report, folded into the other shards' already stored.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  const resourceUpdate = incomingResources
+    ? { resourceReport: mergeResourceReport(testRun.resourceReport, incomingResources) }
+    : {};
+
   if (isSharded) {
     // Sharded run: track shardsFinished; duration is the maximum across shards.
     // The test counters are NOT touched here — every case (including
@@ -130,6 +137,7 @@ export default eventHandler(async (event) => {
       metadata: { ...currentMeta, shardDurations: allDurations },
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
+      ...resourceUpdate,
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
@@ -273,6 +281,7 @@ export default eventHandler(async (event) => {
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
+      ...resourceUpdate,
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
@@ -314,6 +323,7 @@ export default eventHandler(async (event) => {
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
+      ...resourceUpdate,
     };
 
     await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));

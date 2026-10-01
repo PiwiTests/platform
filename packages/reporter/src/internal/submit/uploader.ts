@@ -6,7 +6,7 @@ import { HttpError } from '../transport/http-client.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
-import type { CollectedTestCase, TraceHashInfo, FilterDetails } from '../../types.js';
+import type { CollectedTestCase, TraceHashInfo, FilterDetails, WireResourceReport } from '../../types.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -51,6 +51,8 @@ export interface RunPayload {
   isFullRun?: boolean;
   /** Filter details when isFullRun is false */
   filterDetails?: FilterDetails | null;
+  /** The run's resource findings and what it cost its machine, when the reporter measured them */
+  resourceReport?: WireResourceReport | null;
 }
 
 /** Options controlling which report files and traces to upload */

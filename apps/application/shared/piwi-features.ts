@@ -178,7 +178,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Browsers, contexts and pages your tests leave open or open for nothing, listed with the line that opened them.',
         needs: ['fixtures'],
-        where: 'Reporter output; GitHub job summary',
+        where: 'Run → Resources; Execution → Performance; reporter output',
         doc: 'features/resource-leaks',
       },
       {
@@ -186,7 +186,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'What a run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, after every run.',
         needs: [],
-        where: 'Reporter output; GitHub job summary',
+        where: 'Run → Resources; reporter output; GitHub job summary',
         doc: 'features/cpu-memory-disk',
       },
       {

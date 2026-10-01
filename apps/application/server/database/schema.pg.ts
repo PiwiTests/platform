@@ -102,6 +102,7 @@ export const testRuns = pgTable(
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: jsonb('metadata'), // Additional metadata as JSON
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
+    resourceReport: jsonb('resource_report'), // { v: 1, parts: WireResourceReport[] } — one part per shard: resource findings and what the run cost its machine
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
@@ -490,6 +491,7 @@ export const testRunsCases = pgTable(
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
     wastedTimeMs: integer('wasted_time_ms'), // Aggregated ms spent in wait steps
     webVitals: jsonb('web_vitals'), // { navigation: {...}, paint: {...} }
+    resources: jsonb('resources'), // WireExecutionResources — what the execution cost its worker and browsers
     pageState: jsonb('page_state'), // URL/history/storage-keys/cookie-flags at test end (values never captured)
     aiUsage: jsonb('ai_usage'), // { entries: string[], intents?: {template,locator,kind}[] } — replayed AI-step artifacts + their prompts
     consoleLogs: jsonb('console_logs'), // Array of { type, text, timestamp, location } console entries

@@ -128,8 +128,9 @@ export interface PiwiDashboardOptions {
    * the fixture that opened the object. Rides the capture fixtures and costs a
    * few bookkeeping steps per test. Also samples the run's processes and the
    * machine, with or without the fixtures, and prints what the run cost: CPU by
-   * process, time spent waiting for a CPU, peak memory and disk. Nothing is sent
-   * to the dashboard. Defaults to `true`. Set to `false` (or
+   * process, time spent waiting for a CPU, peak memory and disk. The findings,
+   * the run's cost and each test's go to the dashboard with the run, on its
+   * Resources tab. Defaults to `true`. Set to `false` (or
    * `PIWI_CAPTURE_RESOURCES=false`) to turn both off.
    */
   captureResources?: boolean;
