@@ -1,0 +1,93 @@
+---
+title: CPU, memory & disk
+description: "What a test run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, printed by the reporter at the end of every run."
+lang: en-US
+---
+
+# CPU, memory & disk
+
+<Needs reporter />
+
+A suite that got slower may be doing more, or may be waiting: for a CPU it shares with too many workers, for memory
+the container is about to run out of, for a disk filling with traces. The reporter samples the run's processes and
+the machine while the tests run and prints, at the end, what the run had and what it used of it. It needs no fixtures
+and no dashboard page; on GitHub Actions the same panel is added to the job summary.
+
+## The panel
+
+```text
+[Piwi Dashboard] Machine: 4 cores · 15.7 GB · container limit 13.4 GB · steal 1.5%
+[Piwi Dashboard]   CPU      ▃▆█████▇▆▃▁ 92% busy · a task waited for a CPU 79% of the time · 1 min 33 s of CPU: renderers 41.0 s · browsers 22.0 s · workers 18.0 s · web server 11.0 s · renderers waited 39.0 s for a CPU
+[Piwi Dashboard]   Memory   peak 1.6 GB (PSS) at 0:21 · 12% of the limit · largest process: worker 251 MB · no memory pressure
+[Piwi Dashboard]   Disk     145 MB of artifacts (traces 140 MB · screenshots 5 MB) · 430 MB in use at the peak · 13.9 GB free at the low point
+[Piwi Dashboard]   Workers  event loop busy 28% · p99 delay 181 ms at worst · 2,100 involuntary context switches per test
+```
+
+It follows the [resource leaks](./resource-leaks) summary when the run has any.
+
+| Line | What it says |
+|---|---|
+| **Machine** | The cores and memory the run had. In a container, its memory limit and CPU quota, which are what the run really gets; on a cloud VM, the CPU time the hypervisor took (steal) when it reaches 1%. |
+| **CPU** | How busy the machine was, sampled every second (the sparkline), and the share of the time some task was ready to run but **waited for a CPU**: the measure of too many workers for the cores. Then the CPU time of the run's own processes by role, and the role that waited longest. |
+| **Memory** | The peak of the run's processes together, counted as PSS (proportional set size: memory several processes share is split between them, so the sum is honest), when it happened, against the container's limit or the machine's memory, and the largest single process. A container that hit a new peak, a process the container killed for memory, and time spent waiting for memory are named. |
+| **Disk** | The files the tests attached (traces, videos, screenshots), the most disk the run's output folders and browser profiles took at once while it ran, and the lowest free space on their disks. Profiles and artifact folders that earlier runs left in the temp folder are named from 10 MB. |
+| **Workers** | With the [capture fixtures](/guide/capture-fixtures): how busy each worker's event loop was during its tests, the worst p99 delay, and how often the worker was switched out of a CPU it still needed. A worker that drives the browser late makes actions slow and timeouts flaky. |
+
+The roles come from each process's command line: Playwright's **workers**, the **browsers** they launch with their
+**renderers** (the processes pages run in), **GPU** process and **browser utilities**, **ffmpeg** when videos are recorded,
+the **runner** (Playwright's main process, with the reporters), and the **web server**: whatever the runner starts that
+is none of these, `webServer` and `globalSetup` servers alike.
+
+## Reading it
+
+- **Waiting for a CPU most of the time, renderers waiting longest**: more workers than the cores can serve. Lower
+  `workers`, or look for pages that keep working after their test: the [resource leaks](./resource-leaks) summary
+  gives the main-thread CPU each leaked page used after its test.
+- **Memory near the limit**: each worker holds a browser, and each open page a renderer. Fewer workers, or close what
+  the tests leave open.
+- **Most of the CPU in the GPU process or ffmpeg**: tracing screenshots and video frames are rendered in software on a
+  machine without a GPU. `trace: 'on-first-retry'` and `video: 'on-first-retry'` record only what a retry needs.
+- **Disk in use far above the artifacts**: traces are written and zipped in place; a green `retain-on-failure` run
+  writes them all, then deletes them.
+- **A large web server share**: a development server compiles on demand; serving a production build in CI is cheaper.
+
+## Platforms
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| Machine busy, the sparkline | ✅ | ✅ | ✅ |
+| CPU of the run's processes by role | ✅ every second | ✅ every 5 seconds, through `ps` | not measured |
+| Waiting for a CPU, steal | ✅ | not measured | not measured |
+| Peak memory | ✅ PSS | RSS, which counts shared memory in each process | not measured |
+| Container limits, peak, kills | ✅ cgroup v1 and v2 | — | — |
+| Disk, workers | ✅ | ✅ | ✅ |
+
+A line lists what could not be measured on the machine, rather than printing a zero. The workers' reads are taken at
+each test's start and end; on Linux they add the CPU, the time waiting for a CPU and the peak memory of each browser
+process during the test, kept for each test with its census.
+
+## Cost
+
+The sampler runs on a timer in the reporter's process, which it never keeps alive: about 2 ms of CPU every second to
+read the processes' CPU time, and on Linux about 30 ms every five seconds to read their memory and walk the output
+folders (up to 10,000 files), under 1% of one core in all. The workers' reads take about 2 ms at the end of each
+test.
+
+Turn it off, with the resource ledger, through `captureResources: false` (or `PIWI_CAPTURE_RESOURCES=false`).
+
+## Limits
+
+- **Printed, not uploaded.** The panel is in the reporter's output and the GitHub job summary; the dashboard does not
+  store it.
+- **Sampled.** A process that lives less than a second, or the last second of one that exits, can be missed; a run of a
+  few seconds has few samples.
+- **The machine is shared.** Busy, waiting and free memory count every process on the machine, other jobs included;
+  only the CPU by role and the peak memory are the run's own.
+- A browser the tests reach over the network (`connectOptions`, a grid) runs elsewhere and is not measured.
+- A container's peak memory counts from the container's start, so it is named only when the run raised it.
+
+## Related
+
+- [Resource leaks](./resource-leaks): what the tests leave open
+- [Reporter options](/reference/reporter-options#what-gets-captured): `captureResources`
+- [Slow tests & wasted time](./slow-tests): where the suite's time goes

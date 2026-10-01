@@ -36,6 +36,31 @@ ones none. What changed while building PR 1:
   holds for `beforeAll` objects, which the gate leaves alone.
 - A warning annotation at each leak's line waits for PR 4, where only the leaks a branch introduces are flagged.
 
+**PR 2 built 2026-10-01**: the run sampler in the reporter, artifact sizes, the per-test reads in the workers, the CDP
+reads of pages that outlive their test, and the machine panel after the summary, with a CPU, memory & disk docs page
+and a `resources` rung in the bench. What changed while building PR 2:
+
+- Nothing new leaves the machine: the machine facts feed the panel and travel with the run's profile in PR 3, rather
+  than going into the run's metadata now.
+- The sampler scans `/proc` every second (about 2 ms of CPU with a browser running) and reads PSS, the container
+  and the disk every five (about 30 ms): under 1% of one core. A worker reads its process tree once per test, at its
+  end (about 2 ms), and that read starts the next test's window; a worker that never started a browser skips it. macOS reads the tree through `ps` every five seconds and counts RSS. Windows measures the machine and the
+  disk; the process tree is not measured there yet.
+- The web server is whatever the runner starts that is not a worker, a browser or ffmpeg: the runner does not expose
+  the pid of `webServer`'s command, and a `globalSetup` server counts the same way.
+- A leaked page's cost is its main thread's task time over CDP (`TaskDuration` in thread ticks), not its renderer's
+  process CPU, which the pages a renderer hosts share. It is shown from half a second: a static page logs about
+  0.1 s of background tasks over a few seconds.
+- The container's peak counts from the container's start, so the panel names it only when the run raised it.
+- Artifact sizes are what the tests attached: `preserveOutput` can delete them after the run.
+- Each test's reads (the worker's CPU, event loop, switches, heap and descriptors; on Linux the CPU, run-queue wait
+  and peak RSS of each browser process by role) go into its census for PR 3's wire; the panel prints the workers'
+  event loop and switches.
+- Not read yet: device I/O (`diskstats`, PSI `io`, `io.stat`), major faults and swap, descriptors of the browser
+  processes, PSS by kind, bytes per page, CPU by role over CDP outside Linux, and `PIWI_CAPTURE_RESOURCES=full`.
+- The bench's `resources` rung measured +15 ms and +0 ms per test over `full` in two runs of four rounds (1.3% and
+  0%), inside the 3% the Verification section sets.
+
 ## What the reader gets
 
 At the end of a local or CI run, from the reporter alone:

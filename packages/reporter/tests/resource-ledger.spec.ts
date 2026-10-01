@@ -347,6 +347,27 @@ describe('ResourceLedger', () => {
     expect(expected.census.test).not.toHaveProperty('failed');
   });
 
+  it("adds the test's metrics and the open pages' main thread to its census", async () => {
+    const fake = fakePlaywright();
+    const metrics = { start: vi.fn(), end: vi.fn(() => ({ worker: { cpuMs: 12 } })), dispose: vi.fn() };
+    const pages = { read: vi.fn(async () => ({ cpuMs: 30, heapMb: 1, nodes: 5, listeners: 2 })) };
+    const ledger = new ResourceLedger(fake.playwright, 0, 'report', null, () => null, Date.now, {
+      metrics: metrics as never,
+      pages: pages as never,
+    });
+    ledger.install();
+    ledger.testStarted(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    await (await browser.newContext()).newPage();
+
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(metrics.start).toHaveBeenCalled();
+    expect(census.metrics).toEqual({ worker: { cpuMs: 12 } });
+    expect(census.open.find((o) => o.id === 3)?.main).toEqual({ cpuMs: 30, heapMb: 1, nodes: 5, listeners: 2 });
+    ledger.workerEnded();
+    expect(metrics.dispose).toHaveBeenCalled();
+  });
+
   it('appends its shutdown census to the results file and stops listening', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-ledger-')), 'results.jsonl');
     const fake = fakePlaywright();

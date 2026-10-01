@@ -14,7 +14,7 @@ import { Uploader } from '../internal/submit/uploader.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
-import { ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
+import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
 import { MetadataCollector } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
@@ -56,6 +56,14 @@ import {
 } from '../internal/collect/resource-verdicts.js';
 import { Logger } from '../internal/support/logger.js';
 import { emitResourceSummary } from '../internal/support/ci-output.js';
+import { RunSampler } from '../internal/collect/process-sampler.js';
+import {
+  artifactKind,
+  emptyArtifacts,
+  formatMachinePanel,
+  workerHealthOf,
+  type ArtifactBytes,
+} from '../internal/collect/machine-panel.js';
 import { FailureLinks, failureHeadline } from '../internal/support/failure-links.js';
 import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails, TestAnnotation } from '../types.js';
 
@@ -127,6 +135,10 @@ export class PiwiDashboardReporter {
   private fixturesByTest = new Map<string, string[]>();
   /** The file workers append their shutdown census to, set in `onBegin`. */
   private resourcesFile: string | null = null;
+  /** Samples the run's processes and the machine from `onBegin` to `onEnd`. */
+  private sampler: RunSampler | null = null;
+  /** Bytes of the files the tests attached, by kind. */
+  private artifactBytes: ArtifactBytes = emptyArtifacts();
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -205,6 +217,13 @@ export class PiwiDashboardReporter {
     if (this.options.captureResources !== false) {
       this.resourcesFile = path.join(os.tmpdir(), `piwi-resources-${process.pid}-${Date.now()}.jsonl`);
       process.env[PIWI_RESOURCES_RESULTS_ENV] = this.resourcesFile;
+      try {
+        this.sampler = new RunSampler({ outputDirs: (config.projects ?? []).map((project) => project.outputDir) });
+        this.sampler.start();
+      } catch (error) {
+        this.sampler = null;
+        this.logger.debug(`Run sampler not started: ${errorMessage(error)}`);
+      }
     }
     this.logger.info(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
@@ -565,10 +584,19 @@ export class PiwiDashboardReporter {
   }
 
   /**
-   * Keep a test's resource census; for a test that ran without the capture
-   * fixtures, tally the browsers and contexts its steps opened and closed.
+   * Add up the files a test attached, and keep its resource census; for a test
+   * that ran without the capture fixtures, tally the browsers and contexts its
+   * steps opened and closed.
    */
   private collectResources(test: TestCase, result: TestResult): void {
+    for (const file of result.attachments ?? []) {
+      if (!file.path || INTERNAL_ATTACHMENT_NAMES.has(file.name)) continue;
+      try {
+        this.artifactBytes[artifactKind(file.name, file.contentType)] += fs.statSync(file.path).size;
+      } catch {
+        // A file already moved or removed.
+      }
+    }
     const attachment = result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.resources);
     const census = parseResourceCensus(attachment?.body);
     if (census) {
@@ -583,9 +611,14 @@ export class PiwiDashboardReporter {
       this.lifecycleTallies.push(tally);
   }
 
-  /** Print what the run left open or opened for nothing, from the censuses and the workers' shutdown file. */
-  private reportResources(): void {
+  /**
+   * Print what the run left open or opened for nothing, from the censuses and
+   * the workers' shutdown file, then what the run cost the machine.
+   */
+  private async reportResources(): Promise<void> {
     if (this.options.captureResources === false) return;
+    const profile = this.sampler ? await this.sampler.stop() : null;
+    this.sampler = null;
     const censuses = [...this.resourceCensuses];
     if (this.resourcesFile) {
       try {
@@ -595,19 +628,26 @@ export class PiwiDashboardReporter {
         // No worker wrote one: their last tests' censuses stand in.
       }
     }
-    if (censuses.length === 0 && this.lifecycleTallies.length === 0) return;
+    const lines: string[] = [];
     try {
-      const report = buildResourceReport({
-        censuses,
-        fixturesByTest: this.fixturesByTest,
-        tallies: this.lifecycleTallies,
-      });
-      const lines = formatResourceSummary(report, readLeakCheck(this.options.leakCheck));
-      for (const line of lines) this.logger.info(line);
-      emitResourceSummary(lines, this.logger);
+      if (censuses.length > 0 || this.lifecycleTallies.length > 0) {
+        const report = buildResourceReport({
+          censuses,
+          fixturesByTest: this.fixturesByTest,
+          tallies: this.lifecycleTallies,
+        });
+        lines.push(...formatResourceSummary(report, readLeakCheck(this.options.leakCheck)));
+      }
+      if (profile) {
+        lines.push(
+          ...formatMachinePanel(profile, { artifacts: this.artifactBytes, workers: workerHealthOf(censuses) }),
+        );
+      }
     } catch (error) {
       this.logger.debug(`Resource summary skipped: ${errorMessage(error)}`);
     }
+    for (const line of lines) this.logger.info(line);
+    emitResourceSummary(lines, this.logger);
   }
 
   /**
@@ -672,7 +712,7 @@ export class PiwiDashboardReporter {
     });
     this.materializeUnrunTests(unrunReason);
     // Printed before the submit, so a slow or failed upload never hides it.
-    this.reportResources();
+    await this.reportResources();
 
     try {
       await this.submitter.submit(

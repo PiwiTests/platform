@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
+import type { FullConfig, FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
+import { RunSampler } from '../../src/internal/collect/process-sampler.js';
 import type { ResourceCensus } from '../../src/internal/capture/resource-ledger.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../../src/internal/config/env.js';
 import {
@@ -63,10 +64,14 @@ export default class VerifyCaptureReporter implements Reporter {
   private censusByTitle = new Map<string, ResourceCensus>();
   private resourcesFile = path.join(os.tmpdir(), `piwi-resources-verify-${process.pid}.jsonl`);
 
-  onBegin(): void {
+  private sampler: RunSampler | null = null;
+
+  onBegin(config: FullConfig): void {
     // Workers start after this hook and inherit the variable.
     fs.rmSync(this.resourcesFile, { force: true });
     process.env[PIWI_RESOURCES_RESULTS_ENV] = this.resourcesFile;
+    this.sampler = new RunSampler({ outputDirs: config.projects.map((project) => project.outputDir) });
+    this.sampler.start();
   }
 
   onTestEnd(test: TestCase, result: TestResult): void {
@@ -257,6 +262,7 @@ export default class VerifyCaptureReporter implements Reporter {
     if (!this.sawSeededProbe) this.fail('the seeded-probe test did not run — the in-page probe install is unverified');
     if (this.stressRuns < 1) this.fail('the teardown-race stress tests did not run');
     this.checkResources();
+    await this.checkSampler();
 
     if (this.failures.length > 0) {
       console.error(`\n[verify-reporter] ${this.failures.length} check(s) FAILED:`);
@@ -344,6 +350,26 @@ export default class VerifyCaptureReporter implements Reporter {
       .find((c) => c.id === closedInAfterAll?.id);
     check(afterAllClose?.phase === 'afterAll', `a context closed in afterAll: ${JSON.stringify(afterAllClose)}`);
 
+    // ── What each test cost its worker, and the pages that outlived it ──────
+    for (const [title, census] of this.censusByTitle) {
+      const worker = census.metrics?.worker;
+      check(
+        !!worker && worker.loopUtilization >= 0 && worker.loopUtilization <= 1 && worker.cpuMs >= 0,
+        `[${title}] the census should carry the worker's metrics: ${JSON.stringify(census.metrics)}`,
+      );
+    }
+    if (process.platform === 'linux') {
+      check(
+        this.censuses.some((c) => (c.metrics?.roles?.renderer?.cpuMs ?? 0) > 0 && (c.metrics?.roles?.renderer?.peakRssMb ?? 0) > 0),
+        'some census should carry the CPU and peak memory of the renderers the worker started',
+      );
+    }
+    const popupWorker = this.censusByTitle.get('resources: leaves a popup of a worker-scoped page open')?.worker;
+    check(
+      this.censuses.some((c) => c.worker === popupWorker && c.open.some((o) => o.id === popup?.id && (o.main?.heapMb ?? 0) > 0)),
+      'the popup that outlived its test should be read over CDP at the next censuses',
+    );
+
     // ── Findings, from every census and each worker's shutdown census ───────
     const shutdown = fs.existsSync(this.resourcesFile)
       ? parseResourceResults(fs.readFileSync(this.resourcesFile, 'utf8'))
@@ -356,7 +382,12 @@ export default class VerifyCaptureReporter implements Reporter {
     const expected: Array<[string, (f: ResourceFinding) => boolean]> = [
       [
         'a context left open',
-        (f) => f.verdict === 'leaked' && f.kind === 'context' && f.where.endsWith(at('context')) && f.pages === 1,
+        (f) =>
+          f.verdict === 'leaked' &&
+          f.kind === 'context' &&
+          f.where.endsWith(at('context')) &&
+          f.pages === 1 &&
+          (f.afterTestCpuMs ?? 0) > 0,
       ],
       ['the page of browser.newPage()', (f) => f.verdict === 'leaked' && f.kind === 'page' && f.where.endsWith(at('new-page'))],
       ['an API request context', (f) => f.verdict === 'leaked' && f.kind === 'request' && f.where.endsWith(at('request'))],
@@ -400,6 +431,22 @@ export default class VerifyCaptureReporter implements Reporter {
     for (const finding of report.findings) {
       check(matched.has(finding), `unexpected finding: ${JSON.stringify(finding)}`);
     }
+  }
+
+  /** The run sampler against the run's real processes: Playwright's workers, Chromium's browser and renderers. */
+  private async checkSampler(): Promise<void> {
+    const profile = await this.sampler!.stop();
+    const check = (cond: boolean, msg: string) => {
+      if (!cond) this.fail(`[sampler] ${msg}`);
+    };
+    check(profile.machine.cores > 0 && profile.cpu.busyPct !== null, 'the machine should be measured');
+    if (process.platform !== 'linux') return;
+    const roles = profile.cpu.byRole ?? {};
+    for (const role of ['worker', 'browser', 'renderer'] as const) {
+      check((roles[role]?.cpuMs ?? 0) > 0, `the ${role} processes should have used CPU: ${JSON.stringify(roles)}`);
+    }
+    check(profile.memory.kind === 'pss' && (profile.memory.peakBytes ?? 0) > 0, `memory: ${JSON.stringify(profile.memory)}`);
+    check(profile.disk.lowestFreeBytes !== null, 'free space should be measured');
   }
 
   private fail(msg: string): void {

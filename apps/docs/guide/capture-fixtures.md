@@ -50,7 +50,6 @@ That's the entire setup: nothing to start, wrap, or await inside your tests.
 | **Locator snapshots**: element attributes, stable-ancestor anchors, same-role position and ranked alternative locators for each element a test proves resolvable, stamped with the call site | after each successful action and each passing web-first assertion (`toBeVisible()`, `toHaveText()`, …) | [Locator healing](/features/locator-healing); when a failing name-based locator (`getByRole`, `getByText`, `getByLabel`, …) matches nothing, a fresh suggestion is attached to the test as a Playwright annotation |
 | **Locator pages**: the [page key](/guide/concepts#page-key) each locator call ran on, never a query or raw id | at each locator action and assertion | [Locator pages](/features/locator-usage#pages); **This page** in [Tested elements](/features/tested-elements) |
 | **Code reach** (opt-in): executed files | teardown | [Code reach](/features/code-reach) |
-| **Resources**: each browser, context, page and API request context the worker opens, the line or fixture that opened it, whether it was used and when it closed | at each test's end | [Resource leaks](/features/resource-leaks), listed in the reporter's end-of-run summary |
 
 ::: tip Test source is captured without any fixture
 On a failure the reporter also reads the **call stack's in-project source**: the line that threw plus the helpers and page objects above it, as line-numbered snippets. Read from the stack trace and local files, it needs no fixture, and renders as the **Test source** call stack on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages.
@@ -73,7 +72,6 @@ Nothing breaks without the fixtures. This is what you give up:
 | Dialogs lane on the failure timeline (Playwright 1.63+) | — | ✅ |
 | Locator healing (ranked alternatives panel) | — | ✅ |
 | The page each locator was used on | — | ✅ |
-| [Resource leaks](/features/resource-leaks) left open, idle or piling up | probable leaks, counted from the steps | ✅ with the line that opened each |
 | Backend log correlation | — | ✅ with a [backend integration](./backend-logs) |
 
 ## Where capture works
@@ -111,7 +109,7 @@ export const test = mergeTests(myTest, extendPiwiFixtures(base))
 
 Two rules:
 
-- The fixture names **`piwiCapture` and `piwiResources` are reserved**: a fixture of your own with either name replaces Piwi's and silently disables the attachments, or the [resource ledger](/features/resource-leaks).
+- The fixture names **`piwiCapture`** and **`piwiResources`** (the [resource ledger](/features/resource-leaks)) are reserved: a fixture of your own with either name replaces Piwi's.
 - If you **override `browser` or `page` yourself**, extend with `piwiFixtures` *after* your override so the capture wrapping still applies.
 
 ## Cost & opt-outs
@@ -125,8 +123,8 @@ Capture is designed to never fail or noticeably slow down a test:
 - Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.
 
 `collectPerformanceMetrics: false` discards all fixture data; `captureLocators: false` turns off only the locator
-snapshots and pages, `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
-values), and `captureResources: false` only the [resource ledger](/features/resource-leaks). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
+snapshots and pages, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
+values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
 [let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs).
 Set all but `collectPerformanceMetrics` through [`wrapConfig`](./reporter#installing-via-wrapconfig) or their `PIWI_*`

@@ -182,6 +182,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/resource-leaks',
       },
       {
+        title: 'CPU, memory & disk',
+        summary:
+          'What a run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, after every run.',
+        needs: [],
+        where: 'Reporter output; GitHub job summary',
+        doc: 'features/cpu-memory-disk',
+      },
+      {
         title: 'AI diagnosis',
         summary:
           'An LLM explains a cluster against your actual diff, with a suggested patch validated against your source first.',

@@ -123,11 +123,14 @@ export interface PiwiDashboardOptions {
    * test opens, and list at the end of the run the ones left open after the
    * scope that created them ended (a context a test never closed, a `beforeAll`
    * context no `afterAll` closes, a browser a test launched itself), the pages
-   * opened and never used, and the pages, listeners and route handlers piling
-   * up on a page or context that lives across tests. Each finding names the line or the fixture that opened
-   * the object. Rides the capture fixtures and costs a few bookkeeping steps per
-   * test; nothing is sent to the dashboard. Defaults to `true`. Set to `false`
-   * (or `PIWI_CAPTURE_RESOURCES=false`) to turn it off.
+   * opened and never used, and the pages, listeners and route handlers piling up
+   * on a page or context that lives across tests. Each finding names the line or
+   * the fixture that opened the object. Rides the capture fixtures and costs a
+   * few bookkeeping steps per test. Also samples the run's processes and the
+   * machine, with or without the fixtures, and prints what the run cost: CPU by
+   * process, time spent waiting for a CPU, peak memory and disk. Nothing is sent
+   * to the dashboard. Defaults to `true`. Set to `false` (or
+   * `PIWI_CAPTURE_RESOURCES=false`) to turn both off.
    */
   captureResources?: boolean;
   /**

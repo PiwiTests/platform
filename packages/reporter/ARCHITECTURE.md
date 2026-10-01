@@ -33,7 +33,12 @@ Two **external contracts** beyond the npm API:
   adds for this package's `dist/` in each worker (so a wrapped action is located at the
   test's line), and the resource ledger's listener on each worker's Playwright
   instrumentation, with its wrappers on the browser types' `launch`/`connect`
-  (`internal/capture/resource-ledger.ts`).
+  (`internal/capture/resource-ledger.ts`). On Linux each worker writes `5` to
+  `/proc/<pid>/clear_refs` of the processes it started at each test's start,
+  which resets their peak RSS for the test (`internal/capture/worker-metrics.ts`),
+  and in Chromium it opens a DevTools session on each page that outlives its test.
+  The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
+  unref'd timer (`internal/collect/process-sampler.ts`).
 
 ## Two processes, two paths
 
@@ -63,8 +68,9 @@ census, taken as its `piwiResources` worker fixture tears down, belongs to no te
 The reporter names a temp file in `PIWI_RESOURCES_RESULTS` in `onBegin`, before
 any worker starts; each worker appends that census to it, and `onEnd` reads it
 back. `internal/collect/resource-verdicts.ts` stitches every census per worker
-into the findings the reporter prints; nothing about resources is sent to the
-server.
+into the findings the reporter prints. The machine panel needs no worker: the
+run sampler reads the processes under the runner from the reporter's own
+process. Nothing about resources is sent to the server.
 
 ## The submit/fallback ladder (`internal/submit/run-submitter.ts`)
 
@@ -96,19 +102,25 @@ src/
     transport/  http-client (+ HttpError)
     streaming/  stream-manager, stream-buffer, crash-recovery
     collect/    metadata-collector, error-text, resource-verdicts (the censuses
-                stitched into leaked, idle, piling-up and handle findings)
+                stitched into leaked, idle, piling-up and handle findings),
+                process-sampler (the run's processes and the machine, sampled
+                from the reporter), machine-panel (the end-of-run CPU, memory
+                and disk lines)
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
                 trace and stack locations — Playwright internals, feature-detected)
                 resource-ledger (the browsers, contexts, pages and API request
-                contexts each worker opens, and the census per test)
+                contexts each worker opens, and the census per test),
+                worker-metrics (what a test cost the worker and its browsers,
+                and CDP reads of pages that outlive their test)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first
                 page, the results file
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
+                system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, source-snippet, worker-index, errors,
                 selection-client, selection-env, shard-info
   types/

@@ -5,6 +5,7 @@ import type { APIRequestContext, Browser, BrowserContext, Page, TestInfo } from 
 import { PIWI_ENV_KEYS, PIWI_RESOURCES_RESULTS_ENV } from '../config/env.js';
 import { ATTACHMENT_NAMES } from './attachments.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
+import { PageReader, WorkerMetrics, type PageMain, type TestMetrics } from './worker-metrics.js';
 
 /**
  * The resource ledger: every browser, context, page and API request context a
@@ -84,6 +85,8 @@ export interface ResourceOpen {
   routes?: number;
   /** Contexts: open pages. */
   pages?: number;
+  /** Pages, over CDP: main-thread CPU and weight. */
+  main?: PageMain;
 }
 
 /** One census: what changed since the previous one in this worker, and what is open now. */
@@ -100,6 +103,8 @@ export interface ResourceCensus {
   open: ResourceOpen[];
   /** Counts of the tracked Node handle types in the worker at the test's start and end. */
   handles?: { start: Record<string, number>; end: Record<string, number> };
+  /** What the test cost the worker and the browsers it started. */
+  metrics?: TestMetrics;
 }
 
 /** An object a test opened itself and left open: what `PIWI_LEAK_CHECK` fails or closes. */
@@ -126,6 +131,10 @@ const USE_METHODS = ['evaluate', 'evaluateHandle', '$eval', '$$eval', 'waitForFu
 
 /** How long `PIWI_LEAK_CHECK=close` waits for one close before moving on. */
 const CLOSE_TIMEOUT_MS = 5000;
+
+/** The most open pages read over CDP at one census, and how long the reads may take together. */
+const PAGE_READ_CAP = 50;
+const PAGE_READ_TIMEOUT_MS = 1000;
 
 /** The parts of Playwright's API-call zone the ledger reads (internal). */
 interface ApiZone {
@@ -333,6 +342,8 @@ export class ResourceLedger {
   /** The test between `testStarted` and `testEnded`, for when Playwright's own test info cannot be read. */
   private window: ResourceTestRef | null = null;
   private listener: object | null = null;
+  /** A browser or a context was opened in this worker: there are browser processes for the metrics to read. */
+  private sawBrowser = false;
 
   constructor(
     private readonly playwright: PlaywrightLike,
@@ -341,6 +352,7 @@ export class ResourceLedger {
     private readonly resultsFile: string | null = process.env[PIWI_RESOURCES_RESULTS_ENV] || null,
     private readonly testInfoSource: () => TestInfoLike | null = playwrightTestInfoSource(),
     private readonly now: () => number = Date.now,
+    private readonly readers: { metrics?: WorkerMetrics | null; pages?: PageReader | null } = {},
   ) {}
 
   /** Listen to the worker's Playwright and wrap its browser types. False when the instrumentation is missing. */
@@ -395,6 +407,7 @@ export class ResourceLedger {
   testStarted(info: TestInfoLike): void {
     this.window = testRef(info);
     this.handlesAtStart = countHandles();
+    this.readers.metrics?.start(this.sawBrowser);
   }
 
   /**
@@ -413,9 +426,32 @@ export class ResourceLedger {
     const ref = test
       ? { ...test, title: typeof info.title === 'string' ? info.title : '', ...(failed ? { failed: true } : {}) }
       : null;
-    const census = this.census(ref, { start: this.handlesAtStart, end: await settledHandles(this.handlesAtStart) });
+    const metrics = this.readers.metrics?.end(this.sawBrowser) ?? null;
+    const handles = { start: this.handlesAtStart, end: await settledHandles(this.handlesAtStart) };
+    const census = this.census(ref, handles, await this.readPages());
+    if (metrics) census.metrics = metrics;
     this.window = null;
     return { census, leaks };
+  }
+
+  /** The open pages' main thread and weight, over CDP, within a deadline. */
+  private async readPages(): Promise<Map<number, PageMain>> {
+    const out = new Map<number, PageMain>();
+    const reader = this.readers.pages;
+    if (!reader) return out;
+    const pages = this.openEntries()
+      .filter((entry) => entry.birth.kind === 'page')
+      .slice(0, PAGE_READ_CAP);
+    await settleWithin(
+      Promise.all(
+        pages.map(async (entry) => {
+          const main = entry.object ? await reader.read(entry.object) : null;
+          if (main) out.set(entry.birth.id, main);
+        }),
+      ),
+      PAGE_READ_TIMEOUT_MS,
+    );
+    return out;
   }
 
   /** The census a worker takes as it shuts down, appended to the results file when the reporter set one. */
@@ -428,6 +464,7 @@ export class ResourceLedger {
         // The census of the worker's last test stands in.
       }
     }
+    this.readers.metrics?.dispose();
     this.uninstall();
     return census;
   }
@@ -470,6 +507,7 @@ export class ResourceLedger {
       site,
     };
     const entry: Entry = { birth, object, closed: null, used: false };
+    if (kind === 'browser' || kind === 'context') this.sawBrowser = true;
     this.entries.set(birth.id, entry);
     this.byObject.set(object, entry);
     this.born.push(birth);
@@ -651,17 +689,23 @@ export class ResourceLedger {
     }
   }
 
-  private census(test: ResourceTestRef | null, handles?: ResourceCensus['handles']): ResourceCensus {
+  private census(
+    test: ResourceTestRef | null,
+    handles?: ResourceCensus['handles'],
+    mains: Map<number, PageMain> = new Map(),
+  ): ResourceCensus {
     const open: ResourceOpen[] = [];
     for (const entry of this.openEntries()) {
       const object = entry.object as Record<string, unknown>;
       if (entry.birth.kind === 'page') {
+        const main = mains.get(entry.birth.id);
         open.push({
           id: entry.birth.id,
           used: entry.used,
           url: this.pageUrl(object),
           listeners: this.listenerCount(object),
           routes: this.routeCount(object),
+          ...(main ? { main } : {}),
         });
       } else if (entry.birth.kind === 'context') {
         this.isImplicit(entry.birth.id);
@@ -722,8 +766,20 @@ let activeLedger: ResourceLedger | null = null;
 export function startResourceLedger(playwright: unknown, workerIndex: number): ResourceLedger | null {
   if (process.env[PIWI_ENV_KEYS.captureResources] === 'false') return null;
   if (activeLedger) return activeLedger;
-  const ledger = new ResourceLedger(playwright as PlaywrightLike, workerIndex);
-  if (!ledger.install()) return null;
+  const metrics = new WorkerMetrics();
+  const ledger = new ResourceLedger(
+    playwright as PlaywrightLike,
+    workerIndex,
+    readLeakCheck(),
+    process.env[PIWI_RESOURCES_RESULTS_ENV] || null,
+    playwrightTestInfoSource(),
+    Date.now,
+    { metrics, pages: new PageReader() },
+  );
+  if (!ledger.install()) {
+    metrics.dispose();
+    return null;
+  }
   activeLedger = ledger;
   return ledger;
 }

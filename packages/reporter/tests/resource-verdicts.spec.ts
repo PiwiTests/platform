@@ -97,6 +97,23 @@ describe('buildResourceReport', () => {
     expect(report.findings).toEqual([]);
   });
 
+  it('adds up the page CPU a leaked context used after its test', () => {
+    const report = buildResourceReport({
+      censuses: [
+        census(1000, test('t1'), {
+          born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
+          open: [{ id: 1, pages: 1 }, { id: 2, used: true, main: { cpuMs: 40, heapMb: 2, nodes: 10, listeners: 0 } }],
+        }),
+        census(3000, test('t2'), {
+          open: [{ id: 1, pages: 1 }, { id: 2, used: true, main: { cpuMs: 1540, heapMb: 2, nodes: 10, listeners: 0 } }],
+        }),
+        census(3100, null, { closed: [close(2, { at: 3100, phase: 'worker', test: null }), close(1, { at: 3100, phase: 'worker', test: null })] }),
+      ],
+    });
+    expect(leaks(report.findings)).toEqual([expect.objectContaining({ kind: 'context', pages: 1, afterTestCpuMs: 1500 })]);
+    expect(formatResourceSummary(report, 'report')[1]).toContain('· 1.5 s of page CPU after its test');
+  });
+
   it('keeps an object a later test of the same file closed out of the leaks', () => {
     const report = buildResourceReport({
       censuses: [

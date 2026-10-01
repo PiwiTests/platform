@@ -44,6 +44,8 @@ export interface ResourceFinding {
   pages?: number;
   /** Leaked: closed by `PIWI_LEAK_CHECK=close`. */
   closedByPiwi?: boolean;
+  /** Leaked past its test: main-thread CPU its pages used after the test, over CDP (Chromium). */
+  afterTestCpuMs?: number;
   /** Piling: what grew, from how many to how many, over how many tests. */
   growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
   /** Free text: the describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
@@ -78,6 +80,8 @@ interface Tracked {
   lastOpenAt: number | null;
   used: boolean | undefined;
   series: Array<{ pages?: number; listeners?: number; routes?: number }>;
+  /** Pages: main-thread CPU read at each census, over CDP. */
+  mainCpu: Array<{ at: number; cpuMs: number }>;
 }
 
 const OPEN_STEP_TITLES: Record<string, 'context' | 'browser'> = {
@@ -187,6 +191,7 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
           lastOpenAt: null,
           used: undefined,
           series: [],
+          mainCpu: [],
         });
       }
       for (const close of census.closed) {
@@ -201,6 +206,7 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
         entry.lastOpenAt = census.at;
         if (open.used !== undefined) entry.used = open.used;
         if (census.test) entry.series.push({ pages: open.pages, listeners: open.listeners, routes: open.routes });
+        if (open.main) entry.mainCpu.push({ at: census.at, cpuMs: open.main.cpuMs });
       }
     }
     const testCensuses = censuses.filter((census) => census.test !== null);
@@ -295,6 +301,14 @@ function whereOf(birth: ResourceBirth): string {
   return birth.site ?? 'an unknown line';
 }
 
+/** The main-thread CPU a page used after the census that closed its test. */
+function afterTestCpu(entry: Tracked): number {
+  const readings = entry.mainCpu;
+  if (readings.length < 2) return 0;
+  const first = readings.find((reading) => reading.at >= entry.bornCensus.at) ?? readings[0]!;
+  return Math.max(0, readings[readings.length - 1]!.cpuMs - first.cpuMs);
+}
+
 /** The key of an object across workers: ids restart in every worker process. */
 const keyOf = (worker: number, id: number) => `${worker}:${id}`;
 
@@ -335,18 +349,25 @@ function groupLeaks(leaked: Leak[], all: Tracked[]): ResourceFinding[] {
     group.heldMs = Math.max(group.heldMs ?? 0, leak.heldMs);
     group.untilWorkerEnd = group.untilWorkerEnd || leak.untilWorkerEnd;
     if (leak.tracked.close?.byPiwi) group.closedByPiwi = true;
+    if (birth.kind === 'page' && leak.scope === 'test') addCpu(group, afterTestCpu(leak.tracked));
     groups.set(key, group);
   }
-  // Count the pages folded into each group.
+  // Count the pages folded into each group, and what they used after their test.
   for (const leak of leaked) {
     if (leak.tracked.birth.kind !== 'page') continue;
     const root = foldTarget(leak.tracked, leaks, tracked);
     const group = root ? groups.get(groupKey(root)) : undefined;
-    if (group) group.pages = (group.pages ?? 0) + 1;
+    if (!group) continue;
+    group.pages = (group.pages ?? 0) + 1;
+    if (root!.scope === 'test') addCpu(group, afterTestCpu(leak.tracked));
   }
   return [...groups.values()]
     .map(({ testIds, ...finding }) => ({ ...finding, tests: testIds.size }))
     .sort((a, b) => (a.scope === b.scope ? b.count - a.count : a.scope === 'test' ? -1 : 1));
+}
+
+function addCpu(group: ResourceFinding, cpuMs: number): void {
+  if (cpuMs > 0) group.afterTestCpuMs = (group.afterTestCpuMs ?? 0) + cpuMs;
 }
 
 /**
@@ -523,6 +544,8 @@ function findingLine(finding: ResourceFinding): string {
       else if (finding.untilWorkerEnd)
         parts.push(`open until the worker shut down (${formatHeld(finding.heldMs ?? 0)} past ${past})`);
       else parts.push(`open ${formatHeld(finding.heldMs ?? 0)} past ${past}`);
+      if ((finding.afterTestCpuMs ?? 0) >= 500)
+        parts.push(`${formatHeld(finding.afterTestCpuMs!)} of page CPU after its test`);
       break;
     }
     case 'idle':

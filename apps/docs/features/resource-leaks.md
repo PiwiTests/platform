@@ -20,7 +20,7 @@ The reporter prints it after the last test, before the upload, and adds it to th
 
 ```text
 [Piwi Dashboard] Resources: 3 leaks · 6 idle pages · 1 piling up · 1 handle left in workers
-[Piwi Dashboard]   leaked   context     tests/cart.spec.ts:12 · 4 contexts · with 4 pages · 4 tests · open until the worker shut down (41.2 s past its test)
+[Piwi Dashboard]   leaked   context     tests/cart.spec.ts:12 · 4 contexts · with 4 pages · 4 tests · open until the worker shut down (41.2 s past its test) · 18.3 s of page CPU after its test
 [Piwi Dashboard]   leaked   page        popup after locator.click at tests/checkout.spec.ts:30 · 2 pages · 2 tests · open 3.1 s past its test
 [Piwi Dashboard]   leaked   context     tests/admin.spec.ts:8 · beforeAll of "admin" · 1 test · open until the worker shut down (12.0 s past its describe block)
 [Piwi Dashboard]   piling   listeners   fixture "adminPage" at tests/fixtures.ts:21 · 11 → 31 listeners over 20 tests
@@ -31,7 +31,9 @@ The reporter prints it after the last test, before the upload, and adds it to th
 
 Findings that share a line are grouped: the first one above is the same line leaking in four tests. A leaked context
 or browser carries the pages open in it, and a page `browser.newPage()` opened carries the context made for it. At most
-ten findings are listed; the rest are counted.
+ten findings are listed; the rest are counted. In Chromium, the fixtures read each page that outlives its test over the
+DevTools protocol, so a leak also says how much CPU its pages' main threads used after their test, from half a second.
+The [CPU, memory & disk](./cpu-memory-disk) panel follows, with what the whole run cost the machine.
 
 ## What it reports
 
@@ -80,9 +82,10 @@ reporter entry's options.
 
 ## Cost
 
-The ledger listens to the calls Playwright already reports and does its bookkeeping at the end of each test: no extra
-call to the browser, and nothing added to the steps or the trace. A test that started a server waits one timer tick
-more at its end, so the server's count settles.
+The ledger listens to the calls Playwright already reports and does its bookkeeping at the end of each test, adding
+nothing to the steps or the trace. In Chromium, a page still open at the end of a test is read over the DevTools
+protocol: about 20 ms the first time, to open a session, then a couple of milliseconds per test while it stays open. A
+test that started a server waits one timer tick more at its end, so the server's count settles.
 
 ## Limits
 
@@ -100,4 +103,5 @@ more at its end, so the server's count settles.
 
 - [Capture fixtures](/guide/capture-fixtures): what else the fixtures record
 - [Reporter options](/reference/reporter-options#what-gets-captured): `captureResources` and `leakCheck`
+- [CPU, memory & disk](./cpu-memory-disk): what the whole run cost the machine
 - [Slow tests & wasted time](./slow-tests): where the suite's time goes

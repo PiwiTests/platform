@@ -1,5 +1,6 @@
 import { describe, it, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../src/internal/config/env.js';
@@ -92,12 +93,22 @@ describe('the resource summary', () => {
     expect(lines).toContain('  probable context     tests/cart.spec.ts:7 · 1 opened, 0 closed in tests/cart.spec.ts');
   });
 
+  it('prints what the run cost the machine, with the artifacts the tests attached', async () => {
+    const trace = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-summary-')), 'trace.zip');
+    fs.writeFileSync(trace, Buffer.alloc(3 * 1024 * 1024));
+    const attachments = [{ name: 'trace', contentType: 'application/zip', path: trace }];
+    const lines = await run({}, fakeResult({ attachments }));
+    expect(lines.find((line) => line.startsWith('Machine: '))).toMatch(/^Machine: \d+ cores · /);
+    expect(lines.find((line) => line.startsWith('  Disk     '))).toContain('3 MB of artifacts (traces 3 MB)');
+    fs.rmSync(path.dirname(trace), { recursive: true, force: true });
+  });
+
   it('stays silent with captureResources: false, and tells no worker where to write', async () => {
     const attachments = [
       { name: ATTACHMENT_NAMES.resources, contentType: 'application/json', body: Buffer.from(JSON.stringify(leakyCensus())) },
     ];
     const lines = await run({ captureResources: false }, fakeResult({ attachments }));
     expect(process.env[PIWI_RESOURCES_RESULTS_ENV]).toBeUndefined();
-    expect(lines.some((line) => line.startsWith('Resources:'))).toBe(false);
+    expect(lines.some((line) => line.startsWith('Resources:') || line.startsWith('Machine:'))).toBe(false);
   });
 });

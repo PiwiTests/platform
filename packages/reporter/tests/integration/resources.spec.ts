@@ -36,13 +36,29 @@ const PAGE_HTML = `<!doctype html>
   </body>
 </html>`;
 
+// A page that keeps its main thread busy, as a polling or animating page left open does.
+const BUSY_HTML = `<!doctype html>
+<html>
+  <body>
+    <h1>Busy</h1>
+    <script>
+      setInterval(() => {
+        let sum = 0;
+        for (let i = 0; i < 2e6; i++) sum += i;
+        document.title = String(sum);
+      }, 50);
+    </script>
+  </body>
+</html>`;
+
 let server: http.Server;
 let baseUrl: string;
 
 test.beforeAll(async () => {
-  server = http.createServer((_req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Length': Buffer.byteLength(PAGE_HTML) });
-    res.end(PAGE_HTML);
+  server = http.createServer((req, res) => {
+    const html = req.url === '/busy' ? BUSY_HTML : PAGE_HTML;
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Length': Buffer.byteLength(html) });
+    res.end(html);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -59,7 +75,7 @@ test.afterAll(async () => {
 test('resources: leaks a context', async ({ browser }) => {
   const context = await browser.newContext(); // site:context
   const page = await context.newPage();
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}/busy`);
 });
 
 test('resources: leaks a page from browser.newPage', async ({ browser }) => {

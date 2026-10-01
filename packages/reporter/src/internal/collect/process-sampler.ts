@@ -1,0 +1,542 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import {
+  CgroupFs,
+  ProcFs,
+  descendantsOf,
+  parsePsOutput,
+  roleOf,
+  type ContainerReads,
+  type CpuTicks,
+  type ProcessRole,
+} from '../support/system-readers.js';
+
+/**
+ * The run sampler: what the run cost the machine, read from the operating
+ * system on a background timer in the reporter's process, so it needs no
+ * fixtures. Every second it reads the CPU time and run-queue wait of each
+ * process under the runner (workers, browsers, the web server) and the
+ * machine's load; every few seconds the tree's memory (PSS), the container's
+ * counters, free space and the disk the run's output takes. Linux reads all of
+ * it; macOS reads the tree through `ps`; elsewhere the tree is not measured.
+ * What a platform cannot read is listed as not measured, never reported as zero.
+ */
+
+export interface RoleUsage {
+  cpuMs: number;
+  /** Time runnable but waiting for a CPU; null where the platform cannot tell. */
+  runWaitMs: number | null;
+  processes: number;
+}
+
+export interface RunProfile {
+  platform: NodeJS.Platform;
+  wallMs: number;
+  machine: {
+    cores: number;
+    memoryBytes: number;
+    /** The container's memory limit, when it is below the machine's memory. */
+    memoryLimitBytes: number | null;
+    /** The container's CPU quota in cores, when it has one. */
+    cpuQuotaCores: number | null;
+  };
+  cpu: {
+    /** Share of the machine's CPU time spent busy over the run. */
+    busyPct: number | null;
+    iowaitPct: number | null;
+    /** CPU time the hypervisor took from this VM. */
+    stealPct: number | null;
+    /** Share of the run's wall time some task waited for a CPU (PSI). */
+    pressurePct: number | null;
+    /** Machine busy share per sample, in order. */
+    series: number[];
+    /** CPU time of the processes under the runner, by role; null when the tree is not measured. */
+    byRole: Partial<Record<ProcessRole, RoleUsage>> | null;
+    /** Time the container's CPU quota held the run back. */
+    throttledMs: number | null;
+  };
+  memory: {
+    /** How the tree's memory was counted: PSS splits shared pages, RSS counts them in each process. */
+    kind: 'pss' | 'rss' | null;
+    peakBytes: number | null;
+    /** When the peak was sampled, ms after the run started. */
+    peakAtMs: number | null;
+    largest: { role: ProcessRole; bytes: number } | null;
+    /** Processes counted by RSS because their PSS could not be read. */
+    rssFallbacks: number;
+    /** Share of the run's wall time some task waited for memory (PSI). */
+    pressurePct: number | null;
+    lowestAvailableBytes: number | null;
+    /** The container's peak, when the run raised it. */
+    containerPeakBytes: number | null;
+    /** Processes the container's OOM killer ended during the run. */
+    oomKills: number | null;
+  };
+  disk: {
+    /** The run's output directories and the browser profiles it created, at their largest. */
+    peakInUseBytes: number | null;
+    /** The walk stopped at its file cap, so the peak is at least this. */
+    peakInUseIsLowerBound: boolean;
+    lowestFreeBytes: number | null;
+    /** Browser profiles and artifact folders earlier runs left in the temp directory. */
+    leftoverBytes: number | null;
+  };
+  /** Metrics this platform or machine could not read. */
+  notMeasured: string[];
+}
+
+export interface SamplerOptions {
+  /** The runner's process, whose descendants are the run's processes. */
+  rootPid?: number;
+  platform?: NodeJS.Platform;
+  procRoot?: string;
+  cgroupRoot?: string;
+  /** The projects' output directories. */
+  outputDirs?: string[];
+  tmpDir?: string;
+  intervalMs?: number;
+  /** Every how many samples the heavy reads run: memory, container, disk. */
+  heavyEvery?: number;
+  now?: () => number;
+  /** `ps` output on macOS; a test stands in for it. */
+  runPs?: () => Promise<string>;
+}
+
+/** The most files a disk walk visits per sample; past it the size is a lower bound. */
+const WALK_FILE_CAP = 10_000;
+/** The most series points kept: an hour at one per second. */
+const SERIES_CAP = 3600;
+/** Names Playwright gives the browser profiles and artifact folders it writes in the temp directory. */
+const PLAYWRIGHT_TEMP = /^(playwright_\w+dev_profile-|playwright-artifacts-)/;
+
+interface Tracked {
+  role: ProcessRole | null;
+  firstCpuMs: number;
+  firstWaitMs: number | null;
+  lastCpuMs: number;
+  lastWaitMs: number | null;
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function pct(part: number, whole: number): number | null {
+  return whole > 0 ? round1((part / whole) * 100) : null;
+}
+
+/** CPU ticks from Node, for platforms without `/proc/stat`: no iowait, no steal. */
+function nodeCpuTicks(): CpuTicks | null {
+  const cpus = os.cpus();
+  if (cpus.length === 0) return null;
+  let busy = 0;
+  let idle = 0;
+  for (const cpu of cpus) {
+    busy += cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.irq;
+    idle += cpu.times.idle;
+  }
+  return { busy, idle, iowait: 0, steal: 0, total: busy + idle };
+}
+
+function defaultPs(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'ps',
+      ['-A', '-o', 'pid=,ppid=,rss=,time=,command='],
+      { timeout: 2000, maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout) => (error ? reject(error) : resolve(stdout)),
+    );
+  });
+}
+
+/** Free bytes on the filesystem holding `dir`, or on its nearest existing parent. */
+function freeBytes(dir: string): number | null {
+  let current = path.resolve(dir);
+  for (;;) {
+    try {
+      const stats = fs.statfsSync(current);
+      return stats.bavail * stats.bsize;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
+  }
+}
+
+/** Bytes under a directory, visiting at most `budget.files` files. */
+async function dirBytes(dir: string, budget: { files: number }): Promise<number> {
+  let bytes = 0;
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries) {
+    if (budget.files <= 0) return bytes;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) bytes += await dirBytes(full, budget);
+    else if (entry.isFile()) {
+      budget.files--;
+      try {
+        bytes += (await fs.promises.lstat(full)).size;
+      } catch {
+        // Removed while the walk ran.
+      }
+    }
+  }
+  return bytes;
+}
+
+export class RunSampler {
+  private readonly rootPid: number;
+  private readonly platform: NodeJS.Platform;
+  private readonly proc: ProcFs;
+  private readonly cgroup: CgroupFs;
+  private readonly outputDirs: string[];
+  private readonly tmpDir: string;
+  private readonly intervalMs: number;
+  private readonly heavyEvery: number;
+  private readonly now: () => number;
+  private readonly runPs: () => Promise<string>;
+  private readonly linux: boolean;
+
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private running: Promise<void> | null = null;
+  private samples = 0;
+  private startedAt = 0;
+  private tracked = new Map<string, Tracked>();
+  private treeMeasured = false;
+  private waitMeasured = false;
+  private cpuStart: CpuTicks | null = null;
+  private cpuPrevious: CpuTicks | null = null;
+  private series: number[] = [];
+  private pressureStart: { cpu: number | null; memory: number | null } = { cpu: null, memory: null };
+  private containerStart: ContainerReads | null = null;
+  private memoryKind: 'pss' | 'rss' | null = null;
+  private peakBytes: number | null = null;
+  private peakAtMs: number | null = null;
+  private largest: { role: ProcessRole; bytes: number } | null = null;
+  private rssFallbackPids = new Set<string>();
+  private lowestAvailableKb: number | null = null;
+  private peakInUse: number | null = null;
+  private peakInUseIsLowerBound = false;
+  private lowestFree: number | null = null;
+
+  constructor(options: SamplerOptions = {}) {
+    this.rootPid = options.rootPid ?? process.pid;
+    this.platform = options.platform ?? process.platform;
+    this.proc = new ProcFs(options.procRoot);
+    this.cgroup = new CgroupFs(options.procRoot, options.cgroupRoot);
+    this.outputDirs = [...new Set((options.outputDirs ?? []).map((dir) => path.resolve(dir)))];
+    this.tmpDir = options.tmpDir ?? os.tmpdir();
+    this.intervalMs = options.intervalMs ?? 1000;
+    this.heavyEvery = Math.max(1, options.heavyEvery ?? 5);
+    this.now = options.now ?? Date.now;
+    this.runPs = options.runPs ?? defaultPs;
+    this.linux = this.platform === 'linux' && this.proc.available();
+  }
+
+  /** Take the first sample and sample on a timer that never keeps the process alive. */
+  start(): void {
+    if (this.timer) return;
+    this.startedAt = this.now();
+    this.cpuStart = this.cpuTicks();
+    this.cpuPrevious = this.cpuStart;
+    if (this.linux) {
+      this.pressureStart = { cpu: this.proc.pressureUs('cpu'), memory: this.proc.pressureUs('memory') };
+      this.containerStart = this.cgroup.read();
+    }
+    this.schedule();
+    this.timer = setInterval(() => this.schedule(), this.intervalMs);
+    this.timer.unref?.();
+  }
+
+  /** Take the last sample and return the run's profile. Never throws. */
+  async stop(): Promise<RunProfile> {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    try {
+      await this.running;
+      await this.sample(true);
+    } catch {
+      // A profile from what was read so far.
+    }
+    return this.profile(await this.leftoverBytes());
+  }
+
+  private schedule(): void {
+    if (this.running) return;
+    const heavy = this.samples % this.heavyEvery === 0;
+    this.running = this.sample(heavy)
+      .catch(() => undefined)
+      .finally(() => {
+        this.running = null;
+      });
+  }
+
+  private cpuTicks(): CpuTicks | null {
+    return this.linux ? this.proc.cpuTicks() : nodeCpuTicks();
+  }
+
+  private async sample(heavy: boolean): Promise<void> {
+    this.samples++;
+    const ticks = this.cpuTicks();
+    if (ticks && this.cpuPrevious) {
+      const busy = pct(ticks.busy - this.cpuPrevious.busy, ticks.total - this.cpuPrevious.total);
+      if (busy !== null && this.series.length < SERIES_CAP) this.series.push(busy);
+    }
+    if (ticks) this.cpuPrevious = ticks;
+
+    const availableKb = this.linux ? this.proc.memAvailableKb() : Math.round(os.freemem() / 1024);
+    if (availableKb !== null) this.lowestAvailableKb = Math.min(this.lowestAvailableKb ?? Infinity, availableKb);
+
+    if (this.linux) await this.sampleLinuxTree(heavy);
+    else if (this.platform === 'darwin' && heavy) await this.samplePsTree();
+    if (heavy) await this.sampleDisk();
+  }
+
+  private track(key: string, role: ProcessRole | null, cpuMs: number, waitMs: number | null): void {
+    const known = this.tracked.get(key);
+    if (known) {
+      known.lastCpuMs = cpuMs;
+      known.lastWaitMs = waitMs;
+      if (role) known.role = role;
+      return;
+    }
+    // A process alive at the first sample counts from there; one born later counts from zero.
+    const first = this.samples === 1;
+    this.tracked.set(key, {
+      role,
+      firstCpuMs: first ? cpuMs : 0,
+      firstWaitMs: first ? waitMs : waitMs === null ? null : 0,
+      lastCpuMs: cpuMs,
+      lastWaitMs: waitMs,
+    });
+  }
+
+  /** The role of each process of the tree, a child of the runner being the web server unless it says otherwise. */
+  private resolveRoles<T extends { pid: number; ppid: number }>(tree: T[], explicit: (proc: T) => ProcessRole | null) {
+    const roles = new Map<number, ProcessRole>([[this.rootPid, 'runner']]);
+    for (const proc of tree) {
+      const parent = roles.get(proc.ppid);
+      const inherited = parent === 'runner' || parent === 'webServer' ? 'webServer' : 'other';
+      roles.set(proc.pid, explicit(proc) ?? inherited);
+    }
+    return roles;
+  }
+
+  private async sampleLinuxTree(heavy: boolean): Promise<void> {
+    const table = this.proc.table();
+    const root = table.get(this.rootPid);
+    if (!root) return;
+    this.treeMeasured = true;
+    const tree = [root, ...descendantsOf(this.rootPid, table.values())];
+    const roles = this.resolveRoles(tree.slice(1), (proc) => {
+      const key = `${proc.pid}:${proc.start}`;
+      const known = this.tracked.get(key)?.role;
+      // The command line is read once, and again on heavy samples: a forked process may exec later.
+      return known && !heavy ? known : roleOf(proc.comm, this.proc.cmdline(proc.pid));
+    });
+    for (const proc of tree) {
+      const waitMs = this.proc.runWaitMs(proc.pid);
+      if (waitMs !== null) this.waitMeasured = true;
+      this.track(`${proc.pid}:${proc.start}`, roles.get(proc.pid) ?? 'other', proc.cpuMs, waitMs);
+    }
+    if (!heavy) return;
+
+    let total = 0;
+    let largest: { role: ProcessRole; bytes: number } | null = null;
+    const memory = await Promise.all(
+      tree.map(async (proc) => {
+        const pss = await this.proc.pssKb(proc.pid);
+        if (pss !== null) return { proc, kb: pss, fallback: false };
+        return { proc, kb: this.proc.statusKb(proc.pid, 'VmRSS'), fallback: true };
+      }),
+    );
+    for (const { proc, kb, fallback } of memory) {
+      if (kb === null) continue;
+      if (fallback) this.rssFallbackPids.add(`${proc.pid}:${proc.start}`);
+      total += kb * 1024;
+      if (!largest || kb * 1024 > largest.bytes) largest = { role: roles.get(proc.pid) ?? 'other', bytes: kb * 1024 };
+    }
+    this.memoryKind = memory.some((m) => m.kb !== null && !m.fallback) ? 'pss' : memory.length ? 'rss' : null;
+    this.notePeak(total, largest);
+  }
+
+  private async samplePsTree(): Promise<void> {
+    let list;
+    try {
+      list = parsePsOutput(await this.runPs());
+    } catch {
+      return;
+    }
+    const root = list.find((proc) => proc.pid === this.rootPid);
+    if (!root) return;
+    this.treeMeasured = true;
+    const tree = [root, ...descendantsOf(this.rootPid, list)];
+    const roles = this.resolveRoles(tree.slice(1), (proc) =>
+      roleOf(path.basename(proc.command.split(' ')[0] ?? ''), proc.command),
+    );
+    let total = 0;
+    let largest: { role: ProcessRole; bytes: number } | null = null;
+    for (const proc of tree) {
+      const role = roles.get(proc.pid) ?? 'other';
+      this.track(String(proc.pid), role, proc.cpuMs, null);
+      total += proc.rssKb * 1024;
+      if (!largest || proc.rssKb * 1024 > largest.bytes) largest = { role, bytes: proc.rssKb * 1024 };
+    }
+    this.memoryKind = 'rss';
+    this.notePeak(total, largest);
+  }
+
+  private notePeak(total: number, largest: { role: ProcessRole; bytes: number } | null): void {
+    if (this.peakBytes === null || total > this.peakBytes) {
+      this.peakBytes = total;
+      this.peakAtMs = this.now() - this.startedAt;
+    }
+    if (largest && (!this.largest || largest.bytes > this.largest.bytes)) this.largest = largest;
+  }
+
+  private async sampleDisk(): Promise<void> {
+    for (const dir of [...this.outputDirs, this.tmpDir]) {
+      const free = freeBytes(dir);
+      if (free !== null) this.lowestFree = Math.min(this.lowestFree ?? Infinity, free);
+    }
+    const budget = { files: WALK_FILE_CAP };
+    let bytes = 0;
+    for (const dir of this.outputDirs) bytes += await dirBytes(dir, budget);
+    for (const name of await this.playwrightTempEntries((mtimeMs) => mtimeMs >= this.startedAt - 1000)) {
+      bytes += await dirBytes(path.join(this.tmpDir, name), budget);
+    }
+    if (budget.files <= 0) this.peakInUseIsLowerBound = true;
+    this.peakInUse = Math.max(this.peakInUse ?? 0, bytes);
+  }
+
+  /** Playwright's folders in the temp directory whose modification time passes `keep`. */
+  private async playwrightTempEntries(keep: (mtimeMs: number) => boolean): Promise<string[]> {
+    let names: string[];
+    try {
+      names = await fs.promises.readdir(this.tmpDir);
+    } catch {
+      return [];
+    }
+    const out: string[] = [];
+    for (const name of names) {
+      if (!PLAYWRIGHT_TEMP.test(name)) continue;
+      try {
+        if (keep((await fs.promises.stat(path.join(this.tmpDir, name))).mtimeMs)) out.push(name);
+      } catch {
+        // Removed while listed.
+      }
+    }
+    return out;
+  }
+
+  private async leftoverBytes(): Promise<number | null> {
+    try {
+      const budget = { files: WALK_FILE_CAP };
+      let bytes = 0;
+      for (const name of await this.playwrightTempEntries((mtimeMs) => mtimeMs < this.startedAt - 1000)) {
+        bytes += await dirBytes(path.join(this.tmpDir, name), budget);
+      }
+      return bytes;
+    } catch {
+      return null;
+    }
+  }
+
+  private profile(leftoverBytes: number | null): RunProfile {
+    const wallMs = Math.max(0, this.now() - this.startedAt);
+    const notMeasured: string[] = [];
+
+    let byRole: RunProfile['cpu']['byRole'] = null;
+    if (this.treeMeasured) {
+      byRole = {};
+      for (const entry of this.tracked.values()) {
+        const role = entry.role ?? 'other';
+        const usage = (byRole[role] ??= { cpuMs: 0, runWaitMs: this.waitMeasured ? 0 : null, processes: 0 });
+        usage.cpuMs += Math.max(0, entry.lastCpuMs - entry.firstCpuMs);
+        if (usage.runWaitMs !== null && entry.lastWaitMs !== null && entry.firstWaitMs !== null) {
+          usage.runWaitMs += Math.max(0, entry.lastWaitMs - entry.firstWaitMs);
+        }
+        usage.processes++;
+      }
+    } else {
+      notMeasured.push('CPU and memory of the run’s processes');
+    }
+    if (this.treeMeasured && !this.waitMeasured) notMeasured.push('time waiting for a CPU');
+
+    const end = this.cpuTicks();
+    const start = this.cpuStart;
+    const total = end && start ? end.total - start.total : 0;
+    const machineCpu = {
+      busyPct: end && start ? pct(end.busy - start.busy, total) : null,
+      iowaitPct: this.linux && end && start ? pct(end.iowait - start.iowait, total) : null,
+      stealPct: this.linux && end && start ? pct(end.steal - start.steal, total) : null,
+    };
+    if (!this.linux) notMeasured.push('steal');
+
+    const pressure = (resource: 'cpu' | 'memory', from: number | null) => {
+      if (!this.linux || from === null) return null;
+      const to = this.proc.pressureUs(resource);
+      return to === null || wallMs === 0 ? null : Math.min(100, round1(((to - from) / 1000 / wallMs) * 100));
+    };
+    const cpuPressure = pressure('cpu', this.pressureStart.cpu);
+    const memoryPressure = pressure('memory', this.pressureStart.memory);
+    if (cpuPressure === null) notMeasured.push('CPU pressure');
+
+    const container = this.linux ? this.cgroup.read() : null;
+    const startContainer = this.containerStart;
+    const totalMemory = os.totalmem();
+    const constrained = typeof process.constrainedMemory === 'function' ? process.constrainedMemory() : undefined;
+    const limit = container?.memoryLimitBytes ?? (constrained && constrained > 0 ? constrained : null);
+    const raisedPeak =
+      container?.memoryPeakBytes != null &&
+      startContainer?.memoryPeakBytes != null &&
+      container.memoryPeakBytes > startContainer.memoryPeakBytes
+        ? container.memoryPeakBytes
+        : null;
+    const delta = (to: number | null | undefined, from: number | null | undefined) =>
+      to != null && from != null ? Math.max(0, to - from) : null;
+
+    return {
+      platform: this.platform,
+      wallMs,
+      machine: {
+        cores: typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length,
+        memoryBytes: totalMemory,
+        memoryLimitBytes: limit !== null && limit < totalMemory ? limit : null,
+        cpuQuotaCores: container?.cpuQuotaCores ?? null,
+      },
+      cpu: {
+        ...machineCpu,
+        pressurePct: cpuPressure,
+        series: this.series,
+        byRole,
+        throttledMs: delta(container?.throttledMs, startContainer?.throttledMs),
+      },
+      memory: {
+        kind: this.memoryKind,
+        peakBytes: this.peakBytes,
+        peakAtMs: this.peakAtMs,
+        largest: this.largest,
+        rssFallbacks: this.memoryKind === 'pss' ? this.rssFallbackPids.size : 0,
+        pressurePct: memoryPressure,
+        lowestAvailableBytes: this.lowestAvailableKb === null ? null : this.lowestAvailableKb * 1024,
+        containerPeakBytes: raisedPeak,
+        oomKills: delta(container?.oomKills, startContainer?.oomKills),
+      },
+      disk: {
+        peakInUseBytes: this.peakInUse,
+        peakInUseIsLowerBound: this.peakInUseIsLowerBound,
+        lowestFreeBytes: this.lowestFree,
+        leftoverBytes,
+      },
+      notMeasured,
+    };
+  }
+}
