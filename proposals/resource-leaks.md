@@ -613,7 +613,7 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 |---|---|---|
 | 1 | The ledger in the capture fixtures (worker auto fixture `piwiResources`), the `piwi-resources` attachment, stitching and verdicts in the reporter, the fixture-free tier, the console summary, `PIWI_LEAK_CHECK` | leaks and idle pages at the end of every run, no server change |
 | 2 | The metrics of Part 2: the run sampler (CPU, pressure, memory, disk, container) and artifact sizes in the reporter, which need no fixtures; the test-boundary reads (subtree, run-queue wait, peak RSS reset, event loop) and CDP reads for pages that outlive their test in the fixtures; machine facts | the machine panel in the console summary, for every reporter user |
-| 3 | Wire, storage, the Resources tab, per-execution cost on the execution page, the capability | the run page |
+| 3 | Wire, storage, the Resources tab, per-execution cost on the execution page, the capability, a leaky run in the demo (simulator scenario and seeded run) | the run page, and the demo |
 | 4 | Finding history and fix verification, gate policies, the pull-request line, MCP tools | CI and agents |
 | 5 | The clue, the flake suspect and the `hold` condition, editor diagnostics and quick fixes | failures and the editor |
 | 6 | The waste findings of Part 3 | the Waste section |
@@ -657,6 +657,15 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 - `apps/application/shared/resource-findings.ts` (new, pure: fingerprints, verdict summaries), handlers, routes, demo
   handlers and seed rows (`app:check:demo`).
 - The Resources tab and the execution cost block; `shared/capabilities.ts`.
+- The demo, both ways the tab can be met:
+  - *A "Leaky run" scenario* in the run simulator (`app/demo/simulator.ts`), on `e2e-checkout` like the others:
+    `tests/cart.spec.ts` opens a context in each test and never closes it, popups pile up on a worker-scoped page, and
+    an API test asks for `page`. Its tests stream their censuses, so the Resources tab fills as the run arrives, the
+    machine panel lands with `finish`, and the run is slower than the seeded baseline, with renderers waiting for a CPU.
+  - *A seeded run* (`scripts/generate-demo-seed.mjs`) in `web-dashboard`: the `adminPage` worker fixture piling up
+    pages, listeners and route handlers, a browser `tests/admin/export.spec.ts` launches and never closes, and idle
+    pages from an auto fixture, with a profile whose memory nears the container's limit. A `demo-examples.mjs` entry
+    links its Resources tab from the docs page.
 - `apps/docs/`: a features page, the configuration reference entries.
 
 ### PR 4 to 6
