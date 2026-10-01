@@ -1324,7 +1324,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
 
     const baseBranch = typeof params.baseBranch === 'string' ? params.baseBranch.trim() || null : null;
-    const r = await computeRunInsights(db, runId, { baseBranch });
+    const r = await computeRunInsights(db, runId, { baseBranch, failedFallback: true });
     const cap = <T>(a: T[]) => a.slice(0, 15);
     return dropNulls({
       runId,

@@ -871,6 +871,55 @@ async function routeJiraScreen(page) {
 // records the execution id it submits so `run` can open that page.
 let footerExecId = 0;
 
+// The run-changes-fallback scenes share one project that never passed: an
+// interrupted run, then two failed runs. Seeded once per server.
+let neverGreenRuns = null;
+async function prepareNeverGreenRuns({ base, request }) {
+  if (neverGreenRuns) return;
+  const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const testCase = (title, status, line, duration) => ({
+    title,
+    status,
+    duration,
+    location: `tests/checkout.spec.ts:${line}:3`,
+    retries: 0,
+    ...(status === 'failed' ? { error: 'Error: expect(locator).toBeVisible() failed' } : {}),
+  });
+  const submit = async (status, minutes, branch, environment, cases) => {
+    const failed = cases.filter((c) => c.status === 'failed').length;
+    const res = await request.post(`${base}/api/test-runs/submit`, {
+      data: {
+        projectName: 'checkout-never-green',
+        status,
+        startTime: minutesAgo(minutes),
+        duration: 42_000,
+        totalTests: cases.length,
+        passedTests: cases.length - failed,
+        failedTests: failed,
+        skippedTests: 0,
+        environment,
+        metadata: { scm: { branch } },
+        testCases: cases,
+      },
+    });
+    return (await res.json()).runId;
+  };
+  const interrupted = await submit('interrupted', 600, 'main', 'staging', [
+    testCase('cart keeps items', 'passed', 8, 900),
+  ]);
+  const firstFailed = await submit('failed', 300, 'main', 'staging', [
+    testCase('cart keeps items', 'passed', 8, 900),
+    testCase('coupon applies discount', 'failed', 21, 3200),
+    testCase('guest checkout', 'passed', 34, 2100),
+  ]);
+  const latest = await submit('failed', 30, 'feature/coupons', 'staging', [
+    testCase('cart keeps items', 'failed', 8, 5400),
+    testCase('coupon applies discount', 'passed', 21, 2900),
+    testCase('guest checkout', 'passed', 34, 2600),
+  ]);
+  neverGreenRuns = { interrupted, firstFailed, latest };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -3352,6 +3401,47 @@ const SCENES = [
       await settle();
       await shoot('narrow', { of: '[data-shot="evidence-card"]', pad: 8 });
     },
+  },
+  {
+    name: 'run-changes-fallback',
+    description:
+      'Run Changes tab in a project that never passed: compared with the last failed run, the run picker open, then the run with no eligible baseline and the first run',
+    prepare: prepareNeverGreenRuns,
+    route: '/',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle, goto }) {
+      await goto(`/test-runs/${neverGreenRuns.latest}?tab=changes`);
+      await page.locator('[data-shot="run-changes-baseline"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('failed-baseline', { of: '[data-shot="run-changes"]', pad: 12 });
+      await page.getByTitle('Compare against one earlier run').click();
+      await page.getByRole('option').first().waitFor({ timeout: 15000 });
+      await shoot('picker');
+      await page.keyboard.press('Escape');
+
+      await goto(`/test-runs/${neverGreenRuns.firstFailed}?tab=changes`);
+      await page.locator('[data-shot="run-changes-empty"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('no-baseline', { of: '[data-shot="run-changes-empty"]', pad: 24 });
+
+      await goto(`/test-runs/${neverGreenRuns.interrupted}?tab=changes`);
+      await page.locator('[data-shot="run-changes-empty"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('first-run', { of: '[data-shot="run-changes-empty"]', pad: 24 });
+
+      await page.setViewportSize({ width: 390, height: 1200 });
+      await goto(`/test-runs/${neverGreenRuns.latest}?tab=changes`);
+      await page.locator('[data-shot="run-changes-baseline"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot('narrow', { of: '[data-shot="run-changes-baseline"]', pad: 8 });
+    },
+    outputs: [
+      'run-changes-fallback-failed-baseline.png',
+      'run-changes-fallback-picker.png',
+      'run-changes-fallback-no-baseline.png',
+      'run-changes-fallback-first-run.png',
+      'run-changes-fallback-narrow.png',
+    ],
   },
 ];
 

@@ -470,7 +470,7 @@ export const HELP_TOPICS = {
   },
   'run.changes': {
     title: 'Changes',
-    text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; the line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one specific run. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
+    text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; when no earlier full run passed, the last failed run, found the same way. The line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one earlier run: each shows its branch, environment and outcome. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
     doc: 'features/run-changes',
     recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
   },

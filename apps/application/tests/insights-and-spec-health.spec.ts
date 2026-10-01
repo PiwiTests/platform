@@ -196,7 +196,7 @@ test.describe.serial('Run baseline: environment, base branch and the explicit ch
     // The newer production run on main loses to the older staging one.
     expect(insights.baseline.id).toBe(stagingMain);
     expect(insights.baselineSource).toBe('auto');
-    expect(insights.baselineMatch).toEqual({ branch: 'fallback', environment: 'same' });
+    expect(insights.baselineMatch).toEqual({ branch: 'fallback', environment: 'same', outcome: 'passed' });
     expect(insights.fallbackBranch).toEqual({ branch: 'main', source: 'pull-request' });
     expect(insights.baselineNote).toBe(
       "No passing staging run exists on feature/x; the last passing run on the pull request's target branch main in staging.",
@@ -212,7 +212,7 @@ test.describe.serial('Run baseline: environment, base branch and the explicit ch
     const chosen = await (await request.get(`/api/test-runs/${stagingFeature}/insights?baseBranch=main`)).json();
     expect(chosen.baseline.id).toBe(stagingMain);
     expect(chosen.baselineSource).toBe('branch');
-    expect(chosen.baselineMatch).toEqual({ branch: 'chosen', environment: 'same' });
+    expect(chosen.baselineMatch).toEqual({ branch: 'chosen', environment: 'same', outcome: 'passed' });
     expect(chosen.baselineNote).toBe('The last passing run on main in staging, the base branch you chose.');
 
     const none = await (await request.get(`/api/test-runs/${stagingFeature}/insights?baseBranch=nope`)).json();

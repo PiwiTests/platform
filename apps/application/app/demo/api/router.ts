@@ -969,6 +969,7 @@ const routes: RouteEntry[] = [
       return computeRunInsights(await getDemoDb(), +m[1]!, {
         baselineId: baselineId != null && Number.isFinite(baselineId) ? baselineId : null,
         baseBranch,
+        failedFallback: true,
       });
     },
   },
