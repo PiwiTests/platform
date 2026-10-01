@@ -16,6 +16,7 @@ import {
   type IdeMethod,
 } from '~/composables/useOpenInIde';
 import type { VscodeScheme } from '~/utils/ide-links';
+import { JETBRAINS_PLUGIN_URL } from '#shared/companion-links';
 
 const { prefs, settingsOpen, settingsContext, openInIde } = useOpenInIde();
 const isDesktop = useIsDesktop();
@@ -115,7 +116,13 @@ function testOpen(filePath: string) {
           icon="i-lucide-puzzle"
           title="JetBrains: install the Piwi plugin"
           description="With the Piwi plugin in your JetBrains IDE (Rider, WebStorm, IntelliJ IDEA, …), files open there with no setting: the IDE finds the file in its open projects, opens it at the line, and confirms it did. Auto and both JetBrains methods ask it first, on every IDE running."
-        />
+        >
+          <template #actions>
+            <UButton :to="JETBRAINS_PLUGIN_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              JetBrains Marketplace
+            </UButton>
+          </template>
+        </UAlert>
 
         <UFormField
           label="Method"

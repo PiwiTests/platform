@@ -893,6 +893,45 @@ const SCENES = [
     outputs: ['sidebar-latest-run-hover.png', 'sidebar-latest-run-run.png'],
   },
   {
+    name: 'user-menu-piwi-tools',
+    description:
+      "The user menu's Piwi tools submenu: where to get Piwi Picker, the JetBrains plugin, the desktop app and the reporter, and the docs",
+    route: '/',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      const tools = page.getByRole('menuitem', { name: 'Piwi tools' });
+      await settle();
+      // Hydration can lag the first paint on a dev server; retry the click until the menu opens.
+      for (let attempt = 0; attempt < 20 && !(await tools.isVisible()); attempt++) {
+        await page.locator('[data-shot="user-menu"]').click();
+        await tools.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await tools.hover();
+      await page.getByRole('menuitem', { name: /Piwi for JetBrains IDEs/ }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'open-in-ide-settings',
+    description:
+      'The Open in IDE dialog from the user menu: the Piwi plugin callout with its JetBrains Marketplace link, then the methods',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      const item = page.getByRole('menuitem', { name: 'Open in IDE…' });
+      await settle();
+      for (let attempt = 0; attempt < 20 && !(await item.isVisible()); attempt++) {
+        await page.locator('[data-shot="user-menu"]').click();
+        await item.waitFor({ timeout: 3000 }).catch(() => {});
+      }
+      await item.click();
+      await page.getByRole('link', { name: 'JetBrains Marketplace' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'analytics-scope-bar',
     description:
       'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',
