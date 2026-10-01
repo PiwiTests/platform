@@ -11,8 +11,9 @@ every `close`, and their auto fixture tears down after Playwright's own `page` a
 position into a **ledger** of every object's birth, use and death, a **measured cost** per test and per run, and
 **findings** that name a call site, a fixture or a config line, each with its fix.
 
-**Status.** Proposed 2026-10-01. Nothing is built. A prototype of the ledger and of both samplers ran against a
-deliberately leaky suite on Playwright 1.63; its results are in [What we measured](#what-we-measured).
+**Status.** Proposed 2026-10-01. Nothing is built. A prototype of the ledger and of both samplers ran on Playwright
+1.63 against a deliberately leaky suite and a page closer to an application, and every metric source in Part 2 was
+read and timed on the same machine; the results are in [What we measured](#what-we-measured).
 
 ## What the reader gets
 
@@ -45,6 +46,16 @@ Run #1842 · Resources                         peak 1.4 GB (PSS) at 04:12 · 96 
   CPU by role   renderer 41 s · browser 22 s · worker 18 s · webServer 11 s · gpu 3 s · ffmpeg 1 s
 ```
 
+On the same tab, the machine the run had:
+
+```
+Machine · 4 vCPU · 16 GB · container limit 14 GB · steal 1.5%
+  CPU      ▁▃▆█████▇▆▃▁  busy 92% · a task waited for a CPU 79% of the time · renderers waited 39 s in total
+  Memory   peak 1.6 GB (PSS) at 00:21 · 11% of the limit · largest process: worker 251 MB · no memory pressure
+  Disk     145 MB kept (traces) · 430 MB in use at the peak · 13.9 GB free at the low point
+  Worker   event loop busy 28% · p99 delay 181 ms · 2,100 involuntary context switches per test
+```
+
 On a failing execution, a clue:
 
 ```
@@ -69,7 +80,8 @@ $ npx @piwitests/reporter gate --max-new-leaks 0
 ```
 
 - Part 1 gives the ledger and its findings in the console, with the capture fixtures only. No server change.
-- Part 2 adds the measured cost: the run profile from the reporter, the cost per test from the fixtures.
+- Part 2 adds the metrics: CPU, memory and disk for the run (from the reporter alone), for each test and each page
+  (from the fixtures), with what each costs to read on each platform.
 - Part 3 adds the waste findings: idle pages, browser projects that run browserless tests, tracing and video modes,
   the web server, worker restarts, machine size.
 - Part 4 stores findings with a history and puts them where Piwi already speaks: the run page, the failure clues, the
@@ -135,6 +147,61 @@ most of what `on` costs, because both record every test; `on-first-retry` costs 
   `Performance.getMetrics` on an open session 1.7 ms, `SystemInfo.getProcessInfo` 1.3 ms, the `/proc` scan 1.5 ms. The
   design below keeps PSS in the reporter's background sampler and opens CDP sessions only on pages that outlive their
   test, which brings a boundary to a few milliseconds.
+
+**Which metrics see contention.** The same two variants, with every source of [Part 2](#part-2--metrics) sampled:
+
+| Metric | Contexts closed | Contexts left open |
+|---|---|---|
+| machine CPU busy (`/proc/stat`) | 60.7% | 90.5% |
+| CPU pressure, PSI `some`: share of the wall time a task waited for a CPU | 28.6% | 66.3% |
+| time runnable but waiting for a CPU (`/proc/<pid>/schedstat`), all processes | 8.3 s | 72.8 s |
+| … of which renderers | 2.3 s | 58.6 s |
+| worker event-loop delay, p99 of the worst test | 54 ms | 82 ms |
+| peak memory (PSS) | 911 MB | 1373 MB |
+| steal (`/proc/stat`) | 1.9% | 1.6% |
+
+"Busy" says the machine was used; pressure and run-queue wait say work was waiting, and for whom. The largest single
+process was the Node worker (173–180 MB peak RSS), not a renderer (98–101 MB).
+
+**What artifacts cost on a page closer to an application.** A 1,500-row table, a 400 KB API response, an animation
+and a re-sort on click; 32 tests on 4 workers, two rounds unless noted:
+
+| Mode | Wall | CPU | Kept after the run | Peak disk in use during the run |
+|---|---|---|---|---|
+| no artifacts | 9.7–9.9 s | 22–23 s | 0 | 0 |
+| `trace: 'on'` | 35–38 s | 122–134 s | 145–148 MB | 412–430 MB |
+| `trace: 'retain-on-failure'`, every test passing | 28–30 s | 101–108 s | 0 | 279–286 MB |
+| `trace: 'on-first-retry'` | 9.6–10.0 s | 22–24 s | 0 | 0 |
+| `trace` with `screenshots: false` (one round) | 14.8 s | 41 s | 2.4 MB | 12 MB |
+| `trace` with `snapshots: false` (one round) | 22.4 s | 76 s | 89 MB | 252 MB |
+| `video: 'on'` | 21–24 s | 73–86 s | 5.6–6.1 MB | 10–12 MB |
+| `video: 'retain-on-failure'`, every test passing | 21–24 s | 74–86 s | 0 | 5 MB |
+| `screenshot: 'on'` (one round) | 10.4 s | 24 s | 0.8 MB | — |
+
+Tracing's cost grows with the page: on the trivial page it added a third to the CPU, here it multiplied it by about
+5.5 to 6. Most of it is the screencast frames. In one run of each, the GPU process, which renders them in software on
+a machine without a GPU, went from 0.8 s of CPU to 37.6 s with tracing and to 30.2 s with video (plus 13 s of
+`ffmpeg`). Turning the frames off cut what a tracing run keeps from 145 MB to 2.4 MB; turning the DOM snapshots off
+left 89 MB. A run needs about three times the disk it keeps while it writes and zips its traces, and a green
+`retain-on-failure` run keeps nothing yet needs 280 MB of scratch. With tracing on, the worker's event loop was busy 28% of the time (12% without), its p99 delay reached
+181 ms, and it was switched out involuntarily about 2,100 times per test (70 without): the process that drives the
+browser was starved as well.
+
+**Where disk and memory numbers mislead.**
+
+- `write_bytes` in `/proc/<pid>/io` counts pages when they are dirtied. With no artifacts at all, the browser
+  processes dirtied about 480 MB per run and 265 MB of it was deleted before writeback: Chromium keeps its shared
+  memory in deleted `/tmp/.org.chromium.Chromium.*` files, because Playwright launches it with
+  `--disable-dev-shm-usage`. A browser's `write_bytes` is not disk usage.
+- `wchar` counts every `write()`, pipes included: the worker's 22 MB per run was protocol traffic to the browser.
+- `/proc/diskstats` counts what reached the device, through the page cache, so it lags: by `onEnd` the device had
+  received 202–310 MB in the tracing runs and 2–12 MB in the others. The disk numbers worth reporting are space:
+  kept, peak in use, free at the low point.
+- The container's counters give an exact peak with no sampling (`memory.max_usage_in_bytes` on cgroup v1,
+  `memory.peak` on v2), page cache included, and Node reports the container's limit (`process.constrainedMemory()`,
+  14.3 GB on a 16 GB host here), which `os.totalmem()` does not.
+- A process's peak RSS can be reset: writing `5` to `/proc/<pid>/clear_refs` took `VmHWM` from 341 MB back to the
+  current 41 MB, so a worker can read an exact per-test peak for each of its browser processes.
 
 ## What exists
 
@@ -211,7 +278,7 @@ most of what `on` costs, because both record every test; `on-first-retry` costs 
 | D3 | Verdicts are taken at Playwright's scope boundaries, never after a delay: test end (after test-scoped teardown), describe end (the first test outside it), worker end (before the fixture browser closes). An object leaks when it outlives the scope that created it. | Timing heuristics produce false positives; scopes are what Playwright and the reader both reason in. |
 | D4 | Workers report facts, the reporter reaches verdicts. Each test's attachment lists what was born, closed and used, and what is open; the reporter stitches lifetimes per worker. | An object a serial describe hands from one test to the next and closes in `afterAll` is shared, not leaked, and only a later census can tell. |
 | D5 | Five verdicts: **leaked** (outlived its scope, closed by nothing but worker exit), **shared** (outlived its test, closed within its describe), **idle** (created, never used), **piling** (a long-lived owner that grows: pages, Node-side listeners, route handlers), **held** (worker-scoped: cost only, never flagged). | Each verdict has a different fix; held objects are a choice, not a bug. |
-| D6 | Cost is measured from the operating system, not estimated. The reporter samples its process tree; workers read their subtree at test boundaries; Chromium pages add renderer CPU and heap through CDP. Memory is PSS where the platform has it, labeled RSS elsewhere. | Measured: summed RSS overcounted memory 2.6×, exit accounting undercounted CPU nearly 3×. |
+| D6 | Cost is measured from the operating system, not estimated. The reporter samples its process tree; workers read their subtree at test boundaries; Chromium pages add renderer CPU and heap through CDP. Memory is PSS or the container's own count, labeled RSS where neither exists; disk is space, not per-process writes. | Measured: summed RSS overcounted memory 2.6×, exit accounting undercounted CPU nearly 3×, browsers dirtied 480 MB of "writes" that were their shared memory. |
 | D7 | Off the test's path. Reads happen at boundaries, through `internalCall`; PSS only in the reporter's background sampler; CDP sessions only on pages that outlive their test. The budget is a few milliseconds per boundary, held by a `resources` rung in the bench. | The capture must cost far less than what it finds, and stay out of steps and traces. |
 | D8 | Report by default. `PIWI_LEAK_CHECK=fail` fails a test that leaked an object it created, naming the call site; `close` closes what a test leaked (never shared or held objects) and still reports it. A `beforeAll` or worker leak is judged after its tests finished, so only the gate can enforce it. | Teams choose their own strictness; closing for them saves the memory today without hiding the bug. |
 | D9 | A finding's identity is its kind, verdict and creation call site (or creating fixture), like a failure cluster's fingerprint: it has a first run, a last run, held time per run, and is recorded fixed after five runs without it. | "Did my fix hold?" is Piwi's first question for failures; it is the same question here. |
@@ -278,31 +345,117 @@ From the `pw:api` steps it already receives, the reporter counts `Create context
 `Create request context` and `Launch browser` against their close and dispose steps per scope (the test with its
 hooks, a describe's `beforeAll`/`afterAll`). An excess is a **probable** leak at the step's location.
 
-## Part 2 — What a run costs
+## Part 2 — Metrics
 
-### 2.1 The run profile
+### 2.1 Who reads what
 
-The reporter samples the processes under the Playwright main process: CPU every second, PSS every five seconds
-(`/proc/<pid>/stat`, `/proc/<pid>/smaps_rollup` on Linux). Each process gets a role from its command line: `worker`,
-`browser`, `renderer`, `gpu`, `utility`, `zygote` (Chromium's `--type=`), `ffmpeg` (video), `webServer` (the subtree of
-`config.webServer`'s command), and a browser parented by the main process (global setup or teardown). A process born
-after the first sample counts from zero. Machine facts join the run metadata: cores, memory, and the cgroup limits a
-CI container runs under (`cpu.max`, `memory.max`), which `os.cpus()` does not reflect.
+Four collectors, each where its numbers are cheapest and can be attributed:
 
-The profile stores peak PSS and when it happened, CPU-seconds per role, CPU saturation over time (CPU-seconds per wall
-second against capacity), and, per worker, its starts and peak memory. On macOS the sampler reads `ps` (CPU and RSS);
-on Windows a CIM query at a lower rate (working set); both are labeled as overcounting shared memory. A remote browser
-(`connectOptions`) is outside the tree and is reported as not measured.
+| Collector | Runs in | When | Reads |
+|---|---|---|---|
+| Run sampler | the reporter (main process), on a background timer | CPU and pressure every second; PSS and disk space every five seconds | the process tree under Playwright (workers, browsers, `webServer`, global setup), the machine, the container |
+| Test boundary | the capture fixtures, in each worker | test start and end | its own subtree (CPU, run-queue wait, switches, peak RSS after a reset), the Node worker, the ledger |
+| Page reads | the capture fixtures, over CDP (Chromium) | test end, for pages that outlive their test (every page with `PIWI_CAPTURE_RESOURCES=full`) | renderer CPU, JS heap, DOM nodes, listeners, layout and script time |
+| Artifact sizes | the reporter, in `onTestEnd` | each test | the size of each trace, video, screenshot and attachment the test produced (`stat` of its paths) |
 
-### 2.2 Per test
+Each process gets a role from its command line: `worker`, `browser`, `renderer`, `gpu`, `utility`, `zygote`
+(Chromium's `--type=`), `ffmpeg` (video), `webServer` (the subtree of `config.webServer`'s command), and a browser
+parented by the main process (global setup or teardown). A remote browser (`connectOptions`) is outside the tree and is
+reported as not measured. The worker's attachment carries its PID, so the reporter can place its samples in the
+worker's subtree and inside a test's span.
 
-At each boundary a worker reads the CPU of its own subtree (the browsers it owns, including any a test launched) per
-role during the test. Its memory comes from the reporter's PSS samples of that subtree: the attachment carries the
-worker's PID, and the reporter takes the samples inside the test's span. For Chromium pages that outlived their test,
-a CDP session (`Performance.getMetrics`: `ProcessTime`, `JSHeapUsedSize`, `Nodes`, `JSEventListeners`) splits the
-browser's CPU during the test into the test's own pages and the pages other tests left open. With
-`PIWI_CAPTURE_RESOURCES=full`, the test's own pages get the same reads, for the heaviest pages and the CPU of each URL.
-Firefox and WebKit get the subtree numbers only.
+### 2.2 CPU
+
+| Metric | Source | Scope | What it answers |
+|---|---|---|---|
+| CPU time by role | `/proc/<pid>/stat` (user + system); on any OS for Chromium, CDP `SystemInfo.getProcessInfo` | run, test (worker subtree) | which processes the suite pays for: renderers, browser, GPU, worker, `ffmpeg`, `webServer` |
+| Machine busy, iowait, steal | `/proc/stat` | run, test span | how full the machine was; steal is CPU the hypervisor took from a cloud VM |
+| CPU pressure | PSI `/proc/pressure/cpu`, or `cpu.pressure` per cgroup on v2 | run, test span | the share of time work waited for a CPU: oversubscription, measured directly |
+| Run-queue wait | `/proc/<pid>/schedstat` | run by role, test | who waited: renderers, the worker, the browser |
+| Involuntary context switches | `/proc/<pid>/status`; the worker's own `process.resourceUsage()` on any OS | test | a starved process, where `schedstat` is missing |
+| Container throttling | cgroup `cpu.stat` (`nr_throttled`, `throttled_usec`), quota in `cpu.max` | run | a CPU quota (Kubernetes, Docker) holding the run back |
+| Worker event loop | `perf_hooks`: `monitorEventLoopDelay`, `eventLoopUtilization` | test | whether the process that drives the browser was free to answer it |
+| Page main thread | CDP `Performance.getMetrics`: `ProcessTime`, `TaskDuration`, `ScriptDuration`, `LayoutDuration`, `RecalcStyleDuration` | page, URL | which page of the application burns the CPU, and on what |
+| Capacity | cgroup `cpu.max`, `os.availableParallelism()` | run | the cores the run really had |
+
+### 2.3 Memory
+
+| Metric | Source | Scope | What it answers |
+|---|---|---|---|
+| Peak memory, total | PSS from `/proc/<pid>/smaps_rollup`, summed over the tree | run, test span | the honest total, shared memory counted once |
+| Container memory and its peak | cgroup `memory.current` and `memory.peak` (v2), `memory.max_usage_in_bytes` (v1); `memory.stat` splits anonymous memory from page cache | run | how close the run came to the limit the OOM killer uses, exactly, with no sampling |
+| Peak per process | `VmHWM` in `/proc/<pid>/status`, reset per test through `clear_refs` | run, test | the largest single process; whether one test spiked a renderer |
+| Kind of memory | `Pss_Anon`, `Pss_File`, `Pss_Shmem` in `smaps_rollup` | run by role | heaps, mapped binaries, or Chromium's shared memory |
+| Memory pressure | PSI `/proc/pressure/memory`, major faults (`/proc/vmstat`), swap, lowest `MemAvailable` | run, test span | whether memory slowed the run before it killed anything |
+| Kills | cgroup `memory.events` (`oom_kill`); a browser process that disappears during a test | run, test | an out-of-memory death behind a "Target closed" error |
+| Page memory | CDP `Performance.getMetrics`: `JSHeapUsedSize`, `Nodes`, `JSEventListeners`, `Documents` | page, URL | the application's weight per page; a DOM that grows across tests in a reused page |
+| Worker memory | `process.memoryUsage()`: heap, external, array buffers | test | test code or fixtures holding on to data |
+| Limit | `process.constrainedMemory()`, `process.availableMemory()`, cgroup `memory.max` | run | the memory the run really had |
+
+### 2.4 Disk
+
+| Metric | Source | Scope | What it answers |
+|---|---|---|---|
+| Artifacts kept | each test's attachment sizes (`stat`); the output directory at the end | run, test | what the run leaves to upload and store: traces, videos, screenshots, reports |
+| Peak disk in use | the output directory with its `.playwright-artifacts-<worker>` folders, and the browser profiles, walked every few seconds | run | the space a run needs while it writes and zips: about three times what it keeps |
+| Free space at the low point | `statfs` on the output directory and `os.tmpdir()` | run, test span | how close the run came to `ENOSPC` |
+| Device I/O | `/proc/diskstats` (bytes, busy time), PSI `io`, cgroup `io.stat` on v2 | run | whether the run waited on the disk |
+| Leftovers | `playwright_*dev_profile-*` and `.playwright-artifacts-*` that outlive the run | run | the disk a crashed or killed run leaves on a runner |
+| Upload and storage | bytes the reporter sends; bytes the dashboard stores for the run | run | what keeping the history costs |
+
+Per-process `write_bytes` and `wchar` are not used for browsers ([What we measured](#what-we-measured)).
+
+### 2.5 Processes, handles and network
+
+| Metric | Source | Scope | What it answers |
+|---|---|---|---|
+| Processes by role, threads | the sampler's tree | run | how many renderers a run kept alive at once |
+| Open files and sockets | `/proc/<pid>/fd` | test | a worker that accumulates descriptors |
+| Node handles | `process.getActiveResourcesInfo()` | test | servers, sockets and intervals a test left in the worker ([1.5](#15-the-worker-process)) |
+| Worker starts and browser launches | `workerIndex`, the ledger | run | what red tests cost in relaunches |
+| Bytes per page | resource timing `transferSize`, read once per page; CDP `Network` with `full` | page, URL | heavy pages and third-party weight |
+
+### 2.6 Read cost and cadence
+
+Measured under load on the 4-vCPU VM, with 40 to 130 processes on the machine:
+
+| Read | Cost | When |
+|---|---|---|
+| `stat`, `status`, `schedstat`, `io` of one process | 6–40 µs each | every second in the sampler; at boundaries in the worker |
+| a full `/proc` scan to find the tree | 4–5 ms | every second, or follow the tree from known PIDs |
+| `smaps_rollup` (PSS) of one process | 1.2–2 ms | every five seconds; never at a test boundary |
+| `/proc/<pid>/fd` of one process | 0.1–0.2 ms | every five seconds |
+| PSI, `/proc/stat`, `meminfo`, `diskstats`, `statfs` | 36–260 µs | every second |
+| walking the output directory (about 100 files) | 1.5–5 ms | every few seconds, capped by file count |
+| CDP `SystemInfo.getProcessInfo`, `Performance.getMetrics` | 1.3 ms, 1.7 ms | at boundaries |
+| opening a CDP session on a page | 21 ms | once per page, only for pages that outlive their test |
+
+Computed from these costs, with 40 processes in the tree the cadences above take the sampler about 2% of one core,
+most of it PSS; following the tree from known PIDs and reading PSS every ten seconds bring it under 1%. A test boundary
+costs about a millisecond, plus 1.7 ms for each page read over CDP.
+
+### 2.7 Platforms
+
+| | Linux | macOS | Windows | Containers (cgroup v2) | Chromium, any OS |
+|---|---|---|---|---|---|
+| CPU by process | `/proc` | `ps` | CIM `Win32_Process` | — | CDP `SystemInfo.getProcessInfo` |
+| Waiting for a CPU | PSI, `schedstat` | the worker's involuntary switches | — | `cpu.pressure`, throttling | — |
+| Honest memory | PSS | physical footprint (to verify) | private working set | `memory.current`, `memory.peak` | page heap only |
+| Disk space | `statfs`, directory walks | the same | the same | — | — |
+| Device I/O | `diskstats`, PSI `io` | — | CIM transfer counts | `io.stat`, `io.pressure` | — |
+
+Linux, where most CI runs, gets everything. Elsewhere a missing metric is reported as not measured, never as zero.
+
+### 2.8 Attribution and honest numbers
+
+- A test's cost is what its worker's subtree spent during its span: CPU, run-queue wait, peak RSS per process after a
+  reset, artifact bytes. Machine-wide numbers over the same span (pressure, steal, free space) are its context, never
+  its cost: tests running at once share them.
+- A run's peak is the peak of the sum (PSS samples, or the container's own peak), never the sum of per-process peaks.
+- Memory is PSS or the container's count; CPU is sampled, never read from exit accounting; disk is space, plus device
+  I/O over a window that includes writeback.
+- Capacity comes from the container's limits, not from the host.
+- A process born after the first sample counts from zero.
 
 ## Part 3 — Waste
 
@@ -312,20 +465,31 @@ Each finding names what to change and, where the lab measured it, what it costs.
 |---|---|---|---|
 | Idle page or context | a fixture made it, nothing used it; named by creator | drop `page` from the test's arguments; make an auto fixture depend on nothing it does not use, or opt tests out of it | API test 20 → 107 ms median, a browser per worker (+300 MB on 4 workers) |
 | Browserless tests in browser projects | a test that used no page in any project, over its history | run it once, in a project with no browser fixture | — |
-| Tracing and video modes | tests traced or recorded versus artifacts kept, per run | `trace: 'on-first-retry'`, `video: 'on-first-retry'` | trace `retain-on-failure` +20–26% CPU on a green run, `on-first-retry` +0%; video `retain-on-failure` +24–32% |
+| Tracing and video modes | tests traced or recorded versus artifacts kept, per run, with the run's own CPU and disk | `trace: 'on-first-retry'`, `video: 'on-first-retry'` | on a 1,500-row page, a green `retain-on-failure` run: CPU ×4.5, wall ×2.9, 280 MB of scratch, nothing kept; `on-first-retry` +0% (on a trivial page `retain-on-failure` cost +20–26% CPU) |
+| Trace screencast frames | tracing on, the GPU process's CPU and the trace bytes | `screenshots: false` in the trace options keeps the DOM snapshots and the action log | CPU ×5.8 → ×1.8, kept 145 → 2.4 MB, peak disk 430 → 12 MB (one round) |
+| Disk headroom | peak disk in use and free space at the low point, against the runner's disk | fewer or lighter artifacts; remove leftovers | peak in use ≈ 3× kept with tracing |
 | Video that records nothing | `video` set while the tests create their contexts by hand | record through the `context` fixture, or drop the option | — |
 | The web server | the `webServer` role's share of CPU; a dev-server command (`dev`, `vite`, `next dev`, `nuxt dev`, `webpack serve`) | serve a production build in CI | — |
 | Worker restarts | worker processes started against `workers`; each start relaunches the browser | fix the failures; read as a cost of red runs | — |
-| Machine size | CPU saturation and peak PSS against capacity, per worker | fewer workers on a saturated runner, more where memory and CPU sit idle | — |
+| Machine size | CPU pressure and run-queue wait; peak memory against the container's limit; per-worker peaks | fewer workers on a runner where work waits for a CPU most of the run, more where memory and CPU sit idle | leaked contexts: CPU pressure 29% → 66%, run-queue wait 8 s → 73 s |
 | Third-party hosts | requests per host outside `baseURL`'s origin, all resource types, counted without bodies | block them with `context.route` | — |
 
 Hard waits already have a lens (wasted time); the Resources tab links to it rather than counting them twice.
 
 ## Part 4 — Explain, enforce, fix
 
-- **Clue.** A `resource-pressure` rule (medium): when the failing attempt started, the worker held pages other tests
-  left open, or the machine was above 90% of its memory or CPU capacity. Its detail names the leak's call site. Strong
-  when the failure is a timeout and those pages' renderers used at least half of the browser's CPU during the attempt.
+- **Clues.** Four rules read the failing attempt's span. Their thresholds start from the lab's numbers and are tuned
+  on stored history:
+  - `pages-left-open` (medium): the worker held pages other tests left open; the detail names the leak's call site.
+    Strong when the failure is a timeout and those pages' renderers used at least half of the browser's CPU during
+    the attempt.
+  - `cpu-starved` (medium, strong on a timeout): CPU pressure stayed high, the test's renderer or worker spent a large
+    share of the attempt waiting for a CPU, the worker's event loop stalled, or the container was throttled. The detail
+    says who waited and what else ran: leaked pages, tracing, more workers than cores, steal.
+  - `out-of-memory` (strong): the container recorded an OOM kill, or a browser process disappeared during the attempt;
+    the detail gives the peak and the limit.
+  - `disk-full` (strong): free space fell under a floor during the attempt, or the error carries `ENOSPC`; the detail
+    gives what was in use: traces, videos, leftovers.
 - **Flakiness.** A flake profile suspect: the failure rate rises with the pages left open in the worker when the
   attempt started (and with its position in the worker). The lab proves it with the `after` condition (run behind the
   leaking test) or a new `hold` condition (keep N polling pages open in the worker before the target runs).
@@ -349,7 +513,9 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 - **`piwi doctor`.** Lists browser processes left by earlier runs on a self-hosted runner (a
   `playwright_*dev_profile-*` profile and no Playwright parent) and leftover profile directories, with their memory and
   disk; `--clean` removes them after asking. Entry: a self-hosted user reports runner degradation.
-- **Disk.** Trace, video and screenshot bytes per run, against what was kept.
+- **Runner advice from history.** Runs of one project on different runner sizes or worker counts already exist in
+  the history; comparing their wall time, CPU pressure and peak memory gives the cheapest setting that does not slow
+  the run. Entry: a project with runs on at least two configurations.
 - **Upstream.** Ask Playwright for public lifecycle hooks and the fixture scope on the runnable, which would retire
   most of Risk 1.
 
@@ -357,14 +523,19 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 
 - **Attachment** `piwi-resources` (per test, JSON): objects born, closed and still open (ids, kinds, provenance), idle
   pages, handler counts, Node handle growth, CPU per role, after-test CPU of leaked pages.
-- **Per case** `resources` on `WireTestCase`: `cpuMsByRole`, `leakedCpuMs`, `openAtStart` (contexts, pages), and the
-  findings this test produced.
-- **Per run** `resourceProfile`: machine facts, peak PSS and its time, CPU per role, a downsampled saturation series,
-  per-worker starts and peaks, and the stitched findings.
+- **Per case** `resources` on `WireTestCase`: CPU per role, run-queue wait, peak RSS of its browser processes,
+  `leakedCpuMs`, `openAtStart` (contexts, pages), the worker's event-loop utilization and p99 delay, artifact bytes by
+  kind, the pressure, steal and free space over its span, and the findings this test produced.
+- **Per run** `resourceProfile`: machine facts (cores, memory, container limits, platform and which metrics it could
+  read), peak PSS and its time, the container's own peak, CPU and run-queue wait per role, PSI and steal averages,
+  artifacts kept and peak disk in use, the lowest free space, per-worker starts and peaks, a series downsampled to
+  one point every two seconds and capped (CPU busy, CPU pressure, PSS, disk in use), and the stitched findings.
 - **Tables.** `resource_findings` (project, fingerprint, kind, verdict, call site, creator, first and last run, status,
   fixed run) and `resource_occurrences` (finding, run, execution, held ms, after-test CPU, pages, tests). Runs gain
-  `peak_pss_mb`, `cpu_ms` and the profile JSON; executions gain `browser_cpu_ms`, `leaked_cpu_ms` and
-  `open_pages_at_start`. Daily rollups carry leaked CPU-seconds, idle pages and peak memory for analytics.
+  `peak_pss_mb`, `cpu_ms`, `cpu_pressure_pct`, `artifact_bytes`, `peak_disk_bytes` and the profile JSON; executions
+  gain `browser_cpu_ms`, `run_queue_wait_ms`, `leaked_cpu_ms`, `peak_rss_mb`, `artifact_bytes` and
+  `open_pages_at_start`. Daily rollups carry CPU-seconds, leaked CPU-seconds, peak memory, artifact bytes and idle
+  pages for analytics.
 - **Capability** `resources` (module `workflow`, instance and project levels, passive data), so a team that does not
   want the tab declines it like any other.
 
@@ -373,7 +544,7 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 | PR | Content | Visible result |
 |---|---|---|
 | 1 | The ledger in the capture fixtures (worker auto fixture `piwiResources`), the `piwi-resources` attachment, stitching and verdicts in the reporter, the fixture-free tier, the console summary, `PIWI_LEAK_CHECK` | leaks and idle pages at the end of every run, no server change |
-| 2 | The run-profile sampler, per-test subtree reads, CDP reads for pages that outlive their test, machine facts | cost in the console summary |
+| 2 | The metrics of Part 2: the run sampler (CPU, pressure, memory, disk, container) and artifact sizes in the reporter, which need no fixtures; the test-boundary reads (subtree, run-queue wait, peak RSS reset, event loop) and CDP reads for pages that outlive their test in the fixtures; machine facts | the machine panel in the console summary, for every reporter user |
 | 3 | Wire, storage, the Resources tab, per-execution cost on the execution page, the capability | the run page |
 | 4 | Finding history and fix verification, gate policies, the pull-request line, MCP tools | CI and agents |
 | 5 | The clue, the flake suspect and the `hold` condition, editor diagnostics and quick fixes | failures and the editor |
@@ -397,10 +568,16 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
   verdicts, plus a clean suite that must produce none.
 - `apps/application/tests/fixtures.ts`: the dogfood mirror installs the same fixture.
 
-### PR 2 — cost
+### PR 2 — metrics
 
-- `packages/reporter/src/internal/collect/process-sampler.ts` (new): `/proc`, `ps` and CIM readers, roles, PSS cadence.
-- `metadata-collector.ts`: machine facts and cgroup limits.
+- `packages/reporter/src/internal/collect/process-sampler.ts` (new): the `/proc`, `ps` and CIM readers, roles, the
+  cadences of [2.6](#26-read-cost-and-cadence), PSI, steal, `diskstats`, `statfs`, directory walks, cgroup v1 and v2
+  counters; every reader feature-detected and reported as not measured when missing.
+- `packages/reporter/src/internal/capture/worker-metrics.ts` (new): the test-boundary reads (subtree counters,
+  `clear_refs` reset and `VmHWM`, `perf_hooks` event loop, `resourceUsage`, descriptors) and the CDP page reads.
+- `packages/reporter/src/public/reporter.ts`: the sampler's lifetime, artifact sizes in `onTestEnd`, the machine
+  panel.
+- `metadata-collector.ts`: machine facts and container limits.
 - `packages/reporter/tests/bench/`: the `resources` rung.
 
 ### PR 3 — storage and the tab
@@ -417,7 +594,8 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 
 - `shared/handlers/` finding history and fix verification; `packages/reporter/src/cli/gate.ts`; the pull-request
   comment builder; `shared/mcp-tools.ts`.
-- `shared/failure-clues.ts` (`resource-pressure`); the flake profile and `@piwitests/core/flake-plan` (`hold`).
+- `shared/failure-clues.ts` (`pages-left-open`, `cpu-starved`, `out-of-memory`, `disk-full`); the flake profile and
+  `@piwitests/core/flake-plan` (`hold`).
 - `packages/editor/src/analysis.ts`, `server.ts`: diagnostic, hover, quick fixes.
 - The waste findings, each with a unit test on stored fixtures.
 
@@ -428,7 +606,8 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
   and `evaluate`-only pages, a reused context) reports none.
 - The bench `resources` rung stays within 3% of `full` on the default workload.
 - The A/B of [What we measured](#what-we-measured) reproduces in direction and rough size on CI's Linux runner, and
-  the run profile's CPU and peak match an outside measurement (`pidstat` or `/proc` read by hand) within 10%.
+  the run profile matches outside tools on the same run within 10%: `pidstat` for CPU per process, `vmstat` and the
+  PSI files for pressure, `du` for disk in use, the container's counters for peak memory.
 - The package smoke job (Linux, macOS, Windows) runs with the sampler on and checks the profile is present and labeled
   per platform.
 - Playwright 1.61 through the newest release: each internal hook is feature-detected and the degraded signal is the
@@ -448,12 +627,17 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 4. **Shared machines.** Another job on the runner is outside the tree and does not count, while still slowing the run.
    The profile reports capacity from cgroup limits, not from the host.
 5. **Privacy.** Page URLs are stored without query or hash, as the page inventory does; nothing from page content.
+6. **Kernels and runners differ.** PSI can be compiled out or disabled at boot, `smaps_rollup` needs Linux 4.14,
+   `memory.peak` needs 5.19, and cgroup v1 and v2 name things differently. Each reader is feature-detected, and the
+   profile lists the metrics it could read, so a missing one never reads as zero.
 
 ## Open questions
 
 - Should `PIWI_LEAK_CHECK=fail` apply per kind (fail on leaked contexts and browsers, never on popups)?
 - Should the run profile be on by default for reporter-only users, given that it reads `/proc` every second?
 - Per-test cost on every execution, or only on failures and a sample of passes, for storage on large suites?
+- How fine the run's series should be, and how long it is kept: one point every two seconds is about 1,800 points for
+  an hour-long run.
 - Can leaked CPU-seconds ever be priced honestly (D12), for example when the run was CPU-saturated the whole time?
 - Should Piwi's own capture overhead appear in the profile? Measuring it per run needs a control run; the bench may be
   the only honest place.
