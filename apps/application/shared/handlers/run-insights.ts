@@ -1,13 +1,15 @@
-import { eq, and, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, inArray, lt } from 'drizzle-orm';
 import { testRuns, testRunsCases, testCases, failureClusters } from '../../server/database/schema';
 import type { TestRun } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import { selectBaselineRun } from '../../server/utils/branch-baseline';
+import { listBaselineBranches, selectBaselineRun } from '../../server/utils/branch-baseline';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { attemptKey, finalAttempts } from '../utils/test-counts';
+import { notLabRun } from './probes';
+import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
 
 interface TestCaseEntry {
@@ -36,8 +38,22 @@ export interface InsightsBaseline {
   environment: string | null;
 }
 
+/** An earlier run the Changes tab offers to compare with. */
+export interface InsightsEarlierRun {
+  id: number;
+  startTime: Date;
+  status: string;
+  label: string | null;
+  branch: string | null;
+  environment: string | null;
+  isFullRun: boolean;
+}
+
 /** How the baseline was picked: the automatic ladder, a run, or a base branch someone chose. */
 export type InsightsBaselineSource = 'auto' | 'run' | 'branch';
+
+/** How many earlier runs the Changes tab offers to compare with. */
+const EARLIER_RUN_LIMIT = 50;
 
 export interface RunInsightsResult {
   hasBaseline: boolean;
@@ -54,8 +70,10 @@ export interface RunInsightsResult {
   fallbackBranch: RunBaselineFallback;
   /** The base branch asked for, echoed even when it yielded no baseline. */
   baseBranch: string | null;
-  /** Branches with at least one earlier passing run in the project — the base branches on offer. */
+  /** Branches a baseline can be taken from (an earlier passing full run, or a failed one with `failedFallback`). */
   baseBranches: string[];
+  /** The project's finished runs before this one, newest first, lab runs left out — the runs on offer. */
+  earlierRuns: InsightsEarlierRun[];
   /** Tests that passed in the baseline and fail here — the one "new failures" set. */
   newFailures: number;
   commitRange: CommitRange | null;
@@ -91,7 +109,12 @@ const FAIL_STATUSES: ReadonlySet<string> = new Set(['failed', 'timedOut', 'timed
 export async function computeRunInsights(
   db: DrizzleDB,
   runId: number,
-  options?: { baselineId?: number | null; baseBranch?: string | null },
+  options?: {
+    baselineId?: number | null;
+    baseBranch?: string | null;
+    /** Take the last failed run as the baseline when no earlier full run passed. */
+    failedFallback?: boolean;
+  },
 ): Promise<RunInsightsResult> {
   const runResults: any[] = await db
     .select({
@@ -131,23 +154,50 @@ export async function computeRunInsights(
   // The baseline ladder: a passing full run in this run's environment, on its
   // own branch, else on the branch it forked from (the pull request's target
   // when the reporter captured one, else the project's default branch), else
-  // any branch; then the same three rungs without the environment.
+  // any branch; then the same three rungs without the environment. With
+  // `failedFallback`, the same ladder again for the last failed full run.
   const branch = run.branch ?? resolveRunBranch(run.metadata);
   const environment: string | null = run.environment ?? null;
   const fallbackBranch = resolveFallbackBranch(
     run.metadata,
     await readProjectDefaultBranch(db, run.projectId, run.metadata),
   );
+  const failedFallback = options?.failedFallback === true;
+  const baseBranches = await listBaselineBranches(db, {
+    projectId: run.projectId,
+    before: run.startTime,
+    fullRunOnly: true,
+    failedFallback,
+  });
 
-  // The base branches on offer: every branch with an earlier passing run.
-  const branchRows: Array<{ branch: string | null }> = await db
-    .selectDistinct({ branch: testRuns.branch })
+  const earlierRunRows = await db
+    .select({
+      id: testRuns.id,
+      startTime: testRuns.startTime,
+      status: testRuns.status,
+      label: testRuns.label,
+      branch: testRuns.branch,
+      environment: testRuns.environment,
+      isFullRun: testRuns.isFullRun,
+    })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, run.projectId), eq(testRuns.status, 'passed'), isNotNull(testRuns.branch)));
-  const baseBranches = branchRows
-    .map((r) => r.branch)
-    .filter((b): b is string => !!b)
-    .sort();
+    .where(
+      and(
+        eq(testRuns.projectId, run.projectId),
+        lt(testRuns.startTime, run.startTime),
+        inArray(testRuns.status, TERMINAL_STATUSES),
+        notLabRun(testRuns.metadata),
+      ),
+    )
+    .orderBy(desc(testRuns.startTime))
+    .limit(EARLIER_RUN_LIMIT);
+  const earlierRuns: InsightsEarlierRun[] = earlierRunRows.map((r) => ({
+    ...r,
+    label: r.label ?? null,
+    branch: r.branch ?? null,
+    environment: r.environment ?? null,
+    isFullRun: r.isFullRun === 1,
+  }));
 
   // An explicit baseline (the `?baseline=` selection on the Changes tab) wins,
   // as long as it is a different run in the same project. Then a chosen base
@@ -172,6 +222,7 @@ export async function computeRunInsights(
       fallbackBranch: fallbackBranch.branch,
       baseBranch: chosenBranch,
       fullRunOnly: true,
+      failedFallback,
     });
     if (selection) {
       baselineRun = selection.run;
@@ -179,7 +230,7 @@ export async function computeRunInsights(
       baselineSource = chosenBranch ? 'branch' : 'auto';
     }
   }
-  const scope = { run: { branch, environment }, fallbackBranch, baseBranch: chosenBranch, baseBranches };
+  const scope = { run: { branch, environment }, fallbackBranch, baseBranch: chosenBranch, baseBranches, earlierRuns };
   const empty = {
     hasBaseline: false,
     baseline: null,

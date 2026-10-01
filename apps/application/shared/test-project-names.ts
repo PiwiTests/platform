@@ -150,6 +150,7 @@ export const PROJECT = {
   REPORT_SHARE_LINKS: 'report-share-links-test',
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
+  RUN_CHANGES_FALLBACK: 'run-changes-fallback-test',
   RUN_COMPARE: 'run-compare',
   RUN_DELETE_MANY: 'run-delete-many-test',
   RUN_KEEP_OTHER: 'run-keep-other-test',

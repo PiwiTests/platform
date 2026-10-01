@@ -4,13 +4,13 @@
  * stopped failing, the ones that got slower or faster, the commits landed since
  * the baseline and the environment fields that moved. Every section reads the
  * same baseline — the automatic choice (same environment, then same branch,
- * then the base branch, then any), the base branch `?baseBranch=<name>` names,
- * or the run `?baseline=<runId>` names — so the "new failures" count is
- * computed once and reused everywhere. The selector says which run it is and
- * why it was chosen.
+ * then the base branch, then any; the last failed run when no earlier full run
+ * passed), the base branch `?baseBranch=<name>` names, or the run
+ * `?baseline=<runId>` names — so the "new failures" count is computed once and
+ * reused everywhere. The selector says which run it is and why it was chosen.
  */
 import { computed, ref, watch } from 'vue';
-import type { TestRunDetails, TestCaseResult, ProjectWithTestRuns, RunClusterMeta } from '~~/types/api';
+import type { TestRunDetails, TestCaseResult, RunClusterMeta } from '~~/types/api';
 import type { RunInsightsResult } from '#shared/handlers/run-insights';
 import { describeRunBaselineParts, type RunBaselinePart } from '#shared/run-baseline';
 
@@ -72,74 +72,7 @@ async function load() {
 
 watch([() => props.testRun?.id, baselineId, baseBranch, () => props.refreshKey], load, { immediate: true });
 
-// ── Baseline picker ─────────────────────────────────────────────────────────
-const projectData = ref<ProjectWithTestRuns | null>(null);
-
-watch(
-  () => props.testRun?.projectId,
-  async (projectId) => {
-    if (!projectId || projectData.value) return;
-    try {
-      projectData.value = await $fetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
-    } catch {
-      // the picker falls back to Previous run only
-    }
-  },
-  { immediate: true },
-);
-
-interface RunOption {
-  label: string;
-  value: number;
-  branch: string | null;
-  environment: string | null;
-  date: string;
-  status: string;
-}
-
-const runOptions = computed<RunOption[]>(() => {
-  const runs = projectData.value?.testRuns;
-  if (!runs) return [];
-  return runs
-    .filter((r) => r.id !== runId)
-    .slice(0, 50)
-    .map((r) => ({
-      label: `Run #${r.id} · ${r.branch ?? 'no branch'} · ${r.environment ?? 'no environment'} · ${prettyDateFormat(r.startTime, { dateOnly: true })} (${r.status})`,
-      value: r.id,
-      branch: r.branch ?? null,
-      environment: r.environment ?? null,
-      date: prettyDateFormat(r.startTime, { dateOnly: true }),
-      status: r.status,
-    }));
-});
-
-// Base-branch choices: the automatic ladder, then every branch that has an
-// earlier passing run. Offered only when a branch other than the run's own
-// has one — otherwise there is nothing to choose.
-const AUTO_BASE = '';
-interface BaseBranchOption {
-  label: string;
-  value: string;
-}
-const baseBranchOptions = computed<BaseBranchOption[]>(() => {
-  const d = data.value;
-  if (!d || !d.baseBranches.some((b) => b !== d.run.branch)) return [];
-  const own = d.run.branch;
-  const fallback = d.fallbackBranch.branch;
-  const ladder = !own ? 'most recent' : own === fallback ? own : `${own}, then ${fallback}`;
-  const auto = { label: `Automatic (${ladder})`, value: AUTO_BASE };
-  return [auto, ...d.baseBranches.map((b) => ({ label: b, value: b }))];
-});
-
-// The run immediately before this one, for the "Previous run" shortcut.
-const previousRunId = computed<number | null>(() => {
-  const runs = projectData.value?.testRuns;
-  if (!runs || !props.testRun) return null;
-  const sorted = [...runs].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-  const idx = sorted.findIndex((r) => r.id === runId);
-  return idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1]!.id : null;
-});
-
+// ── Baseline choice ─────────────────────────────────────────────────────────
 // Picking a run and picking a base branch are exclusive: the URL carries one.
 function selectBaseline(id: number | null) {
   const query = { ...route.query };
@@ -157,20 +90,13 @@ function selectBaseBranch(name: string | null) {
   router.replace({ query });
 }
 
-function resetBaseline() {
-  selectBaseline(null);
-}
-
-const pickerValue = computed<RunOption | undefined>({
-  get: () =>
-    baselineId.value != null ? runOptions.value.find((o) => o.value === data.value?.baseline?.id) : undefined,
-  set: (opt) => selectBaseline(opt?.value ?? null),
-});
-
-const baseBranchValue = computed<{ label: string; value: string } | undefined>({
-  get: () => baseBranchOptions.value.find((o) => o.value === (baseBranch.value ?? AUTO_BASE)),
-  set: (opt) => selectBaseBranch(opt?.value || null),
-});
+// Without a baseline: the first finished run has nothing before it; otherwise
+// the earlier runs exist but none was eligible, or the chosen branch had none.
+const noBaselineTitle = computed(() =>
+  data.value && !data.value.baseBranch && data.value.earlierRuns.length === 0
+    ? 'No earlier run to compare with'
+    : 'No baseline run found',
+);
 
 // Why this baseline, as parts, so branch and environment names carry their icon.
 const noteParts = computed<RunBaselinePart[]>(() => {
@@ -257,46 +183,31 @@ function clusterIssue(tc: TestCaseResult) {
       <p class="text-sm text-muted max-w-sm text-center">Changes are available once the run finishes.</p>
     </EmptyState>
 
-    <EmptyState v-else-if="!data?.hasBaseline" icon="i-lucide-git-compare-arrows" text="No baseline run found">
+    <EmptyState
+      v-else-if="!data?.hasBaseline"
+      icon="i-lucide-git-compare-arrows"
+      :text="noBaselineTitle"
+      data-shot="run-changes-empty"
+    >
       <p v-if="data?.baseBranch" class="text-sm text-muted max-w-sm text-center">
-        No earlier passing run exists on <BranchLabel :name="data.baseBranch" copyable />. Pick another base branch, or
-        go back to the automatic choice.
+        No earlier full run on <BranchLabel :name="data.baseBranch" copyable /> passed or failed. Pick another base
+        branch or a run, or go back to the automatic choice.
+      </p>
+      <p v-else-if="data && data.earlierRuns.length === 0" class="text-sm text-muted max-w-sm text-center">
+        This is the first finished run in the project. The next run compares against it.
       </p>
       <p v-else class="text-sm text-muted max-w-sm text-center">
-        Changes compare this run against the last passing run in the same environment — on the same branch, then the
-        branch it forked from, then any branch. No earlier passing run exists yet; once the project has one, comparisons
-        appear here.
+        No earlier full run passed or failed, so none was picked automatically. Pick one of the earlier runs to compare
+        with.
       </p>
-      <div v-if="baseBranchOptions.length > 0" class="flex flex-wrap items-center justify-center gap-2 mt-2">
-        <USelectMenu
-          v-model="baseBranchValue"
-          :items="baseBranchOptions"
-          size="xs"
-          placeholder="Base branch…"
-          class="w-64"
-          title="Take the baseline from this branch only"
-        >
-          <template #default="{ modelValue: selected }">
-            <BranchLabel v-if="selected?.value" :name="selected.value" />
-            <span v-else class="inline-flex items-center gap-1.5">
-              <UIcon name="i-lucide-git-branch" class="size-3 shrink-0 text-muted" />
-              {{ selected?.label ?? 'Base branch…' }}
-            </span>
-          </template>
-          <template #item-label="{ item }">
-            <BranchLabel v-if="item.value" :name="item.value" />
-            <span v-else>{{ item.label }}</span>
-          </template>
-        </USelectMenu>
-        <UButton
-          v-if="data?.baselineSource !== 'auto'"
-          size="xs"
-          variant="outline"
-          color="neutral"
-          label="Automatic baseline"
-          @click="resetBaseline"
-        />
-      </div>
+      <RunBaselinePicker
+        v-if="data"
+        class="justify-center mt-2 max-w-xl"
+        :insights="data"
+        :base-branch="baseBranch"
+        @select-run="selectBaseline"
+        @select-base-branch="selectBaseBranch"
+      />
     </EmptyState>
 
     <div v-else class="space-y-6" data-shot="run-changes">
@@ -328,77 +239,12 @@ function clusterIssue(tc: TestCaseResult) {
             <EnvironmentBadge :name="data.run.environment" inline />.
           </template>
         </p>
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-medium text-muted">Base branch</span>
-          <USelectMenu
-            v-if="baseBranchOptions.length > 0"
-            v-model="baseBranchValue"
-            :items="baseBranchOptions"
-            size="xs"
-            class="w-64"
-            title="Take the baseline from this branch only"
-          >
-            <template #default="{ modelValue: selected }">
-              <BranchLabel v-if="selected?.value" :name="selected.value" />
-              <span v-else class="inline-flex items-center gap-1.5 min-w-0">
-                <UIcon name="i-lucide-git-branch" class="size-3 shrink-0 text-muted" />
-                <span class="truncate">{{ selected?.label ?? 'Automatic' }}</span>
-              </span>
-            </template>
-            <template #item-label="{ item }">
-              <BranchLabel v-if="item.value" :name="item.value" />
-              <span v-else>{{ item.label }}</span>
-            </template>
-          </USelectMenu>
-          <span v-else class="inline-flex items-center gap-1 text-xs text-muted">
-            <BranchLabel :name="data.fallbackBranch.branch" copyable /> (no other branch has a passing run yet)
-          </span>
-          <span class="text-xs font-medium text-muted ml-2">Run</span>
-          <USelectMenu
-            v-model="pickerValue"
-            :items="runOptions"
-            size="xs"
-            placeholder="Pick a run…"
-            class="w-80"
-            title="Compare against one specific run"
-          >
-            <template #default="{ modelValue: selected }">
-              <span v-if="selected" class="inline-flex items-center gap-2 min-w-0">
-                <span class="shrink-0">Run #{{ selected.value }}</span>
-                <BranchLabel :name="selected.branch" />
-                <EnvironmentBadge :name="selected.environment" />
-              </span>
-              <span v-else class="text-muted">Pick a run…</span>
-            </template>
-            <template #item-label="{ item }">
-              <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
-                <span class="shrink-0">Run #{{ item.value }}</span>
-                <BranchLabel :name="item.branch" />
-                <EnvironmentBadge :name="item.environment" />
-                <span class="text-xs text-muted">{{ item.date }} ({{ item.status }})</span>
-              </span>
-            </template>
-          </USelectMenu>
-          <UButton
-            v-if="previousRunId && previousRunId !== data.baseline!.id"
-            size="xs"
-            variant="ghost"
-            color="neutral"
-            icon="i-lucide-arrow-left"
-            label="Previous run"
-            @click="selectBaseline(previousRunId)"
-          />
-          <UButton
-            v-if="data.baselineSource !== 'auto'"
-            size="xs"
-            variant="ghost"
-            color="neutral"
-            icon="i-lucide-rotate-ccw"
-            label="Automatic"
-            title="Back to the automatic baseline"
-            @click="resetBaseline"
-          />
-        </div>
+        <RunBaselinePicker
+          :insights="data"
+          :base-branch="baseBranch"
+          @select-run="selectBaseline"
+          @select-base-branch="selectBaseBranch"
+        />
       </div>
 
       <EmptyState v-if="!hasAnyChange" icon="i-lucide-equal" text="No changes against the baseline">

@@ -92,7 +92,9 @@ passing `staging` run on `feature/x`, then the last passing `staging` run on `ma
 has the "any branch" rung; a run with no environment label only walks the branch ladder. The Changes
 tab names the run it picked and the rung that applied ("No passing staging run exists on feature/x; the
 last passing run on the default branch main in staging"), and lets you pick a different **base branch**
-or one specific run — see [What changed in a run](/features/run-changes#the-baseline).
+or one specific run — see [What changed in a run](/features/run-changes#the-baseline). When no earlier
+full run passed, the Changes tab and the MCP `get_run_insights` tool fall back to the last failed run,
+found by the same ladder; the regression signals, the CI gate and pull-request feedback do not.
 
 The environment, visual and page diffs compare one execution against the same test's last passing
 execution on the same browser, with the same environment-first order: a `development` failure is diffed

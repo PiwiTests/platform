@@ -1,9 +1,11 @@
 /**
  * The run-level baseline: which earlier passing run a run is compared against
  * by the Changes tab, the stored regression signals, the CI gate, pull-request
- * feedback and the AI diagnosis. The selection itself is a database query
- * (`server/utils/branch-baseline.ts`); this module holds the shapes that
- * describe the outcome and the one sentence every surface uses to explain it.
+ * feedback and the AI diagnosis. The Changes tab and the MCP run-insights tool
+ * also accept the last failed run when no earlier full run passed. The
+ * selection itself is a database query (`server/utils/branch-baseline.ts`);
+ * this module holds the shapes that describe the outcome and the one sentence
+ * every surface uses to explain it.
  */
 
 /**
@@ -18,10 +20,15 @@
  * `environment` — `same`: the run's own environment label; `other`: another
  * label, because the run's environment has no passing run; `null`: the run has
  * no environment label, so the environment was not a criterion.
+ *
+ * `outcome` — `passed`: the baseline passed; `failed`: no earlier full run
+ * passed, so the baseline is the last failed run, found by walking the same
+ * rungs. Only a caller that accepts a failed baseline gets `failed`.
  */
 export interface RunBaselineMatch {
   branch: 'same' | 'fallback' | 'chosen' | 'any' | null;
   environment: 'same' | 'other' | null;
+  outcome: 'passed' | 'failed';
 }
 
 /** The branch the automatic ladder falls back to, and where it came from. */
@@ -69,7 +76,8 @@ function fromEnvironmentParts(name: string | null): RunBaselinePart[] {
  * joined: "The last passing run on feature/x in staging." / "No passing
  * staging run exists on feature/x; the last passing run on the default branch
  * main in staging." / "No passing staging run exists; the last passing run on
- * feature/x, from the production environment."
+ * feature/x, from the production environment." / "No earlier full run passed;
+ * the last failed run on feature/x in staging."
  */
 export function describeRunBaselineParts(input: {
   run: RunBaselineScope;
@@ -78,24 +86,25 @@ export function describeRunBaselineParts(input: {
   fallback: RunBaselineFallback | null;
 }): RunBaselinePart[] {
   const { run, baseline, match, fallback } = input;
+  const word = match.outcome === 'failed' ? 'failed' : 'passing';
   const env = run.environment;
   const sameEnv = match.environment === 'same' && env;
   const inEnv: RunBaselinePart[] = sameEnv ? [text(' in '), environment(env)] : [];
   const otherEnv: RunBaselinePart[] = match.environment === 'other' ? fromEnvironmentParts(baseline.environment) : [];
   const envWord: RunBaselinePart[] = sameEnv ? [environment(env), text(' ')] : [];
 
-  // The subject: which passing run was picked.
+  // The subject: which run was picked.
   let picked: RunBaselinePart[];
   switch (match.branch) {
     case 'same':
-      picked = [text('the last passing run on '), branch(run.branch!), ...inEnv, ...otherEnv];
+      picked = [text(`the last ${word} run on `), branch(run.branch!), ...inEnv, ...otherEnv];
       break;
     case 'fallback':
-      picked = [text('the last passing run on '), ...fallbackParts(fallback), ...inEnv, ...otherEnv];
+      picked = [text(`the last ${word} run on `), ...fallbackParts(fallback), ...inEnv, ...otherEnv];
       break;
     case 'chosen':
       picked = [
-        text('the last passing run on '),
+        text(`the last ${word} run on `),
         branch(baseline.branch!),
         ...inEnv,
         text(', the base branch you chose'),
@@ -110,37 +119,48 @@ export function describeRunBaselineParts(input: {
             ? [text(' in '), environment(baseline.environment)]
             : [text(' in no environment')]
           : [];
-      picked = [text('the most recent passing run'), ...inEnv, text(', from '), ...from, ...where];
+      picked = [text(`the most recent ${word} run`), ...inEnv, text(', from '), ...from, ...where];
       break;
     }
     default:
       picked = sameEnv
-        ? [text('the last passing '), ...envWord, text('run')]
-        : [text('the most recent passing run'), ...otherEnv];
+        ? [text(`the last ${word} `), ...envWord, text('run')]
+        : [text(`the most recent ${word} run`), ...otherEnv];
   }
 
   // The reasons a closer candidate was not available.
   const reasons: RunBaselinePart[][] = [];
+  if (match.outcome === 'failed') {
+    reasons.push(
+      match.branch === 'chosen'
+        ? [text('no earlier full run passed on '), branch(baseline.branch!)]
+        : [text('no earlier full run passed')],
+    );
+  }
   if (match.branch === null && match.environment !== null) reasons.push([text('this run has no branch')]);
   if (match.environment === 'other' && env) {
     reasons.push(
       match.branch === 'chosen'
-        ? [text('no passing '), environment(env), text(' run exists on '), branch(baseline.branch!)]
-        : [text('no passing '), environment(env), text(' run exists')],
+        ? [text(`no ${word} `), environment(env), text(' run exists on '), branch(baseline.branch!)]
+        : [text(`no ${word} `), environment(env), text(' run exists')],
     );
   }
   if (match.branch === 'fallback') {
-    reasons.push([text('no passing '), ...envWord, text('run exists on '), branch(run.branch!)]);
+    reasons.push([text(`no ${word} `), ...envWord, text('run exists on '), branch(run.branch!)]);
   }
   if (match.branch === 'any' && run.branch) {
     const or: RunBaselinePart[] = fallback ? [branch(fallback.branch)] : [text('the default branch')];
-    reasons.push([text('no passing '), ...envWord, text('run exists on '), branch(run.branch), text(' or '), ...or]);
+    reasons.push([text(`no ${word} `), ...envWord, text('run exists on '), branch(run.branch), text(' or '), ...or]);
   }
 
+  // "A; …", "A, and B; …", "A, B, and C; …"
   const parts: RunBaselinePart[] = [];
   if (reasons.length === 0) parts.push(...picked);
   else {
-    reasons.forEach((reason, i) => parts.push(...(i > 0 ? [text(', and ')] : []), ...reason));
+    reasons.forEach((reason, i) => {
+      if (i > 0) parts.push(text(i === reasons.length - 1 ? ', and ' : ', '));
+      parts.push(...reason);
+    });
     parts.push(text('; '), ...picked);
   }
   parts.push(text('.'));
