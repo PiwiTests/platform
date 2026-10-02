@@ -142,7 +142,7 @@ test.describe.serial('Capabilities opt-out', () => {
     // form's tri-state opens on it rather than the instance default.
     await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { fixtures: 'declined' } } });
 
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=capabilities`);
     await waitForHydration(page);
     await expect(page.getByLabel('Capture fixtures for this project')).toContainText('Declined for this project');
 

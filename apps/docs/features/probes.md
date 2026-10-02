@@ -81,8 +81,9 @@ It needs:
   `PIWI_SERVER_PROBES=true`. Both apply faults only outside production. The ASP.NET Core package applies throw,
   status, delay and extreme-value faults; its data and dependency probes record as *inconclusive*;
 - the same `PIWI_PROBE_SECRET` where `piwi probe` runs;
-- **Server probes** turned on in the project's edit page, where the fault classes and routes are allow-listed.
-  Dependency faults on state-changing routes (`POST`, `PUT`, `PATCH`, `DELETE`) stay off unless you allow them.
+- **Server probes** turned on under **Scenario gaps** in the **Capabilities** section of the project's **Settings** tab,
+  where the fault classes and routes are allow-listed. Dependency faults on state-changing routes (`POST`, `PUT`,
+  `PATCH`, `DELETE`) stay off unless you allow them.
 
 With server probes on, half of the budget goes to server faults.
 

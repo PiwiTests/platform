@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The project-level capability overrides on the project edit form. Each
+ * Project settings → Capabilities: the project-level capability overrides. Each
  * project-level capability reads Instance default, Declined for this project or
  * Enabled for this project, and a change is saved on its own through
  * `PATCH /api/projects/:id/capabilities`. Administrators only.
@@ -12,6 +12,7 @@ const props = defineProps<{
   /** The project's stored raw decisions, seeded from the project record. */
   initial?: Partial<Record<CapabilityId, ProjectDecision>> | null;
 }>();
+const emit = defineEmits<{ changed: [] }>();
 
 const { canDecide, decide } = await useProjectCapabilities(props.projectId);
 const toast = useToast();
@@ -28,6 +29,7 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   'test-map': 'Scenario gaps & the Test Map',
   'server-probes': 'Server probes',
   'flake-lab': 'Flake suspects',
+  'bug-reports': 'Bug reports',
   resources: 'Resources',
 };
 
@@ -54,6 +56,7 @@ async function onChange(id: CapabilityId, value: Choice) {
   try {
     await decide(id, value === 'default' ? null : value);
     toast.add({ title: 'Capability updated', color: 'success' });
+    emit('changed');
   } catch {
     toast.add({ title: 'Could not update the capability', color: 'error' });
   } finally {
@@ -63,25 +66,32 @@ async function onChange(id: CapabilityId, value: Choice) {
 </script>
 
 <template>
-  <UFormField v-if="canDecide" name="capabilities">
-    <template #label>
-      <span class="inline-flex items-center gap-1">Capabilities <HelpHint topic="project.capabilities" /></span>
-    </template>
-    <template #description> Override the instance default for this project. </template>
-    <div class="space-y-2">
-      <div v-for="cap in PROJECT_CAPABILITIES" :key="cap.id" class="flex items-center justify-between gap-3">
+  <SectionCard
+    v-if="canDecide"
+    icon="i-lucide-toggle-right"
+    title="Capabilities"
+    help="project.capabilities"
+    subtitle="Override the instance default for this project. A change applies at once."
+    data-shot="project-capabilities"
+  >
+    <ul class="divide-y divide-default">
+      <li
+        v-for="cap in PROJECT_CAPABILITIES"
+        :key="cap.id"
+        class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0"
+      >
         <span class="text-sm text-highlighted">{{ cap.label }}</span>
         <USelect
           :model-value="choice[cap.id]"
           :items="OPTIONS"
           value-key="value"
           size="sm"
-          class="w-56 shrink-0"
+          class="w-full sm:w-56"
           :disabled="busy"
           :aria-label="`${cap.label} for this project`"
           @update:model-value="onChange(cap.id, $event as Choice)"
         />
-      </div>
-    </div>
-  </UFormField>
+      </li>
+    </ul>
+  </SectionCard>
 </template>

@@ -114,7 +114,7 @@ failing; the banner says whether new occurrences or new evidence caused it.
 
 ## Custom instructions
 
-Tailor the analysis to your stack with **global** instructions (Settings → AI) and **per-project** instructions. Use them to describe your architecture, common false positives, or house style for fixes.
+Tailor the analysis to your stack with **global** instructions (Settings → AI) and **per-project** instructions (Project → Settings → AI diagnosis). Use them to describe your architecture, common false positives, or house style for fixes.
 
 ## Context limits (and token cost)
 

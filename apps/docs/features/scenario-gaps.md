@@ -111,8 +111,9 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
   package serves no manifest.
 - **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ "routes": [...], "pages": [...] }`)
   is uploaded whenever present, whatever the backend.
-- **An OpenAPI URL**, set per project. Piwi fetches the document on a recompute and records each route's documented
-  response codes, so a *success only* gap can name the error codes a route documents but never returned under test.
+- **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi fetches the document
+  on a recompute and records each route's documented response codes, so a *success only* gap can name the error codes a
+  route documents but never returned under test.
 
 ## What this is not
 

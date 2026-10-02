@@ -44,7 +44,7 @@ A URL pattern is a glob over a page's whole address: `*` matches within one part
 `https://staging.shop.example/**` covers every page of that site, and `https://shop.example/admin/*` the pages one
 level under `/admin`. A pattern starts with `http://`, `https://` or a wildcard.
 
-Each project keeps its own list in its **Settings** tab, under **Browser extension URLs**. A pattern can name:
+Each project keeps its own list in the **Browser extension** section of its **Settings** tab. A pattern can name:
 
 - an **environment**, a label shown beside the project in Piwi Picker (`staging`, `production`);
 - a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows;

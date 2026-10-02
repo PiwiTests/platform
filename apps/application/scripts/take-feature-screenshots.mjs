@@ -1144,10 +1144,10 @@ const SCENES = [
       route: '/failure-clusters/3',
       what: 'a failure cluster’s occurrences over time',
     },
-    { shot: 'project-targets', route: '/projects/1?tab=settings', what: 'the project targets form' },
+    { shot: 'project-targets', route: '/projects/1?tab=settings&section=targets', what: 'the project targets form' },
     {
       shot: 'project-url-patterns',
-      route: '/projects/1?tab=settings',
+      route: '/projects/1?tab=settings&section=browser-extension',
       what: 'the browser extension URL patterns of a project, with the origins its suite visited',
     },
   ].flatMap(({ shot, route, what }) =>
@@ -1170,12 +1170,22 @@ const SCENES = [
     })),
   ),
   ...[
+    { name: 'project-settings', width: 1280, height: 1100 },
+    { name: 'project-settings-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings: the section menu beside one section at a time, at ${width} px`,
+    route: '/projects/1?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="project-settings"]',
+  })),
+  ...[
     { name: 'project-url-patterns-empty', width: 1280 },
     { name: 'project-url-patterns-empty-mobile', width: 375 },
   ].map(({ name, width }) => ({
     name,
     description: `The browser extension URLs of a project whose runs recorded no baseURL, saying why nothing is suggested, at ${width} px`,
-    route: '/projects/2?tab=settings',
+    route: '/projects/2?tab=settings&section=browser-extension',
     viewport: { width, height: 1000 },
     of: '[data-shot="project-url-patterns"]',
     async run({ page, shoot, settle }) {
@@ -1751,7 +1761,7 @@ const SCENES = [
         });
       }
     },
-    route: '/projects/2?tab=settings',
+    route: '/projects/2?tab=settings&section=issue-tracker',
     viewport: { width: 1280, height: 1600 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
@@ -1795,7 +1805,7 @@ const SCENES = [
     // The binding is answered as bound to CHK / Bug with a Severity and a
     // component default; the pickers and the create screen come from routeJiraScreen.
     prepare: prepareJiraSceneConnection,
-    route: '/projects/2?tab=settings',
+    route: '/projects/2?tab=settings&section=issue-tracker',
     viewport: { width: 1280, height: 1600 },
     async run({ page, goto, shoot }) {
       await routeJiraScreen(page);
@@ -1812,7 +1822,7 @@ const SCENES = [
           },
         });
       });
-      await goto('/projects/2?tab=settings');
+      await goto('/projects/2?tab=settings&section=issue-tracker');
       await page.locator('[data-shot="binding-jira-fields"] [data-field-id="customfield_10001"]').waitFor();
       await shoot(undefined, { of: '[data-shot="binding-jira-fields"]', pad: 12 });
     },
@@ -1825,7 +1835,7 @@ const SCENES = [
     // the transitions of an open and a done sample issue are canned, so no Jira
     // is contacted.
     prepare: prepareJiraSceneConnection,
-    route: '/projects/2?tab=settings',
+    route: '/projects/2?tab=settings&section=issue-tracker',
     viewport: { width: 1280, height: 1800 },
     async run({ page, goto, shoot }) {
       await routeJiraScreen(page);
@@ -1855,7 +1865,7 @@ const SCENES = [
           },
         });
       });
-      await goto('/projects/2?tab=settings');
+      await goto('/projects/2?tab=settings&section=issue-tracker');
       await page.locator('[data-shot="transition-fields-open"] [data-field-id="resolution"]').waitFor();
       await page.locator('[data-shot="transition-fields-done"] [data-testid="transition-check"]').waitFor();
       await shoot(undefined, { of: '[data-shot="binding-sync-policies"]', pad: 12 });
@@ -3203,7 +3213,7 @@ const SCENES = [
     tags: ['desktop'],
     mode: 'desktop',
     link: { path: READY_INSPECTION.path, exists: true },
-    route: '/projects/2/edit',
+    route: '/projects/2/edit#local-folder',
     of: '#local-folder',
     pad: 8,
     outputs: ['edit-local-folder-ready.png'],
@@ -3224,7 +3234,7 @@ const SCENES = [
       reporterConfigured: false,
       configuredProjectName: null,
     },
-    route: '/projects/2/edit',
+    route: '/projects/2/edit#local-folder',
     of: '#local-folder',
     pad: 8,
     async run({ page, shoot }) {
@@ -3271,7 +3281,7 @@ const SCENES = [
         kind: 'trace',
       },
     ],
-    route: '/projects/2?tab=settings',
+    route: '/projects/2?tab=settings&section=local-folder',
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Choose folder…' }).click();
       const dialog = page.getByRole('dialog');

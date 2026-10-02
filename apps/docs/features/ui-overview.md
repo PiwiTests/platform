@@ -56,8 +56,12 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
   ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
   ([Slow tests & wasted time](./slow-tests)).
-- **Settings**: project [access](/operate/project-access), the default branch, a per-project
-  [SCM token](/guide/source-control) and [AI instructions](./ai-diagnosis#custom-instructions).
+- **Settings**: one section at a time, picked from a menu beside it: the label and tags, the project's
+  [members](/operate/project-access), [source control](/guide/source-control) (token, default branch, CI re-run),
+  [AI instructions](./ai-diagnosis#custom-instructions), [capabilities](/operate/capabilities),
+  [targets](./analytics#targets), the [issue tracker](./issue-tracking), the
+  [browser extension URLs](./extension-connection#url-patterns) and, in the desktop app, the
+  [local folder](./desktop#running-tests-from-the-app).
 
 ## Locators
 

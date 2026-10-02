@@ -24,7 +24,7 @@ When the provider exposes it, the reporter also captures the **pull-request numb
 
 ## The default branch
 
-Each project has a **Default branch** setting on its **Settings** tab (placeholder `e.g. main`). Leave it blank and Piwi resolves it from your SCM provider. The default branch is the reference point for the rest of this page: baselines fall back to it, and "already flaky on the default branch" is measured against it.
+Each project has a **Default branch** setting in the **Source control** section of its **Settings** tab (placeholder `e.g. main`). Leave it blank and Piwi resolves it from your SCM provider. The default branch is the reference point for the rest of this page: baselines fall back to it, and "already flaky on the default branch" is measured against it.
 
 ## Filtering by branch
 

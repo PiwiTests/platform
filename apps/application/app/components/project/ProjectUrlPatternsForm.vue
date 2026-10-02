@@ -193,7 +193,8 @@ watch(() => props.projectId, load, { immediate: true });
   >
     <LoadingState v-if="loading" text="Loading…" />
 
-    <UForm v-else :state="{ rows }" class="space-y-4" @submit="save">
+    <!-- A container, so each row's layout follows the card's width rather than the window's. -->
+    <UForm v-else :state="{ rows }" class="@container space-y-4" @submit="save">
       <p v-if="rows.length === 0" class="text-sm text-muted">
         No pattern yet. Add one{{ shownSuggestions.length > 0 ? ', or pick a suggestion below' : '' }}.
       </p>
@@ -202,10 +203,10 @@ watch(() => props.projectId, load, { immediate: true });
         <li
           v-for="(row, index) in rows"
           :key="row.key"
-          class="grid gap-2 rounded-lg border border-default p-3 md:grid-cols-[1fr_7rem_7rem_6.5rem_6.5rem_auto] md:items-start md:border-0 md:p-0"
+          class="grid gap-2 rounded-lg border border-default p-3 @2xl:grid-cols-[repeat(4,minmax(0,1fr))_auto] @2xl:items-start"
           data-testid="url-pattern-row"
         >
-          <UFormField :error="patternError(row.pattern)" :name="`pattern-${row.key}`">
+          <UFormField :error="patternError(row.pattern)" :name="`pattern-${row.key}`" class="@2xl:col-span-4">
             <UInput
               v-model="row.pattern"
               placeholder="https://staging.example.com/**"
@@ -233,7 +234,7 @@ watch(() => props.projectId, load, { immediate: true });
               class="w-full font-mono"
             />
           </UFormField>
-          <div class="flex gap-1 justify-end">
+          <div class="flex gap-1 justify-end @2xl:col-start-5 @2xl:row-start-1">
             <UButton
               icon="i-lucide-chevron-up"
               color="neutral"
