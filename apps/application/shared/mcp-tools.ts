@@ -497,6 +497,39 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'list_resource_findings',
+    module: 'workflow',
+    capability: 'resources',
+    description:
+      'A project’s resource findings across runs, the most recently seen first: browsers, contexts, pages and API contexts left open past the test or describe block that opened them (leaked), pages opened and never used (idle), pages, listeners or route handlers growing on a long-lived page (piling), Node servers or file watchers a test left running in its worker (handle), and leaks counted from steps without the capture fixtures (probable). Each has where it was opened (`site` is the `file:line` to edit), the run it was first and last seen in, how many runs showed it, and its status: `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back). `last` is what it held the last time it showed: objects, tests, how long it stayed open, page CPU after its test. Use it before touching a suite’s fixtures or teardown, or to check a leak fix held.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID' },
+        status: { type: 'string', enum: ['open', 'fixed', 'all'], description: 'Which findings (default open)' },
+        verdict: {
+          type: 'string',
+          enum: ['leaked', 'idle', 'piling', 'handle', 'probable'],
+          description: 'Only findings with this verdict',
+        },
+        limit: { type: 'number', description: 'Max findings (default 50, max 200)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'get_resource_profile',
+    module: 'workflow',
+    capability: 'resources',
+    description:
+      'What one run cost and left open, from its reporters’ resource reports (one per shard): the findings, each with whether its base branch (the pull request’s target, else the default branch) had shown it before (`isNew`); the machine each shard ran on (cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk); the busiest open pages per worker; and the costliest tests by the CPU of their worker and browser processes, with the pages each found already open. Null fields were not measured on that platform. Use it to explain a slow or timing-out run, or to find which tests a leak slows down.',
+    inputSchema: {
+      type: 'object',
+      properties: { runId: { type: 'number', description: 'Test run ID' } },
+      required: ['runId'],
+    },
+  },
+  {
     name: 'get_failure_groups',
     module: 'core',
     description:

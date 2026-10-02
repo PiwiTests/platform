@@ -21,6 +21,8 @@ const DEFAULTS: PiwiDashboardOptions = {
   // Off by default: JavaScript coverage slows the page, so a scheduled job opts in.
   captureCodeReach: false,
   captureServerTraces: true,
+  captureResources: true,
+  leakCheck: 'report',
   sampleAriaOnPass: true,
   uploadManifest: true,
   defaultCapture: true,
@@ -68,6 +70,8 @@ export const PIWI_ENV_KEYS = {
   captureCodeReach: 'PIWI_CAPTURE_CODE_REACH',
   codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
+  captureResources: 'PIWI_CAPTURE_RESOURCES',
+  leakCheck: 'PIWI_LEAK_CHECK',
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
   uploadManifest: 'PIWI_UPLOAD_MANIFEST',
   defaultCapture: 'PIWI_DEFAULT_CAPTURE',
@@ -152,6 +156,14 @@ export const PIWI_FLAKE_ENV = {
   results: 'PIWI_FLAKE_RESULTS',
 } as const;
 
+/**
+ * The JSONL file each worker appends its last resource census to when it shuts
+ * down: what was still open when no test was left to attach it to. The reporter
+ * sets it in `onBegin`, before any worker starts, and reads it in `onEnd`. Not
+ * an option — without it the census of a worker's last test stands in.
+ */
+export const PIWI_RESOURCES_RESULTS_ENV = 'PIWI_RESOURCES_RESULTS';
+
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
   return val === 'true';
@@ -202,6 +214,8 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
   { option: 'captureCodeReach', env: PIWI_ENV_KEYS.captureCodeReach, kind: 'bool' },
   { option: 'captureServerTraces', env: PIWI_ENV_KEYS.captureServerTraces, kind: 'bool' },
+  { option: 'captureResources', env: PIWI_ENV_KEYS.captureResources, kind: 'bool' },
+  { option: 'leakCheck', env: PIWI_ENV_KEYS.leakCheck, kind: 'string' },
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
   { option: 'uploadManifest', env: PIWI_ENV_KEYS.uploadManifest, kind: 'bool' },
   { option: 'defaultCapture', env: PIWI_ENV_KEYS.defaultCapture, kind: 'bool' },
@@ -316,6 +330,10 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.captureServerTraces] = 'false';
   else if (options.captureServerTraces === true) env[PIWI_ENV_KEYS.captureServerTraces] = 'true';
+  // The resource ledger runs in the worker fixtures; bridge only an explicit
+  // value so an unset option keeps their defaults (on, report only).
+  if (options.captureResources !== undefined) env[PIWI_ENV_KEYS.captureResources] = String(options.captureResources);
+  if (options.leakCheck !== undefined) env[PIWI_ENV_KEYS.leakCheck] = options.leakCheck;
   // Green ARIA sampling runs in the worker fixture; bridge only an explicit
   // value so an unset option keeps the fixture's default-on behavior.
   if (options.sampleAriaOnPass === false) env[PIWI_ENV_KEYS.sampleAriaOnPass] = 'false';

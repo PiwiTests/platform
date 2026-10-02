@@ -58,6 +58,7 @@ import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
+import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
   normalizeTestLocks,
@@ -73,6 +74,8 @@ import {
 } from '#shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '#shared/types';
 import { demoHttpError } from './http-error';
+import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -419,6 +422,8 @@ export interface RunCaseInput {
   locatorPages?: unknown;
   /** The source files the test executed (code reach). */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers (`piwi-resources`). */
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -741,6 +746,7 @@ export async function persistRunCases(
       browserName: resolveBrowserName(c.browser),
       timeout: c.timeout ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
+      resources: sanitizeExecutionResources(c.resources),
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
@@ -974,6 +980,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+  // This reporter's resource report, in its own row next to the other shards'.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
@@ -1088,6 +1097,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
       await syncAutoMarkersForRun(db, id).catch(() => {});
+      await recordRunResourceFindings(db, id).catch(() => {});
       await upsertDailyRollup(db, id).catch(() => {});
       publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
@@ -1172,6 +1182,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await recordRunResourceFindings(db, id).catch(() => {});
   await upsertDailyRollup(db, id).catch(() => {});
   publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 

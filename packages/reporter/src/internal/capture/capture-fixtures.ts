@@ -16,6 +16,7 @@ import type {
   Request,
   TestInfo,
   TestType,
+  WorkerInfo,
 } from '@playwright/test';
 import {
   generateAlternatives,
@@ -79,6 +80,13 @@ import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserP
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, internalCall } from './quiet-capture.js';
 import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
+import {
+  activeResourceLedger,
+  noteResourceUse,
+  recordResourceCensus,
+  startResourceLedger,
+  stopResourceLedger,
+} from './resource-ledger.js';
 
 // Re-exported: probeElementAttrs now lives in @piwitests/picker-dom (shared
 // with the dashboard's snapshot picker), but the dogfood mirror
@@ -86,6 +94,8 @@ import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopC
 // from here, as the mirror does the quiet-capture helpers.
 export { probeElementAttrs, internalCall, boxCaptureFrames };
 export { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach };
+// The dogfood mirror runs the same resource ledger from its own fixtures.
+export { activeResourceLedger, noteResourceUse, recordResourceCensus, startResourceLedger, stopResourceLedger };
 export type { ProbeArg, ProbedAttrs };
 
 /** A Playwright fixture's `use` callback — hands the fixture value to the test. */
@@ -1302,6 +1312,7 @@ function instrumentPage(page: Page): void {
         // Touching a page's locator factory marks it the active page even for
         // assertion-only tests that never call an action method.
         if (currentSink) currentSink.lastActivePage = page;
+        noteResourceUse(page);
         return wrapLocator(page, original(...args), method, args);
       };
     }
@@ -1821,6 +1832,18 @@ export interface PiwiFixtures {
 }
 
 /**
+ * The worker fixture `piwiFixtures` / `extendPiwiFixtures` contribute:
+ * `piwiResources`, an auto, worker-scoped fixture that keeps the worker's
+ * resource ledger (the browsers, contexts, pages and API request contexts its
+ * tests open) from before the first hook to the worker's shutdown. Its name is
+ * **reserved** like `piwiCapture`'s: a fixture of your own with that name
+ * replaces it and turns the ledger off.
+ */
+export interface PiwiWorkerFixtures {
+  piwiResources: void;
+}
+
+/**
  * Playwright fixtures that collect network requests, console entries,
  * web vitals, ARIA snapshots, and locator interaction data during a test.
  *
@@ -1831,10 +1854,29 @@ export interface PiwiFixtures {
  */
 export const piwiFixtures: Fixtures<
   PiwiFixtures,
-  {},
+  PiwiWorkerFixtures,
   PlaywrightTestArgs & PlaywrightTestOptions,
   PlaywrightWorkerArgs & PlaywrightWorkerOptions
 > = {
+  // Auto, worker-scoped: the worker's resource ledger. Set up before any hook
+  // (worker fixtures come first), so a `beforeAll` context is in it too, and
+  // torn down after the browser closed, so its census sees what only the
+  // worker's shutdown closed. Depends on `playwright` alone, which launches nothing.
+  piwiResources: [
+    async ({ playwright }: PlaywrightWorkerArgs, use: UseFn<void>, workerInfo: WorkerInfo) => {
+      // A browser launched in the first `beforeAll` goes through the ledger's
+      // wrapper: box it before any hook runs so the step names the spec's line.
+      boxCaptureFrames();
+      startResourceLedger(playwright, workerInfo.workerIndex);
+      try {
+        await use();
+      } finally {
+        stopResourceLedger();
+      }
+    },
+    { scope: 'worker', auto: true },
+  ],
+
   // Worker-scoped: patch the shared browser so every page/context created from
   // it — including by user fixtures that take `browser` directly — is captured.
   browser: [
@@ -1884,6 +1926,7 @@ export const piwiFixtures: Fixtures<
           file: testInfo.file,
           titlePath: testInfo.titlePath,
         });
+      activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
       try {
         await use();
@@ -1919,6 +1962,9 @@ export const piwiFixtures: Fixtures<
         }
         if (sink.flake) await recordFlakeAttempt(sink.flake, testInfo);
         await flushSink(sink, testInfo);
+        // Last: the test-scoped fixtures have torn down, so what is still open
+        // now outlived the test. Throws under `PIWI_LEAK_CHECK=fail`.
+        await recordResourceCensus(testInfo);
       }
     },
     { auto: true },
@@ -1970,8 +2016,10 @@ async function recordFlakeAttempt(flake: NonNullable<CaptureSink['flake']>, test
  */
 export function extendPiwiFixtures<TestArgs extends FixtureArgs, WorkerArgs extends FixtureArgs>(
   test: TestType<TestArgs, WorkerArgs>,
-): TestType<TestArgs & PiwiFixtures, WorkerArgs> {
+): TestType<TestArgs & PiwiFixtures, WorkerArgs & PiwiWorkerFixtures> {
   return (
-    test as unknown as { extend: (f: typeof piwiFixtures) => TestType<TestArgs & PiwiFixtures, WorkerArgs> }
+    test as unknown as {
+      extend: (f: typeof piwiFixtures) => TestType<TestArgs & PiwiFixtures, WorkerArgs & PiwiWorkerFixtures>;
+    }
   ).extend(piwiFixtures);
 }

@@ -30,6 +30,8 @@ import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { notLabRun } from './probes';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import { hasResourceReport } from './resource-reports';
 import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
@@ -267,6 +269,8 @@ export async function getTestRun(
     keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
+    hasResources:
+      (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
     project: projectPublic,
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({

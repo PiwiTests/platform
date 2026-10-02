@@ -12,7 +12,7 @@ import { computeDistinctRunCounts, resolveOverallStatus, serializeRun } from './
 import { runUrl } from '../support/run-url.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
 import type { FailureLinks } from '../support/failure-links.js';
-import type { CollectedTestCase, SetupStep, FilterDetails } from '../../types.js';
+import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport } from '../../types.js';
 
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -51,6 +51,8 @@ export interface CollectedRun {
   setupSteps: SetupStep[];
   isFullRun: boolean;
   filterDetails: FilterDetails | null;
+  /** The run's resource findings and machine profile, from `onEnd`; null when not measured. */
+  resourceReport?: WireResourceReport | null;
 }
 
 /**
@@ -240,6 +242,7 @@ export class RunSubmitter {
       shardTotal: run.shardInfo?.total,
       isFullRun: run.isFullRun,
       filterDetails: run.filterDetails,
+      resourceReport: run.resourceReport ?? null,
     };
   }
 
@@ -278,6 +281,7 @@ export class RunSubmitter {
         isFullRun: run.isFullRun,
         filterDetails: run.filterDetails ?? null,
       };
+      if (run.resourceReport) finishBody.resourceReport = run.resourceReport;
       if (run.shardInfo) {
         finishBody.shardIndex = run.shardInfo.current;
         finishBody.shardTotal = run.shardInfo.total;

@@ -2915,6 +2915,43 @@ const SCENES = [
     colorScheme: 'dark',
   },
 
+  // ── Resources ──────────────────────────────────────────────────────────
+  // Run 62 is Web Dashboard's newest run in the demo seed: a leaky one.
+  {
+    name: 'run-resources',
+    description: 'Run Resources tab: findings, open pages by worker, the machine and the costliest tests',
+    tags: ['desktop'],
+    route: '/test-runs/62?tab=resources',
+    viewport: { width: 1280, height: 2900 },
+    charts: true,
+    of: '[data-shot="run-resources"]',
+    pad: 12,
+  },
+  {
+    name: 'run-resources-narrow',
+    description: 'Run Resources tab at phone width',
+    tags: ['desktop'],
+    route: '/test-runs/62?tab=resources',
+    viewport: { width: 390, height: 3000 },
+    charts: true,
+    of: '[data-shot="run-resources"]',
+  },
+  {
+    name: 'execution-resources',
+    description: 'Execution Performance tab: what the costliest test of the leaky run cost',
+    tags: ['desktop'],
+    route: '/test-runs/62?tab=resources',
+    viewport: { width: 1280, height: 1600 },
+    of: '[data-shot="execution-resources"]',
+    pad: 12,
+    async run({ page, base, goto, openTab, shoot }) {
+      const resources = await (await page.request.get(`${base}/api/test-runs/62/resources`)).json();
+      await goto(`/test-run-cases/${resources.costliest[0].executionId}`);
+      await openTab('Performance');
+      await shoot();
+    },
+  },
+
   // ── Bug reports ──────────────────────────────────────────────────────────
   {
     name: 'bug-report-page',

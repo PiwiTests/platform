@@ -236,3 +236,31 @@ describe('formatGateResult', () => {
     expect(output.trimEnd().endsWith('https://piwi.example.com/test-runs/42')).toBe(true);
   });
 });
+
+describe('leak rules', () => {
+  const leak = (site: string, tests = 1) => ({ where: site, site, tests });
+  const resources = (leaks: ReturnType<typeof leak>[], newLeaks: ReturnType<typeof leak>[]) => ({
+    reported: true,
+    leaks,
+    newLeaks,
+    baseBranch: 'main',
+  });
+
+  test('count the leaks, and the ones the base branch never showed, each against its limit', () => {
+    const run = facts({
+      resources: resources([leak('tests/a.spec.ts:3'), leak('tests/b.spec.ts:9', 4)], [leak('tests/b.spec.ts:9', 4)]),
+    });
+    expect(evaluateGatePolicy(run, { maxLeaks: 2, maxNewLeaks: 1 }).passed).toBe(true);
+
+    const result = evaluateGatePolicy(run, { maxLeaks: 1, maxNewLeaks: 0 });
+    expect(result.violations.map((v) => v.rule)).toEqual(['max-leaks', 'max-new-leaks']);
+    expect(result.violations[1]!.message).toBe('1 new leak, never seen on main (limit 0): tests/b.spec.ts:9');
+    expect(formatGateResult(result)).toContain('  2 leaks, 1 new');
+  });
+
+  test('a run that sent no resource report fails a leak rule rather than passing on silence', () => {
+    const run = facts({ resources: { reported: false, leaks: [], newLeaks: [], baseBranch: null } });
+    expect(evaluateGatePolicy(run, { maxLeaks: 5 }).violations.map((v) => v.rule)).toEqual(['no-resource-report']);
+    expect(isEmptyPolicy({ maxNewLeaks: 0 })).toBe(false);
+  });
+});

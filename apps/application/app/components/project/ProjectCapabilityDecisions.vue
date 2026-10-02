@@ -30,6 +30,7 @@ const CAPABILITY_LABELS: Partial<Record<CapabilityId, string>> = {
   'server-probes': 'Server probes',
   'flake-lab': 'Flake suspects',
   'bug-reports': 'Bug reports',
+  resources: 'Resources',
 };
 
 /** Every capability a project can override, with a plain label. */

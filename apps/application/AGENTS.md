@@ -686,7 +686,9 @@ app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--ur
   (`reuseExistingServer: !process.env.CI`), and Nuxt's HMR picks up your edits, so you iterate without re-booting
   a server per test run. Watch `dev-server.log` for compile errors (a template error shows up there, not in the
   browser); restart only when the server crashes or you touch `nuxt.config`/server plugins. The feature-screenshot
-  harness reuses the same server (`--url`).
+  harness reuses the same server (`--url`). A cold server compiles each page on its first visit, which can take 20 s:
+  a spec's first test timing out on a page that renders is that compile, so rerun it against the warm server before
+  reading it as a regression.
 
 - **Do NOT use `PIWI_DEMO_MODE=true` for the dev server.** Demo mode builds the static SPA; it is not a `nuxt dev` flag.
   To verify a change _in the demo_, build it and drive the build:

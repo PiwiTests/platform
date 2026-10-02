@@ -32,6 +32,7 @@ export interface ParsedCompleteEvent {
   pageInventory?: unknown;
   locatorPages?: unknown;
   codeReach?: unknown;
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -90,6 +91,7 @@ export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput
     pageInventory: tc.pageInventory,
     locatorPages: tc.locatorPages,
     codeReach: tc.codeReach,
+    resources: tc.resources ?? null,
     aiUsage: tc.aiUsage,
     consoleLogs: tc.consoleLogs,
     dialogs: tc.dialogs,

@@ -23,6 +23,7 @@ import { isLabRun, notLabExecution, notLabRun } from './probes';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
+import { sanitizeExecutionResources } from '../resource-report';
 import { isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import {
@@ -531,6 +532,10 @@ export async function getTestRunCase(
           : null)),
     networkRequests: networkRequestsData,
     webVitals: trc.webVitals,
+    resources:
+      trc.resources != null && testCase && !(await isPassiveCapabilityDeclined(db, testCase.projectId, 'resources'))
+        ? sanitizeExecutionResources(trc.resources)
+        : null,
     pageState: trc.pageState,
     aiUsage: trc.aiUsage,
     consoleLogs: trc.consoleLogs,

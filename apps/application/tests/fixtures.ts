@@ -51,6 +51,11 @@ import {
   resolveCodeReach,
   startCodeReach,
   stopCodeReach,
+  activeResourceLedger,
+  noteResourceUse,
+  recordResourceCensus,
+  startResourceLedger,
+  stopResourceLedger,
 } from '../../../packages/reporter/dist/internal/capture/capture-fixtures.js';
 import {
   inspectionGateFromTestInfo,
@@ -293,7 +298,31 @@ async function collectNetworkAndVitals(page: Page, testInfo: TestInfo) {
 /** This file, boxed with the reporter's bundle so wrapped actions report the spec's line. */
 const FIXTURES_FILE = fileURLToPath(import.meta.url);
 
-export const test = base.extend<{ page: Page }>({
+export const test = base.extend<{ page: Page; piwiResourceCensus: void }, { piwiResources: void }>({
+  // ── Resource ledger (mirrors the reporter fixtures' `piwiResources` worker
+  // fixture and the census their `piwiCapture` takes) ──
+  piwiResources: [
+    async ({ playwright }, use, workerInfo) => {
+      boxCaptureFrames([FIXTURES_FILE]);
+      startResourceLedger(playwright, workerInfo.workerIndex);
+      try {
+        await use();
+      } finally {
+        stopResourceLedger();
+      }
+    },
+    { scope: 'worker', auto: true },
+  ],
+  // Auto, so it is set up before the page and torn down after its context:
+  // what is still open at the census outlived the test.
+  piwiResourceCensus: [
+    async ({}, use, testInfo) => {
+      activeResourceLedger()?.testStarted(testInfo);
+      await use();
+      await recordResourceCensus(testInfo);
+    },
+    { auto: true },
+  ],
   page: async ({ page }, use, testInfo) => {
     boxCaptureFrames([FIXTURES_FILE]);
     // ── Locator interaction capture (dogfooding: matches reporter/src/fixtures.ts) ──
@@ -490,7 +519,10 @@ export const test = base.extend<{ page: Page }>({
     if (captureLocators) {
       for (const method of LOCATOR_METHODS) {
         const original = (page as any)[method].bind(page);
-        (page as any)[method] = (...args: unknown[]) => wrapLocator(original(...args), method, args);
+        (page as any)[method] = (...args: unknown[]) => {
+          noteResourceUse(page);
+          return wrapLocator(original(...args), method, args);
+        };
       }
       page.on('framenavigated', (frame) => {
         if (frame === page.mainFrame()) noteNavigation(page);

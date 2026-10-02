@@ -7,6 +7,9 @@
  * talk to GitHub / GitLab live in `server/utils/scm/`.
  */
 
+import type { WireResourceFinding } from '#shared/types';
+import { findingView } from '#shared/resource-copy';
+
 /** `app_settings` key holding the resolved `PrFeedbackSettings`. */
 export const PR_FEEDBACK_KEY = 'pr_feedback';
 
@@ -133,6 +136,40 @@ export interface PrSummaryInput {
   changeCoverage?: PrChangeCoverage | null;
   /** Locators the diff breaks whose tests this run did not exercise. */
   locatorBreaks?: PrLocatorBreaks | null;
+  /** Browsers, contexts and pages this run left open that the base branch never showed. */
+  newLeaks?: PrNewLeaks | null;
+}
+
+// ── New leaks ────────────────────────────────────────────────────────────────
+
+/** The leaks a run introduces against its base branch. */
+export interface PrNewLeaks {
+  baseBranch: string;
+  leaks: WireResourceFinding[];
+}
+
+/** Max new leaks listed in the pull-request comment. */
+const MAX_LEAKS_LISTED = 10;
+
+/**
+ * Render the new-leaks section: one line per leak the base branch never
+ * showed, with the line or fixture that opened it. Null when there is none.
+ */
+export function renderNewLeaks(nl: PrNewLeaks): string | null {
+  if (nl.leaks.length === 0) return null;
+  const n = nl.leaks.length;
+  const lines = nl.leaks.slice(0, MAX_LEAKS_LISTED).map((finding) => {
+    const view = findingView(finding);
+    const facts = view.facts.slice(0, 3).join(' · ');
+    return `- **${view.label}** · ${codeSpan(view.where ?? '')}${facts ? ` · ${escapeInline(facts)}` : ''}`;
+  });
+  const blocks = [
+    `#### 🟠 Left open by this change (${n})`,
+    `Never seen on ${codeSpan(nl.baseBranch)}. Close each before its test ends, or set \`leakCheck: 'fail'\` to catch the next one locally.`,
+    lines.join('\n'),
+  ];
+  if (n > MAX_LEAKS_LISTED) blocks.push(`…and ${n - MAX_LEAKS_LISTED} more`);
+  return blocks.join('\n\n');
 }
 
 // ── Change coverage ──────────────────────────────────────────────────────────
@@ -490,6 +527,11 @@ export function buildPrComment(input: PrSummaryInput): string {
       })
       .join('\n');
     sections.push(`#### 🟢 Fixed by this change (${fixedClusters.length})\n${list}`);
+  }
+
+  if (input.newLeaks) {
+    const section = renderNewLeaks(input.newLeaks);
+    if (section) sections.push(section);
   }
 
   if (input.changeCoverage) {

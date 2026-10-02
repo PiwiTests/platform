@@ -34,6 +34,7 @@ import {
   graphNodes,
   probes,
   bugReports,
+  testRunResourceReports,
 } from '../../server/database/schema';
 import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
@@ -76,7 +77,8 @@ export type SetupCapabilityId =
   | 'test-map'
   | 'server-probes'
   | 'bug-reports'
-  | 'flake-lab';
+  | 'flake-lab'
+  | 'resources';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -140,6 +142,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasReportSnapshots,
     hasBugReports,
     hasRetryPass,
+    hasResourceReport,
   ] = await Promise.all([
     exists(
       db,
@@ -299,6 +302,18 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             .where(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
             .limit(1),
     ),
+    // Resources: active once a reporter sent a run's resource report.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: testRunResourceReports.id })
+            .from(testRunResourceReports)
+            .innerJoin(testRuns, eq(testRunResourceReports.runId, testRuns.id))
+            .where(eq(testRuns.projectId, pid))
+            .limit(1)
+        : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
+    ),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -331,6 +346,7 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'server-probes': hasServerProbes,
     'bug-reports': hasBugReports,
     'flake-lab': hasRetryPass,
+    resources: hasResourceReport,
   };
 }
 
@@ -364,6 +380,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'server-probes',
   'bug-reports',
   'flake-lab',
+  'resources',
 ];
 
 /**

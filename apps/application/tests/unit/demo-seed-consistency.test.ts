@@ -14,6 +14,8 @@ import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
+import type { WireResourceFinding } from '#shared/types';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -706,11 +708,12 @@ describe('flake lab experiments', () => {
 // Every docs page's demo example opens the entity it names, in the state its
 // sentence promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
 describe('demo examples hold in the seed', () => {
-  const EXPECT_KEYS = new Set(['testCase', 'project', 'cluster', 'diagnosis', 'fixLanded', 'lab']);
+  const EXPECT_KEYS = new Set(['testCase', 'project', 'cluster', 'run', 'diagnosis', 'fixLanded', 'lab', 'resources']);
   const ROUTE_ENTITIES = [
     { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
     { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
     { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
+    { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
   ] as const;
 
   test('ids are unique', () => {
@@ -728,7 +731,7 @@ describe('demo examples hold in the seed', () => {
     const opened = ROUTE_ENTITIES.map((r) => ({ key: r.key, match: r.pattern.exec(example.route) })).find(
       (r) => r.match,
     );
-    expect(opened, `${id}: route ${example.route} opens a test case, a project or a cluster`).toBeTruthy();
+    expect(opened, `${id}: route ${example.route} opens a test case, a project, a cluster or a run`).toBeTruthy();
     expect(want[opened!.key]?.id, `${id}: the route opens the ${opened!.key} it expects`).toBe(
       Number(opened!.match![1]),
     );
@@ -740,6 +743,20 @@ describe('demo examples hold in the seed', () => {
     if (want.project) {
       const [row] = q(`select name from projects where id = ${want.project.id}`);
       expect(row?.name, `${id}: project ${want.project.id}`).toBe(want.project.name);
+    }
+    if (want.run) {
+      const [row] = q(
+        `select p.name from test_runs r join projects p on p.id = r.project_id where r.id = ${want.run.id}`,
+      );
+      expect(row?.name, `${id}: run ${want.run.id}'s project`).toBe(want.run.project);
+    }
+    if (want.resources) {
+      expect(want.run, `${id}: resources needs a run`).toBeTruthy();
+      const parts = q(`select report from test_run_resource_reports where run_id = ${want.run!.id}`).map(
+        (row) => JSON.parse(String(row.report)) as { counts: { leaked: number } },
+      );
+      const leaks = parts.reduce((sum, part) => sum + part.counts.leaked, 0);
+      expect(leaks, `${id}: the run's report names a leak`).toBeGreaterThan(0);
     }
     if (want.cluster) {
       expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(
@@ -773,6 +790,45 @@ describe('demo examples hold in the seed', () => {
         ? { flakedAgainAt: firstRetryPassAfter(seededExecutions(testCaseId), mark.finishedAt) ? 'yes' : null }
         : null;
       expect(flakeLabTestState(experiments, fix), `${id}: the test's lab state`).toBe(want.lab);
+    }
+  });
+});
+
+// The seeded resource findings are what recordRunResourceFindings would write
+// from the seeded reports: one per identity, with the runs that showed it.
+describe('resource findings match the seeded reports', () => {
+  test('each finding is the identity of the findings its runs reported, and counts those runs', () => {
+    const runs = q(`select run_id, report from test_run_resource_reports`) as Array<{ run_id: number; report: string }>;
+    expect(runs.length).toBeGreaterThan(0);
+    const runsByFingerprint = new Map<string, number[]>();
+    for (const run of runs.map((row) => ({
+      id: row.run_id,
+      report: JSON.parse(row.report) as { findings: WireResourceFinding[] },
+    }))) {
+      for (const finding of run.report.findings) {
+        const fingerprint = resourceFingerprint(finding);
+        runsByFingerprint.set(fingerprint, [...(runsByFingerprint.get(fingerprint) ?? []), run.id]);
+      }
+    }
+    const findings = q(
+      `select id, fingerprint, occurrences, first_seen_run_id, last_seen_run_id from resource_findings`,
+    ) as Array<{
+      id: number;
+      fingerprint: string;
+      occurrences: number;
+      first_seen_run_id: number;
+      last_seen_run_id: number;
+    }>;
+    expect(findings.map((f) => f.fingerprint).sort()).toEqual([...runsByFingerprint.keys()].sort());
+    for (const finding of findings) {
+      const runIds = runsByFingerprint.get(finding.fingerprint)!;
+      expect(finding.occurrences, finding.fingerprint).toBe(runIds.length);
+      expect(finding.first_seen_run_id, finding.fingerprint).toBe(Math.max(...runIds));
+      expect(finding.last_seen_run_id, finding.fingerprint).toBe(Math.min(...runIds));
+      const occurrences = q(`select run_id from resource_occurrences where finding_id = ${finding.id}`) as Array<{
+        run_id: number;
+      }>;
+      expect(occurrences.map((o) => o.run_id).sort(), finding.fingerprint).toEqual([...runIds].sort());
     }
   });
 });

@@ -479,6 +479,26 @@ export const HELP_TOPICS = {
     text: "When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. The hatched part of a bar is hook time: setup (beforeAll, beforeEach, fixtures) at the start, teardown (afterEach, afterAll, worker cleanup) at the end, and a failed hook in dark red even with Show hooks off. Hover one for the hooks it ran and the error; click it to open the steps on that hook. A bar spans the hooks Playwright leaves out of a test's duration, such as a slow beforeAll. Each lane is one worker: Playwright replaces a worker process after a failed test, and ↻ marks where the new process took over. A dashed line is time the worker ran no test; hover it or ↻ for what it was. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show waits for the wasted waits, and Show locks to see when each named lock was held and how much of the run it serialized.",
     doc: 'features/ui-overview#test-run-detail',
   },
+  'run.resource-findings': {
+    title: 'Resource findings',
+    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter only counts browsers and contexts opened and closed in each file’s steps: those are probable leaks.',
+    doc: 'features/resource-leaks#what-it-reports',
+  },
+  'run.resource-pages': {
+    title: 'Open pages by worker',
+    text: 'How many pages were still open in each worker at the end of each of its tests. A line that keeps rising is a page left open test after test; every line shares one scale.',
+    doc: 'features/resource-leaks#in-the-dashboard',
+  },
+  'run.resource-machine': {
+    title: 'Machine',
+    text: 'What the run cost the machine it ran on, sampled by the reporter: how busy the CPUs were, CPU time by process (renderers, browsers, workers, the web server), time spent waiting for a CPU, peak memory and the largest process, and the disk the artifacts used. A sharded run shows one machine per shard. What a platform cannot tell is listed as not measured.',
+    doc: 'features/cpu-memory-disk#reading-it',
+  },
+  'run.resource-costliest': {
+    title: 'Costliest tests',
+    text: 'The tests that used the most CPU in their worker and in the browser processes they started, measured at the end of each test. A test that found pages already open paid for what an earlier test left behind.',
+    doc: 'features/cpu-memory-disk#in-the-dashboard',
+  },
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
@@ -523,6 +543,11 @@ export const HELP_TOPICS = {
     title: 'Failure timeline',
     text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The type chips hide or show the steps, requests, console entries, dialogs and backend logs in the window (“Only” or Alt-click shows just one type; the failing step and the last shown type always stay), and the line beside them says what is hidden; the choice is remembered in this browser. The list below reads it chronologically — click a line to jump to that step, console entry or request. The failed step is the one that raised the test’s own error; an error the test caught and went on from (a probe in a try/catch, a retried toPass attempt) is greyed out and marked as caught. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     doc: 'features/evidence#one-execution-diagnosis-first',
+  },
+  'case.resources': {
+    title: 'What the test cost',
+    text: 'The CPU this test used in its worker and in the browser processes it started, the largest of those processes, how busy the worker’s event loop was, and the pages it found open when it started and left open when it ended. Browser processes are read on Linux only.',
+    doc: 'features/cpu-memory-disk#in-the-dashboard',
   },
   'case.web-vitals': {
     title: 'Web Vitals',

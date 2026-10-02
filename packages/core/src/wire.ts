@@ -157,3 +157,167 @@ export interface WireNetworkRequest {
   /** Why the request failed, as Playwright reports it (`net::ERR_CONNECTION_RESET`); absent when it finished. */
   failure?: string;
 }
+
+// ── Resources ──────────────────────────────────────────────────────────────────
+
+/** What a process is for the run, from its command line. */
+export type ProcessRole =
+  | 'runner'
+  | 'worker'
+  | 'browser'
+  | 'renderer'
+  | 'gpu'
+  | 'utility'
+  | 'ffmpeg'
+  | 'webServer'
+  | 'other';
+
+/** The kinds of files tests attach, by Playwright's attachment names. */
+export type ArtifactKind = 'trace' | 'video' | 'screenshot' | 'other';
+
+/** What the processes of one role used during a test. */
+export interface RoleCost {
+  cpuMs: number;
+  /** Time runnable but waiting for a CPU. */
+  runWaitMs: number | null;
+  /** The largest process of the role during the test (its peak RSS). */
+  peakRssMb: number | null;
+  processes: number;
+}
+
+/**
+ * What one execution cost its worker and the browsers the worker started, and
+ * what it found and left open, as the capture fixtures measured it at the
+ * test's start and end.
+ */
+export interface WireExecutionResources {
+  /** CPU of the worker process. */
+  workerCpuMs: number;
+  /** The processes the worker started (its browsers), by role; Linux only. */
+  roles?: Partial<Record<ProcessRole, RoleCost>> | null;
+  /** Share of the test's time the worker's event loop was busy. */
+  loopUtilization: number;
+  loopDelayP99Ms: number;
+  involuntarySwitches: number;
+  heapUsedMb: number;
+  /** Contexts and pages already open in the worker when the test started. */
+  openAtStart?: { contexts: number; pages: number } | null;
+  /** Objects the test opened itself and left open. */
+  leftOpen?: number | null;
+  /** Bytes of the files the test attached, by kind. */
+  artifactBytes?: Partial<Record<ArtifactKind, number>> | null;
+}
+
+export type ResourceVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probable';
+
+/** One finding of the end-of-run resource report: leaked objects, idle pages, piling handlers, Node handles. */
+export interface WireResourceFinding {
+  verdict: ResourceVerdict;
+  /** The object kind, `handle` for a Node handle. */
+  kind: 'browser' | 'context' | 'page' | 'request' | 'handle';
+  /** Where it was opened: `file:line`, a fixture, or a popup's trigger. */
+  where: string;
+  /** The line that opened it, `file:line`, when one is known. */
+  site?: string | null;
+  /** Leaked: the scope it outlived. */
+  scope?: 'test' | 'describe';
+  tests: number;
+  /** The objects (or the leaks, for handles) grouped in this finding. */
+  count: number;
+  /** Leaked: how long the longest one stayed open past its scope, in ms. */
+  heldMs?: number;
+  /** Leaked: at least one was still open when its worker shut down. */
+  untilWorkerEnd?: boolean;
+  /** Leaked contexts and browsers: the open pages that went with them. */
+  pages?: number;
+  /** Leaked: closed by `PIWI_LEAK_CHECK=close`. */
+  closedByPiwi?: boolean;
+  /** Leaked past its test: main-thread CPU its pages used after the test (Chromium). */
+  afterTestCpuMs?: number;
+  /** Piling: what grew, from how many to how many, over how many tests. */
+  growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
+  /** The describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
+  detail?: string;
+}
+
+/** What the processes of one role used over the run. */
+export interface RoleUsage {
+  cpuMs: number;
+  /** Time runnable but waiting for a CPU; null where the platform cannot tell. */
+  runWaitMs: number | null;
+  processes: number;
+}
+
+/** What a run cost the machine it ran on, sampled by the reporter. */
+export interface WireRunProfile {
+  platform: string;
+  wallMs: number;
+  machine: {
+    cores: number;
+    memoryBytes: number;
+    /** The container's memory limit, when it is below the machine's memory. */
+    memoryLimitBytes: number | null;
+    /** The container's CPU quota in cores, when it has one. */
+    cpuQuotaCores: number | null;
+  };
+  cpu: {
+    busyPct: number | null;
+    iowaitPct: number | null;
+    stealPct: number | null;
+    /** Share of the run's wall time some task waited for a CPU (PSI). */
+    pressurePct: number | null;
+    /** Machine busy share per sample, in order. */
+    series: number[];
+    byRole: Partial<Record<ProcessRole, RoleUsage>> | null;
+    throttledMs: number | null;
+  };
+  memory: {
+    kind: 'pss' | 'rss' | null;
+    peakBytes: number | null;
+    /** When the peak was sampled, ms after the run started. */
+    peakAtMs: number | null;
+    largest: { role: ProcessRole; bytes: number } | null;
+    rssFallbacks: number;
+    pressurePct: number | null;
+    lowestAvailableBytes: number | null;
+    /** The container's peak, when the run raised it. */
+    containerPeakBytes: number | null;
+    oomKills: number | null;
+  };
+  disk: {
+    peakInUseBytes: number | null;
+    peakInUseIsLowerBound: boolean;
+    lowestFreeBytes: number | null;
+    leftoverBytes: number | null;
+  };
+  /** Metrics the machine could not read. */
+  notMeasured: string[];
+}
+
+/** The workers' health over the run's tests, from their censuses. */
+export interface WorkerHealth {
+  tests: number;
+  /** Mean share of each test's time the worker's event loop was busy. */
+  loopUtilization: number;
+  /** The worst test's p99 event-loop delay. */
+  loopDelayP99Ms: number;
+  /** Mean involuntary context switches of the worker per test. */
+  involuntarySwitchesPerTest: number;
+}
+
+/**
+ * One reporter's resource report, sent with the run's end: the findings, what
+ * the run cost its machine, and the pages open in each worker test after test.
+ * A sharded run sends one per shard, each from its own machine.
+ */
+export interface WireResourceReport {
+  v: 1;
+  shardIndex?: number | null;
+  findings: WireResourceFinding[];
+  counts: Record<ResourceVerdict, number>;
+  profile: WireRunProfile | null;
+  /** Open pages in each worker at the end of each of its tests, in order. */
+  workers: Array<{ worker: number; openPages: number[] }>;
+  artifactBytes: Partial<Record<ArtifactKind, number>>;
+  workerHealth: WorkerHealth | null;
+}

@@ -456,6 +456,7 @@ export const testRunsCases = sqliteTable(
     slowestStepDuration: integer('slowest_step_duration'), // Duration of the slowest step in ms
     wastedTimeMs: integer('wasted_time_ms'), // Aggregated ms spent in wait steps
     webVitals: text('web_vitals', { mode: 'json' }), // { navigation: {...}, paint: {...} }
+    resources: text('resources', { mode: 'json' }), // WireExecutionResources — what the execution cost its worker and browsers
     pageState: text('page_state', { mode: 'json' }), // URL/history/storage-keys/cookie-flags at test end (values never captured)
     aiUsage: text('ai_usage', { mode: 'json' }), // { entries: string[], intents?: {template,locator,kind}[] } — replayed AI-step artifacts + their prompts
     consoleLogs: text('console_logs', { mode: 'json' }), // Array of { type, text, timestamp, location } console entries
@@ -1942,5 +1943,99 @@ export const flakeArms = sqliteTable(
   },
   (t) => ({
     experimentIdx: index('idx_flake_arms_experiment').on(t.experimentId),
+  }),
+);
+
+// A resource finding across runs: one per project and identity (its verdict,
+// kind, scope and where it was opened, line included;
+// shared/resource-fingerprint.mjs), with the runs it first and last showed in.
+// An edit above the line moves it to a new identity, which it takes on with its
+// history. It is fixed once five full runs of the default branch, with the
+// capture fixtures on, came without it, and reopened when it shows again.
+export const resourceFindings = sqliteTable(
+  'resource_findings',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    verdict: text('verdict').notNull(), // 'leaked' | 'idle' | 'piling' | 'handle' | 'probable'
+    kind: text('kind').notNull(), // 'browser' | 'context' | 'page' | 'request' | 'handle'
+    place: text('place').notNull(), // where it was opened, as the latest run named it, with its line
+    site: text('site'), // the `file:line` that opened it, when known
+    // Run ids are not foreign keys: findings outlive the runs retention deletes.
+    firstSeenRunId: integer('first_seen_run_id').notNull(),
+    lastSeenRunId: integer('last_seen_run_id').notNull(),
+    // When those runs started: runs are ordered by start time, since an imported
+    // run can be older than runs stored before it.
+    firstSeenAt: integer('first_seen_at', { mode: 'timestamp' }).notNull(),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }).notNull(),
+    occurrences: integer('occurrences').notNull().default(0), // runs it showed in
+    status: text('status').notNull().default('open'), // 'open' | 'fixed'
+    cleanRuns: integer('clean_runs').notNull().default(0), // full default-branch runs without it since it last showed
+    lastCheckedRunId: integer('last_checked_run_id'), // the last run that counted as clean, so a retried finish counts once
+    fixedRunId: integer('fixed_run_id'), // the first run without it since it last showed; it is fixed there once five came
+    fixedAt: integer('fixed_at', { mode: 'timestamp' }),
+    reopenedRunId: integer('reopened_run_id'), // the run it showed in again after it was fixed
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectFingerprintIdx: uniqueIndex('idx_resource_findings_project_fingerprint').on(t.projectId, t.fingerprint),
+    projectStatusIdx: index('idx_resource_findings_project_status').on(t.projectId, t.status),
+  }),
+);
+
+// One run's showing of a resource finding, with what it held in that run and
+// the branch the run was on (the gate and the pull-request comment read a
+// finding as new when no earlier run of the base branch showed it).
+export const resourceOccurrences = sqliteTable(
+  'resource_occurrences',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    findingId: integer('finding_id')
+      .notNull()
+      .references(() => resourceFindings.id, { onDelete: 'cascade' }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    branch: text('branch'), // the run's branch; null when the reporter captured none
+    count: integer('count').notNull().default(0),
+    tests: integer('tests').notNull().default(0),
+    heldMs: integer('held_ms'),
+    afterTestCpuMs: integer('after_test_cpu_ms'),
+    pages: integer('pages'),
+  },
+  (t) => ({
+    findingRunIdx: uniqueIndex('idx_resource_occurrences_finding_run').on(t.findingId, t.runId),
+    runIdx: index('idx_resource_occurrences_run').on(t.runId),
+  }),
+);
+
+// What each reporter of a run measured about resources (WireResourceReport):
+// one row per shard, 0 for a run that was not sharded. Each shard's finish
+// writes its own row whole, so shards finishing at once never overwrite each
+// other's, and a retried finish replaces its row. Read folded in shard order
+// by shared/handlers/resource-reports.ts.
+export const testRunResourceReports = sqliteTable(
+  'test_run_resource_reports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    shard: integer('shard').notNull().default(0),
+    report: text('report', { mode: 'json' }).notNull(), // rebuilt field by field on ingest (shared/resource-report.ts)
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    runShardIdx: uniqueIndex('idx_test_run_resource_reports_run_shard').on(t.runId, t.shard),
   }),
 );

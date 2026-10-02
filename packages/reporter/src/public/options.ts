@@ -119,6 +119,35 @@ export interface PiwiDashboardOptions {
    */
   captureServerTraces?: boolean;
   /**
+   * Keep a ledger of the browsers, contexts, pages and API request contexts each
+   * test opens, and list at the end of the run the ones left open after the
+   * scope that created them ended (a context a test never closed, a `beforeAll`
+   * context no `afterAll` closes, a browser a test launched itself), the pages
+   * opened and never used, and the pages, listeners and route handlers piling up
+   * on a page or context that lives across tests. Each finding names the line or
+   * the fixture that opened the object. Rides the capture fixtures and costs a
+   * few bookkeeping steps per test. Also samples the run's processes and the
+   * machine, with or without the fixtures, and prints what the run cost: CPU by
+   * process, time spent waiting for a CPU, peak memory and disk. The findings,
+   * the run's cost and each test's go to the dashboard with the run, on its
+   * Resources tab. Defaults to `true`. Set to `false` (or
+   * `PIWI_CAPTURE_RESOURCES=false`) to turn both off.
+   */
+  captureResources?: boolean;
+  /**
+   * What the capture fixtures do when a test leaves open a browser, context,
+   * page or API request context that the test itself opened (its body or its
+   * `beforeEach`/`afterEach` hooks; a fixture's objects are the fixture's):
+   * `'report'` lists it in the end-of-run summary, `'fail'` also fails the test
+   * with the line that opened it, and `'close'` closes it when the test ends and
+   * still lists it. A `beforeAll` object left open is only ever reported. Each
+   * test is judged when it ends, so a test that hands what it opened to the next
+   * one fails under `'fail'` and loses it under `'close'`: open such objects in
+   * `beforeAll` and close them in `afterAll`. Defaults to `'report'`. Can also
+   * be set with `PIWI_LEAK_CHECK`.
+   */
+  leakCheck?: 'report' | 'fail' | 'close';
+  /**
    * Sample the ARIA snapshot at the end of a *passing* test, so a later failure
    * can be diffed against the page as it last looked when green. Rate-limited by
    * the server: at run start the reporter asks which tests are due a fresh

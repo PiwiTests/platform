@@ -195,6 +195,7 @@ import {
 } from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import { getVerifiedFixes } from '#shared/handlers/flake-verified';
+import { getRunResources } from '#shared/handlers/run-resources';
 import {
   getFailureCluster,
   getOpenFailureClusters,
@@ -971,6 +972,18 @@ const routes: RouteEntry[] = [
         baseBranch,
         failedFallback: true,
       });
+    },
+  },
+
+  // Run resources
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/resources$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const resources = await getRunResources(await getDemoDb(), +m[1]!);
+      if (!resources) throw demoHttpError(404, 'Run not found');
+      return resources;
     },
   },
 

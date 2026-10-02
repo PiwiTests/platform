@@ -11,6 +11,8 @@ import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects
 import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -102,6 +104,11 @@ export default eventHandler(async (event) => {
   const flakyTests = body.flakyTests ?? 0;
 
   const hasPendingUploads = body.hasPendingUploads === true;
+
+  // This reporter's resource report, in its own row: shards finishing at once
+  // each write theirs, and none overwrites another's.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
 
   if (isSharded) {
     // Sharded run: track shardsFinished; duration is the maximum across shards.

@@ -9,7 +9,16 @@ import type {
   TestSourceFrame,
   TestStepEvent,
   TestStepEventHook,
+  ProcessRole,
+  ResourceVerdict,
+  RoleCost,
+  RoleUsage,
+  WireExecutionResources,
   WireNetworkRequest,
+  WireResourceFinding,
+  WireResourceReport,
+  WireRunProfile,
+  WorkerHealth,
 } from '@piwitests/core/wire';
 
 // The wire leaf shapes live in @piwitests/core (shared with the reporter);
@@ -24,7 +33,16 @@ export type {
   TestSourceFrame,
   TestStepEvent,
   TestStepEventHook,
+  ProcessRole,
+  ResourceVerdict,
+  RoleCost,
+  RoleUsage,
+  WireExecutionResources,
   WireNetworkRequest,
+  WireResourceFinding,
+  WireResourceReport,
+  WireRunProfile,
+  WorkerHealth,
 };
 
 // ── Test status types ──────────────────────────────────────────────────────────
@@ -89,6 +107,8 @@ export interface TestCasePayload {
   locatorPages?: unknown;
   /** The repository-relative source files the test executed (`piwi-code-reach`), when code reach is on. */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
+  resources?: WireExecutionResources | null;
   /** AI-step usage manifest (`{ entries: string[] }`): committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   consoleLogs?: unknown;
@@ -153,6 +173,8 @@ export interface TestRunSubmitPayload {
   shardTotal?: number;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** The run's resource findings and what it cost its machine, measured by the reporter. */
+  resourceReport?: WireResourceReport | null;
 }
 
 // ── Streaming event payload ───────────────────────────────────────────────────
@@ -187,6 +209,7 @@ export interface StreamEventPayload {
   pageInventory?: unknown;
   locatorPages?: unknown;
   codeReach?: unknown;
+  resources?: WireExecutionResources | null;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -249,6 +272,8 @@ export interface TestRunFinishPayload {
   shardTotal?: number;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** The run's resource findings and what it cost its machine, measured by the reporter (per shard). */
+  resourceReport?: WireResourceReport | null;
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────

@@ -14,6 +14,8 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -55,6 +57,8 @@ export default eventHandler(async (event) => {
       message: 'Missing required fields: projectName, status, startTime',
     });
   }
+
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
@@ -106,6 +110,8 @@ export default eventHandler(async (event) => {
           duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
         })
         .where(eq(testRuns.id, existingRun.id));
+      // This shard's resource report, in its own row next to the other shards'.
+      if (incomingResources) await saveResourceReportPart(db, existingRun.id, incomingResources);
       await applyReporterKeep(db, existingRun.id, body.keep);
 
       // Insert test cases if provided
@@ -142,6 +148,7 @@ export default eventHandler(async (event) => {
             pageInventory: testCase.pageInventory,
             locatorPages: testCase.locatorPages,
             codeReach: testCase.codeReach,
+            resources: testCase.resources ?? null,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
             dialogs: testCase.dialogs,
@@ -243,6 +250,7 @@ export default eventHandler(async (event) => {
       message: 'Failed to create test run',
     });
   }
+  if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
   await applyReporterKeep(db, testRun.id, body.keep);
 
   // Insert test cases if provided and calculate flaky tests
@@ -272,6 +280,7 @@ export default eventHandler(async (event) => {
         pageInventory?: unknown;
         locatorPages?: unknown;
         codeReach?: unknown;
+        resources?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
         dialogs?: unknown;
@@ -326,6 +335,7 @@ export default eventHandler(async (event) => {
           pageInventory: testCase.pageInventory,
           locatorPages: testCase.locatorPages,
           codeReach: testCase.codeReach,
+          resources: testCase.resources ?? null,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
           dialogs: testCase.dialogs,

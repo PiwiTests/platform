@@ -96,6 +96,9 @@ describe('parseGateArgs', () => {
         '2',
         '--fail-on-new-cluster',
         '--fail-on-flaky',
+        '--max-leaks',
+        '4',
+        '--max-new-leaks=0',
       ],
       EMPTY_ENV,
     );
@@ -105,6 +108,8 @@ describe('parseGateArgs', () => {
       maxNewFlaky: 2,
       failOnNewCluster: true,
       failOnFlaky: true,
+      maxLeaks: 4,
+      maxNewLeaks: 0,
     });
   });
 

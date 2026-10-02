@@ -53,6 +53,7 @@ import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
+import { sanitizeExecutionResources } from '#shared/resource-report';
 import type { DbClient as DB } from '../database';
 
 /** Apply the canonical per-case status spelling to each attempt entry. */
@@ -107,6 +108,8 @@ export interface RunCaseInput {
   locatorPages?: unknown;
   /** The source files the test executed — stored through case_payloads, and per test in `code_reach`. */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers (`piwi-resources`). */
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -553,6 +556,7 @@ export async function persistRunCases(
       slowestStepDuration: c.slowestStepDuration ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
+      resources: sanitizeExecutionResources(c.resources),
       pageState: sanitizePageState(c.pageState),
       aiUsage: sanitizeAiUsage(c.aiUsage),
       consoleLogs:
