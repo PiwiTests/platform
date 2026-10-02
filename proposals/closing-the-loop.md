@@ -2,26 +2,27 @@
 
 A plan to make Piwi learn from what it hands back. Piwi keeps every run, explains each failure and hands back
 something to do: a replacement locator, an auto-heal pull request, a validated patch, a fix plan, a gate verdict, a
-gap draft, a failing test for a bug report, a bisected commit. Almost none of these come back. Piwi does not record
-whether the heal was applied, the pull request merged, the patch used, the draft written or the verdict overridden. So
-it cannot tell which of its suggestions work, cannot credit a fix to the action that produced it, and proposes again
-what people already rejected. The verdicts these loops would read are also less reliable than they look: a re-run at
-the same commit counts as a fix, Flake Lab runs count as CI results for the editor, and a sharded run has no branch.
+gap draft, a failing test for a bug report, a bisected commit. Piwi learns what happened to almost none of them: it
+does not record whether the heal was applied, the pull request merged, the patch used, the draft written or the
+verdict overridden. So it cannot tell which of its suggestions work, cannot credit a fix to the action that produced
+it, and proposes again what people already rejected. The verdicts these loops would read are also less reliable than
+they look: a re-run at the same commit counts as a fix, Flake Lab runs count as CI results for the editor, and a
+sharded run has no branch.
 
 This plan fixes those verdicts first, then adds five shared pieces that every loop needs:
 
 - a **run origin** on every run, and one **eligibility** rule deciding which runs may feed which analysis;
 - an **outcome** table for every hand-back;
 - **linking annotations and commit trailers** that tie a new test or a commit to what Piwi suggested;
-- **precision per suggestion source**, generalizing the gap detectors' precision loop;
+- **precision per hand-back kind and per AI model** (2.5, 2.6), generalizing the gap detectors' precision loop;
 - **write-back parity**: what a person can do in the dashboard, an agent can do through MCP.
 
 On top of them it closes the loops one at a time, then covers the stages of a suite's life that Piwi does not touch
 yet: environment incidents, new tests before they land, aging and escalation, release readiness and suite hygiene.
 
-**Status.** Proposed 2026-10-02. Nothing is built. Researched against `main` at `b103d2d` (0.45.0): one reader per
-subsystem, 28 candidate gaps each checked against the code by a reviewer asked to refute it, and a separate search for
-lifecycle stages nobody had listed ([Appendix C](#appendix-c-method)). The defects found on the way are in
+**Status.** Proposed 2026-10-02. Nothing is built. Researched against `main` at `b103d2d` (0.45.0): one researcher per
+subsystem, 28 candidate open loops each checked against the code by a reviewer asked to refute it, and a separate
+search for lifecycle stages nobody had listed ([Appendix C](#appendix-c-method)). The defects found on the way are in
 [Appendix A](#appendix-a-defects-found), and [Part 0](#part-0-defects-first) fixes them before anything else ships.
 Parts 0 to 3 are specified to the file. Parts 4 to 7 are sketched with their first step and get their own proposals
 when they start.
@@ -36,10 +37,12 @@ Paths are relative to `apps/application/` unless they start with `packages/`, `a
 - **Run origin**: what launched a run: CI, a CI re-run from the dashboard, a local run, the desktop app, an editor,
   `piwi preflight`, `piwi bug`, Flake Lab, a probe, a bisect step, a reproduction, an import.
 - **Eligible run**: a run allowed to feed a given analysis (a baseline, fix verification, flaky scores, the selection
-  catalog, the editor's branch failures). Eligibility depends on the run origin, the branch, whether the run is
-  complete, and whether it is an environment incident.
-- **Fix attempt**: a recorded attempt to fix a cluster (a heal, a patch, a fix plan, an agent's edit), tied to a commit
-  or a run.
+  catalog, the editor's CI failures). Eligibility depends on the run origin, the branch, whether the run is complete
+  (it ran the whole suite: not a `--grep` run, a selection or a run still in progress), and whether it is an
+  environment incident.
+- **Fix attempt**: a change that a person or an agent reports having made to fix a cluster (a patch, a locator edit, a
+  fix plan carried out), tied to a commit or a branch. It is the `fix-attempt` kind of hand-back; heals and diagnoses
+  that Piwi suggests have their own kinds.
 - **Environment incident**: a run whose failures come from the environment under test being down or broken, not from
   the tests or the code.
 
@@ -53,7 +56,7 @@ Cluster #214 · Login button renamed · fixed
 ```
 
 ```
-Analytics · Piwi's help · last 90 days · main
+Analytics · Hand-back outcomes · last 90 days · main
   Locator heals    31 call sites now use the recommended locator · 9 auto-heal PRs merged, 2 closed
   AI diagnoses     44 · rated helpful 12 of 17 · the fix touched the diagnosed files in 19
   Gap drafts       23 drafted · 8 closed by the test written from them
@@ -64,7 +67,7 @@ Analytics · Piwi's help · last 90 days · main
 ```
 Run #930 · environment incident · not counted
   41 of 44 tests failed, 39 of them navigating to https://staging.example.test (connection refused).
-  The same origin failed in 2 other projects within 20 minutes.
+  The same host failed in 2 other projects within 20 minutes.
   Left out of flaky scores, baselines, fix verification and the gate (inconclusive). One incident marker added.
 ```
 
@@ -85,14 +88,14 @@ Pull request #88 · New tests (3)
 
 ```
 checkout.spec.ts:42   flaky 18% · top suspect: slow GET /api/cart (reproduced 7 of 10)
-  Piwi: Verify the flake fix · Piwi: Reproduce in the desktop app
+  Piwi: Reproduce this flake · Piwi: Verify the flake fix
 ```
 
 - Part 0 alone makes "fixed", "regressed", the editor's CI failures and the AI's prior assessment trustworthy.
 - Parts 1 and 2 add the run origin, eligibility, incidents, the outcome table and the Analytics section above.
 - Part 3 lets agents, editors and the desktop app report back.
-- Parts 4 to 7 use those pieces to explain with proven facts, learn what the suite misses, act on time and ownership,
-  and close the independent tracks (privacy, activation, AI steps, unread data).
+- Parts 4 to 6 use those pieces to explain with proven facts, learn what the suite misses, and act on time and
+  ownership. Part 7 covers independent tracks (privacy, activation, AI steps, unread data).
 
 ## The loop today
 
@@ -100,23 +103,24 @@ checkout.spec.ts:42   flaky 18% · top suspect: slow GET /api/cart (reproduced 7
 |---|---|---|
 | Author | Recorder and codegen, AI steps, gap drafts, bug-report specs | A test written from a gap draft is never linked back to its gap |
 | Select | Selections, impact from a diff, preflight | Impact never learns from a test it skipped that failed later, and skips passing users of a changed helper (A1) |
-| Run and capture | Reporter, capture fixtures, backend packages, probes, Flake Lab | Runs carry no origin; route reach comes from a capped request list; no `pageerror` or `crash`; ASP.NET Core sends spans only for probes |
-| Keep | Ingest, rollups, retention | Sharded runs and imports lose the branch (A3); imports overwrite current state (A19); heal outcomes and per-test history are pruned |
-| Explain | Clusters, clues, verdicts, AI diagnosis | Proven facts (bisect, lab verdicts, resources, markers) do not reach the AI context; six cause classifiers are never reconciled |
+| Run and capture | Reporter, capture fixtures, backend packages, probes, Flake Lab | Runs carry no origin; route reach comes from a capped request list; Playwright's `pageerror` and `crash` events are not recorded; ASP.NET Core sends spans only for probes |
+| Keep | Ingest, rollups, retention | Sharded runs and imports lose the branch (A3); imports overwrite current state (A19); auto-heal outcomes and per-test history are pruned; Flake Lab, probe and bisect runs feed the editor's CI failures, the selection catalog, change coverage, the environment, visual and page diffs and shared state (A6 to A10) |
+| Explain | Clusters, clues, verdicts, AI diagnosis | Proven facts (the bisected commit, lab verdicts other than a reproduced suspect, resource findings, markers) do not reach the AI context, and a reproduced suspect reaches it only as a clue; the seven cause sources listed in 4.2 are never reconciled |
 | Route and decide | Inbox, owners, notifications, PR comment, gate, Jira | The gate verdict and the PR comment are not stored; an assignment notifies nobody; insights are never sent |
 | Fix | Heals, auto-heal PRs, patches, fix plans, MCP and skills, editor quick fixes, desktop reproduce and bisect | Whether a hand-back was applied is never recorded; agents read almost everything and write almost nothing |
-| Verify | Fix verification, quarantine streaks, `piwi flake verify`, the bug-report lifecycle | Any green run counts: at the same commit (A4), on any branch (A5), lab runs included (A6 to A10) |
+| Verify | Fix verification, quarantine streaks, `piwi flake verify`, the bug-report lifecycle | Any green run counts: at the same commit (A4), on any branch (A5), and desktop bisect and reproduction steps, which carry no lab stamp (A34); the bug-report lifecycle ignores branch and run type (A20) |
 | Learn | Four closed loops, below | Everything else |
 
 The four loops that are closed today:
 
-- **Gap detector precision.** Triage verdicts count for or against each detector, which is muted below 60% over 20
-  verdicts (`shared/handlers/detector-precision.ts`).
-- **Green ARIA sampling.** The server names the tests due a fresh last-known-good page
+- **Gap detector precision.** Each triage verdict counts for or against the detector that raised the gap, and a
+  detector whose precision is below 60% after at least 20 verdicts is muted (`shared/handlers/detector-precision.ts`).
+- **Green ARIA sampling.** The server lists the tests that need a new ARIA snapshot from a passing run
   (`GET /api/projects/:id/aria-sampling`, `shared/handlers/aria-sampling.ts`). It is the only place where the server
   tells the capture fixtures what to capture.
-- **Flake Lab.** A held `piwi flake verify` marks a test verified fixed, takes it off the flaky ranking until it
-  retry-passes again and proposes a quarantine release (`shared/handlers/flake-lab.ts`).
+- **Flake Lab.** A `piwi flake verify` whose verdict is `verified` marks the test verified fixed, takes it off the
+  flaky ranking until it retry-passes again and proposes a quarantine release (`shared/handlers/flake-verified.ts`,
+  the release in `shared/handlers/quarantine.ts`).
 - **Bug reports.** A test carrying `piwi:bug <id>` moves its report through test-committed, looks-fixed and closed,
   and a later failure reopens it (`applyBugReportLifecycle`, `shared/handlers/bug-reports.ts`).
 
@@ -126,10 +130,12 @@ state, with no client call and no telemetry.
 ## What exists
 
 - **An outcome inferred from runs, computed and thrown away.** `stampHealedRun` (`server/utils/locator-healing.ts`)
-  finds the run in which the recommended locator's signature appears at the failing call site. That detects an
-  applied heal whatever applied it (the editor's quick fix, `piwi preflight --fix`, the desktop's `apply_locator_fix`,
-  a skill, a hand edit), because it reads the code that ran. It is computed on read, never stored or counted.
-- **Auto-heal actions.** `heal_actions` goes pending, opened, merged or closed (`server/utils/heal/pr-state.ts`); its
+  stamps the last run, other than the failing one, that saw the recommended locator's signature in any of the test's
+  locator snapshots, at any call site. That detects an applied heal whatever applied it (the editor's quick fix,
+  `piwi preflight --fix`, the desktop's `apply_locator_fix`, a skill, a hand edit), because it reads the code that
+  ran. It is computed on read, never stored or counted.
+- **Auto-heal actions.** `heal_actions` goes pending, processing, opened, then merged or closed, or ends failed or
+  skipped (`server/utils/heal/pr-state.ts`); its
   `kind` column defaults to `open-pr` and the sweeper ignores it. Heal commits carry a `Piwi-Heal: <dedupeKey>`
   trailer (`server/utils/heal/dispatch.ts`). Merged and closed states only free the open-PR cap
   (`server/utils/heal/policy.ts`) and add to one count in `shared/handlers/analytics/progress.ts`.
@@ -153,14 +159,18 @@ state, with no client call and no telemetry.
 - **A desktop round trip that already works.** Piwi Picker posts a reproduction request with the bug report id and
   the instance URL to the desktop app, the window asks the developer to confirm (`DesktopReproRequestModal.vue`), and
   the verdict can be shared on the team instance through `POST /api/bug-reports/:id/reproductions`. The editor service
-  already holds a connection to both the team instance and the desktop app (`packages/editor/src/context.ts`).
-- **Outboxes.** Notifications, heal actions and integration actions share `server/utils/outbox.ts`. Retention prunes
-  settled rows after `PIWI_RETENTION_NOTIFICATION_DAYS` (30 by default, `server/utils/retention.ts`).
+  can reach both: it resolves the team instance's credentials (`namedInstance`) and reads the desktop app's address and
+  token from its discovery file (`readDesktopDiscovery`), though each context's client talks to only one of them
+  (`resolveContextConnection`, `packages/editor/src/context.ts`).
+- **Outboxes.** Notifications, auto-heal actions and integration actions share `server/utils/outbox.ts`. Retention
+  prunes settled rows after `PIWI_RETENTION_NOTIFICATION_DAYS` (30 by default, read in
+  `server/tasks/retention/sweep.ts`; the prune functions are in `server/utils/retention.ts`).
 - **Rollups.** `analytics_daily_rollups` are written at finalize and by `archiveRunsIntoRollups` before retention
   deletes a run (`shared/handlers/analytics/rollups.ts`).
 - **Analytics.** The metric catalog (`shared/analytics/metrics.ts`, `MetricDef.capability` accepts only `test-map`),
   insight rules (`shared/analytics/insight-rules.ts`) and per-project targets (`shared/analytics/targets.ts`). Insights
-  and targets are read by widgets and scheduled reports only.
+  and targets are read by widgets and quality reports only (scheduled, previewed, shared or fetched with
+  `get_quality_report`), never by notifications.
 - **Capabilities.** `shared/capabilities.ts` with `CapabilityDef.since`, and `resolveProjectStates` in
   `shared/handlers/capabilities.ts`.
 - **CI re-run** (`server/utils/ci-rerun.ts`, `shared/ci-rerun.ts`) dispatches a workflow with one input holding the
@@ -171,15 +181,15 @@ state, with no client call and no telemetry.
 
 | # | Decision | Why |
 |---|---|---|
-| D1 | Outcomes are inferred from the runs Piwi already receives first. Explicit write-backs from MCP, editors and the desktop are additions, never prerequisites. | Works with no client change, sees hand edits, sends nothing anywhere. |
-| D2 | Nothing leaves the instance. Production data (route usage, incidents) enters only when the user pushes it to an import endpoint. | Zero telemetry, as everywhere else in Piwi. |
-| D3 | Every analysis that compares runs reads one eligibility rule. Lab, probe, bisect, reproduction, import and incident runs are excluded per use, not by each caller. | Today each caller filters, or forgets to (A6 to A10, A24). |
+| D1 | Outcomes are inferred first from the runs Piwi already receives. Explicit write-backs from MCP, editors and the desktop are additions, never prerequisites. | Works with no client change, sees hand edits, sends nothing anywhere. |
+| D2 | Nothing leaves the instance. Production data (route usage, 5.4) enters only when the user pushes it to an import endpoint. | Zero telemetry, as everywhere else in Piwi. |
+| D3 | Every analysis that compares runs reads one eligibility rule. Flake Lab, probe, bisect, reproduction, import and incident runs are excluded per use, not by each caller. | Today each caller filters, or forgets to (A6 to A10, A24). |
 | D4 | The run origin is a metadata key, `metadata.piwiOrigin = { kind, ref }`, stamped by the launcher through `PIWI_ORIGIN` and `PIWI_ORIGIN_REF`. No column until a query needs an index. | Additive on the wire, and every launcher can set an environment variable. |
 | D5 | A fix is recorded only when the commit changed since the cluster last failed, on an eligible run of the cluster's branch or the default branch. A pass at the same commit is flake evidence. | A4 and A5. |
 | D6 | Links over guesses. A test written from a gap draft carries `piwi:gap <id>`, as a bug spec carries `piwi:bug <id>`. Commits Piwi writes or suggests carry `Piwi-Heal` or `Piwi-Cluster` trailers, and Piwi reads full commit messages to find them. | The bug-report lifecycle shows that an annotation closes a loop with no heuristic. |
-| D7 | Learning demotes and explains; it never mutes, switches a model or blocks below a sample floor (the `MUTE_MIN_VERDICTS` pattern). | Self-hosted instances have small samples. |
+| D7 | Learning demotes and explains. It never switches a model, and it mutes or blocks only above a sample floor (the `MUTE_MIN_VERDICTS` pattern). | Self-hosted instances have small samples. |
 | D8 | Every MCP write tool calls the same shared handler as its REST route, with the same role check. MCP gets no verb the dashboard lacks. | One behavior, one test, one audit path. |
-| D9 | Outcome rows follow run retention. Daily counters per kind and stage go into a rollup table before rows are pruned. | "Is Piwi's help working" must survive `PIWI_RETENTION_DAYS`. |
+| D9 | Outcome rows follow run retention. Daily counters per kind and outcome go into a rollup table before rows are pruned. | Whether hand-backs work must survive `PIWI_RETENTION_DAYS`. |
 | D10 | Each new surface sits under an existing capability or a new declinable one. Each new metadata key, event, MCP tool and CLI command gets a D entry in [`1.0-stabilization.md`](1.0-stabilization.md) before it ships. | Every optional capability can be declined, and the wire freezes at 1.0. |
 | D11 | Part 0 ships before any learning feature. | Every loop reads the verdicts those defects corrupt. |
 
@@ -188,23 +198,27 @@ state, with no client call and no telemetry.
 Three pull requests, grouped by what they protect. Each row of [Appendix A](#appendix-a-defects-found) names the file
 and the scenario.
 
-- **PR 1, the verdicts.** Fix verification at the same commit and on other branches (A4, A5). The AI's prior
-  assessment and thumbs carried to the next version (A2, A26, A38). Auto-heal rows pruned while open, the state sweep
-  starving and failed rows holding their dedupe key (A11, A29, A30). Triage notes wiped by a status change (A16).
-  `piwi/tests` red on quarantined failures (A25). AI usage counted by `updatedAt` (A32).
+- **PR 1, the verdicts.** Fix verification ignores a pass at the failing commit and runs on other branches (A4, A5).
+  The next diagnosis receives the prior assessment, a rating stays on the version it rated, and a diagnosis rated
+  unhelpful is no longer offered under Fixed before, the list of resolved clusters this one resembles (A2, A26, A38).
+  Open auto-heal rows are kept, the state sweep checks the least recently checked rows first, and failed or skipped
+  rows free their dedupe key (A11, A29, A30). A status change keeps the triage note (A16). AI usage is counted by
+  creation time (A32). PR 1 also changes one behavior on purpose: `piwi/tests` stays green when only quarantined tests
+  failed, with a project setting to keep the current rule (A25, 2.3).
 - **PR 2, ingest and lab runs.** The branch on `/begin`, sharded `/finish` and imports (A3). Lab runs left out of the
-  editor's branch failures, the selection catalog, change coverage, the three diffs, green samples and the AI's
-  baseline comparison (A6 to A9, A24). Lab and bisect runs no longer write locator snapshots or test metadata (A10).
-  The step cap keeps the failing step (A18). Imports backdated, without touching current metadata or locks (A19).
-  These use `notLabRun` directly; PR 4 moves them to the eligibility rule.
-- **PR 3, analysis.** Impact widens when a changed file is mapped only through another test's failure frames, and on
-  changed non-source files nothing maps (A1, A23). The AI context reads retry passes by test, not by cluster (A12).
-  Owner filters apply to every event that carries owners (A13). Extract creates a real cluster, rejected merge pairs
-  block auto-merge and LLM "no" verdicts are stored (A14, A15). The reproduced suspect wins the clue and the flaky
-  list, and the load suspect keeps a stable id (A17, A33). The bug-report lifecycle reads eligible branches only (A20).
-  Re-probe on a source change, `covered-by` closes the gap (A21, A22). The desktop's bisect banner matches the cluster,
-  and reproduction and bisect steps report to the local app only (A27, A34). Declined green samples are not sampled
-  (A35). `piwi ai check` names a command that works (A31).
+  editor's CI failures, the selection catalog, change coverage, the environment, visual and page diffs, green samples
+  and the AI's baseline comparison (A6 to A9, A24). Lab and bisect runs no longer write locator snapshots or test
+  metadata (A10). The step cap keeps the failing step (A18). Imports backdated, without touching current metadata or
+  locks (A19). These use `notLabRun` directly; PR 4 moves them to the eligibility rule.
+- **PR 3, analysis.** Impact selection widens to the full suite when a changed file is mapped only through another
+  test's failure frames, or when a changed non-source file maps to no test (A1, A23). The AI context reads retry
+  passes by test, not by cluster (A12). Owner filters apply to every event that carries owners (A13). "Move to a new
+  cluster" creates a real cluster, rejected merge pairs block auto-merge and LLM "no" verdicts are stored (A14, A15).
+  The clue and the flaky list show the reproduced suspect first, and the load suspect keeps a stable id (A17, A33).
+  The bug-report lifecycle reads default-branch runs only (A20). Re-probe on a source change, `covered-by` closes the
+  gap (A21, A22). The desktop's bisect banner matches the cluster, and reproduction and bisect steps report to the
+  local app only (A27, A34). A declined `green-samples` capability stops green sampling (A35). `piwi ai check` names a
+  command that works (A31).
 
 ## Part 1: Eligible runs
 
@@ -212,11 +226,13 @@ and the scenario.
 
 The reporter reads `PIWI_ORIGIN` (`ci`, `ci-rerun`, `local`, `desktop`, `editor`, `preflight`, `bug`, `flake-lab`,
 `probe`, `bisect`, `reproduce`) and `PIWI_ORIGIN_REF` (a dispatch id, a cluster id, a bug report id) into
-`metadata.piwiOrigin`. With nothing set, it records `ci` when it detects a CI provider and `local` otherwise.
+`metadata.piwiOrigin`. With nothing set, it records `ci` when it detects a CI provider and `local` otherwise, and
+`collectCiInfo` learns Bitbucket Pipelines' build number and URL (A41). Imports are stamped `import` by the server
+(`shared/handlers/import-runs.ts`), since no reporter launches them.
 
 | Launcher | Sets | File |
 |---|---|---|
-| Desktop app: local run, reproduction, bisect step | `desktop`, `reproduce`, `bisect` with the cluster id | `apps/desktop/src-tauri/src/runner.rs`, `worktree.rs` |
+| Desktop app: local run, reproduction, bisect step, Piwi Picker reproduction | `desktop`, `reproduce`, `bisect` with the cluster id, `reproduce` with the bug report id | `apps/desktop/src-tauri/src/runner.rs`, `worktree.rs`, `repro.rs` |
 | Editor run commands | `editor` | `packages/editor/src/server.ts` (an `env` field on the run command, not a shell prefix, so it works on Windows) |
 | `piwi preflight --run`, `piwi bug --write` | `preflight`, `bug` with the report id | `packages/reporter/src/cli/preflight.ts`, `bug.ts` |
 | CI re-run from the dashboard | `ci-rerun` with the dispatch id | `server/utils/ci-rerun.ts`, through an optional configured input or variable |
@@ -224,7 +240,8 @@ The reporter reads `PIWI_ORIGIN` (`ci`, `ci-rerun`, `local`, `desktop`, `editor`
 
 A CI re-run also stores GitLab's pipeline id and Bitbucket's build number in its dispatch record and matches them at
 finalize. GitHub rejects an undeclared `workflow_dispatch` input, so the correlation input is its own optional setting;
-without it, the dispatch is matched on ref, time window and test files.
+without it, the dispatch is matched on ref, time window and test files. The re-run also passes each affected test's
+file and line instead of whole files, and dispatches on the cluster's branch rather than the configured ref (A28).
 
 ### 1.2 One eligibility rule
 
@@ -232,25 +249,27 @@ without it, the dispatch is matched on ref, time window and test files.
 
 | Use | Excludes |
 |---|---|
-| `baseline` (run and execution baselines, the three diffs, the AI's baseline comparison) | lab, probe, bisect, reproduction, incident; partial runs for run-level baselines |
+| `baseline` (run and execution baselines, the environment, visual and page diffs, the AI's baseline comparison) | Flake Lab, probe, bisect, reproduction, incident; partial runs for run-level baselines |
 | `fix-verification` | the above, plus a pass at the failing commit (D5) and other branches |
-| `flakiness` | lab, probe, bisect, reproduction, incident |
-| `selection-catalog` (pass rate, last status, recent failures, durations, suggestions) | lab, probe, bisect, reproduction, incident |
+| `flakiness` | Flake Lab, probe, bisect, reproduction, incident |
+| `selection-catalog` (pass rate, last status, recent failures, durations, suggestions) | Flake Lab, probe, bisect, reproduction, incident |
 | `branch-failures` (what the editor shows as CI failures) | everything but complete CI runs when one exists on the branch |
-| `change-coverage` and other "not reached in N runs" analyses | partial runs, lab, probe, bisect, reproduction |
-| `shared-state` (locator snapshots, test metadata sync, green samples) | lab, probe, bisect, reproduction, historical import |
-| `notifications` and the gate | lab and probe (as today), incident (inconclusive) |
+| `change-coverage` and other "not reached in N runs" analyses | partial runs, Flake Lab, probe, bisect, reproduction |
+| `shared-state` (locator snapshots, test metadata sync, green samples) | Flake Lab, probe, bisect, reproduction, historical import |
+| `auto-heal` | Flake Lab, probe, bisect, reproduction, incident |
+| `bug-lifecycle` | branches other than the default, `bug`, Flake Lab, probe, bisect, reproduction |
+| `notifications` and the gate | Flake Lab and probe (as today), incident (inconclusive) |
 
 The consumers fixed by hand in PR 2 move to it, and `isLabRun` becomes one of its cases. A unit test lists every use
 and the origins it excludes, so a new origin has to be placed explicitly.
 
 ### 1.3 The branch on every ingest path
 
-`/begin` and the sharded `/finish` resolve the branch from the metadata they receive (`resolveRunBranch`), blob imports
-read the commit and branch from the blob's config metadata, and a run with no branch is "unknown": analytics stop
+`/begin` and the sharded `/finish` resolve the branch from the metadata they receive (`resolveRunBranch`). Blob
+imports read the commit and branch from the blob's config metadata. A run with no branch is "unknown": analytics stop
 counting it as the default branch, and `pruneStaleCanonicalNodes` (`server/utils/graph-ingest.ts`) stops treating it
-as one. A startup backfill, like `server/plugins/locator-index-backfill.ts`, sets the branch from `metadata.scm` on
-existing rows.
+as the default branch. A startup backfill, like `server/plugins/locator-index-backfill.ts`, sets the branch from
+`metadata.scm` on existing rows.
 
 ### 1.4 Historical imports
 
@@ -262,10 +281,11 @@ eligible for `shared-state`. Imports stay silent, as today.
 
 `shared/handlers/run-health.ts` (new) classifies a finished run from data already stored: the share of tests that
 failed, the share of failures in the largest cluster, navigation, connection and crash error kinds, failed requests to
-the run's own origin, and the same origin or fingerprint failing in other projects within 30 minutes. A run it flags
-gets `metadata.incident = { reason, origin, projects }` and:
+the app's host (from `baseURL`), and the same host or fingerprint failing in other projects within 30 minutes. A run
+it flags gets `metadata.incident = { reason, host, projects }` and:
 
-- is excluded by the eligibility rule from flaky scores, baselines, fix verification and auto-heal;
+- is excluded by the eligibility rule from baselines, fix verification, flaky scores, the selection catalog and
+  auto-heal;
 - adds one `incident` marker (the category exists in `shared/marker-categories.ts`) and sends one
   `environment.incident` event to the project's subscribers, not to test owners;
 - gives the gate an inconclusive verdict, distinct from pass and fail;
@@ -285,35 +305,42 @@ effects, because `server/utils/revive-run.ts` can bring a reaped run back.
 
 ### 2.1 The outcome table
 
-`handback_outcomes`, one row per stage transition:
+`handback_outcomes`, one row each time a hand-back reaches a new outcome:
 
 | Column | Holds |
 |---|---|
-| `kind` | `locator-heal`, `auto-heal-pr`, `diagnosis`, `fix-plan`, `fix-attempt`, `gap-draft`, `bug-spec`, `quarantine-proposal`, `merge-suggestion`, `gate`, `bisect`, `flake-verify` |
+| `kind` | `locator-heal`, `auto-heal-pr`, `diagnosis`, `fix-attempt`, `gap-draft`, `bug-spec`, `quarantine-proposal`, `merge-suggestion`, `gate`, `flake-verify` |
 | `subject` | the cluster, test case, gap, bug report or call site it is about |
-| `suggestion_key` | a stable hash of what was suggested (for a heal: the call site, the failing and the suggested locator) |
-| `stage` | `suggested`, `applied`, `verified`, `rejected`, `regressed` |
+| `suggestion_key` | a stable hash of what was suggested (for a heal: the call site, the failing locator and the recommended locator) |
+| `outcome` | `suggested`, `applied`, `verified`, `rejected`, `regressed` |
 | `channel` | `inferred`, `ui`, `mcp`, `editor`, `desktop`, `cli`, `ci` |
 | `actor` | the user or the API key, null when inferred |
 | `run_id`, `commit`, `created_at` | where it was seen |
 
-Before retention prunes rows, a daily counter per project, kind and stage goes into a sibling of
+Before retention prunes rows, a daily counter per project, kind and outcome goes into a sibling of
 `analytics_daily_rollups` (D9).
 
 ### 2.2 Outcomes inferred from runs
 
 No client change is needed for any of these:
 
-- **Locator heal.** At ingest, when a call site with an open recommendation shows the recommended signature, record
-  `applied` with channel `inferred`, labeled "matched the recommendation". The next eligible passing run records
-  `verified`. `healedInRunId` is stored instead of recomputed, and only later runs count (A40).
+- **Locator heal.** At ingest, when the failing call site itself (not another call site of the same test) shows the
+  recommended signature, record `applied` with channel `inferred`, labeled "matched the recommendation". The next
+  eligible passing run records `verified`. `healedInRunId` is stored instead of recomputed, and only later runs count
+  (A40).
 - **Diagnosis.** A `diagnosis-verified` fix records `verified` on the diagnosis version that was current when the
   fix landed; `cluster.regressed` records `regressed`.
-- **Auto-heal PR.** Merged records `applied`, closed without merging `rejected`, a green run on its own branch
-  `verified` (2.4).
-- **Merge suggestion and quarantine proposal.** Approve and reject, release accepted and declined, mirrored from the
-  tables that already hold them.
-- **Gap draft.** Issuing a draft records `suggested`; Part 5.1 adds `verified`.
+- **Auto-heal PR.** Merged records `applied` and closed without merging records `rejected`. A green run on the heal
+  branch is noted in the action's result (2.4); the next eligible passing run after the merge records `verified`.
+- **Merge suggestion and quarantine proposal.** An approved merge records `applied`, written by
+  `approveMergeSuggestion` before the merge deletes the suggestion row; a rejected merge records `rejected`, read from
+  `cluster_merge_suggestions`. An accepted release records `applied`, read from `quarantined_tests.released_at`; a
+  declined proposal or release records `rejected` when a person dismisses it, since nothing stores that today.
+- **Flake verify.** A `piwi flake verify` whose verdict is `verified` records `verified`; the test's next retry-pass
+  records `regressed`.
+- **Bug spec.** The bug-report lifecycle records test-committed as `applied`, closed as `verified` and a reopen as
+  `regressed`.
+- **Gap draft.** Issuing a draft records `suggested`; 5.1 adds `verified`.
 
 ### 2.3 The gate and the PR feedback, stored
 
@@ -323,20 +350,21 @@ No client change is needed for any of these:
   `server/utils/scm/pr-feedback.ts`.
 - The PR feedback posted per run (provider, PR number, comment id, statuses posted). Setup marks PR feedback active
   from it (`shared/handlers/setup-status.ts`) instead of from the setting alone.
-- A sweep, like the heal PR state sweep, reads the final state of PRs whose gate failed. Merged anyway records the
-  gate verdict as `rejected`. A later regression of the same cluster on the default branch counts as "escaped past
-  the gate".
-- `piwi/tests` ignores quarantined failures and says "N quarantined" (A25), with a project setting to keep the strict
-  rule.
+- A sweep, like the auto-heal PR state sweep, reads the final state of PRs whose gate failed. A PR merged despite the
+  failed gate records the gate's outcome as `rejected`. A later regression of the same cluster on the default branch
+  counts as "escaped past the gate".
+- `piwi/tests` ignores quarantined failures and says "N quarantined" (A25, in PR 1), with a project setting to keep
+  the strict rule.
 
 ### 2.4 Auto-heal outcomes
 
 - Retention prunes merged, closed, failed and skipped rows after their counters are rolled up, never opened ones (A11).
-- A closed edit (file, failing locator, suggested locator) is not proposed again unless a person picks that locator
-  later in the snapshot picker.
-- `fetchChanges` returns full commit messages: all three providers cut them to the first line today
-  (`server/utils/scm/GitHubProvider.ts`, `GitLabProvider.ts`, `BitbucketProvider.ts`), so no trailer is ever seen.
-  Fix verification reads `Piwi-Heal` and records the heal PR in an optional `healPr` field on the fix, not as a new
+- An edit whose auto-heal PR was closed without merging (same file, failing locator and recommended locator) is not
+  proposed again unless a person picks that locator later in the snapshot picker.
+- `fetchChanges` returns full commit messages. Today GitHub and GitLab cut them to the first line
+  (`server/utils/scm/GitHubProvider.ts`, `GitLabProvider.ts`) and Bitbucket's `fetchChanges` returns no commits at all
+  (`BitbucketProvider.ts`), so no trailer is ever seen; Bitbucket needs a commits call over the range. Fix
+  verification reads `Piwi-Heal` and records the auto-heal PR in an optional `healPr` field on the fix, not as a new
   verdict value, so the `cluster.fixed` payload stays compatible.
 - Runs on a heal branch link to their action (the branch name carries the run id and the edit signature) and record
   "verified on the branch" in the action's result.
@@ -355,13 +383,13 @@ After A2 and A26:
   (`server/utils/quarantine-candidates.ts`).
 - Models are never switched automatically (D7).
 
-### 2.6 Is Piwi's help working
+### 2.6 Are hand-backs working
 
 New catalog metrics: `heal-adoption` (call sites now using the recommendation), `heal-pr-merge-rate`,
-`diagnosis-helpful-rate`, `diagnosis-verified-rate`, `gap-drafts-closed`, `gate-blocked-merges`, `gate-overrides`,
-`flakes-verified-fixed`. `MetricDef.capability` widens beyond `test-map` so each metric hides with its capability. They
-show as a "Piwi's help" section in Analytics, a sentence group in quality reports, and through the existing metrics
-MCP tools and `/api/metrics`.
+`diagnosis-helpful-rate`, `diagnosis-verified-rate`, `gap-drafts-closed` (counted once 5.1 links a test to its gap),
+`gate-blocked-merges`, `gate-overrides`, `flakes-verified-fixed`. `MetricDef.capability` accepts any capability, not
+only `test-map`, so each metric is hidden when its capability is declined. They show as a "Hand-back outcomes" section
+in Analytics, a sentence group in quality reports, and through the existing metrics MCP tools and `/api/metrics`.
 
 ## Part 3: Write-back
 
@@ -373,10 +401,10 @@ Thin tools over the shared handlers the REST routes already use (D8):
 |---|---|---|
 | `triage_cluster` | assign, snooze, quarantine, release, resolve with a note; several clusters at once | `patchClusterAssignee`, `bulkTriageClusters` in `shared/handlers/failure-clusters.ts` |
 | `triage_gap` | accept, snooze, dismiss with a reason, covered-by | `triageGap` in `shared/handlers/scenario-gaps.ts` |
-| `decide_merge_suggestion` | approve or reject | the merge-suggestion handlers |
+| `decide_merge_suggestion` | approve or reject | `approveMergeSuggestion`, `rejectMergeSuggestion` in `shared/handlers/cluster-merge-suggestions.ts` |
 | `set_bug_report_status` | dismiss, reopen | `shared/handlers/bug-reports.ts` |
 | `rerun_cluster_in_ci` | dispatch the re-run | `server/utils/ci-rerun.ts` |
-| `link_issue` | link an existing ticket | the links handler |
+| `link_issue` | link an existing ticket | `createLink` in `shared/handlers/links.ts` |
 | `set_cluster_bisect` | record a first bad commit | 3.4 |
 
 `list_open_clusters` already filters on the merge-suggestion and quarantine-ready queues; these tools let an agent act
@@ -386,11 +414,12 @@ on them. `set_cluster_status` stops erasing triage notes (A16).
 
 - `record_diagnosis` takes the diagnosis JSON schema the server already validates, stores it with provider `agent` and
   the model the agent names, validates its patch server-side and snapshots it into the versions. The dashboard shows
-  it as written by an agent. Instances with no AI provider then get diagnoses, Fixed-before memory and
+  it as written by an agent. Instances with no AI provider then get diagnoses, Fixed before and
   `diagnosis-verified` from the agent the developer already uses.
 - `report_fix_attempt` takes a cluster, a kind (patch, locator edit, fix plan), a patch hash or the edit, a commit or a
   branch, and the diagnosis id. It records `applied` with channel `mcp`; fix verification later turns it into
-  `verified` or `regressed`. The fix plan suggests a `Piwi-Cluster: <id>` trailer for the commit.
+  `verified` or `regressed`. The fix plan suggests a `Piwi-Cluster: <id>` trailer for the commit, and fix
+  verification reads it as it reads `Piwi-Heal` (2.4) to tie the fix to the attempt.
 
 ### 3.3 Skills and prompts that report back
 
@@ -398,8 +427,8 @@ on them. `set_cluster_status` stops erasing triage notes (A16).
   `event.context` in `server/routes/mcp.post.ts`. It follows notification retention, can be declined, and shows on the
   cluster's timeline ("an agent recorded a fix attempt").
 - Each workflow skill ends with its write-back: `investigate-failure` with `submit_diagnosis_feedback` and
-  `report_fix_attempt`, `write-the-missing-test` with `piwi:gap <id>` and `triage_gap`, `apply-locator-healing` with
-  `report_fix_attempt`.
+  `report_fix_attempt`, `write-the-missing-test` with `triage_gap` (and `piwi:gap <id>` once 5.1 adds the
+  annotation), `apply-locator-healing` with `report_fix_attempt`.
 - The six workflow skills are also served as MCP prompts, versioned with the app and bundled the way the docs corpus is
   (`shared/docs-corpus.ts`). `piwi skills add` stamps a version in each `SKILL.md` front matter and reports "outdated"
   apart from "edited" (`packages/reporter/src/cli/skills.ts`). The desktop app offers to install them in a linked
@@ -407,27 +436,30 @@ on them. `set_cluster_status` stops erasing triage notes (A16).
 
 ### 3.4 The desktop app and the team instance
 
-- A shared server accepts a bisect result: `server/api/failure-clusters/[id]/bisect.post.ts` returns 404 unless the
-  desktop token is set, and its role check already limits it to administrators and reporters. The body is typed in
-  `packages/core` before 1.0.
-- The editor brokers jobs between the two. On a CI failure from the team instance, "Reproduce in the desktop app" and
+- A team instance accepts a bisect result. Today `server/api/failure-clusters/[id]/bisect.post.ts` returns 404 unless
+  the desktop token is set; it stops requiring the token, and its role check already limits it to administrators and
+  reporters. The body is typed in `packages/core` before 1.0.
+- The editor passes jobs between the two. On a CI failure from the team instance, "Reproduce in the desktop app" and
   "Find the breaking commit in the desktop app" post a job request (kind, commit, arguments, instance URL, the remote
   cluster id) to the desktop app, which asks the developer to confirm, as Piwi Picker's reproduction requests do. The
   editor polls the verdict and offers "Share on <instance>" with its own key. The desktop app never stores the team's
   key, and running code at another commit always needs the click in its window.
 - Flake Lab follows the same path: the editor fetches the plan from the team instance with recording on, the desktop
   app runs it with `--plan` and `--json`, and the editor uploads the results.
+- The desktop app links a local run by the `PIWI_ORIGIN_REF` it set, not as the newest id above a baseline, so
+  concurrent runs stop cross-linking (A46).
 
-### 3.5 Flake Lab within reach
+### 3.5 Flake Lab from the editor and the failure pages
 
 - An editor code lens on a flaky test: "Reproduce this flake" and "Verify the flake fix", built from
   `GET /api/projects/:id/flake-lab` and `flakeLabNextCommand`, run through the editor's existing run command with
   `--server-url`, so the results land on the instance the editor reads.
 - Next-step rows (`shared/next-step.ts`): reproduce under the top suspect, then verify once reproduced. Home links the
-  project's lab queue.
+  project's flaky tests that have an untested suspect or a reproduction waiting for a verify.
 - An optional `flakeLab` workflow target in the CI re-run settings, reusing the dispatch.
 - Planning order: untested suspects first, the reproduced one preferred in the clue and the flaky list (A17). A suspect
-  that did not reproduce is demoted and explained, never dropped: ten clean runs only bound the rate.
+  that did not reproduce is demoted and explained, never dropped: ten clean runs only set an upper bound on the failure
+  rate.
 
 ## Part 4: Proven facts in every explanation
 
@@ -438,7 +470,7 @@ Sketched; its own proposal when it starts.
 Right after the clues in `server/utils/ai-context.ts`: the bisected commit ("proven by bisect"), every latest Flake Lab
 verdict including "ruled out" (with its commit and date), a verified fix, the resource findings of the representative
 execution's worker, markers between the last green run and the first failure, the linked ticket's status and
-resolution, and a merged heal PR. In the same change, produce the `dialogs` and `pageDiff` sections that
+resolution, and a merged auto-heal PR. In the same change, produce the `dialogs` and `pageDiff` sections that
 `shared/diagnosis-sections.ts` declares and nothing writes (A42), and add the attempt diff to the retry progression.
 The demo mirror (`app/demo/api/diagnosis-context.ts`) follows. The context hash covers every section, so each existing
 diagnosis shows as stale once after the upgrade.
@@ -448,26 +480,27 @@ diagnosis shows as stale once after the upgrade.
 `shared/failure-cause.ts` (new) resolves `{ cause, source, confidence, evidence, conflicts }` from what exists today:
 `errorType`, `ParsedErrorKind`, the verdict's `FailureWhy`, `flakyRootCause`, the AI category, the clue story and the
 lab verdicts. Precedence: a person, then a reproduced lab suspect, then a strong clue story, then the AI (not rated
-unhelpful, confidence medium or higher), then `flakyRootCause`, then `errorType`. The next step, the inbox clue and the
-AI context read it. Later: a cause override on the cluster, and a source on `flakyRootCause` so the finalize step stops
-overwriting a person's or the lab's value (A39). It also settles the disagreement where a `goto` timeout is a timeout
-in the inbox and an infrastructure failure on the cluster page.
+unhelpful, confidence medium or higher), then `flakyRootCause`, then `errorType`. The next step, the inbox clue and
+the AI context read it. Later: a cause override on the cluster, and a source on `flakyRootCause`, so a verified fix
+clears it (A39) and the finalize step stops overwriting a person's or the lab's value. It also settles the
+disagreement where a `goto` timeout is a timeout in the inbox and an infrastructure failure on the cluster page.
 
-### 4.3 The top clue and late facts reach every delivery route
+### 4.3 The top clue and later diagnoses reach every delivery route
 
 - The top clue in the PR comment entries (at most 5 per section), in notifications (at most 3 failures), in the Jira
   body (replacing the fingerprint hint) and in the editor's diagnostics, under the existing include toggles.
 - `piwi explain <file:line | id> [--json]` prints the clues and the fix plan's Markdown. It was planned in
   [`failure-experience-audit.md`](failure-experience-audit.md) and never shipped.
 - A `commentOnDiagnosis` integration policy (off by default) comments a ticket when a diagnosis completes after it was
-  filed. The heal PR body names the linked ticket, and a `commentOnHealPr` policy comments it when the PR opens or
+  filed. The auto-heal PR body names the linked ticket, and a `commentOnHealPr` policy comments it when the PR opens or
   merges. A diagnosis line in PR entries refreshes the comment on `diagnosis.completed`, for the PR's latest run only.
 
 ### 4.4 Markers as evidence
 
 `piwi marker` in the CLI, `create_marker` and `list_markers` over MCP, and an opt-in deploy marker from the CI
 metadata. Markers between the last green run and the first failure feed the verdict's "since", a clause in the
-situation block, 4.1 and the cluster's trend chart, which hides markers today. Fixes A37.
+situation block, the proven-facts section (4.1) and the cluster's trend chart, which hides markers today. The run
+header shows every marker in its window (A37).
 
 ### 4.5 Resource clues
 
@@ -476,10 +509,11 @@ run-queue wait, event-loop delay), gated on the `resources` capability and silen
 open-pages factor in the flake profile, a REST endpoint for findings, an editor diagnostic at the opening line, and a
 `fix-resource-leaks` skill. New clues reach the AI context through the clues section with no extra work.
 
-### 4.6 Clustering corrections that stick
+### 4.6 Reversible cluster merges
 
-A merge log (method, score, actor, the victim's triage state), the original fingerprint on each execution so a merge
-can be undone, and an unmerge endpoint. Part 0 already makes rejections hold and extract create a cluster.
+A merge log (method, score, actor, the triage state of the cluster merged away), the original fingerprint on each
+execution so a merge can be undone, and an unmerge endpoint. Part 0 already makes rejected merges stay rejected and
+"Move to a new cluster" create a cluster.
 
 ## Part 5: What the suite misses
 
@@ -502,7 +536,7 @@ precision loop.
 One `resolveFileReach` serves impact (`server/utils/selection-impact.ts`) and change coverage
 (`server/utils/scm/change-coverage.ts`): spec path, locator call sites, route conventions, code reach, handler pairs
 and source frames. That restores the precision Part 0 gives up for A1. The selection stamp gains the base commit. When
-an eligible full run fails a test that a recent impact run on the same branch skipped (flaky and quarantined tests
+an eligible complete run fails a test that a recent impact run on the same branch skipped (flaky and quarantined tests
 aside), Piwi records an impact miss and adds a learned `affects` edge, a kind the graph schema already reserves.
 Unmapped files are kept as changed-unreached instead of dropped.
 
@@ -551,7 +585,7 @@ options still win. Code reach then becomes affordable on every run.
   adds a new file with a guard that the path does not exist (`applyHealAction` drops new files today). The sweeper
   reads `kind` (A44).
 - "Keep as failing test" in the desktop app writes the commit version into the bugs folder after a reproduction,
-  instead of deleting the spec (A36).
+  instead of deleting the spec. The app also removes the reproduction spec when it quits mid-run (A36).
 - The person who filed the report hears when it looks fixed and when it closes, through the fix-author personal
   channel. Reproduction verdicts give a "confirmed" or "cannot reproduce" badge.
 - Before Send, Piwi Picker shows the open reports on the same page.
@@ -571,10 +605,10 @@ rules (`stale-cluster`, `owner-load`, `quarantine-debt-growth`) become subscriba
 
 ### 6.2 Assignment and one work queue
 
-An `assigned` delivery when the assignee resolves to a user, through the fix-author personal channel and the live
-stream. The Jira assignee fills Piwi's when it is empty. `/api/inbox` returns typed items (clusters, open bug reports,
-heal PRs waiting for review, new leaks, reproduced flakes waiting for a verify, quarantine releases, overdue items),
-and `list_work` serves the same over MCP. A teams entity waits until a second consumer needs one, as
+A `cluster.assigned` event when the assignee resolves to a user, delivered through the fix-author personal channel and
+the live stream. The Jira assignee fills Piwi's when it is empty. `/api/inbox` returns typed items (clusters, open bug
+reports, auto-heal PRs waiting for review, new leaks, reproduced flakes waiting for a verify, quarantine releases,
+overdue items), and `list_work` serves the same over MCP. A teams entity waits until a second consumer needs one, as
 [`issue-tracker-integrations.md`](issue-tracker-integrations.md) decided.
 
 ### 6.3 Release readiness
@@ -589,17 +623,17 @@ quality-report pipeline. Clusters that appear after the release link back to it.
 - Per test: cost (duration, runs per week, `shared/ci-cost.ts`), real regressions caught in 180 days, reach no other
   trusted test has, last execution, skip or fixme age. Proposals: move to a nightly selection, merge with a named test,
   delete, un-skip. Shown on the Performance tab, as an MCP tool and as a quality-report section.
-- It needs stable test identity: renames proposed when one test disappears and another appears in the same file or
-  with the same title, confirmed by a person into `test_case_aliases`; `retired_at` after N eligible full runs without
-  the test, which also drops it from the `failed` selection (A43); per-test daily rollups, so the history these
-  decisions read survives retention.
+- It needs stable test identity. When one test disappears and another appears in the same file or with the same title,
+  Piwi proposes a rename, and a person confirms it into `test_case_aliases`. A test absent from N eligible complete
+  runs gets `retired_at`, which also drops it from the `failed` selection (A43). Per-test daily rollups keep the
+  history these decisions read past retention.
 
-### 6.5 Dependency-bump campaigns
+### 6.5 Dependency bumps
 
 A run whose diff touches only manifests and lockfiles, or that carries a Playwright version marker, groups its new
-locator failures into one campaign, heals them in one batch and, with a per-project opt-in, pushes the edits onto the
-bump pull request's own branch (auto-heal skips every branch but the default today). One PR section lists what was
-healed and what needs review.
+locator failures together and heals them in one batch. With a per-project opt-in, the edits go onto the bump pull
+request's own branch; today auto-heal skips every branch but the default. One PR section lists what was healed and
+what needs review.
 
 ## Part 7: Independent tracks
 
@@ -617,7 +651,7 @@ keeps it indefinitely and sends it to a model.
 - Ingest masks card numbers (Luhn check), IBANs, emails and known API-key prefixes in step parameters and console text.
 - Exports and share links scrub the trace archives they include (`server/utils/trace-zip.ts`).
 - The AI context runs a redaction pass, shown in the prompt preview (`shared/ai-prompt-preview.ts`).
-- `guide/privacy.md` states all of it.
+- `apps/docs/guide/privacy.md` states all of it.
 
 ### 7.2 Activation beyond the first run
 
@@ -632,9 +666,9 @@ keeps it indefinitely and sends it to a model.
 
 ### 7.3 AI steps report their replays
 
-The `piwi-ai-usage` manifest gains an optional outcome per entry (replayed, authored, drifted, postcondition failed,
-missing), caught and rethrown in the fixture, so the AI steps tab ranks artifacts by drift. The healing panel offers
-the re-author command next to an AI step's prompt (`piwi ai resolve --grep <title> --update-ai`).
+The `piwi-ai-usage` manifest gains an optional replay result per entry (replayed, authored, drifted, postcondition
+failed, missing), caught and rethrown in the fixture, so the AI steps tab ranks artifacts by drift. The healing panel
+offers the re-author command next to an AI step's prompt (`piwi ai resolve --grep <title> --update-ai`).
 
 ### 7.4 Data captured and never read
 
@@ -663,10 +697,10 @@ the re-author command next to an AI step's prompt (`piwi ai resolve --grep <titl
 
 | Kind | Added |
 |---|---|
-| Tables | `handback_outcomes`, its daily rollup, `gate_evaluations`, the PR feedback record, `mcp_tool_calls`. Later: `scenario_gaps.closed_by_test_case_id` and `close_reason`, `quarantined_tests.expires_at`, `failure_clusters.assigned_at` and a cause override, `test_case_aliases`, per-test daily rollups, the original fingerprint on `test_runs_cases` |
+| Tables | `handback_outcomes`, its daily rollup, `gate_evaluations`, the PR feedback record, `mcp_tool_calls`. Later: `scenario_gaps.closed_by_test_case_id` and `close_reason`, `quarantined_tests.expires_at`, `failure_clusters.assigned_at` and a cause override, `test_case_aliases`, per-test daily rollups, the original fingerprint on `test_runs_cases`, a merge log, a route-set payload column on `test_runs_cases` |
 | Run metadata | `piwiOrigin`, `incident`, `ingestHealth` |
 | Reporter | `PIWI_ORIGIN`, `PIWI_ORIGIN_REF`, console entry types `pageerror` and `crash`, the route-set attachment, the capture-plan file, `gap` in test metadata |
-| Events | `environment.incident`, `run.interrupted`, `cluster.assigned`, `cluster.overdue`, `quarantine.expired`, `target.missed`, `gap.new`, `bug.reported` |
+| Events | `environment.incident`, `run.interrupted`, `cluster.assigned`, `cluster.overdue`, `quarantine.expired`, `target.missed`, `gap.new` |
 | MCP | `triage_cluster`, `triage_gap`, `decide_merge_suggestion`, `set_bug_report_status`, `rerun_cluster_in_ci`, `link_issue`, `set_cluster_bisect`, `record_diagnosis`, `report_fix_attempt`, `create_marker`, `list_markers`, `list_work`, and the workflow prompts |
 | CLI | `piwi explain`, `piwi marker`, `piwi flake burn-in`, `piwi gate --release`, `piwi init --login` and `--ci` |
 
@@ -677,19 +711,19 @@ Every row of this table gets a D entry in [`1.0-stabilization.md`](1.0-stabiliza
 
 | PR | Part | Content | Needs |
 |---|---|---|---|
-| 1 | 0 | The verdicts: A2, A4, A5, A11, A16, A25, A26, A29, A30, A32, A38 | none |
+| 1 | 0 | The verdicts: A2, A4, A5, A11, A16, A26, A29, A30, A32, A38; the quarantine-aware `piwi/tests` (A25) | none |
 | 2 | 0 | Ingest and lab runs: A3, A6 to A10, A18, A19, A24 | none |
 | 3 | 0 | Analysis: A1, A12 to A15, A17, A20 to A23, A27, A31, A33 to A35 | none |
-| 4 | 1 | Run origin from every launcher, the eligibility rule, CI re-run correlation (A28, A41) | 2 |
+| 4 | 1 | Run origin from every launcher (A41), the eligibility rule, CI re-run correlation and targeting (A28) | 2 |
 | 5 | 1 | Branch backfill, historical imports, ingest health, `run.interrupted` | 2 |
 | 6 | 1 | Environment incidents | 4 |
-| 7 | 2 | Outcome table, inferred heal and diagnosis outcomes, rollup counters | 4 |
+| 7 | 2 | Outcome table, inferred outcomes, rollup counters (A40) | 4 |
 | 8 | 2 | Gate evaluations and status, the PR feedback record, the override sweep | 7 |
 | 9 | 2 | Auto-heal outcomes, full commit messages, trailers | 7 |
-| 10 | 2 | Diagnosis quality, the "Piwi's help" metrics and section | 7 to 9 |
-| 11 | 3 | MCP triage verbs, skills that end with their write-back | 1 |
-| 12 | 3 | `record_diagnosis`, `report_fix_attempt`, the write log, skills as prompts | 7, 11 |
-| 13 | 3 | Bisect results on team instances, the editor-to-desktop broker (A46) | 4 |
+| 10 | 2 | Diagnosis quality, the hand-back metrics and section | 7 to 9 |
+| 11 | 3 | MCP triage verbs | 1 |
+| 12 | 3 | `record_diagnosis`, `report_fix_attempt`, the write log, skills that end with their write-back, skills as prompts | 7, 11 |
+| 13 | 3 | Bisect results on team instances, jobs passed from the editor to the desktop app (A46) | 4 |
 | 14 | 3 | Flake Lab in the editor, the next step and Home | 4 |
 
 Parts 4 to 7 get their own proposals; Part 7 can start at any time, and 7.1 is the one to start first. Each PR carries
@@ -702,7 +736,8 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
   evidence); candidates scoped to the cluster's branch or the default branch.
 - `server/utils/ai-diagnosis.ts`: the prior assessment comes from the snapshot written before `claimRunningRow` resets
   the row; `runningDiagnosisFields` resets the feedback and its note. `server/utils/ai-context.ts`:
-  `priorDiagnosisSection` reads that snapshot; Fixed before skips a diagnosis rated unhelpful.
+  `priorDiagnosisSection` reads that snapshot. `server/utils/cluster-memory.ts`: `findFixedBefore` skips a diagnosis
+  rated unhelpful, so the AI context and the fix plan both follow.
 - `server/utils/retention.ts` (`pruneHealActions` without `opened`), `server/utils/heal/pr-state.ts` (bump the row on
   each check, oldest check first), `server/utils/heal/policy.ts` (failed and skipped rows free their dedupe key).
 - `shared/handlers/failure-clusters.ts`: status changes and bulk triage keep the triage note unless a new one is given.
@@ -731,25 +766,28 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
   non-source file widens unless something maps it. `tests/unit/selection-impact.test.ts`.
 - `server/utils/ai-context.ts`: recurrence and retry sections read the cluster's tests' executions.
 - `shared/notification-events.ts`: the owners filter applies to every event whose payload carries owners.
-- `shared/handlers/failure-clusters.ts` (extract creates a cluster and appends to its note),
+- `shared/handlers/failure-clusters.ts` (`extractClusterCases`: "Move to a new cluster" creates a cluster and appends
+  to its note),
   `app/components/cluster/ClusterAffectedTests.vue`, `server/utils/cluster-reconcile.ts` (skip rejected pairs, store
   LLM "no" verdicts).
 - `shared/failure-clues.ts`, `shared/handlers/flake-profile.ts`: the reproduced suspect first; the load suspect's id
   without its threshold. `tests/unit/failure-clues.test.ts` with several suspects.
-- `shared/handlers/bug-reports.ts`: the lifecycle reads eligible branches only.
+- `shared/handlers/bug-reports.ts`: the lifecycle reads default-branch runs only.
 - `shared/handlers/probes.ts` (re-probe on a source hash), `shared/handlers/scenario-gaps.ts` (`covered-by` closes the
   gap; a covered-by on a surface-drift gap does not switch on project-wide control gaps).
 - `apps/desktop/src-tauri/src/worktree.rs` (reproduction and bisect steps pinned to the local app, as lab sessions are),
   `app/components/shared/ReproduceSection.vue` (match the live bisect by cluster).
-- `shared/handlers/aria-sampling.ts` (declined green samples), `packages/reporter/src/cli/ai.ts` and the check
-  command's message.
+- `shared/handlers/aria-sampling.ts` (honors a declined `green-samples` capability),
+  `packages/reporter/src/internal/ai/check.ts` (the message) and `packages/reporter/src/cli/ai.ts` (the prune stub).
 
 ### PR 4: run origin and eligibility
 - `packages/reporter/src/internal/config/env.ts`, `internal/collect/metadata-collector.ts`, `packages/core/src/wire.ts`.
-- `apps/desktop/src-tauri/src/runner.rs`, `worktree.rs`; `packages/editor/src/server.ts`;
-  `packages/reporter/src/cli/preflight.ts`, `bug.ts`; `server/utils/ci-rerun.ts`, `shared/ci-rerun.ts` and the three
-  providers (dispatch ids, the optional correlation input).
-- `shared/run-eligibility.ts` (new) and its unit test; every PR 2 consumer and `shared/handlers/probes.ts` move to it.
+- `apps/desktop/src-tauri/src/runner.rs`, `worktree.rs`, `repro.rs`; `packages/editor/src/server.ts`;
+  `packages/reporter/src/cli/preflight.ts`, `bug.ts`; `shared/handlers/import-runs.ts` (`import`);
+  `server/utils/ci-rerun.ts`, `shared/ci-rerun.ts` and the three providers (dispatch ids, the optional correlation
+  input, each test's file and line, the cluster's branch).
+- `shared/run-eligibility.ts` (new) and its unit test; every PR 2 consumer, `shared/handlers/bug-reports.ts` and
+  `shared/handlers/probes.ts` move to it.
 - `shared/piwi-env-vars.ts`, `apps/docs/guide/ci.md`, `proposals/1.0-stabilization.md`.
 
 ### PR 5: branch, imports, ingest health
@@ -757,6 +795,8 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
   `server/utils/graph-ingest.ts` (`pruneStaleCanonicalNodes`).
 - `metadata.ingestHealth` from `server/utils/sanitize.ts` and the submit paths; the run page; `ai-context.ts`.
 - `server/utils/stale-runs.ts` and `shared/notification-events.ts` (`run.interrupted`).
+- `shared/handlers/import-runs.ts`, `server/utils/persist-run-cases.ts`: a historical import does not wake snoozed
+  clusters and is not eligible for `shared-state`.
 
 ### PR 6: environment incidents
 - `shared/handlers/run-health.ts` (new), `server/utils/run-finalize-side-effects.ts`, `shared/handlers/markers.ts`,
@@ -768,35 +808,41 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 - `server/utils/locator-healing.ts` and `persist-run-cases.ts` (store `healedInRunId`, later runs only),
   `server/utils/fix-verification.ts` (the diagnosis version), `server/utils/heal/pr-state.ts`,
   `shared/handlers/analytics/rollups.ts`, `server/utils/retention.ts`.
+- `shared/handlers/cluster-merge-suggestions.ts`, `shared/handlers/quarantine.ts` (decisions copied as outcomes),
+  `server/api/projects/[id]/gaps/[gapId]/draft.post.ts` (an issued draft records `suggested`).
 
 ### PR 8: the gate and the PR feedback
 - Schema and migrations; `server/api/test-runs/[id]/gate.post.ts`; `server/utils/scm/pr-feedback.ts`;
   `shared/handlers/setup-status.ts`; a sweep in `server/tasks/`; `apps/docs/guide/ci.md`.
 
 ### PR 9: auto-heal outcomes
-- `server/utils/heal/policy.ts`, `server/utils/scm/ScmProvider.ts` and the three providers (full messages),
-  `server/utils/fix-verification.ts` (`healPr`), `shared/notification-events.ts` (additive payload field).
+- `server/utils/heal/policy.ts`, `server/utils/scm/ScmProvider.ts`, GitHub and GitLab (full messages), Bitbucket (the
+  commits over the range), `server/utils/fix-verification.ts` (`healPr`), `shared/notification-events.ts` (additive
+  payload field).
+- `shared/auto-heal.ts` and `server/utils/heal/lookup.ts` (a run on a heal branch finds its action from the branch name
+  and records "verified on the branch").
 
-### PR 10: diagnosis quality and Piwi's help
+### PR 10: diagnosis quality and hand-back metrics
 - `server/api/settings/ai/usage.get.ts`, `app/components/settings/AiUsagePanel.vue`, `server/utils/ai-diagnosis.ts`
   (budget), `server/utils/quarantine-candidates.ts`, `shared/analytics/metrics.ts` and its value loader, the Analytics
   page, the quality-report sentences, `apps/docs/features/analytics.md`.
 
-### PR 11: MCP verbs and skills
-- `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`, the generated MCP tools page,
-  `packages/reporter/templates/skills/*/SKILL.md`, `apps/docs/features/agent-skills.md`.
+### PR 11: MCP verbs
+- `shared/mcp-tools.ts`, `server/utils/mcp/tools.ts`, the generated MCP tools page.
 
 ### PR 12: agent diagnoses, fix attempts, prompts
 - `server/utils/mcp/tools.ts`, `server/routes/mcp.post.ts` (key id), schema for `mcp_tool_calls`,
   `shared/mcp-prompts.ts`, `packages/reporter/src/cli/skills.ts`, `apps/desktop/src-tauri/src/mcp_clients.rs`, the
-  cluster timeline.
+  cluster timeline, `server/utils/fix-verification.ts` (`Piwi-Cluster`).
+- `packages/reporter/templates/skills/*/SKILL.md`, `apps/docs/features/agent-skills.md`.
 
 ### PR 13: desktop and team instance
 - `server/api/failure-clusters/[id]/bisect.post.ts`, a bisect body type in `packages/core`, the desktop job request
   (generalizing `DesktopReproRequestModal.vue`), `packages/editor/src/server.ts` (quick fixes, polling, sharing),
-  `apps/vscode` and `apps/jetbrains` commands, `apps/docs/features/desktop.md`, `apps/docs/features/editors.md`.
+  `apps/vscode` and `apps/jetbrains` commands, `app/composables/useDesktopLocalRuns.ts` (A46),
+  `apps/docs/features/desktop.md`, `apps/docs/features/editors.md`.
 
-### PR 14: Flake Lab within reach
+### PR 14: Flake Lab from the editor and the failure pages
 - `packages/editor/src/server.ts` (code lens), `shared/next-step.ts`, Home, `shared/ci-rerun.ts` (lab target),
   `shared/handlers/flake-lab.ts` (planning order), `apps/docs/features/flake-lab.md`.
 
@@ -804,10 +850,10 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 
 1. A cluster fails at commit A; the same commit is re-run and passes: no fix is recorded, the cluster stays open, the
    re-run is recorded as flake evidence. A pass at commit B on the default branch records the fix.
-2. A sharded run on a pull-request branch has its branch; the editor shows its failures; the baseline ladder's
-   same-branch rung picks it.
-3. Twelve `piwi flake` arms after a CI run: the editor's failures, change coverage, the `failed` selection, the three
-   diffs and the locator snapshots are unchanged.
+2. A sharded run on a pull-request branch has its branch; the editor shows its failures; the
+   same-branch baseline picks it (`selectBaselineRun`).
+3. Twelve `piwi flake` arms after a CI run: the editor's CI failures, change coverage, the `failed` selection, the
+   environment, visual and page diffs and the locator snapshots are unchanged.
 4. A heal applied by hand and pushed: the next CI run records `applied` (inferred) and the run after it `verified`;
    Analytics shows one call site adopted.
 5. An auto-heal PR closed without merging: the next default-branch run opens no PR for the same edit. A PR left open
@@ -817,7 +863,7 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 7. An agent calls `get_fix_plan`, edits, calls `report_fix_attempt`, and CI passes on a new commit: the attempt is
    `verified` and the cluster's timeline shows it.
 8. The gate fails, the PR is merged anyway, and the cluster regresses on main: one override and one escape are counted.
-9. The staging origin refuses connections during one run in two projects: one incident marker, one event, unchanged
+9. The staging host refuses connections during one run in two projects: one incident marker, one event, unchanged
    flaky scores, an inconclusive gate.
 10. A CI failure bisected in the desktop app from the editor and shared: the team instance's cluster shows the first
     bad commit.
@@ -828,10 +874,10 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 
 - **Attribution noise.** An inferred `applied` also counts a hand edit that happens to match the recommendation, so it
   is labeled "matched the recommendation", not "applied by Piwi".
-- **Numbers move after Part 0 and Part 1.** Stricter fix verification sends fewer `cluster.fixed` events, leaving lab
-  runs out changes pass rates and durations, and a quarantine-aware `piwi/tests` changes what the status means. The
-  release notes say so, and the quarantine rule has a setting.
-- **Local runs.** On the desktop app every run is local, and some teams only run locally against a shared instance.
+- **Numbers move after Part 0 and Part 1.** Stricter fix verification sends fewer `cluster.fixed` events. Leaving lab
+  runs out changes pass rates and durations. A quarantine-aware `piwi/tests` changes what the status means. The release
+  notes say so, and the quarantine rule has a setting.
+- **Local runs.** On the desktop app every run is local, and some teams only run locally against a team instance.
   Eligibility must not leave those projects with no baseline (open question 1).
 - **1.0 surface.** The plan adds metadata keys, events, MCP tools and CLI commands while the wire is about to freeze.
   D10 makes each one an explicit decision.
@@ -842,16 +888,16 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 
 ## Open questions
 
-1. **Do local runs on a shared instance count for flaky scores and baselines?** Recommendation: complete local runs
+1. **Do local runs on a team instance count for flaky scores and baselines?** Recommendation: complete local runs
    count as today, except as the editor's CI failures when a CI run exists on the branch; partial runs never count for
-   analyses based on absence; on the desktop app, local runs are the primary data.
+   "not reached in N runs" analyses such as change coverage; on the desktop app, local runs are the primary data.
 2. **Is a hand edit that matches the recommendation an applied heal?** Recommendation: yes, labeled as matched.
 3. **Does `record_diagnosis` obey a declined `ai` capability?** Recommendation: no. Declining `ai` stops Piwi calling a
    model; an agent's diagnosis is the developer's own. Agent diagnoses get their own declinable capability.
 4. **What does the gate return when the run is an incident?** Recommendation: a distinct exit code, decided in
    `1.0-stabilization.md` with the other gate codes.
 5. **Incident thresholds.** Recommendation: start with 80% of tests failed and 70% of failures navigating or connecting
-   to the run's own origin, and tune them on the demo and on real projects before the flag affects the gate.
+   to the app's host, and tune them on the demo and on real projects before the flag affects the gate.
 6. **Should a green run on a heal branch mark the draft PR ready for review?** Recommendation: no, a comment only.
 7. **Outcome counters: a new rollup table or columns on `analytics_daily_rollups`?** Recommendation: a sibling table
    with the same keys, since the run rollups are per run and outcomes are per hand-back.
@@ -861,7 +907,7 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 - Learning heal-strategy weights and the auto-heal minimum score from outcomes: auto-heal is off by default and capped
   at three open PRs per project, so there is almost no data (Part 8 names the entry condition).
 - Precision per clue rule: sixteen deterministic rules and very few labels.
-- Flake Lab priors shared across tests: one test's results would bend another's ranking.
+- Flake Lab priors shared across tests: one test's results would change another test's suspect ranking.
 - One-click signed actions in Slack, Teams and email: they need the instance to be reachable from outside and put
   bearer tokens in messages.
 - Share links in PR comments: a bearer token in public repositories.
@@ -875,17 +921,17 @@ its docs, its demo handlers (`npm run app:check:demo`) and, where it adds a page
 
 Found while researching this plan, on `b103d2d`. ✓ marks the ones re-read by hand after the reviewer reported them.
 
-| # | Sev. | Defect | Where |
+| # | Severity | Defect | Where |
 |---|---|---|---|
 | A1 ✓ | High | Impact selection skips passing tests that use a changed helper. Source frames are recorded only on failure and only each test's latest execution is read, so one recent failure inside the helper marks it mapped, nothing widens, and every other user of the helper is skipped (code reach off, the default). | `server/utils/selection-impact.ts` (`loadSourceReach`), `packages/reporter/src/public/reporter.ts` |
 | A2 ✓ | High | The AI's prior assessment never reaches a real diagnosis. `claimRunningRow` resets the row to `running` before the context is built, and `priorDiagnosisSection` returns nothing unless the row is completed. The triage note, the thumbs-down "do not repeat" line and the previous category are never sent, though the prompt preview shows them. | `server/utils/ai-diagnosis.ts`, `server/utils/ai-context.ts` |
-| A3 | High | Sharded runs have no branch: `/begin` writes metadata without it and the sharded `/finish` ignores the metadata it receives; blob and trace imports set none. The same-branch baseline, the editor's branch failures and the rollups miss these runs, and graph pruning treats them as the default branch. | `server/api/test-runs/[id]/begin.post.ts`, `finish.post.ts`, `shared/handlers/import-runs.ts`, `server/utils/graph-ingest.ts` |
+| A3 | High | Sharded runs have no branch: `/begin` writes metadata without it and the sharded `/finish` ignores the metadata it receives; blob and trace imports set none. The same-branch baseline, the editor's CI failures and the rollups miss these runs, and graph pruning treats them as the default branch. | `server/api/test-runs/[id]/begin.post.ts`, `finish.post.ts`, `shared/handlers/import-runs.ts`, `server/utils/graph-ingest.ts` |
 | A4 ✓ | Medium | A pass at the failing commit is recorded as a fix: no check that the commit changed. A CI retry, or Piwi's own "Re-run in CI", sends `cluster.fixed`, emails that commit's author, posts "fix landed" on the ticket, then marks the cluster regressed at the next failure. | `server/utils/fix-verification.ts` |
 | A5 | Medium | Fix verification ignores the branch: a green run on a pull-request or heal branch records the fix, can resolve the cluster and transition its ticket; the next default-branch failure reopens it. | `server/utils/fix-verification.ts`, `server/utils/integrations/policies.ts` |
 | A6 ✓ | Medium | The editor's CI failures come from the newest run on the branch, whatever it is: a Flake Lab arm, a local `--grep` run or a run still in progress. | `server/utils/branch-failures.ts` |
 | A7 | Medium | The selection catalog counts lab runs: a probe the test noticed fails it, so the built-in `failed` selection re-runs a healthy test; lab arms inflate durations and lower pass rates, which taints `slow` tags and smoke suggestions. | `shared/handlers/selections.ts`, `shared/handlers/selection-suggestions.ts` |
 | A8 | Medium | Change coverage reads the last 30 runs by id with no lab, branch or completeness filter; after `piwi flake`, changed files read "reached in 0 of 30 runs". | `shared/handlers/change-coverage.ts` |
-| A9 | Medium | The environment, visual and page diffs take 20 candidates before filtering lab runs, and green-sample deduplication counts lab samples, so CI green samples are dropped for 24 hours. | `server/utils/environment-diff.ts`, `visual-diff.ts`, `page-diff.ts`, `server/utils/persist-run-cases.ts`, `shared/handlers/aria-sampling.ts` |
+| A9 | Medium | The environment, visual and page diffs pick their baseline from the 20 newest passing executions with no lab filter, so a passing lab arm can be the baseline; green-sample deduplication counts lab samples, so CI green samples are dropped for 24 hours. | `server/utils/environment-diff.ts`, `visual-diff.ts`, `page-diff.ts`, `server/utils/persist-run-cases.ts`, `shared/handlers/aria-sampling.ts` |
 | A10 | Medium | Lab and bisect runs write shared state: a bisect step at an old commit rewrites tags, owner and locks, and replaces locator snapshots with old ones, so healing works from stale pages. | `server/utils/persist-run-cases.ts` |
 | A11 ✓ | Medium | Auto-heal rows still `opened` are pruned after 30 days, and the state sweep never touches a row while its PR stays open; the cap and the dedupe key disappear and the next run opens a duplicate PR. | `server/utils/retention.ts` (`pruneHealActions`), `server/utils/heal/pr-state.ts` |
 | A12 ✓ | Medium | The AI context calls every flaky cluster persistent: passed executions are never fingerprinted, and the recurrence and retry sections look for passed rows carrying the cluster id. The demo seed hides it by setting the cluster id on every row. | `server/utils/persist-run-cases.ts`, `server/utils/ai-context.ts` |
@@ -897,27 +943,27 @@ Found while researching this plan, on `b103d2d`. ✓ marks the ones re-read by h
 | A18 | Medium | The step cap keeps the first 500 steps with no marker, and can drop the failing step. | `server/utils/sanitize.ts` |
 | A19 | Medium | Imported executions are dated at import time and become the latest; an old blob overwrites current tags, owner and priority and sets locks to null, which lock-aware sharding then ignores. | `server/utils/persist-run-cases.ts`, `shared/handlers/import-runs.ts` |
 | A20 | Medium | The bug-report lifecycle ignores branch and run type: a feature-branch run closes a report, and an uncommitted `piwi bug --write` run marks it test-committed; the ticket follows each flip. | `server/utils/run-finalize-side-effects.ts`, `shared/handlers/bug-reports.ts` |
-| A21 | Medium | A re-probe is never triggered by a change to the test or the handler, so a not-noticed gap stays open after the assertion is fixed. | `shared/handlers/probes.ts` |
+| A21 | Medium | The re-probe trigger (`changed` in `buildProbePlan`) compares the probe time with `test_cases.updated_at`, which moves on tag, owner or flaky-cause writes, not on a change to the test's source or the route's handler; a not-noticed gap stays open after the assertion is fixed. | `shared/handlers/probes.ts` |
 | A22 | Medium | `covered-by` leaves the gap open and never closes most gap classes; one covered-by on a surface-drift control gap switches on control gaps for the whole project. | `shared/handlers/scenario-gaps.ts` |
 | A23 | Medium | A diff touching only CSS, HTML, JSON or YAML maps to no test, and `piwi run impact` runs nothing and exits 0. | `server/utils/selection-impact.ts`, `packages/reporter/src/cli/select.ts` |
 | A24 | Medium | The AI context's baseline comparison counts lab passes, ignores the branch and compares run ids, so it can say a cluster "passed on a newer commit" after `piwi flake`. | `server/utils/ai-context.ts` |
-| A25 | Low-medium | `piwi/tests` turns red on quarantined failures, contrary to the flaky-tests page. | `shared/pr-feedback.ts`, `apps/docs/features/flaky-tests.md` |
+| A25 | Low-medium | `piwi/tests` turns red on quarantined failures (`buildCommitStatus` counts every failure). The flaky-tests page says quarantine applies to the gate's checks "and nothing else", so this is documented behavior; PR 1 changes it on purpose, behind a setting (2.3). | `shared/pr-feedback.ts`, `apps/docs/features/flaky-tests.md` |
 | A26 | Low-medium | A rating carries over to the next diagnosis version. | `server/utils/ai-diagnosis.ts` |
 | A27 | Low-medium | The desktop app shows a running bisect's commit on any cluster of the same project. | `app/components/shared/ReproduceSection.vue` |
-| A28 | Low-medium | "Re-run in CI" runs whole spec files, repeated once per affected test, and uses the configured ref rather than the cluster's branch. | `shared/ci-rerun.ts`, `server/utils/ci-rerun.ts` |
+| A28 | Low-medium | "Re-run in CI" passes whole spec files (no line, no title filter), the same path once per affected test, and dispatches on the configured ref (GitHub, GitLab) or the repository's default branch (Bitbucket) rather than the cluster's branch. | `shared/ci-rerun.ts`, `server/utils/ci-rerun.ts` |
 | A29 | Low | The heal state sweep always takes the 50 oldest rows and starves newer ones. | `server/utils/heal/pr-state.ts` |
 | A30 | Low | A failed or skipped heal row keeps its dedupe key for 30 days, logged as "already queued". | `server/utils/heal/policy.ts` |
-| A31 | Low | `piwi ai check` recommends `piwi ai prune --apply`, which exits 2. | `packages/reporter/src/cli/ai.ts` |
+| A31 | Low | `piwi ai check` recommends `piwi ai prune --apply`, which exits 2. | `packages/reporter/src/internal/ai/check.ts` (the message), `packages/reporter/src/cli/ai.ts` (the stub) |
 | A32 | Low | AI usage filters on `updatedAt`, which a rating moves; earlier versions' tokens are never counted. | `server/api/settings/ai/usage.get.ts` |
 | A33 | Low | The load suspect's id embeds its threshold, so a lab result detaches when the threshold moves. | `shared/handlers/flake-profile.ts` |
 | A34 | Low | Desktop reproduction and bisect steps inherit the app's environment; with a team URL and key in it, each step uploads an ordinary run of an old commit to the team instance. | `apps/desktop/src-tauri/src/worktree.rs` |
 | A35 | Low | A declined `green-samples` capability is still sampled. | `shared/handlers/aria-sampling.ts` |
 | A36 | Low | A desktop reproduction spec may be left in the project when the app quits mid-run (removed only on the run's end; inferred from the code). | `apps/desktop/src-tauri/src/repro.rs` |
 | A37 | Low | The run header misses markers: a strict comparison and a limit applied before the environment filter. | `shared/handlers/test-runs.ts` |
-| A38 | Low | A diagnosis rated unhelpful is still offered as the earlier fix in the AI context. | `server/utils/ai-context.ts` |
+| A38 | Low | A diagnosis rated unhelpful is still offered under Fixed before, in the AI context and the fix plan. | `server/utils/cluster-memory.ts` (`findFixedBefore`), `server/utils/ai-context.ts` |
 | A39 | Low | `flakyRootCause` is never cleared, so the Test Map distrusts a test even after a verified fix. | `shared/handlers/scenario-gaps.ts` |
-| A40 | Low | `stampHealedRun` accepts any run but the failing one, earlier runs included (not confirmed). | `server/utils/locator-healing.ts` |
-| A41 | Low | Bitbucket Pipelines runs are not identified as CI. | `packages/reporter/src/internal/collect/metadata-collector.ts` |
+| A40 | Low | `stampHealedRun` accepts any run but the failing one, earlier runs included: it checks `lastSeenRunId !== failingRunId` only. | `server/utils/locator-healing.ts` |
+| A41 | Low | Bitbucket Pipelines runs are recorded as "Unknown CI" (through `CI=true`) with no build number or URL: `collectCiInfo` has no Bitbucket case, though the branch and PR readers do. | `packages/reporter/src/internal/collect/metadata-collector.ts` |
 | A42 | Low | The AI context's coverage block says the dialogs and page-diff sections are absent while clues cite them. | `shared/diagnosis-sections.ts`, `server/utils/ai-context.ts` |
 | A43 | Low | A failed test that was renamed or deleted stays in the `failed` selection, which then finds no tests. | `shared/handlers/selections.ts` |
 | A44 | Low | The heal sweeper ignores `heal_actions.kind`. | `server/utils/heal/dispatch.ts` |
@@ -934,21 +980,21 @@ Found while researching this plan, on `b103d2d`. ✓ marks the ones re-read by h
   factor the score does not have.
 - [`failure-experience-audit.md`](failure-experience-audit.md) says every recommendation is implemented; `piwi explain`
   (section H) never shipped.
-- `apps/docs/features/flaky-tests.md` says a quarantined failure does not turn the commit status red (A25).
-- The extract dialog says the tests regroup into their own cluster (A14).
+- The "Move to a new cluster" dialog says the tests regroup into their own cluster (A14).
 - `app/utils/setup-capabilities.ts` says "Automatic from reporter 0.45"; nothing reads the reporter version (7.2).
 - `CompanionToolsCard.vue` says the list is informative rather than detected, while approved connections and key use
   could detect it (7.2).
-- `piwi flake --bisect` says it saves nothing, while every step is reported as a lab run.
+- `piwi flake verify --bisect` says in its help that it saves nothing, while every step is reported as a lab run.
 
 ## Appendix C: Method
 
-- One reader per subsystem (reporter and capture, CLI and skills, ingest and data model, analysis, delivery and
+- One researcher per subsystem (reporter and capture, CLI and skills, ingest and data model, analysis, delivery and
   integrations, AI and agents, Test Map and selections, extension and bug reports, editors and desktop, product surface
-  and proposals) mapped what each area produces, who reads it, what it hands back, and whether the outcome comes back.
-- Their missing edges became 28 candidate gaps. Eight reviewers, each holding three to five candidates, checked every
-  claim against the code with the instruction to refute it; a claim that did not hold changed the candidate. The
-  verdicts were 13 partially existing, 15 confirmed missing, none already built.
-- A separate reviewer looked for stages nobody had listed; environment incidents, new-test admission, aging, release
+  and proposals) mapped what each area produces, who reads it, what it hands back, and whether Piwi learns the outcome.
+- The places where Piwi never learns the outcome became 28 candidate open loops. Eight reviewers, each holding three to
+  five candidates, checked every claim against the code with the instruction to refute it; a claim that did not hold
+  changed the candidate. The verdicts were 13 partially existing, 15 confirmed missing, none already built.
+- A separate reviewer looked for stages nobody had listed. Environment incidents, new-test admission, aging, release
   readiness, suite hygiene, dependency bumps, privacy and the items in Part 8 come from it.
+- Two more reviewers then checked this document: one against the code, one for consistency and wording.
 - The defects marked ✓ in Appendix A were re-read by hand.
