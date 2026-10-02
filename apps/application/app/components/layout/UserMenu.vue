@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
+import {
+  DESKTOP_DOWNLOAD_URL,
+  JETBRAINS_PLUGIN_URL,
+  PICKER_STORE_URL,
+  REPORTER_NPM_URL,
+} from '#shared/companion-links';
+import { DOCS_BASE_URL } from '#shared/docs';
 
 defineProps<{
   collapsed?: boolean;
@@ -11,6 +18,7 @@ const config = useRuntimeConfig();
 const { authState, logout } = useAuth();
 const settingsNav = await useSettingsNav();
 const { openSettings: openIdeSettings } = useOpenInIde();
+const isDesktop = useIsDesktop();
 
 // Tailwind's own `neutral` palette lives under `--color-old-neutral-*`: Nuxt UI
 // points `--color-neutral-*` at the active gray scale.
@@ -130,6 +138,57 @@ const items = computed<DropdownMenuItem[][]>(() => {
     ],
     [
       {
+        // The tools that install outside the dashboard, for every user: the
+        // Setup page's companion-tools card is for admins only.
+        label: 'Piwi tools',
+        icon: 'i-lucide-blocks',
+        ui: { content: 'w-80' },
+        children: [
+          [
+            {
+              label: 'Piwi Picker',
+              description: 'Browser extension · Chrome Web Store',
+              icon: 'i-lucide-mouse-pointer-click',
+              to: PICKER_STORE_URL,
+              target: '_blank',
+            },
+            {
+              label: 'Piwi for JetBrains IDEs',
+              description: 'IDE plugin · JetBrains Marketplace',
+              icon: 'i-lucide-puzzle',
+              to: JETBRAINS_PLUGIN_URL,
+              target: '_blank',
+            },
+            ...(isDesktop
+              ? []
+              : [
+                  {
+                    label: 'Desktop app',
+                    description: 'Installers · GitHub Releases',
+                    icon: 'i-lucide-monitor',
+                    to: DESKTOP_DOWNLOAD_URL,
+                    target: '_blank',
+                  },
+                ]),
+            {
+              label: 'Playwright reporter',
+              description: '@piwitests/reporter · npm',
+              icon: 'i-lucide-package',
+              to: REPORTER_NPM_URL,
+              target: '_blank',
+            },
+          ],
+          [
+            {
+              label: 'Documentation',
+              icon: 'i-lucide-book-open',
+              to: DOCS_BASE_URL,
+              target: '_blank',
+            },
+          ],
+        ],
+      },
+      {
         label: 'GitHub repository',
         icon: 'i-lucide-github',
         to: 'https://github.com/piwitests/platform',
@@ -164,6 +223,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
     :ui="{ content: collapsed ? 'w-48' : 'w-(--reka-dropdown-menu-trigger-width)' }"
   >
     <UButton
+      data-shot="user-menu"
       v-bind="{
         ...user,
         label: collapsed ? undefined : user?.name,
