@@ -238,20 +238,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
 
-  // The terminal of each directory tests run in, reused while it is open.
+  // The terminal of each directory and environment tests run in, reused while it is open.
   const terminals = new Map<string, vscode.Terminal>();
-  const runInTerminal = (cwd: string, command: string) => {
-    let terminal = terminals.get(cwd);
+  const runInTerminal = (cwd: string, command: string, env?: Record<string, string>) => {
+    const key = `${cwd}\0${JSON.stringify(env ?? {})}`;
+    let terminal = terminals.get(key);
     if (!terminal || terminal.exitStatus) {
-      terminal = vscode.window.createTerminal({ name: 'Piwi', cwd });
-      terminals.set(cwd, terminal);
+      terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
+      terminals.set(key, terminal);
     }
     terminal.show();
     terminal.sendText(command);
   };
   context.subscriptions.push(
     vscode.window.onDidCloseTerminal((t) => {
-      for (const [cwd, terminal] of terminals) if (terminal === t) terminals.delete(cwd);
+      for (const [key, terminal] of terminals) if (terminal === t) terminals.delete(key);
     }),
   );
 
@@ -261,7 +262,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return;
     }
-    runInTerminal(command.cwd, command.command);
+    runInTerminal(command.cwd, command.command, command.env);
   };
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
@@ -313,7 +314,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               .then((p) => p?.t);
       if (picked) await vscode.env.openExternal(vscode.Uri.parse(picked.url));
     }),
-    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) => runInTerminal(args.cwd, args.command)),
+    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) =>
+      runInTerminal(args.cwd, args.command, args.env),
+    ),
     vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
@@ -336,7 +339,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (!picked) return;
       const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, { uri, key: picked.key });
-      if (command) runInTerminal(command.cwd, command.command);
+      if (command) runInTerminal(command.cwd, command.command, command.env);
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));

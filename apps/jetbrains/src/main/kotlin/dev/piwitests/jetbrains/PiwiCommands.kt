@@ -42,7 +42,7 @@ object PiwiCommands {
             "piwi.runTests" -> arg<RunTestsArgs>(arguments.firstOrNull())?.let { runTests(project, it) }
             "piwi.openTrace" -> arg<TraceParams>(arguments.firstOrNull())?.let { openTrace(project, it) }
             "piwi.openScreenshot" -> arg<TraceParams>(arguments.firstOrNull())?.let { openScreenshot(project, it) }
-            "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command) }
+            "piwi.runCommand" -> arg<RunCommandArgs>(arguments.firstOrNull())?.let { run(project, it.cwd, it.command, it.env) }
             "piwi.copyText" -> arg<String>(arguments.firstOrNull())?.let {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
                 notify(project, "Copied. Paste it to your agent.")
@@ -56,7 +56,7 @@ object PiwiCommands {
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
-                run(project, command.cwd, command.command!!)
+                run(project, command.cwd, command.command!!, command.env)
             }
         }
     }
@@ -87,8 +87,11 @@ object PiwiCommands {
         }
     }
 
-    /** Run a command line in the Run tool window, in `cwd`: the process starts off the event thread. */
-    fun run(project: Project, cwd: String, command: String) {
+    /**
+     * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
+     * the event thread.
+     */
+    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
@@ -96,7 +99,9 @@ object PiwiCommands {
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             val handler = try {
-                KillableColoredProcessHandler(GeneralCommandLine(parts).withWorkDirectory(cwd).withCharset(Charsets.UTF_8))
+                val commandLine = GeneralCommandLine(parts).withWorkDirectory(cwd).withCharset(Charsets.UTF_8)
+                if (!env.isNullOrEmpty()) commandLine.withEnvironment(env)
+                KillableColoredProcessHandler(commandLine)
             } catch (e: ExecutionException) {
                 notify(project, "Could not run ${parts[0]}: ${e.message}", NotificationType.ERROR)
                 return@executeOnPooledThread
