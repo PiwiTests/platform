@@ -117,6 +117,28 @@ export const PIWI_SELECTION_ENV = {
 } as const;
 
 /**
+ * What launched the run, set by the launcher on the Playwright process: the
+ * desktop app, an editor, `piwi preflight`, `piwi bug`, a CI re-run dispatched
+ * from the dashboard. Not options — the reporter reads them once to stamp the
+ * run's `piwiOrigin` metadata:
+ *  - `kind` is one of `RUN_ORIGIN_KINDS` (`@piwitests/core/wire`); unset, the
+ *    run is `ci` when a CI provider is detected and `local` otherwise;
+ *  - `ref` names what the run was launched for: a dispatch, a cluster or a bug
+ *    report id.
+ */
+export const PIWI_ORIGIN_ENV = {
+  kind: 'PIWI_ORIGIN',
+  ref: 'PIWI_ORIGIN_REF',
+} as const;
+
+/** The environment a launcher adds to the Playwright process it starts, naming itself as the run's origin. */
+export function originEnv(kind: string, ref?: string | number): Record<string, string> {
+  return ref === undefined
+    ? { [PIWI_ORIGIN_ENV.kind]: kind }
+    : { [PIWI_ORIGIN_ENV.kind]: kind, [PIWI_ORIGIN_ENV.ref]: String(ref) };
+}
+
+/**
  * The `i/n` shard `piwi run --shard` sets on the Playwright child process. The
  * run's tests are already narrowed to that shard, so Playwright gets no `--shard`
  * of its own; the reporter reads this to report the shard to the dashboard, which

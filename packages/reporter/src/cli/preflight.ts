@@ -42,6 +42,7 @@ import {
   type ImpactResolution,
 } from '../internal/support/selection-client.js';
 import { spawnPlaywrightForRun } from './select.js';
+import { originEnv } from '../internal/config/env.js';
 
 const EXIT_OK = 0;
 const EXIT_BREAKS = 1;
@@ -635,7 +636,10 @@ export async function runPreflight(
       console.error('piwi preflight: no test reaches this change — nothing to run');
       return code;
     }
-    const runCode = await spawnPlaywrightForRun(args.pkgRunner, [...runArgs, ...args.extra], env);
+    const runCode = await spawnPlaywrightForRun(args.pkgRunner, [...runArgs, ...args.extra], {
+      ...env,
+      ...originEnv('preflight'),
+    });
     if (runCode !== 0) code = EXIT_BREAKS;
   }
   return code;
