@@ -65,3 +65,31 @@ describe('generateAlternatives for a label-named form field', () => {
     ]);
   });
 });
+
+describe('generateAlternatives with a role from an accessibility model', () => {
+  const header = el({
+    tagName: 'th',
+    attributes: { id: 'price' },
+    textContent: 'Price',
+    accessibleName: 'Price',
+  });
+
+  test('builds the role candidates from the given role, which the tag maps do not know', () => {
+    expect(generateAlternatives(header).some((r) => r.method === 'getByRole')).toBe(false);
+    const ranked = generateAlternatives(header, { role: 'columnheader' });
+    expect(ranked[0]).toMatchObject({ locator: "getByRole('columnheader', { name: 'Price' })", score: 90 });
+  });
+
+  test('a null role leaves only the candidates of an element without one', () => {
+    const summary = el({ tagName: 'summary', textContent: 'More info', accessibleName: 'More info' });
+    expect(generateAlternatives(summary)[0]!.locator).toBe("getByRole('button', { name: 'More info' })");
+    const ranked = generateAlternatives(summary, { role: null });
+    expect(ranked.some((r) => r.method === 'getByRole')).toBe(false);
+    expect(ranked[0]!.locator).toBe("getByText('More info')");
+  });
+
+  test('without the option the tag maps decide', () => {
+    const button = el({ tagName: 'button', textContent: 'Join', accessibleName: 'Join' });
+    expect(generateAlternatives(button, {})).toEqual(generateAlternatives(button));
+  });
+});

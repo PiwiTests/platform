@@ -52,6 +52,50 @@ const LINKS_PAGE = `<!doctype html><html><body>
   </main>
 </body></html>`;
 
+/** A search form whose submissions the page counts, without leaving it. */
+const SEARCH_PAGE = `<!doctype html><html><body data-submits="0">
+  <form onsubmit="event.preventDefault(); document.body.dataset.submits = Number(document.body.dataset.submits) + 1">
+    <input name="q" aria-label="Search" />
+    <button type="submit">Go</button>
+  </form>
+</body></html>`;
+
+/** Fields inside the open shadow roots of custom elements: a password, a text field and a checkbox. */
+const SHADOW_FIELDS_PAGE = `<!doctype html><html><body>
+  <x-pass></x-pass>
+  <x-profile></x-profile>
+  <script>
+    customElements.define('x-pass', class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML = '<label>Password <input type="password" /></label>';
+      }
+    });
+    customElements.define('x-profile', class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML =
+          '<label>Name <input /></label><label><input type="checkbox" /> Subscribe</label>';
+      }
+    });
+  </script>
+</body></html>`;
+
+/** A password field inside a closed shadow root, which the page's own script can focus. */
+const CLOSED_SHADOW_PAGE = `<!doctype html><html><body>
+  <x-secret></x-secret>
+  <script>
+    customElements.define('x-secret', class extends HTMLElement {
+      constructor() {
+        super();
+        const root = this.attachShadow({ mode: 'closed' });
+        root.innerHTML = '<label>Password <input type="password" /></label>';
+        this.focusField = () => root.querySelector('input').focus();
+      }
+    });
+  </script>
+</body></html>`;
+
 /** A file field, a row that opens on a double click, and a card dragged onto a column. */
 const FILES_PAGE = `<!doctype html><html><body>
   <input type="file" data-testid="attachment" aria-label="Attachment" multiple />
@@ -61,19 +105,39 @@ const FILES_PAGE = `<!doctype html><html><body>
     style="height: 80px; border: 1px dashed">Done</section>
 </body></html>`;
 
+/** Password fields a button shows in clear, before or after typing, and fields whose autocomplete names a secret. */
+const REVEAL_PAGE = `<!doctype html><html><body>
+  <label>Password <input id="pw" type="password" /></label>
+  <button id="show" type="button" onclick="pw.type = pw.type === 'password' ? 'text' : 'password'">Show password</button>
+  <label>PIN <input id="pin" type="password" /></label>
+  <button id="show-pin" type="button" onclick="pin.type = 'text'">Show PIN</button>
+  <label>Card number <input id="card" autocomplete="cc-number" /></label>
+  <label>Code <input id="otp" autocomplete="one-time-code" /></label>
+  <label>Name <input id="name" /></label>
+</body></html>`;
+
+/** An editable note that takes plain text only, and a comment box editable by its bare attribute. */
+const EDITABLE_PAGE = `<!doctype html><html><body>
+  <div contenteditable="plaintext-only" aria-label="Note" data-testid="note"></div>
+  <div contenteditable aria-label="Comment"><p>Looks <b>good</b> to me</p></div>
+</body></html>`;
+
+/** The pages by path; any other path is the login page. */
+const PAGES: Record<string, string> = {
+  '/editable': EDITABLE_PAGE,
+  '/reveal': REVEAL_PAGE,
+  '/dashboard': DASHBOARD_PAGE,
+  '/bare': BARE_FORM_PAGE,
+  '/links': LINKS_PAGE,
+  '/files': FILES_PAGE,
+  '/search': SEARCH_PAGE,
+  '/shadow': SHADOW_FIELDS_PAGE,
+  '/closed-shadow': CLOSED_SHADOW_PAGE,
+};
+
 async function routePages(context: BrowserContext): Promise<void> {
   await context.route(`${ORIGIN}/**`, async (route) => {
-    const url = new URL(route.request().url());
-    const body =
-      url.pathname === '/dashboard'
-        ? DASHBOARD_PAGE
-        : url.pathname === '/bare'
-          ? BARE_FORM_PAGE
-          : url.pathname === '/links'
-            ? LINKS_PAGE
-            : url.pathname === '/files'
-              ? FILES_PAGE
-              : LOGIN_PAGE;
+    const body = PAGES[new URL(route.request().url()).pathname] ?? LOGIN_PAGE;
     await route.fulfill({ contentType: 'text/html', body });
   });
 }
@@ -183,6 +247,46 @@ test.describe('record-panel.js', () => {
     expect(steps.filter((s) => s.action === 'fill').map((s) => s.value)).toEqual(['alice', 'smith']);
   });
 
+  /** A live recording on `pathname`, the recorder attached. */
+  async function recordingOn(context: BrowserContext, pathname: string): Promise<Page> {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}${pathname}`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    return page;
+  }
+
+  test('Enter in a form’s field submits once: the click it sends to the submit button is no step', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/search');
+    await page.getByLabel('Search').fill('shoes');
+    await page.getByLabel('Search').press('Enter');
+    // A click with the mouse, and Space on the focused button, each submit again.
+    const go = page.getByRole('button', { name: 'Go' });
+    await go.click();
+    await go.focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator('body')).toHaveAttribute('data-submits', '3');
+
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBeGreaterThanOrEqual(5);
+    await page.waitForTimeout(200);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.value, s.target?.accessibleName ?? null])).toEqual([
+      ['goto', `${ORIGIN}/search`, null],
+      ['fill', 'shoes', 'Search'],
+      ['press', 'Enter', 'Search'],
+      ['click', null, 'Go'],
+      ['click', null, 'Go'],
+    ]);
+  });
+
   test('a page’s shortcuts are recorded, and typing, select-all, Tab and a checkbox’s own input are not', async ({
     context,
   }) => {
@@ -220,6 +324,47 @@ test.describe('record-panel.js', () => {
       ['press', 'Escape', null],
       // A checkbox fires `input` as well as `change`: one step, never a fill.
       ['check', null, 'remember-me'],
+    ]);
+  });
+
+  test('typing in an element that takes plain text only is no key press', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/editable`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await page.getByTestId('note').click();
+    await page.keyboard.type('ab');
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(200);
+    expect(normalizeSteps(await readStoredEvents(page)).map((s) => s.action)).toEqual(['goto', 'click']);
+  });
+
+  test('a click inside an editable element is a click on the element', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/editable`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await page.getByText('good').click();
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(2);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    // The box itself, not the bold word clicked: an editable element has no role of its own, as in Playwright.
+    expect(
+      steps.map((s) => [s.action, s.target?.tagName.toLowerCase() ?? null, s.target?.accessibleName ?? null]),
+    ).toEqual([
+      ['goto', null, null],
+      ['click', 'div', 'Comment'],
     ]);
   });
 
@@ -284,6 +429,140 @@ test.describe('record-panel.js', () => {
     const fillStep = steps.find((s) => s.action === 'fill');
     expect(fillStep?.redacted).toBe(true);
     expect(fillStep?.value).toBeNull();
+  });
+
+  test('a password shown in clear, before or after typing, and a card number or a one-time code are never captured', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/reveal');
+    await page.locator('#pw').click();
+    await page.keyboard.type('s3cr');
+    await page.locator('#show').click();
+    await expect(page.locator('#pw')).toHaveAttribute('type', 'text');
+    await page.locator('#pw').click();
+    await page.keyboard.type('et!');
+    await page.keyboard.press('Control+Alt+q');
+    // Shown in clear before it is ever focused.
+    await page.locator('#show-pin').click();
+    await page.locator('#pin').click();
+    await page.keyboard.type('4321');
+    await page.locator('#card').click();
+    await page.keyboard.type('4111111111111111');
+    await page.locator('#otp').click();
+    await page.keyboard.type('987654');
+    await page.locator('#name').click();
+    await page.keyboard.type('alice');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.value === 'alice'))
+      .toBe(true);
+    const events = await readStoredEvents(page);
+    for (const secret of ['s3c', 'et!', '4321', '4111', '9876']) expect(JSON.stringify(events)).not.toContain(secret);
+    expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual([]);
+    const fills = normalizeSteps(events).filter((s) => s.action === 'fill');
+    expect(fills.map((s) => [s.target?.accessibleName, s.value, s.redacted])).toEqual([
+      ['Password', null, true],
+      ['Password', null, true],
+      ['PIN', null, true],
+      ['Card number', null, true],
+      ['Code', null, true],
+      ['Name', 'alice', false],
+    ]);
+  });
+
+  test('a password field inside an open shadow root is never captured: no key it holds, its fill redacted', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/shadow');
+    await page.getByLabel('Password').click();
+    await page.keyboard.type('hunter2');
+    await page.keyboard.press('Control+Alt+q');
+    await page.keyboard.press('Enter');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'press'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const events = await readStoredEvents(page);
+    expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual(['Enter']);
+    expect(JSON.stringify(events)).not.toContain('hunter2');
+    const steps = normalizeSteps(events);
+    expect(steps.map((s) => [s.action, s.value, s.redacted])).toEqual([
+      ['goto', `${ORIGIN}/shadow`, false],
+      ['click', null, false],
+      ['fill', null, true],
+      ['press', 'Enter', false],
+    ]);
+    // Every step names the field inside the shadow root, as the replay and the spec need.
+    for (const step of steps.slice(1)) {
+      const locator = step.target?.alternatives[0]?.locator ?? '';
+      await expect(playwrightLocator(page, locator), locator).toHaveAttribute('type', 'password');
+    }
+  });
+
+  test('a text field and a checkbox inside an open shadow root are recorded as a fill and a check', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/shadow');
+    await page.getByLabel('Name').click();
+    await page.keyboard.type('alice');
+    await page.getByLabel('Subscribe').check();
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'check'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.value, s.target?.accessibleName ?? null])).toEqual([
+      ['goto', `${ORIGIN}/shadow`, null],
+      ['click', null, 'Name'],
+      ['fill', 'alice', 'Name'],
+      ['check', null, 'Subscribe'],
+    ]);
+    for (const step of steps.slice(1)) {
+      const locator = step.target?.alternatives[0]?.locator ?? '';
+      await expect(playwrightLocator(page, locator), locator).toHaveJSProperty('localName', 'input');
+    }
+  });
+
+  test('a key pressed in a closed shadow root is recorded only as a password field’s would be', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    // `chrome.dom.openOrClosedShadowRoot`, which a content script has: the shadow root of an element, closed ones too.
+    await context.addInitScript(() => {
+      const roots = new WeakMap<Element, ShadowRoot>();
+      const attach = Element.prototype.attachShadow;
+      Element.prototype.attachShadow = function (init: ShadowRootInit) {
+        const root = attach.call(this, init);
+        roots.set(this, root);
+        return root;
+      };
+      (globalThis as any).chrome.dom = { openOrClosedShadowRoot: (el: Element) => roots.get(el) ?? null };
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/closed-shadow`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+
+    await page.evaluate(() =>
+      (document.querySelector('x-secret') as HTMLElement & { focusField(): void }).focusField(),
+    );
+    await page.keyboard.type('hunter2');
+    await page.keyboard.press('Control+Alt+q');
+    await page.keyboard.press('ControlOrMeta+K');
+    await page.keyboard.press('Enter');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'press'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const events = await readStoredEvents(page);
+    expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual(['Enter']);
+    expect(JSON.stringify(events)).not.toContain('hunter2');
   });
 
   /** A page with a password field and a text field, the recorder attached, `platform` as `navigator.platform`. */
@@ -392,6 +671,33 @@ test.describe('record-panel.js', () => {
     // Capture is really over, not just its UI: further interaction records nothing.
     const before = (await readStoredEvents(page)).length;
     await page.click('#submit');
+    await page.waitForTimeout(200);
+    expect((await readStoredEvents(page)).length).toBe(before);
+  });
+
+  test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {
+    const page = await recordingInProgress(context);
+    const navigations = async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length;
+    await expect.poll(navigations).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    await expect.poll(navigations).toBe(2);
+    expect(await page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    // Capture goes on, once.
+    await page.getByTestId('remember-me').click();
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'change').length).toBe(1);
+    await page.waitForTimeout(200);
+    expect((await readStoredEvents(page)).filter((e) => e.kind === 'change')).toHaveLength(1);
+  });
+
+  test('a page restored from the back/forward cache after the recording stopped lets go of it', async ({ context }) => {
+    const page = await recordingInProgress(context);
+    await setRecordingActive(page, false);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(false);
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-frame-host'))).toBe(false);
+    expect(await page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(false);
+    const before = (await readStoredEvents(page)).length;
+    await page.click('#username');
     await page.waitForTimeout(200);
     expect((await readStoredEvents(page)).length).toBe(before);
   });
@@ -638,6 +944,14 @@ test.describe('record-panel.js in French and German', () => {
     expect(hud.text).toContain('Enregistrement : 2 étapes');
     expect(hud.text).toMatch(/Dernier locator/i);
     expect(hud.text).toContain(`getByTestId('add-to-cart')`);
+    // The locator is highlighted as every panel shows one.
+    expect(
+      await page.evaluate(
+        () =>
+          document.getElementById('piwi-record-hud-host')!.shadowRoot!.querySelectorAll('.piwi-loc .piwi-tok-fn')
+            .length,
+      ),
+    ).toBe(1);
     expect(hud.text).toMatch(/Fonctions de test correspondantes/i);
     expect(hud.text).toContain('addToCart');
     expect(hud.text).toContain('prête');
@@ -650,7 +964,7 @@ test.describe('record-panel.js in French and German', () => {
     const review = (await shadowOf(page, 'piwi-record-review-host'))!;
     expect(review.text).toContain('2 étapes enregistrées');
     expect(review.text).toContain('1 étape correspond à l’une de vos fonctions de test');
-    expect(review.text).toContain('fill — Coupon = « SPRING10 »');
+    expect(review.text).toContain('Saisir « SPRING10 » dans le champ de texte « Coupon »');
     expect(review.text).toContain('Copier en TypeScript (avec vos fonctions)');
     expect(review.text).toContain('Copier en TypeScript sans vos fonctions');
     expect(review.text).toContain('Télécharger les étapes');

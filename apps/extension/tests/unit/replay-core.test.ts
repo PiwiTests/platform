@@ -175,6 +175,25 @@ describe('replayVerdict', () => {
     });
   });
 
+  it('says a page reached as reported when it is the address the report gives, on the replay’s origin', () => {
+    const page: RecordedStep = {
+      ...click,
+      action: 'assert',
+      assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart?step=2', negated: false, note: null },
+    };
+    const found = (url: string) => [
+      { status: 'done' as const, detail: null },
+      { status: 'failed' as const, detail: null, found: url },
+    ];
+    expect(replayVerdict([click, page], found(`${ORIGIN}/cart?step=2`), false)).toEqual({
+      kind: 'reproduced',
+      step: 1,
+      found: `${ORIGIN}/cart?step=2`,
+      sameAsReported: true,
+    });
+    expect(replayVerdict([click, page], found(`${ORIGIN}/cart`), false)).toMatchObject({ sameAsReported: false });
+  });
+
   it('is stopped when the replay was stopped before the end', () => {
     expect(replayVerdict([click, check], [{ status: 'done', detail: null }], true)).toEqual({
       kind: 'stopped',
@@ -230,6 +249,31 @@ describe('readReportFile', () => {
     });
     const json = new TextEncoder().encode(JSON.stringify(doc));
     expect(await readReportFile('steps.json', json)).toEqual({ steps: doc, views: [] });
+  });
+
+  /** The archive with its first entry marked as deflated, its bytes left as stored: data no inflater reads. */
+  function inflatesNothing(zip: Uint8Array): Uint8Array {
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    view.setUint16(8, 8, true);
+    view.setUint16(view.getUint32(zip.length - 22 + 16, true) + 10, 8, true);
+    return zip;
+  }
+
+  it('says, in the interface language, that an archive whose steps cannot be inflated cannot be read', async () => {
+    const broken = inflatesNothing(createZip([{ name: 'steps.json', data: new Uint8Array([0xff, 0xff, 0xff, 0xff]) }]));
+    await expect(readReportFile('bug.zip', broken)).rejects.toThrow(/^bug\.zip cannot be read/);
+    setBrowserLanguage('fr');
+    await expect(readReportFile('bug.zip', broken)).rejects.toThrow(/^Impossible de lire bug\.zip/);
+  });
+
+  it('reads the steps alone when the evidence cannot be inflated', async () => {
+    const archive = inflatesNothing(
+      createZip([
+        { name: 'evidence.json', data: new Uint8Array([0xff, 0xff, 0xff, 0xff]) },
+        { name: 'steps.json', data: JSON.stringify(doc) },
+      ]),
+    );
+    expect(await readReportFile('bug.zip', archive)).toEqual({ steps: doc, views: [] });
   });
 
   it('reads the steps alone when the evidence cannot be read or an image is missing', async () => {
@@ -343,6 +387,44 @@ describe('createWaker', () => {
     void fresh.wait().then(() => (freshThrough = true));
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(freshThrough).toBe(false);
+  });
+
+  it('ends at the other answer when it comes first, and keeps a wake that comes after it', async () => {
+    // The person answered a hand-over, then clicked Next while the loop was still busy.
+    const waker = createWaker();
+    await expect(waker.until(Promise.resolve('done'))).resolves.toEqual({ woken: false, value: 'done' });
+    waker.wake();
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('keeps a wake that comes in the same moment as the other answer', async () => {
+    const waker = createWaker();
+    let answer!: (value: string) => void;
+    const answered = waker.until(new Promise<string>((resolve) => (answer = resolve)));
+    answer('done');
+    waker.wake();
+    await expect(answered).resolves.toEqual({ woken: false, value: 'done' });
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('ends at a wake that comes first', async () => {
+    const waker = createWaker();
+    const answered = waker.until(new Promise<string>(() => undefined));
+    waker.wake();
+    await expect(answered).resolves.toEqual({ woken: true });
+  });
+
+  it('lets a wait in progress through on a wake of a waiting loop, and keeps nothing when none waits', async () => {
+    // Pause and Continue: the loop reads them from the state, so a busy loop needs no wake from them.
+    const waker = createWaker();
+    const waiting = waker.wait();
+    waker.wakeWaiting();
+    await expect(waiting).resolves.toBeUndefined();
+    waker.wakeWaiting();
+    let through = false;
+    void waker.wait().then(() => (through = true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(through).toBe(false);
   });
 });
 

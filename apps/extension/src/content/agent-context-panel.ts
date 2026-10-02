@@ -1,8 +1,20 @@
 import { initI18n, t, uiLanguage } from '../shared/i18n.js';
-import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
+import {
+  bindToTool,
+  endTool,
+  installEscapeToCancel,
+  isToolActive,
+  startTool,
+  teardownToolSurfaces,
+  toolIsCurrent,
+  waitForGlobal,
+} from '../shared/tool-session.js';
 import { installPickerOverlay, removePickerOverlay, type PickerOverlayArg } from '@piwitests/picker-dom';
 import { buildAgentContext } from './agent-context.js';
 import { attachPanelShadow } from './panel-root.js';
+import { pickerOverlayStrings } from './picker-strings.js';
+import { holdFocus } from './modal-panel.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const HOST_ID = 'piwi-agent-context-host';
 
@@ -12,35 +24,7 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-/** Poll for a global the picker overlay sets, mirroring `pick.ts`'s own helper. */
-function waitForGlobal<T>(key: string): Promise<T> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const value = (globalThis as any)[key];
-      if (value !== undefined) {
-        resolve(value as T);
-        return;
-      }
-      setTimeout(check, 120);
-    };
-    check();
-  });
-}
-
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-function renderContextPanel(context: string): Promise<void> {
+function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -133,18 +117,11 @@ function renderContextPanel(context: string): Promise<void> {
   copyBtn.className = 'copy';
   copyBtn.type = 'button';
   copyBtn.textContent = t('common_copy');
-  copyBtn.addEventListener('click', () => void copyToClipboard(context, copyBtn));
+  copyBtn.addEventListener('click', () => void copyWithFeedback(context, copyBtn));
   panel.appendChild(copyBtn);
 
   return new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      document.removeEventListener('keydown', onKeyDown, true);
-      host.remove();
-      resolve();
-    };
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -153,6 +130,12 @@ function renderContextPanel(context: string): Promise<void> {
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
+    const finish = bindToTool(toolEpoch, () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      host.remove();
+      releaseFocus();
+      resolve();
+    });
     closeBtn.addEventListener('click', finish);
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
@@ -160,41 +143,42 @@ function renderContextPanel(context: string): Promise<void> {
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
   });
 }
 
 /**
- * Runs the copy-context-for-agent flow (E1, standalone portion): pick a
- * single element, then show one paste-able block (page URL, element
- * summary, ranked locators) with a single copy button. Reuses pick.ts's
- * single-pick mechanism (sharing its `__piwiPicking` guard) but skips the
- * anchors step, same reasoning as `assertion-panel.ts`.
+ * Runs the copy-context-for-agent flow: pick a single element, then show one
+ * paste-able block (page URL, element summary, ranked locators) with a single
+ * copy button. Reuses pick.ts's single-pick mechanism but skips the anchors
+ * step, same reasoning as `assertion-panel.ts`. Injected again while it runs,
+ * it leaves the running one be; any other tool, a pick included, gives way to
+ * it.
  */
 async function runAgentContextPanel(): Promise<void> {
   const g = globalThis as any;
-  if (g.__piwiPicking) return;
-  g.__piwiPicking = true;
+  if (isToolActive('agent-context-panel')) return;
   const toolEpoch = startTool('agent-context-panel', teardownToolSurfaces);
   installEscapeToCancel();
-  const i18nReady = initI18n();
   try {
+    // The overlay and the panel speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     clearPickGlobals();
-    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
+    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null, strings: pickerOverlayStrings() };
     installPickerOverlay(overlayArg);
-    const state = await waitForGlobal<string>('__piwiPickState');
-    if (state !== 'picked') return;
+    const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
+    if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
     // Done with the picking overlay — otherwise it stays up behind this
     // tool's own panel, still reading "Analyzing element…".
     removePickerOverlay();
 
     const el = g.__piwiPickedElement as Element;
     const context = buildAgentContext(el, location.href);
-    await i18nReady;
-    await renderContextPanel(context);
+    await renderContextPanel(context, toolEpoch);
   } finally {
-    clearPickGlobals();
-    g.__piwiPicking = false;
+    // A flow another tool took over from leaves the pick globals to that tool.
+    if (toolIsCurrent(toolEpoch)) clearPickGlobals();
     endTool(toolEpoch);
   }
 }

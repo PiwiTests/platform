@@ -3,7 +3,8 @@ import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.
 import { stabilityRulesText } from '../shared/core-words.js';
 import { describeSelection, type SelectionLocator, type SelectionRanking } from '../shared/devtools-selection.js';
 import { initI18n, localizeDocument, t, tn, uiLanguage } from '../shared/i18n.js';
-import { isValidPickName } from '../shared/session-export.js';
+import { isReservedPickName, isValidPickName } from '../shared/session-export.js';
+import { patternOrigin } from '../shared/web-origin.js';
 import { addSessionPick, getSessionPicks } from '../shared/session-storage.js';
 import { copyText, requestSiteAccess } from './inspected.js';
 import { button, el, emptyState, flash, type IconName } from './ui.js';
@@ -78,7 +79,7 @@ function render(outcome: RankOutcome): void {
         },
         'primary',
       );
-      show(null, empty('lock', t('devtools_noAccess', { site: outcome.pattern.replace(/\/\*$/, '') }), allow));
+      show(null, empty('lock', t('devtools_noAccess', { site: patternOrigin(outcome.pattern) }), allow));
       return;
     }
     case 'ranked':
@@ -180,6 +181,7 @@ function openSessionForm(row: HTMLElement, locator: string, pageUrl: string): vo
     void (async () => {
       const name = input.value.trim();
       if (!name) return void (message.textContent = t('session_nameRequired'));
+      if (isReservedPickName(name)) return void (message.textContent = t('session_nameReserved', { name }));
       if (!isValidPickName(name)) return void (message.textContent = t('session_nameInvalid'));
       const picks = await getSessionPicks();
       if (picks.some((pick) => pick.name === name))

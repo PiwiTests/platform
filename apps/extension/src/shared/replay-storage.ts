@@ -69,6 +69,12 @@ export interface ReplayState {
   viewport?: { width: number; height: number; set: boolean } | null;
   /** The step the replay could not play and handed to the person, waiting for them, and why. */
   handOver?: { step: number; reason: string } | null;
+  /**
+   * Set once the replay has ended for good: its tab showed the verdict and
+   * told the worker, or the tab was closed. A replay stopped or done without
+   * it shows its verdict on the next page its tab loads.
+   */
+  finished?: boolean;
 }
 
 function isReplayState(value: unknown): value is ReplayState {
@@ -86,12 +92,41 @@ export async function setReplayState(state: ReplayState): Promise<void> {
   await sessionArea().set({ [REPLAY_KEY]: state });
 }
 
-export async function updateReplayState(change: (state: ReplayState) => ReplayState): Promise<ReplayState | null> {
+/**
+ * Changes the stored replay. With `replayId`, only that replay: a replay
+ * started meanwhile is left as it is, and the answer is null.
+ */
+export async function updateReplayState(
+  change: (state: ReplayState) => ReplayState,
+  replayId?: string,
+): Promise<ReplayState | null> {
   const state = await getReplayState();
-  if (!state) return null;
+  if (!state || (replayId !== undefined && state.id !== replayId)) return null;
   const next = change(state);
   await setReplayState(next);
   return next;
+}
+
+/**
+ * The tab a replay plays in. Only the background worker writes it, apart
+ * from the replay's own state, which the replay script rewrites on every step.
+ */
+const REPLAY_TAB_KEY = 'piwiReplayTab';
+
+export interface ReplayTab {
+  replayId: string;
+  tabId: number;
+}
+
+export async function getReplayTab(): Promise<ReplayTab | null> {
+  const value = (await sessionArea().get(REPLAY_TAB_KEY))[REPLAY_TAB_KEY] as Partial<ReplayTab> | undefined;
+  return typeof value?.replayId === 'string' && typeof value.tabId === 'number'
+    ? { replayId: value.replayId, tabId: value.tabId }
+    : null;
+}
+
+export async function setReplayTab(tab: ReplayTab): Promise<void> {
+  await sessionArea().set({ [REPLAY_TAB_KEY]: tab });
 }
 
 /** A new replay of `steps` on `origin`, from its first step. */

@@ -27,18 +27,38 @@ import {
  * Only this worker writes it, under its own key (`CDP_EVIDENCE_KEY`), which
  * `getBugEvidence` merges with what the page relays. A request keeps its
  * method, its URL without query values and its status: never a header or a
- * body. The session is held while the recording runs, and let go when it
- * stops; in Firefox, or when attaching fails or is cancelled, the main-world
- * script (`bug-evidence-main.ts`) does the work.
+ * body. Only the recorded origin is reported, as the page's script reports
+ * it: the console of the page's own scripts (the default execution contexts,
+ * never an extension's isolated world) while the tab shows that origin, and
+ * the requests of its documents, their URLs written against it. The session is
+ * held while the recording runs, and let go when it stops; in Firefox, or when
+ * attaching fails or is cancelled, the main-world script
+ * (`bug-evidence-main.ts`) does the work.
  */
 
 interface Collector {
   stop: () => void;
+  /** The origin the recording was granted. */
+  origin: string;
+  /** The origin the tab's main frame shows: follows the tab's navigations. */
+  frameOrigin: string;
   /** The page's path, for each entry: follows the tab's navigations. */
   page: string;
-  pageUrl: string;
+  /** The page's own execution contexts, where its scripts run, by id. */
+  contexts: Set<number>;
   requests: Map<string, { method: string; url: string }>;
 }
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
+/** Whether the tab shows the recorded origin, whose console the report keeps. */
+const onRecordedOrigin = (collector: Collector) => collector.frameOrigin === collector.origin;
 
 const collectors = new Map<number, Collector>();
 
@@ -120,14 +140,26 @@ function onEvent(collector: Collector, method: string, params: Record<string, un
     case 'Page.frameNavigated': {
       const frame = params.frame as { parentId?: string; url?: string } | undefined;
       if (frame && !frame.parentId && frame.url) {
-        collector.pageUrl = frame.url;
+        collector.frameOrigin = originOf(frame.url);
         collector.page = pathOf(frame.url);
       }
       return;
     }
+    case 'Runtime.executionContextCreated': {
+      const context = params.context as { id?: number; auxData?: { isDefault?: boolean } } | undefined;
+      if (typeof context?.id === 'number' && context.auxData?.isDefault === true) collector.contexts.add(context.id);
+      return;
+    }
+    case 'Runtime.executionContextDestroyed':
+      collector.contexts.delete(Number(params.executionContextId));
+      return;
+    case 'Runtime.executionContextsCleared':
+      collector.contexts.clear();
+      return;
     case 'Runtime.consoleAPICalled': {
       const type = params.type;
       if (type !== 'error' && type !== 'warning' && type !== 'assert') return;
+      if (!onRecordedOrigin(collector) || !collector.contexts.has(Number(params.executionContextId))) return;
       const args = (params.args as Array<Record<string, unknown>> | undefined) ?? [];
       pending.console.push({
         level: type === 'warning' ? 'warn' : 'error',
@@ -141,8 +173,10 @@ function onEvent(collector: Collector, method: string, params: Record<string, un
     case 'Runtime.exceptionThrown': {
       const details = (params.exceptionDetails ?? {}) as {
         text?: string;
+        executionContextId?: number;
         exception?: { description?: string; value?: unknown };
       };
+      if (!onRecordedOrigin(collector) || !collector.contexts.has(Number(details.executionContextId))) return;
       const rejection = /\(in promise\)/.test(details.text ?? '');
       const text = details.exception?.description ?? String(details.exception?.value ?? details.text ?? '');
       pending.console.push({
@@ -158,6 +192,7 @@ function onEvent(collector: Collector, method: string, params: Record<string, un
       const entry = (params.entry ?? {}) as { level?: string; source?: string; text?: string };
       // Network failures come from `Network`, and console calls from `Runtime`.
       if (entry.level !== 'error' || entry.source === 'network' || entry.source === 'console-api') return;
+      if (!onRecordedOrigin(collector)) return;
       pending.console.push({
         level: 'error',
         source: 'console',
@@ -169,6 +204,9 @@ function onEvent(collector: Collector, method: string, params: Record<string, un
     }
     case 'Network.requestWillBeSent': {
       const request = params.request as { method?: string; url?: string } | undefined;
+      // A request belongs to the document it loads for (a navigation's, the new one): one of another origin is not reported.
+      const document = typeof params.documentURL === 'string' ? params.documentURL : '';
+      if (originOf(document) !== collector.origin) return;
       if (typeof params.requestId === 'string' && request?.url && /^https?:/.test(request.url)) {
         collector.requests.set(params.requestId, { method: request.method ?? 'GET', url: request.url });
       }
@@ -180,7 +218,7 @@ function onEvent(collector: Collector, method: string, params: Record<string, un
       if (request && status >= 400) {
         pending.requests.push({
           method: request.method.toUpperCase(),
-          url: reportedRequestUrl(request.url, collector.pageUrl),
+          url: reportedRequestUrl(request.url, `${collector.origin}/`),
           status,
           page: collector.page,
           time: now,
@@ -196,7 +234,7 @@ function onEvent(collector: Collector, method: string, params: Record<string, un
       if (!request || params.canceled === true) return;
       pending.requests.push({
         method: request.method.toUpperCase(),
-        url: reportedRequestUrl(request.url, collector.pageUrl),
+        url: reportedRequestUrl(request.url, `${collector.origin}/`),
         status: 0,
         page: collector.page,
         time: now,
@@ -214,10 +252,11 @@ async function setDebugging(debugging: DebuggingState): Promise<void> {
 }
 
 /**
- * Starts collecting in the tab a bug recording started in. Answers whether the
+ * Starts collecting in the tab a bug recording started in, for the origin
+ * `originPattern` grants (`https://app.example.com/*`). Answers whether the
  * session attached: when it did not, the page's own script collects instead.
  */
-export async function startBugDebugger(tabId: number): Promise<boolean> {
+export async function startBugDebugger(tabId: number, originPattern: string): Promise<boolean> {
   // Nothing of an earlier recording carries over, even a write still queued.
   takePending();
   await update(() => emptyCdpEvidence());
@@ -227,10 +266,13 @@ export async function startBugDebugger(tabId: number): Promise<boolean> {
     return false;
   }
   const tab = await chrome.tabs.get(tabId).catch(() => null);
+  const frameOrigin = originOf(tab?.url ?? '');
   const collector: Collector = {
     stop: () => undefined,
+    origin: originOf(originPattern.replace(/\*$/, '')) || frameOrigin,
+    frameOrigin,
     page: pathOf(tab?.url ?? ''),
-    pageUrl: tab?.url ?? '',
+    contexts: new Set(),
     requests: new Map(),
   };
   collector.stop = onDebuggerEvent(tabId, (method, params) => onEvent(collector, method, params));
@@ -286,14 +328,15 @@ export async function captureThroughDebugger(tabId: number, format: 'png' | 'jpe
 
 /**
  * Called when a bug recording's session ends without being released (the
- * person cancelled the bar): the page's own script takes over, and the HUD
- * says so.
+ * person cancelled the bar): the page's own script takes over from the time
+ * kept as `endedAt`, and the HUD says so.
  */
 export function onBugDebuggerLost(fallback: (reason: FallbackReason) => Promise<void>): void {
   onDebuggerLost((tabId, purposes, reason) => {
     if (!purposes.includes('bug')) return;
+    const endedAt = Date.now();
     collectors.get(tabId)?.stop();
     collectors.delete(tabId);
-    void setDebugging({ state: 'off', reason }).then(() => fallback(reason));
+    void setDebugging({ state: 'off', reason, endedAt }).then(() => fallback(reason));
   });
 }

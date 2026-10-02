@@ -3,7 +3,7 @@ import {
   HIGHLIGHT_MESSAGE,
   MARK_MATCH_MESSAGE,
   QUERY_MESSAGE,
-  REVEAL_MARK,
+  REVEAL_EXPRESSION,
 } from '../shared/devtools-selection.js';
 import {
   evalInPage,
@@ -59,12 +59,13 @@ export async function callPageScript<T>(method: Method, arg: unknown): Promise<P
   return second !== undefined ? { ok: true, value: second } : { ok: false, reason: 'restricted' };
 }
 
-/** Selects match `index` of the last query in the Elements panel. */
+/**
+ * Selects match `index` of the last query in the Elements panel: the element
+ * marked in the page, found there in the document or an open shadow root.
+ */
 export async function revealMatch(index: number): Promise<boolean> {
   const marked = await callPageScript<boolean>('mark', index);
   if (!marked.ok || !marked.value) return false;
-  const revealed = await evalInPage<boolean>(
-    `(() => { const el = document.querySelector('[${REVEAL_MARK}]'); if (!el) return false; el.removeAttribute('${REVEAL_MARK}'); inspect(el); return true; })()`,
-  );
+  const revealed = await evalInPage<boolean>(REVEAL_EXPRESSION);
   return revealed.ok && revealed.value === true;
 }

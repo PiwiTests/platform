@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  clearLocatorBranchOverrides,
   getLocatorBranchOverride,
   resolveLocatorBranch,
   setLocatorBranchOverride,
@@ -13,6 +14,9 @@ beforeEach(() => {
         get: async (key: string) => ({ [key]: store[key] }),
         set: async (values: Record<string, unknown>) => {
           Object.assign(store, values);
+        },
+        remove: async (key: string) => {
+          delete store[key];
         },
       },
     },
@@ -44,5 +48,13 @@ describe('locator branch', () => {
     expect(await getLocatorBranchOverride(2)).toBe('');
     await setLocatorBranchOverride(1, undefined);
     expect(await getLocatorBranchOverride(1)).toBeUndefined();
+  });
+
+  it('forgets every project’s choice at once, as Disconnect does', async () => {
+    await setLocatorBranchOverride(1, 'feature/x');
+    await setLocatorBranchOverride(2, '*');
+    await clearLocatorBranchOverrides();
+    expect(await getLocatorBranchOverride(1)).toBeUndefined();
+    expect(await getLocatorBranchOverride(2)).toBeUndefined();
   });
 });

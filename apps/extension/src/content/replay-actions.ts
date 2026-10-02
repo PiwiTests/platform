@@ -2,13 +2,13 @@ import { stepLocator } from '@piwitests/core/codegen';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import type { RecordedStep } from '@piwitests/core/recording';
 import { t, tn } from '../shared/i18n.js';
-import { DomModel } from './engine-aria.js';
-import { createLocatorEngine } from './locator-engine.js';
+import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
+import { LocatorEngineError } from './engine-selector.js';
 import { endHoverEmulation, hoverElement } from './hover-emulation.js';
 import { parentOf } from './hover-reveal.js';
 import { isOwnHost } from './record-ui.js';
 import type { FakeCursor } from './replay-cursor.js';
-import type { Observation } from './replay-core.js';
+import { wait, type Observation } from './replay-core.js';
 
 /**
  * How the replay finds each step's element and acts on it in the page.
@@ -26,10 +26,6 @@ import type { Observation } from './replay-core.js';
 export const ACTION_TIMEOUT_MS = 10_000;
 export const ASSERT_TIMEOUT_MS = 5_000;
 const POLL_MS = 100;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -107,9 +103,18 @@ export function dropLocatorFor(step: RecordedStep): string | null {
   return step.dropTarget ? stepLocator(step.dropTarget, { locators: 'stable' }) : null;
 }
 
+/**
+ * An engine over the page as it is now, blind to the extension's own surfaces.
+ * Its caches hold for one look at the page: one per poll, shared by the
+ * locators that poll looks for. A strict one refuses a frame part that finds
+ * more than one frame, as an action and an assertion other than a count do.
+ */
+export function pageEngine(options: { strict?: boolean } = {}): LocatorEngine {
+  return createLocatorEngine(document, { ignore: isOwnHost, strict: options.strict });
+}
+
 /** Every element a locator finds on the page now, the extension's own surfaces left out. */
-export function findAll(locator: string): Element[] {
-  const engine = createLocatorEngine(document, { ignore: isOwnHost });
+export function findAll(locator: string, engine = pageEngine()): Element[] {
   try {
     return engine.queryAll(parseLocatorChain(locator));
   } catch {
@@ -136,9 +141,17 @@ export async function resolveForAction(
   const deadline = Date.now() + timeout;
   let reason = '';
   for (;;) {
-    const found = findAll(locator);
-    const model = new DomModel();
-    if (found.length === 0) reason = t('replay_reasonNoMatch', { locator });
+    const engine = pageEngine({ strict: true });
+    let found: Element[] = [];
+    let frames = 0;
+    try {
+      found = engine.queryAll(parseLocatorChain(locator));
+    } catch (e) {
+      frames = e instanceof LocatorEngineError ? (e.matched ?? 0) : 0;
+    }
+    const model = engine.model;
+    if (frames > 1) reason = tn('replay_reasonManyMatches', frames, { locator });
+    else if (found.length === 0) reason = t('replay_reasonNoMatch', { locator });
     else if (found.length > 1) reason = tn('replay_reasonManyMatches', found.length, { locator });
     // A file field is often hidden behind a button of its own; Playwright sets its files all the same.
     else if (step.action === 'setInputFiles') return { ok: true, element: found[0]! };
@@ -159,13 +172,13 @@ export async function resolveForAction(
 }
 
 /** What the page shows for an assertion step's element, or for the page itself. */
-export function observe(step: RecordedStep): Observation {
+export function observe(step: RecordedStep, engine = pageEngine()): Observation {
   const url = location.href;
   const locator = step.assertion?.matcher === 'toHaveURL' ? null : locatorFor(step);
-  const found = locator ? findAll(locator) : [];
+  const found = locator ? findAll(locator, engine) : [];
   const first = found[0];
   if (!first) return { count: 0, text: null, value: null, name: null, visible: false, enabled: false, url };
-  const model = new DomModel();
+  const model = engine.model;
   const value =
     'value' in first && typeof (first as HTMLInputElement).value === 'string'
       ? (first as HTMLInputElement).value
@@ -349,9 +362,10 @@ export async function performDrag(
 
 /**
  * Fields whose value is only valid whole (`09:30`, `2026-09-27`, `#22c55e`):
- * a browser drops a partial one, so the replay sets them in one go.
+ * a browser drops a partial one, so the replay sets them in one go, as
+ * Playwright does.
  */
-const WHOLE_VALUE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
+export const WHOLE_VALUE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
 
 /** Typed in steps a person can follow, at most about a second and a half whatever its length. */
 export async function performFill(
@@ -412,6 +426,12 @@ export async function performCheck(
   return input.checked === checked;
 }
 
+/** The option a `selectOption` step chooses: by its value, else by its label, as Playwright looks for it. */
+export function optionFor(select: HTMLSelectElement, value: string): HTMLOptionElement | undefined {
+  const options = [...select.options];
+  return options.find((o) => o.value === value) ?? options.find((o) => o.label === value);
+}
+
 export async function performSelect(
   element: Element,
   value: string,
@@ -422,8 +442,7 @@ export async function performSelect(
   await cursor.press();
   cursor.outline(null);
   if (!(element instanceof HTMLSelectElement)) return false;
-  const option =
-    [...element.options].find((o) => o.value === value) ?? [...element.options].find((o) => o.label === value);
+  const option = optionFor(element, value);
   if (!option) return false;
   element.focus({ preventScroll: true });
   element.value = option.value;

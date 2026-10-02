@@ -792,7 +792,7 @@ button.request {
 }
 
 .request-head span:nth-child(n + 3),
-.request .status,
+.request .status-code,
 .request .time {
   text-align: right;
 }
@@ -847,11 +847,11 @@ ul.requests li:nth-child(even) button.request[aria-pressed='true'] {
   white-space: nowrap;
 }
 
-.request .status {
+.request .status-code {
   font-variant-numeric: tabular-nums;
 }
 
-.request .status.bad {
+.request .status-code.bad {
   color: var(--bad);
 }
 

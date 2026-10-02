@@ -2,6 +2,7 @@ import { parseSteps } from '@piwitests/core/steps';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getDesktopSettings } from '../shared/desktop-settings.js';
 import { fetchReproRequest, sendReproRequest, type ReproRequestState } from '../shared/piwi-client.js';
+import { sessionArea } from '../shared/session-area.js';
 import { t } from '../shared/i18n.js';
 
 /**
@@ -19,6 +20,20 @@ export interface DesktopTargetAnswer {
 export async function handleDesktopTarget(): Promise<DesktopTargetAnswer> {
   const desktop = await getDesktopSettings();
   return { paired: !!desktop, url: desktop?.url ?? null };
+}
+
+/** The reports sent to the desktop app in this browser session, most recent last: their verdicts may be shared. */
+const DESKTOP_REPORTS_KEY = 'piwiDesktopRunReports';
+const DESKTOP_REPORTS_KEPT = 20;
+
+export async function desktopRunReports(): Promise<number[]> {
+  const value = (await sessionArea().get(DESKTOP_REPORTS_KEY))[DESKTOP_REPORTS_KEY];
+  return Array.isArray(value) ? value.filter((id): id is number => Number.isInteger(id)) : [];
+}
+
+async function keepDesktopRunReport(id: number): Promise<void> {
+  const kept = (await desktopRunReports()).filter((other) => other !== id);
+  await sessionArea().set({ [DESKTOP_REPORTS_KEY]: [...kept, id].slice(-DESKTOP_REPORTS_KEPT) });
 }
 
 export type DesktopReproAnswer = { ok: true; id: string; windowOpen: boolean } | { ok: false; error: string };
@@ -43,6 +58,7 @@ export async function handleDesktopRepro(message: {
       bugReportId,
       instanceUrl,
     });
+    if (bugReportId) await keepDesktopRunReport(bugReportId).catch(() => undefined);
     return { ok: true, ...sent };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

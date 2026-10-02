@@ -4,8 +4,9 @@
  * Split from `catalog-cache.ts` (pure storage) because this is the *request*
  * side: content scripts have no API key and no host permission for the Piwi
  * instance, so they can't fetch. The background worker owns the fetch
- * (`handleRefreshCatalog` in `background/index.ts`) and writes the cache;
- * callers here re-read it afterwards.
+ * (`handleRefreshCatalog` in `background/project-refresh.ts`) and writes the
+ * cache; callers here re-read it afterwards. From a content script, the
+ * worker refreshes only the project the page's own address maps to.
  *
  * Callers should render from cache first and treat this as a background
  * revalidation — never block the UI on it.

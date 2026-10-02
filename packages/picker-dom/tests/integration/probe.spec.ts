@@ -241,6 +241,27 @@ test.describe('probeElementAttrs', () => {
     });
   });
 
+  test('with countMatches off, reports the anchors without a count, past the role-node limit', async ({ page }) => {
+    const rows = Array.from({ length: 4100 }, (_, i) => `<li><h3>Item ${i}</h3><button>Remove</button></li>`);
+    await page.setContent(`<!doctype html><html><body><ul data-testid="cart">
+      <li><h3>Keyboard</h3><button id="target">Remove</button></li>${rows.join('')}
+    </ul></body></html>`);
+    const attrs = await page.locator('#target').evaluate(probeElementAttrs, {
+      keep: ['id', 'data-testid'],
+      tagRoles: { button: 'button', li: 'listitem', h3: 'heading', ul: 'list' },
+      inputRoles: {},
+      roleSources: 'button,li,h3,ul',
+      includeStructural: true,
+      countMatches: false,
+    });
+    expect(attrs.selectorCounts).toEqual({});
+    expect(attrs.rolePosition).toBeNull();
+    expect(attrs.ancestors).toEqual([
+      { tag: 'li', depth: 1, testId: null, id: null, role: null, ariaLabel: null, filterText: 'Keyboard' },
+      { tag: 'ul', depth: 2, testId: 'cart', id: null, role: null, ariaLabel: null },
+    ]);
+  });
+
   test('never filters a container by the target element own text', async ({ page }) => {
     await page.setContent(`<!doctype html><html><body><ul>
       <li><button>Remove</button></li>

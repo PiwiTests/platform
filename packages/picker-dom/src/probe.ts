@@ -6,7 +6,8 @@ import type { ProbeArg, ProbedAttrs } from './types.js';
  * attributes, geometry, label association, and selector-uniqueness counts,
  * plus (when `arg.includeStructural`) its position among same-role elements
  * and anchor-worthy ancestors, which power name-free and ancestor-scoped
- * locator alternatives.
+ * locator alternatives. With `arg.countMatches` false it counts nothing and
+ * reports the anchors alone.
  *
  * Must stay a fully self-contained function (no references to this module's
  * closure): both hosts re-serialize it via `Function.prototype.toString()`.
@@ -14,6 +15,7 @@ import type { ProbeArg, ProbedAttrs } from './types.js';
  */
 export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
   const { keep, tagRoles, inputRoles, roleSources, includeStructural } = arg;
+  const countMatches = arg.countMatches !== false;
   const FIELD_TAGS = ['input', 'select', 'textarea'];
   /** `root`'s text, leaving out `skip`'s subtree — a wrapping label's text without the field it wraps. */
   const textWithout = (root: any, skip: any): string => {
@@ -55,44 +57,46 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
   // count > 1 marks the alternative as ambiguous (strict-mode violation) so
   // generateAlternatives drops it.
   const selectorCounts: ProbedAttrs['selectorCounts'] = {};
-  try {
-    const doc = el.ownerDocument;
-    const cssEsc = (s: string): string => doc.defaultView.CSS.escape(s);
-    const count = (sel: string): number | undefined => {
-      try {
-        return doc.querySelectorAll(sel).length;
-      } catch {
-        return undefined;
+  if (countMatches) {
+    try {
+      const doc = el.ownerDocument;
+      const cssEsc = (s: string): string => doc.defaultView.CSS.escape(s);
+      const count = (sel: string): number | undefined => {
+        try {
+          return doc.querySelectorAll(sel).length;
+        } catch {
+          return undefined;
+        }
+      };
+      if (attrMap['data-testid']) {
+        selectorCounts.testId = count(`[data-testid=${JSON.stringify(attrMap['data-testid'])}]`);
       }
-    };
-    if (attrMap['data-testid']) {
-      selectorCounts.testId = count(`[data-testid=${JSON.stringify(attrMap['data-testid'])}]`);
-    }
-    if (attrMap['id']) selectorCounts.id = count(`#${cssEsc(attrMap['id'])}`);
-    if (attrMap['name']) selectorCounts.name = count(`[name=${JSON.stringify(attrMap['name'])}]`);
-    // `getByPlaceholder`/`getByAltText`/`getByTitle` each resolve to exactly the
-    // elements carrying that attribute value, so an attribute selector counts
-    // their real match set, so a placeholder repeated across a wizard's steps
-    // does not score as unique.
-    if (attrMap['placeholder']) {
-      selectorCounts.placeholder = count(`[placeholder=${JSON.stringify(attrMap['placeholder'])}]`);
-    }
-    if (attrMap['alt']) selectorCounts.alt = count(`[alt=${JSON.stringify(attrMap['alt'])}]`);
-    if (attrMap['title']) selectorCounts.title = count(`[title=${JSON.stringify(attrMap['title'])}]`);
-    const classList = (attrMap['class'] || '')
-      .split(/\s+/)
-      .filter((c: string) => c.length > 1)
-      .slice(0, 10);
-    if (classList.length > 0) {
-      const classCounts: Record<string, number> = {};
-      for (const cls of classList) {
-        const n = count(`.${cssEsc(cls)}`);
-        if (n !== undefined) classCounts[cls] = n;
+      if (attrMap['id']) selectorCounts.id = count(`#${cssEsc(attrMap['id'])}`);
+      if (attrMap['name']) selectorCounts.name = count(`[name=${JSON.stringify(attrMap['name'])}]`);
+      // `getByPlaceholder`/`getByAltText`/`getByTitle` each resolve to exactly the
+      // elements carrying that attribute value, so an attribute selector counts
+      // their real match set, so a placeholder repeated across a wizard's steps
+      // does not score as unique.
+      if (attrMap['placeholder']) {
+        selectorCounts.placeholder = count(`[placeholder=${JSON.stringify(attrMap['placeholder'])}]`);
       }
-      selectorCounts.classes = classCounts;
+      if (attrMap['alt']) selectorCounts.alt = count(`[alt=${JSON.stringify(attrMap['alt'])}]`);
+      if (attrMap['title']) selectorCounts.title = count(`[title=${JSON.stringify(attrMap['title'])}]`);
+      const classList = (attrMap['class'] || '')
+        .split(/\s+/)
+        .filter((c: string) => c.length > 1)
+        .slice(0, 10);
+      if (classList.length > 0) {
+        const classCounts: Record<string, number> = {};
+        for (const cls of classList) {
+          const n = count(`.${cssEsc(cls)}`);
+          if (n !== undefined) classCounts[cls] = n;
+        }
+        selectorCounts.classes = classCounts;
+      }
+    } catch {
+      // Uniqueness probing is best-effort — never fail the capture.
     }
-  } catch {
-    // Uniqueness probing is best-effort — never fail the capture.
   }
 
   // Structural probe: the element's position among same-role elements plus
@@ -216,8 +220,8 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       };
 
       // A truncated scan would produce wrong counts/indexes — skip instead.
-      const nodes = doc.querySelectorAll(roleSources);
-      const nodesUsable = nodes.length <= 4000;
+      const nodes = countMatches ? doc.querySelectorAll(roleSources) : [];
+      const nodesUsable = countMatches && nodes.length <= 4000;
       const rolesUsable = !!targetRole && nodesUsable;
 
       if (rolesUsable) {
@@ -260,7 +264,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
         }
       }
 
-      if (textNeedle) {
+      if (textNeedle && countMatches) {
         const textCount = countTextOwners(doc.body || doc.documentElement, 4000);
         if (textCount >= 0) selectorCounts.text = textCount;
       }
@@ -268,7 +272,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       // The anchor walk runs for role-less leaves too: a `<span class="price">`
       // has no role to scope, but scoping its text to a parent is the only way
       // to tell one repeated card from another.
-      if (rolesUsable || textNeedle) {
+      if (rolesUsable || textNeedle || !countMatches) {
         // `li` and `tr` are almost never document-unique, so they are useless
         // as bare role anchors — but they are the repeated container a
         // `filter({ hasText })` chain exists to single out.
@@ -338,10 +342,18 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
          * text-bearing leaf that names the row rather than reporting its state.
          * The target's own text is never used: filtering a container by the very
          * text we are trying to disambiguate is circular and singles out nothing.
+         * With `countMatches` off, a container of more than 200 elements has
+         * none, found without walking past its 200th.
          */
         const usableDiscriminator = (t: string): boolean =>
           !!t && t.length <= 60 && t !== targetText && namesRatherThanReports(t);
+        const hasAtMost = (root: any, cap: number): boolean => {
+          const walker = doc.createTreeWalker(root, 1);
+          for (let n = 0; walker.nextNode(); n++) if (n >= cap) return false;
+          return true;
+        };
         const discriminatingText = (anc: any): string | null => {
+          if (!countMatches && !hasAtMost(anc, 200)) return null;
           const heading = anc.querySelector('h1,h2,h3,h4,h5,h6,[role="heading"]');
           if (heading) {
             const t = rawText(heading);
@@ -395,14 +407,14 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
                 }
               }
             }
-            const scopedTextCount = countTextOwners(node, 2000);
+            const scopedTextCount = countMatches ? countTextOwners(node, 2000) : -1;
             // A repeated container — a card, a row — has no unique hook of its
             // own, but the text it holds still names it.
             // Isolated: a hiccup finding the discriminator must cost this one
             // optional field, not every anchor collected so far.
             let filterText: string | null = null;
             try {
-              if (anchorRole && nodesUsable) filterText = discriminatingText(node);
+              if (anchorRole && (nodesUsable || !countMatches)) filterText = discriminatingText(node);
             } catch {
               filterText = null;
             }
@@ -415,14 +427,16 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
               ariaLabel: ariaLabel || null,
               ...(scopedRoleCount >= 0 ? { scopedRoleCount } : {}),
               ...(scopedTextCount >= 0 ? { scopedTextCount } : {}),
-              ...(testId ? { testIdCount: count(`[data-testid=${JSON.stringify(testId)}]`) } : {}),
-              ...(id ? { idCount: count(`#${cssEsc(id)}`) } : {}),
+              ...(testId && countMatches ? { testIdCount: count(`[data-testid=${JSON.stringify(testId)}]`) } : {}),
+              ...(id && countMatches ? { idCount: count(`#${cssEsc(id)}`) } : {}),
               ...(anchorRole && nodesUsable ? { roleCount: docRoleCount(anchorRole) } : {}),
-              ...(filterText
-                ? { filterText, filterRoleCount: filterMatchCount(anchorRole as string, filterText) }
+              ...(filterText ? { filterText } : {}),
+              ...(filterText && countMatches
+                ? { filterRoleCount: filterMatchCount(anchorRole as string, filterText) }
                 : {}),
-              ...(dataAttr
-                ? { dataAttr, dataAttrCount: count(`[${dataAttr.name}=${JSON.stringify(dataAttr.value)}]`) }
+              ...(dataAttr ? { dataAttr } : {}),
+              ...(dataAttr && countMatches
+                ? { dataAttrCount: count(`[${dataAttr.name}=${JSON.stringify(dataAttr.value)}]`) }
                 : {}),
             });
           }

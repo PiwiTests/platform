@@ -18,14 +18,13 @@ import {
   appendReplayEvidence,
   getReplayEvidence,
   getReplayState,
-  setReplayState,
   type ReplayEvidence,
   updateReplayState,
   type ReplayState,
   type ReplayStepResult,
 } from '../shared/replay-storage.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
-import { REPLAY_DIALOG_HOST_ID, REPLAY_HUD_HOST_ID, SHARED_STYLE } from './record-ui.js';
+import { isOwnHost, REPLAY_DIALOG_HOST_ID, REPLAY_HUD_HOST_ID, SHARED_STYLE } from './record-ui.js';
 import { fileNames } from '@piwitests/core/codegen';
 import type { FallbackReason, ReplayDriver } from '../shared/cdp-input.js';
 import {
@@ -47,11 +46,13 @@ import {
   evidenceLines,
   quoted,
   replayVerdict,
+  stepGlyph,
   verdictText,
+  wait,
   type ReplayVerdict,
 } from './replay-core.js';
-import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
-import type { BugConsoleEntry, BugFailedRequest } from '@piwitests/core/bug-report';
+import { relayEvidence } from '../shared/bug-relay.js';
+import { storeAsPageLeaves } from '../shared/bug-storage.js';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
   ACTION_TIMEOUT_MS,
@@ -62,6 +63,7 @@ import {
   findAll,
   locatorFor,
   observe,
+  pageEngine,
   performCheck,
   performClick,
   performDoubleClick,
@@ -76,9 +78,10 @@ import {
 } from './replay-actions.js';
 import { readReportFile } from './steps-file.js';
 import type { ReplayStepView } from '../shared/step-views.js';
-import { attachPanelShadow } from './panel-root.js';
+import { attachPanelShadow, clearPanelShadow } from './panel-root.js';
 import { openDesktopRun } from './desktop-run-panel.js';
 import { shareable, shareResultRow } from './share-result.js';
+import { button, DIALOG_CSS, holdFocus } from './replay-ui.js';
 
 /**
  * Replay: plays a bug report's steps (or any steps file) in this tab, on this
@@ -152,10 +155,6 @@ const STYLE = `
   }
 `;
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /** A step in plain words, without the Markdown code marks the report uses. */
 function stepWords(step: RecordedStep): string {
   return describeStepInWords(step, interfacePhrases()).replace(/`+/g, '');
@@ -167,6 +166,20 @@ function pathOf(url: string): string {
     return `${u.pathname}${u.search}`;
   } catch {
     return url;
+  }
+}
+
+/**
+ * The address a goto opens, when the replay follows it: http or https, on the
+ * replay's origin. Null for another site, another scheme (`javascript:`,
+ * `data:`, `file:`) or a value that is no address.
+ */
+function followedUrl(value: string): URL | null {
+  try {
+    const url = new URL(value, location.href);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === location.origin ? url : null;
+  } catch {
+    return null;
   }
 }
 
@@ -264,13 +277,28 @@ function notifyFinished(): void {
   }
 }
 
+/**
+ * Whether this tab plays the replay, as the background worker says: the tab
+ * it started in, else the first of its origin's tabs to ask. A worker that
+ * does not know the question (one older than this script) leaves it to the tab.
+ */
+async function replayHere(state: ReplayState): Promise<boolean> {
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-replay-tab', replayId: state.id })) as
+      | { ok?: boolean }
+      | undefined;
+    return answer?.ok !== false;
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The panel
 
 let cursor: FakeCursor | null = null;
 let loopActive = false;
 /** Resolves the wait for Next in step mode, or for Continue after a pause. */
-
 const waker = createWaker();
 
 function waitForRelease(): Promise<void> {
@@ -281,39 +309,27 @@ function wakeLoop(): void {
   waker.wake();
 }
 
-function glyph(result: ReplayStepResult | undefined, current: boolean): string {
-  if (current) return '▸';
-  switch (result?.status) {
-    case 'done':
-    case 'passed':
-    case 'manual':
-      return '✓';
-    case 'failed':
-      return '✗';
-    case 'diverged':
-      return '!';
-    case 'skipped':
-      return '–';
-    default:
-      return '·';
-  }
-}
+/** The attribute naming each control of the panel, so the one that had the focus has it again once redrawn. */
+const CONTROL_KEY = 'data-piwi-control';
 
-function button(label: string, onClick: () => void, className = ''): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.textContent = label;
-  if (className) b.className = className;
-  b.addEventListener('click', onClick);
-  return b;
+function keyed<T extends HTMLElement>(control: T, key: string): T {
+  control.setAttribute(CONTROL_KEY, key);
+  return control;
 }
 
 /** The replay's panel, drawn again on every change: steps, controls, and the verdict once done. */
 let hud: { host: HTMLElement; root: ShadowRoot } | null = null;
 
+/**
+ * The pointer and focus events of the panel's own controls, stopped at its
+ * root: they are composed, and a page's outside-click or focus-outside handler
+ * would close its open menu on a click on Next.
+ */
+const HUD_CONTAINED_EVENTS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'focusin', 'focusout'];
+
 function hudRoot(): ShadowRoot {
   if (hud && hud.host.isConnected) {
-    hud.root.replaceChildren();
+    clearPanelShadow(hud.root);
     return hud.root;
   }
   document.getElementById(REPLAY_HUD_HOST_ID)?.remove();
@@ -321,8 +337,40 @@ function hudRoot(): ShadowRoot {
   host.id = REPLAY_HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  hud = { host, root: attachPanelShadow(host, { mode: 'closed', delegatesFocus: true }) };
+  const root = attachPanelShadow(host, { mode: 'closed', delegatesFocus: true });
+  for (const type of HUD_CONTAINED_EVENTS) root.addEventListener(type, (event) => event.stopPropagation());
+  // A click on a control leaves focus where it is on the page, where a key press with no element goes.
+  root.addEventListener('mousedown', (event) => {
+    const pressed = event.composedPath()[0];
+    if (pressed instanceof Element && pressed.closest('button, label.check')) event.preventDefault();
+  });
+  hud = { host, root };
   return hud.root;
+}
+
+/** The page's element that last had focus, the extension's own surfaces left out. */
+let pageFocus: Element | null = null;
+
+function trackPageFocus(event: FocusEvent): void {
+  const target = event.target;
+  if (!(target instanceof Element) || isOwnHost(target)) return;
+  const inner = event.composedPath()[0];
+  pageFocus = inner instanceof Element ? inner : target;
+}
+
+/**
+ * Gives focus back to the page before a key press that goes wherever focus
+ * is, when it is on one of the extension's surfaces (the person tabbed to
+ * Next): to the page's element that last had it, else to the page itself.
+ */
+function focusBackOnPage(): void {
+  const active = document.activeElement;
+  if (!active || !isOwnHost(active)) return;
+  if (pageFocus?.isConnected && (pageFocus instanceof HTMLElement || pageFocus instanceof SVGElement)) {
+    pageFocus.focus({ preventScroll: true });
+  }
+  const still = document.activeElement;
+  if (still && isOwnHost(still) && still instanceof HTMLElement) still.blur();
 }
 
 /** Which steps the person played by hand, under the verdict; null when none. */
@@ -345,6 +393,7 @@ function renderHud(
   verdict: ReplayVerdict | null = null,
   evidence: ReplayEvidence | null = null,
 ): void {
+  const focused = hud?.host.isConnected ? (hud.root.activeElement?.getAttribute(CONTROL_KEY) ?? null) : null;
   const root = hudRoot();
   const style = document.createElement('style');
   style.textContent = STYLE;
@@ -404,7 +453,7 @@ function renderHud(
     row.className = `step ${current ? 'current' : (result?.status ?? 'pending')}`;
     const icon = document.createElement('span');
     icon.className = 'icon';
-    icon.textContent = glyph(result, current);
+    icon.textContent = stepGlyph(result, current);
     const text = document.createElement('span');
     text.textContent = `${formatNumber(i + 1)}. ${stepWords(step)}`;
     row.append(icon, text);
@@ -435,26 +484,31 @@ function renderHud(
   const handed = handOver;
   if (!done && handed && steps[handed.step]) box.appendChild(handOverBox(handed, steps[handed.step]!));
 
+  /** What a control says under the controls, such as why Replay again could not start. */
+  const notices: HTMLElement[] = [];
   const controls = document.createElement('div');
   controls.className = 'row';
   if (!done) {
     const paused = state.status === 'paused';
     controls.appendChild(
-      button(paused ? t('replay_continue') : t('replay_pause'), () => {
-        void updateReplayState((s) => ({ ...s, status: paused ? 'running' : 'paused' })).then((s) => {
-          if (s) renderHud(s);
-          wakeLoop();
-        });
-      }),
+      keyed(
+        button(paused ? t('replay_continue') : t('replay_pause'), () => {
+          void updateReplayState((s) => ({ ...s, status: paused ? 'running' : 'paused' }), state.id).then((s) => {
+            if (s) renderHud(s);
+            waker.wakeWaiting();
+          });
+        }),
+        'pause',
+      ),
     );
-    if (state.stepMode) controls.appendChild(button(t('replay_nextStep'), wakeLoop, 'primary'));
+    if (state.stepMode) controls.appendChild(keyed(button(t('replay_nextStep'), wakeLoop, 'primary'), 'next'));
     const stepLabel = document.createElement('label');
     stepLabel.className = 'check';
-    const stepBox = document.createElement('input');
+    const stepBox = keyed(document.createElement('input'), 'step-mode');
     stepBox.type = 'checkbox';
     stepBox.checked = state.stepMode;
     stepBox.addEventListener('change', () => {
-      void updateReplayState((s) => ({ ...s, stepMode: stepBox.checked })).then((s) => {
+      void updateReplayState((s) => ({ ...s, stepMode: stepBox.checked }), state.id).then((s) => {
         if (s) renderHud(s);
         if (!stepBox.checked) wakeLoop();
       });
@@ -462,11 +516,14 @@ function renderHud(
     stepLabel.append(stepBox, t('replay_stepByStep'));
     controls.appendChild(stepLabel);
     controls.appendChild(
-      button(
-        t('common_stop'),
-        () => {
-          void updateReplayState((s) => ({ ...s, status: 'stopped' })).then(() => wakeLoop());
-        },
+      keyed(
+        button(
+          t('common_stop'),
+          () => {
+            void updateReplayState((s) => ({ ...s, status: 'stopped' }), state.id).then(() => wakeLoop());
+          },
+          'stop',
+        ),
         'stop',
       ),
     );
@@ -476,12 +533,12 @@ function renderHud(
       const box2 = document.createElement('div');
       box2.className = `verdict ${verdict.kind}`;
       box2.setAttribute('role', 'status');
-      const t = document.createElement('div');
-      t.className = 'title';
-      t.textContent = verdictTitle;
+      const titleEl = document.createElement('div');
+      titleEl.className = 'title';
+      titleEl.textContent = verdictTitle;
       const d = document.createElement('div');
       d.textContent = detail;
-      box2.append(t, d);
+      box2.append(titleEl, d);
       if (state.driver) {
         const how = document.createElement('div');
         how.className = 'sub';
@@ -531,60 +588,87 @@ function renderHud(
       box.appendChild(box3);
     }
     controls.style.marginTop = '8px';
+    const againError = document.createElement('div');
+    againError.className = 'message';
+    againError.setAttribute('role', 'alert');
+    notices.push(againError);
+    // Disabled until the worker answers: a second click would start a second replay.
+    const again = button(
+      t('replay_again'),
+      () => {
+        again.disabled = true;
+        againError.textContent = '';
+        void (async () => {
+          const response = await startReplay(
+            state.steps,
+            state.stepMode,
+            state.startPage?.actual ?? null,
+            state.bugReportId ?? null,
+            { keepViews: true },
+          );
+          if (response.ok) return void runReplay();
+          again.disabled = false;
+          againError.textContent = response.error ?? t('common_replayStartFailed');
+        })();
+      },
+      'primary',
+    );
+    controls.appendChild(keyed(again, 'again'));
     controls.appendChild(
-      button(
-        t('replay_again'),
-        () => {
-          void (async () => {
-            const response = await startReplay(
-              state.steps,
-              state.stepMode,
-              state.startPage?.actual ?? null,
-              state.bugReportId ?? null,
-              { keepViews: true },
-            );
-            if (response.ok) void runReplay();
-          })();
-        },
-        'primary',
+      keyed(
+        button(t('replay_runWithPlaywright'), () => openDesktopRun(state.steps, state.bugReportId ?? null, STYLE)),
+        'playwright',
       ),
     );
     controls.appendChild(
-      button(t('replay_runWithPlaywright'), () => openDesktopRun(state.steps, state.bugReportId ?? null, STYLE)),
-    );
-    controls.appendChild(
-      button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), 'stop'),
+      keyed(
+        button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), 'stop'),
+        'close',
+      ),
     );
   }
-  box.appendChild(controls);
+  box.append(controls, ...notices);
   root.append(style, box);
+  if (focused) root.querySelector<HTMLElement>(`[${CONTROL_KEY}="${focused}"]`)?.focus({ preventScroll: true });
 }
 
 // ---------------------------------------------------------------------------
 // The run
 
+/**
+ * Stores a step's result on the stored replay, so a Pause, a Stop or a change
+ * of step mode made while the step played is kept.
+ */
 async function recordResult(state: ReplayState, index: number, result: ReplayStepResult): Promise<ReplayState> {
-  const results = state.results.slice();
-  results[index] = result;
-  const next: ReplayState = {
-    ...state,
-    results,
-    position: index + 1,
-    cursor: cursor?.position() ?? state.cursor,
-    handOver: null,
-  };
-  await setReplayState(next);
-  return next;
+  const next = await updateReplayState((s) => {
+    const results = s.results.slice();
+    results[index] = result;
+    return { ...s, results, position: index + 1, cursor: cursor?.position() ?? s.cursor, handOver: null };
+  }, state.id);
+  return next ?? state;
+}
+
+/** This page stops playing a replay that ended or was replaced elsewhere: its panel, cursor and evidence relay go. */
+function leaveReplay(): void {
+  void stopEvidence();
+  endHover();
+  hud?.host.remove();
+  hud = null;
+  cursor?.remove();
+  cursor = null;
 }
 
 async function finish(state: ReplayState, stopped: boolean): Promise<void> {
-  await evidenceFlush?.();
+  await stopEvidence();
   const evidence = await getReplayEvidence(state.evidenceToken).catch(() => null);
-  const steps = sessionFromSteps(state.steps, state.origin).steps;
-  const verdict = replayVerdict(steps, state.results, stopped);
   endHover();
-  const final: ReplayState = { ...state, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null };
-  await setReplayState(final);
+  const final = await updateReplayState(
+    (s) => ({ ...s, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null, finished: true }),
+    state.id,
+  );
+  if (!final) return leaveReplay();
+  const steps = sessionFromSteps(final.steps, final.origin).steps;
+  const verdict = replayVerdict(steps, final.results, stopped);
   notifyFinished();
   renderHud(final, verdict, evidence);
   (globalThis as ReplayGlobals).__piwiReplayVerdict = verdict;
@@ -593,14 +677,10 @@ async function finish(state: ReplayState, stopped: boolean): Promise<void> {
   setTimeout(() => shown?.remove(), 1200);
 }
 
-function caption(step: RecordedStep): string {
-  return stepWords(step);
-}
-
 /** A step's action with the page's own events: false when it could not be done here. */
 async function actWithEvents(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<boolean> {
   const c = cursor!;
-  const words = caption(step);
+  const words = stepWords(step);
   if (!element) {
     await performPress(null, step.value ?? 'Enter', c, words);
     return true;
@@ -638,7 +718,7 @@ async function actWithEvents(step: RecordedStep, element: Element | null, dropOn
 /** A step's action as trusted input, through the background worker. */
 async function actTrusted(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<boolean> {
   const c = cursor!;
-  const words = caption(step);
+  const words = stepWords(step);
   if (!element) {
     await trustedPress(null, step.value ?? 'Enter', c, words);
     return true;
@@ -681,15 +761,21 @@ type ActResult = { ok: true; driver: ReplayDriver } | { ok: false; reason: strin
  * the replay goes on with the page's own events, from this step; lost once
  * part of it reached the page, the step fails and the replay stops.
  */
-async function act(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<ActResult> {
+async function act(
+  replayId: string,
+  step: RecordedStep,
+  element: Element | null,
+  dropOn: Element | null,
+): Promise<ActResult> {
+  if (!element) focusBackOnPage();
   const state = await getReplayState();
-  if (state?.driver?.driver === 'cdp') {
+  if (state?.id === replayId && state.driver?.driver === 'cdp') {
     try {
       return (await actTrusted(step, element, dropOn)) ? { ok: true, driver: 'cdp' } : { ok: false, reason: null };
     } catch (e) {
       if (e instanceof NotActionable) return { ok: false, reason: e.message };
       if (!(e instanceof TrustedInputLost)) throw e;
-      await fallBack(e.reason);
+      await fallBack(e.reason, replayId);
       // Part of the action reached the page: playing it again with events would do it twice.
       if (e.started) return { ok: false, reason: t('replay_reasonInputInterrupted') };
     }
@@ -697,10 +783,21 @@ async function act(step: RecordedStep, element: Element | null, dropOn: Element 
   return (await actWithEvents(step, element, dropOn)) ? { ok: true, driver: 'synthetic' } : { ok: false, reason: null };
 }
 
-/** The replay goes on with the page's own events, and its panel says why. */
-async function fallBack(reason: FallbackReason): Promise<void> {
-  const next = await updateReplayState((s) =>
-    s.driver?.driver === 'synthetic' ? s : { ...s, driver: { driver: 'synthetic', reason } },
+/**
+ * The replay goes on with the page's own events, and its panel says why. The
+ * viewport it set went with the session.
+ */
+async function fallBack(reason: FallbackReason, replayId: string): Promise<void> {
+  const next = await updateReplayState(
+    (s) =>
+      s.driver?.driver === 'synthetic'
+        ? s
+        : {
+            ...s,
+            driver: { driver: 'synthetic', reason },
+            viewport: s.viewport ? { ...s.viewport, set: false } : s.viewport,
+          },
+    replayId,
   );
   if (next && loopActive) renderHud(next);
 }
@@ -726,7 +823,7 @@ async function pickDriver(state: ReplayState): Promise<ReplayState> {
       ? { driver: answer.driver, reason: answer.reason ?? null }
       : { driver: 'synthetic' as const, reason: 'unavailable' as const };
   if (state.driver?.driver === choice.driver && state.driver.reason === choice.reason) return state;
-  return (await updateReplayState((s) => ({ ...s, driver: choice }))) ?? state;
+  return (await updateReplayState((s) => ({ ...s, driver: choice }), state.id)) ?? state;
 }
 
 /** The file step waiting for the developer: the names the report gives, and what answers it. */
@@ -748,7 +845,7 @@ function filePromptBox(prompt: FilePrompt): HTMLElement {
     step: formatNumber(prompt.step + 1),
     files: prompt.names.map(quoted).join(', '),
   });
-  const input = document.createElement('input');
+  const input = keyed(document.createElement('input'), 'file');
   input.type = 'file';
   input.multiple = prompt.names.length > 1;
   input.setAttribute('data-piwi-replay-file', '');
@@ -759,7 +856,12 @@ function filePromptBox(prompt: FilePrompt): HTMLElement {
   });
   const row = document.createElement('div');
   row.className = 'row';
-  row.appendChild(button(t('replay_fileSkip'), () => prompt.answer(null)));
+  row.appendChild(
+    keyed(
+      button(t('replay_fileSkip'), () => prompt.answer(null)),
+      'file-skip',
+    ),
+  );
   box.append(text, input, row);
   return box;
 }
@@ -779,10 +881,10 @@ async function askForFiles(state: ReplayState, index: number, step: RecordedStep
   renderHud(state);
   try {
     for (;;) {
-      const answer = await Promise.race([chosen, waitForRelease().then(() => 'woken' as const)]);
-      if (answer !== 'woken') return answer ?? 'skip';
+      const answer = await waker.until(chosen);
+      if (!answer.woken) return answer.value ?? 'skip';
       const latest = await getReplayState();
-      if (!latest || latest.status === 'stopped') return null;
+      if (!latest || latest.id !== state.id || latest.status === 'stopped') return null;
     }
   } finally {
     filePrompt = null;
@@ -800,19 +902,20 @@ async function checkAssertion(state: ReplayState, step: RecordedStep): Promise<R
   const deadline = Date.now() + ASSERT_TIMEOUT_MS;
   let pointed = false;
   for (;;) {
-    const observation = observe(step);
+    const engine = pageEngine({ strict: true });
+    const observation = observe(step, engine);
     const { holds, found } = evaluateAssertion(assertion, observation, state.origin);
     if (!pointed && observation.count === 1 && assertion.matcher !== 'toHaveURL') {
       pointed = true;
       const locator = locatorFor(step);
-      const element = locator ? findAll(locator)[0] : undefined;
+      const element = locator ? findAll(locator, engine)[0] : undefined;
       if (element) {
         const r = element.getBoundingClientRect();
         cursor?.outline(r);
         await cursor?.moveTo(
           r.left + r.width / 2,
           r.top + r.height / 2,
-          t('replay_cursorCheck', { step: caption(step) }),
+          t('replay_cursorCheck', { step: stepWords(step) }),
         );
       }
     }
@@ -860,7 +963,8 @@ function recordedLocators(step: RecordedStep): { element: string[]; dropOn: stri
 function recordedElements(step: RecordedStep): Element[] {
   const { element, dropOn } = recordedLocators(step);
   const listed = [...element.slice(0, HANDED_LOCATORS), ...dropOn.slice(0, HANDED_LOCATORS)];
-  return [...new Set(listed.flatMap((locator) => findAll(locator)))];
+  const engine = pageEngine();
+  return [...new Set(listed.flatMap((locator) => findAll(locator, engine)))];
 }
 
 function locatorList(locators: string[]): HTMLElement {
@@ -956,9 +1060,18 @@ function handOverBox(handed: HandOver, step: RecordedStep): HTMLElement {
   const row = document.createElement('div');
   row.className = 'row';
   row.append(
-    button(t('replay_handOverDone'), () => handed.answer('done'), 'primary'),
-    button(t('replay_handOverSkip'), () => handed.answer('skip')),
-    button(t('replay_handOverStop'), () => handed.answer('stop')),
+    keyed(
+      button(t('replay_handOverDone'), () => handed.answer('done'), 'primary'),
+      'hand-over-done',
+    ),
+    keyed(
+      button(t('replay_handOverSkip'), () => handed.answer('skip')),
+      'hand-over-skip',
+    ),
+    keyed(
+      button(t('replay_handOverStop'), () => handed.answer('stop')),
+      'hand-over-stop',
+    ),
   );
   box.append(how, row);
   return box;
@@ -979,7 +1092,8 @@ async function handOverStep(
   const current =
     state.handOver?.step === index
       ? state
-      : ((await updateReplayState((s) => ({ ...s, position: index, handOver: { step: index, reason } }))) ?? state);
+      : ((await updateReplayState((s) => ({ ...s, position: index, handOver: { step: index, reason } }), state.id)) ??
+        state);
   cursor?.outline(null);
   const view = await replayStepView(index);
   const step = sessionFromSteps(current.steps, current.origin).steps[index];
@@ -1001,10 +1115,10 @@ async function handOverStep(
   renderHud(current);
   try {
     for (;;) {
-      const answer = await Promise.race([chosen, waitForRelease().then(() => 'woken' as const)]);
+      const answer = await waker.until(chosen);
       const latest = await getReplayState();
-      if (!latest || latest.status === 'stopped') return null;
-      if (answer !== 'woken') return { answer, state: latest };
+      if (!latest || latest.id !== state.id || latest.status === 'stopped') return null;
+      if (!answer.woken) return { answer: answer.value, state: latest };
       renderHud(latest);
     }
   } finally {
@@ -1026,8 +1140,7 @@ async function playByHand(state: ReplayState, index: number, reason: string): Pr
     await recordResult(handed.state, index, { status: 'skipped', detail: t('replay_stepSkipped') });
     return true;
   }
-  await recordResult(handed.state, index, { status: 'diverged', detail: reason });
-  await finish((await getReplayState())!, false);
+  await finish(await recordResult(handed.state, index, { status: 'diverged', detail: reason }), false);
   return false;
 }
 
@@ -1037,6 +1150,13 @@ const VIEWPORT_LAYOUT_MS = 150;
 /** The viewport the steps were recorded at from step `index` on, when it changes there. */
 function viewportFrom(state: ReplayState, index: number): StepViewport | null {
   return state.steps.viewports?.find((v) => v.step === index) ?? null;
+}
+
+/** The viewport step `index` was recorded at: the last one the steps give at or before it. */
+function viewportAt(state: ReplayState, index: number): StepViewport | null {
+  let found: StepViewport | null = null;
+  for (const v of state.steps.viewports ?? []) if (v.step <= index && (!found || v.step >= found.step)) found = v;
+  return found;
 }
 
 /**
@@ -1059,81 +1179,140 @@ async function applyViewport(state: ReplayState, viewport: StepViewport): Promis
       set = false;
     }
   }
-  const next = await updateReplayState((s) => ({
-    ...s,
-    viewport: { width: viewport.width, height: viewport.height, set },
-  }));
+  const next = await updateReplayState(
+    (s) => ({ ...s, viewport: { width: viewport.width, height: viewport.height, set } }),
+    state.id,
+  );
   if (set) await wait(VIEWPORT_LAYOUT_MS);
   return next ?? state;
 }
 
-/** In step mode: waits for Next, then answers the state if the replay is still on this step and running. */
-async function waitForNext(index: number): Promise<ReplayState | null> {
-  await waitForRelease();
+/** The stored replay while it still runs at step `index`; null once it was paused, stopped or replaced. */
+async function runningAt(replayId: string, index: number): Promise<ReplayState | null> {
   const latest = await getReplayState();
-  return latest && latest.status === 'running' && latest.position === index ? latest : null;
+  return latest && latest.id === replayId && latest.status === 'running' && latest.position === index ? latest : null;
 }
 
-/** Stores what the evidence script relays during the replay; null until this page's replay starts it. */
-let evidenceFlush: (() => Promise<void>) | null = null;
+/**
+ * In step mode: waits for Next, then answers the state if the replay is still
+ * on this step and running. Answers null without waiting when the replay was
+ * paused, stopped or replaced while the step looked for its element: the loop
+ * waits for Continue first, and a Continue never stands for this step's Next.
+ */
+async function waitForNext(replayId: string, index: number): Promise<ReplayState | null> {
+  if (!(await runningAt(replayId, index))) return null;
+  await waitForRelease();
+  return runningAt(replayId, index);
+}
+
+/** How long a navigation gets to unload the page once it has started. */
+const UNLOAD_TIMEOUT_MS = ACTION_TIMEOUT_MS;
+
+/** Set once the page has begun to leave for another document: a goto, a link, a form's submit. */
+let leaving = false;
+
+/**
+ * Waits for the page to unload, a navigation having started: the replay goes
+ * on in the next page. Answers `stayed` when the page is still here after
+ * `UNLOAD_TIMEOUT_MS` (a 204, a download, a "Stay on page"), or `ended` once
+ * the replay was stopped or replaced meanwhile, what is left of the
+ * navigation cancelled either way.
+ */
+async function waitForUnload(replayId: string): Promise<'stayed' | 'ended'> {
+  const deadline = Date.now() + UNLOAD_TIMEOUT_MS;
+  let outcome: 'stayed' | 'ended' = 'stayed';
+  for (let left = UNLOAD_TIMEOUT_MS; left > 0; left = deadline - Date.now()) {
+    if (!(await waker.until(wait(left))).woken) break;
+    const latest = await getReplayState();
+    if (!latest || latest.id !== replayId || latest.status === 'stopped') {
+      outcome = 'ended';
+      break;
+    }
+  }
+  window.stop();
+  leaving = false;
+  return outcome;
+}
+
+/**
+ * The goto of step `index` started a navigation: waits for the page to
+ * unload. A page that stays puts the step back, and it goes to the person, as
+ * a step on another page does. False when the replay ends there.
+ */
+async function gotoUnloads(replayId: string, index: number, expected: string): Promise<boolean> {
+  const outcome = await waitForUnload(replayId);
+  const back = await updateReplayState(
+    (s) => ({ ...s, position: index, results: s.results.slice(0, index) }),
+    replayId,
+  );
+  if (outcome === 'ended' || !back || back.status === 'stopped') return true;
+  return playByHand(
+    back,
+    index,
+    t('replay_reasonOtherPage', { expected: pathOf(expected), actual: pathOf(location.href) }),
+  );
+}
+
+/** Stores what the evidence script relayed and is still pending, and stops listening; null while none listens. */
+let evidenceStop: (() => Promise<void>) | null = null;
 /** The replay whose entries this page listens for; a new replay (Replay again) listens anew. */
 let evidenceToken: string | null = null;
+
+/** This page stops listening to the evidence script, once what it relayed is stored. */
+async function stopEvidence(): Promise<void> {
+  const stop = evidenceStop;
+  evidenceStop = null;
+  evidenceToken = null;
+  await stop?.();
+}
 
 /**
  * Listens to the main-world evidence script (registered by the background
  * script while a replay runs) with the replay's token, and keeps its entries in
- * batches. Returns the function that stores what is still pending.
+ * batches (`relayEvidence`), handing them to the worker as the page is left.
+ * Returns the disposer, which stores what is still pending and stops listening.
  */
 function startReplayEvidence(token: string): () => Promise<void> {
-  const pendingConsole: BugConsoleEntry[] = [];
-  const pendingRequests: BugFailedRequest[] = [];
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const flush = async (): Promise<void> => {
-    if (timer != null) clearTimeout(timer);
-    timer = null;
-    if (pendingConsole.length === 0 && pendingRequests.length === 0) return;
-    const entries = { console: pendingConsole.splice(0), requests: pendingRequests.splice(0) };
-    await appendReplayEvidence(token, entries).catch(() => undefined);
-  };
-  const hello = () => window.postMessage({ source: BUG_RELAY.HELLO, token }, ownOrigin());
-  window.addEventListener('message', (e: MessageEvent) => {
-    if (e.source !== window) return;
-    const data = e.data as { source?: unknown } | null;
-    if (data?.source === BUG_RELAY.READY) return hello();
-    const item = readRelayedEntry(data, token);
-    if (!item) return;
-    if (item.kind === 'console') pendingConsole.push(item.entry);
-    else pendingRequests.push(item.entry);
-    timer ??= setTimeout(() => void flush(), 250);
+  return relayEvidence(token, (entries) => appendReplayEvidence(token, entries), {
+    leave: (entries) => storeAsPageLeaves(token, entries),
   });
-  // A page left mid-batch keeps what it saw.
-  window.addEventListener('pagehide', () => void flush());
-  hello();
-  return flush;
 }
 
 async function runReplay(): Promise<void> {
   if (loopActive) return;
   loopActive = true;
   waker.reset();
+  /** Set when another replay took this one's place, which this tab may play next. */
+  let replaced = false;
   try {
     let state = await getReplayState();
     if (!state || (state.status !== 'running' && state.status !== 'paused') || state.origin !== location.origin) return;
+    if (!(await replayHere(state))) return;
+    const replayId = state.id;
     document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
     if (state.evidenceToken && state.evidenceToken !== evidenceToken) {
+      void stopEvidence();
       evidenceToken = state.evidenceToken;
-      evidenceFlush = startReplayEvidence(state.evidenceToken);
+      evidenceStop = startReplayEvidence(state.evidenceToken);
     }
     cursor?.remove();
     cursor = createCursor(state.cursor);
     setTrustedReplay(state.id);
     state = await pickDriver(state);
+    // The recorded viewport, set again on each page: the session may be new here (the tab came back from another
+    // origin, the worker restarted), and a replay on the page's events says it is not set.
+    const size = viewportAt(state, state.position);
+    if (size && (state.driver?.driver === 'cdp' || state.viewport?.set)) state = await applyViewport(state, size);
     // The panel shows at once; the first step waits for the page to be ready.
     renderHud(state);
     await waitForPageReady();
     for (;;) {
-      state = await getReplayState();
-      if (!state) return;
+      const latest = await getReplayState();
+      if (!latest || latest.id !== replayId || latest.origin !== location.origin) {
+        replaced = !!latest;
+        return leaveReplay();
+      }
+      state = latest;
       if (state.status === 'stopped') return void (await finish(state, true));
       renderHud(state);
       if (state.status === 'paused') {
@@ -1159,19 +1338,31 @@ async function runReplay(): Promise<void> {
 
       if (step.action === 'goto' && index === 0 && state.startPage) {
         const actual = state.startPage.actual;
+        // The page it started on, as any goto: followed only on the replay's own origin.
+        const url = followedUrl(actual);
+        if (!url) {
+          const reason = t('replay_reasonOtherPage', { expected: actual, actual: pathOf(location.href) });
+          if (!(await playByHand(state, index, reason))) return;
+          continue;
+        }
         await recordResult(state, index, { status: 'done', detail: t('replay_startedHere') });
         // Replayed again from another page: back to the page it started on.
-        if (location.href.split('#')[0] !== actual.split('#')[0]) {
-          location.assign(actual);
-          await new Promise(() => undefined);
+        if (location.href.split('#')[0] !== url.href.split('#')[0]) {
+          location.assign(url.href);
+          if (!(await gotoUnloads(replayId, index, actual))) return;
         }
         continue;
       }
 
       if (step.action === 'goto') {
         const target = step.value ?? step.pageUrl;
+        const url = followedUrl(target);
+        if (!url) {
+          const reason = t('replay_reasonOtherPage', { expected: target, actual: pathOf(location.href) });
+          if (!(await playByHand(state, index, reason))) return;
+          continue;
+        }
         await recordResult(state, index, { status: 'done', detail: null });
-        const url = new URL(target, location.href);
         const here = new URL(location.href);
         if (url.href.split('#')[0] === here.href.split('#')[0] && url.hash !== here.hash) {
           location.assign(url.href);
@@ -1180,7 +1371,8 @@ async function runReplay(): Promise<void> {
         if (url.href === here.href) location.reload();
         else location.assign(url.href);
         // The page unloads; the replay continues on the next one.
-        await new Promise(() => undefined);
+        if (!(await gotoUnloads(replayId, index, target))) return;
+        continue;
       }
 
       if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage))) {
@@ -1191,9 +1383,16 @@ async function runReplay(): Promise<void> {
 
       await waitForStepReady();
 
+      // The last action began to load another document, whose address may not differ (a submit to the same page,
+      // `/items/1` to `/items/2`): the step plays there.
+      if (leaving) {
+        await waitForUnload(replayId);
+        continue;
+      }
+
       if (step.action === 'assert' || step.action === 'assertVisible') {
         if (state.stepMode) {
-          const latest = await waitForNext(index);
+          const latest = await waitForNext(replayId, index);
           if (!latest) continue;
           state = latest;
         }
@@ -1221,53 +1420,61 @@ async function runReplay(): Promise<void> {
           await cursor?.moveTo(
             r.left + r.width / 2,
             r.top + r.height / 2,
-            t('replay_cursorNext', { step: caption(step) }),
+            t('replay_cursorNext', { step: stepWords(step) }),
           );
         }
-        const latest = await waitForNext(index);
+        const latest = await waitForNext(replayId, index);
         if (!latest) continue;
         state = latest;
       }
       if (step.action === 'setInputFiles' && resolved.element) {
         const files = await askForFiles(state, index, step);
         if (files === null) continue;
-        const latest = (await getReplayState()) ?? state;
         if (files === 'skip') {
-          await recordResult(latest, index, { status: 'skipped', detail: t('replay_fileSkipped') });
+          await recordResult(state, index, { status: 'skipped', detail: t('replay_fileSkipped') });
           continue;
         }
         if (!assignFiles(resolved.element, files)) {
-          await recordResult(latest, index, { status: 'diverged', detail: t('replay_reasonActionFailed') });
-          return void (await finish((await getReplayState())!, false));
+          if (!(await playByHand(state, index, t('replay_reasonActionFailed')))) return;
+          continue;
         }
-        await recordResult(latest, index, {
+        await recordResult(state, index, {
           status: 'done',
           detail: files.length ? t('replay_fileChosen', { files: files.map((f) => quoted(f.name)).join(', ') }) : null,
         });
         continue;
       }
+      // Paused, stopped, replaced or put in step mode while the step waited for its element: it is not played yet.
+      const current = await runningAt(replayId, index);
+      if (!current || (current.stepMode && !state.stepMode)) continue;
       // Saved before acting: the action may leave the page, and the next one continues from here.
-      const driver = (await getReplayState())?.driver?.driver ?? 'synthetic';
-      const advanced = await recordResult(state, index, { status: 'done', detail: null, driver });
-      const worked = await act(step, resolved.element, dropOn?.ok ? dropOn.element : null);
+      const driver = current.driver?.driver ?? 'synthetic';
+      await recordResult(current, index, { status: 'done', detail: null, driver });
+      const worked = await act(replayId, step, resolved.element, dropOn?.ok ? dropOn.element : null);
       if (!worked.ok) {
         // Back on the step, which the person does or skips.
-        const latest = (await getReplayState()) ?? advanced;
-        const back = { ...latest, position: index, results: latest.results.slice(0, index) };
-        await setReplayState(back);
+        const back = await updateReplayState(
+          (s) => ({ ...s, position: index, results: s.results.slice(0, index) }),
+          replayId,
+        );
+        if (!back) continue;
         if (!(await playByHand(back, index, worked.reason ?? t('replay_reasonActionFailed')))) return;
         continue;
       }
       if (worked.driver !== driver) {
-        await updateReplayState((s) => ({
-          ...s,
-          results: Object.assign(s.results.slice(), { [index]: { ...s.results[index]!, driver: worked.driver } }),
-        }));
+        await updateReplayState(
+          (s) => ({
+            ...s,
+            results: Object.assign(s.results.slice(), { [index]: { ...s.results[index]!, driver: worked.driver } }),
+          }),
+          replayId,
+        );
       }
-      await updateReplayState((s) => ({ ...s, cursor: cursor?.position() ?? s.cursor }));
+      await updateReplayState((s) => ({ ...s, cursor: cursor?.position() ?? s.cursor }), replayId);
     }
   } finally {
     loopActive = false;
+    if (replaced) void runReplay();
   }
 }
 
@@ -1302,8 +1509,7 @@ function openChooser(lastReport: ChosenReport | null): void {
   document.documentElement.appendChild(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
-  style.textContent = `${STYLE}
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }`;
+  style.textContent = `${STYLE}${DIALOG_CSS}`;
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
   const panel = document.createElement('div');
@@ -1312,7 +1518,11 @@ function openChooser(lastReport: ChosenReport | null): void {
   panel.setAttribute('role', 'dialog');
   panel.lang = uiLanguage();
   panel.setAttribute('aria-label', t('replay_dialogTitle'));
-  const close = () => host.remove();
+  let giveFocusBack: (() => void) | null = null;
+  const close = () => {
+    host.remove();
+    giveFocusBack?.();
+  };
 
   const title = document.createElement('div');
   title.className = 'title';
@@ -1327,6 +1537,8 @@ function openChooser(lastReport: ChosenReport | null): void {
   let chosenReportId: number | null = null;
   /** Where the chosen report's step screenshots come from. */
   let chosenViews: ReplayViews | null = null;
+  /** Counts the reports asked for: an answer that comes after a later choice is left out. */
+  let asked = 0;
   const summary = document.createElement('div');
   summary.className = 'sub';
   summary.style.marginTop = '6px';
@@ -1356,7 +1568,11 @@ function openChooser(lastReport: ChosenReport | null): void {
   };
 
   if (lastReport) {
-    const use = button(t('replay_useRecorded'), () => describe(lastReport.steps, null, lastReport.views));
+    const use = button(t('replay_useRecorded'), () => {
+      asked++;
+      reports.value = '';
+      describe(lastReport.steps, null, lastReport.views);
+    });
     use.style.marginTop = '10px';
     panel.appendChild(use);
   }
@@ -1368,12 +1584,17 @@ function openChooser(lastReport: ChosenReport | null): void {
   file.addEventListener('change', () => {
     const picked = file.files?.[0];
     if (!picked) return;
+    const ask = ++asked;
+    reports.value = '';
     void picked
       .arrayBuffer()
       .then((buffer) => readReportFile(picked.name, new Uint8Array(buffer)))
       .then(
-        ({ steps, views }) => describe(steps, null, { views }),
+        ({ steps, views }) => {
+          if (ask === asked) describe(steps, null, { views });
+        },
         (e: unknown) => {
+          if (ask !== asked) return;
           chosen = null;
           summary.textContent = '';
           message.textContent = e instanceof Error ? e.message : String(e);
@@ -1424,9 +1645,11 @@ function openChooser(lastReport: ChosenReport | null): void {
     }
   });
   reports.addEventListener('change', () => {
+    const ask = ++asked;
     const id = Number(reports.value);
     if (!id) return;
     void instanceReportSteps(id).then((answer) => {
+      if (ask !== asked || reports.value !== String(id)) return;
       if (answer.ok) describe(answer.steps, id);
       else {
         chosen = null;
@@ -1447,28 +1670,30 @@ function openChooser(lastReport: ChosenReport | null): void {
   const row = document.createElement('div');
   row.className = 'row';
   row.style.marginTop = '12px';
-  row.appendChild(
-    button(
-      t('replay_start'),
-      () => {
-        if (!chosen) {
-          message.textContent = t('replay_chooseFirst');
+  // Disabled until the worker answers: a second click would start a second replay.
+  const start = button(
+    t('replay_start'),
+    () => {
+      if (!chosen) {
+        message.textContent = t('replay_chooseFirst');
+        return;
+      }
+      const steps = chosen;
+      const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
+      start.disabled = true;
+      void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews).then((response) => {
+        if (!response.ok) {
+          start.disabled = false;
+          message.textContent = response.error ?? t('common_replayStartFailed');
           return;
         }
-        const steps = chosen;
-        const startOn = !startLabel.hidden && startBox.checked ? location.href : null;
-        void startReplay(steps, stepBox.checked, startOn, chosenReportId, chosenViews).then((response) => {
-          if (!response.ok) {
-            message.textContent = response.error ?? t('common_replayStartFailed');
-            return;
-          }
-          close();
-          void runReplay();
-        });
-      },
-      'primary',
-    ),
+        close();
+        void runReplay();
+      });
+    },
+    'primary',
   );
+  row.appendChild(start);
   row.appendChild(
     button(t('replay_runWithPlaywright'), () => {
       if (!chosen) {
@@ -1487,6 +1712,7 @@ function openChooser(lastReport: ChosenReport | null): void {
   });
   backdrop.appendChild(panel);
   root.append(style, backdrop);
+  giveFocusBack = holdFocus(panel, close);
 }
 
 // ---------------------------------------------------------------------------
@@ -1500,9 +1726,15 @@ async function entry(): Promise<void> {
     );
   }
   const [state] = await Promise.all([ensureSessionAccess().then(() => getReplayState()), texts]);
-  if (state && (state.status === 'running' || state.status === 'paused') && state.origin === location.origin) {
-    await runReplay();
-    return;
+  if (state && !state.finished && state.origin === location.origin) {
+    const running = state.status === 'running' || state.status === 'paused';
+    if (await replayHere(state)) {
+      if (running) return void (await runReplay());
+      // Stopped or done while no page of its tab played it (a Stop during a navigation): the verdict shows here.
+      return void (await finish(state, state.status === 'stopped'));
+    }
+    // Another tab plays it. One stopped there has ended now, and this tab may replay a report.
+    if (running) return;
   }
   openChooser(await lastRecordedReport());
 }
@@ -1512,19 +1744,27 @@ if (globals.__piwiReplayEntry) {
   void globals.__piwiReplayEntry();
 } else {
   globals.__piwiReplayEntry = entry;
-  // The Piwi panel in DevTools changed the stored state: draw it, and go on when asked.
+  document.addEventListener('focusin', trackPageFocus, true);
+  const active = document.activeElement;
+  if (active && active !== document.body && !isOwnHost(active)) pageFocus = active;
+  window.addEventListener('beforeunload', () => {
+    leaving = true;
+  });
   chrome.runtime.onMessage.addListener((message) => {
+    // The worker lost the replay's debugging session: the replay goes on with the page's own events.
     if (message?.type === 'piwi-replay-driver-lost') {
       void getReplayState().then((state) => {
-        if (state && state.id === message.replayId) void fallBack(message.reason ?? 'lost');
+        if (state && state.id === message.replayId) void fallBack(message.reason ?? 'lost', state.id);
       });
       return undefined;
     }
+    // The Piwi panel in DevTools changed the stored state: draw it, and go on when asked.
     if (message?.type !== 'piwi-replay-wake') return undefined;
     void getReplayState().then((state) => {
       if (state && loopActive) renderHud(state);
     });
     if (message.wake === true) wakeLoop();
+    else if (message.wake === 'waiting') waker.wakeWaiting();
     return undefined;
   });
   void entry();

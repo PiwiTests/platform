@@ -2,7 +2,7 @@ import { probeElementAttrs, type ProbeArg, type ProbedAttrs } from '@piwitests/p
 import {
   generateAlternatives,
   approximateAccessibleName,
-  resolveAriaRole,
+  headingLevel,
   CAPTURED_ATTRIBUTES,
   TAG_TO_ROLE,
   INPUT_TYPE_TO_ROLE,
@@ -23,15 +23,17 @@ import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
  * is with the engine that evaluates locators the way Playwright does (the one
  * the replay and the Tested elements overlay use).
  *
- * Names come from `DomModel`, the model `locator-engine.spec.ts` compares with
- * Playwright: "Regressions 5" for a tab showing a count badge, where the
- * element's `textContent` reads "Regressions5".
+ * Names and roles come from `DomModel`, the model `locator-engine.spec.ts`
+ * compares with Playwright: "Regressions 5" for a tab showing a count badge,
+ * where the element's `textContent` reads "Regressions5", and `columnheader`
+ * for a `<th>`, which no tag map knows.
  *
- * The ranking comes from `generateAlternatives`, whose counts are the probe's
- * estimates: a name Playwright matches as a substring (`{ name: 'Failed' }`
- * also finds "3 failed"), a link repeated in the sidebar and in the page. Each
- * candidate is run through the engine. One that finds this element alone is
- * verified. One that finds several, this one among them, is narrowed: first to
+ * The ranking comes from `generateAlternatives`, given no count for a
+ * candidate itself, only for the anchors that scope one (from the engine a
+ * scan hands over, else from the probe). A name Playwright matches as a
+ * substring (`{ name: 'Failed' }` also finds "3 failed") or a link repeated in
+ * the sidebar and in the page shows once each candidate is run through the
+ * engine. One that finds this element alone is verified. One that finds several, this one among them, is narrowed: first to
  * an exact match, then to the one showing this element's text, then inside the
  * nearest landmark, dialog, row, list item or test id that tells it apart. One
  * that finds only others is dropped. When nothing is verified, the best
@@ -51,14 +53,22 @@ const PROBE_ARG: ProbeArg = {
   includeStructural: true,
 };
 
+/** The probe for a ranking an engine counts for: the anchors alone, none of the probe's walks of the page. */
+const ANCHORS_PROBE: ProbeArg = { ...PROBE_ARG, countMatches: false };
+
 /** The extension's own elements (panels, overlays, the picker's banner) and everything inside them. */
 export function isPiwiElement(element: Element): boolean {
   return !!element.closest('[id^="piwi-"], [id^="__piwi"]');
 }
 
+/** The engines `createPageEngine` built, by their model: a ranking handed the model counts with its engine. */
+const pageEngines = new WeakMap<DomModel, LocatorEngine>();
+
 /** An engine over `doc` as it is now, blind to the extension's own elements. Its caches last as long as it does. */
 export function createPageEngine(doc: Document = document, testIdAttributes?: string[]): LocatorEngine {
-  return createLocatorEngine(doc, { testIdAttributes, ignore: isPiwiElement });
+  const engine = createLocatorEngine(doc, { testIdAttributes, ignore: isPiwiElement });
+  pageEngines.set(engine.model, engine);
+  return engine;
 }
 
 /**
@@ -73,23 +83,126 @@ function accessibleNameOf(el: Element, attrs: ProbedAttrs, model: DomModel = new
 export interface RankedElement {
   attrs: ProbedAttrs;
   accessibleName: string | null;
+  /** The role Playwright gives the element (`DomModel`), null when it has none or is presentational. */
   role: string | null;
   /** Every candidate `generateAlternatives` builds, most stable first, not yet checked against the page. */
   ranked: RankedLocator[];
 }
 
+type Structure = Pick<ProbedAttrs, 'rolePosition' | 'ancestors'>;
+
+/** The probe's structural data, without the counts it made for a role other than `role`. */
+function probedStructure(attrs: ProbedAttrs, role: string | null): Structure {
+  if (attrs.rolePosition?.role === role) return {};
+  return {
+    rolePosition: null,
+    ancestors: attrs.ancestors?.map(({ scopedRoleCount: _, ...anchor }) => anchor),
+  };
+}
+
+const byRole = (role: string, level?: number | null): LocatorCall => ({
+  method: 'getByRole',
+  args:
+    level != null
+      ? [str(role), { type: 'object', entries: [['level', { type: 'number', value: level }]] }]
+      : [str(role)],
+});
+const bySelector = (selector: string): LocatorCall => ({ method: 'locator', args: [str(selector)] });
+
 /**
- * Probe `el`, name it as Playwright does and rank its candidate locators. The
- * probe's match counts are left out of the ranking: they are estimates, and
- * `checkLocators` counts every candidate with the engine instead, so a name
- * shared with another element is narrowed from its own score rather than
- * ranked down on a guess.
+ * The counts the probe leaves out with `countMatches` off, from the engine's
+ * indexes: where `el` stands among the elements of its role, and how many
+ * elements each anchor of the probe, and the leaf inside it, finds.
  */
-export function rankElement(el: Element, options: { model?: DomModel; probe?: ProbeArg } = {}): RankedElement {
-  const attrs = probeElementAttrs(el, options.probe ?? PROBE_ARG);
-  const accessibleName = accessibleNameOf(el, attrs, options.model);
-  const role = resolveAriaRole({ ...attrs, accessibleName });
-  const ranked = generateAlternatives({ ...attrs, selectorCounts: undefined, accessibleName });
+function engineStructure(
+  el: Element,
+  attrs: ProbedAttrs,
+  role: string | null,
+  level: number | null,
+  engine: LocatorEngine,
+): Structure {
+  const find = (calls: LocatorCall[], scope?: Element): Element[] | undefined => {
+    try {
+      return engine.queryAll({ calls }, scope);
+    } catch {
+      return undefined;
+    }
+  };
+  const count = (calls: LocatorCall[], scope?: Element) => find(calls, scope)?.length;
+  let rolePosition: Structure['rolePosition'] = null;
+  const same = role ? find([byRole(role)]) : undefined;
+  const index = same?.indexOf(el) ?? -1;
+  if (role && same && index !== -1) {
+    rolePosition = { role, count: same.length, index };
+    if (level != null) rolePosition.levelCount = count([byRole(role, level)]);
+  }
+  const leaf: LocatorCall | null = role
+    ? byRole(role, level)
+    : attrs.textContent
+      ? { method: 'getByText', args: [str(attrs.textContent)] }
+      : null;
+  let ancestor: Element | null = el;
+  let depth = 0;
+  const ancestors = attrs.ancestors?.map((anchor) => {
+    for (; ancestor && depth < anchor.depth; depth++) ancestor = ancestor.parentElement;
+    if (!ancestor) return anchor;
+    const anchorRole = anchor.role || TAG_TO_ROLE[anchor.tag] || null;
+    const scoped = leaf ? count([leaf], ancestor) : undefined;
+    return {
+      ...anchor,
+      ...(role ? { scopedRoleCount: scoped } : { scopedTextCount: scoped }),
+      ...(anchor.testId ? { testIdCount: count([{ method: 'getByTestId', args: [str(anchor.testId)] }]) } : {}),
+      ...(anchor.id ? { idCount: count([bySelector(`#${CSS.escape(anchor.id)}`)]) } : {}),
+      ...(anchor.dataAttr
+        ? { dataAttrCount: count([bySelector(`[${anchor.dataAttr.name}=${JSON.stringify(anchor.dataAttr.value)}]`)]) }
+        : {}),
+      ...(anchorRole ? { roleCount: count([byRole(anchorRole)]) } : {}),
+      ...(anchorRole && anchor.filterText
+        ? {
+            filterRoleCount: count([
+              byRole(anchorRole),
+              { method: 'filter', args: [{ type: 'object', entries: [['hasText', str(anchor.filterText)]] }] },
+            ]),
+          }
+        : {}),
+    };
+  });
+  return { rolePosition, ancestors };
+}
+
+export interface RankOptions {
+  /**
+   * The engine of the page `el` is on, for a caller ranking many elements:
+   * the anchors are counted with its indexes, built once for the whole scan,
+   * where the probe walks the page again for every element. A `model` from
+   * `createPageEngine` brings its engine along.
+   */
+  engine?: LocatorEngine;
+  /** The model names and roles come from, a new one otherwise. */
+  model?: DomModel;
+  /** A probe of the caller's own, whose counts are taken as they are. */
+  probe?: ProbeArg;
+}
+
+/**
+ * Probe `el`, name it and give it its role as Playwright does, and rank its
+ * candidate locators. The probe's match counts are left out of the ranking:
+ * they are estimates, and `checkLocators` counts every candidate with the
+ * engine instead, so a name shared with another element is narrowed from its
+ * own score rather than ranked down on a guess.
+ */
+export function rankElement(el: Element, options: RankOptions = {}): RankedElement {
+  const engine = options.probe ? undefined : (options.engine ?? (options.model && pageEngines.get(options.model)));
+  const model = engine?.model ?? options.model ?? new DomModel();
+  const attrs = probeElementAttrs(el, options.probe ?? (engine ? ANCHORS_PROBE : PROBE_ARG));
+  const accessibleName = accessibleNameOf(el, attrs, model);
+  // As Playwright's own generator: no role candidate for a presentational element.
+  const modelRole = model.role(el);
+  const role = modelRole === 'none' || modelRole === 'presentation' ? null : modelRole;
+  const structure = engine
+    ? engineStructure(el, attrs, role, headingLevel({ ...attrs, accessibleName }, role), engine)
+    : probedStructure(attrs, role);
+  const ranked = generateAlternatives({ ...attrs, ...structure, selectorCounts: undefined, accessibleName }, { role });
   return { attrs, accessibleName, role, ranked };
 }
 
@@ -184,8 +297,10 @@ function textFilterVariant(chain: LocatorChain, text: string): LocatorChain | nu
 
 /** The call that locates `ancestor` on its own, when it has something that names it. */
 function scopeCall(engine: LocatorEngine, ancestor: Element): LocatorCall | null {
-  const testId = ancestor.getAttribute('data-testid');
-  if (testId) return { method: 'getByTestId', args: [str(testId)] };
+  for (const attribute of engine.testIdAttributes) {
+    const testId = ancestor.getAttribute(attribute);
+    if (testId) return { method: 'getByTestId', args: [str(testId)] };
+  }
   const role = engine.model.role(ancestor);
   if (!role) return null;
   const name = engine.model.normalizedAccessibleName(ancestor, false);
@@ -333,8 +448,8 @@ export function verifiedLocators(el: Element, ranked: readonly RankedLocator[], 
  * Every locator that finds `el` alone, most stable first, for tools that
  * choose among them (the Tested elements overlay's replacements).
  */
-export function rankElementLocators(el: Element, engine?: LocatorEngine): CheckedLocator[] {
-  const { ranked } = rankElement(el, { model: engine?.model });
+export function rankElementLocators(el: Element, engine = createPageEngine(el.ownerDocument)): CheckedLocator[] {
+  const { ranked } = rankElement(el, { engine });
   return checkLocators(el, ranked, { engine });
 }
 
@@ -351,8 +466,8 @@ const TOP_CHECKED = 4;
  * The one locator a tool needs for an already-picked element
  * (`assertion-suggest.ts`, the overlays' previews).
  */
-export function deriveTopLocator(el: Element, engine?: LocatorEngine): TopLocatorInfo {
-  const { ranked, accessibleName } = rankElement(el, { model: engine?.model });
+export function deriveTopLocator(el: Element, engine = createPageEngine(el.ownerDocument)): TopLocatorInfo {
+  const { ranked, accessibleName } = rankElement(el, { engine });
   const [top] = checkLocators(el, ranked, { engine, limit: 1, maxChecked: TOP_CHECKED });
   return { locator: top?.locator ?? null, accessibleName };
 }

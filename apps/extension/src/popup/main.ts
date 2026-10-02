@@ -11,6 +11,8 @@ import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProjec
 import { workerState } from '../shared/worker-status.js';
 import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
 import { injectionFailureText } from '../shared/injection-failure.js';
+import { getReplayState, getReplayTab } from '../shared/replay-storage.js';
+import { originPattern, webOrigin } from '../shared/web-origin.js';
 
 await initI18n();
 localizeDocument();
@@ -31,6 +33,7 @@ const coverageHint = document.getElementById('coverage-hint')!;
 const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
 const bugLabel = document.getElementById('report-bug-label')!;
 const bugHint = document.getElementById('report-bug-hint')!;
+const replayBtn = document.getElementById('replay-bug') as HTMLButtonElement;
 /** Set once the connection settings are read: "Tested elements" needs a Piwi instance. */
 let connected = false;
 
@@ -174,11 +177,10 @@ const AUTO_OPTION_VALUE = '';
 
 /** Populates and pre-selects the active-project picker: hidden until connected, otherwise offering every mapped project plus "Auto" (clears the manual override, falling back to URL-pattern matching). */
 async function refreshActiveProjectSelect(): Promise<void> {
-  const [connection, override, tab] = await Promise.all([
-    getConnectionSettings(),
-    getActiveProjectOverride(),
-    activeTab(),
-  ]);
+  const [connection, tab] = await Promise.all([getConnectionSettings(), activeTab()]);
+  // The choice belongs to the tab's site.
+  const tabUrl = tab?.url ?? '';
+  const override = await getActiveProjectOverride(tabUrl);
 
   connected = isConnected(connection);
   coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
@@ -217,12 +219,12 @@ async function refreshActiveProjectSelect(): Promise<void> {
   activeProjectSelect.addEventListener('change', () => {
     void (async () => {
       if (activeProjectSelect.value === AUTO_OPTION_VALUE) {
-        await setActiveProjectOverride(null);
+        await setActiveProjectOverride(tabUrl, null);
         return;
       }
       const projectId = Number(activeProjectSelect.value);
       const projectLabel = activeProjectSelect.selectedOptions[0]?.textContent ?? `#${projectId}`;
-      await setActiveProjectOverride({ projectId, projectLabel });
+      await setActiveProjectOverride(tabUrl, { projectId, projectLabel });
     })();
   });
 }
@@ -233,13 +235,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
  * this browser.
  */
 function renderAddSite(url: string | undefined, unmatched: boolean): void {
-  let origin: string | null = null;
-  try {
-    const parsed = new URL(url ?? '');
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') origin = parsed.origin;
-  } catch {
-    // Not a page a pattern could cover.
-  }
+  const origin = webOrigin(url);
   addSiteRow.hidden = !(unmatched && origin);
   addSiteButton.onclick = () => {
     if (!origin) return;
@@ -264,6 +260,12 @@ type RecordUiState = 'idle' | 'recording' | 'stopped';
 let uiState: RecordUiState = 'idle';
 let uiMode: RecordingMode = 'actions';
 let recordTab: chrome.tabs.Tab | null = null;
+/** Reads the popup's tab into `recordTab`, once: Record actions, Report a bug and Replay act on it. */
+const tabRead = activeTab()
+  .catch(() => null)
+  .then((tab) => {
+    recordTab = tab;
+  });
 
 async function recordUiState(): Promise<{ state: RecordUiState; mode: RecordingMode; steps: number }> {
   const rec = await getRecordingState();
@@ -274,10 +276,9 @@ async function recordUiState(): Promise<{ state: RecordUiState; mode: RecordingM
 }
 
 async function refreshRecordButton(): Promise<void> {
-  const [{ state, mode, steps }, tab] = await Promise.all([recordUiState(), activeTab()]);
+  const [{ state, mode, steps }] = await Promise.all([recordUiState(), tabRead]);
   uiState = state;
   uiMode = mode;
-  recordTab = tab;
   const bug = mode === 'bug';
   const count = formatNumber(steps);
   if (state === 'recording') {
@@ -308,24 +309,13 @@ async function refreshRecordButton(): Promise<void> {
   bugBtn.disabled = false;
 }
 
-/** The host permission a recording on `url` needs, or null when the page can't be recorded at all. */
-function recordOriginPattern(url: string | undefined): string | null {
-  if (!url) return null;
-  try {
-    const { origin } = new URL(url);
-    return origin === 'null' ? null : `${origin}/*`;
-  } catch {
-    return null;
-  }
-}
-
 async function startRecordingFlow(
-  originPattern: string,
+  pattern: string,
   tabId: number,
   mode: RecordingMode,
   granted: Promise<boolean>,
 ): Promise<void> {
-  if (!(await granted)) {
+  if (!(await granted.catch(() => false))) {
     // Drop the intent the click parked for the worker, so a later unrelated
     // grant for this same origin can't revive a recording the user declined.
     await clearRecordIntent().catch(() => undefined);
@@ -333,15 +323,9 @@ async function startRecordingFlow(
     return;
   }
 
-  const response = (await chrome.runtime.sendMessage({
-    type: 'piwi-start-recording',
-    originPattern,
-    tabId,
-    mode,
-  })) as {
-    ok: boolean;
-    error?: string;
-  };
+  const response = (await chrome.runtime
+    .sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode })
+    .catch(() => undefined)) as { ok: boolean; error?: string } | undefined;
   if (!response?.ok) {
     statusEl.textContent = response?.error ?? t('common_recordingStartFailed');
     return;
@@ -349,7 +333,27 @@ async function startRecordingFlow(
   window.close();
 }
 
+/**
+ * Finishes a bug report as the page's own Finish does (a screenshot, the
+ * outline, the evidence still on its way): answers false when no recorder of
+ * this tab takes it.
+ */
+async function finishBugInPage(): Promise<boolean> {
+  const tab = await activeTab();
+  if (tab?.id == null) return false;
+  try {
+    const answer = (await chrome.tabs.sendMessage(tab.id, { type: 'piwi-bug-finish' })) as { ok?: boolean } | undefined;
+    return answer?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
 async function stopRecordingFlow(): Promise<void> {
+  if (uiMode === 'bug' && (await finishBugInPage())) {
+    window.close();
+    return;
+  }
   await stopRecording();
   try {
     // The worker owns the fan-out that tears the HUD and border down in every
@@ -373,8 +377,9 @@ async function reviewRecordingFlow(): Promise<void> {
  * permission request, which must run inside the click's user gesture.
  */
 function requestRecording(mode: RecordingMode): void {
-  const originPattern = recordOriginPattern(recordTab?.url);
-  if (originPattern == null || recordTab?.id == null) {
+  // Only a web page's site can be granted: never a browser page, a file or another extension.
+  const pattern = originPattern(recordTab?.url);
+  if (pattern == null || recordTab?.id == null) {
     statusEl.textContent = t('popup_cannotRecord');
     return;
   }
@@ -382,7 +387,7 @@ function requestRecording(mode: RecordingMode): void {
   // Synchronous, before any await: this is the user gesture the request needs.
   let granted: Promise<boolean>;
   try {
-    granted = chrome.permissions.request({ origins: [originPattern] });
+    granted = chrome.permissions.request({ origins: [pattern] });
   } catch {
     statusEl.textContent = t('popup_permissionNeeded');
     return;
@@ -392,8 +397,8 @@ function requestRecording(mode: RecordingMode): void {
   // the recorder does not need a second click. Fire-and-forget: it must
   // not delay the request above, and `startRecordingFlow` still starts things
   // directly whenever the popup does survive.
-  void setRecordIntent({ originPattern, tabId, mode });
-  void startRecordingFlow(originPattern, tabId, mode, granted);
+  void setRecordIntent({ originPattern: pattern, tabId, mode });
+  void startRecordingFlow(pattern, tabId, mode, granted);
 }
 
 recordBtn.addEventListener('click', () => {
@@ -446,15 +451,26 @@ bugBtn.addEventListener('click', () => {
  * continue across pages, and opens the replay's chooser in the tab under the
  * `activeTab` grant opening the popup gave.
  */
-document.getElementById('replay-bug')!.addEventListener('click', () => {
-  const originPattern = recordOriginPattern(recordTab?.url);
-  if (originPattern == null || recordTab?.id == null) {
+replayBtn.addEventListener('click', () => {
+  const pattern = originPattern(recordTab?.url);
+  if (pattern == null || recordTab?.id == null) {
     statusEl.textContent = t('popup_cannotReplay');
     return;
   }
-  void chrome.permissions.request({ origins: [originPattern] }).catch(() => false);
-  void inject('replay-panel.js');
+  void chrome.permissions.request({ origins: [pattern] }).catch(() => false);
+  const tabId = recordTab.id;
+  void replayInOtherTab(tabId).then((elsewhere) => {
+    if (elsewhere) statusEl.textContent = t('popup_replayElsewhere');
+    else void inject('replay-panel.js');
+  });
 });
+
+/** Whether a replay runs, or waits paused, in a tab other than `tabId`: that tab alone plays it. */
+async function replayInOtherTab(tabId: number): Promise<boolean> {
+  const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]).catch(() => [null, null] as const);
+  if (!state || state.finished || (state.status !== 'running' && state.status !== 'paused')) return false;
+  return bound?.replayId === state.id && bound.tabId !== tabId;
+}
 
 /** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */
 async function showOutdatedWorkerNotice(): Promise<void> {
@@ -464,14 +480,28 @@ async function showOutdatedWorkerNotice(): Promise<void> {
   document.getElementById('worker-reload')!.addEventListener('click', () => chrome.runtime.reload());
 }
 
+// A "Record actions" prompt that closed the last popup has been answered by the time this one opens: an intent
+// still parked would start a recording when another flow's grant for the site lands.
+void clearRecordIntent().catch(() => undefined);
+// Each tile acts on what it needs read first: Record and Bug the recording's state, Replay the tab, Tested elements
+// the connection.
 recordBtn.disabled = true;
 bugBtn.disabled = true;
+replayBtn.disabled = true;
+coverageButton.disabled = true;
+void tabRead.then(() => {
+  replayBtn.disabled = false;
+});
 void refreshRecordButton().catch(() => {
   // Left disabled on purpose: acting on a state we failed to read could start a
   // second recording over a live one.
   statusEl.textContent = t('popup_stateUnreadable');
 });
-void refreshActiveProjectSelect();
+void refreshActiveProjectSelect()
+  .catch(() => undefined)
+  .then(() => {
+    coverageButton.disabled = false;
+  });
 void renderPickShortcutHint();
 void highlightActiveTool();
 void showOutdatedWorkerNotice();

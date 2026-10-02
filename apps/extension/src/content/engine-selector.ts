@@ -7,7 +7,10 @@
  *
  * CSS keeps Playwright's scoping rule: inside a scope, every compound of the
  * selector must match inside that scope, never on the scope element itself or
- * above it, unless the selector names `:scope`.
+ * above it, unless the selector names `:scope`. `:is()`, `:where()`, `:not()`
+ * and `:has()` follow the same rule and pierce open shadow roots, as
+ * Playwright evaluates them itself; a selector starting with a combinator
+ * starts at `:scope`.
  */
 import { normalizeWhiteSpace, parentElementOrShadowHost, isElementNode, type DomModel } from './engine-aria.js';
 
@@ -17,6 +20,8 @@ export class LocatorEngineError extends Error {
     message: string,
     /** The CSS selector the page refused, when that is the reason. */
     readonly invalidSelector?: string,
+    /** How many elements a strict engine found where it takes one, when that is the reason. */
+    readonly matched?: number,
   ) {
     super(message);
     this.name = 'LocatorEngineError';
@@ -97,11 +102,18 @@ export function splitSelectorParts(selector: string): SelectorPart[] {
   return parts;
 }
 
-/** A Playwright pseudo-class inside a compound selector, evaluated here rather than by the browser. */
-interface CssFunction {
-  name: 'has-text' | 'text' | 'text-is' | 'text-matches' | 'visible' | 'scope';
-  args: string[];
-}
+type PlainPseudo = 'has-text' | 'text' | 'text-is' | 'text-matches' | 'visible' | 'scope';
+type SelectorPseudo = 'is' | 'where' | 'not' | 'has';
+
+/**
+ * A Playwright pseudo-class inside a compound selector, evaluated here rather
+ * than by the browser. `invalid` is the error Playwright raises once it
+ * matches the pseudo-class against an element: a text argument not written as
+ * a quoted string.
+ */
+type CssFunction =
+  | { name: PlainPseudo; args: string[]; invalid?: string }
+  | { name: SelectorPseudo; list: CssSelectorList };
 
 interface CssCompound {
   /** The native part, handed to `Element.matches()`; empty for `*`. */
@@ -122,9 +134,15 @@ interface CssComplex {
 export type CssSelectorList = CssComplex[];
 
 const EVALUATED_PSEUDOS = new Set(['has-text', 'text', 'text-is', 'text-matches', 'visible', 'scope']);
+const SELECTOR_PSEUDOS = new Set(['is', 'where', 'not', 'has']);
 const UNSUPPORTED_PSEUDOS = new Set(['light', 'nth-match', 'left-of', 'right-of', 'above', 'below', 'near']);
-const PLAYWRIGHT_PSEUDO_ANYWHERE =
-  /:(?:has-text|text|text-is|text-matches|visible|light|nth-match|left-of|right-of|above|below|near)(?![-\w])/;
+/** How many quoted strings each text pseudo-class takes, at least and at most. */
+const TEXT_PSEUDO_ARGS: Partial<Record<PlainPseudo, [number, number]>> = {
+  'has-text': [1, 1],
+  text: [1, 1],
+  'text-is': [1, 1],
+  'text-matches': [1, 2],
+};
 
 /** Split `text` at a top-level character, skipping quotes, brackets, parentheses and escapes. */
 function splitTopLevel(text: string, separator: string): string[] {
@@ -161,27 +179,44 @@ function splitTopLevel(text: string, separator: string): string[] {
   return out;
 }
 
-function unquoteCssArg(arg: string): string {
-  const trimmed = arg.trim();
-  if (trimmed.length >= 2 && (trimmed[0] === '"' || trimmed[0] === "'") && trimmed.endsWith(trimmed[0]!)) {
-    let out = '';
-    const inner = trimmed.slice(1, -1);
-    for (let i = 0; i < inner.length; i++) {
-      if (inner[i] !== '\\') {
-        out += inner[i];
-        continue;
-      }
-      const hex = /^[0-9a-fA-F]{1,6}\s?/.exec(inner.slice(i + 1));
-      if (hex) {
-        out += String.fromCodePoint(parseInt(hex[0].trim(), 16));
-        i += hex[0].length;
-        continue;
-      }
-      if (i + 1 < inner.length) out += inner[++i];
+/** The value of a pseudo-class argument written as one quoted CSS string, or null when it is anything else. */
+function cssString(arg: string): string | null {
+  const text = arg.trim();
+  const quote = text[0];
+  if (text.length < 2 || (quote !== '"' && quote !== "'")) return null;
+  let out = '';
+  for (let i = 1; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === quote) return i === text.length - 1 ? out : null;
+    if (c !== '\\') {
+      out += c;
+      continue;
     }
-    return out;
+    const hex = /^[0-9a-fA-F]{1,6}\s?/.exec(text.slice(i + 1));
+    if (hex) {
+      out += String.fromCodePoint(parseInt(hex[0].trim(), 16));
+      i += hex[0].length;
+      continue;
+    }
+    if (i + 1 < text.length) out += text[++i];
   }
-  return trimmed;
+  return null;
+}
+
+/** A Playwright pseudo-class evaluated here, with its arguments; a text one also records how Playwright refuses them. */
+function plainPseudo(name: PlainPseudo, inner: string | undefined): CssFunction {
+  const raw = inner === undefined ? [] : splitTopLevel(inner, ',');
+  const values = raw.map(cssString);
+  const args = values.map((value, k) => value ?? raw[k]!.trim());
+  const arity = TEXT_PSEUDO_ARGS[name];
+  if (!arity || (values.length >= arity[0] && values.length <= arity[1] && values.every((v) => v !== null))) {
+    return { name, args };
+  }
+  const invalid =
+    name === 'text-matches'
+      ? '"text-matches" engine expects a regexp body and optional regexp flags'
+      : `"${name}" engine expects a single string`;
+  return { name, args, invalid };
 }
 
 /** Pull Playwright's pseudo-classes out of one compound, leaving the native CSS. */
@@ -208,10 +243,13 @@ function parseCompound(text: string): CssCompound {
     if (c === ']') depthBracket--;
     if (c === '(') depthParen++;
     if (c === ')') depthParen--;
-    if (c === ':' && depthBracket === 0 && depthParen === 0 && text[i + 1] !== ':') {
+    if (c === ':' && depthBracket === 0 && depthParen === 0 && text[i + 1] === ':') {
+      throw new LocatorEngineError(`pseudo-elements are not supported: "${text}"`);
+    }
+    if (c === ':' && depthBracket === 0 && depthParen === 0) {
       const name = /^[-\w]+/.exec(text.slice(i + 1))?.[0] ?? '';
       let end = i + 1 + name.length;
-      let args: string[] = [];
+      let inner: string | undefined;
       if (text[end] === '(') {
         let depth = 0;
         let inQuote: string | null = null;
@@ -234,13 +272,25 @@ function parseCompound(text: string): CssCompound {
           }
         }
         if (j >= text.length) throw new LocatorEngineError(`unterminated :${name}( in selector`);
-        args = splitTopLevel(text.slice(end + 1, j), ',').map(unquoteCssArg);
+        inner = text.slice(end + 1, j);
         end = j + 1;
       }
       const lower = name.toLowerCase();
       if (UNSUPPORTED_PSEUDOS.has(lower)) throw new LocatorEngineError(`:${name}() is not supported`);
       if (EVALUATED_PSEUDOS.has(lower)) {
-        funcs.push({ name: lower as CssFunction['name'], args });
+        funcs.push(plainPseudo(lower as PlainPseudo, inner));
+        i = end - 1;
+        continue;
+      }
+      if (SELECTOR_PSEUDOS.has(lower)) {
+        if (inner === undefined) throw new LocatorEngineError(`:${name} needs a selector list`);
+        const list = parseSelectorList(inner);
+        // A list of plain compounds means the same to the browser, which matches it faster.
+        if (lower !== 'has' && list.every((c) => c.steps.length === 1 && c.steps[0]!.compound.funcs.length === 0)) {
+          css += text.slice(i, end);
+        } else {
+          funcs.push({ name: lower as SelectorPseudo, list });
+        }
         i = end - 1;
         continue;
       }
@@ -248,9 +298,6 @@ function parseCompound(text: string): CssCompound {
     css += c;
   }
   css = css.trim();
-  if (PLAYWRIGHT_PSEUDO_ANYWHERE.test(css)) {
-    throw new LocatorEngineError("Playwright pseudo-classes inside :is()/:not()/:has() aren't supported");
-  }
   return { css: css === '*' ? '' : css, funcs };
 }
 
@@ -293,7 +340,9 @@ function parseComplex(text: string): CssComplex {
     if (depthParen === 0 && depthBracket === 0 && !quote) {
       if (c === '>' || c === '+' || c === '~') {
         flush();
-        if (steps.length === 0) throw new LocatorEngineError(`selector can't start with "${c}"`);
+        if (pending !== null) throw new LocatorEngineError(`two combinators in a row in "${text}"`);
+        if (steps.length === 0)
+          steps.push({ compound: { css: '', funcs: [{ name: 'scope', args: [] }] }, combinator: '' });
         pending = c;
         continue;
       }
@@ -310,39 +359,106 @@ function parseComplex(text: string): CssComplex {
   return { steps };
 }
 
+function parseSelectorList(css: string): CssSelectorList {
+  return splitTopLevel(css, ',').map((part) => parseComplex(part));
+}
+
 let validationFragment: DocumentFragment | null = null;
 
-/** Parse a CSS selector list; throws on syntax the browser or this engine can't evaluate. */
-export function parseCssSelectorList(css: string): CssSelectorList {
-  const list = splitTopLevel(css, ',').map((part) => parseComplex(part));
+function validateNative(list: CssSelectorList, source: string): void {
   validationFragment ??= document.createDocumentFragment();
   for (const complex of list) {
     for (const { compound } of complex.steps) {
+      for (const func of compound.funcs) if ('list' in func) validateNative(func.list, source);
       if (!compound.css) continue;
       try {
         validationFragment.querySelector(compound.css);
       } catch {
-        throw new LocatorEngineError(`"${css}" isn't a valid CSS selector`, css);
+        throw new LocatorEngineError(`"${source}" isn't a valid CSS selector`, source);
       }
     }
   }
+}
+
+/** Parse a CSS selector list; throws on syntax the browser or this engine can't evaluate. */
+export function parseCssSelectorList(css: string): CssSelectorList {
+  const list = parseSelectorList(css);
+  validateNative(list, css);
   return list;
 }
 
 /** What CSS evaluation needs from the engine running it. */
 export interface CssHost {
   model: DomModel;
-  /** `root.querySelectorAll(css)`, then the same inside every open shadow root below, in Playwright's order. */
+  /** `root.querySelectorAll(css)`, then the same inside every open shadow root below, in Playwright's order; the array is shared, never changed. */
   queryCssUnder(root: Document | Element, css: string): Element[];
 }
 
 interface CssContext {
   scope: Document | Element;
-  originalScope: Document | Element;
+  /** The scope `:scope` names, once a selector naming it has moved the search up to the scope's parent. */
+  originalScope?: Document | Element;
+}
+
+/** Sort elements into tree order, open shadow roots after the light children of their host. */
+export function sortInDomOrder(elements: Iterable<Element>): Element[] {
+  interface Entry {
+    children: Element[];
+    taken: boolean;
+  }
+  const entries = new Map<Element, Entry>();
+  const roots: Element[] = [];
+  const append = (element: Element): Entry => {
+    const existing = entries.get(element);
+    if (existing) return existing;
+    const parent = parentElementOrShadowHost(element);
+    if (parent) append(parent).children.push(element);
+    else roots.push(element);
+    const entry: Entry = { children: [], taken: false };
+    entries.set(element, entry);
+    return entry;
+  };
+  for (const element of elements) append(element).taken = true;
+  const out: Element[] = [];
+  const visit = (element: Element) => {
+    const entry = entries.get(element)!;
+    if (entry.taken) out.push(element);
+    if (entry.children.length > 1) {
+      const wanted = new Set(entry.children);
+      const ordered: Element[] = [];
+      for (
+        let child = element.firstElementChild;
+        child && ordered.length < wanted.size;
+        child = child.nextElementSibling
+      ) {
+        if (wanted.has(child)) ordered.push(child);
+      }
+      let shadowChild = element.shadowRoot ? element.shadowRoot.firstElementChild : null;
+      for (; shadowChild && ordered.length < wanted.size; shadowChild = shadowChild.nextElementSibling) {
+        if (wanted.has(shadowChild)) ordered.push(shadowChild);
+      }
+      entry.children = ordered;
+    }
+    entry.children.forEach(visit);
+  };
+  roots.forEach(visit);
+  return out;
 }
 
 function hasScopeClause(complex: CssComplex): boolean {
   return complex.steps.some((s) => s.compound.funcs.some((f) => f.name === 'scope'));
+}
+
+/** A selector naming `:scope` searches from the scope's parent, so that `:scope` itself can match. */
+function contextFor(complex: CssComplex, ctx: CssContext): CssContext {
+  if (!hasScopeClause(complex) || !isElementNode(ctx.scope)) return ctx;
+  const parent = parentElementOrShadowHost(ctx.scope);
+  return parent ? { scope: parent, originalScope: ctx.originalScope ?? ctx.scope } : ctx;
+}
+
+function scopeElement(ctx: CssContext): Element | null {
+  const actual = ctx.originalScope ?? ctx.scope;
+  return isElementNode(actual) ? actual : (actual as Document).documentElement;
 }
 
 function parentInContext(element: Element, ctx: CssContext): Element | undefined {
@@ -358,12 +474,22 @@ function previousSiblingInContext(element: Element, ctx: CssContext): Element | 
 function matchesFunc(host: CssHost, element: Element, func: CssFunction, ctx: CssContext): boolean {
   const model = host.model;
   switch (func.name) {
-    case 'scope': {
-      const actual = ctx.originalScope;
-      return isElementNode(actual) ? element === actual : element === (actual as Document).documentElement;
+    case 'is':
+    case 'where':
+      return func.list.some((complex) => matchesComplex(host, element, complex, ctx));
+    case 'not':
+      return !func.list.some((complex) => matchesComplex(host, element, complex, ctx));
+    case 'has': {
+      const inside: CssContext = { ...ctx, scope: element };
+      return func.list.some((complex) => hasMatch(host, complex, inside));
     }
+    case 'scope':
+      return element === scopeElement(ctx);
     case 'visible':
       return model.isVisible(element);
+  }
+  if (func.invalid) throw new LocatorEngineError(func.invalid);
+  switch (func.name) {
     case 'has-text': {
       const needle = normalizeWhiteSpace(func.args[0] ?? '').toLowerCase();
       if (element.nodeName === 'SCRIPT' || element.nodeName === 'NOSCRIPT' || element.nodeName === 'STYLE')
@@ -401,6 +527,15 @@ function matchesCompound(host: CssHost, element: Element, compound: CssCompound,
   return compound.funcs.every((func) => matchesFunc(host, element, func, ctx));
 }
 
+function matchesComplex(host: CssHost, element: Element, complex: CssComplex, outer: CssContext): boolean {
+  const ctx = contextFor(complex, outer);
+  const last = complex.steps.length - 1;
+  return (
+    matchesCompound(host, element, complex.steps[last]!.compound, ctx) &&
+    matchesParents(host, element, complex, last - 1, ctx)
+  );
+}
+
 function matchesParents(host: CssHost, element: Element, complex: CssComplex, index: number, ctx: CssContext): boolean {
   if (index < 0) return true;
   const { compound, combinator } = complex.steps[index]!;
@@ -436,48 +571,81 @@ function matchesParents(host: CssHost, element: Element, complex: CssComplex, in
   return false;
 }
 
-function querySimple(host: CssHost, compound: CssCompound, ctx: CssContext): Element[] {
+/**
+ * The candidates for a compound: the browser's match of its native part under
+ * `root`, else what `:scope` or an `:is()` finds, else every element under `root`.
+ */
+function querySimple(host: CssHost, compound: CssCompound, ctx: CssContext, root = ctx.scope): Element[] {
   let elements: Element[];
-  let skipScopeFunc = false;
+  let first: CssFunction | undefined;
   if (compound.css || compound.funcs.length === 0) {
-    elements = host.queryCssUnder(ctx.scope, compound.css || '*');
-  } else if (compound.funcs.some((f) => f.name === 'scope')) {
-    const actual = ctx.originalScope;
-    const element = isElementNode(actual) ? actual : (actual as Document).documentElement;
-    elements = element ? [element] : [];
-    skipScopeFunc = true;
+    elements = host.queryCssUnder(root, compound.css || '*');
   } else {
-    elements = host.queryCssUnder(ctx.scope, '*');
+    first = compound.funcs.find((f) => f.name === 'scope' || f.name === 'is' || f.name === 'where');
+    if (first?.name === 'scope') {
+      const element = scopeElement(ctx);
+      elements = element ? [element] : [];
+    } else if (first && 'list' in first) {
+      elements = queryList(host, first.list, ctx);
+    } else {
+      elements = host.queryCssUnder(root, '*');
+    }
   }
   return elements.filter((element) =>
-    compound.funcs.every((func) => (skipScopeFunc && func.name === 'scope') || matchesFunc(host, element, func, ctx)),
+    compound.funcs.every((func) => func === first || matchesFunc(host, element, func, ctx)),
   );
 }
 
-function queryComplex(host: CssHost, complex: CssComplex, scope: Document | Element): Element[] {
-  let ctx: CssContext = { scope, originalScope: scope };
-  if (hasScopeClause(complex) && isElementNode(scope)) {
-    const parent = parentElementOrShadowHost(scope);
-    if (parent) ctx = { scope: parent, originalScope: scope };
-  }
+/**
+ * The combinator after a bare `:scope` the selector starts with (`> span`,
+ * `:scope ~ p`) when that `:scope` is the element `outer` searches, else null.
+ */
+function combinatorFromScope(complex: CssComplex, outer: CssContext, ctx: CssContext): CssStep['combinator'] | null {
+  if (ctx === outer || outer.originalScope || complex.steps.length < 2) return null;
+  const { compound, combinator } = complex.steps[0]!;
+  return !compound.css && compound.funcs.length === 1 && compound.funcs[0]!.name === 'scope' ? combinator : null;
+}
+
+function queryComplex(host: CssHost, complex: CssComplex, outer: CssContext): Element[] {
+  const ctx = contextFor(complex, outer);
   const last = complex.steps.length - 1;
-  return querySimple(host, complex.steps[last]!.compound, ctx).filter((element) =>
+  // Going down from `:scope` finds only what is inside it, in the same order.
+  const combinator = combinatorFromScope(complex, outer, ctx);
+  const root = combinator === '>' || combinator === '' ? outer.scope : ctx.scope;
+  return querySimple(host, complex.steps[last]!.compound, ctx, root).filter((element) =>
     matchesParents(host, element, complex, last - 1, ctx),
   );
 }
 
+/** Whether a `:has()` selector finds anything for the element `outer` searches. */
+function hasMatch(host: CssHost, complex: CssComplex, outer: CssContext): boolean {
+  const ctx = contextFor(complex, outer);
+  const last = complex.steps.length - 1;
+  const { compound } = complex.steps[last]!;
+  const matches = (element: Element) => matchesParents(host, element, complex, last - 1, ctx);
+  const foundUnder = (root: Document | Element) => querySimple(host, compound, ctx, root).some(matches);
+  const combinator = combinatorFromScope(complex, outer, ctx);
+  if (combinator === null) return foundUnder(ctx.scope);
+  const element = outer.scope as Element;
+  if (combinator === '>' || combinator === '') return foundUnder(element);
+  // `+` and `~` reach the siblings after the element and what is inside them.
+  for (let sibling = element.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+    if ((matchesCompound(host, sibling, compound, ctx) && matches(sibling)) || foundUnder(sibling)) return true;
+  }
+  return false;
+}
+
+function queryList(host: CssHost, list: CssSelectorList, ctx: CssContext): Element[] {
+  if (list.length === 1) return queryComplex(host, list[0]!, ctx);
+  const all: Element[] = [];
+  for (const complex of list) all.push(...queryComplex(host, complex, ctx));
+  return sortInDomOrder(all);
+}
+
 /** Every element a CSS selector list matches inside `scope`, in Playwright's order. */
-export function queryCss(
-  host: CssHost,
-  list: CssSelectorList,
-  scope: Document | Element,
-  sortInDomOrder: (elements: Element[]) => Element[],
-): Element[] {
+export function queryCss(host: CssHost, list: CssSelectorList, scope: Document | Element): Element[] {
   try {
-    if (list.length === 1) return queryComplex(host, list[0]!, scope);
-    const all: Element[] = [];
-    for (const complex of list) all.push(...queryComplex(host, complex, scope));
-    return sortInDomOrder(all);
+    return queryList(host, list, { scope });
   } catch (error) {
     if (error instanceof LocatorEngineError) throw error;
     throw new LocatorEngineError(`invalid selector: ${(error as Error).message}`);

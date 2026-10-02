@@ -7,12 +7,16 @@ import {
   applyServerSync,
   coerceConnectionSettings,
   mappedProjects,
+  getInstanceApiKey,
+  setInstanceApiKey,
+  clearInstanceApiKey,
+  moveLegacyApiKey,
   type ConnectionSettings,
 } from '../../src/shared/connection-settings.js';
+import { memoryLocalStorage, memorySecretArea } from './memory-secret-area.js';
 
 const EMPTY_SETTINGS: ConnectionSettings = {
   instanceUrl: '',
-  apiKey: '',
   projectMappings: [],
   serverMappings: [],
   serverProjects: [],
@@ -55,14 +59,11 @@ describe('connection settings', () => {
     await setConnectionSettings(
       conn({
         instanceUrl: 'https://piwi.example.com',
-        apiKey: 'pd_abc',
         projectMappings: [shopMapping],
       }),
     );
     const settings = await getConnectionSettings();
-    expect(settings).toEqual(
-      conn({ instanceUrl: 'https://piwi.example.com', apiKey: 'pd_abc', projectMappings: [shopMapping] }),
-    );
+    expect(settings).toEqual(conn({ instanceUrl: 'https://piwi.example.com', projectMappings: [shopMapping] }));
     expect(isConnected(settings)).toBe(true);
   });
 
@@ -71,7 +72,6 @@ describe('connection settings', () => {
     await setConnectionSettings(
       conn({
         instanceUrl: 'https://piwi.example.com',
-        apiKey: '',
         projectMappings: [shopMapping, otherMapping],
       }),
     );
@@ -80,7 +80,7 @@ describe('connection settings', () => {
   });
 
   it('is not connected with a URL but no mappings', async () => {
-    await setConnectionSettings(conn({ instanceUrl: 'https://piwi.example.com', apiKey: '', projectMappings: [] }));
+    await setConnectionSettings(conn({ instanceUrl: 'https://piwi.example.com', projectMappings: [] }));
     expect(isConnected(await getConnectionSettings())).toBe(false);
   });
 
@@ -88,7 +88,6 @@ describe('connection settings', () => {
     await setConnectionSettings(
       conn({
         instanceUrl: 'https://piwi.example.com',
-        apiKey: 'pd_abc',
         projectMappings: [shopMapping],
       }),
     );
@@ -118,7 +117,6 @@ describe('connection settings', () => {
     await setConnectionSettings(
       conn({
         instanceUrl: 'https://piwi.example.com',
-        apiKey: '',
         projectMappings: [
           { ...shopMapping, branch: ' develop ' },
           { ...shopMapping, urlPattern: 'https://b.test/**', branch: '  ' },
@@ -134,7 +132,6 @@ describe('connection settings', () => {
     await setConnectionSettings(
       conn({
         instanceUrl: 'https://piwi.example.com',
-        apiKey: '',
         projectMappings: [
           { ...shopMapping, pathPrefix: 'app/' },
           { ...shopMapping, urlPattern: 'https://b.test/**', pathPrefix: ' ' },
@@ -152,7 +149,6 @@ describe('connection settings', () => {
     await setConnectionSettings(
       conn({
         instanceUrl: 'https://piwi.example.com',
-        apiKey: '',
         projectMappings: [
           { ...shopMapping, testPathPrefix: 'shop/' },
           { ...shopMapping, urlPattern: 'https://b.test/**', testPathPrefix: '/shop/*' },
@@ -207,7 +203,7 @@ describe("the instance's patterns", () => {
   };
 
   it('a sync caches the patterns, projects and account name, and keeps the local patterns', () => {
-    const before = conn({ instanceUrl: 'https://piwi.test', apiKey: 'pd_x', projectMappings: [shopMapping] });
+    const before = conn({ instanceUrl: 'https://piwi.test', projectMappings: [shopMapping] });
     const after = applyServerSync(before, answer, 1234);
     expect(after.projectMappings).toEqual([shopMapping]);
     expect(after.serverMappings).toEqual([
@@ -247,7 +243,111 @@ describe("the instance's patterns", () => {
   });
 
   it('reads settings stored by an older version, before server patterns existed', () => {
-    const old = { instanceUrl: 'https://piwi.test', apiKey: 'pd_x', projectMappings: [shopMapping] };
+    const old = { instanceUrl: 'https://piwi.test', projectMappings: [shopMapping] };
     expect(coerceConnectionSettings(old)).toEqual(conn(old));
+  });
+});
+
+describe('the API key', () => {
+  let local: ReturnType<typeof memoryLocalStorage>;
+  let area: ReturnType<typeof memorySecretArea>;
+  const legacy = {
+    instanceUrl: 'https://piwi.example.com/',
+    apiKey: 'pd_old',
+    projectMappings: [shopMapping],
+    serverMappings: [],
+    serverProjects: [],
+    serverSyncedAt: 5,
+    connectedAs: 'Ada',
+  };
+
+  beforeEach(() => {
+    local = memoryLocalStorage();
+    area = memorySecretArea();
+    (globalThis as any).chrome = { storage: { local: local.local } };
+  });
+
+  it('is kept in the secret area, never in the settings content scripts read', async () => {
+    await setConnectionSettings(conn({ instanceUrl: 'https://piwi.example.com', projectMappings: [shopMapping] }));
+    await setInstanceApiKey('https://piwi.example.com', 'pd_abc', area);
+    expect(JSON.stringify(local.store)).not.toContain('pd_abc');
+    expect(await getInstanceApiKey('https://piwi.example.com/', area)).toBe('pd_abc');
+    expect(isConnected(await getConnectionSettings())).toBe(true);
+  });
+
+  it('goes only to the origin it was given for', async () => {
+    await setInstanceApiKey('https://piwi.example.com', 'pd_abc', area);
+    expect(await getInstanceApiKey('https://piwi.example.com/sub/path', area)).toBe('pd_abc');
+    expect(await getInstanceApiKey('https://evil.example.com', area)).toBe('');
+    expect(await getInstanceApiKey('http://piwi.example.com', area)).toBe('');
+    expect(await getInstanceApiKey('https://piwi.example.com:8443', area)).toBe('');
+    expect(await getInstanceApiKey('', area)).toBe('');
+  });
+
+  it('an empty key, or Disconnect, keeps none', async () => {
+    await setInstanceApiKey('https://piwi.example.com', 'pd_abc', area);
+    await setInstanceApiKey('https://piwi.example.com', '  ', area);
+    expect(await getInstanceApiKey('https://piwi.example.com', area)).toBe('');
+    await setInstanceApiKey('https://piwi.example.com', 'pd_abc', area);
+    await clearInstanceApiKey(area);
+    expect(area.data.size).toBe(0);
+  });
+
+  it('a key left in the stored settings moves to the secret area, bound to their instance, and leaves them', async () => {
+    local.store.piwiConnection = structuredClone(legacy);
+    await moveLegacyApiKey(area);
+    expect(area.data.get('instance')).toEqual({ apiKey: 'pd_old', origin: 'https://piwi.example.com' });
+    const { apiKey: _key, ...rest } = legacy;
+    expect(local.store.piwiConnection).toEqual(rest);
+    // Content scripts read the same settings as before, without the key.
+    const settings = await getConnectionSettings();
+    expect(settings).not.toHaveProperty('apiKey');
+    expect(isConnected(settings)).toBe(true);
+    expect(await getInstanceApiKey(legacy.instanceUrl, area)).toBe('pd_old');
+  });
+
+  it('moving again changes nothing', async () => {
+    local.store.piwiConnection = structuredClone(legacy);
+    await moveLegacyApiKey(area);
+    const once = { local: structuredClone(local.store), area: structuredClone([...area.data]) };
+    await moveLegacyApiKey(area);
+    expect({ local: local.store, area: [...area.data] }).toEqual(once);
+  });
+
+  it('a move cut short before the key is written leaves it where it was', async () => {
+    local.store.piwiConnection = structuredClone(legacy);
+    area.failNextSet = true;
+    await expect(moveLegacyApiKey(area)).rejects.toThrow();
+    expect(local.store.piwiConnection).toEqual(legacy);
+    await moveLegacyApiKey(area);
+    expect(await getInstanceApiKey(legacy.instanceUrl, area)).toBe('pd_old');
+    expect(local.store.piwiConnection).not.toHaveProperty('apiKey');
+  });
+
+  it('a move cut short after the key is written finishes on the next one', async () => {
+    local.store.piwiConnection = structuredClone(legacy);
+    local.failNextSet = true;
+    await expect(moveLegacyApiKey(area)).rejects.toThrow();
+    // In both places for now: nothing is lost.
+    expect(area.data.get('instance')).toEqual({ apiKey: 'pd_old', origin: 'https://piwi.example.com' });
+    expect(local.store.piwiConnection).toHaveProperty('apiKey', 'pd_old');
+    await moveLegacyApiKey(area);
+    expect(local.store.piwiConnection).not.toHaveProperty('apiKey');
+    expect(await getInstanceApiKey(legacy.instanceUrl, area)).toBe('pd_old');
+  });
+
+  it('a key written into the stored settings later never replaces the one kept', async () => {
+    await setInstanceApiKey('https://piwi.example.com', 'pd_real', area);
+    local.store.piwiConnection = { ...structuredClone(legacy), instanceUrl: 'https://evil.example.com', apiKey: 'x' };
+    expect(await getInstanceApiKey('https://evil.example.com', area)).toBe('');
+    expect(await getInstanceApiKey('https://piwi.example.com', area)).toBe('pd_real');
+    expect(local.store.piwiConnection).not.toHaveProperty('apiKey');
+  });
+
+  it('an empty key left in the stored settings is only removed', async () => {
+    local.store.piwiConnection = { ...structuredClone(legacy), apiKey: '' };
+    await moveLegacyApiKey(area);
+    expect(area.data.size).toBe(0);
+    expect(local.store.piwiConnection).not.toHaveProperty('apiKey');
   });
 });

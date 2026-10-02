@@ -22,26 +22,60 @@ export interface ActiveProject {
 
 const OVERRIDE_KEY = 'piwiActiveProjectOverride';
 
-/**
- * A manual "use this project regardless of the URL-pattern mapping" choice,
- * made from the popup's active-project select. `chrome.storage.session` —
- * a for-this-browser-run choice, not a permanent setting; closing the
- * browser goes back to pure pattern matching, same reasoning as the
- * recording/pick-session state in `recording-storage.ts`/`session-storage.ts`.
- */
-export async function getActiveProjectOverride(): Promise<ActiveProject | null> {
-  const stored = await sessionArea().get(OVERRIDE_KEY);
-  const value = stored[OVERRIDE_KEY];
-  if (!value || typeof value !== 'object') return null;
-  const v = value as Partial<ActiveProject>;
-  return typeof v.projectId === 'number'
-    ? { projectId: v.projectId, projectLabel: String(v.projectLabel ?? `#${v.projectId}`) }
-    : null;
+/** The origin a choice is kept under; null for an address with none (`about:blank`, a file). */
+function overrideOrigin(url: string): string | null {
+  try {
+    const origin = new URL(url).origin;
+    return origin === 'null' ? null : origin;
+  } catch {
+    return null;
+  }
 }
 
-export async function setActiveProjectOverride(project: ActiveProject | null): Promise<void> {
-  if (project) await sessionArea().set({ [OVERRIDE_KEY]: project });
-  else await sessionArea().remove(OVERRIDE_KEY);
+/** Every site's choice, by origin. */
+async function readOverrides(): Promise<Record<string, ActiveProject>> {
+  const value = (await sessionArea().get(OVERRIDE_KEY))[OVERRIDE_KEY];
+  if (!value || typeof value !== 'object') return {};
+  const overrides: Record<string, ActiveProject> = {};
+  for (const [origin, entry] of Object.entries(value as Record<string, unknown>)) {
+    const v = entry as Partial<ActiveProject> | null;
+    if (v && typeof v === 'object' && typeof v.projectId === 'number') {
+      overrides[origin] = { projectId: v.projectId, projectLabel: String(v.projectLabel ?? `#${v.projectId}`) };
+    }
+  }
+  return overrides;
+}
+
+/**
+ * A manual "use this project regardless of the URL-pattern mapping" choice for
+ * one site, made from the popup's active-project select and kept per origin:
+ * the choice made on one site never applies on another. `url` is the page's
+ * address: a content script's own by default; the popup, the background worker
+ * and the DevTools pages pass the tab's. `chrome.storage.session` — a
+ * for-this-browser-run choice, not a permanent setting; closing the browser
+ * goes back to pure pattern matching, same reasoning as the recording/pick-session
+ * state in `recording-storage.ts`/`session-storage.ts`.
+ */
+export async function getActiveProjectOverride(
+  url: string = globalThis.location?.href ?? '',
+): Promise<ActiveProject | null> {
+  const origin = overrideOrigin(url);
+  return origin ? ((await readOverrides())[origin] ?? null) : null;
+}
+
+/** Keeps `project` as the choice for `url`'s origin; null goes back to the URL patterns there. */
+export async function setActiveProjectOverride(url: string, project: ActiveProject | null): Promise<void> {
+  const origin = overrideOrigin(url);
+  if (!origin) return;
+  const overrides = await readOverrides();
+  if (project) overrides[origin] = { projectId: project.projectId, projectLabel: project.projectLabel };
+  else delete overrides[origin];
+  await sessionArea().set({ [OVERRIDE_KEY]: overrides });
+}
+
+/** Drops the choice of every site: on Disconnect, and when another instance's projects take over. */
+export async function clearActiveProjectOverrides(): Promise<void> {
+  await sessionArea().remove(OVERRIDE_KEY);
 }
 
 /**
@@ -104,6 +138,6 @@ function prefixesOf(mapping: { pathPrefix?: string; testPathPrefix?: string } | 
  * report's page key is keyed with.
  */
 export async function activePathPrefixes(settings: ConnectionSettings, url: string): Promise<PathPrefixes> {
-  const override = await getActiveProjectOverride().catch(() => null);
+  const override = await getActiveProjectOverride(url).catch(() => null);
   return prefixesOf(resolveActiveProject(settings, override, url) ?? undefined);
 }

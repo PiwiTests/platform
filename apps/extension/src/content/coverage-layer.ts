@@ -10,8 +10,9 @@ import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { editText, type Replacement } from './coverage-risk.js';
 import type { CoveredElement, UncoveredElement } from './coverage-scan.js';
 import { statusLabel, testTitle, usePages, type CoverageContext } from './coverage-view.js';
-import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
+import { projectLocatorsUrl, testCaseUrl } from '../shared/instance-links.js';
 import { t, tn, uiLanguage } from '../shared/i18n.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 export interface Drawable {
   element: Element;
@@ -74,17 +75,6 @@ function viewportRect(element: Element): Rect | null {
 
 const PREVIEW_TESTS = 4;
 const CARD_TESTS = 8;
-
-async function copyText(text: string, button: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = button.textContent;
-  button.textContent = t('common_copied');
-  setTimeout(() => (button.textContent = original), 1200);
-}
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -424,13 +414,13 @@ export class CoverageLayer {
     const actions = el('div', 'card-actions');
     const copy = el('button', undefined, t('coverage_copyLocator'));
     copy.type = 'button';
-    copy.addEventListener('click', () => void copyText(next, copy));
+    copy.addEventListener('click', () => void copyWithFeedback(next, copy));
     const edit = el('button', undefined, t('coverage_copyEdit'));
     edit.type = 'button';
     edit.title = t('coverage_copyEditTitle');
     const locator = context.index.locators[entry]!;
     const sites = [...new Set(locator.uses.flatMap((use) => use.callSites))];
-    edit.addEventListener('click', () => void copyText(editText(sites, locator.locator, next), edit));
+    edit.addEventListener('click', () => void copyWithFeedback(editText(sites, locator.locator, next), edit));
     actions.append(copy, edit);
     suggestion.appendChild(actions);
     block.appendChild(suggestion);
@@ -562,7 +552,7 @@ export class CoverageLayer {
         const actions = el('div', 'card-actions');
         const copy = el('button', undefined, t('coverage_copyLocator'));
         copy.type = 'button';
-        copy.addEventListener('click', () => void copyText(suggestion, copy));
+        copy.addEventListener('click', () => void copyWithFeedback(suggestion, copy));
         actions.appendChild(copy);
         block.appendChild(actions);
         card.appendChild(block);

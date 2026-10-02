@@ -163,25 +163,64 @@ describe('the replay’s session', () => {
 });
 
 describe('the bug recording’s evidence', () => {
-  const consoleError = { type: 'error', args: [{ type: 'string', value: 'Cart failed' }] };
+  const consoleError = { type: 'error', executionContextId: 1, args: [{ type: 'string', value: 'Cart failed' }] };
+  /** The page's own world, where its scripts run. */
+  const pageContext = { context: { id: 1, origin: 'https://shop.test', auxData: { isDefault: true } } };
 
   it('stores what is pending when the recording stops', async () => {
     const { CDP_EVIDENCE_KEY } = await import('../../src/shared/bug-storage.js');
     const { startBugDebugger, stopBugDebugger } = await import('../../src/background/cdp-evidence.js');
-    expect(await startBugDebugger(7)).toBe(true);
+    expect(await startBugDebugger(7, 'https://shop.test/*')).toBe(true);
+    browser.emit(7, 'Runtime.executionContextCreated', pageContext);
     browser.emit(7, 'Runtime.consoleAPICalled', consoleError);
     await stopBugDebugger();
     const stored = browser.session.get(CDP_EVIDENCE_KEY) as { console: Array<{ message: string }> };
     expect(stored.console.map((e) => e.message)).toEqual(['Cart failed']);
   });
 
+  it('keeps the console of the page’s own world and the requests of its documents, on the recorded origin only', async () => {
+    const { CDP_EVIDENCE_KEY } = await import('../../src/shared/bug-storage.js');
+    const { startBugDebugger, stopBugDebugger } = await import('../../src/background/cdp-evidence.js');
+    await startBugDebugger(7, 'https://shop.test/*');
+    browser.emit(7, 'Runtime.executionContextCreated', pageContext);
+    browser.emit(7, 'Runtime.executionContextCreated', {
+      context: { id: 2, origin: 'https://shop.test', auxData: { isDefault: false } },
+    });
+    browser.emit(7, 'Runtime.consoleAPICalled', { ...consoleError, executionContextId: 2 });
+    const failed = (id: string, url: string, documentURL: string, status: number) => {
+      browser.emit(7, 'Network.requestWillBeSent', { requestId: id, documentURL, request: { method: 'GET', url } });
+      browser.emit(7, 'Network.responseReceived', { requestId: id, response: { status } });
+    };
+    failed('1', 'https://login.test/session', 'https://shop.test/cart', 401);
+    // The tab goes through another site, then comes back.
+    browser.emit(7, 'Page.frameNavigated', { frame: { url: 'https://login.test/sign-in' } });
+    browser.emit(7, 'Runtime.executionContextCreated', {
+      context: { id: 3, origin: 'https://login.test', auxData: { isDefault: true } },
+    });
+    browser.emit(7, 'Runtime.consoleAPICalled', { ...consoleError, executionContextId: 3 });
+    browser.emit(7, 'Log.entryAdded', { entry: { level: 'error', source: 'javascript', text: 'Sign-in failed' } });
+    failed('2', 'https://login.test/api/me', 'https://login.test/sign-in', 401);
+    failed('3', 'https://shop.test/cart', 'https://shop.test/cart', 500);
+    browser.emit(7, 'Page.frameNavigated', { frame: { url: 'https://shop.test/cart' } });
+    browser.emit(7, 'Runtime.executionContextCreated', { context: { ...pageContext.context, id: 4 } });
+    browser.emit(7, 'Runtime.consoleAPICalled', { ...consoleError, executionContextId: 4 });
+    await stopBugDebugger();
+    const stored = browser.session.get(CDP_EVIDENCE_KEY) as {
+      console: Array<{ message: string }>;
+      requests: Array<{ url: string; status: number }>;
+    };
+    expect(stored.console.map((e) => e.message)).toEqual(['Cart failed']);
+    expect(stored.requests.map((r) => `${r.url} ${r.status}`)).toEqual(['https://login.test/session 401', '/cart 500']);
+  });
+
   it('starts a new recording with nothing from the one before', async () => {
     const { CDP_EVIDENCE_KEY } = await import('../../src/shared/bug-storage.js');
     const { startBugDebugger, stopBugDebugger } = await import('../../src/background/cdp-evidence.js');
-    await startBugDebugger(7);
+    await startBugDebugger(7, 'https://shop.test/*');
+    browser.emit(7, 'Runtime.executionContextCreated', pageContext);
     browser.emit(7, 'Runtime.consoleAPICalled', consoleError);
     await stopBugDebugger();
-    await startBugDebugger(7);
+    await startBugDebugger(7, 'https://shop.test/*');
     await new Promise((resolve) => setTimeout(resolve, 300));
     const stored = browser.session.get(CDP_EVIDENCE_KEY) as { console: unknown[] };
     expect(stored.console).toEqual([]);
@@ -202,5 +241,21 @@ describe('the viewport set in a tab', () => {
     expect(browser.session.get(TAB_VIEWPORT_KEY)).toEqual({ 8: { tabId: 8, width: 1280, height: 720 } });
     expect(browser.attached.has(7)).toBe(false);
     expect(browser.attached.has(8)).toBe(true);
+  });
+
+  it('gives a replay that sized the tab its own size back when the panel’s viewport is reset', async () => {
+    const replayId = await runningReplay();
+    const { handleReplayDriver, handleReplayViewport } = await import('../../src/background/cdp-replay.js');
+    const { clearTabViewport, setTabViewport } = await import('../../src/background/cdp-conditions.js');
+    await handleReplayDriver({ replayId, previous: null }, TAB);
+    expect(await handleReplayViewport({ replayId, width: 800, height: 600 }, TAB)).toEqual({ ok: true });
+    await setTabViewport({ tabId: 7, width: 390, height: 664 });
+    await clearTabViewport(7);
+    const emulation = browser.commands.filter((c) => c.method.startsWith('Emulation.'));
+    expect(emulation[emulation.length - 1]).toMatchObject({
+      method: 'Emulation.setDeviceMetricsOverride',
+      params: { width: 800, height: 600 },
+    });
+    expect(browser.attached.has(7)).toBe(true);
   });
 });

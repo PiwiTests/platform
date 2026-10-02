@@ -78,11 +78,26 @@ export async function stubChromeStorage(
   await stubChromeI18n(context);
 }
 
-/** Plays the service worker's `chrome.tabs.sendMessage` fan-out — the only way a stop reaches a content script. */
-export async function dispatchRuntimeMessage(page: Page, message: unknown): Promise<void> {
-  await page.evaluate((msg) => {
-    for (const fn of (globalThis as any).__piwiTestRuntimeListeners ?? []) fn(msg);
-  }, message);
+/**
+ * Plays the service worker's `chrome.tabs.sendMessage` fan-out — the only way
+ * a stop reaches a content script — or the popup's own messages to the page,
+ * each `messages` in turn in one task. Answers what each listener sent back.
+ */
+export async function dispatchRuntimeMessage(page: Page, ...messages: unknown[]): Promise<unknown[]> {
+  return page.evaluate(async (all) => {
+    const answers: Array<Promise<unknown>> = [];
+    for (const msg of all) {
+      for (const fn of (globalThis as any).__piwiTestRuntimeListeners ?? []) {
+        answers.push(
+          new Promise((resolve) => {
+            // A listener that answers later says so by returning true.
+            if (fn(msg, {}, resolve) !== true) resolve(undefined);
+          }),
+        );
+      }
+    }
+    return Promise.all(answers);
+  }, messages);
 }
 
 export async function setRecordingActive(page: Page, active: boolean): Promise<void> {

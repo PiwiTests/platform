@@ -12,9 +12,9 @@ import {
   type Point,
   type ReplayDriver,
 } from '../shared/cdp-input.js';
-import { getReplayState } from '../shared/replay-storage.js';
+import { getReplayState, getReplayTab } from '../shared/replay-storage.js';
 import { restoreTabViewport } from './cdp-conditions.js';
-import { emulateCssViewport, onTabZoomChange, type CssViewport } from './viewport-emulation.js';
+import { emulateCssViewport, onTabZoomChange, replayViewports } from './viewport-emulation.js';
 import {
   acquireDebugger,
   debuggerAvailable,
@@ -29,30 +29,44 @@ import {
 /**
  * The replay's trusted input: the replay script finds each element and says
  * where it is; the worker attaches to that tab and sends the input through the
- * debugging protocol, as Playwright does. A replay attaches on its first action
- * and detaches when it ends.
+ * debugging protocol, as Playwright does. Each page of the replay asks for its
+ * driver (`piwi-replay-driver`), which attaches when the tab has no session
+ * yet; the replay lets go of the tab when it ends, when the tab leaves its
+ * origin, and when a command fails.
  */
 
 let isMac: Promise<boolean> | null = null;
 
 /** The replay each tab's session was attached for. */
 const replayOfTab = new Map<number, string>();
-/** The viewport a replay set on each tab, in CSS pixels: set again when the tab's zoom changes, given back when the replay lets the tab go. */
-const sizedTabs = new Map<number, CssViewport>();
 
 onTabZoomChange((tabId) => {
-  const size = sizedTabs.get(tabId);
+  const size = replayViewports.get(tabId);
   if (size && holdsDebugger(tabId, 'replay')) void emulateCssViewport(tabId, size).catch(() => undefined);
 });
 /** The widest and tallest viewport a replay sets, in CSS pixels, as a steps document allows. */
 const VIEWPORT_MAX = 10_000;
-/** Replays whose session ended without them (the person cancelled the bar): they go on with the page's events. */
+/**
+ * Replays whose session ended without them (the person cancelled the bar) or
+ * that let it go when a command failed: they go on with the page's events.
+ * Emptied when a replay ends or another starts, since only the running replay
+ * is ever asked about.
+ */
 const lostReplays = new Map<string, FallbackReason>();
+/** What stops listening to each replayed tab's top-frame navigations. */
+const navigationWatches = new Map<number, () => void>();
+
+function stopWatching(tabId: number): void {
+  navigationWatches.get(tabId)?.();
+  navigationWatches.delete(tabId);
+}
 
 onDebuggerLost((tabId, purposes, reason) => {
   if (!purposes.includes('replay')) return;
   const replayId = replayOfTab.get(tabId);
   replayOfTab.delete(tabId);
+  replayViewports.delete(tabId);
+  stopWatching(tabId);
   if (replayId) lostReplays.set(replayId, reason);
   // The replay script hears it now rather than at its next step, and says so in its panel.
   void chrome.tabs.sendMessage(tabId, { type: 'piwi-replay-driver-lost', replayId, reason }).catch(() => undefined);
@@ -66,15 +80,47 @@ function macPlatform(): Promise<boolean> {
   return isMac;
 }
 
-/** Whether the tab asking is on the running replay's origin. */
+/** Whether the tab asking plays the running replay: its tab, on its origin. */
 async function replayRunsIn(tab: chrome.tabs.Tab | undefined, replayId: unknown): Promise<boolean> {
-  const state = await getReplayState();
+  const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]);
   if (!state || state.id !== replayId || (state.status !== 'running' && state.status !== 'paused')) return false;
+  if (bound?.replayId === state.id && bound.tabId !== tab?.id) return false;
   try {
     return !!tab?.url && new URL(tab.url).origin === state.origin;
   } catch {
     return false;
   }
+}
+
+function originOf(url: unknown): string | null {
+  try {
+    return typeof url === 'string' ? new URL(url).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lets go of the tab once its top frame shows a page off the replay's origin,
+ * or the replay no longer runs. The protocol reports it for any origin, where
+ * `chrome.tabs.onUpdated` gives no address for a page the extension has no
+ * access to.
+ */
+function watchNavigation(tabId: number): void {
+  stopWatching(tabId);
+  const stop = onDebuggerEvent(tabId, (method, params) => {
+    if (method !== 'Page.frameNavigated') return;
+    const frame = params.frame as { parentId?: string; url?: string } | undefined;
+    if (!frame || frame.parentId) return;
+    const origin = originOf(frame.url);
+    void getReplayState().then((state) => {
+      const running = state?.status === 'running' || state?.status === 'paused';
+      if ((!running || origin !== state.origin) && navigationWatches.get(tabId) === stop) {
+        void releaseReplayTab(tabId);
+      }
+    });
+  });
+  navigationWatches.set(tabId, stop);
 }
 
 /**
@@ -93,6 +139,8 @@ export async function handleReplayDriver(
   const lost = lostReplays.get(String(message.replayId));
   if (lost) return { driver: 'synthetic', reason: lost };
   if (!debuggerAvailable()) return chooseDriver({ available: false, attached: false, previous });
+  // A new session holds no viewport the replay set before.
+  if (!holdsDebugger(tab.id, 'replay')) replayViewports.delete(tab.id);
   const attached = await acquireDebugger(tab.id, 'replay');
   if (!attached.ok) {
     return {
@@ -101,6 +149,7 @@ export async function handleReplayDriver(
     };
   }
   replayOfTab.set(tab.id, String(message.replayId));
+  watchNavigation(tab.id);
   // A click that opens a file chooser must not open the browser's dialog: the file step asks for the file.
   await sendCommand(tab.id, 'Page.enable').catch(() => undefined);
   await sendCommand(tab.id, 'Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined);
@@ -173,18 +222,20 @@ const INPUT_COMMANDS = new Set([
 /**
  * Performs what the replay script asks in its tab. `started` says whether any
  * input reached the page before a failure, command by command: a click whose
- * button went down is started, so the script does not play it again.
+ * button went down is started, so the script does not play it again. A
+ * command that fails ends the replay's use of the session: the replay goes on
+ * with the page's events, and the tab is let go.
  */
 export async function handleReplayInput(
   message: { replayId?: unknown; ops?: unknown },
   tab: chrome.tabs.Tab | undefined,
-): Promise<{ ok: true } | { ok: false; lost: boolean; started: boolean; error: string; reason?: FallbackReason }> {
+): Promise<{ ok: true } | { ok: false; started: boolean; error: string; reason?: FallbackReason }> {
   const ops = readInputOps(message.ops);
-  if (tab?.id == null || !ops) return { ok: false, lost: false, started: false, error: 'bad request' };
+  if (tab?.id == null || !ops) return { ok: false, started: false, error: 'bad request' };
   const tabId = tab.id;
+  const replayId = String(message.replayId);
   if (!holdsDebugger(tabId, 'replay') || !(await replayRunsIn(tab, message.replayId))) {
-    const reason = lostReplays.get(String(message.replayId)) ?? 'lost';
-    return { ok: false, lost: true, started: false, error: 'not attached', reason };
+    return { ok: false, started: false, error: 'not attached', reason: lostReplays.get(replayId) ?? 'lost' };
   }
   const mac = await macPlatform();
   let started = false;
@@ -198,15 +249,18 @@ export async function handleReplayInput(
     return { ok: true };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const lost = !holdsDebugger(tabId, 'replay');
-    return { ok: false, lost, started, error, reason: lostReplays.get(String(message.replayId)) ?? 'lost' };
+    const reason = lostReplays.get(replayId) ?? 'lost';
+    lostReplays.set(replayId, reason);
+    if (holdsDebugger(tabId, 'replay')) await releaseReplayTab(tabId);
+    return { ok: false, started, error, reason };
   }
 }
 
 /**
  * Sets the viewport the steps were recorded at on the replay's tab, through
  * its session: only while the replay acts with trusted input, since without
- * the protocol nothing can size a tab's page.
+ * the protocol nothing can size a tab's page. The replay asks on each page; a
+ * tab already at that size is left as it is.
  */
 export async function handleReplayViewport(
   message: { replayId?: unknown; width?: unknown; height?: unknown },
@@ -218,9 +272,11 @@ export async function handleReplayViewport(
   if (!(await replayRunsIn(tab, message.replayId)) || !holdsDebugger(tab.id, 'replay')) {
     return { ok: false, error: 'not attached' };
   }
+  const sized = replayViewports.get(tab.id);
+  if (sized?.width === width && sized.height === height) return { ok: true };
   try {
     await emulateCssViewport(tab.id, { width, height });
-    sizedTabs.set(tab.id, { width, height });
+    replayViewports.set(tab.id, { width, height });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -234,7 +290,8 @@ export async function handleReplayViewport(
  */
 export async function releaseReplayTab(tabId: number): Promise<void> {
   replayOfTab.delete(tabId);
-  const sized = sizedTabs.delete(tabId);
+  stopWatching(tabId);
+  const sized = replayViewports.delete(tabId);
   if (holdsDebugger(tabId, 'replay')) {
     await sendCommand(tabId, 'Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined);
     if (sized && !(await restoreTabViewport(tabId))) {
@@ -244,7 +301,8 @@ export async function releaseReplayTab(tabId: number): Promise<void> {
   await releaseDebugger(tabId, 'replay');
 }
 
-/** The replay ended: every tab it attached to is let go. */
+/** The replay ended, or another starts: every tab it attached to is let go. */
 export async function releaseReplayDebugger(): Promise<void> {
+  lostReplays.clear();
   await Promise.all(tabsHolding('replay').map(releaseReplayTab));
 }

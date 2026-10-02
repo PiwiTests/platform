@@ -21,6 +21,10 @@ export interface Observation {
   url: string;
 }
 
+export function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Whitespace collapsed and trimmed, as Playwright compares text. */
 export function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
@@ -32,6 +36,14 @@ export function absoluteUrl(expected: string, origin: string): string {
     return new URL(expected, `${origin}/`).href;
   } catch {
     return expected;
+  }
+}
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
   }
 }
 
@@ -108,7 +120,20 @@ export type ReplayVerdict =
   | { kind: 'not-reproduced' }
   | { kind: 'diverged'; step: number; reason: string }
   | { kind: 'completed' }
-  | { kind: 'stopped'; step: number };
+  /** `step` is the step it stopped before; null when the run gave none (the desktop app's). */
+  | { kind: 'stopped'; step: number | null };
+
+/**
+ * Whether what an assertion found is what the report says the reporter saw: the
+ * same text, or the same page, the reported address taken on the origin it
+ * was found on.
+ */
+function foundAsReported(assertion: StepAssertion | undefined, found: string): boolean {
+  const actual = assertion?.actual;
+  if (actual == null) return false;
+  if (assertion!.matcher === 'toHaveURL') return found === absoluteUrl(actual, originOf(found));
+  return found === quoted(normalizeText(actual)) || found === actual;
+}
 
 /**
  * What a finished replay says. A step that could not be done means the page
@@ -122,8 +147,7 @@ export function replayVerdict(steps: RecordedStep[], results: ReplayStepResult[]
   const failed = results.findIndex((r) => r?.status === 'failed');
   if (failed >= 0) {
     const found = results[failed]!.found ?? '';
-    const actual = steps[failed]?.assertion?.actual;
-    const sameAsReported = actual != null && (found === quoted(normalizeText(actual)) || found === actual);
+    const sameAsReported = foundAsReported(steps[failed]?.assertion, found);
     return { kind: 'reproduced', step: failed, found, sameAsReported };
   }
   if (stopped) return { kind: 'stopped', step: results.length };
@@ -163,8 +187,30 @@ export function verdictText(verdict: ReplayVerdict, steps: RecordedStep[]): { ti
     case 'stopped':
       return {
         title: t('replay_verdictStopped'),
-        detail: t('replay_verdictStoppedDetail', { step: verdict.step + 1 }),
+        detail:
+          verdict.step === null
+            ? t('replay_verdictStoppedNoStep')
+            : t('replay_verdictStoppedDetail', { step: verdict.step + 1 }),
       };
+  }
+}
+
+/** The mark before a step in the replay's lists: where it is, or how it went. */
+export function stepGlyph(result: ReplayStepResult | undefined, current: boolean): string {
+  if (current) return '▸';
+  switch (result?.status) {
+    case 'done':
+    case 'passed':
+    case 'manual':
+      return '✓';
+    case 'failed':
+      return '✗';
+    case 'diverged':
+      return '!';
+    case 'skipped':
+      return '–';
+    default:
+      return '·';
   }
 }
 
@@ -187,36 +233,66 @@ export function driverText(choice: ReplayState['driver']): string {
 export interface Waker {
   /** Resolves on the next `wake`, or at once when one came since the last wait. */
   wait(): Promise<void>;
+  /**
+   * Waits for the next wake or for `other`, whichever comes first. When
+   * `other` does, the wait ends there, and a wake that comes with it or after
+   * it is kept for the next wait.
+   */
+  until<T>(other: Promise<T>): Promise<{ woken: true } | { woken: false; value: T }>;
   wake(): void;
+  /** Lets a wait in progress through, and keeps nothing when the loop is busy. */
+  wakeWaiting(): void;
   /** Forgets a wake that came before this loop started. */
   reset(): void;
 }
 
 /**
  * What the replay loop waits on in step mode and when paused: Next, turning
- * step mode off, Continue or Stop. A wake that comes while the loop is still
- * busy with a step (waiting for the page to settle) is kept for its next
- * wait, rather than lost with the loop left waiting for a click already made.
+ * step mode off or Stop, kept when they come while the loop is still busy
+ * with a step (waiting for the page to settle) rather than lost with the loop
+ * left waiting for a click already made. Pause and Continue only let a wait
+ * in progress through: a busy loop reads them from the state at its next
+ * step, and a kept wake would play the step after it without its Next.
  */
 export function createWaker(): Waker {
   let release: (() => void) | null = null;
   let early = false;
+  const wait = (): Promise<void> => {
+    if (early) {
+      early = false;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      release = () => {
+        release = null;
+        resolve();
+      };
+    });
+  };
   return {
-    wait() {
-      if (early) {
-        early = false;
-        return Promise.resolve();
-      }
-      return new Promise((resolve) => {
-        release = () => {
-          release = null;
-          resolve();
-        };
+    wait,
+    async until<T>(other: Promise<T>) {
+      let woken = false;
+      const waiting = wait().then(() => {
+        woken = true;
       });
+      const ours = release;
+      const first = await Promise.race([
+        waiting.then(() => ({ woken: true }) as const),
+        other.then((value) => ({ woken: false, value }) as const),
+      ]);
+      if (!first.woken) {
+        if (release === ours) release = null;
+        if (woken) early = true;
+      }
+      return first;
     },
     wake() {
       if (release) release();
       else early = true;
+    },
+    wakeWaiting() {
+      release?.();
     },
     reset() {
       early = false;

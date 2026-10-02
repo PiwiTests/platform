@@ -26,6 +26,7 @@
   </head>
   <body>
     <!-- Each case's element carries data-case; the ranking never reads it. -->
+    <header aria-label="Site header" data-case="banner"><strong>Piwi</strong> results</header>
     <nav aria-label="Sidebar">
       <a href="#runs">Runs</a>
       <a href="#settings">Settings</a>
@@ -47,6 +48,23 @@
         <button type="button" aria-label="Show popup" data-case="popup">Details</button>
         <button type="button" aria-label="Show popup">History</button>
       </div>
+      <!-- Roles no tag map gives: a column header, and a search field with suggestions. -->
+      <table>
+        <thead>
+          <tr>
+            <th data-case="th">Price</th>
+            <th>Quantity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>12 €</td>
+            <td>2</td>
+          </tr>
+        </tbody>
+      </table>
+      <input type="search" list="run-names" aria-label="Find a run" data-case="combobox" />
+      <datalist id="run-names"><option value="Nightly"></option></datalist>
     </main>
   </body>
 </html>

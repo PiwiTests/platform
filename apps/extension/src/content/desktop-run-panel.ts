@@ -3,9 +3,10 @@ import { sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import { interfacePhrases } from '../shared/core-words.js';
 import { formatNumber, t, uiLanguage } from '../shared/i18n.js';
 import { DESKTOP_DIALOG_HOST_ID } from './record-ui.js';
-import { verdictText, type ReplayVerdict } from './replay-core.js';
+import { verdictText, wait, type ReplayVerdict } from './replay-core.js';
 import { attachPanelShadow } from './panel-root.js';
 import { shareable, shareResultRow } from './share-result.js';
+import { askWorker, button, DIALOG_CSS, holdFocus } from './replay-ui.js';
 
 /**
  * Run with Playwright: sends a report's steps to the paired desktop app, which
@@ -17,42 +18,36 @@ import { shareable, shareResultRow } from './share-result.js';
 
 type DesktopTarget = { paired: boolean; url: string | null };
 type SendAnswer = { ok: true; id: string; windowOpen: boolean } | { ok: false; error: string };
-type StatusAnswer =
-  | {
-      ok: true;
-      status: 'waiting' | 'running' | 'done' | 'declined' | 'expired';
-      verdict:
-        | { kind: 'reproduced'; step: number; found: string | null }
-        | { kind: 'not-reproduced' }
-        | { kind: 'diverged'; step: number; reason: string }
-        | { kind: 'completed' }
-        | { kind: 'stopped' }
-        | null;
-    }
-  | { ok: false; error: string };
+type StatusAnswer = { ok: true; status?: unknown; verdict?: unknown } | { ok: false; error: string };
+
+const REPRO_STATUSES = ['waiting', 'running', 'done', 'declined', 'expired'] as const;
+type ReproStatus = (typeof REPRO_STATUSES)[number];
 
 /** How often the dialog asks the desktop app how the request stands. */
 const POLL_MS = 2000;
 
-async function ask<T>(message: Record<string, unknown>, fallback: T): Promise<T> {
-  try {
-    return ((await chrome.runtime.sendMessage(message)) as T | undefined) ?? fallback;
-  } catch {
-    return fallback;
-  }
+/** The desktop app's status of a request; null for one this version does not know. */
+export function reproStatus(status: unknown): ReproStatus | null {
+  return REPRO_STATUSES.find((s) => s === status) ?? null;
 }
 
-/** The desktop app's verdict as Replay words its own. */
-export function asReplayVerdict(verdict: NonNullable<Extract<StatusAnswer, { ok: true }>['verdict']>): ReplayVerdict {
-  switch (verdict.kind) {
+/** The desktop app's verdict as Replay words its own; null for one this version does not read. */
+export function asReplayVerdict(verdict: unknown): ReplayVerdict | null {
+  const v = verdict as { kind?: unknown; step?: unknown; found?: unknown; reason?: unknown } | null;
+  const step = Number.isInteger(v?.step) && (v!.step as number) >= 0 ? (v!.step as number) : null;
+  switch (v?.kind) {
     case 'reproduced':
-      return { kind: 'reproduced', step: verdict.step, found: verdict.found ?? '', sameAsReported: false };
+      if (step === null || (v.found != null && typeof v.found !== 'string')) return null;
+      return { kind: 'reproduced', step, found: (v.found as string | null) ?? '', sameAsReported: false };
     case 'diverged':
-      return { kind: 'diverged', step: verdict.step, reason: verdict.reason };
+      return step === null || typeof v.reason !== 'string' ? null : { kind: 'diverged', step, reason: v.reason };
     case 'stopped':
-      return { kind: 'stopped', step: 0 };
+      return { kind: 'stopped', step: null };
+    case 'not-reproduced':
+    case 'completed':
+      return { kind: v.kind };
     default:
-      return verdict;
+      return null;
   }
 }
 
@@ -64,8 +59,7 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   document.documentElement.appendChild(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
   const css = document.createElement('style');
-  css.textContent = `${style}
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
+  css.textContent = `${style}${DIALOG_CSS}
     pre { max-height: 180px; overflow: auto; font-size: 11px; white-space: pre-wrap; }`;
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
@@ -76,9 +70,11 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   panel.lang = uiLanguage();
   panel.setAttribute('aria-label', t('replay_desktopTitle'));
   let polling = true;
+  let giveFocusBack: (() => void) | null = null;
   const close = () => {
     polling = false;
     host.remove();
+    giveFocusBack?.();
   };
 
   const title = document.createElement('div');
@@ -93,14 +89,6 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   message.setAttribute('role', 'status');
   panel.append(title, body, row, message);
 
-  const button = (label: string, onClick: () => void, className = '') => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    if (className) b.className = className;
-    b.addEventListener('click', onClick);
-    return b;
-  };
   const line = (text: string, className = 'sub') => {
     const d = document.createElement('div');
     d.className = className;
@@ -111,35 +99,35 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   const recorded = sessionFromSteps(steps, steps.origin ?? location.origin).steps;
   const phrases = interfacePhrases();
 
-  const showVerdict = (answer: Extract<StatusAnswer, { ok: true }>) => {
+  /** How the request ended: declined, expired, or run, with the verdict when it is one this version shows. */
+  const showEnd = (status: ReproStatus | null, answer: unknown) => {
     body.replaceChildren();
     row.replaceChildren(button(t('common_close'), close));
-    if (answer.status === 'declined') body.append(line(t('replay_desktopDeclined')));
-    else if (answer.status === 'expired') body.append(line(t('replay_desktopExpired')));
-    else if (answer.verdict) {
-      const verdict = asReplayVerdict(answer.verdict);
-      const { title: verdictTitle, detail } = verdictText(verdict, recorded);
-      const box = document.createElement('div');
-      box.className = `verdict ${verdict.kind}`;
-      box.append(line(verdictTitle, 'title'), line(detail, ''));
-      body.append(line(t('replay_desktopRanIn')), box);
-      if (bugReportId && shareable(verdict.kind)) {
-        body.append(
-          shareResultRow({
-            bugReportId,
-            source: 'desktop',
-            verdict: verdict.kind,
-            divergedAt: verdict.kind === 'diverged' ? verdict.step : null,
-            origin: null,
-          }),
-        );
-      }
+    if (status === 'declined') return body.append(line(t('replay_desktopDeclined')));
+    if (status === 'expired') return body.append(line(t('replay_desktopExpired')));
+    const verdict = status === 'done' ? asReplayVerdict(answer) : null;
+    if (!verdict) return body.append(line(t('replay_desktopNoVerdict')));
+    const { title: verdictTitle, detail } = verdictText(verdict, recorded);
+    const box = document.createElement('div');
+    box.className = `verdict ${verdict.kind}`;
+    box.append(line(verdictTitle, 'title'), line(detail, ''));
+    body.append(line(t('replay_desktopRanIn')), box);
+    if (bugReportId && shareable(verdict.kind)) {
+      body.append(
+        shareResultRow({
+          bugReportId,
+          source: 'desktop',
+          verdict: verdict.kind,
+          divergedAt: verdict.kind === 'diverged' ? verdict.step : null,
+          origin: null,
+        }),
+      );
     }
   };
 
   const poll = async (id: string) => {
     while (polling && host.isConnected) {
-      const answer = await ask<StatusAnswer>(
+      const answer = await askWorker<StatusAnswer>(
         { type: 'piwi-desktop-repro-status', id },
         {
           ok: false,
@@ -149,15 +137,13 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
       if (!polling || !host.isConnected) return;
       if (!answer.ok) {
         message.textContent = answer.error;
-      } else if (answer.status === 'done' || answer.status === 'declined' || answer.status === 'expired') {
-        message.textContent = '';
-        showVerdict(answer);
-        return;
       } else {
         message.textContent = '';
-        body.replaceChildren(line(t(answer.status === 'running' ? 'replay_desktopRunning' : 'replay_desktopWaiting')));
+        const status = reproStatus(answer.status);
+        if (status !== 'waiting' && status !== 'running') return showEnd(status, answer.verdict);
+        body.replaceChildren(line(t(status === 'running' ? 'replay_desktopRunning' : 'replay_desktopWaiting')));
       }
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+      await wait(POLL_MS);
     }
   };
 
@@ -179,7 +165,7 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
       t('replay_desktopSend'),
       () => {
         send.disabled = true;
-        void ask<SendAnswer>(
+        void askWorker<SendAnswer>(
           { type: 'piwi-desktop-repro', steps, bugReportId },
           {
             ok: false,
@@ -201,7 +187,7 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
     row.append(send, button(t('common_cancel'), close));
   };
 
-  void ask<DesktopTarget>({ type: 'piwi-desktop-target' }, { paired: false, url: null }).then((target) => {
+  void askWorker<DesktopTarget>({ type: 'piwi-desktop-target' }, { paired: false, url: null }).then((target) => {
     if (target.paired && target.url) {
       showPreview(target.url);
       return;
@@ -211,7 +197,7 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
       button(
         t('replay_desktopOpenOptions'),
         () => {
-          void ask({ type: 'piwi-open-options' }, null);
+          void askWorker({ type: 'piwi-open-options' }, null);
           close();
         },
         'primary',
@@ -225,4 +211,5 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
   });
   backdrop.appendChild(panel);
   root.append(css, backdrop);
+  giveFocusBack = holdFocus(panel, close);
 }

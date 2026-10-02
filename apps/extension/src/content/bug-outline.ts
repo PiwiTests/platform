@@ -1,5 +1,6 @@
 import { BUG_EVIDENCE_LIMITS } from '@piwitests/core/bug-report';
 import { ARIA_CHECKED_ROLES, DomModel, normalizeWhiteSpace, parentElementOrShadowHost } from './engine-aria.js';
+import { isSensitiveField } from './sensitive-fields.js';
 
 /**
  * An outline of part of the page for a bug report: roles, names and states,
@@ -47,7 +48,9 @@ function scalar(text: string): string {
     : JSON.stringify(text);
 }
 
+/** A field's value for the outline: never one that holds a secret (`isSensitiveField`). */
 function fieldValue(element: Element): string | null {
+  if (isSensitiveField(element)) return null;
   const tag = element.tagName;
   if (tag === 'INPUT') {
     const input = element as HTMLInputElement;

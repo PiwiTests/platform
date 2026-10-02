@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { editorOriginPattern, getEditorPairing, setEditorPairing } from '../../src/shared/editor-pairing.js';
+import {
+  editorOriginPattern,
+  getEditorPairing,
+  moveLegacyEditorPairing,
+  setEditorPairing,
+} from '../../src/shared/editor-pairing.js';
+import { memorySecretArea } from './memory-secret-area.js';
 import { sendToEditor } from '../../src/shared/editor-send.js';
 import { postToEditor } from '../../src/shared/piwi-client.js';
 
@@ -30,12 +36,38 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the editor pairing', () => {
-  it('is kept in extension storage until unpaired', async () => {
-    expect(await getEditorPairing()).toBeNull();
-    await setEditorPairing(PAIRING);
-    expect(await getEditorPairing()).toEqual(PAIRING);
-    await setEditorPairing(null);
-    expect(await getEditorPairing()).toBeNull();
+  it('is kept in the secret area until unpaired', async () => {
+    const area = memorySecretArea();
+    expect(await getEditorPairing(area)).toBeNull();
+    await setEditorPairing(PAIRING, area);
+    expect(await getEditorPairing(area)).toEqual(PAIRING);
+    await setEditorPairing(null, area);
+    expect(await getEditorPairing(area)).toBeNull();
+    expect(store).toEqual({});
+  });
+
+  it('leaves only the address where content scripts read, which tells them an editor is paired', async () => {
+    const area = memorySecretArea();
+    await setEditorPairing(PAIRING, area);
+    expect(JSON.stringify(store)).not.toContain(PAIRING.token);
+    // A content script: not the extension's origin, so no secret area.
+    expect(await getEditorPairing()).toEqual({ url: PAIRING.url, token: '' });
+  });
+
+  it('a token left in chrome.storage.local moves to the secret area, keeping the address there', async () => {
+    const area = memorySecretArea();
+    store.piwiEditorPairing = { ...PAIRING };
+    await moveLegacyEditorPairing(area);
+    expect(store.piwiEditorPairing).toEqual({ url: PAIRING.url });
+    expect(await getEditorPairing(area)).toEqual(PAIRING);
+  });
+
+  it('a token written into chrome.storage.local later never replaces the one kept', async () => {
+    const area = memorySecretArea();
+    await setEditorPairing(PAIRING, area);
+    store.piwiEditorPairing = { url: 'http://127.0.0.1:9/x', token: 'planted_token_0000' };
+    expect(await getEditorPairing(area)).toEqual(PAIRING);
+    expect(store.piwiEditorPairing).toEqual({ url: 'http://127.0.0.1:9/x' });
   });
 
   it('asks only for the editor’s origin', () => {

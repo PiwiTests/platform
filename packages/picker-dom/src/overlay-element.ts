@@ -1,5 +1,17 @@
 import type { ProbeArg } from './types.js';
 
+/** The overlay's texts a host may give in its own language; each one left out is the English default. */
+export interface PickerOverlayStrings {
+  /** The banner's heading for the `'global'` transport with no failing locator. */
+  banner?: string;
+  /** The banner's foot before an element is hovered: the keys. */
+  keys?: string;
+  /** The banner's foot while an element is hovered. */
+  keysHovering?: string;
+  /** The banner's foot once an element is picked. */
+  analyzing?: string;
+}
+
 /** Configuration for `installPickerOverlay` — see the function doc for the transport split. */
 export interface PickerOverlayArg {
   transport: 'global' | 'postMessage';
@@ -7,6 +19,8 @@ export interface PickerOverlayArg {
   failing?: string | null;
   /** Probe arguments for the inline probe the `'postMessage'` transport performs on pick. */
   probeArg?: ProbeArg;
+  /** The banner's texts, for a host that shows another language than English. */
+  strings?: PickerOverlayStrings;
 }
 
 /**
@@ -31,6 +45,8 @@ export interface PickerOverlayArg {
  *    `globalThis.__piwiSnapshotExtras` (`onPick`/`onClose`) for its own
  *    snapshot-only chrome (search, highlight hints, extended inertness).
  *
+ * The banner is in English unless `arg.strings` gives its texts.
+ *
  * The hovered element's locator is shown twice — in a chip pinned to the
  * element itself and on its own line in the banner. Both render whatever
  * `globalThis.__piwiDescribeElement(el)` returns when a host installs one (the
@@ -53,6 +69,16 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     return;
   }
   const Z = 2147483600;
+  const words = {
+    banner: 'Piwi inspector — click any element to generate locators for it',
+    keys: '↑ parent · ↓ child · Esc skip',
+    keysHovering: 'click to pick · ↑ parent · ↓ child · Esc skip',
+    analyzing: 'Analyzing element…',
+  };
+  for (const key of Object.keys(words) as Array<keyof typeof words>) {
+    const given = arg.strings?.[key];
+    if (typeof given === 'string' && given) words[key] = given;
+  }
 
   // A light hairline outside the purple ring and a dark one outside that, so the
   // highlight keeps its edge over white, black and busy backgrounds alike.
@@ -93,12 +119,10 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
   const hlLocator = (expr: string): string => `<code style="font-family:${MONO}">${hlTokens(expr)}</code>`;
   const head = doc.createElement('div');
-  head.innerHTML =
-    arg.transport === 'postMessage'
-      ? 'Click an element to generate locators'
-      : arg.failing
-        ? `Piwi locator picker — click the element that should replace ${hlLocator(arg.failing)}`
-        : 'Piwi inspector — click any element to generate locators for it';
+  if (arg.transport === 'postMessage') head.textContent = 'Click an element to generate locators';
+  else if (arg.failing)
+    head.innerHTML = `Piwi locator picker — click the element that should replace ${hlLocator(arg.failing)}`;
+  else head.textContent = words.banner;
   // The hovered element's locator, given a line of its own at reading size
   // rather than tucked into the hint text.
   const locatorLine = doc.createElement('div');
@@ -109,7 +133,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const foot = doc.createElement('div');
   foot.id = '__piwi_picker_foot';
   foot.style.cssText = 'color:#9ca3af;margin-top:6px;font-size:12px;';
-  foot.textContent = '↑ parent · ↓ child · Esc skip';
+  foot.textContent = words.keys;
   banner.appendChild(head);
   banner.appendChild(locatorLine);
   banner.appendChild(foot);
@@ -123,9 +147,41 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     'max-width:min(620px,92vw);background:#0b1120;color:#f9fafb;border:1px solid #7c3aed;' +
     `border-radius:7px;padding:4px 8px;font:12.5px/1.45 ${MONO};white-space:nowrap;` +
     'overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 18px rgba(0,0,0,.5);';
-  doc.body.appendChild(highlight);
-  doc.body.appendChild(label);
-  doc.body.appendChild(banner);
+  // A modal dialog the page opened sits in the top layer and makes the rest of
+  // the page inert: the overlay goes at its end, unless the dialog lays out
+  // \`position: fixed\` children in its own box (a transform, a filter,
+  // containment…), and back to the body when it closes.
+  const mountParent = (): any => {
+    let modal: any = null;
+    try {
+      modal = doc.querySelector('dialog:modal');
+    } catch {
+      modal = null;
+    }
+    if (!modal) return doc.body;
+    const s = g.getComputedStyle(modal);
+    const holdsFixed =
+      s.transform !== 'none' ||
+      s.perspective !== 'none' ||
+      s.filter !== 'none' ||
+      /\b(paint|layout|strict|content)\b/.test(s.contain) ||
+      /\b(transform|perspective|filter)\b/.test(s.willChange);
+    return holdsFixed ? doc.body : modal;
+  };
+  const mount = (...nodes: any[]) => {
+    const parent = mountParent();
+    for (const node of nodes) parent.appendChild(node);
+    if (parent !== doc.body) {
+      parent.addEventListener(
+        'close',
+        () => {
+          for (const node of nodes) if (node.parentNode === parent) doc.body.appendChild(node);
+        },
+        { once: true },
+      );
+    }
+  };
+  mount(highlight, label, banner);
 
   // Short descriptor of an element for the banner breadcrumb.
   const escJs = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -245,7 +301,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
       locatorLine.style.display = 'block';
     }
     placeLabel(r);
-    foot.textContent = 'click to pick · ↑ parent · ↓ child · Esc skip';
+    foot.textContent = words.keysHovering;
   };
 
   const redescribe = () => {
@@ -323,6 +379,16 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     banner.remove();
     if (g.__piwiRedescribe === redescribe) delete g.__piwiRedescribe;
   };
+  // Everything the overlay put on the page, whatever step it is at: its
+  // listeners, the suppressed pointer events and the post-pick blockers as
+  // well as its nodes.
+  const teardown = () => {
+    removePickingListeners();
+    removeSuppressed();
+    doc.removeEventListener('click', stop, true);
+    doc.removeEventListener('keydown', stop, true);
+    cleanup();
+  };
 
   // A pick committed. `'global'` hands the raw element back to Node (probed
   // later, separately) and tears everything down — the reporter's next step
@@ -341,13 +407,13 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
       g.__piwiSnapshotExtras?.onPick?.();
       doc.addEventListener('click', stop, true);
       doc.addEventListener('keydown', stop, true);
-      foot.textContent = 'Analyzing element…';
+      foot.textContent = words.analyzing;
       g.parent.postMessage({ type: 'elementPicked', attrs }, '*');
     } else {
       removeSuppressed();
       g.__piwiPickedElement = el;
       g.__piwiPickState = 'picked';
-      foot.textContent = 'Analyzing element…';
+      foot.textContent = words.analyzing;
     }
   };
 
@@ -398,7 +464,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     });
   };
 
-  g.__piwiPickCleanup = cleanup;
+  g.__piwiPickCleanup = teardown;
   doc.addEventListener('mousemove', onMove, true);
   doc.addEventListener('click', onClick, true);
   doc.addEventListener('keydown', onKey, true);
@@ -410,9 +476,11 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
 }
 
 /**
- * Tears down the element-picking overlay (highlight + banner).
+ * Tears down the element-picking overlay: highlight, banner and chip, and the
+ * capture listeners it holds while picking, so the page gets its clicks and
+ * keys back even when the pick never finished.
  *
- * `installPickerOverlay` deliberately leaves both standing once a pick is
+ * `installPickerOverlay` deliberately leaves its nodes standing once a pick is
  * committed: the reporter's flow hands the element back to Node, which drives
  * whatever comes next, and multi-pick keeps the banner up between picks while
  * only its footer text changes. Anything that finishes with the element
@@ -424,9 +492,9 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
  */
 export function removePickerOverlay(): void {
   const g = globalThis as any;
-  // `installPickerOverlay` stashes the teardown for exactly the nodes it
-  // mounted; prefer it, and fall back to removing by id so a half-torn-down
-  // or re-injected overlay still goes away.
+  // `installPickerOverlay` stashes the teardown for exactly the nodes and
+  // listeners it put on the page; prefer it, and fall back to removing by id
+  // so a half-torn-down or re-injected overlay still goes away.
   const cleanup = g.__piwiPickCleanup;
   if (typeof cleanup === 'function') {
     cleanup();

@@ -13,6 +13,13 @@ export interface CssViewport {
   height: number;
 }
 
+/**
+ * The viewport a replay set on each tab: set again when the tab's zoom
+ * changes, kept when the DevTools panel's own viewport is cleared meanwhile,
+ * given back when the replay lets the tab go.
+ */
+export const replayViewports = new Map<number, CssViewport>();
+
 /** The tab's zoom factor, 1 at 100%; 1 when the browser cannot say. */
 export async function tabZoom(tabId: number): Promise<number> {
   try {

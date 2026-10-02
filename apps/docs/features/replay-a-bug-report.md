@@ -57,8 +57,8 @@ Under the answer, the panel lists the steps played by hand.
 
 In Chrome and Edge, Replay sends trusted input as Playwright does: a real hover, clicks, keys and drags that the page
 cannot tell from a person's. Chrome shows its debugging bar until the replay ends. In Firefox, when the browser refuses
-the session, or once the bar is cancelled, Replay goes on with the page's own events; the panel says which, step by
-step.
+the session, once the bar is cancelled, or once the browser refuses one of its commands (the bar then closes), Replay
+goes on with the page's own events; the panel says which, step by step.
 
 A report names the files a step chose but never carries them: Replay asks you to choose them, or to skip the step.
 
@@ -73,7 +73,8 @@ confirm it there.
 
 ## Limits
 
-- It plays one site, in the top-level document only, as the report was recorded.
+- It plays one site, in the top-level document only, as the report was recorded. A step that opens another site, or
+  an address that is not a web page, is handed to you.
 - **Share result…** and **Run with Playwright…** are the only parts that send anything, each after showing what it
   sends.
 

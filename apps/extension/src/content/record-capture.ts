@@ -20,7 +20,7 @@ export function classifyInputKind(tagName: string, typeAttr: string | null): Inp
   return 'text';
 }
 
-/** Whether a field's value should never be captured — checked on every `input` event, not just at field focus, since `type` can change dynamically. */
+/** Whether a tag/type pair is a password field, one of the fields whose value is never captured (see `sensitive-fields.ts`). */
 export function isPasswordInput(tagName: string, typeAttr: string | null): boolean {
   return tagName.toLowerCase() === 'input' && (typeAttr ?? '').toLowerCase() === 'password';
 }

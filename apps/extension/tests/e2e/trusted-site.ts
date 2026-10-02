@@ -24,6 +24,8 @@ export interface Fixtures {
   /** The site's origin, `http://127.0.0.1:<port>`; `pages` maps a path to its HTML. */
   site: string;
   pages: Record<string, string>;
+  /** How long the site takes to answer a path, in milliseconds. */
+  delays: Record<string, number>;
   context: BrowserContext;
   worker: Worker;
   /** An extension page, whose messages reach the worker as the popup's do. */
@@ -32,9 +34,12 @@ export interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   pages: [{}, { option: true }],
-  site: async ({ pages }, use) => {
-    const server = http.createServer((request, response) => {
+  delays: [{}, { option: true }],
+  site: async ({ pages, delays }, use) => {
+    const server = http.createServer(async (request, response) => {
       const url = new URL(request.url ?? '/', 'http://x');
+      const delay = delays[url.pathname];
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       if (url.pathname.startsWith('/api/')) {
         if (url.pathname.includes('fail')) response.statusCode = 500;
         response.setHeader('content-type', 'application/json');
@@ -124,9 +129,14 @@ export interface StoredReplay {
   position: number;
   results: Array<{ status: string; detail: string | null; driver?: string }>;
   driver?: { driver: string; reason: string | null } | null;
+  viewport?: { width: number; height: number; set: boolean } | null;
+  handOver?: { step: number; reason: string } | null;
 }
 
-/** Starts a replay on `site` as the popup does, then loads `path` in a tab, where the registered script runs it. */
+/**
+ * Starts a replay on `site` as the popup does, then loads `path` in `page` (by
+ * default a new tab), where the registered script runs it.
+ */
 export async function startReplay(
   control: Page,
   context: BrowserContext,
@@ -134,6 +144,7 @@ export async function startReplay(
   doc: PiwiSteps,
   path: string,
   stepMode = false,
+  page?: Page,
 ): Promise<Page> {
   const started = await control.evaluate(
     ({ steps, origin, stepMode }) =>
@@ -141,7 +152,7 @@ export async function startReplay(
     { steps: doc, origin: site, stepMode },
   );
   expect(started).toEqual({ ok: true });
-  const page = await context.newPage();
+  page ??= await context.newPage();
   await page.goto(`${site}${path}`);
   return page;
 }
@@ -199,18 +210,40 @@ export async function panelNode(page: Page, match: (node: DomNode) => boolean): 
   }
 }
 
-/** Clicks the button reading `label`, in the page or one of the extension's closed shadow roots. */
-export async function clickInShadow(page: Page, label: string): Promise<void> {
+async function buttonNode(page: Page, label: string): Promise<number> {
   const backendNodeId = await panelNode(
     page,
     (node) => node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === label),
   );
   expect(backendNodeId, `a button reading "${label}"`).not.toBeNull();
+  return backendNodeId!;
+}
+
+/** Runs `fn` on the button reading `label`, in the page or one of the extension's closed shadow roots. */
+async function callOnButton(page: Page, label: string, fn: string): Promise<void> {
+  const backendNodeId = await buttonNode(page, label);
   const cdp = await page.context().newCDPSession(page);
-  const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: backendNodeId! });
-  await cdp.send('Runtime.callFunctionOn', {
-    objectId: object.objectId!,
-    functionDeclaration: 'function () { this.click(); }',
-  });
+  const { object } = await cdp.send('DOM.resolveNode', { backendNodeId });
+  await cdp.send('Runtime.callFunctionOn', { objectId: object.objectId!, functionDeclaration: fn });
   await cdp.detach();
+}
+
+/** Clicks the button reading `label`, in the page or one of the extension's closed shadow roots. */
+export function clickInShadow(page: Page, label: string): Promise<void> {
+  return callOnButton(page, label, 'function () { this.click(); }');
+}
+
+/** Moves focus to the button reading `label`, as a person tabbing to it does. */
+export function focusInShadow(page: Page, label: string): Promise<void> {
+  return callOnButton(page, label, 'function () { this.focus(); }');
+}
+
+/** Clicks the button reading `label` with the mouse, as a person does: pressed and released at its middle. */
+export async function mouseClickInShadow(page: Page, label: string): Promise<void> {
+  const backendNodeId = await buttonNode(page, label);
+  const cdp = await page.context().newCDPSession(page);
+  const { model } = (await cdp.send('DOM.getBoxModel', { backendNodeId })) as { model: { border: number[] } };
+  await cdp.detach();
+  const [left, top, , , right, bottom] = model.border as [number, number, number, number, number, number];
+  await page.mouse.click((left + right) / 2, (top + bottom) / 2);
 }

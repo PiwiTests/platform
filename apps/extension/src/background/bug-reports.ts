@@ -12,13 +12,16 @@ import {
   type BugReportSummary,
   type SentIssue,
 } from '../shared/piwi-client.js';
+import { getReplayState } from '../shared/replay-storage.js';
 import { dataUrlBytes } from '../shared/zip.js';
 import { t } from '../shared/i18n.js';
+import { desktopRunReports } from './desktop-repro.js';
 
 /**
  * The bug-report requests to the connected instance, made here for the tab's
  * content scripts: they never hold the API key and never reach the network.
- * The project is always resolved again from the sending tab's URL.
+ * The project is always resolved again from the sending tab's URL, with the
+ * Active project chosen for that tab's site.
  */
 
 /** Set once a report has been sent from this browser profile, so the preview explains sending only the first time. */
@@ -33,7 +36,7 @@ async function targetFor(tab: chrome.tabs.Tab | undefined): Promise<Target | nul
   const settings = await getConnectionSettings();
   if (!settings.instanceUrl.trim()) return null;
   const url = tab?.url ?? '';
-  return { settings, project: resolveActiveProject(settings, await getActiveProjectOverride(), url) };
+  return { settings, project: resolveActiveProject(settings, await getActiveProjectOverride(url), url) };
 }
 
 function instanceHost(settings: ConnectionSettings): string {
@@ -134,13 +137,17 @@ export async function handleListBugReports(tab: chrome.tabs.Tab | undefined): Pr
 
 export type GetBugReportAnswer = { ok: true; steps: PiwiSteps } | { ok: false; error: string };
 
-/** One report's steps, checked like a steps file from anywhere else. */
-export async function handleGetBugReport(id: unknown): Promise<GetBugReportAnswer> {
-  const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
-  if (typeof id !== 'number' || !Number.isInteger(id)) return { ok: false, error: t('common_noProject') };
+/** One report of the project this tab maps to, its steps checked like a steps file from anywhere else. */
+export async function handleGetBugReport(id: unknown, tab: chrome.tabs.Tab | undefined): Promise<GetBugReportAnswer> {
+  const target = await targetFor(tab);
+  if (!target) return { ok: false, error: t('common_notConnected') };
+  if (typeof id !== 'number' || !Number.isInteger(id) || !target.project) {
+    return { ok: false, error: t('common_noProject') };
+  }
   try {
-    const parsed = parseSteps(await fetchBugReportSteps(settings, id));
+    const report = await fetchBugReportSteps(target.settings, id);
+    if (report.projectId !== target.project.projectId) return { ok: false, error: t('common_noProject') };
+    const parsed = parseSteps(report.steps);
     if (!parsed.ok) return { ok: false, error: t('common_replayNotSteps', { error: parsed.errors[0] ?? '' }) };
     return { ok: true, steps: parsed.steps };
   } catch (err) {
@@ -158,6 +165,20 @@ export type ShareReproductionAnswer = { ok: true } | { ok: false; error: string 
 
 const SHARED_VERDICTS = ['reproduced', 'not-reproduced', 'diverged'] as const;
 
+/**
+ * The report a verdict is shared on, when this worker played it: the stored
+ * replay's report, or one it sent to the desktop app; null for any other.
+ */
+async function sharedReportId(message: { bugReportId?: unknown; source?: unknown }): Promise<number | null> {
+  const id = message.bugReportId;
+  if (typeof id !== 'number' || !Number.isInteger(id)) return null;
+  const played =
+    message.source === 'desktop'
+      ? (await desktopRunReports()).includes(id)
+      : (await getReplayState())?.bugReportId === id;
+  return played ? id : null;
+}
+
 /** Records the verdict the developer chose to share on the report it came from. */
 export async function handleShareReproduction(message: {
   bugReportId?: unknown;
@@ -168,9 +189,9 @@ export async function handleShareReproduction(message: {
 }): Promise<ShareReproductionAnswer> {
   const settings = await getConnectionSettings();
   if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
-  const id = message.bugReportId;
+  const id = await sharedReportId(message);
   const verdict = SHARED_VERDICTS.find((v) => v === message.verdict);
-  if (typeof id !== 'number' || !Number.isInteger(id) || !verdict) return { ok: false, error: t('common_noProject') };
+  if (id == null || !verdict) return { ok: false, error: t('common_noProject') };
   const origin =
     typeof message.origin === 'string' && /^https?:\/\/[^/\s]+$/.test(message.origin) ? message.origin : null;
   try {

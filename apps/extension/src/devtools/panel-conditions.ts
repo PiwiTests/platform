@@ -13,7 +13,7 @@ import {
 } from '../shared/request-conditions.js';
 import { mockUrlPattern } from '../shared/mock-code.js';
 import { sessionArea } from '../shared/session-area.js';
-import { inspectedTabId, sitePattern } from './inspected.js';
+import { inspectedTabId, requestSiteAccess, sitePattern } from './inspected.js';
 import { button, el } from './ui.js';
 import type { NetworkEntry } from './panel-network.js';
 
@@ -26,8 +26,9 @@ import type { NetworkEntry } from './panel-network.js';
  * is asked for inside the click.
  */
 
-/** What is on for this tab: the requests' conditions, the page's network and CPU. */
+/** What is on for this tab: the requests' conditions, the page's network and CPU, and the origin they were set for. */
 interface TabConditions {
+  origin: string | null;
   conditions: RequestCondition[];
   throttle: NetworkThrottle | null;
   cpuRate: number | null;
@@ -38,9 +39,10 @@ interface TabConditions {
 async function onThisTab(): Promise<TabConditions> {
   const state = (await sessionArea().get(CONDITIONS_KEY))[CONDITIONS_KEY] as ConditionsState | undefined;
   if (state?.tabId !== inspectedTabId()) {
-    return { conditions: [], throttle: null, cpuRate: null, via: undefined, lost: null };
+    return { origin: null, conditions: [], throttle: null, cpuRate: null, via: undefined, lost: null };
   }
   return {
+    origin: state.origin,
     conditions: state.conditions,
     throttle: state.throttle ?? null,
     cpuRate: state.cpuRate ?? null,
@@ -49,8 +51,15 @@ async function onThisTab(): Promise<TabConditions> {
   };
 }
 
-async function conditionsOnThisTab(): Promise<RequestCondition[]> {
-  return (await onThisTab()).conditions;
+/**
+ * What is on for this tab at `origin`. What was set for another origin, which
+ * the page has left since, is left out: a change made here sets this
+ * origin's conditions, and does not carry the other origin's along.
+ */
+async function onThisTabAt(origin: string | null): Promise<TabConditions> {
+  const on = await onThisTab();
+  if (on.origin === null || on.origin === origin) return on;
+  return { ...on, conditions: [], throttle: null, cpuRate: null };
 }
 
 /** Whether this browser gives the extension the debugging protocol: Chrome and Edge do, Firefox does not. */
@@ -73,7 +82,7 @@ async function setState(
 }
 
 async function setConditions(origin: string, conditions: RequestCondition[], report: (text: string) => void) {
-  const { throttle, cpuRate } = await onThisTab();
+  const { throttle, cpuRate } = await onThisTabAt(origin);
   await setState(origin, { conditions, throttle, cpuRate }, report);
 }
 
@@ -85,7 +94,7 @@ async function setConditions(origin: string, conditions: RequestCondition[], rep
 export async function pageConditions(origin: string | null, report: (text: string) => void): Promise<HTMLElement> {
   const group = el('span', 'page-conditions');
   if (!debuggingProtocol()) return group;
-  const current = await onThisTab();
+  const current = await onThisTabAt(origin);
   const choice = (label: string, options: Array<[string, string]>, value: string) => {
     const select = el('select');
     select.setAttribute('aria-label', label);
@@ -115,11 +124,11 @@ export async function pageConditions(origin: string | null, report: (text: strin
     const pattern = sitePattern(origin);
     if (!origin || !pattern) return report(t('devtools_conditionsNoPage'));
     // Inside the change: the browser shows the request only during it.
-    void chrome.permissions.request({ origins: [pattern] }).then(async (granted) => {
+    void requestSiteAccess(pattern).then(async (granted) => {
       if (!granted) return report(t('devtools_conditionsNeedAccess'));
       const throttle = isThrottle(network.value) ? network.value : null;
       const cpuRate = cpu.value ? Number(cpu.value) : null;
-      await setState(origin, { conditions: await conditionsOnThisTab(), throttle, cpuRate }, report);
+      await setState(origin, { conditions: (await onThisTabAt(origin)).conditions, throttle, cpuRate }, report);
     });
   };
   network.addEventListener('change', apply);
@@ -157,9 +166,9 @@ export function conditionActions(entry: NetworkEntry, origin: string | null): HT
       delayMs: kind === 'delay' ? delayMs : 0,
     };
     // Inside the click: the browser shows the request only during it.
-    void chrome.permissions.request({ origins: [pattern] }).then(async (granted) => {
+    void requestSiteAccess(pattern).then(async (granted) => {
       if (!granted) return report(t('devtools_conditionsNeedAccess'));
-      const others = (await conditionsOnThisTab()).filter(
+      const others = (await onThisTabAt(origin)).conditions.filter(
         (c) => c.method !== condition.method || c.pattern !== condition.pattern,
       );
       await setConditions(origin, [...others, condition], report);
@@ -184,10 +193,17 @@ export function conditionActions(entry: NetworkEntry, origin: string | null): HT
   return section;
 }
 
-/** What is on for this tab, each with Remove, and Turn all off; nothing when nothing is on. */
-export async function renderConditions(strip: HTMLElement, origin: string | null): Promise<void> {
+/**
+ * What is on for this tab, each with Remove, and Turn all off; nothing when
+ * nothing is on. They act on the origin the conditions were set for. Once the
+ * page is on another, the strip names that origin and keeps Turn all off: the
+ * background worker changes a tab's conditions only while it shows their origin.
+ */
+export async function renderConditions(strip: HTMLElement, pageOrigin: string | null): Promise<void> {
   const on = await onThisTab();
   const { conditions } = on;
+  const origin = on.origin ?? pageOrigin;
+  const away = origin !== pageOrigin;
   const lostNote =
     on.lost === 'canceled'
       ? t('devtools_conditionsLostCanceled')
@@ -207,17 +223,20 @@ export async function renderConditions(strip: HTMLElement, origin: string | null
     const item = el('li');
     item.append(
       el('span', '', conditionText(condition)),
-      button(
-        t('devtools_conditionRemove'),
-        () => {
-          void setConditions(
-            origin,
-            conditions.filter((c) => c.id !== condition.id),
-            report,
-          );
-        },
-        'link',
-      ),
+      ...(away
+        ? []
+        : [
+            button(
+              t('devtools_conditionRemove'),
+              () =>
+                void setConditions(
+                  origin,
+                  conditions.filter((c) => c.id !== condition.id),
+                  report,
+                ),
+              'link',
+            ),
+          ]),
     );
     list.appendChild(item);
   }
@@ -229,11 +248,15 @@ export async function renderConditions(strip: HTMLElement, origin: string | null
     const item = el('li');
     item.append(
       el('span', '', text),
-      button(
-        t('devtools_conditionRemove'),
-        () => void setState(origin, { conditions, throttle: on.throttle, cpuRate: on.cpuRate, ...off }, report),
-        'link',
-      ),
+      ...(away
+        ? []
+        : [
+            button(
+              t('devtools_conditionRemove'),
+              () => void setState(origin, { conditions, throttle: on.throttle, cpuRate: on.cpuRate, ...off }, report),
+              'link',
+            ),
+          ]),
     );
     list.appendChild(item);
   }
@@ -243,6 +266,7 @@ export async function renderConditions(strip: HTMLElement, origin: string | null
     'danger',
   );
   const parts: HTMLElement[] = [el('span', 'strip-title', t('devtools_conditionsTitle')), list, allOff, status];
+  if (away) parts.push(el('span', 'strip-note', t('devtools_conditionsSetFor', { site: origin })));
   if (on.via === 'debugger') parts.push(el('span', 'strip-note', t('devtools_conditionsDebugging')));
   if (lostNote) parts.push(el('span', 'warn-text', lostNote));
   strip.replaceChildren(...parts);

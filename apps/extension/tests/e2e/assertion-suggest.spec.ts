@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 
 interface ExposedCandidate {
-  method: 'toHaveValue' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
+  method: 'toHaveValue' | 'toHaveValues' | 'toHaveText' | 'toHaveAccessibleName' | 'toBeVisible';
   detail: string | null;
   expectLine: string;
 }
@@ -32,6 +32,21 @@ async function pickAndSuggest(page: Page, targetSelector: string): Promise<Expos
   await page.click(targetSelector);
   await expect.poll(() => page.evaluate(() => !!(globalThis as any).__piwiAssertionSuggestion)).toBe(true);
   return page.evaluate(() => (globalThis as any).__piwiAssertionSuggestion as ExposedSuggestion);
+}
+
+/** `pickAndSuggest` for an element pointing at would act on (a multiple select): the pick is answered as the overlay answers it. */
+async function suggestFor(page: Page, targetSelector: string): Promise<ExposedSuggestion> {
+  await page.evaluate(() => delete (globalThis as any).__piwiAssertionSuggestion);
+  await page.addScriptTag({ path: path.join(DIST, 'assertion-panel.js') });
+  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  await page.evaluate((selector) => {
+    (globalThis as any).__piwiPickedElement = document.querySelector(selector);
+    (globalThis as any).__piwiPickState = 'picked';
+  }, targetSelector);
+  await expect.poll(() => page.evaluate(() => !!(globalThis as any).__piwiAssertionSuggestion)).toBe(true);
+  const suggestion = await page.evaluate(() => (globalThis as any).__piwiAssertionSuggestion as ExposedSuggestion);
+  await page.keyboard.press('Escape');
+  return suggestion;
 }
 
 test.describe('suggestAssertions (via the real built assertion-panel.js)', () => {
@@ -111,6 +126,58 @@ test.describe('suggestAssertions (via the real built assertion-panel.js)', () =>
     const { candidates } = await pickAndSuggest(page, '[data-testid="agree-checkbox"]');
 
     expect(candidates.map((c) => c.method)).not.toContain('toHaveValue');
+  });
+
+  test('a password field, one shown in clear, and a card number never offer their value', async ({ context }) => {
+    for (const field of [
+      '<input type="password" aria-label="Password" value="hunter2" />',
+      '<input autocomplete="cc-number" aria-label="Card number" value="4111111111111111" />',
+      '<input autocomplete="section-pay cc-csc" aria-label="Security code" value="737" />',
+    ]) {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><html><body>${field}</body></html>`);
+      const { candidates } = await pickAndSuggest(page, 'input');
+      expect(
+        candidates.map((c) => c.method),
+        field,
+      ).toEqual(['toHaveAccessibleName', 'toBeVisible']);
+      await page.close();
+    }
+
+    // Seen as a password once, it stays one when the page shows it in clear.
+    const page = await context.newPage();
+    await page.setContent(
+      `<!doctype html><html><body><input type="password" aria-label="Password" value="hunter2" /></body></html>`,
+    );
+    await suggestFor(page, 'input');
+    await page.evaluate(() => (document.querySelector('input')!.type = 'text'));
+    const { candidates } = await suggestFor(page, 'input');
+    expect(JSON.stringify(candidates)).not.toContain('hunter2');
+  });
+
+  test('a value keeps its line breaks escaped, and a multiple select asserts every selected value', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <textarea data-testid="notes"></textarea>
+      <select data-testid="tags" multiple>
+        <option value="a" selected>A</option><option value="b">B</option><option value="it's" selected>C</option>
+      </select>
+    </body></html>`);
+    await page.locator('textarea').fill('line one\nline two\u2028three');
+    const notes = await suggestFor(page, 'textarea');
+    expect(notes.candidates[0]!.expectLine).toBe(
+      "await expect(page.getByTestId('notes')).toHaveValue('line one\\nline two\\u2028three');",
+    );
+
+    const tags = await suggestFor(page, 'select');
+    expect(tags.candidates[0]).toEqual({
+      method: 'toHaveValues',
+      detail: "a, it's",
+      expectLine: "await expect(page.getByTestId('tags')).toHaveValues(['a', 'it\\'s']);",
+    });
+    await expect(playwrightLocator(page, tags.locator!)).toHaveValues(['a', "it's"]);
   });
 
   test('an element with no identifying attributes, text, or role yields no locator and no candidates', async ({

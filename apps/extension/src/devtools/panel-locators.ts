@@ -1,5 +1,6 @@
 import type { LocatorMatch, LocatorQueryResult } from '../shared/devtools-selection.js';
 import { formatNumber, t, tn } from '../shared/i18n.js';
+import { patternOrigin } from '../shared/web-origin.js';
 import { requestSiteAccess } from './inspected.js';
 import { callPageScript, revealMatch } from './page-script.js';
 import { button, el, emptyState } from './ui.js';
@@ -29,7 +30,7 @@ export function renderLocatorsTab(container: HTMLElement): void {
   input.className = 'mono locator-input';
   input.spellcheck = false;
   input.value = expression;
-  input.placeholder = `getByRole('button', { name: 'Pay' })`;
+  input.placeholder = t('devtools_locatorPlaceholder');
   input.setAttribute('aria-label', t('console_expression'));
   const verdict = el('p', 'status');
   verdict.setAttribute('role', 'status');
@@ -67,7 +68,7 @@ export function renderLocatorsTab(container: HTMLElement): void {
         'primary',
       );
       results.replaceChildren(
-        emptyState('lock', t('devtools_noAccess', { site: answer.pattern.replace(/\/\*$/, '') }), allow),
+        emptyState('lock', t('devtools_noAccess', { site: patternOrigin(answer.pattern) }), allow),
       );
       return;
     }
@@ -89,11 +90,22 @@ export function renderLocatorsTab(container: HTMLElement): void {
           : `⚠ ${tn('console_many', result.count)}`;
     const list = el('ol', 'steps matches');
     list.setAttribute('aria-label', t('devtools_matches'));
+    const revealNote = el('p', 'view-note warn-text');
+    revealNote.setAttribute('aria-live', 'polite');
     result.matches.forEach((match, index) => {
       const row = el('li');
       row.append(el('span', 'glyph'), el('div', 'step-words', matchLabel(match)));
       if (match.text && match.text !== match.name) row.appendChild(el('div', 'detail', match.text));
-      const reveal = button(t('devtools_reveal'), () => void revealMatch(index), 'link reveal');
+      const reveal = button(
+        t('devtools_reveal'),
+        () => {
+          revealNote.textContent = '';
+          void revealMatch(index).then((revealed) => {
+            if (!revealed) revealNote.textContent = t('devtools_revealFailed');
+          });
+        },
+        'link reveal',
+      );
       row.appendChild(reveal);
       const on = () => void callPageScript('highlight', index);
       const off = () => void callPageScript('highlight', null);
@@ -103,7 +115,7 @@ export function renderLocatorsTab(container: HTMLElement): void {
       reveal.addEventListener('blur', off);
       list.appendChild(row);
     });
-    const parts: HTMLElement[] = [list];
+    const parts: HTMLElement[] = [list, revealNote];
     if (result.count > LISTED) {
       parts.push(el('p', 'view-note', t('devtools_matchesListed', { shown: formatNumber(LISTED) })));
     }
@@ -114,5 +126,4 @@ export function renderLocatorsTab(container: HTMLElement): void {
     timer = setTimeout(() => void run(), TYPING_MS);
   });
   void run();
-  input.focus();
 }

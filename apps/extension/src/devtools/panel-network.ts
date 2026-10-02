@@ -1,5 +1,14 @@
+import { downloadBlob } from '../shared/download.js';
 import { formatNumber, t, tn } from '../shared/i18n.js';
-import { mockCode, type MockKind, type MockSource, mockUrlPattern } from '../shared/mock-code.js';
+import {
+  mockCode,
+  type MockKind,
+  type MockSource,
+  mockUrlPattern,
+  responseBody,
+  type ResponseBody,
+} from '../shared/mock-code.js';
+import { webOrigin } from '../shared/web-origin.js';
 import { copyText, inspectedOrigin } from './inspected.js';
 import { conditionActions, pageConditions, renderConditions } from './panel-conditions.js';
 import { button, el, emptyState, flash } from './ui.js';
@@ -22,7 +31,7 @@ export interface NetworkEntry {
   /** Milliseconds from the request to the end of the response. */
   time: number;
   /** The response body, as DevTools kept it. */
-  body(): Promise<{ text: string | null; base64: boolean }>;
+  body(): Promise<ResponseBody>;
   /** A `fetch` or XHR call, rather than a document, a script, an image… */
   api: boolean;
 }
@@ -37,12 +46,12 @@ const NOT_API_MIME =
 
 type HarEntry = Omit<chrome.devtools.network.Request, 'getContent'> & {
   _resourceType?: string;
-  getContent?: (callback: (content: string, encoding: string) => void) => void;
+  getContent?: unknown;
 };
 
 let nextId = 1;
 const entries: NetworkEntry[] = [];
-let listeners: Array<() => void> = [];
+const listeners: Array<() => void> = [];
 
 function isApiCall(har: HarEntry): boolean {
   if (har._resourceType) return API_TYPES.has(har._resourceType);
@@ -58,17 +67,7 @@ function toEntry(har: HarEntry): NetworkEntry {
     mimeType: har.response.content?.mimeType ?? '',
     time: Math.round(har.time ?? 0),
     api: isApiCall(har),
-    body: () =>
-      new Promise((resolve) => {
-        if (typeof har.getContent === 'function') {
-          har.getContent((content, encoding) =>
-            resolve({ text: content ?? har.response.content?.text ?? null, base64: encoding === 'base64' }),
-          );
-        } else {
-          const content = har.response.content;
-          resolve({ text: content?.text ?? null, base64: content?.encoding === 'base64' });
-        }
-      }),
+    body: () => responseBody(har),
   };
 }
 
@@ -96,14 +95,6 @@ function pathOf(url: string): string {
   }
 }
 
-function originOf(url: string): string | null {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return null;
-  }
-}
-
 interface NetworkView {
   allOrigins: boolean;
   /** Every kind of request, not only `fetch` and XHR. */
@@ -125,14 +116,7 @@ const view: NetworkView = {
 
 function download(content: string, filename: string, base64: boolean): void {
   const bytes = base64 ? Uint8Array.from(atob(content), (c) => c.charCodeAt(0)) : content;
-  const url = URL.createObjectURL(new Blob([bytes]));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  downloadBlob(new Blob([bytes]), filename);
 }
 
 const KINDS = [
@@ -151,6 +135,8 @@ function field(id: string, label: string, control: HTMLInputElement | HTMLSelect
 
 async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void> {
   const { text, base64 } = await entry.body();
+  // Another request was clicked while DevTools read this one's body.
+  if (view.selected !== entry.id) return;
   const source: MockSource = {
     method: entry.method,
     url: entry.url,
@@ -242,13 +228,15 @@ interface NetworkDom {
 }
 
 let dom: NetworkDom | null = null;
+/** Counts the tab's draws: a draw that a later one overtook leaves `dom` to it. */
+let draws = 0;
 
 /** Redraws the list of requests, leaving the mock being edited as it is. */
 export function refreshNetworkList(): void {
   if (!dom) return;
   const { list, origin } = dom;
   const shown = entries.filter(
-    (entry) => (entry.api || view.allTypes) && (view.allOrigins || !origin || originOf(entry.url) === origin),
+    (entry) => (entry.api || view.allTypes) && (view.allOrigins || !origin || webOrigin(entry.url) === origin),
   );
   if (shown.length === 0) {
     list.replaceChildren(el('li', 'note', t('devtools_networkEmpty')));
@@ -264,7 +252,7 @@ export function refreshNetworkList(): void {
       row.append(
         el('span', 'method', entry.method),
         el('span', 'path', view.allOrigins ? entry.url : pathOf(entry.url)),
-        el('span', entry.status >= 400 || entry.status === 0 ? 'status bad' : 'status', String(entry.status)),
+        el('span', entry.status >= 400 || entry.status === 0 ? 'status-code bad' : 'status-code', String(entry.status)),
         el('span', 'time', t('devtools_requestTime', { ms: formatNumber(entry.time) })),
       );
       row.addEventListener('click', () => {
@@ -291,12 +279,19 @@ async function showSelected(): Promise<void> {
   await renderMock(dom.detail, selected);
 }
 
+/** Whether the page at `url` is on another origin than the one the tab was drawn for. */
+export function networkOriginChanged(url: string): boolean {
+  return !!dom && webOrigin(url) !== dom.origin;
+}
+
 /**
  * Draws the tab: the conditions on, across the top; the requests on the left,
  * most recent last; the selected one on the right, to mock, slow down or fail.
+ * The page's origin is read in the page, or from `pageUrl` after a navigation.
  */
-export async function renderNetworkTab(container: HTMLElement): Promise<void> {
-  const origin = await inspectedOrigin();
+export async function renderNetworkTab(container: HTMLElement, pageUrl?: string): Promise<void> {
+  const mine = ++draws;
+  const origin = pageUrl === undefined ? await inspectedOrigin() : webOrigin(pageUrl);
   const strip = el('section', 'conditions-strip');
   strip.setAttribute('aria-label', t('devtools_conditionsTitle'));
 
@@ -318,6 +313,10 @@ export async function renderNetworkTab(container: HTMLElement): Promise<void> {
   const toolbar = el('div', 'pane-toolbar');
   const pageStatus = el('span', 'warn-text');
   pageStatus.setAttribute('role', 'status');
+  const conditionsMenu = await pageConditions(origin, (text) => {
+    pageStatus.textContent = text;
+  });
+  if (mine !== draws) return;
   // Documents, scripts and images: only where the debugging protocol can slow them down or fail them.
   const typesLabel = el('label', 'check');
   if (typeof chrome.debugger?.attach === 'function') {
@@ -330,15 +329,7 @@ export async function renderNetworkTab(container: HTMLElement): Promise<void> {
     });
     typesLabel.append(types, t('devtools_networkAllTypes'));
   }
-  toolbar.append(
-    allLabel,
-    typesLabel,
-    clear,
-    await pageConditions(origin, (text) => {
-      pageStatus.textContent = text;
-    }),
-    pageStatus,
-  );
+  toolbar.append(allLabel, typesLabel, clear, conditionsMenu, pageStatus);
   const head = el('div', 'request-head');
   head.setAttribute('aria-hidden', 'true');
   head.append(
@@ -358,6 +349,7 @@ export async function renderNetworkTab(container: HTMLElement): Promise<void> {
   container.replaceChildren(grid);
   dom = { list, detail, origin };
   await renderConditions(strip, origin);
+  if (mine !== draws) return;
   refreshNetworkList();
   await showSelected();
 }

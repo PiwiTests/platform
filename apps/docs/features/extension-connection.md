@@ -77,7 +77,8 @@ loaded. Editing the list takes the administrator role, like the rest of the proj
 Piwi Picker reads the patterns of every project you can see when it connects and each time its settings open, and
 keeps a copy, so a page's project is known with the instance out of reach. For a page it decides in this order:
 
-1. the project chosen in the popup's **Active project**, for the rest of the browser session;
+1. the project chosen in the popup's **Active project** on that site, for the rest of the browser session or until you
+   disconnect;
 2. the patterns under **This browser only**, the first that matches;
 3. the instance's patterns, by project, in each project's order, the first that matches.
 

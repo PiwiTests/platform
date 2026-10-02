@@ -51,10 +51,10 @@
     "message": "No se pudo iniciar la reproducción."
   },
   "common_sendForbidden": {
-    "message": "su cuenta no puede enviar informes a este proyecto."
+    "message": "tu cuenta no puede enviar informes a este proyecto."
   },
   "common_sendTooLarge": {
-    "message": "el informe es demasiado grande para la instancia. Quite una captura y vuelva a intentarlo."
+    "message": "el informe es demasiado grande para la instancia. Quita una captura y vuelve a intentarlo."
   },
   "common_sendRefused": {
     "message": "la instancia lo rechazó ($error$).",
@@ -88,6 +88,12 @@
   },
   "common_instanceUnreachable": {
     "message": "Piwi Picker no pudo conectar con la instancia: revisa la dirección y que esté en funcionamiento."
+  },
+  "common_instanceNotPiwi": {
+    "message": "La instancia respondió con algo que no es Piwi: revisa la dirección y que no haya una página de inicio de sesión delante."
+  },
+  "common_instanceRedirects": {
+    "message": "La instancia respondió con una redirección, que Piwi Picker no sigue: escribe la dirección a la que lleva, por ejemplo https:// en lugar de http://."
   },
   "common_desktopUnreachable": {
     "message": "La aplicación de escritorio no responde. ¿Está abierta?"
@@ -188,16 +194,16 @@
   "popup_testedElementsConnect": {
     "message": "Conecta Piwi para ver lo que alcanzan tus pruebas"
   },
-  "popup_playwrightView": {
+  "devtools_playwrightView": {
     "message": "Vista Playwright"
   },
-  "popup_saveLogin": {
+  "devtools_saveLogin": {
     "message": "Guardar la sesión para las pruebas"
   },
-  "popup_viewport": {
+  "devtools_viewportLabel": {
     "message": "Abrir esta página con un viewport"
   },
-  "popup_viewportProject": {
+  "devtools_viewportProject": {
     "message": "$project$ ($size$)",
     "placeholders": {
       "project": {
@@ -210,22 +216,22 @@
       }
     }
   },
-  "popup_viewportCustom": {
+  "devtools_viewportCustom": {
     "message": "Tamaño escrito a mano"
   },
-  "popup_viewportWidth": {
+  "devtools_viewportWidth": {
     "message": "Ancho"
   },
-  "popup_viewportHeight": {
+  "devtools_viewportHeight": {
     "message": "Alto"
   },
-  "popup_viewportOnly": {
+  "devtools_viewportOnly": {
     "message": "Solo el viewport: sin táctil, densidad de píxeles ni user agent."
   },
-  "popup_viewportHere": {
+  "devtools_viewportHere": {
     "message": "En esta pestaña"
   },
-  "popup_viewportHereOn": {
+  "devtools_viewportHereOn": {
     "message": "Esta pestaña muestra su página a $size$.",
     "placeholders": {
       "size": {
@@ -234,13 +240,13 @@
       }
     }
   },
-  "popup_viewportReset": {
+  "devtools_viewportReset": {
     "message": "Volver al tamaño de la ventana"
   },
-  "popup_viewportHereUnavailable": {
-    "message": "Este navegador no da a las extensiones un protocolo de depuración para ajustar el viewport de la propia pestaña: abra una ventana en su lugar."
+  "devtools_viewportHereUnavailable": {
+    "message": "Este navegador no da a las extensiones un protocolo de depuración para ajustar el viewport de la propia pestaña: abre una ventana en su lugar."
   },
-  "popup_viewportHereRefused": {
+  "devtools_viewportHereRefused": {
     "message": "El navegador rechazó la sesión de depuración: $error$",
     "placeholders": {
       "error": {
@@ -249,8 +255,8 @@
       }
     }
   },
-  "popup_viewportInvalid": {
-    "message": "Abra una página web, con un ancho y un alto entre $min$ y $max$ píxeles.",
+  "devtools_viewportInvalid": {
+    "message": "Abre una página web, con un ancho y un alto entre $min$ y $max$ píxeles.",
     "placeholders": {
       "max": {
         "content": "$1",
@@ -444,6 +450,9 @@
   },
   "popup_cannotReplay": {
     "message": "Piwi Picker no puede reproducir un informe en esta página."
+  },
+  "popup_replayElsewhere": {
+    "message": "Hay una reproducción en curso en otra pestaña. Deténla allí, o en el panel Piwi de las DevTools, antes de reproducir aquí."
   },
   "popup_notRecordedTab": {
     "message": "Esta pestaña no es la que se está grabando."
@@ -1029,7 +1038,7 @@
     "message": "Enviar al editor"
   },
   "options_editorHint": {
-    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecute «Piwi: Pair with Piwi Picker» y pegue aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor."
+    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecuta «Piwi: Pair with Piwi Picker» y pega aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor."
   },
   "options_editorAddress": {
     "message": "Dirección de emparejamiento"
@@ -1063,6 +1072,9 @@
   },
   "common_copied": {
     "message": "Copiado"
+  },
+  "common_copyFailed": {
+    "message": "No copiado"
   },
   "common_sentToEditor": {
     "message": "Enviado"
@@ -1246,6 +1258,22 @@
   "lint_allGood": {
     "message": "Cada botón, enlace y campo de esta página tiene un test id, un nombre o un lugar estable en la página."
   },
+  "lint_checking": {
+    "message": "Buscando elementos difíciles de localizar…"
+  },
+  "lint_truncated": {
+    "message": "Se revisaron los primeros $checked$ de los $total$ botones, enlaces y campos de esta página.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "800"
+      },
+      "total": {
+        "content": "$2",
+        "example": "1200"
+      }
+    }
+  },
   "lint_copyChecklist": {
     "message": "Copiar como lista de tareas Markdown"
   },
@@ -1346,6 +1374,15 @@
   "session_nameInvalid": {
     "message": "Usa solo letras sin tildes, cifras, _ o $$, y no empieces por una cifra."
   },
+  "session_nameReserved": {
+    "message": "El page object ya usa el nombre $name$: elige otro.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "page"
+      }
+    }
+  },
   "session_nameTaken": {
     "message": "«$name$» ya está en la lista.",
     "placeholders": {
@@ -1354,6 +1391,66 @@
         "example": "submitButton"
       }
     }
+  },
+  "pick_overlayBanner": {
+    "message": "Inspector de Piwi: haz clic en un elemento para generar sus locators"
+  },
+  "pick_overlayKeys": {
+    "message": "↑ padre · ↓ hijo · Esc omitir"
+  },
+  "pick_overlayKeysHovering": {
+    "message": "clic para elegir · ↑ padre · ↓ hijo · Esc omitir"
+  },
+  "pick_overlayAnalyzing": {
+    "message": "Analizando el elemento…"
+  },
+  "pick_anchorsTitle": {
+    "message": "Limitar a padres estables (opcional)"
+  },
+  "pick_anchorsHint": {
+    "message": "Elige uno o varios padres en los que anclar el locator. Pasa el ratón por una fila para ver el padre."
+  },
+  "pick_anchorsNoneSelected": {
+    "message": "Ningún padre elegido: solo los locators habituales."
+  },
+  "pick_anchorsMatchesOne": {
+    "message": "✓ La selección encuentra exactamente 1 elemento"
+  },
+  "pick_anchorsMatchesMany": {
+    "message": "✗ La selección encuentra $count$ elementos",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_anchorsCountUnavailable": {
+    "message": "Número de coincidencias no disponible"
+  },
+  "pick_anchorsContainsOne": {
+    "message": "contiene exactamente 1 elemento coincidente"
+  },
+  "pick_anchorsContainsMany": {
+    "message": "contiene $count$ elementos coincidentes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_anchorsNeedsTestId": {
+    "message": "añade un data-testid para poder usarlo"
+  },
+  "pick_anchorsNoHook": {
+    "message": "sin ancla estable"
+  },
+  "pick_anchorsUse": {
+    "message": "Usar los padres elegidos"
+  },
+  "pick_anchorsSkip": {
+    "message": "Omitir (Esc)"
   },
   "pick_panelLabel": {
     "message": "Locators del elemento elegido"
@@ -1708,6 +1805,9 @@
       }
     }
   },
+  "functions_cacheFailed": {
+    "message": "No se pudieron leer las funciones de test guardadas en este navegador. Actualiza para descargarlas de nuevo."
+  },
   "functions_ready": {
     "message": "Lista para usar aquí"
   },
@@ -1848,19 +1948,6 @@
   "record_noSteps": {
     "message": "No se grabó ningún paso."
   },
-  "record_stepValue": {
-    "message": "$step$ = «$value$»",
-    "placeholders": {
-      "step": {
-        "content": "$1",
-        "example": "fill — Email"
-      },
-      "value": {
-        "content": "$2",
-        "example": "alice@example.com"
-      }
-    }
-  },
   "record_copyCode": {
     "message": "Copiar como TypeScript"
   },
@@ -1956,6 +2043,24 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotBlockedFirefox": {
+    "message": "Firefox solo deja que Piwi Picker haga una captura de pantalla después de que lo abras en esta pestaña. Abre Piwi Picker y elige «$action$».",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_screenshotNotInFront": {
+    "message": "La pestaña no estaba en primer plano, y el navegador solo captura la pestaña que se muestra."
+  },
+  "bug_screenshotFailed": {
+    "message": "El navegador no pudo hacer la captura de pantalla."
+  },
+  "bug_screenshotNotKept": {
+    "message": "La captura de pantalla era demasiado grande para guardarla en el almacenamiento de este navegador."
   },
   "bug_stepShows": {
     "message": "muestra «$text$»",
@@ -2258,7 +2363,7 @@
     "message": "Enviar a Piwi…"
   },
   "bug_sendToPiwiHint": {
-    "message": "Ver exactamente lo que se envía y guardar el informe en su instancia de Piwi"
+    "message": "Ver exactamente lo que se envía y guardar el informe en tu instancia de Piwi"
   },
   "bug_sendTitle": {
     "message": "Enviar a $project$",
@@ -2400,7 +2505,7 @@
     }
   },
   "bug_sendNoProject": {
-    "message": "Ningún proyecto de su instancia de Piwi corresponde a esta página. Añada este sitio en los ajustes o elija el proyecto en la ventana emergente."
+    "message": "Ningún proyecto de tu instancia de Piwi corresponde a esta página. Añade este sitio en la configuración o elige el proyecto en el menú de Piwi Picker."
   },
   "bug_staysLocalUntilSent": {
     "message": "Todo se queda en este navegador hasta que lo envíe."
@@ -2693,6 +2798,9 @@
       }
     }
   },
+  "replay_verdictStoppedNoStep": {
+    "message": "La ejecución terminó antes del último paso: se detuvo o no pudo iniciarse."
+  },
   "replay_reasonNoLocator": {
     "message": "El informe no dice cómo encontrar este elemento."
   },
@@ -2799,6 +2907,19 @@
       "element": {
         "content": "$1",
         "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_reasonDragApart": {
+    "message": "Arrastrar necesita $element$ y $target$ en pantalla a la vez, y no caben juntos.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "div \"Card\""
+      },
+      "target": {
+        "content": "$2",
+        "example": "div \"Done\""
       }
     }
   },
@@ -3165,6 +3286,9 @@
   "replay_desktopExpired": {
     "message": "La solicitud caducó antes de iniciarse."
   },
+  "replay_desktopNoVerdict": {
+    "message": "La aplicación de escritorio no envió ningún veredicto que Piwi Picker pueda mostrar: consulta la ejecución en la ventana de la aplicación."
+  },
   "replay_fileLabel": {
     "message": "El .piwibug del informe de bug, o su steps.json"
   },
@@ -3226,6 +3350,15 @@
   },
   "replay_zipNoSteps": {
     "message": "$file$ no contiene ningún steps.json: elige el .piwibug guardado por Piwi Picker, o su steps.json.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "bug.piwibug"
+      }
+    }
+  },
+  "replay_zipUnreadable": {
+    "message": "No se puede leer $file$: elige el .piwibug guardado por Piwi Picker, o su steps.json.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -4585,11 +4718,8 @@
   "common_workerOutdated": {
     "message": "Piwi Picker se volvió a compilar sin recargarse, y su proceso en segundo plano sigue ejecutando la versión anterior. Vuelve a cargar la extensión desde su menú o desde la página de extensiones del navegador."
   },
-  "devtools_ranking": {
-    "message": "Clasificando el elemento seleccionado…"
-  },
   "devtools_selectElement": {
-    "message": "Seleccione un elemento en el panel Elementos para ver sus locators."
+    "message": "Selecciona un elemento en el panel Elementos para ver sus locators."
   },
   "devtools_inFrame": {
     "message": "Este elemento está dentro de un marco. La barra lateral solo clasifica los elementos de la página principal."
@@ -4763,7 +4893,7 @@
     "message": "Reproducir"
   },
   "devtools_noRecording": {
-    "message": "No se está grabando nada. Empiece con Grabar acciones o Notificar un bug en el menú de la extensión: los pasos aparecen aquí a medida que se graban."
+    "message": "No se está grabando nada. Empieza con Grabar acciones o Notificar un bug en el menú de la extensión: los pasos aparecen aquí a medida que se graban."
   },
   "devtools_recordingOn_one": {
     "message": "Grabando en $site$: $count$ paso",
@@ -4839,19 +4969,19 @@
     "message": "Detener la grabación"
   },
   "devtools_finishBugOnPage": {
-    "message": "Termine el informe de bug desde su panel en la página, que reúne las evidencias."
+    "message": "Termina el informe de bug desde su panel en la página, que reúne las evidencias."
   },
   "devtools_noReplay": {
-    "message": "Aún no hay ninguna reproducción. Inicie una con Reproducir un informe de bug en el menú de la extensión: sus pasos y resultados aparecen aquí."
+    "message": "Aún no hay ninguna reproducción. Inicia una con Reproducir un informe de bug en el menú de la extensión: sus pasos y resultados aparecen aquí."
   },
   "devtools_tabNetwork": {
     "message": "Red"
   },
   "devtools_networkHint": {
-    "message": "Las peticiones fetch y XHR de la página, leídas de DevTools mientras está abierto. Nada sale del navegador salvo lo que copie o descargue."
+    "message": "Las peticiones fetch y XHR de la página, leídas de DevTools mientras está abierto. Nada sale del navegador salvo lo que copies o descargues."
   },
   "devtools_networkEmpty": {
-    "message": "Aún no hay peticiones. Use la página, o recárguela, y sus peticiones aparecen aquí."
+    "message": "Aún no hay peticiones. Usa la página, o recárgala, y sus peticiones aparecen aquí."
   },
   "devtools_networkAllOrigins": {
     "message": "También otros sitios"
@@ -4890,7 +5020,7 @@
     "message": "un fallo de red"
   },
   "devtools_mockNoBody": {
-    "message": "DevTools no guardó el cuerpo de esta respuesta. Recargue la página con DevTools abierto para simularla."
+    "message": "DevTools no guardó el cuerpo de esta respuesta. Recarga la página con DevTools abierto para simularla."
   },
   "devtools_mockHidden_one": {
     "message": "$count$ valor oculto: campos con nombre de contraseña, token o clave.",
@@ -5008,7 +5138,7 @@
     "message": "Ralentizar o hacer fallar esta petición"
   },
   "devtools_conditionsLimits": {
-    "message": "Las condiciones se aplican a cada solicitud de las páginas de esta pestaña, documentos, scripts e imágenes incluidos, hasta que las desactive o cierre la pestaña. Las solicitudes propias de un service worker no pasan por ellas."
+    "message": "Las condiciones se aplican a cada solicitud de las páginas de esta pestaña, documentos, scripts e imágenes incluidos, hasta que las desactives o cierres la pestaña. Las solicitudes propias de un service worker no pasan por ellas."
   },
   "devtools_conditionRemove": {
     "message": "Quitar"
@@ -5041,16 +5171,16 @@
     }
   },
   "login_noSite": {
-    "message": "Ábralo desde el menú de la extensión en una página web: guarda la sesión del sitio de esa página."
+    "message": "Ábralo desde el panel Piwi de DevTools en una página web: guarda la sesión del sitio de esa página."
   },
   "login_holds": {
     "message": "El archivo contiene las cookies de este navegador para el sitio, incluidas las httpOnly, y el localStorage del sitio, en el formato storageState de Playwright. IndexedDB queda fuera."
   },
   "login_warning": {
-    "message": "Quien tenga este archivo inicia sesión como usted hasta que la sesión caduque. Use una cuenta de prueba y deje el archivo fuera de su repositorio."
+    "message": "Quien tenga este archivo inicia sesión como tú hasta que la sesión caduque. Usa una cuenta de prueba y deja el archivo fuera de tu repositorio."
   },
   "login_gitignore": {
-    "message": "Guárdelo como $path$ y añada $folder$ a $file$.",
+    "message": "Guárdalo como $path$ y añade $folder$ a $file$.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -5081,6 +5211,15 @@
       "error": {
         "content": "$1",
         "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_siteChanged": {
+    "message": "La pestaña muestra ahora otro sitio: vuelve a $site$ en ella y guarda de nuevo.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
       }
     }
   },
@@ -5127,7 +5266,7 @@
     "message": "Copiar el código"
   },
   "devtools_networkSelect": {
-    "message": "Seleccione una petición para simularla, ralentizarla o hacerla fallar."
+    "message": "Selecciona una petición para simularla, ralentizarla o hacerla fallar."
   },
   "devtools_colMethod": {
     "message": "Método"
@@ -5145,10 +5284,19 @@
     "message": "Lo que esto no puede ralentizar"
   },
   "devtools_conditionsLimitsPage": {
-    "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactive o cierre la pestaña. Los documentos, los scripts, las imágenes y las solicitudes de un service worker no pasan por ellas."
+    "message": "Las condiciones se aplican a las llamadas fetch y XHR de las páginas de esta pestaña hasta que las desactives o cierres la pestaña. Los documentos, los scripts, las imágenes y las solicitudes de un service worker no pasan por ellas."
   },
   "devtools_conditionsDebugging": {
     "message": "Aplicadas a cada solicitud de esta pestaña mediante el protocolo de depuración de Chrome: Chrome muestra su barra de depuración hasta que las desactive todas."
+  },
+  "devtools_conditionsSetFor": {
+    "message": "Definidas para $site$: se aplican mientras la pestaña muestre ese sitio.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
   },
   "devtools_conditionsLostCanceled": {
     "message": "Se canceló la barra de depuración: la limitación está desactivada, y las condiciones de las solicitudes ahora solo alcanzan las llamadas fetch y XHR de la página."
@@ -5210,14 +5358,20 @@
   "devtools_viewportOpen": {
     "message": "Abrir en una ventana nueva"
   },
+  "devtools_locatorPlaceholder": {
+    "message": "getByLabel('Correo electrónico')"
+  },
   "devtools_locatorsHint": {
-    "message": "Escriba un locator: se listan los elementos que encuentra en esta página, como los encuentra Playwright. Pase el puntero sobre uno para resaltarlo en la página; Mostrar lo selecciona en el panel Elementos."
+    "message": "Escribe un locator: se listan los elementos que encuentra en esta página, como los encuentra Playwright. Pasa el puntero sobre uno para resaltarlo en la página; Mostrar lo selecciona en el panel Elementos."
   },
   "devtools_matches": {
     "message": "Elementos encontrados"
   },
   "devtools_reveal": {
     "message": "Mostrar"
+  },
+  "devtools_revealFailed": {
+    "message": "No se pudo seleccionar este elemento en el panel Elementos: puede que ya no esté en la página. Prueba el locator de nuevo."
   },
   "devtools_matchesListed": {
     "message": "Solo se listan los $shown$ primeros.",
@@ -5229,7 +5383,7 @@
     }
   },
   "devtools_sessionEmpty": {
-    "message": "Aún no hay ningún elemento con nombre. Seleccione uno en el panel Elementos y use Añadir a la sesión en la barra lateral Piwi."
+    "message": "Aún no hay ningún elemento con nombre. Selecciona uno en el panel Elementos y usa Añadir a la sesión en la barra lateral Piwi."
   },
   "devtools_sessionCount_one": {
     "message": "$count$ elemento con nombre",

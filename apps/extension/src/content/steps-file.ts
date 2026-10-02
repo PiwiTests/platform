@@ -12,17 +12,18 @@ function base64(bytes: Uint8Array): string {
 
 /**
  * The screenshot of each step a bug report archive holds, as its evidence
- * names them; none when its evidence cannot be read.
+ * names them; none when its evidence cannot be read, and none of an image
+ * that cannot be.
  */
 async function stepViewsOf(bytes: Uint8Array, steps: string, stepCount: number): Promise<ReplayStepView[]> {
-  const evidence = await readZipEntry(bytes, BUG_REPORT_FILES.evidence);
+  const evidence = await readZipEntry(bytes, BUG_REPORT_FILES.evidence).catch(() => null);
   if (!evidence) return [];
   const report = bugReportFromFiles({ steps, evidence: new TextDecoder().decode(evidence) });
   if (!report.ok) return [];
   const views: ReplayStepView[] = [];
   for (const shot of report.report.evidence.stepShots ?? []) {
     if (shot.step >= stepCount) continue;
-    const image = await readZipEntry(bytes, shot.file);
+    const image = await readZipEntry(bytes, shot.file).catch(() => null);
     if (!image) continue;
     views.push({
       step: shot.step,
@@ -46,7 +47,12 @@ export async function readReportFile(
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
   let text: string;
   if (isZip) {
-    const entry = await readZipEntry(bytes, BUG_REPORT_FILES.steps);
+    let entry: Uint8Array | null;
+    try {
+      entry = await readZipEntry(bytes, BUG_REPORT_FILES.steps);
+    } catch {
+      throw new Error(t('replay_zipUnreadable', { file: name }));
+    }
     if (!entry) throw new Error(t('replay_zipNoSteps', { file: name }));
     text = new TextDecoder().decode(entry);
   } else {

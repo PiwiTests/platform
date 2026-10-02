@@ -3,7 +3,7 @@
     "message": "Des locators Playwright stables et classés pour tout élément de la page, notés comme dans le tableau de bord Piwi."
   },
   "pickElementCommand": {
-    "message": "Obtenir le locator d'un élément de la page"
+    "message": "Obtenir le locator d’un élément de la page"
   },
   "common_languageTag": {
     "message": "fr"
@@ -88,6 +88,12 @@
   },
   "common_instanceUnreachable": {
     "message": "Piwi Picker n’a pas pu joindre l’instance : vérifiez l’adresse, et qu’elle est démarrée."
+  },
+  "common_instanceNotPiwi": {
+    "message": "L’instance a répondu par autre chose que Piwi : vérifiez l’adresse, et qu’aucune page de connexion ne s’interpose devant elle."
+  },
+  "common_instanceRedirects": {
+    "message": "L’instance a répondu par une redirection, que Piwi Picker ne suit pas : saisissez l’adresse vers laquelle elle mène, par exemple https:// plutôt que http://."
   },
   "common_desktopUnreachable": {
     "message": "L’application de bureau ne répond pas. Est-elle lancée ?"
@@ -188,16 +194,16 @@
   "popup_testedElementsConnect": {
     "message": "Connectez Piwi pour voir ce que vos tests atteignent"
   },
-  "popup_playwrightView": {
+  "devtools_playwrightView": {
     "message": "Vue Playwright"
   },
-  "popup_saveLogin": {
+  "devtools_saveLogin": {
     "message": "Sauvegarder la connexion pour les tests"
   },
-  "popup_viewport": {
+  "devtools_viewportLabel": {
     "message": "Ouvrir cette page avec un viewport"
   },
-  "popup_viewportProject": {
+  "devtools_viewportProject": {
     "message": "$project$ ($size$)",
     "placeholders": {
       "project": {
@@ -210,22 +216,22 @@
       }
     }
   },
-  "popup_viewportCustom": {
+  "devtools_viewportCustom": {
     "message": "Taille saisie à la main"
   },
-  "popup_viewportWidth": {
+  "devtools_viewportWidth": {
     "message": "Largeur"
   },
-  "popup_viewportHeight": {
+  "devtools_viewportHeight": {
     "message": "Hauteur"
   },
-  "popup_viewportOnly": {
+  "devtools_viewportOnly": {
     "message": "Viewport seulement : ni tactile, ni densité de pixels, ni user agent."
   },
-  "popup_viewportHere": {
+  "devtools_viewportHere": {
     "message": "Dans cet onglet"
   },
-  "popup_viewportHereOn": {
+  "devtools_viewportHereOn": {
     "message": "Cet onglet affiche sa page en $size$.",
     "placeholders": {
       "size": {
@@ -234,13 +240,13 @@
       }
     }
   },
-  "popup_viewportReset": {
+  "devtools_viewportReset": {
     "message": "Revenir à la taille de la fenêtre"
   },
-  "popup_viewportHereUnavailable": {
+  "devtools_viewportHereUnavailable": {
     "message": "Ce navigateur ne donne pas aux extensions de protocole de débogage pour régler l’affichage de l’onglet lui-même : ouvrez plutôt une fenêtre."
   },
-  "popup_viewportHereRefused": {
+  "devtools_viewportHereRefused": {
     "message": "Le navigateur a refusé la session de débogage : $error$",
     "placeholders": {
       "error": {
@@ -249,7 +255,7 @@
       }
     }
   },
-  "popup_viewportInvalid": {
+  "devtools_viewportInvalid": {
     "message": "Ouvrez une page web, avec une largeur et une hauteur entre $min$ et $max$ pixels.",
     "placeholders": {
       "max": {
@@ -445,6 +451,9 @@
   "popup_cannotReplay": {
     "message": "Piwi Picker ne peut pas rejouer de rapport sur cette page."
   },
+  "popup_replayElsewhere": {
+    "message": "Un rejeu est en cours dans un autre onglet. Arrêtez-le là-bas, ou dans le panneau Piwi des DevTools, avant de rejouer ici."
+  },
   "popup_notRecordedTab": {
     "message": "Cet onglet n’est pas celui qui est enregistré."
   },
@@ -616,7 +625,7 @@
     "message": "Se déconnecter"
   },
   "options_privacy": {
-    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez, les téléchargez ou les envoyez à votre éditeur appairé ou à votre application de bureau associée. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
+    "message": "Utilisée uniquement depuis cette page, la clé d’API n’atteint jamais les scripts d’une page web. Les étapes enregistrées ne vont nulle part, sauf si vous les copiez, les téléchargez ou les envoyez à votre éditeur ou à votre application de bureau associés. La connexion télécharge les motifs d’adresse de vos projets, le catalogue de fonctions de chaque projet et les éléments que ses tests atteignent ; ajouter un site n’envoie que son motif."
   },
   "options_testing": {
     "message": "Test en cours…"
@@ -1029,19 +1038,19 @@
     "message": "Envoyer à l’éditeur"
   },
   "options_editorHint": {
-    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur."
+    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur."
   },
   "options_editorAddress": {
-    "message": "Adresse d’appairage"
+    "message": "Adresse d’association"
   },
   "options_editorPair": {
-    "message": "Appairer"
+    "message": "Associer"
   },
   "options_editorUnpair": {
-    "message": "Désappairer"
+    "message": "Dissocier"
   },
   "options_editorPaired": {
-    "message": "Appairé avec l’éditeur à l’adresse $url$.",
+    "message": "Associé à l’éditeur à l’adresse $url$.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1050,7 +1059,7 @@
     }
   },
   "options_editorInvalid": {
-    "message": "Ce n’est pas une adresse d’appairage. Elle ressemble à http://127.0.0.1:47211/piwi/send#… et vient de la commande « Pair with Piwi Picker » de l’éditeur."
+    "message": "Ce n’est pas une adresse d’association. Elle ressemble à http://127.0.0.1:47211/piwi/send#… et vient de la commande « Pair with Piwi Picker » de l’éditeur."
   },
   "options_editorPermission": {
     "message": "Piwi Picker a besoin de l’autorisation de joindre l’éditeur sur cet ordinateur."
@@ -1063,6 +1072,9 @@
   },
   "common_copied": {
     "message": "Copié"
+  },
+  "common_copyFailed": {
+    "message": "Non copié"
   },
   "common_sentToEditor": {
     "message": "Envoyé"
@@ -1246,6 +1258,22 @@
   "lint_allGood": {
     "message": "Chaque bouton, lien et champ de cette page a un test id, un nom ou une place stable dans la page."
   },
+  "lint_checking": {
+    "message": "Recherche des éléments difficiles à cibler…"
+  },
+  "lint_truncated": {
+    "message": "Seuls les $checked$ premiers des $total$ boutons, liens et champs de cette page ont été contrôlés.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "800"
+      },
+      "total": {
+        "content": "$2",
+        "example": "1 200"
+      }
+    }
+  },
   "lint_copyChecklist": {
     "message": "Copier en liste de tâches Markdown"
   },
@@ -1346,6 +1374,15 @@
   "session_nameInvalid": {
     "message": "Utilisez seulement des lettres sans accent, des chiffres, _ ou $$, sans commencer par un chiffre."
   },
+  "session_nameReserved": {
+    "message": "Le page object utilise déjà le nom $name$ : choisissez-en un autre.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "page"
+      }
+    }
+  },
   "session_nameTaken": {
     "message": "« $name$ » est déjà dans la liste.",
     "placeholders": {
@@ -1354,6 +1391,66 @@
         "example": "submitButton"
       }
     }
+  },
+  "pick_overlayBanner": {
+    "message": "Inspecteur Piwi, cliquez sur un élément pour générer ses locators"
+  },
+  "pick_overlayKeys": {
+    "message": "↑ parent · ↓ enfant · Échap pour passer"
+  },
+  "pick_overlayKeysHovering": {
+    "message": "cliquez pour choisir · ↑ parent · ↓ enfant · Échap pour passer"
+  },
+  "pick_overlayAnalyzing": {
+    "message": "Analyse de l’élément…"
+  },
+  "pick_anchorsTitle": {
+    "message": "Limiter à des parents stables (facultatif)"
+  },
+  "pick_anchorsHint": {
+    "message": "Choisissez un ou plusieurs parents auxquels ancrer le locator. Survolez une ligne pour voir le parent."
+  },
+  "pick_anchorsNoneSelected": {
+    "message": "Aucun parent choisi, les locators habituels seulement."
+  },
+  "pick_anchorsMatchesOne": {
+    "message": "✓ La sélection trouve exactement 1 élément"
+  },
+  "pick_anchorsMatchesMany": {
+    "message": "✗ La sélection trouve $count$ éléments",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_anchorsCountUnavailable": {
+    "message": "Nombre d’éléments trouvés indisponible"
+  },
+  "pick_anchorsContainsOne": {
+    "message": "contient exactement 1 élément correspondant"
+  },
+  "pick_anchorsContainsMany": {
+    "message": "contient $count$ éléments correspondants",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_anchorsNeedsTestId": {
+    "message": "ajoutez un data-testid pour pouvoir l’utiliser"
+  },
+  "pick_anchorsNoHook": {
+    "message": "aucune accroche stable"
+  },
+  "pick_anchorsUse": {
+    "message": "Utiliser les parents choisis"
+  },
+  "pick_anchorsSkip": {
+    "message": "Passer (Échap)"
   },
   "pick_panelLabel": {
     "message": "Locators de l’élément choisi"
@@ -1708,6 +1805,9 @@
       }
     }
   },
+  "functions_cacheFailed": {
+    "message": "Les fonctions de test gardées dans ce navigateur n’ont pas pu être lues. Actualisez pour les télécharger à nouveau."
+  },
   "functions_ready": {
     "message": "Prête à l’emploi ici"
   },
@@ -1848,19 +1948,6 @@
   "record_noSteps": {
     "message": "Aucune étape n’a été enregistrée."
   },
-  "record_stepValue": {
-    "message": "$step$ = « $value$ »",
-    "placeholders": {
-      "step": {
-        "content": "$1",
-        "example": "fill — Email"
-      },
-      "value": {
-        "content": "$2",
-        "example": "alice@example.com"
-      }
-    }
-  },
   "record_copyCode": {
     "message": "Copier en TypeScript"
   },
@@ -1956,6 +2043,24 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotBlockedFirefox": {
+    "message": "Firefox ne laisse Piwi Picker prendre une capture d’écran qu’après que vous l’avez ouvert sur cet onglet. Ouvrez Piwi Picker et choisissez « $action$ ».",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_screenshotNotInFront": {
+    "message": "L’onglet n’était pas celui au premier plan, et le navigateur ne capture que l’onglet affiché."
+  },
+  "bug_screenshotFailed": {
+    "message": "Le navigateur n’a pas pu prendre la capture d’écran."
+  },
+  "bug_screenshotNotKept": {
+    "message": "La capture d’écran était trop volumineuse pour être conservée dans le stockage de ce navigateur."
   },
   "bug_stepShows": {
     "message": "affiche « $text$ »",
@@ -2400,7 +2505,7 @@
     }
   },
   "bug_sendNoProject": {
-    "message": "Aucun projet de votre instance Piwi ne correspond à cette page. Ajoutez ce site dans les paramètres, ou choisissez le projet dans la fenêtre de l’extension."
+    "message": "Aucun projet de votre instance Piwi ne correspond à cette page. Ajoutez ce site dans les réglages, ou choisissez le projet dans le menu de Piwi Picker."
   },
   "bug_staysLocalUntilSent": {
     "message": "Tout reste dans ce navigateur tant que vous ne l’envoyez pas."
@@ -2693,6 +2798,9 @@
       }
     }
   },
+  "replay_verdictStoppedNoStep": {
+    "message": "L’exécution s’est terminée avant la dernière étape : elle a été arrêtée, ou n’a pas pu démarrer."
+  },
   "replay_reasonNoLocator": {
     "message": "Le rapport ne dit pas comment trouver cet élément."
   },
@@ -2799,6 +2907,19 @@
       "element": {
         "content": "$1",
         "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_reasonDragApart": {
+    "message": "Le glisser-déposer a besoin de $element$ et de $target$ à l’écran en même temps, et ils n’y tiennent pas ensemble.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "div \"Card\""
+      },
+      "target": {
+        "content": "$2",
+        "example": "div \"Done\""
       }
     }
   },
@@ -3127,7 +3248,7 @@
     "message": "Lancer avec Playwright dans l’application de bureau"
   },
   "replay_desktopNotPaired": {
-    "message": "Associez d’abord l’application de bureau, dans les options de Piwi Picker sous Application de bureau."
+    "message": "Associez d’abord l’application de bureau, dans les réglages de Piwi Picker sous Application de bureau."
   },
   "replay_desktopOpenOptions": {
     "message": "Ouvrir les options"
@@ -3164,6 +3285,9 @@
   },
   "replay_desktopExpired": {
     "message": "La demande a expiré avant d’être démarrée."
+  },
+  "replay_desktopNoVerdict": {
+    "message": "L’application de bureau n’a envoyé aucun verdict que Piwi Picker sache afficher : voyez l’exécution dans sa fenêtre."
   },
   "replay_fileLabel": {
     "message": "Le .piwibug du rapport de bug, ou son steps.json"
@@ -3226,6 +3350,15 @@
   },
   "replay_zipNoSteps": {
     "message": "$file$ ne contient pas de steps.json : choisissez le .piwibug enregistré par Piwi Picker, ou son steps.json.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "bug.piwibug"
+      }
+    }
+  },
+  "replay_zipUnreadable": {
+    "message": "Impossible de lire $file$ : choisissez le .piwibug enregistré par Piwi Picker, ou son steps.json.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -4585,9 +4718,6 @@
   "common_workerOutdated": {
     "message": "Piwi Picker a été reconstruit sans être rechargé, et son processus d’arrière-plan tourne encore sur la version précédente. Rechargez l’extension depuis son menu, ou depuis la page des extensions du navigateur."
   },
-  "devtools_ranking": {
-    "message": "Classement de l’élément sélectionné…"
-  },
   "devtools_selectElement": {
     "message": "Sélectionnez un élément dans le panneau Éléments pour voir ses locators."
   },
@@ -5023,10 +5153,10 @@
     "message": "Ralentir"
   },
   "devtools_failError": {
-    "message": "Échouer avec 500"
+    "message": "Faire échouer (erreur 500)"
   },
   "devtools_failAbort": {
-    "message": "Échouer (erreur réseau)"
+    "message": "Faire échouer (erreur réseau)"
   },
   "login_title": {
     "message": "Sauvegarder la connexion pour les tests"
@@ -5041,7 +5171,7 @@
     }
   },
   "login_noSite": {
-    "message": "Ouvrez cette page depuis le menu de l’extension, sur une page web : elle sauvegarde la connexion au site de cette page."
+    "message": "Ouvrez cette page depuis le panneau Piwi de DevTools, sur une page web : elle sauvegarde la connexion au site de cette page."
   },
   "login_holds": {
     "message": "Le fichier contient les cookies de ce navigateur pour le site, y compris les cookies httpOnly, et le localStorage du site, au format storageState de Playwright. IndexedDB n’est pas inclus."
@@ -5081,6 +5211,15 @@
       "error": {
         "content": "$1",
         "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_siteChanged": {
+    "message": "L’onglet affiche maintenant un autre site : revenez à $site$ dans cet onglet, puis sauvegardez de nouveau.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
       }
     }
   },
@@ -5150,6 +5289,15 @@
   "devtools_conditionsDebugging": {
     "message": "Appliquées à chaque requête de cet onglet par le protocole de débogage de Chrome : Chrome affiche sa barre de débogage jusqu’à ce que vous les désactiviez toutes."
   },
+  "devtools_conditionsSetFor": {
+    "message": "Définies pour $site$ : elles s’appliquent tant que l’onglet affiche ce site.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
   "devtools_conditionsLostCanceled": {
     "message": "La barre de débogage a été annulée : la limitation est désactivée, et les conditions des requêtes n’atteignent plus que les appels fetch et XHR de la page."
   },
@@ -5210,6 +5358,9 @@
   "devtools_viewportOpen": {
     "message": "Ouvrir dans une nouvelle fenêtre"
   },
+  "devtools_locatorPlaceholder": {
+    "message": "getByLabel('E-mail')"
+  },
   "devtools_locatorsHint": {
     "message": "Tapez un locator : les éléments qu’il trouve sur cette page s’affichent, tels que Playwright les trouve. Survolez-en un pour l’encadrer sur la page ; Afficher le sélectionne dans le panneau Éléments."
   },
@@ -5218,6 +5369,9 @@
   },
   "devtools_reveal": {
     "message": "Afficher"
+  },
+  "devtools_revealFailed": {
+    "message": "Cet élément n’a pas pu être sélectionné dans le panneau Éléments : il n’est peut-être plus sur la page. Essayez de nouveau le locator."
   },
   "devtools_matchesListed": {
     "message": "Seuls les $shown$ premiers sont listés.",

@@ -8,6 +8,7 @@ import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { interfacePhrases } from '../shared/core-words.js';
+import { downloadBlob } from '../shared/download.js';
 import { t, tn } from '../shared/i18n.js';
 import {
   discardRecording,
@@ -16,6 +17,7 @@ import {
   stopRecording,
   type RecordingState,
 } from '../shared/recording-storage.js';
+import { patternOrigin } from '../shared/web-origin.js';
 import { copyText, evalInPage } from './inspected.js';
 import { button, el, emptyState, flash } from './ui.js';
 
@@ -52,31 +54,16 @@ export function viewHead(dot: string, text: string, ...actions: HTMLElement[]): 
   return head;
 }
 
-function originOf(pattern: string | null): string {
-  return pattern ? pattern.replace(/\/\*$/, '') : '';
-}
-
 /** The spec the review panel copies, with the active project's functions when the extension is connected. */
 async function specFor(state: RecordingState): Promise<string> {
   const session = buildSession(normalizeSteps(state.events), state.events[0]?.timestamp ?? Date.now());
   const href = await evalInPage<string>('location.href');
   const pageUrl = href.ok && typeof href.value === 'string' ? href.value : (session.startUrl ?? '');
-  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
+  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(pageUrl)]);
   const project = resolveActiveProject(connection, override, pageUrl);
   await requestCatalogRefresh(project?.projectId ?? null);
   const catalog = await getCachedCatalog(project?.projectId ?? null);
   return renderSpec(session, { catalog, urlChecks: true }).code;
-}
-
-function download(text: string, filename: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function fileStamp(time: number): string {
@@ -101,7 +88,7 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
   const count = steps.length;
   const text = state.active
     ? tn(bug ? 'devtools_bugRecordingOn' : 'devtools_recordingOn', count, {
-        site: originOf(state.grantedOriginPattern),
+        site: state.grantedOriginPattern ? patternOrigin(state.grantedOriginPattern) : '',
       })
     : tn('devtools_recordingStopped', count);
 
@@ -135,7 +122,10 @@ export async function renderRecordTab(container: HTMLElement): Promise<void> {
     const save = button(t('record_downloadSteps'), () => {
       const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
       const doc = toStepsDocument(session);
-      download(JSON.stringify(doc, null, 2), `piwi-steps-${fileStamp(doc.recordedAt)}.json`);
+      downloadBlob(
+        new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
+        `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
+      );
     });
     save.title = t('record_downloadStepsTitle');
     actions.push(

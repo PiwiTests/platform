@@ -4,16 +4,21 @@ import {
   RECORDED_KEYS,
   type RawCaptureEvent,
   type RecordedTarget,
-  type RecordedStep,
   type StepAssertion,
   type StepView,
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { describeStepInWords } from '@piwitests/core/bug-report';
+import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { classifyInputKind, isPasswordInput } from './record-capture.js';
+import { interfacePhrases } from '../shared/core-words.js';
+import { relayEvidence } from '../shared/bug-relay.js';
+import { classifyInputKind } from './record-capture.js';
+import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
+import { parentElementOrShadowHost } from './engine-aria.js';
 import { HoverTracker, cssHoverSubjects, outermostFirst } from './hover-reveal.js';
 import { documentStyleRules } from './hover-rules.js';
 import {
@@ -24,8 +29,9 @@ import {
   recordingMode,
   type RecordingState,
 } from '../shared/recording-storage.js';
-import { getBugEvidence, setBugEvidenceFields } from '../shared/bug-storage.js';
+import { appendBugEntries, getBugEvidence, setBugEvidenceFields, storeAsPageLeaves } from '../shared/bug-storage.js';
 import {
+  cancelBugPick,
   captureStepView,
   currentBugContext,
   outlineAround,
@@ -34,8 +40,8 @@ import {
   runMarkFlow,
   runMissingFlow,
   runWrongPageFlow,
-  startEvidenceRelay,
   takeBugScreenshot,
+  updateBugHudEvidence,
   type BugRecorderHooks,
 } from './bug-panel.js';
 import {
@@ -46,9 +52,10 @@ import {
   OWN_HOST_IDS,
   SHARED_STYLE,
   copyToClipboard,
-  downloadBlob,
   fileStamp,
+  mountSurface,
 } from './record-ui.js';
+import { downloadBlob } from '../shared/download.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
@@ -60,7 +67,7 @@ import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping, though not the identical algorithm. */
 const ACTIONABLE_SELECTOR =
-  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable="true"], [data-testid]';
+  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable]:not([contenteditable="false" i]), [data-testid]';
 
 /** Where an arrow key moves through choices rather than a caret or the page, and so is worth replaying. */
 const ARROW_KEY_WIDGETS =
@@ -69,9 +76,14 @@ const ARROW_KEY_WIDGETS =
 /** Inputs Playwright's `fill` refuses: their `input` event is not a fill. */
 const UNFILLABLE_INPUT_TYPES = new Set(['checkbox', 'radio', 'file', 'submit', 'button', 'reset', 'image', 'hidden']);
 
-/** Fields a character typed into is text, not a shortcut. */
+/** Fields a character typed into is text, not a shortcut; {@link inTextField} adds the editable elements. */
 const TEXT_FIELDS =
-  'textarea, select, [contenteditable=""], [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="range"], [type="color"], [type="image"])';
+  'textarea, select, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="range"], [type="color"], [type="image"])';
+
+/** Whether `el` takes what is typed as text: a text field, or an element the page lets the person edit. */
+function inTextField(el: Element | null | undefined): boolean {
+  return !!el && (!!el.closest(TEXT_FIELDS) || (el as Partial<HTMLElement>).isContentEditable === true);
+}
 const MODIFIER_KEYS = new Set([
   'Control',
   'Shift',
@@ -107,14 +119,16 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
  * ⌘), and a character pressed outside a field, a page's own shortcut.
  *
  * A character typed with AltGr (which also sets Ctrl and Alt on Windows) or
- * with Option on a Mac (`©`) is typing, not a shortcut. In a password field
- * only an unmodified key of `RECORDED_KEYS` is recorded, so no key a password
- * holds is ever written down.
+ * with Option on a Mac (`©`) is typing, not a shortcut. In a field that holds
+ * a secret (`isSensitiveField`), and when the focus is inside a closed shadow
+ * root (`hiddenFocus`), which may hold one, only an unmodified key of
+ * `RECORDED_KEYS` is recorded, so no key a password holds is ever written down.
  */
-function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
+function recordedKey(e: KeyboardEvent, focused: Element | null, hiddenFocus: boolean): string | null {
   if (MODIFIER_KEYS.has(e.key)) return null;
   if (e.getModifierState?.('AltGraph')) return null;
-  const inField = !!focused?.closest(TEXT_FIELDS);
+  const secret = hiddenFocus || (!!focused && isSensitiveField(focused));
+  const inField = secret || inTextField(focused);
   const typedWithOption =
     IS_MAC && e.altKey && !e.metaKey && !e.ctrlKey && [...e.key].length === 1 && e.key.trim() !== '';
   // A letter or digit by its key, whatever Alt or a layout made of it.
@@ -131,7 +145,7 @@ function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
         !IS_MAC && e.metaKey && 'Meta',
         e.altKey && 'Alt',
       ].filter((m): m is string => !!m);
-  if (modifiers.length > 0 && focused?.closest('input[type="password" i]')) return null;
+  if (modifiers.length > 0 && secret) return null;
   if (modifiers.length === 0) {
     if (e.shiftKey && [...e.key].length > 1) return null;
     if (RECORDED_KEYS.has(e.key)) {
@@ -213,8 +227,12 @@ function fieldTarget(el: Element): RecordedTarget {
   return derived;
 }
 
+/** The control `el` is part of: itself or its nearest actionable ancestor, out through the hosts of the shadow roots it is in. */
 function nearestActionable(el: Element): Element {
-  return el.closest(ACTIONABLE_SELECTOR) ?? el;
+  for (let node: Element | undefined = el; node; node = parentElementOrShadowHost(node)) {
+    if (node.matches(ACTIONABLE_SELECTOR)) return node;
+  }
+  return el;
 }
 
 /** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
@@ -283,8 +301,61 @@ function clickTarget(raw: Element, at: number, pointer: boolean): Omit<Press, 'a
   return { el, target: deriveRecordedTarget(el), hovers: pointer ? hoverTargets(el) : [] };
 }
 
+/**
+ * Enter recorded in a form's field. The browser answers it with a click on the
+ * form's submit button, no pointer behind it (`detail` 0), which the press
+ * already stands for. The next key or press ends it, so the button's own
+ * activation from the keyboard stays a step. The click comes within the same
+ * few tasks as the key; the allowance is for a busy page, not for human timing.
+ */
+let enterInForm: { form: HTMLFormElement; at: number } | null = null;
+const ENTER_SUBMIT_WINDOW_MS = 500;
+
+/** Whether `el` submits `form` when clicked. */
+function submitsForm(el: Element, form: HTMLFormElement): boolean {
+  if (el instanceof HTMLButtonElement) return el.type === 'submit' && el.form === form;
+  return el instanceof HTMLInputElement && (el.type === 'submit' || el.type === 'image') && el.form === form;
+}
+
+/** Whether a click is the one the browser sends to a form's submit button for the Enter just recorded in its field. */
+function submitFromEnter(e: MouseEvent, el: Element): boolean {
+  const enter = enterInForm;
+  if (!enter || e.detail !== 0 || performance.now() - enter.at > ENTER_SUBMIT_WINDOW_MS) return false;
+  if (!submitsForm(el, enter.form)) return false;
+  enterInForm = null;
+  return true;
+}
+
 function withinOwnUi(e: Event): boolean {
   return e.composedPath().some((n) => n instanceof HTMLElement && OWN_HOST_IDS.has(n.id));
+}
+
+/**
+ * The element an event began at. To a listener on the document, `target` is
+ * the host of the shadow root the event came from; the composed path goes on
+ * inside every open shadow root, and ends at the host of a closed one.
+ */
+function deepTarget(e: Event): Element | null {
+  const first = e.composedPath()[0];
+  return first instanceof Element ? first : null;
+}
+
+/**
+ * Whether the focus is inside a closed shadow root `el` hosts, as far as the
+ * browser shows one to an extension (`chrome.dom` in Chrome and Edge,
+ * `openOrClosedShadowRoot` in Firefox). An open one is never hidden: the
+ * composed path goes inside it.
+ */
+function focusInClosedShadowRoot(el: Element): boolean {
+  if (el.shadowRoot) return false;
+  try {
+    const root =
+      chrome.dom?.openOrClosedShadowRoot?.(el as HTMLElement) ??
+      (el as Element & { openOrClosedShadowRoot?: ShadowRoot | null }).openOrClosedShadowRoot;
+    return root?.activeElement != null;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether capture is paused in this document: a bug report's pick or dialog is on screen. */
@@ -308,7 +379,7 @@ function ensureRecordingFrame(): void {
   const host = document.createElement('div');
   host.id = FRAME_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `
@@ -338,12 +409,13 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
   style.textContent = `
     ${SHARED_STYLE}
+    ${LOCATOR_SYNTAX_CSS}
     .bar {
       display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb;
       border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
@@ -416,7 +488,8 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     locTitle.className = 'section-title';
     locTitle.textContent = t('record_lastLocator');
     const code = document.createElement('code');
-    code.textContent = lastTarget.alternatives[0].locator;
+    code.className = 'piwi-loc';
+    code.innerHTML = highlightLocator(lastTarget.alternatives[0].locator);
     bar.append(locTitle, code);
   }
 
@@ -457,16 +530,6 @@ function renderMatchRow(m: RankedFunctionMatch): HTMLElement {
     : `${formatNumber(m.matchedIndices.length)}/${formatNumber(m.entry.steps.length)}`;
   row.append(name, barWrap, badge);
   return row;
-}
-
-function describeStep(step: RecordedStep): string {
-  const target = step.target;
-  const label = target?.testId
-    ? `testId=${target.testId}`
-    : (target?.accessibleName ?? target?.text ?? target?.tagName ?? '');
-  const value = step.redacted ? '••••••' : step.value;
-  const described = `${step.action}${label ? ` — ${label}` : ''}`;
-  return value ? t('record_stepValue', { step: described, value }) : described;
 }
 
 /** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
@@ -572,11 +635,8 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   closeBtn.className = 'close';
   closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
-  // Every close path goes through one function, so the document-level Escape
-  // listener below is always detached with the panel. Registering it and only
-  // removing it on Escape itself meant closing any other way (the ×, the
-  // backdrop, Discard) left it attached to the page for good, and each reopen
-  // stacked another.
+  // Every close path (the ×, the backdrop, Discard, Escape) goes through one
+  // function, which detaches the document-level Escape listener below with the panel.
   const closeController = new AbortController();
   const closePanel = (): void => {
     closeController.abort();
@@ -602,7 +662,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       idx.textContent = formatNumber(i + 1);
       const desc = document.createElement('span');
       desc.className = 'step-desc';
-      desc.textContent = describeStep(step);
+      desc.textContent = describeStepInWords(step, interfacePhrases());
       row.append(idx, desc);
       const span = withCatalog.matchedSpans.find((s) => i >= s.startStep && i <= s.endStep);
       if (span) {
@@ -684,14 +744,29 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   panel.focus();
 }
 
+/** The longest Stop waits for the worker's answer before it opens the review. */
+const STOP_ANSWER_MS = 2000;
+
+/**
+ * Tells the worker the recording stopped. Its answer comes once it has stored
+ * what its debugging session still held, which the review then shows.
+ */
+function tellWorkerStopped(): Promise<unknown> {
+  try {
+    const answer = Promise.resolve(chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' })).catch(
+      () => undefined,
+    );
+    return Promise.race([answer, new Promise((resolve) => setTimeout(resolve, STOP_ANSWER_MS))]);
+  } catch {
+    // Extension context can be gone (e.g. reloaded mid-recording) — the storage write already stuck.
+    return Promise.resolve();
+  }
+}
+
 async function handleStop(): Promise<void> {
   const state = await stopRecording();
   stopCapture();
-  try {
-    chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' });
-  } catch {
-    // Extension context can be gone (e.g. reloaded mid-recording) — the storage write above already stuck.
-  }
+  await tellWorkerStopped();
   await renderReviewPanel(state);
 }
 
@@ -705,15 +780,19 @@ async function handleBugFinish(): Promise<void> {
   if (g.__piwiBugFinishing) return;
   g.__piwiBugFinishing = true;
   try {
-    await g.__piwiBugRelayFlush?.();
+    await g.__piwiBugRelayStop?.();
     const state = await getRecordingState();
     if (!state.active) return;
     await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
-    const evidence = await getBugEvidence();
-    await setBugEvidenceFields({
-      context: await currentBugContext(),
-      ...(evidence.outline ? {} : { outline: outlineAround(null) }),
-    });
+    // A write session storage refuses leaves the report without its context, never unfinished.
+    await getBugEvidence()
+      .then(async (evidence) =>
+        setBugEvidenceFields({
+          context: await currentBugContext(),
+          ...(evidence.outline ? {} : { outline: outlineAround(null) }),
+        }),
+      )
+      .catch(() => undefined);
     await handleStop();
   } finally {
     g.__piwiBugFinishing = false;
@@ -846,8 +925,10 @@ interface RecorderGlobals {
   __piwiRecordCapture?: AbortController;
   /** Set while a bug report's pick or dialog is open: nothing is captured meanwhile. */
   __piwiRecordPaused?: boolean;
-  /** Stores the evidence entries received but not stored yet. */
-  __piwiBugRelayFlush?: () => Promise<void>;
+  /** Stores the evidence entries received but not stored yet, and stops the relay. */
+  __piwiBugRelayStop?: () => Promise<void>;
+  /** Whether this document's back/forward cache listener is already registered. */
+  __piwiRecordPageShow?: boolean;
   /** Guards Finish against a second click while it runs. */
   __piwiBugFinishing?: boolean;
   /** Serializes concurrent injections of this script into one document. */
@@ -861,8 +942,9 @@ function recorderGlobals(): RecorderGlobals {
 }
 
 /**
- * Ends capture on this page: detaches the listeners, drops the HUD, and drops
- * the border that says the tab is being recorded.
+ * Ends capture on this page: detaches the listeners, ends a bug report's pick
+ * and closes its dialog, drops the HUD, and drops the border that says the tab
+ * is being recorded.
  *
  * Idempotent, and safe when nothing was ever attached — it runs both from the
  * HUD's own Stop button and from a stop initiated elsewhere (the popup, or
@@ -873,7 +955,7 @@ function stopCapture(): void {
   const g = recorderGlobals();
   g.__piwiRecordCapture?.abort();
   g.__piwiRecordCapture = undefined;
-  g.__piwiBugRelayFlush = undefined;
+  cancelBugPick();
   stopViews();
   g.__piwiRecordPaused = false;
   document.getElementById(HUD_HOST_ID)?.remove();
@@ -997,17 +1079,51 @@ function attachListeners(): void {
     attributeFilter: ['style', 'hidden'],
     attributeOldValue: true,
   });
+  // A field shown in clear (`type` from `password` to `text`) stays a secret.
+  const fieldChanges = new MutationObserver(rememberChangedFields);
+  fieldChanges.observe(document.documentElement, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['type', 'autocomplete'],
+    attributeOldValue: true,
+  });
   controller.signal.addEventListener('abort', () => {
     mutations.disconnect();
+    fieldChanges.disconnect();
     if (hoverTracker === tracker) hoverTracker = null;
   });
+
+  // `change` does not leave a shadow root: each open one a press or the focus
+  // goes into gets a listener of its own.
+  const watchedRoots = new WeakSet<ShadowRoot>();
+  const watchShadowRoots = (e: Event): void => {
+    for (const node of e.composedPath()) {
+      if (!(node instanceof ShadowRoot) || watchedRoots.has(node)) continue;
+      watchedRoots.add(node);
+      node.addEventListener('change', onChange, opts);
+    }
+  };
+
+  document.addEventListener(
+    'focusin',
+    (e) => {
+      if (!e.isTrusted || withinOwnUi(e)) return;
+      watchShadowRoots(e);
+      // A field focused as a secret stays one: its value is never recorded, whatever its type becomes.
+      const el = deepTarget(e);
+      if (el) isSensitiveField(el);
+    },
+    opts,
+  );
 
   document.addEventListener(
     'pointerdown',
     (e) => {
+      if (e.isTrusted) enterInForm = null;
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const raw = e.composedPath()[0];
-      if (!(raw instanceof Element)) {
+      watchShadowRoots(e);
+      const raw = deepTarget(e);
+      if (!raw) {
         lastPress = null;
         return;
       }
@@ -1035,8 +1151,8 @@ function attachListeners(): void {
       // A click the page's own script sends (`el.click()` when Enter picks an
       // option) follows from an action already recorded.
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const raw = e.target;
-      if (!(raw instanceof Element)) return;
+      const raw = deepTarget(e);
+      if (!raw || submitFromEnter(e, raw)) return;
       const { el, target, hovers } = clickTarget(raw, e.timeStamp, e.detail > 0);
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
       // A checkbox or a radio is recorded by its `change`, which takes the view.
@@ -1054,15 +1170,14 @@ function attachListeners(): void {
       // Only what the person does: a component that mirrors its state into a
       // hidden input (a switch, a custom select) sends its own events there.
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const el = e.target;
+      const el = deepTarget(e);
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
       // A checkbox or a radio fires `input` too; its `change` records it as a check.
       if (el instanceof HTMLInputElement && UNFILLABLE_INPUT_TYPES.has(el.type)) return;
-      const typeAttr = el instanceof HTMLInputElement ? el.type : null;
-      const passwordField = isPasswordInput(el.tagName, typeAttr);
-      // The raw value never enters the event at all for a password field —
-      // redacting later in normalizeSteps would still mean the plaintext sat
-      // in chrome.storage.session in the meantime.
+      const passwordField = isSensitiveField(el);
+      // The raw value never enters the event at all for a field that holds a
+      // secret — redacting later in normalizeSteps would still mean the
+      // plaintext sat in chrome.storage.session in the meantime.
       captureEvent(
         buildEvent('input', el, {
           // Cached per field: the probe behind a target is a document-wide walk,
@@ -1077,35 +1192,34 @@ function attachListeners(): void {
     opts,
   );
 
-  document.addEventListener(
-    'change',
-    (e) => {
-      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const el = e.target;
-      if (!(el instanceof Element)) return;
-      const typeAttr = el instanceof HTMLInputElement ? el.type : null;
-      const kind = classifyInputKind(el.tagName, typeAttr);
-      if (kind === 'checkbox' || kind === 'radio') {
-        const checked = (el as HTMLInputElement).checked;
-        captureEvent(buildEvent('change', el, { inputType: kind, checked, view: viewForAction(el) }));
-      } else if (kind === 'select') {
-        const value = (el as HTMLSelectElement).value;
-        captureEvent(buildEvent('change', el, { inputType: 'select', value, view: viewForAction(el) }));
-      } else if (el instanceof HTMLInputElement && el.type === 'file') {
-        // The names of the chosen files, one per line: never their content, which stays on this computer.
-        const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
-        captureEvent(buildEvent('files', el, { value: names.join('\n'), view: viewForAction(el) }));
-      }
-    },
-    opts,
-  );
+  function onChange(e: Event): void {
+    // A change the document hears is recorded there, one in a shadow root by that root's listener.
+    if (e.currentTarget !== document && e.composedPath().includes(document)) return;
+    if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+    const el = deepTarget(e);
+    if (!el) return;
+    const typeAttr = el instanceof HTMLInputElement ? el.type : null;
+    const kind = classifyInputKind(el.tagName, typeAttr);
+    if (kind === 'checkbox' || kind === 'radio') {
+      const checked = (el as HTMLInputElement).checked;
+      captureEvent(buildEvent('change', el, { inputType: kind, checked, view: viewForAction(el) }));
+    } else if (kind === 'select') {
+      const value = (el as HTMLSelectElement).value;
+      captureEvent(buildEvent('change', el, { inputType: 'select', value, view: viewForAction(el) }));
+    } else if (el instanceof HTMLInputElement && el.type === 'file') {
+      // The names of the chosen files, one per line: never their content, which stays on this computer.
+      const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
+      captureEvent(buildEvent('files', el, { value: names.join('\n'), view: viewForAction(el) }));
+    }
+  }
+  document.addEventListener('change', onChange, opts);
 
   document.addEventListener(
     'dblclick',
     (e) => {
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const raw = e.target;
-      if (!(raw instanceof Element)) return;
+      const raw = deepTarget(e);
+      if (!raw) return;
       const el = nearestActionable(raw);
       captureEvent(buildEvent('dblclick', el, { view: viewForAction(el) }));
     },
@@ -1117,7 +1231,7 @@ function attachListeners(): void {
   document.addEventListener(
     'dragstart',
     (e) => {
-      dragged = e.isTrusted && !capturePaused() && !withinOwnUi(e) && e.target instanceof Element ? e.target : null;
+      dragged = e.isTrusted && !capturePaused() && !withinOwnUi(e) ? deepTarget(e) : null;
     },
     opts,
   );
@@ -1126,8 +1240,9 @@ function attachListeners(): void {
     (e) => {
       const source = dragged;
       dragged = null;
-      if (!source || !e.isTrusted || capturePaused() || withinOwnUi(e) || !(e.target instanceof Element)) return;
-      const dropTarget = deriveRecordedTarget(nearestActionable(e.target));
+      const raw = deepTarget(e);
+      if (!source || !raw || !e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      const dropTarget = deriveRecordedTarget(nearestActionable(raw));
       captureEvent(buildEvent('drop', source, { dropTarget, view: viewForAction(source) }));
     },
     opts,
@@ -1136,15 +1251,19 @@ function attachListeners(): void {
   document.addEventListener(
     'keydown',
     (e) => {
+      if (e.isTrusted) enterInForm = null;
       if (!e.isTrusted || e.isComposing || capturePaused() || withinOwnUi(e)) return;
-      const focused = e.target instanceof Element ? e.target : null;
-      const key = recordedKey(e, focused);
+      const focused = deepTarget(e);
+      const key = recordedKey(e, focused, !!focused && focusInClosedShadowRoot(focused));
       if (!key) return;
       // Escape and a page's shortcuts go to whatever has focus, as the replay
       // sends them: their target is often the page itself, which no locator names.
-      const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
+      const shortcut = key.includes('+') ? !inTextField(focused) : [...key].length === 1;
       const onPage = !focused || focused === document.body || focused === document.documentElement;
       const el = key === 'Escape' || shortcut || onPage ? null : focused;
+      if (key === 'Enter' && focused instanceof HTMLInputElement && focused.form) {
+        enterInForm = { form: focused.form, at: performance.now() };
+      }
       captureEvent(buildEvent('keydown', el, { value: key, view: viewForAction(el) }));
     },
     opts,
@@ -1153,7 +1272,8 @@ function attachListeners(): void {
 
 /**
  * Listens for a stop that came from somewhere other than this page's own HUD —
- * the popup's Stop button, or the HUD in a different tab of the same recording.
+ * the popup's Stop button, or the HUD in a different tab of the same recording
+ * — and for the popup's Finish of a bug report and its screenshot.
  * The service worker fans the stop out with `chrome.tabs.sendMessage`, which is
  * the only thing that reaches a content script: `chrome.runtime.sendMessage`
  * goes to extension pages and the worker, never here, so a stop from the popup
@@ -1169,11 +1289,24 @@ function installStopListener(): void {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
     if (message?.type === 'piwi-bug-debugger-lost') {
-      // The debugging session ended: the page's own script, registered all along, relays from now on.
-      void getRecordingState().then((state) => {
-        if (state.active && state.bugToken) startPageRelay(state.bugToken);
+      // The debugging session ended: the page's own script, registered all along, relays from then on; what it
+      // noted before, the session collected.
+      void Promise.all([getRecordingState(), getBugEvidence().catch(() => null)]).then(([state, evidence]) => {
+        if (state.active && state.bugToken) startPageRelay(state.bugToken, evidence?.debugging?.endedAt ?? Date.now());
         scheduleHudRefresh();
       });
+    }
+    if (message?.type === 'piwi-bug-finish' && recorderGlobals().__piwiRecordCapture) {
+      // The popup's Finish: answered once the page knows it records a bug, then finished as the HUD's Finish is.
+      void getRecordingState().then(
+        (state) => {
+          const bug = state.active && recordingMode(state) === 'bug';
+          sendResponse({ ok: bug });
+          if (bug) void handleBugFinish();
+        },
+        () => sendResponse({ ok: false }),
+      );
+      return true;
     }
     if (message?.type === 'piwi-bug-take-screenshot' && recorderGlobals().__piwiRecordCapture) {
       // Answered at once: the popup that asked closes as soon as it hears back.
@@ -1198,24 +1331,37 @@ function installStopListener(): void {
  * an already-stopped recording still shows something useful instead of
  * nothing.
  */
-async function runRecordPanel(): Promise<void> {
+async function runRecordPanel(restored = false): Promise<void> {
   const g = recorderGlobals();
-  // Chained rather than latched: this script is injected both by the dynamic
-  // registration (on every navigation) and one-off from the popup, and the two
-  // can land together. A plain boolean guard would let both pass the
-  // "already capturing?" check below before either had attached — and, worse,
-  // a guard that stayed latched after a stop made the review panel
-  // unreachable, since a re-injection returned before rendering anything.
-  // Errors are swallowed into the chain so one bad run never blocks the next:
-  // the usual cause is the worker not having widened session-storage access
-  // yet, which is transient.
+  installPageShowListener();
+  // Each run waits for the one before it: this script is injected both by the
+  // dynamic registration (on every navigation) and one-off from the popup, and
+  // the two can land together. Chained, the second sees the capture the first
+  // attached, and a run after a stop still renders the review panel. A failed
+  // run never blocks the next: the usual cause is the worker not having
+  // widened session-storage access yet, which is transient.
   g.__piwiRecordPanelRun = (g.__piwiRecordPanelRun ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => initRecordPanel())
+    .then(() => initRecordPanel(restored))
     .catch((err: unknown) => {
       console.warn('[Piwi Picker] recorder failed to start on this page:', err);
     });
   await g.__piwiRecordPanelRun;
+}
+
+/**
+ * A page the browser restores from its back/forward cache runs no script
+ * again, and heard no message while it was cached: the recorder runs as on a
+ * page the recording reaches, or lets go of the page when the recording ended
+ * meanwhile. Registered once per document.
+ */
+function installPageShowListener(): void {
+  const g = recorderGlobals();
+  if (g.__piwiRecordPageShow) return;
+  g.__piwiRecordPageShow = true;
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) void runRecordPanel(true);
+  });
 }
 
 /**
@@ -1234,12 +1380,33 @@ async function evidenceThroughDebugger(): Promise<boolean> {
   }
 }
 
-/** Listens to the main-world evidence script for this recording, once per document. */
-function startPageRelay(token: string): void {
+/**
+ * Listens to the main-world evidence script for this recording, once per
+ * capture, and stores what it relays; with `since`, what it noted from then
+ * on only.
+ */
+function startPageRelay(token: string, since?: number): void {
   const g = recorderGlobals();
   const capture = g.__piwiRecordCapture;
-  if (!capture || g.__piwiBugRelayFlush) return;
-  g.__piwiBugRelayFlush = startEvidenceRelay(token, capture.signal, scheduleHudRefresh);
+  if (!capture || g.__piwiBugRelayStop) return;
+  const stop = relayEvidence(
+    token,
+    async (entries) => {
+      await appendBugEntries(entries);
+      void showRelayedEvidence();
+    },
+    { since, signal: capture.signal, leave: (entries) => storeAsPageLeaves(token, entries) },
+  );
+  g.__piwiBugRelayStop = stop;
+  capture.signal.addEventListener('abort', () => {
+    if (g.__piwiBugRelayStop === stop) g.__piwiBugRelayStop = undefined;
+  });
+}
+
+/** What the page relayed, on the HUD: its evidence line updated in place, or the HUD drawn when there is none. */
+async function showRelayedEvidence(): Promise<void> {
+  const evidence = await getBugEvidence().catch(() => null);
+  if (!evidence || !updateBugHudEvidence(evidence)) scheduleHudRefresh();
 }
 
 /** How long the window keeps its size before a resize counts, so a drag records its end only. */
@@ -1318,7 +1485,8 @@ function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
   });
 }
 
-async function initRecordPanel(): Promise<void> {
+/** `restored`: the page came back from the back/forward cache, and attaches as a page the recording reaches. */
+async function initRecordPanel(restored: boolean): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
   // override loads alongside, so the HUD paints no later for it.
   const [state] = await Promise.all([ensureSessionAccess().then(getRecordingState), initI18n()]);
@@ -1326,13 +1494,14 @@ async function initRecordPanel(): Promise<void> {
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
     // first — a border that outlives the capture it signals is worse than no
-    // border at all — then show whatever is left to review.
+    // border at all — then show whatever is left to review, unless the page
+    // only came back from the cache: the review is the stopping tab's.
     stopCapture();
-    if (state.events.length > 0) await renderReviewPanel(state);
+    if (state.events.length > 0 && !restored) await renderReviewPanel(state);
     return;
   }
 
-  if (recorderGlobals().__piwiRecordCapture) {
+  if (recorderGlobals().__piwiRecordCapture && !restored) {
     // Already capturing in this document; a second injection only refreshes.
     await refreshHud();
     return;

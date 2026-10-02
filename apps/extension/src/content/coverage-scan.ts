@@ -99,6 +99,12 @@ export interface ScanOptions {
   ignore?: (element: Element) => boolean;
   /** Checked between slices of work; returning false abandons the scan. */
   keepGoing?: () => boolean;
+  /**
+   * A number that changes whenever the page does, read between slices: a scan
+   * whose page changed starts over with a new engine, at most
+   * `MAX_RESTARTS` times, so a page that never settles still gets a scan.
+   */
+  pageVersion?: () => number;
   /** Milliseconds of work between yields back to the page. */
   sliceMs?: number;
   onProgress?: (done: number, total: number) => void;
@@ -127,6 +133,9 @@ const INTERACTIVE_ROLES = new Set([
 
 /** Cap on the untested elements listed, so a pathological page stays responsive. */
 const MAX_UNCOVERED = 500;
+
+/** How many times a scan starts over because the page changed under it. */
+const MAX_RESTARTS = 2;
 
 const parsedChains = new WeakMap<LocatorIndex, Array<LocatorChain | null>>();
 
@@ -204,8 +213,11 @@ export async function scanCoverage(
 ): Promise<CoverageScan | null> {
   const started = performance.now();
   const sliceMs = options.sliceMs ?? 12;
-  const engine = createLocatorEngine(doc, { testIdAttributes: options.testIdAttributes, ignore: options.ignore });
-  const model = engine.model;
+  const newEngine = () =>
+    createLocatorEngine(doc, { testIdAttributes: options.testIdAttributes, ignore: options.ignore });
+  let engine = newEngine();
+  let version = options.pageVersion?.();
+  let restarts = 0;
   const chains = chainsOf(index);
   const byElement = new Map<Element, CoverageMatch[]>();
   const errors: CoverageScan['errors'] = [];
@@ -219,6 +231,19 @@ export async function scanCoverage(
       await yieldToPage();
       if (options.keepGoing && !options.keepGoing()) return null;
       sliceStart = performance.now();
+      const now = options.pageVersion?.();
+      if (now !== version && restarts < MAX_RESTARTS) {
+        // The engine's indexes hold the page as it was: start over on the page as it is.
+        version = now;
+        restarts++;
+        engine = newEngine();
+        byElement.clear();
+        errors.length = 0;
+        foundCounts.fill(-1);
+        unmatched = 0;
+        i = -1;
+        continue;
+      }
     }
     const chain = chains[i];
     if (!chain) {
@@ -244,6 +269,7 @@ export async function scanCoverage(
     }
   }
   options.onProgress?.(chains.length, chains.length);
+  const model = engine.model;
 
   // Page order: the page's own elements, then each same-origin frame's.
   const docs = [doc, ...frameDocuments(engine, doc)];

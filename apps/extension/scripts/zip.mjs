@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import archiver from 'archiver';
 import { buildAmoMetadata } from './amo-metadata.mjs';
+import { isReleaseBuild } from './build.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const repoRoot = path.resolve(root, '..', '..');
@@ -57,21 +58,35 @@ async function writeZip(fileName, fill) {
   console.log(`Zipped ${path.relative(process.cwd(), outPath)}`);
 }
 
+/** The files git lists under `SOURCE_PATHS` with `args`, relative to the repository root. */
+function gitFiles(args) {
+  const output = execFileSync('git', ['ls-files', '-z', ...args, '--', ...SOURCE_PATHS], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return output.split('\0').filter(Boolean);
+}
+
 /**
- * Tracked files plus untracked ones git doesn't ignore, read from the working
- * tree: that is what the build in dist/ just read, so a file not committed yet
- * still reaches the reviewers, while node_modules, dist/ and earlier zips stay
- * out.
+ * The tracked files, read from the working tree; a file git does not track
+ * stays out. A tracked file deleted from the working tree is still listed by
+ * git, and left out too.
  */
 function listSourceFiles() {
-  const output = execFileSync(
-    'git',
-    ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...SOURCE_PATHS],
-    { cwd: repoRoot, encoding: 'utf8' },
-  );
-  // A tracked file deleted from the working tree is still listed.
-  return output.split('\0').filter((file) => file && existsSync(path.join(repoRoot, file)));
+  return gitFiles(['--cached']).filter((file) => existsSync(path.join(repoRoot, file)));
 }
+
+// The store zips are the release build: a dev build, stamped with its build time, never ships.
+for (const dir of [distDir, firefoxDistDir]) {
+  if (!isReleaseBuild(dir, version)) {
+    console.error(
+      `${path.relative(process.cwd(), dir)} does not hold the release build of v${version}: run \`npm run extension:zip\`, which builds it first.`,
+    );
+    process.exit(1);
+  }
+}
+const untracked = gitFiles(['--others', '--exclude-standard']);
+if (untracked.length) console.warn(`Left out of the source zip, as git does not track them: ${untracked.join(', ')}`);
 
 // `false` as the second arg: zip the contents of dist/ directly at the
 // archive root (manifest.json at the top level), not nested in a dist/ folder

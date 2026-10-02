@@ -16,7 +16,9 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite runs on one worker (see tests/e2e/playwright.config.ts) and
+    # takes about 20 minutes; 30 leaves room for a slow runner.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
