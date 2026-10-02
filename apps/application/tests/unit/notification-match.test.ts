@@ -156,6 +156,26 @@ describe('passesSubscriptionFilters', () => {
     ).toBe(true);
   });
 
+  test('owner filter applies to the non-run events that carry owners', () => {
+    const filters = { owners: ['team-a'] };
+    const otherTeam = { ...runPayload, owners: ['team-b'] };
+    expect(passesSubscriptionFilters(filters, 'flakiness.spike', otherTeam)).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'perf.regression', { ...otherTeam, regressionPct: 40 })).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'flakiness.spike', { ...runPayload, owners: ['team-a'] })).toBe(true);
+
+    const cluster = {
+      clusterId: 4,
+      projectId: 1,
+      projectName: 'web',
+      signature: 'Timeout',
+      runId: 7,
+      branch: 'main',
+    };
+    expect(passesSubscriptionFilters(filters, 'cluster.new', cluster)).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'cluster.new', { ...cluster, owners: ['team-b'] })).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'cluster.new', { ...cluster, owners: ['team-a'] })).toBe(true);
+  });
+
   test('flakinessThreshold gates flakiness.spike on the rate', () => {
     expect(passesSubscriptionFilters({ flakinessThreshold: 0.2 }, 'flakiness.spike', runPayload)).toBe(false);
     expect(passesSubscriptionFilters({ flakinessThreshold: 0.05 }, 'flakiness.spike', runPayload)).toBe(true);

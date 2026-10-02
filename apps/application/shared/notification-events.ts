@@ -115,6 +115,8 @@ export interface ClusterNewPayload extends RunScope {
   affectedCases?: number;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
+  /** Distinct owners of the tests that failed into the cluster in this run, resolved as for {@link RunFinishedPayload}. */
+  owners?: string[];
 }
 
 /**
@@ -318,7 +320,7 @@ export interface SubscriptionFilters {
   tags?: string[];
   statuses?: string[];
   defaultBranchOnly?: boolean;
-  /** Only deliver when one of these owns a failing test in the run. */
+  /** Only deliver when one of these owns a failing test behind the event ({@link OWNER_SCOPED_EVENTS}). */
   owners?: string[];
   /** Minimum flakiness rate (0-1) for flakiness.spike deliveries. */
   flakinessThreshold?: number;
@@ -341,6 +343,20 @@ export const RUN_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notific
   'cluster.fixed',
   'cluster.regressed',
   'bug.looks_fixed',
+]);
+
+/**
+ * Events whose payload names the owners of the tests behind it: the owners
+ * filter applies to them, and one with no owner is not delivered to an
+ * owner-scoped subscription.
+ */
+export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<NotificationEvent>([
+  'run.finished',
+  'run.failed',
+  'run.failed.default_branch',
+  'flakiness.spike',
+  'perf.regression',
+  'cluster.new',
 ]);
 
 /**
@@ -382,11 +398,11 @@ export function passesSubscriptionFilters(
   if (filters.statuses?.length && event.startsWith('run.') && runPayload.status) {
     if (!filters.statuses.includes(runPayload.status)) return false;
   }
-  if (filters.owners?.length && event.startsWith('run.')) {
+  if (filters.owners?.length && OWNER_SCOPED_EVENTS.has(event)) {
     // No owner on the payload means nothing failed, or ownership could not be
     // resolved. Either way an owner-scoped subscription has nothing to say.
-    const runOwners = runPayload.owners ?? [];
-    if (!runOwners.some((owner) => filters.owners!.includes(owner))) return false;
+    const owners = (payload as { owners?: string[] }).owners ?? [];
+    if (!owners.some((owner) => filters.owners!.includes(owner))) return false;
   }
   if (filters.flakinessThreshold != null && event === 'flakiness.spike') {
     const rate = runPayload.flakinessRate ?? 0;

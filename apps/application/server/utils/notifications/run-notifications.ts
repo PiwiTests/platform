@@ -131,6 +131,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         testCaseId: testRunsCases.testCaseId,
         executionId: testRunsCases.id,
         owner: testCases.owner,
+        clusterId: testRunsCases.failureClusterId,
       })
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -142,11 +143,10 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
     // not miss a run just because that team's failure ranked seventh.
     const topFailures = buildTopFailures(failedRows.slice(0, TOP_FAILURES_LIMIT));
     const resolvedOwners = await resolveOwners(db, runRow.projectId, failedRows).catch(() => new Map());
-    const owners = [
-      ...new Set(
-        failedRows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner)),
-      ),
+    const ownersOf = (rows: typeof failedRows) => [
+      ...new Set(rows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner))),
     ];
+    const owners = ownersOf(failedRows);
 
     const runPayload = {
       runId,
@@ -252,6 +252,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+        owners: ownersOf(failedRows.filter((row) => row.clusterId === cluster.id)),
       });
     }
 

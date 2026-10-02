@@ -76,8 +76,8 @@ Every event that comes from a run carries that run's `branch` and `environment` 
 
 - **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
   of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
-- **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`) and
-  `affectedCases`.
+- **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`),
+  `affectedCases`, and the `owners` of the tests that failed into it in that run.
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the
   verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).
