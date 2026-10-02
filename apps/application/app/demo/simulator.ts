@@ -110,9 +110,10 @@ export interface DemoScenario {
   /**
    * Send what each test cost and the run's resource report, as a reporter
    * with the capture fixtures does; `leaky` is a suite whose login fixture
-   * leaves a browser context open in every test.
+   * leaves a browser context open in every test, `clean` one that closes
+   * what it opens.
    */
-  resources?: 'leaky';
+  resources?: 'leaky' | 'clean';
   metadata: () => Record<string, unknown>;
   tests: () => SimTest[];
 }
@@ -892,12 +893,13 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
   {
     id: 'sharded',
     label: 'Sharded run (2 shards)',
-    description: 'Tests split across 2 parallel CI shards that merge into one run',
+    description: 'Tests split across 2 parallel CI shards that merge into one run, each with its own machine',
     icon: 'i-lucide-layers',
     speed: 2.5,
     workers: 3,
     shardCount: 2,
     environment: 'ci',
+    resources: 'clean',
     metadata: () =>
       buildMetadata({
         branch: 'main',

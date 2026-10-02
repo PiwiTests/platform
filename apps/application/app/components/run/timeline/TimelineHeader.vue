@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { ResourceTrackKind } from '~/utils/resource-tracks';
+import type { DropdownMenuItem } from '@nuxt/ui';
+import type { ResourceTrackKind, WorkerMetricKind } from '~/utils/resource-tracks';
 
 const props = defineProps<{
   workerCount: number;
@@ -28,6 +29,8 @@ const props = defineProps<{
   live?: boolean;
   /** The resource tracks the run has data for, with whether each is shown. */
   resourceTracks?: Array<{ kind: ResourceTrackKind; label: string; shown: boolean }>;
+  /** The metrics the strip under each worker can draw, with the one drawn. */
+  workerMetrics?: Array<{ kind: WorkerMetricKind; label: string; shown: boolean }>;
 }>();
 
 const emit = defineEmits<{
@@ -36,21 +39,50 @@ const emit = defineEmits<{
   toggleWaits: [visible: boolean];
   toggleLocks: [visible: boolean];
   toggleResource: [kind: ResourceTrackKind];
+  selectWorkerMetric: [kind: WorkerMetricKind | null];
   collapseAll: [];
 }>();
 
-// One checkbox per track; choosing one keeps the menu open so the others can follow.
-const resourceItems = computed(() =>
-  (props.resourceTracks ?? []).map((track) => ({
-    label: track.label,
-    type: 'checkbox' as const,
-    checked: track.shown,
-    onSelect: (e: Event) => {
-      e.preventDefault();
-      emit('toggleResource', track.kind);
-    },
-  })),
-);
+// Above the rows, one checkbox per track; under each worker, one metric or
+// none. Choosing an item keeps the menu open so the others can follow.
+const resourceItems = computed<DropdownMenuItem[][]>(() => {
+  const keepOpen = (action: () => void) => (e: Event) => {
+    e.preventDefault();
+    action();
+  };
+  const groups: DropdownMenuItem[][] = [];
+  const tracks = props.resourceTracks ?? [];
+  if (tracks.length > 0) {
+    groups.push([
+      { type: 'label' as const, label: 'Above the rows' },
+      ...tracks.map((track) => ({
+        label: track.label,
+        type: 'checkbox' as const,
+        checked: track.shown,
+        onSelect: keepOpen(() => emit('toggleResource', track.kind)),
+      })),
+    ]);
+  }
+  const metrics = props.workerMetrics ?? [];
+  if (metrics.length > 0) {
+    groups.push([
+      { type: 'label' as const, label: 'Under each worker' },
+      {
+        label: 'Nothing',
+        type: 'checkbox' as const,
+        checked: !metrics.some((metric) => metric.shown),
+        onSelect: keepOpen(() => emit('selectWorkerMetric', null)),
+      },
+      ...metrics.map((metric) => ({
+        label: metric.label,
+        type: 'checkbox' as const,
+        checked: metric.shown,
+        onSelect: keepOpen(() => emit('selectWorkerMetric', metric.kind)),
+      })),
+    ]);
+  }
+  return groups;
+});
 </script>
 
 <template>
@@ -111,7 +143,7 @@ const resourceItems = computed(() =>
           color="neutral"
           variant="ghost"
           trailing-icon="i-lucide-chevron-down"
-          title="Show the machine's CPU, the run's memory and the open pages above the worker rows"
+          title="Show the machine's CPU, the run's memory and the open pages above the worker rows, and one metric under each worker"
           data-testid="timeline-resources-menu"
         >
           Resources

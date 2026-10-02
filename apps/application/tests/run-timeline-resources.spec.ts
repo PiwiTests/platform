@@ -8,13 +8,23 @@ test.describe('Run timeline resource tracks', () => {
   const GB = 1024 ** 3;
 
   test.beforeAll(async ({ request }) => {
-    const testCase = (title: string, workerIndex: number, start: number) => ({
+    // What a test cost its worker and browsers: `cpuMs` of CPU in all, half of it waiting.
+    const resources = (cpuMs: number) => ({
+      workerCpuMs: cpuMs / 4,
+      roles: { renderer: { cpuMs: (cpuMs * 3) / 4, runWaitMs: cpuMs / 2, peakRssMb: 300, processes: 1 } },
+      loopUtilization: 0.2,
+      loopDelayP99Ms: 20,
+      involuntarySwitches: 10,
+      heapUsedMb: 50,
+    });
+    const testCase = (title: string, workerIndex: number, start: number, cpuMs: number) => ({
       title,
       status: 'passed',
       duration: 2000,
       location: `tests/cart.spec.ts:${10 + start}:5`,
       workerIndex,
       startedAt: t0 + start * 1000,
+      resources: resources(cpuMs),
     });
     const response = await retryPost(request, '/api/test-runs/submit', {
       data: {
@@ -27,9 +37,9 @@ test.describe('Run timeline resource tracks', () => {
         failedTests: 0,
         skippedTests: 0,
         testCases: [
-          testCase('adds an item', 0, 0),
-          testCase('removes an item', 0, 2),
-          testCase('empties the cart', 1, 0),
+          testCase('adds an item', 0, 0, 3000),
+          testCase('removes an item', 0, 2, 1000),
+          testCase('empties the cart', 1, 0, 2000),
         ],
         resourceReport: {
           v: 1,
@@ -98,7 +108,8 @@ test.describe('Run timeline resource tracks', () => {
 
     await page.mouse.move(0, 0);
     await page.getByTestId('timeline-resources-menu').click();
-    await page.getByRole('menuitemcheckbox', { name: 'Open pages' }).click();
+    // The tracks above the rows come first in the menu; the strip under each worker names some alike.
+    await page.getByRole('menuitemcheckbox', { name: 'Open pages', exact: true }).first().click();
     await page.keyboard.press('Escape');
     await expect(tracks).toHaveCount(2);
     await expect(page.locator('[data-resource-track="pages"]')).toHaveCount(0);
@@ -108,5 +119,37 @@ test.describe('Run timeline resource tracks', () => {
     await waitForHydration(page);
     await expect(page.locator('[data-resource-track="cpu"]')).toBeVisible();
     await expect(page.locator('[data-resource-track="pages"]')).toHaveCount(0);
+  });
+
+  test('draws one metric under each worker row, each test’s value across its bar', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await waitForHydration(page);
+    await expect(page.locator('[data-resource-track]').first()).toBeVisible();
+    await expect(page.getByTestId('timeline-worker-strip')).toHaveCount(0);
+
+    await page.getByTestId('timeline-resources-menu').click();
+    await page.getByRole('menuitemcheckbox', { name: 'CPU', exact: true }).last().click();
+    await page.keyboard.press('Escape');
+    const strips = page.getByTestId('timeline-worker-strip');
+    await expect(strips).toHaveCount(2);
+    await expect(page.locator('[data-worker-strips="cpu"]')).toContainText('1.5 cores');
+
+    // A quarter into worker 0's strip: its first test, 3 s of CPU over 2 s.
+    const box = (await strips.first().boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
+    const tooltip = page.getByTestId('timeline-worker-strip-tooltip');
+    await expect(tooltip).toContainText('Worker 0');
+    await expect(tooltip).toContainText('1.5 cores for “adds an item”');
+
+    await page.mouse.move(0, 0);
+    await page.getByTestId('timeline-resources-menu').click();
+    await page.getByRole('menuitemcheckbox', { name: 'Waiting for a CPU', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-worker-strips="wait"]')).toContainText('75% wait');
+
+    await page.getByTestId('timeline-resources-menu').click();
+    await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(strips).toHaveCount(0);
   });
 });

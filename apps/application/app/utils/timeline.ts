@@ -23,6 +23,9 @@ export const TIMELINE_LAYOUT = {
   trackGap: 6,
   /** Space between a band of resource tracks and the worker rows under it. */
   bandGap: 6,
+  /** Height a worker row's strip adds, and the height of its plot (it starts 2px under the row's last bar). */
+  stripHeight: 12,
+  stripPlot: 10,
   /** Derived: a full row is a bar plus the gap below it. */
   get rowHeight(): number {
     return this.barHeight + this.rowGap;

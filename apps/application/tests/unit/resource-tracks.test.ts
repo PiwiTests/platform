@@ -1,15 +1,20 @@
 import { describe, test, expect } from 'vitest';
 import {
   ALL_RESOURCE_TRACKS,
+  availableWorkerMetrics,
   buildResourceBands,
+  buildWorkerStrips,
   formatTrackValue,
+  layOutTimelineRows,
   shownTracks,
+  spansPath,
+  stripReading,
   sumSteps,
   trackPaths,
   valueAt,
 } from '../../app/utils/resource-tracks';
-import type { WorkerRow } from '../../app/composables/useTimelineModel';
-import type { RunResourceTimelinePart } from '../../shared/handlers/run-resources';
+import type { TimelineItem, WorkerRow } from '../../app/composables/useTimelineModel';
+import type { RunExecutionCost, RunResourceTimelinePart } from '../../shared/handlers/run-resources';
 
 const GB = 1024 ** 3;
 
@@ -98,6 +103,7 @@ describe('buildResourceBands', () => {
     expect(band!.workers).toEqual([
       {
         name: 'Worker 0',
+        lane: 0,
         points: [
           [0, 1],
           [1000, 2],
@@ -108,6 +114,7 @@ describe('buildResourceBands', () => {
       },
       {
         name: 'Worker 1',
+        lane: 1,
         points: [
           [500, 1],
           [2000, 0],
@@ -222,5 +229,118 @@ describe('formatTrackValue', () => {
     expect(formatTrackValue('cpu', 63.4)).toBe('63%');
     expect(formatTrackValue('memory', 2.5 * GB)).toBe('2.5 GB');
     expect(formatTrackValue('pages', 4)).toBe('4 open');
+  });
+});
+
+describe('the strip under each worker', () => {
+  const rows = [row(null, 0, [0, 2], 0), row(null, 1, [1], 1)];
+  const [band] = buildResourceBands([part(null)], rows, 10_000, false);
+  const bar = (executionId: number, rowIndex: number, start: number, duration: number): TimelineItem => ({
+    key: `t${executionId}`,
+    kind: 'test',
+    testCaseId: executionId,
+    title: `test ${executionId}`,
+    status: 'passed',
+    workerIndex: rowIndex,
+    start,
+    duration,
+    rowIndex,
+  });
+  const tests = [bar(1, 0, 0, 2000), bar(2, 0, 2000, 4000), bar(3, 1, 0, 1000)];
+  const costs: RunExecutionCost[] = [
+    { executionId: 1, cpuMs: 3000, runWaitMs: 500, peakRssMb: 200 },
+    { executionId: 2, cpuMs: 2000, runWaitMs: null, peakRssMb: 300 },
+    { executionId: 3, cpuMs: 500, runWaitMs: 0, peakRssMb: null },
+  ];
+  const input = { rows, bands: [band!], tests, costs, sharded: false };
+
+  test('offers only the metrics the run measured', () => {
+    expect(availableWorkerMetrics([band!], costs)).toEqual(['pages', 'cpu', 'wait', 'memory']);
+    expect(availableWorkerMetrics([], [{ executionId: 1, cpuMs: 1, runWaitMs: null, peakRssMb: null }])).toEqual([
+      'cpu',
+    ]);
+  });
+
+  test('draws each worker’s open pages on one scale', () => {
+    const set = buildWorkerStrips('pages', input)!;
+    expect(set).toMatchObject({ mode: 'step', yMax: 2, scaleLabel: '2 pages' });
+    expect(set.strips.map((strip) => [strip.name, strip.steps.length])).toEqual([
+      ['Worker 0', 5],
+      ['Worker 1', 2],
+    ]);
+    expect(stripReading(set, set.strips[0]!, 1500)).toBe('2 open');
+  });
+
+  test('draws what each test cost across its bar', () => {
+    const cpu = buildWorkerStrips('cpu', input)!;
+    expect(cpu).toMatchObject({ mode: 'spans', yMax: 1.5, scaleLabel: '1.5 cores' });
+    expect(cpu.strips[0]!.spans).toEqual([
+      { start: 0, end: 2000, value: 1.5, title: 'test 1' },
+      { start: 2000, end: 6000, value: 0.5, title: 'test 2' },
+    ]);
+    expect(stripReading(cpu, cpu.strips[0]!, 3000)).toBe('0.5 cores for “test 2”');
+    expect(stripReading(cpu, cpu.strips[1]!, 3000)).toBeNull();
+
+    // A test whose platform could not tell the wait is left out, not drawn at zero.
+    const wait = buildWorkerStrips('wait', input)!;
+    expect(wait.strips[0]!.spans.map((span) => span.value)).toEqual([25]);
+    expect(wait.strips[1]!.spans.map((span) => span.value)).toEqual([0]);
+    expect(stripReading(wait, wait.strips[0]!, 100)).toBe('25% of “test 1” waiting for a CPU');
+
+    const memory = buildWorkerStrips('memory', input)!;
+    expect(memory).toMatchObject({ scaleLabel: '300 MB' });
+    expect(stripReading(memory, memory.strips[0]!, 2500)).toBe('300 MB, the largest browser process of “test 2”');
+  });
+
+  test('measures a test against the duration Playwright reported, not its hooks', () => {
+    const longBar = { ...bar(1, 0, 0, 6000), reportedDuration: 2000 };
+    const set = buildWorkerStrips('cpu', { ...input, tests: [longBar] })!;
+    expect(set.strips[0]!.spans[0]).toMatchObject({ end: 6000, value: 1.5 });
+  });
+
+  test('is null for a metric no row has', () => {
+    expect(buildWorkerStrips('memory', { ...input, costs: [] })).toBeNull();
+    expect(buildWorkerStrips('pages', { ...input, bands: [] })).toBeNull();
+  });
+
+  test('draws a bar per test from the baseline', () => {
+    expect(spansPath([{ start: 0, end: 10, value: 1, title: 'a' }], 2, 10)).toBe('M0,10V5H10V10Z');
+  });
+});
+
+describe('layOutTimelineRows', () => {
+  const rows = [row(1, 0, [0], 0), { ...row(1, 1, [1], 1), laneSpan: 2 }, row(2, 0, [0], 3)];
+  const sizes = { stripHeight: 12, rowHeight: 32, rowGap: 8, axisHeight: 28 };
+
+  test('stacks the rows under the axis, each band right above its shard’s first row', () => {
+    const layout = layOutTimelineRows(rows, {
+      ...sizes,
+      bandHeights: new Map([
+        [0, 50],
+        [3, 40],
+      ]),
+      strips: false,
+    });
+    expect(layout.laneTop).toEqual([78, 110, 142, 214]);
+    expect([...layout.bandTop.entries()]).toEqual([
+      [0, 28],
+      [3, 174],
+    ]);
+    expect(layout.rows.map((r) => [r.sectionTop, r.top, r.bottom, r.stripTop])).toEqual([
+      [28, 78, 110, null],
+      [110, 110, 174, null],
+      [174, 214, 246, null],
+    ]);
+    expect(layout.height).toBe(246);
+  });
+
+  test('puts a strip under each row’s lanes, after its expanded steps', () => {
+    const layout = layOutTimelineRows(rows, { ...sizes, bandHeights: new Map(), strips: true });
+    expect(layout.rows.map((r) => [r.top, r.stripTop, r.bottom])).toEqual([
+      [28, 54, 72],
+      [72, 130, 148],
+      [148, 174, 192],
+    ]);
+    expect(layout.height).toBe(192);
   });
 });

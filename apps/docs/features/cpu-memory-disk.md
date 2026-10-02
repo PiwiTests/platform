@@ -77,8 +77,12 @@ The run's **Timeline** tab draws the same samples on the tests' time axis, above
 **CPU** busy share, the **memory** the run's processes held (against the container's limit when the run came close to
 it), and, with the capture fixtures, the **pages** open in the workers. Hover a track for the values at that moment and
 the pages each worker had open; a line down the rows shows which tests were running. Each track can be turned off
-from the **Resources** menu, and the choice is kept in your browser. A sharded run draws one set of tracks above each
+from the **Resources** menu, a choice kept per browser. A sharded run draws one set of tracks above each
 shard's workers, since each shard ran on its own machine.
+
+The same menu draws one metric **under each worker** row, on one scale for all of them: the pages open in that worker,
+or, from what each test cost, the cores its worker and browsers used, the share of the test their browsers spent
+waiting for a CPU (Linux), or its largest browser process. A test's value spans its bar.
 
 With the capture fixtures, each execution also carries what its test cost, on its Performance tab: the CPU of the
 worker and of the browser processes it started, the largest of those processes, how busy the worker's event loop was,

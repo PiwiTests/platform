@@ -1954,7 +1954,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources',
     description:
-      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, then with memory turned off, then at phone width",
+      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
     // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
     route: '/test-runs/62?tab=workers',
     viewport: { width: 1280, height: 900 },
@@ -1969,16 +1969,24 @@ const SCENES = [
       await page.getByTestId('timeline-resource-tooltip').waitFor();
       await shoot('hover');
       await page.mouse.move(0, 0);
-      await page.getByTestId('timeline-resources-menu').click();
-      await page.getByRole('menuitemcheckbox', { name: 'Memory' }).click();
-      await page.keyboard.press('Escape');
-      await page.mouse.move(0, 0);
-      await settle();
+      // The menu's two groups name some items alike: the tracks above the rows come first.
+      const menuItem = (name, group) => page.getByRole('menuitemcheckbox', { name, exact: true })[group]();
+      const choose = async (name, group) => {
+        await page.getByTestId('timeline-resources-menu').click();
+        await menuItem(name, group).click();
+        await page.keyboard.press('Escape');
+        await page.mouse.move(0, 0);
+        await settle();
+      };
+      await choose('Memory', 'first');
       await shoot('toggled');
       // Back on, so the next visit starts from every track shown.
-      await page.getByTestId('timeline-resources-menu').click();
-      await page.getByRole('menuitemcheckbox', { name: 'Memory' }).click();
-      await page.keyboard.press('Escape');
+      await choose('Memory', 'first');
+      await choose('Open pages', 'last');
+      await shoot('worker-pages');
+      await choose('CPU', 'last');
+      await shoot('worker-cpu');
+      await choose('Nothing', 'last');
       await page.setViewportSize({ width: 390, height: 900 });
       await settle();
       await shoot('narrow');
@@ -1986,8 +1994,53 @@ const SCENES = [
     outputs: [
       'run-timeline-resources-hover.png',
       'run-timeline-resources-toggled.png',
+      'run-timeline-resources-worker-pages.png',
+      'run-timeline-resources-worker-cpu.png',
       'run-timeline-resources-narrow.png',
     ],
+  },
+  {
+    name: 'run-timeline-resources-worker-strip',
+    description: "The leaky run's timeline with each test's CPU under its worker's row, one test's strip hovered",
+    route: '/test-runs/62?tab=workers',
+    viewport: { width: 1280, height: 900 },
+    // A whole-page capture: cropping to the timeline hides what is around it,
+    // which moves the 10px strip out from under the pointer.
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('timeline-resource-band').first().waitFor({ timeout: 60000 });
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'CPU', exact: true }).last().click();
+      await page.keyboard.press('Escape');
+      await settle();
+      const strip = page.getByTestId('timeline-worker-strip').nth(1);
+      const box = await strip.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+      await page.getByTestId('timeline-worker-strip-tooltip').waitFor();
+      await shoot();
+      // Back to no strip, so the next visit starts as the timeline does by default.
+      await page.mouse.move(0, 0);
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
+    },
+  },
+  {
+    name: 'run-timeline-resources-sharded',
+    description:
+      "A run sharded over two machines: each shard's CPU, memory and open-pages tracks above its own worker rows, the second shard's hovered",
+    // The Web Dashboard run before the leaky one ran as two shards, each with its own resource report.
+    route: '/test-runs/63?tab=workers',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async run({ page, shoot, settle }) {
+      const band = page.getByTestId('timeline-resource-band').nth(1);
+      await band.waitFor({ timeout: 60000 });
+      await settle();
+      const box = await band.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
+      await page.getByTestId('timeline-resource-tooltip').waitFor();
+      await shoot();
+    },
   },
   {
     name: 'ai-diagnosis',

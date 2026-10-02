@@ -271,11 +271,32 @@ describe('getRunResourceTimeline', () => {
     expect(await getRunResourceTimeline(db as any, 99)).toBeNull();
   });
 
+  test('serves what each measured execution cost, its worker and browsers together', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, title: 'adds', filePath: 'tests/a.spec.ts' });
+    const leaky = demoExecutionResources({ seq: 2, durationMs: 9000, openAtStart: 3, leaky: true });
+    await db.insert(schema.testRunsCases).values([
+      { id: 11, testRunId: 7, testCaseId: 1, status: 'passed', resources: leaky },
+      { id: 12, testRunId: 7, testCaseId: 1, status: 'passed' },
+    ]);
+    const { executions } = (await getRunResourceTimeline(db as any, 7))!;
+    const roles = Object.values(leaky.roles!);
+    expect(executions).toEqual([
+      {
+        executionId: 11,
+        cpuMs: leaky.workerCpuMs + roles.reduce((sum, cost) => sum + cost!.cpuMs, 0),
+        runWaitMs: roles.reduce((sum, cost) => sum + (cost!.runWaitMs ?? 0), 0),
+        peakRssMb: Math.max(...roles.map((cost) => cost!.peakRssMb!)),
+      },
+    ]);
+  });
+
   test('serves nothing for a project that declined the capability', async () => {
     await db.insert(schema.projects).values({ id: 1, name: 'checkout', capabilities: { resources: 'declined' } });
     await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'passed', startTime: new Date() });
     await saveResourceReportPart(db as any, 7, timedReport(null));
-    expect(await getRunResourceTimeline(db as any, 7)).toEqual({ parts: [] });
+    expect(await getRunResourceTimeline(db as any, 7)).toEqual({ parts: [], executions: [] });
   });
 });
 

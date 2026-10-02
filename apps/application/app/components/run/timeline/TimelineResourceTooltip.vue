@@ -1,20 +1,30 @@
 <script setup lang="ts">
 /**
- * The readout of a resource band at the moment under the pointer: the
- * machine's CPU, the run's memory and the pages open in each worker then.
+ * The readout at the moment under the pointer: in a resource band, the
+ * machine's CPU, the run's memory and the pages open in each worker then; in a
+ * worker's strip, that worker's value then.
  */
 import { computed } from 'vue';
 import { formatTimelineTime } from '~/utils/timeline';
 import {
   RESOURCE_TRACK_KINDS,
+  WORKER_METRICS,
   formatTrackValue,
+  stripReading,
   valueAt,
   type ResourceBand,
   type ResourceTrack,
+  type WorkerStrip,
+  type WorkerStripSet,
 } from '~/utils/resource-tracks';
 
 const props = defineProps<{
-  state: { band: ResourceBand | null; t: number; pos: { x: number; y: number } };
+  state: {
+    band: ResourceBand | null;
+    strip: { set: WorkerStripSet; strip: WorkerStrip } | null;
+    t: number;
+    pos: { x: number; y: number };
+  };
   /** The tracks shown in each band, by its key. */
   tracksFor: (band: ResourceBand) => ResourceTrack[];
 }>();
@@ -48,6 +58,18 @@ const rows = computed(() => {
   });
 });
 
+/** The hovered strip's worker, metric and value, or why there is none then. */
+const stripRow = computed(() => {
+  const hovered = props.state.strip;
+  if (!hovered) return null;
+  const metric = WORKER_METRICS.find((m) => m.kind === hovered.set.kind)!;
+  return {
+    name: hovered.strip.name,
+    label: metric.menuLabel,
+    value: stripReading(hovered.set, hovered.strip, props.state.t) ?? 'No test ran then',
+  };
+});
+
 const TOOLTIP_MAX_WIDTH = 320;
 const positionStyle = computed(() => {
   const { x, y } = props.state.pos;
@@ -64,7 +86,22 @@ const positionStyle = computed(() => {
 <template>
   <Teleport to="body">
     <div
-      v-if="state.band && rows.length > 0"
+      v-if="stripRow"
+      class="fixed z-[9999] pointer-events-none rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs shadow-lg max-w-80"
+      :style="positionStyle"
+      data-testid="timeline-worker-strip-tooltip"
+    >
+      <div class="mb-1 font-medium text-gray-900 dark:text-white tabular-nums">
+        {{ formatTimelineTime(Math.max(0, Math.round(state.t))) }}
+        <span class="font-normal text-gray-500"> · {{ stripRow.name }}</span>
+      </div>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-2">
+        <dt class="text-gray-500">{{ stripRow.label }}</dt>
+        <dd class="text-gray-900 dark:text-white">{{ stripRow.value }}</dd>
+      </dl>
+    </div>
+    <div
+      v-else-if="state.band && rows.length > 0"
       class="fixed z-[9999] pointer-events-none rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs shadow-lg max-w-80"
       :style="positionStyle"
       data-testid="timeline-resource-tooltip"

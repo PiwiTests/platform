@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { WorkerRow } from '~/composables/useTimelineModel';
+import type { TimelineRowsLayout } from '~/utils/resource-tracks';
 import { TIMELINE_LAYOUT } from '~/utils/timeline';
 
 const props = defineProps<{
@@ -7,35 +8,27 @@ const props = defineProps<{
   tickMarks: Array<{ ms: number; x: number; label: string }>;
   contentWidth: number;
   shardTotal?: number | null;
-  /** Height drawn above a lane besides the lanes before it (the resource bands). */
-  laneOffset?: (lane: number) => number;
-  /** Height of the resource band drawn right above a lane. */
-  bandAbove?: (lane: number) => number;
+  /** Where each lane and worker row sits, the resource bands and strips between them. */
+  layout: TimelineRowsLayout;
 }>();
 
-const { barHeight, rowGap, axisHeight, rowHeight } = TIMELINE_LAYOUT;
+const { barHeight, rowGap, axisHeight } = TIMELINE_LAYOUT;
 
-/** Y of a lane's top, below the axis and the bands above it. */
 function laneTop(lane: number): number {
-  return lane * rowHeight + axisHeight + (props.laneOffset?.(lane) ?? 0);
-}
-
-/** Y of the top of what belongs to a lane's worker: the band above it, else the lane. */
-function sectionTop(lane: number): number {
-  return laneTop(lane) - (props.bandAbove?.(lane) ?? 0);
+  return props.layout.laneTop[lane] ?? axisHeight;
 }
 </script>
 
 <template>
   <g>
-    <!-- One shaded band per worker, spanning its test lane plus any expanded step lanes. -->
+    <!-- One shaded band per worker, spanning its test lane, any expanded step lanes and its strip. -->
     <rect
       v-for="(row, i) in props.workerRows"
       :key="'bg-' + i"
       :x="0"
-      :y="laneTop(row.baseLane)"
+      :y="props.layout.rows[i]?.top ?? laneTop(row.baseLane)"
       :width="props.contentWidth"
-      :height="row.laneSpan * rowHeight"
+      :height="(props.layout.rows[i]?.bottom ?? 0) - (props.layout.rows[i]?.top ?? 0)"
       :class="i % 2 === 1 ? 'fill-black/[0.03] dark:fill-white/[0.03]' : 'fill-transparent'"
     />
 
@@ -57,9 +50,9 @@ function sectionTop(lane: number): number {
       <line
         v-if="i > 0 && row.shardIndex !== props.workerRows[i - 1]!.shardIndex"
         :x1="0"
-        :y1="sectionTop(row.baseLane) - rowGap / 2"
+        :y1="(props.layout.rows[i]?.sectionTop ?? 0) - rowGap / 2"
         :x2="props.contentWidth"
-        :y2="sectionTop(row.baseLane) - rowGap / 2"
+        :y2="(props.layout.rows[i]?.sectionTop ?? 0) - rowGap / 2"
         stroke="currentColor"
         stroke-dasharray="4,3"
         class="stroke-gray-400 dark:stroke-gray-500"
