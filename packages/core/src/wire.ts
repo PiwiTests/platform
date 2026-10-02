@@ -321,6 +321,14 @@ export interface WireResourceTimeline {
   memoryBytes: SeriesPoint[];
   /** Pages open in each worker, one point at each change. Empty without the capture fixtures. */
   pages: Array<{ worker: number; points: SeriesPoint[] }>;
+  /**
+   * Each worker process with the browsers it started: the cores they used
+   * over the interval ending at each point, and the bytes they held, measured
+   * as `profile.memory.kind` says. Needs the run sampler, and the capture
+   * fixtures to tell which process is which worker; absent from reporters
+   * before it.
+   */
+  workers?: Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
 }
 
 /**

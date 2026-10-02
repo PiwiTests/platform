@@ -332,7 +332,10 @@ export default class VerifyCaptureReporter implements Reporter {
       !!idleTest?.closed.some((c) => c.id === idlePage?.id && c.used === false),
       'the page fixture of an API-only test should close unused',
     );
-    for (const title of ['resources: clean, evaluates on a page it never navigates', 'resources: clean, sets the content of its page']) {
+    for (const title of [
+      'resources: clean, evaluates on a page it never navigates',
+      'resources: clean, sets the content of its page',
+    ]) {
       const page = this.censusByTitle.get(title);
       check(!!page?.closed.some((c) => c.used === true), `[${title}] its page should close used`);
     }
@@ -360,13 +363,17 @@ export default class VerifyCaptureReporter implements Reporter {
     }
     if (process.platform === 'linux') {
       check(
-        this.censuses.some((c) => (c.metrics?.roles?.renderer?.cpuMs ?? 0) > 0 && (c.metrics?.roles?.renderer?.peakRssMb ?? 0) > 0),
+        this.censuses.some(
+          (c) => (c.metrics?.roles?.renderer?.cpuMs ?? 0) > 0 && (c.metrics?.roles?.renderer?.peakRssMb ?? 0) > 0,
+        ),
         'some census should carry the CPU and peak memory of the renderers the worker started',
       );
     }
     const popupWorker = this.censusByTitle.get('resources: leaves a popup of a worker-scoped page open')?.worker;
     check(
-      this.censuses.some((c) => c.worker === popupWorker && c.open.some((o) => o.id === popup?.id && (o.main?.heapMb ?? 0) > 0)),
+      this.censuses.some(
+        (c) => c.worker === popupWorker && c.open.some((o) => o.id === popup?.id && (o.main?.heapMb ?? 0) > 0),
+      ),
       'the popup that outlived its test should be read over CDP at the next censuses',
     );
 
@@ -389,15 +396,22 @@ export default class VerifyCaptureReporter implements Reporter {
           f.pages === 1 &&
           (f.afterTestCpuMs ?? 0) > 0,
       ],
-      ['the page of browser.newPage()', (f) => f.verdict === 'leaked' && f.kind === 'page' && f.where.endsWith(at('new-page'))],
-      ['an API request context', (f) => f.verdict === 'leaked' && f.kind === 'request' && f.where.endsWith(at('request'))],
+      [
+        'the page of browser.newPage()',
+        (f) => f.verdict === 'leaked' && f.kind === 'page' && f.where.endsWith(at('new-page')),
+      ],
+      [
+        'an API request context',
+        (f) => f.verdict === 'leaked' && f.kind === 'request' && f.where.endsWith(at('request')),
+      ],
       [
         'a launched browser, with its page',
         (f) => f.verdict === 'leaked' && f.kind === 'browser' && f.where.endsWith(at('launch')) && f.pages === 1,
       ],
       [
         'a popup',
-        (f) => f.verdict === 'leaked' && f.where.startsWith('popup after locator.click') && f.where.endsWith(at('popup')),
+        (f) =>
+          f.verdict === 'leaked' && f.where.startsWith('popup after locator.click') && f.where.endsWith(at('popup')),
       ],
       [
         'a beforeAll context past its describe',
@@ -418,7 +432,10 @@ export default class VerifyCaptureReporter implements Reporter {
       ],
       [
         'a server left listening',
-        (f) => f.verdict === 'handle' && f.where === 'TCPServerWrap' && !!f.detail?.includes('resources: leaves a server listening'),
+        (f) =>
+          f.verdict === 'handle' &&
+          f.where === 'TCPServerWrap' &&
+          !!f.detail?.includes('resources: leaves a server listening'),
       ],
       ['the unused page fixture', (f) => f.verdict === 'idle' && f.where === 'fixture "page"' && f.count === 1],
     ];
@@ -445,12 +462,19 @@ export default class VerifyCaptureReporter implements Reporter {
     for (const role of ['worker', 'browser', 'renderer'] as const) {
       check((roles[role]?.cpuMs ?? 0) > 0, `the ${role} processes should have used CPU: ${JSON.stringify(roles)}`);
     }
-    check(profile.memory.kind === 'pss' && (profile.memory.peakBytes ?? 0) > 0, `memory: ${JSON.stringify(profile.memory)}`);
+    check(
+      profile.memory.kind === 'pss' && (profile.memory.peakBytes ?? 0) > 0,
+      `memory: ${JSON.stringify(profile.memory)}`,
+    );
     check(profile.disk.lowestFreeBytes !== null, 'free space should be measured');
     const series = this.sampler!.timedSeries();
     check(
       series.cpuPct.length > 0 && series.memoryBytes.length > 0,
       `CPU and memory should be read over time: ${series.cpuPct.length} and ${series.memoryBytes.length} points`,
+    );
+    check(
+      series.workers.length > 0 && series.workers.every((w) => w.cpuCores.length > 0 && w.memoryBytes.length > 0),
+      `each worker process should be read with its browsers: ${JSON.stringify(series.workers.map((w) => [w.pid, w.cpuCores.length, w.memoryBytes.length]))}`,
     );
   }
 

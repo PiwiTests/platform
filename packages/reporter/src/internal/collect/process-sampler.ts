@@ -20,9 +20,11 @@ import type { RoleUsage, SeriesPoint, WireRunProfile } from '@piwitests/core/wir
  * fixtures. Every second it reads the CPU time and run-queue wait of each
  * process under the runner (workers, browsers, the web server) and the
  * machine's load; every few seconds the tree's memory (PSS), the container's
- * counters, free space and the disk the run's output takes. Linux reads all of
- * it; macOS reads the tree through `ps`; elsewhere the tree is not measured.
- * What a platform cannot read is listed as not measured, never reported as zero.
+ * counters, free space and the disk the run's output takes. Each reading of
+ * the tree is also added up under each Playwright worker process, the browsers
+ * it started included. Linux reads all of it; macOS reads the tree through
+ * `ps`, every few seconds; elsewhere the tree is not measured. What a platform
+ * cannot read is listed as not measured, never reported as zero.
  */
 
 export type { RoleUsage };
@@ -35,6 +37,15 @@ export interface RunSamples {
   /** Epoch milliseconds of the first sample; every point counts from it. */
   startedAt: number;
   cpuPct: SeriesPoint[];
+  memoryBytes: SeriesPoint[];
+  /** Each Playwright worker process with the processes under it (its browsers), by its process id. */
+  workers: Array<{ pid: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
+}
+
+/** One worker process and the processes under it, over time. */
+interface WorkerTree {
+  pid: number;
+  cpuCores: SeriesPoint[];
   memoryBytes: SeriesPoint[];
 }
 
@@ -78,6 +89,10 @@ function round1(value: number): number {
 
 function mean(a: number, b: number): number {
   return round1((a + b) / 2);
+}
+
+function mean2(a: number, b: number): number {
+  return Math.round(((a + b) / 2) * 100) / 100;
 }
 
 /**
@@ -189,6 +204,10 @@ export class RunSampler {
   private series: number[] = [];
   private cpuPoints: SeriesPoint[] = [];
   private memoryPoints: SeriesPoint[] = [];
+  /** Each worker process's tree, by the worker's process key. */
+  private workerTrees = new Map<string, WorkerTree>();
+  /** When the workers' CPU was last read, for the cores they used since. */
+  private workersReadAt: number | null = null;
   private pressureStart: { cpu: number | null; memory: number | null } = { cpu: null, memory: null };
   private containerStart: ContainerReads | null = null;
   private memoryKind: 'pss' | 'rss' | null = null;
@@ -245,7 +264,16 @@ export class RunSampler {
 
   /** The series read so far, each point at the time it was read. */
   timedSeries(): RunSamples {
-    return { startedAt: this.startedAt, cpuPct: [...this.cpuPoints], memoryBytes: [...this.memoryPoints] };
+    return {
+      startedAt: this.startedAt,
+      cpuPct: [...this.cpuPoints],
+      memoryBytes: [...this.memoryPoints],
+      workers: [...this.workerTrees.values()].map((tree) => ({
+        pid: tree.pid,
+        cpuCores: [...tree.cpuCores],
+        memoryBytes: [...tree.memoryBytes],
+      })),
+    };
   }
 
   private schedule(): void {
@@ -301,6 +329,61 @@ export class RunSampler {
     });
   }
 
+  /**
+   * The worker each process of the tree belongs to: a worker process itself,
+   * or the worker it descends from (its browsers and their children). The
+   * runner and the web server belong to none. The tree lists parents first.
+   */
+  private workersOf<T extends { pid: number; ppid: number }>(
+    tree: T[],
+    roles: Map<number, ProcessRole>,
+    keyOf: (proc: T) => string,
+  ): Map<number, { key: string; pid: number }> {
+    const out = new Map<number, { key: string; pid: number }>();
+    for (const proc of tree) {
+      if (roles.get(proc.pid) === 'worker') out.set(proc.pid, { key: keyOf(proc), pid: proc.pid });
+      else {
+        const parent = out.get(proc.ppid);
+        if (parent) out.set(proc.pid, parent);
+      }
+    }
+    return out;
+  }
+
+  /** The CPU a process used since the previous sample: all of it for one born since, none at the first sample. */
+  private cpuSince(key: string, cpuMs: number): number {
+    const known = this.tracked.get(key);
+    if (known) return Math.max(0, cpuMs - known.lastCpuMs);
+    return this.samples === 1 ? 0 : cpuMs;
+  }
+
+  /**
+   * Add a reading to each worker's tree: the cores its processes used since
+   * the previous reading, and on heavy samples their memory.
+   */
+  private noteWorkers(
+    workers: Map<number, { key: string; pid: number }>,
+    cpuMsByWorker: Map<string, number>,
+    bytesByWorker: Map<string, number> | null,
+    at: number,
+  ): void {
+    const elapsed = this.workersReadAt === null ? 0 : at - this.workersReadAt;
+    for (const { key, pid } of new Map([...workers.values()].map((w) => [w.key, w])).values()) {
+      let tree = this.workerTrees.get(key);
+      if (!tree) {
+        tree = { pid, cpuCores: [], memoryBytes: [] };
+        this.workerTrees.set(key, tree);
+      }
+      if (elapsed > 0) {
+        const cores = Math.round(((cpuMsByWorker.get(key) ?? 0) / elapsed) * 100) / 100;
+        tree.cpuCores = pushTimed(tree.cpuCores, [at, cores], mean2);
+      }
+      const bytes = bytesByWorker?.get(key);
+      if (bytes !== undefined) tree.memoryBytes = pushTimed(tree.memoryBytes, [at, bytes], Math.max);
+    }
+    this.workersReadAt = at;
+  }
+
   /** The role of each process of the tree, a child of the runner being the web server unless it says otherwise. */
   private resolveRoles<T extends { pid: number; ppid: number }>(tree: T[], explicit: (proc: T) => ProcessRole | null) {
     const roles = new Map<number, ProcessRole>([[this.rootPid, 'runner']]);
@@ -324,12 +407,22 @@ export class RunSampler {
       // The command line is read once, and again on heavy samples: a forked process may exec later.
       return known && !heavy ? known : roleOf(proc.comm, this.proc.cmdline(proc.pid));
     });
+    const workers = this.workersOf(tree, roles, (proc) => `${proc.pid}:${proc.start}`);
+    const cpuMsByWorker = new Map<string, number>();
     for (const proc of tree) {
+      const key = `${proc.pid}:${proc.start}`;
+      const worker = workers.get(proc.pid);
+      if (worker) {
+        cpuMsByWorker.set(worker.key, (cpuMsByWorker.get(worker.key) ?? 0) + this.cpuSince(key, proc.cpuMs));
+      }
       const waitMs = this.proc.runWaitMs(proc.pid);
       if (waitMs !== null) this.waitMeasured = true;
-      this.track(`${proc.pid}:${proc.start}`, roles.get(proc.pid) ?? 'other', proc.cpuMs, waitMs);
+      this.track(key, roles.get(proc.pid) ?? 'other', proc.cpuMs, waitMs);
     }
-    if (!heavy) return;
+    if (!heavy) {
+      this.noteWorkers(workers, cpuMsByWorker, null, at);
+      return;
+    }
 
     let total = 0;
     let largest: { role: ProcessRole; bytes: number } | null = null;
@@ -340,14 +433,18 @@ export class RunSampler {
         return { proc, kb: this.proc.statusKb(proc.pid, 'VmRSS'), fallback: true };
       }),
     );
+    const bytesByWorker = new Map<string, number>();
     for (const { proc, kb, fallback } of memory) {
       if (kb === null) continue;
       if (fallback) this.rssFallbackPids.add(`${proc.pid}:${proc.start}`);
       total += kb * 1024;
       if (!largest || kb * 1024 > largest.bytes) largest = { role: roles.get(proc.pid) ?? 'other', bytes: kb * 1024 };
+      const worker = workers.get(proc.pid);
+      if (worker) bytesByWorker.set(worker.key, (bytesByWorker.get(worker.key) ?? 0) + kb * 1024);
     }
     this.memoryKind = memory.some((m) => m.kb !== null && !m.fallback) ? 'pss' : memory.length ? 'rss' : null;
     this.notePeak(total, largest, at);
+    this.noteWorkers(workers, cpuMsByWorker, bytesByWorker, at);
   }
 
   private async samplePsTree(at: number): Promise<void> {
@@ -366,14 +463,24 @@ export class RunSampler {
     );
     let total = 0;
     let largest: { role: ProcessRole; bytes: number } | null = null;
+    const workers = this.workersOf(tree, roles, (proc) => String(proc.pid));
+    const cpuMsByWorker = new Map<string, number>();
+    const bytesByWorker = new Map<string, number>();
     for (const proc of tree) {
       const role = roles.get(proc.pid) ?? 'other';
+      const worker = workers.get(proc.pid);
+      if (worker) {
+        const cpuMs = this.cpuSince(String(proc.pid), proc.cpuMs);
+        cpuMsByWorker.set(worker.key, (cpuMsByWorker.get(worker.key) ?? 0) + cpuMs);
+        bytesByWorker.set(worker.key, (bytesByWorker.get(worker.key) ?? 0) + proc.rssKb * 1024);
+      }
       this.track(String(proc.pid), role, proc.cpuMs, null);
       total += proc.rssKb * 1024;
       if (!largest || proc.rssKb * 1024 > largest.bytes) largest = { role, bytes: proc.rssKb * 1024 };
     }
     this.memoryKind = 'rss';
     this.notePeak(total, largest, at);
+    this.noteWorkers(workers, cpuMsByWorker, bytesByWorker, at);
   }
 
   private notePeak(total: number, largest: { role: ProcessRole; bytes: number } | null, at: number): void {

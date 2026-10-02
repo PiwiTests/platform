@@ -26,6 +26,12 @@ export const REPORT_WORKER_POINTS_CAP = 200;
 /** The most points of the timeline's CPU and memory series, and of each worker's open pages over time. */
 export const TIMELINE_SERIES_CAP = 600;
 export const TIMELINE_WORKER_POINTS_CAP = 300;
+/**
+ * The most points of the workers' CPU and memory series together; each
+ * worker's share is between 60 and `TIMELINE_WORKER_POINTS_CAP` per series, so
+ * a run with many workers keeps a coarser series rather than a larger report.
+ */
+const TIMELINE_WORKERS_BUDGET = 6000;
 
 /** A series shortened to at most `cap` points, each the mean of its slice. */
 export function downsample(series: number[], cap: number): number[] {
@@ -153,6 +159,36 @@ function pagesOverTime(censuses: ResourceCensus[]): Array<{ worker: number; even
 }
 
 /**
+ * The Playwright worker each sampled worker process was: the worker index its
+ * censuses name for that process id, the one whose censuses fall nearest the
+ * process's readings when a process id came back for a later worker. A
+ * process no census names is left out.
+ */
+function workerTreesByIndex(
+  samples: RunSamples,
+  censuses: ResourceCensus[],
+): Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }> {
+  const byPid = new Map<number, Array<{ worker: number; at: number }>>();
+  for (const census of censuses) {
+    const list = byPid.get(census.pid) ?? [];
+    list.push({ worker: census.worker, at: census.at });
+    byPid.set(census.pid, list);
+  }
+  const out = new Map<number, { worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>();
+  for (const tree of samples.workers) {
+    const candidates = byPid.get(tree.pid);
+    const times = [...tree.cpuCores, ...tree.memoryBytes].map(([at]) => samples.startedAt + at);
+    if (!candidates || times.length === 0) continue;
+    const from = Math.min(...times);
+    const to = Math.max(...times);
+    const distance = (at: number) => (at < from ? from - at : at > to ? at - to : 0);
+    const nearest = candidates.reduce((best, c) => (distance(c.at) < distance(best.at) ? c : best));
+    if (!out.has(nearest.worker)) out.set(nearest.worker, { worker: nearest.worker, ...tree });
+  }
+  return [...out.values()].sort((a, b) => a.worker - b.worker);
+}
+
+/**
  * The run's resources over time, on one clock: from the sampler's start, or
  * the first page a worker opened when the sampler did not run. Null when
  * neither measured anything.
@@ -166,6 +202,11 @@ export function resourceTimeline(samples: RunSamples | null, censuses: ResourceC
   const shift = hasSamples ? samples.startedAt - startedAt : 0;
   const relative = (points: SeriesPoint[], by: number): SeriesPoint[] =>
     points.map(([at, value]) => [Math.round(at + by), value]);
+  const trees = hasSamples ? workerTreesByIndex(samples, censuses) : [];
+  const perWorker = Math.max(
+    60,
+    Math.min(TIMELINE_WORKER_POINTS_CAP, Math.floor(TIMELINE_WORKERS_BUDGET / Math.max(1, 2 * trees.length))),
+  );
   return {
     startedAt,
     cpuPct: hasSamples ? downsamplePoints(relative(samples.cpuPct, shift), TIMELINE_SERIES_CAP, 'mean') : [],
@@ -176,6 +217,11 @@ export function resourceTimeline(samples: RunSamples | null, censuses: ResourceC
       const last = points.pop()!;
       return { worker, points: [...downsamplePoints(points, TIMELINE_WORKER_POINTS_CAP - 1, 'max'), last] };
     }),
+    workers: trees.map((tree) => ({
+      worker: tree.worker,
+      cpuCores: downsamplePoints(relative(tree.cpuCores, shift), perWorker, 'mean'),
+      memoryBytes: downsamplePoints(relative(tree.memoryBytes, shift), perWorker, 'max'),
+    })),
   };
 }
 
