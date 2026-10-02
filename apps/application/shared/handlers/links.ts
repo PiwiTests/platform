@@ -1,4 +1,11 @@
-import { entityLinks, testRuns, testRunsCases, testCases, failureClusters } from '../../server/database/schema';
+import {
+  entityLinks,
+  testRuns,
+  testRunsCases,
+  testCases,
+  failureClusters,
+  bugReports,
+} from '../../server/database/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { safeHttpUrl } from '../utils/safe-url';
@@ -116,6 +123,9 @@ export async function createLink(
       .select({ id: failureClusters.id })
       .from(failureClusters)
       .where(eq(failureClusters.id, entityId));
+    exists = row.length > 0;
+  } else if (entityType === 'bug_report') {
+    const row = await db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.id, entityId));
     exists = row.length > 0;
   } else {
     const row = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, entityId));

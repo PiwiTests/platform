@@ -212,7 +212,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_cluster',
     module: 'core',
     description:
-      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
+      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. `mergeSuggestions` lists the pending suggestions to merge it with another cluster (suggestionId, otherClusterId), to decide with decide_merge_suggestion. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -933,7 +933,7 @@ export const MCP_TOOL_DEFS = [
     name: 'decide_merge_suggestion',
     module: 'core',
     description:
-      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters; when it has more than one pending suggestion, the error lists them and you pass suggestionId. Requires reporter or administrator access.',
+      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters, or a suggestionId from get_cluster’s mergeSuggestions; when a cluster has more than one pending suggestion, pass suggestionId. Requires reporter or administrator access.',
     inputSchema: {
       type: 'object',
       properties: {

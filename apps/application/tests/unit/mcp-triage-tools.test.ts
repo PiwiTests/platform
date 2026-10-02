@@ -228,6 +228,11 @@ describe('decide_merge_suggestion', () => {
     ).rejects.toThrow('2 pending merge suggestions: 5 (with cluster 2), 6 (with cluster 4); pass suggestionId');
   });
 
+  test('get_cluster lists the pending suggestions to decide', async () => {
+    const cluster = (await tool('get_cluster')(db as never, { clusterId: 2 }, reporter)) as Record<string, unknown>;
+    expect(cluster.mergeSuggestions).toEqual([{ suggestionId: 5, otherClusterId: 1 }]);
+  });
+
   test('refuses a read-only key', async () => {
     await expect(
       tool('decide_merge_suggestion')(db as never, { suggestionId: 5, decision: 'approve' }, viewer),
@@ -342,6 +347,25 @@ describe('link_issue', () => {
       statusText: 'In Progress',
     });
     const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.failureClusterId, 1));
+    expect(links).toHaveLength(1);
+  });
+
+  test('links a ticket to a bug report, whose id no test case shares', async () => {
+    await db.insert(schema.bugReports).values({
+      id: 9,
+      projectId: 1,
+      title: 'Coupon is refused',
+      steps: { v: 1, steps: [] },
+      evidence: {},
+      context: {},
+    });
+    const result = await tool('link_issue')(
+      db as never,
+      { entityType: 'bug_report', entityId: 9, url: 'https://github.com/acme/shop/issues/3' },
+      reporter,
+    );
+    expect(result).toMatchObject({ entityType: 'bug_report', entityId: 9 });
+    const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.bugReportId, 9));
     expect(links).toHaveLength(1);
   });
 

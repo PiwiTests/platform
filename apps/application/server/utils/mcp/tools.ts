@@ -821,6 +821,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (cluster.project?.id != null) assertProject(ctx, cluster.project.id);
 
     const knownIssue = await getClusterKnownIssue(db, id);
+    const mergeSuggestions = await pendingSuggestionsForCluster(db, id);
 
     // Fetch locator healing for up to 5 affected cases in one batch (2 DB
     // round-trips) so AI coding agents get fix suggestions without visiting
@@ -884,6 +885,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       lastSeenStatus: cluster.lastSeenRunStatus || null,
       project: cluster.project ? { id: cluster.project.id, name: cluster.project.name } : null,
       sampleError: trunc(cluster.sampleError, 400),
+      mergeSuggestions: mergeSuggestions.map((s) => ({ suggestionId: s.id, otherClusterId: s.otherClusterId })),
       diagnosis: cluster.diagnosis
         ? dropNulls({
             status: cluster.diagnosis.status,
