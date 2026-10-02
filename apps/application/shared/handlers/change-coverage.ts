@@ -29,6 +29,7 @@ import {
   type ConventionTarget,
 } from '../graph';
 import { HISTORY_WINDOW_RUNS } from './scenario-gaps';
+import { notLabRun } from './probes';
 
 /** A repo-relative path normalized for suffix matching. */
 function normalizePath(p: string): string {
@@ -308,7 +309,7 @@ export async function computeChangeCoverage(
   const recent = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.id))
     .limit(windowRuns);
   const recentIds = recent.map((r) => r.id);

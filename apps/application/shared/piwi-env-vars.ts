@@ -950,7 +950,8 @@ export const PIWI_ENV_VARS = {
     max: 20000,
   },
   PIWI_INGEST_MAX_STEPS: {
-    description: 'Max test steps stored per execution.',
+    description:
+      'Max test steps stored per execution. Past it, the steps that failed are kept first, and one marker step counts the steps dropped.',
     category: 'ingest',
     type: 'number',
     default: '500',

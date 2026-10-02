@@ -32,8 +32,8 @@ beforeEach(async () => {
 
 function port(overrides: Partial<Port> = {}): Port {
   return {
-    persistRunCases: (database, projectId, testRunId, cases) =>
-      persistRunCases(database as never, projectId, testRunId, cases as never),
+    persistRunCases: (database, projectId, testRunId, cases, options) =>
+      persistRunCases(database as never, projectId, testRunId, cases as never, options),
     storeFile: async ({ entryName }) => ({ path: `stored/${entryName}`, size: 1 }),
     readTraceConsole: async () => null,
     parseErrorContext: () => ({ ariaSnapshot: null, testSource: null }),
@@ -67,6 +67,7 @@ function report(cases: ImportedRunCase[]): ParsedBlobReport {
     flakyTests: 0,
     shard: null,
     projectNames: ['chromium'],
+    scm: null,
     cases,
   };
 }
@@ -99,6 +100,77 @@ const traceInput = (importGroup: string | null = null) => ({
 });
 
 describe('importBlobReportRun', () => {
+  test("puts the branch and commit the blob's config metadata recorded on the run", async () => {
+    const result = await importBlobReportRun(db as never, port(), {
+      projectId: 1,
+      parsed: { ...report([execution('pays', 'pays.png')]), scm: { commit: 'abc123', branch: 'feature/pay' } },
+      readEntry,
+      importHash: 'b'.repeat(64),
+      source: 'report.zip',
+    });
+
+    const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, result.runId));
+    expect(run!.branch).toBe('feature/pay');
+    expect(run!.metadata).toMatchObject({ scm: { commit: 'abc123', branch: 'feature/pay' } });
+  });
+
+  test("an archive older than the newest run keeps the tests' current metadata and dates its executions from their attempts", async () => {
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-10-01T10:00:00Z') });
+    await persistRunCases(db as never, 1, 1, [
+      {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        status: 'passed',
+        tags: ['checkout'],
+        locks: ['payments-db'],
+        testAnnotations: [{ type: 'piwi:owner', description: 'team-pay' }],
+      },
+    ] as never);
+    const attemptStart = Date.parse('2026-09-30T10:00:05Z');
+    const old = execution('pays', 'pays.png');
+    old.case = { ...old.case, status: 'failed', startedAt: attemptStart, tags: ['legacy'], locks: [] };
+
+    const result = await importBlobReportRun(db as never, port(), {
+      projectId: 1,
+      parsed: report([old]),
+      readEntry,
+      importHash: 'd'.repeat(64),
+      source: 'old-report.zip',
+    });
+
+    const [testCase] = await db.select().from(schema.testCases).where(eq(schema.testCases.title, 'pays'));
+    expect(testCase).toMatchObject({ tags: ['checkout'], locks: ['payments-db'], owner: 'team-pay' });
+    const [imported] = await db
+      .select()
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testRunId, result.runId));
+    expect(imported!.createdAt.getTime()).toBe(attemptStart);
+  });
+
+  test('an archive newer than every stored run updates the tests it declares', async () => {
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-09-01T10:00:00Z') });
+    await persistRunCases(db as never, 1, 1, [
+      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed', tags: ['checkout'] },
+    ] as never);
+    const fresh = execution('pays', 'pays.png');
+    fresh.case = { ...fresh.case, tags: ['checkout', 'smoke'] };
+
+    await importBlobReportRun(db as never, port(), {
+      projectId: 1,
+      parsed: report([fresh]),
+      readEntry,
+      importHash: 'e'.repeat(64),
+      source: 'report.zip',
+    });
+
+    const [testCase] = await db.select().from(schema.testCases).where(eq(schema.testCases.title, 'pays'));
+    expect(testCase!.tags).toEqual(['checkout', 'smoke']);
+  });
+
   test('links each file to the execution of its own case when a repeated case is deduplicated', async () => {
     const result = await importBlobReportRun(db as never, port(), {
       projectId: 1,
@@ -191,5 +263,28 @@ describe('a failed import', () => {
     const runs = await db.select().from(schema.testRuns);
     expect(runs.map((r) => r.importHash)).toEqual([group]);
     expect(await db.select().from(schema.testRunsCases)).toHaveLength(1);
+  });
+});
+
+describe('importTraceRun', () => {
+  test("dates the execution from the trace's start and leaves a newer run's metadata alone", async () => {
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-10-01T10:00:00Z') });
+    await persistRunCases(db as never, 1, 1, [
+      { title: 'pays', filePath: 'checkout.spec.ts', status: 'passed', tags: ['checkout'] },
+    ] as never);
+    const input = traceInput();
+    input.parsed.case = { ...input.parsed.case, tags: ['legacy'] } as never;
+
+    const result = await importTraceRun(db as never, port(), input);
+
+    const [imported] = await db
+      .select()
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testRunId, result.runId));
+    expect(imported!.createdAt.getTime()).toBe(input.parsed.startedAt);
+    const [testCase] = await db.select().from(schema.testCases).where(eq(schema.testCases.title, 'pays'));
+    expect(testCase!.tags).toEqual(['checkout']);
   });
 });

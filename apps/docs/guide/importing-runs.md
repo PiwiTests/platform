@@ -104,6 +104,14 @@ What Playwright never recorded cannot be recovered. Web vitals, page state and l
 installed. [Test locks](/reference/test-metadata#test-locks) are also absent: Playwright exposes them only to a live in-process
 reporter, never through the blob report, so an imported run shows no lock lanes, filters or lock clues.
 
+The run's commit and branch come from the archive when Playwright recorded them: a blob report written with
+[`captureGitInfo`](https://playwright.dev/docs/api/class-testconfig#test-config-capture-git-info) carries them in its
+config metadata, and the imported run then joins its branch's history and baselines. A trace carries neither.
+
+Each imported execution is dated from the start of its attempt, so an old archive lands where it ran in a test's
+history, not at the top. An archive older than the project's newest run leaves the tests' current tags, owner,
+priority, locks and locator snapshots as they are.
+
 Imports are also deliberately **silent**: they never send notifications, never trigger AI diagnosis, and never compute
 regression signals. Backfilling a year of history should not page your team about failures they fixed months ago, or
 label an old failure a new regression.

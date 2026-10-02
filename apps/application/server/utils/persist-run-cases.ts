@@ -37,6 +37,7 @@ import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
+import { executionCreatedAt, type PersistRunCasesOptions } from './persist-options';
 import {
   ingestRunGraph,
   ingestRequestGraph,
@@ -48,7 +49,7 @@ import {
   projectRouteOrigins,
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
-import { isLabRun } from '#shared/handlers/probes';
+import { isLabRun, notLabExecution } from '#shared/handlers/probes';
 import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
@@ -312,8 +313,8 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
  * Drop redundant green ARIA samples before they reach storage. A passing
  * execution's snapshot is kept only when the test has no other green snapshot
  * from the last {@link GREEN_SAMPLE_MAX_AGE_MS} — both against snapshots already
- * stored and against duplicates within this same batch. Failing snapshots are
- * never touched. Mutates `payloads[i].aria` in place; the rows keep their other
+ * stored by runs other than lab runs and against duplicates within this same
+ * batch. Failing snapshots are never touched. Mutates `payloads[i].aria` in place; the rows keep their other
  * evidence, they just stop carrying a duplicate green page.
  */
 async function dedupeGreenSamples(
@@ -352,6 +353,7 @@ async function dedupeGreenSamples(
         inArray(testRunsCases.testCaseId, caseIds),
         eq(testRunsCases.status, 'passed'),
         or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
+        notLabExecution(testRunsCases.testRunId),
       ),
     )
     .groupBy(testRunsCases.testCaseId);
@@ -389,6 +391,7 @@ export async function persistRunCases(
   projectId: number,
   testRunId: number,
   cases: RunCaseInput[],
+  options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
@@ -581,6 +584,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus: resolveExpectedStatus(c.expectedStatus, c.testAnnotations),
       blockedBy: c.blockedBy ?? null,
+      ...(options.datedFrom ? { createdAt: executionCreatedAt(c.startedAt, options.datedFrom) } : {}),
     });
     rowInputIndices.push(i);
 
@@ -589,6 +593,15 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return [];
+
+  // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
+  // run, so it forms no clusters (exactly as imports are silent) and leaves the tests' stored state alone.
+  const [probeCheck] = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  const probeRun = isLabRun(probeCheck?.metadata);
+  const writesTestState = !probeRun && !options.keepTestState;
 
   // Keep at most one green ARIA sample per test per day: a passing snapshot is
   // dropped when the test already has a recent one, so many runs a day stay bounded.
@@ -611,13 +624,6 @@ export async function persistRunCases(
     row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
   });
 
-  // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
-  // run, so it forms no clusters (exactly as imports are silent).
-  const [probeCheck] = await db
-    .select({ metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.id, testRunId));
-  const probeRun = isLabRun(probeCheck?.metadata);
   if (!probeRun) {
     const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
     runCasesRows.forEach((row, i) => {
@@ -649,7 +655,7 @@ export async function persistRunCases(
     await db.insert(networkRequests).values(nrValues);
   }
 
-  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  if (writesTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   // A lab run replays tests with injected faults or conditions; it stays silent here too.
   // The index is derived data: a failure to update it degrades to a warning and
   // never fails the ingest.
@@ -661,7 +667,7 @@ export async function persistRunCases(
       console.warn('[code-reach] failed to store the code reach of this batch', err),
     );
   }
-  await syncTestCaseMetadata(db, caseMetaSnapshots);
+  if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   // Feed the feature graph from the same rows: route nodes from the network
   // requests (own-origin only), page nodes from page state, and a `reaches` edge

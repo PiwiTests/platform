@@ -564,8 +564,8 @@ export async function getTestRunCase(
 }
 
 /**
- * The last passing execution's captured page state for a test case (pinned to
- * the same browser when known) — the baseline for the app-state diff. Shared
+ * The last passing execution's captured page state for a test case, outside
+ * lab runs (pinned to the same browser when known) — the baseline for the app-state diff. Shared
  * by the server AI-context builder and the demo mirror.
  */
 export async function getLastPassPageState(
@@ -576,6 +576,7 @@ export async function getLastPassPageState(
     eq(testRunsCases.testCaseId, opts.testCaseId),
     eq(testRunsCases.status, 'passed'),
     sql`${testRunsCases.pageState} IS NOT NULL`,
+    notLabRun(testRuns.metadata),
   ];
   if (opts.browserName) conds.push(eq(testRunsCases.browserName, opts.browserName));
   const rows = await db

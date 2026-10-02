@@ -19,6 +19,7 @@ import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
+import { notLabRun } from '#shared/handlers/probes';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
@@ -598,11 +599,12 @@ function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[]
 /**
  * Compare the failing execution to the same test's recent passing runs:
  * duration vs baseline, web-vitals deltas, console-error delta, how far the
- * run got (steps executed), and whether the last pass is newer than the
- * cluster's last seen (already-green reconciliation).
- * All from data already stored — no extra collection.
+ * run got (steps executed), and whether the test has passed since the
+ * cluster's last seen run on that run's branch (already-green reconciliation).
+ * Lab runs replay the test under injected conditions and never count as a
+ * pass. All from data already stored — no extra collection.
  */
-async function baselineComparisonSection(
+export async function baselineComparisonSection(
   db: DbClient,
   rep: RepresentativeRow,
   clusterLastSeenRunId?: number,
@@ -617,10 +619,17 @@ async function baselineComparisonSection(
       steps: testRunsCases.steps,
       runId: testRunsCases.testRunId,
       startTime: testRuns.startTime,
+      branch: testRuns.branch,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed')))
+    .where(
+      and(
+        eq(testRunsCases.testCaseId, rep.testCaseId),
+        eq(testRunsCases.status, 'passed'),
+        notLabRun(testRuns.metadata),
+      ),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(20);
 
@@ -629,15 +638,24 @@ async function baselineComparisonSection(
   const last = passings[0]!;
   const lines: string[] = [];
 
-  // Check if the last passing run is NEWER than the cluster's lastSeen run
-  let alreadyGreen = false;
-  if (clusterLastSeenRunId != null && last.runId > clusterLastSeenRunId) {
-    alreadyGreen = true;
-    const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+  // A pass after the cluster's last seen run, on that run's branch.
+  const [lastSeen] =
+    clusterLastSeenRunId != null
+      ? await db
+          .select({ startTime: testRuns.startTime, branch: testRuns.branch })
+          .from(testRuns)
+          .where(eq(testRuns.id, clusterLastSeenRunId))
+      : [];
+  const newerPass = lastSeen
+    ? passings.find((p) => p.startTime > lastSeen.startTime && p.branch === lastSeen.branch)
+    : undefined;
+  const alreadyGreen = newerPass !== undefined;
+  if (newerPass) {
+    const when = newerPass.startTime instanceof Date ? relativeDays(newerPass.startTime) : null;
     lines.push(
-      `⚠️ This test has PASSED on a newer commit (run #${last.runId} > failing #${clusterLastSeenRunId}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
+      `⚠️ This test has PASSED since the failure (run #${newerPass.runId}, after failing run #${clusterLastSeenRunId}${newerPass.branch ? ` on ${newerPass.branch}` : ''}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
     );
-    if (when) lines.push(`- Last passing run: #${last.runId} (${when})`);
+    if (when) lines.push(`- Last passing run: #${newerPass.runId} (${when})`);
   }
 
   const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;

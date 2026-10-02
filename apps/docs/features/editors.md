@@ -26,9 +26,10 @@ compared with your files locally.
 
 ## CI failures in the Problems panel
 
-The failures of the latest run on the checked-out branch (else the default branch) are errors in the Problems panel,
-at the line that failed: the call in the error's stack when that file is in your workspace (often a page
-object), else the `test(…)` line. The message is the failure's headline. The run is read every minute.
+The failures of the latest complete run (whole suite, finished, no lab run) on the checked-out branch, else the
+default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
+is in your workspace (often a page object), else the `test(…)` line. The message is the failure's headline. The run is
+read every minute.
 
 On a failure, the quick fixes are:
 
@@ -48,8 +49,8 @@ created.
 
 ## The status bar
 
-The latest run on the branch: how many tests passed, failed and were flaky, with its progress while it runs. Click it
-to open the run. When the extension is not connected, the item says why and runs **Piwi: Connect**.
+The latest complete run on the branch: how many tests passed, failed and were flaky. Click it to open the run. When
+the extension is not connected, the item says why and runs **Piwi: Connect**.
 
 ## The tests behind each line
 
