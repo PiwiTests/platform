@@ -17,7 +17,13 @@ import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { recomputeClusterOccurrences } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
-import { getQuarantinedCaseIds, countQuarantinedClusterTests, listQuarantine, addQuarantine } from './quarantine';
+import {
+  getQuarantinedCaseIds,
+  countQuarantinedClusterTests,
+  listQuarantine,
+  addQuarantine,
+  releaseQuarantine,
+} from './quarantine';
 import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
@@ -421,6 +427,31 @@ export async function quarantineClusterTests(
     if (created) quarantined += 1;
   }
   return { success: true, projectId: cluster.projectId, tests: rows.length, quarantined };
+}
+
+/**
+ * Release every test currently in a cluster from quarantine, through the same
+ * per-test release the project's quarantine table applies. The quarantine rows
+ * stay as history. A test that is not quarantined is left as it is.
+ */
+export async function releaseClusterTests(db: DrizzleDB, clusterId: number, opts: { reason?: string | null } = {}) {
+  const [cluster] = await db
+    .select({ id: failureClusters.id, projectId: failureClusters.projectId })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  if (!cluster) return null;
+
+  const rows = await db
+    .selectDistinct({ testCaseId: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+
+  let released = 0;
+  for (const row of rows) {
+    const result = await releaseQuarantine(db, cluster.projectId, row.testCaseId, opts.reason ?? null);
+    if (result.released) released += 1;
+  }
+  return { success: true, projectId: cluster.projectId, tests: rows.length, released };
 }
 
 /** A single bulk-triage action applied to a set of already-authorized clusters. */

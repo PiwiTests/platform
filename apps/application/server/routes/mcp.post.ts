@@ -139,7 +139,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
           'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
-          'Write/triage tools (set_cluster_status, run_cluster_diagnosis, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access. ' +
+          'Write/triage tools (set_cluster_status, triage_cluster, triage_gap, decide_merge_suggestion, set_bug_report_status, rerun_cluster_in_ci, link_issue, run_cluster_diagnosis, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access. ' +
           'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
           'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
           'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here.' +

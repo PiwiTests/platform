@@ -212,7 +212,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_cluster',
     module: 'core',
     description:
-      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
+      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. `mergeSuggestions` lists the pending suggestions to merge it with another cluster (suggestionId, otherClusterId), to decide with decide_merge_suggestion. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -865,6 +865,135 @@ export const MCP_TOOL_DEFS = [
         baseCommit: { type: 'string', description: 'Optional baseline commit SHA for SCM-diff context' },
       },
       required: ['clusterId'],
+    },
+  },
+  {
+    name: 'triage_cluster',
+    module: 'core',
+    description:
+      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterIds: { type: 'array', items: { type: 'number' }, description: 'Cluster IDs (1 to 200)' },
+        action: {
+          type: 'string',
+          enum: ['status', 'assign', 'snooze', 'quarantine', 'release'],
+          description: 'The triage action applied to every cluster',
+        },
+        status: {
+          type: 'string',
+          enum: ['open', 'resolved', 'ignored'],
+          description: 'With action status: the new status',
+        },
+        note: { type: 'string', description: 'With action status: the triage note saved on each cluster' },
+        assignee: { type: 'string', description: 'With action assign: a name or email (empty to unassign)' },
+        snooze: {
+          type: 'string',
+          enum: ['1-day', '1-week', 'until-recurs'],
+          description: 'With action snooze: how long to hide the clusters from the inbox (omit to unsnooze)',
+        },
+        reason: { type: 'string', description: 'With action quarantine or release: why, kept on each test' },
+      },
+      required: ['clusterIds', 'action'],
+    },
+  },
+  {
+    name: 'triage_gap',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'Give a verdict on a scenario gap, as the gap inbox does: `accept` (queue its draft, optionally for someone), `snooze` (1-day, 1-week, or until the node changes), `dismiss` with a reason (not-worth-testing, covered-elsewhere with the covering test, wrong), or `covered-by` (record the test that covers it without dismissing). A verdict counts for or against the detector that raised the gap. Pass the gap id from list_scenario_gaps. Returns the gap’s new status. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        gapId: { type: 'number', description: 'The gap id from list_scenario_gaps' },
+        verb: { type: 'string', enum: ['accept', 'snooze', 'dismiss', 'covered-by'], description: 'The verdict' },
+        snooze: {
+          type: 'string',
+          enum: ['1-day', '1-week', 'until-node-changes'],
+          description: 'With snooze: how long (default 1-week)',
+        },
+        reason: {
+          type: 'string',
+          enum: ['not-worth-testing', 'covered-elsewhere', 'wrong'],
+          description: 'With dismiss: why (default wrong)',
+        },
+        coveringTestCaseId: {
+          type: 'number',
+          description: 'With covered-by, or dismiss covered-elsewhere: the testCaseId of the test that covers it',
+        },
+        assignedTo: { type: 'string', description: 'With accept: who writes the test' },
+      },
+      required: ['projectId', 'gapId', 'verb'],
+    },
+  },
+  {
+    name: 'decide_merge_suggestion',
+    module: 'core',
+    description:
+      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters, or a suggestionId from get_cluster’s mergeSuggestions; when a cluster has more than one pending suggestion, pass suggestionId. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'A cluster with a pending merge suggestion' },
+        suggestionId: { type: 'number', description: 'The suggestion, when the cluster has several' },
+        decision: {
+          type: 'string',
+          enum: ['approve', 'reject'],
+          description: 'Merge the clusters, or keep them apart',
+        },
+      },
+      required: ['decision'],
+    },
+  },
+  {
+    name: 'set_bug_report_status',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'Set a bug report’s status by hand: `dismissed` (not a bug, or not worth a test), `open` (reopen it) or `closed`. The other statuses (test-committed, looks-fixed) follow the runs of the test that names the report. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Bug report id from list_bug_reports' },
+        status: { type: 'string', enum: ['open', 'dismissed', 'closed'], description: 'The new status' },
+      },
+      required: ['id', 'status'],
+    },
+  },
+  {
+    name: 'rerun_cluster_in_ci',
+    module: 'core',
+    capability: 'scm',
+    description:
+      "Re-run exactly a failure cluster's affected tests in CI, as the cluster page's Re-run in CI button does: dispatches the project's configured workflow or pipeline with the project's SCM token. Returns the provider and the URL to watch the runs (the re-run's own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: { clusterId: { type: 'number', description: 'Cluster ID' } },
+      required: ['clusterId'],
+    },
+  },
+  {
+    name: 'link_issue',
+    module: 'workflow',
+    capability: 'integrations',
+    description:
+      'Link an existing ticket or pull request (any http(s) URL) to a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does. A URL from a connected tracker is matched to its connection and shows its live status. Use create_issue to file a new Jira issue instead. Returns the stored link. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entityType: {
+          type: 'string',
+          enum: ['failure_cluster', 'test_runs_case', 'test_case', 'test_run', 'bug_report'],
+          description: 'Which entity to link the URL to',
+        },
+        entityId: { type: 'number', description: 'The entity ID matching entityType' },
+        url: { type: 'string', description: 'The ticket or pull request URL (http or https)' },
+        title: { type: 'string', description: 'Optional title (at most 200 characters)' },
+      },
+      required: ['entityType', 'entityId', 'url'],
     },
   },
   {

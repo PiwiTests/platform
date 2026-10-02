@@ -28,9 +28,10 @@ MCP URL to narrow the list further; narrowing never re-enables a declined tool.
 
 **Access.** The server follows the REST API's project assignments: with authentication on, a non-admin key reads only
 its projects, and cross-project tools (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to them.
-The write tools (setting a cluster's status or baseline commit, running or rating a diagnosis, filing an issue,
-registering a test function) need the **reporter** or **administrator** role, and `get_instance_stats` the
-administrator role.
+The write tools (triaging clusters and gaps, deciding a merge suggestion, setting a bug report's status, re-running a
+cluster in CI, linking or filing an issue, setting a cluster's baseline commit, running or rating a diagnosis,
+registering a test function) need the **reporter** or **administrator** role, as the same actions do in the
+dashboard and the REST API, and `get_instance_stats` the administrator role.
 
 **Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no SSE or WebSocket. Protocol versions
 `2025-06-18`, `2025-03-26` and `2024-11-05` are supported.

@@ -7,11 +7,16 @@
  * check (for the button's enabled/disabled state) and the dispatch route agree.
  */
 import { desc, eq } from 'drizzle-orm';
-import { projects, testCases, testRuns, testRunsCases } from '../database/schema';
+import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs } from '#shared/retry-command';
-import { resolveCiRerunSettings, hasRerunTarget, type CiRerunSettings } from '#shared/ci-rerun';
+import {
+  resolveCiRerunSettings,
+  hasRerunTarget,
+  type CiRerunSettings,
+  type ClusterRerunDispatch,
+} from '#shared/ci-rerun';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
@@ -120,4 +125,69 @@ export async function dispatchClusterRerun(
   const args = await clusterRerunArgs(db, cluster.id);
   const { url } = await scm.dispatchRerun(settings, args);
   return { url, args, provider };
+}
+
+/** Who asked for a re-run, as the dispatch record names them. */
+export interface CiRerunActor {
+  id: number | null;
+  name: string | null;
+}
+
+export type ClusterRerunOutcome =
+  | { ok: true; dispatch: ClusterRerunDispatch }
+  | { ok: false; error: 'not-found' | 'unavailable' | 'dispatch-failed'; message: string };
+
+/**
+ * Re-run a cluster's affected tests in CI: check availability, dispatch, and
+ * store the dispatch on the cluster as `lastRerunDispatch`. The REST route and
+ * the MCP tool both call it, after their own access checks.
+ */
+export async function rerunClusterInCi(
+  db: DbClient,
+  clusterId: number,
+  actor: CiRerunActor,
+): Promise<ClusterRerunOutcome> {
+  const [cluster] = await db
+    .select({
+      id: failureClusters.id,
+      projectId: failureClusters.projectId,
+      lastSeenRunId: failureClusters.lastSeenRunId,
+    })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  if (!cluster) return { ok: false, error: 'not-found', message: 'Failure cluster not found' };
+
+  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId);
+  if (!availability.available) {
+    return {
+      ok: false,
+      error: 'unavailable',
+      message: availability.reason ?? 'CI re-run is not available for this cluster',
+    };
+  }
+
+  let dispatched: { url: string; args: string; provider: ScmProviderName };
+  try {
+    dispatched = await dispatchClusterRerun(db, cluster);
+  } catch (e) {
+    return {
+      ok: false,
+      error: 'dispatch-failed',
+      message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
+    };
+  }
+
+  const dispatch: ClusterRerunDispatch = {
+    provider: dispatched.provider,
+    url: dispatched.url,
+    args: dispatched.args,
+    at: Date.now(),
+    byName: actor.name,
+    byUserId: actor.id,
+  };
+  await db
+    .update(failureClusters)
+    .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
+    .where(eq(failureClusters.id, cluster.id));
+  return { ok: true, dispatch };
 }
