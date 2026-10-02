@@ -149,6 +149,28 @@ export async function rejectMergeSuggestion(db: DrizzleDB, id: number): Promise<
   return true;
 }
 
+/** The pending suggestions that involve a cluster, oldest first, with the other cluster of each. */
+export async function pendingSuggestionsForCluster(
+  db: DrizzleDB,
+  clusterId: number,
+): Promise<Array<{ id: number; otherClusterId: number }>> {
+  const rows = await db
+    .select({
+      id: clusterMergeSuggestions.id,
+      clusterAId: clusterMergeSuggestions.clusterAId,
+      clusterBId: clusterMergeSuggestions.clusterBId,
+    })
+    .from(clusterMergeSuggestions)
+    .where(
+      and(
+        eq(clusterMergeSuggestions.status, 'pending'),
+        or(eq(clusterMergeSuggestions.clusterAId, clusterId), eq(clusterMergeSuggestions.clusterBId, clusterId)),
+      ),
+    )
+    .orderBy(clusterMergeSuggestions.id);
+  return rows.map((r) => ({ id: r.id, otherClusterId: r.clusterAId === clusterId ? r.clusterBId : r.clusterAId }));
+}
+
 /** Resolve a suggestion's project (for access checks). */
 export async function getSuggestionProjectId(db: DrizzleDB, id: number): Promise<number | null> {
   const [s] = await db

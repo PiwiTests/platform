@@ -1,5 +1,14 @@
-import { entityLinks, testRuns, testRunsCases, testCases, failureClusters } from '../../server/database/schema';
+import {
+  entityLinks,
+  testRuns,
+  testRunsCases,
+  testCases,
+  failureClusters,
+  bugReports,
+} from '../../server/database/schema';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import { safeHttpUrl } from '../utils/safe-url';
 import { detectProvider, extractKey, type LinkProvider } from '../link-detect';
 
 import type { DrizzleDB } from './db';
@@ -41,6 +50,14 @@ export const LINK_ENTITY_TYPES: readonly LinkEntityType[] = [
   'failure_cluster',
   'bug_report',
 ];
+
+/** The body of a link creation: the entity, an http(s) URL and an optional title. */
+export const createLinkSchema = z.object({
+  entityType: z.enum(['test_run', 'test_runs_case', 'test_case', 'failure_cluster', 'bug_report']),
+  entityId: z.number().int().positive(),
+  url: z.string().refine((url) => safeHttpUrl(url) !== null, 'Must be an http(s) URL'),
+  title: z.string().max(200).nullable().optional(),
+});
 
 /** The `entity_links` FK column that holds an id of the given entity type. */
 function fkColumnFor(entityType: LinkEntityType) {
@@ -106,6 +123,9 @@ export async function createLink(
       .select({ id: failureClusters.id })
       .from(failureClusters)
       .where(eq(failureClusters.id, entityId));
+    exists = row.length > 0;
+  } else if (entityType === 'bug_report') {
+    const row = await db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.id, entityId));
     exists = row.length > 0;
   } else {
     const row = await db.select({ id: testCases.id }).from(testCases).where(eq(testCases.id, entityId));

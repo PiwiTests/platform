@@ -61,6 +61,7 @@ export const projects = pgTable(
     generatedSpecs: jsonb('generated_specs'), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
+    quarantineFailsStatus: boolean('quarantine_fails_status').notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -271,6 +272,7 @@ export const failureClusters = pgTable(
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
     timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
+    flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
     lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
     bisectResult: jsonb('bisect_result'), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
     // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every

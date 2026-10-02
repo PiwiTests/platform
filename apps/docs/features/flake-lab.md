@@ -120,7 +120,9 @@ still fails, or too few runs passed to say) · `2` error. Every flag is on the [
   this loop.
 
 The lab's own runs are stamped as flake-lab runs: the reporter still sends them, and the dashboard keeps them out of
-the flaky score, regression signals, clusters, notifications, quarantine and the suspects.
+the flaky score, regression signals, clusters, notifications, quarantine and the suspects. Nor do they reach the
+editor's CI failures, pass rates, durations, the `failed` selection, change coverage, the environment, visual and page
+diffs, green samples, or a test's tags, owner, locks and locator snapshots.
 
 ## Run it in CI
 

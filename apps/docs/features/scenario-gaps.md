@@ -87,7 +87,8 @@ The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)
 to your channels. Agents list and draft gaps with
 [`list_scenario_gaps`](/reference/mcp-tools#list_scenario_gaps) and
-[`draft_scenario`](/reference/mcp-tools#draft_scenario), and the
+[`draft_scenario`](/reference/mcp-tools#draft_scenario), give a verdict with
+[`triage_gap`](/reference/mcp-tools#triage_gap), and the
 [write-the-missing-test](/features/agent-skills) skill drives the loop.
 
 ## What feeds the map

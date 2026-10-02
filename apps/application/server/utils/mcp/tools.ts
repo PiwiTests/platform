@@ -39,12 +39,23 @@ import {
   patchClusterStatus,
   patchClusterBaseCommit,
   getOpenFailureClusters,
+  bulkTriageClusters,
+  quarantineClusterTests,
+  releaseClusterTests,
 } from '#shared/handlers/failure-clusters';
-import { clusterInQueue, isInboxQueue } from '#shared/inbox-queues';
+import { BULK_TRIAGE_MAX, clusterInQueue, isInboxQueue, isSnoozeOption, parseBulkIds } from '#shared/inbox-queues';
+import {
+  getSuggestionProjectId,
+  pendingSuggestionsForCluster,
+  rejectMergeSuggestion,
+} from '#shared/handlers/cluster-merge-suggestions';
+import { approveSuggestedMerge } from '../merge-suggestion-approve';
+import { rerunClusterInCi } from '../ci-rerun';
+import { createEnrichedLink } from '../integrations/link-create';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { listTags } from '#shared/handlers/tags';
-import { listLinks, type LinkEntityType } from '#shared/handlers/links';
+import { createLinkSchema, listLinks, type LinkEntityType } from '#shared/handlers/links';
 import { resolveLinkEntityProjectId } from '../project-access';
 import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
 import { createIssue } from '../integrations/create';
@@ -127,7 +138,7 @@ import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
-import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
+import { listScenarioGaps, draftScenario, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
@@ -137,6 +148,8 @@ import {
   listBugReports,
   renderBugReportSpec,
   renderStepsWith,
+  bugReportPatchSchema,
+  updateBugReport,
 } from '#shared/handlers/bug-reports';
 import { describeExpectation, describeStepInWords, expectedSteps, type BugReport } from '@piwitests/core/bug-report';
 import { parseSteps } from '@piwitests/core/steps';
@@ -808,6 +821,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (cluster.project?.id != null) assertProject(ctx, cluster.project.id);
 
     const knownIssue = await getClusterKnownIssue(db, id);
+    const mergeSuggestions = await pendingSuggestionsForCluster(db, id);
 
     // Fetch locator healing for up to 5 affected cases in one batch (2 DB
     // round-trips) so AI coding agents get fix suggestions without visiting
@@ -871,6 +885,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       lastSeenStatus: cluster.lastSeenRunStatus || null,
       project: cluster.project ? { id: cluster.project.id, name: cluster.project.name } : null,
       sampleError: trunc(cluster.sampleError, 400),
+      mergeSuggestions: mergeSuggestions.map((s) => ({ suggestionId: s.id, otherClusterId: s.otherClusterId })),
       diagnosis: cluster.diagnosis
         ? dropNulls({
             status: cluster.diagnosis.status,
@@ -2227,7 +2242,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const note = typeof params.triageNote === 'string' ? params.triageNote : undefined;
     const result = await patchClusterStatus(db, id, status, note);
     if (!result) return null;
-    return dropNulls({ id, status, triageNote: note || null, ok: true });
+    return dropNulls({ id, status, triageNote: result.cluster?.triageNote ?? null, ok: true });
   },
 
   // ── set_cluster_base_commit ────────────────────────────────────────────────
@@ -2305,6 +2320,194 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       summary: diag.summary || null,
       rootCause: diag.rootCause || null,
       suggestedFix: det?.suggestedFix || null,
+    });
+  },
+
+  // ── triage_cluster ─────────────────────────────────────────────────────────
+  async triage_cluster(db, params, ctx) {
+    assertWriteRole(ctx);
+    const ids = parseBulkIds(params.clusterIds);
+    if (!ids) {
+      throw new Error(`clusterIds must be a non-empty array of positive integers (max ${BULK_TRIAGE_MAX})`);
+    }
+    const action = String(params.action ?? '');
+    let apply: (allowed: number[]) => Promise<{ updated: number; tests?: number; changed?: number }>;
+    if (action === 'status') {
+      const status = String(params.status ?? '');
+      if (!['open', 'resolved', 'ignored'].includes(status)) {
+        throw new Error('status must be one of: open, resolved, ignored');
+      }
+      const note = typeof params.note === 'string' && params.note.trim() ? params.note : null;
+      apply = async (allowed) => {
+        if (!note) return { updated: (await bulkTriageClusters(db, allowed, { action: 'status', status }))!.updated };
+        let updated = 0;
+        for (const id of allowed) if (await patchClusterStatus(db, id, status, note)) updated += 1;
+        return { updated };
+      };
+    } else if (action === 'assign') {
+      if (params.assignee != null && typeof params.assignee !== 'string') {
+        throw new Error('assignee must be a string (empty to unassign)');
+      }
+      const assignee = (params.assignee as string | undefined) ?? null;
+      apply = async (allowed) => (await bulkTriageClusters(db, allowed, { action: 'assign', assignee }))!;
+    } else if (action === 'snooze') {
+      const snooze = params.snooze ?? null;
+      if (snooze !== null && !isSnoozeOption(snooze)) {
+        throw new Error('snooze must be one of: 1-day, 1-week, until-recurs (omit to unsnooze)');
+      }
+      apply = async (allowed) => (await bulkTriageClusters(db, allowed, { action: 'snooze', snooze }))!;
+    } else if (action === 'quarantine' || action === 'release') {
+      const reason =
+        typeof params.reason === 'string' && params.reason.trim() ? params.reason.slice(0, 500) : undefined;
+      apply = async (allowed) => {
+        let updated = 0;
+        let tests = 0;
+        let changed = 0;
+        for (const id of allowed) {
+          const result =
+            action === 'quarantine'
+              ? await quarantineClusterTests(db, id, { createdBy: ctx.user?.id || null, reason })
+              : await releaseClusterTests(db, id, { reason });
+          if (!result) continue;
+          updated += 1;
+          tests += result.tests;
+          changed += 'quarantined' in result ? result.quarantined : result.released;
+        }
+        return { updated, tests, changed };
+      };
+    } else {
+      throw new Error('action must be one of: status, assign, snooze, quarantine, release');
+    }
+
+    // Like the bulk REST route, act only on the clusters this key may write.
+    const rows = await db
+      .select({ id: failureClusters.id, projectId: failureClusters.projectId })
+      .from(failureClusters)
+      .where(inArray(failureClusters.id, ids));
+    const allowed = new Set(rows.filter((r) => scopeAllows(ctx.scope, r.projectId)).map((r) => r.id));
+    const result = await apply([...allowed]);
+    return dropNulls({
+      action,
+      requested: ids.length,
+      updated: result.updated,
+      tests: result.tests ?? null,
+      quarantined: action === 'quarantine' ? result.changed : null,
+      released: action === 'release' ? result.changed : null,
+      skippedIds: ids.filter((id) => !allowed.has(id)),
+    });
+  },
+
+  // ── triage_gap ─────────────────────────────────────────────────────────────
+  async triage_gap(db, params, ctx) {
+    assertWriteRole(ctx);
+    const projectId = numericParam(params.projectId, 'projectId');
+    const gapId = numericParam(params.gapId, 'gapId');
+    const validation = gapTriageSchema.safeParse(params);
+    if (!validation.success) {
+      throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    }
+    assertProject(ctx, projectId);
+    // The auth-disabled administrator is user 0, which no row references.
+    const result = await triageGap(db, projectId, gapId, { ...validation.data, triagedByUserId: ctx.user?.id || null });
+    if ('error' in result) {
+      if (result.error === 'gap-not-found') return null;
+      throw new Error('Covering test not found in this project');
+    }
+    return { id: gapId, projectId, status: result.status };
+  },
+
+  // ── decide_merge_suggestion ────────────────────────────────────────────────
+  async decide_merge_suggestion(db, params, ctx) {
+    assertWriteRole(ctx);
+    const decision = String(params.decision ?? '');
+    if (decision !== 'approve' && decision !== 'reject') throw new Error('decision must be approve or reject');
+    let suggestionId: number;
+    if (params.suggestionId != null) {
+      suggestionId = numericParam(params.suggestionId, 'suggestionId');
+    } else if (params.clusterId != null) {
+      const clusterId = numericParam(params.clusterId, 'clusterId');
+      if ((await checkEntityScope(db, ctx, clusterId, resolveClusterProjectId)) === 'not-found') return null;
+      const pending = await pendingSuggestionsForCluster(db, clusterId);
+      if (pending.length === 0) throw new Error(`Cluster ${clusterId} has no pending merge suggestion`);
+      if (pending.length > 1) {
+        const listed = pending.map((p) => `${p.id} (with cluster ${p.otherClusterId})`).join(', ');
+        throw new Error(
+          `Cluster ${clusterId} has ${pending.length} pending merge suggestions: ${listed}; pass suggestionId`,
+        );
+      }
+      suggestionId = pending[0]!.id;
+    } else {
+      throw new Error('Pass clusterId or suggestionId');
+    }
+    if ((await checkEntityScope(db, ctx, suggestionId, getSuggestionProjectId)) === 'not-found') return null;
+
+    if (decision === 'approve') {
+      const merged = await approveSuggestedMerge(db, suggestionId);
+      if (!merged) throw new Error('Suggestion is not pending');
+      return { suggestionId, decision, survivorId: merged.survivorId };
+    }
+    if (!(await rejectMergeSuggestion(db, suggestionId))) throw new Error('Suggestion is not pending');
+    return { suggestionId, decision, ok: true };
+  },
+
+  // ── set_bug_report_status ──────────────────────────────────────────────────
+  async set_bug_report_status(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.id, 'id');
+    const validation = bugReportPatchSchema.safeParse({ status: params.status });
+    if (!validation.success || !validation.data.status) {
+      throw new Error('status must be one of: open, dismissed, closed');
+    }
+    if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+    const report = await updateBugReport(db, id, { status: validation.data.status });
+    if (!report) return null;
+    return { id, status: report.status };
+  },
+
+  // ── rerun_cluster_in_ci ────────────────────────────────────────────────────
+  async rerun_cluster_in_ci(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const outcome = await rerunClusterInCi(db, id, {
+      id: ctx.user?.id || null,
+      name: ctx.user?.name || ctx.user?.username || null,
+    });
+    if (!outcome.ok) {
+      if (outcome.error === 'not-found') return null;
+      throw new Error(outcome.message);
+    }
+    const { provider, url, args, at } = outcome.dispatch;
+    return dropNulls({ clusterId: id, provider, url, args, dispatchedAt: iso(at) });
+  },
+
+  // ── link_issue ─────────────────────────────────────────────────────────────
+  async link_issue(db, params, ctx) {
+    assertWriteRole(ctx);
+    const validation = createLinkSchema.safeParse({
+      entityType: params.entityType,
+      entityId: params.entityId,
+      url: params.url,
+      title: params.title,
+    });
+    if (!validation.success) {
+      throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    }
+    const { entityType, entityId } = validation.data;
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
+    const link = await createEnrichedLink(db, validation.data);
+    if (!link) throw new Error('Failed to create link');
+    return dropNulls({
+      id: link.id,
+      entityType,
+      entityId,
+      url: link.url,
+      provider: link.provider,
+      key: link.key || null,
+      title: link.title || null,
+      statusText: link.statusText || null,
     });
   },
 

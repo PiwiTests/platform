@@ -8,7 +8,7 @@
  * edit backed by high-confidence captured evidence. The chosen edit set is
  * snapshotted into a durable `heal_actions` row; the dispatcher does the writes.
  */
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 import { healActions, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { getLocatorHealingBatch } from '../locator-healing';
 import { createScmProvider } from '../scm';
@@ -244,23 +244,57 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
     edits,
   };
 
+  if (!(await queueHealAction(db, { projectId: run.projectId, runId, dedupeKey, payload }))) {
+    return skip('an identical heal action is already queued');
+  }
+
+  return { enqueued: true, dedupeKey, edits: edits.length };
+}
+
+/** Settled states that gave nothing to the repository: their dedupe key is free to reuse. */
+const RETRYABLE_STATUSES = ['failed', 'skipped'];
+
+/**
+ * Queue a heal action under its dedupe key. A row that already holds the key
+ * and ended failed or skipped is reset to pending with the new run and payload;
+ * a pending, processing, opened, merged or closed one keeps it. Returns whether
+ * the action was queued.
+ */
+export async function queueHealAction(
+  db: DbClient,
+  action: { projectId: number; runId: number; dedupeKey: string; payload: HealActionPayload },
+): Promise<boolean> {
   const inserted = await db
     .insert(healActions)
     .values({
-      projectId: run.projectId,
-      runId,
-      dedupeKey,
+      projectId: action.projectId,
+      runId: action.runId,
+      dedupeKey: action.dedupeKey,
       kind: 'open-pr',
       status: 'pending',
       attempts: 0,
-      payload,
+      payload: action.payload,
       scheduledFor: new Date(),
     })
     .onConflictDoNothing({ target: healActions.dedupeKey })
     .returning({ id: healActions.id });
-  if (inserted.length === 0) return skip('an identical heal action is already queued');
+  if (inserted.length > 0) return true;
 
-  return { enqueued: true, dedupeKey, edits: edits.length };
+  const requeued = await db
+    .update(healActions)
+    .set({
+      runId: action.runId,
+      status: 'pending',
+      attempts: 0,
+      payload: action.payload,
+      result: null,
+      error: null,
+      scheduledFor: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(healActions.dedupeKey, action.dedupeKey), inArray(healActions.status, RETRYABLE_STATUSES)))
+    .returning({ id: healActions.id });
+  return requeued.length > 0;
 }
 
 /** Fire-and-forget wrapper for the run-finalize paths. */

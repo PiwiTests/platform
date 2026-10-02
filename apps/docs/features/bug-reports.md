@@ -148,7 +148,8 @@ screenshot. See [Replay a bug report](./replay-a-bug-report).
 ## For agents
 
 The [MCP server](./mcp) has `list_bug_reports`, `get_bug_report` (the steps in words, what was expected, the evidence
-and the reproductions) and `render_steps`, which writes a report's failing test, or any steps file's.
+and the reproductions), `render_steps`, which writes a report's failing test, or any steps file's, and
+`set_bug_report_status`, which dismisses, reopens or closes a report.
 
 ## Related
 

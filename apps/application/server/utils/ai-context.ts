@@ -8,6 +8,7 @@ import {
   networkRequests,
   files,
   failureDiagnoses,
+  failureDiagnosisVersions,
   failureClusters,
 } from '../database/schema';
 import type { FailureCluster } from '../database/schema';
@@ -19,6 +20,7 @@ import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
+import { notLabRun } from '#shared/handlers/probes';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
@@ -598,11 +600,12 @@ function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[]
 /**
  * Compare the failing execution to the same test's recent passing runs:
  * duration vs baseline, web-vitals deltas, console-error delta, how far the
- * run got (steps executed), and whether the last pass is newer than the
- * cluster's last seen (already-green reconciliation).
- * All from data already stored — no extra collection.
+ * run got (steps executed), and whether the test has passed since the
+ * cluster's last seen run on that run's branch (already-green reconciliation).
+ * Lab runs replay the test under injected conditions and never count as a
+ * pass. All from data already stored — no extra collection.
  */
-async function baselineComparisonSection(
+export async function baselineComparisonSection(
   db: DbClient,
   rep: RepresentativeRow,
   clusterLastSeenRunId?: number,
@@ -617,10 +620,17 @@ async function baselineComparisonSection(
       steps: testRunsCases.steps,
       runId: testRunsCases.testRunId,
       startTime: testRuns.startTime,
+      branch: testRuns.branch,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed')))
+    .where(
+      and(
+        eq(testRunsCases.testCaseId, rep.testCaseId),
+        eq(testRunsCases.status, 'passed'),
+        notLabRun(testRuns.metadata),
+      ),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(20);
 
@@ -629,15 +639,24 @@ async function baselineComparisonSection(
   const last = passings[0]!;
   const lines: string[] = [];
 
-  // Check if the last passing run is NEWER than the cluster's lastSeen run
-  let alreadyGreen = false;
-  if (clusterLastSeenRunId != null && last.runId > clusterLastSeenRunId) {
-    alreadyGreen = true;
-    const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+  // A pass after the cluster's last seen run, on that run's branch.
+  const [lastSeen] =
+    clusterLastSeenRunId != null
+      ? await db
+          .select({ startTime: testRuns.startTime, branch: testRuns.branch })
+          .from(testRuns)
+          .where(eq(testRuns.id, clusterLastSeenRunId))
+      : [];
+  const newerPass = lastSeen
+    ? passings.find((p) => p.startTime > lastSeen.startTime && p.branch === lastSeen.branch)
+    : undefined;
+  const alreadyGreen = newerPass !== undefined;
+  if (newerPass) {
+    const when = newerPass.startTime instanceof Date ? relativeDays(newerPass.startTime) : null;
     lines.push(
-      `⚠️ This test has PASSED on a newer commit (run #${last.runId} > failing #${clusterLastSeenRunId}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
+      `⚠️ This test has PASSED since the failure (run #${newerPass.runId}, after failing run #${clusterLastSeenRunId}${newerPass.branch ? ` on ${newerPass.branch}` : ''}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
     );
-    if (when) lines.push(`- Last passing run: #${last.runId} (${when})`);
+    if (when) lines.push(`- Last passing run: #${newerPass.runId} (${when})`);
   }
 
   const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
@@ -1201,9 +1220,12 @@ export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureC
   return lines.join('\n');
 }
 
-/** Prior diagnosis + triage note + user feedback. */
-async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
-  const prev = await db
+/**
+ * The cluster's last completed diagnosis: the stored row when it is completed,
+ * otherwise the newest completed version snapshotted before a re-run reset it.
+ */
+async function lastCompletedDiagnosis(db: DbClient, clusterId: number) {
+  const [current] = await db
     .select({
       status: failureDiagnoses.status,
       category: failureDiagnoses.category,
@@ -1214,11 +1236,37 @@ async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Pro
       feedbackNote: failureDiagnoses.feedbackNote,
     })
     .from(failureDiagnoses)
-    .where(eq(failureDiagnoses.clusterId, cluster.id))
+    .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')))
     .limit(1);
+  if (current?.status === 'completed') return current;
 
-  const d = prev[0];
-  if (!d || d.status !== 'completed') return null;
+  const [version] = await db
+    .select({
+      status: failureDiagnosisVersions.status,
+      category: failureDiagnosisVersions.category,
+      confidence: failureDiagnosisVersions.confidence,
+      summary: failureDiagnosisVersions.summary,
+      rootCause: failureDiagnosisVersions.rootCause,
+      feedback: failureDiagnosisVersions.feedback,
+      feedbackNote: failureDiagnosisVersions.feedbackNote,
+    })
+    .from(failureDiagnosisVersions)
+    .where(
+      and(
+        eq(failureDiagnosisVersions.clusterId, clusterId),
+        eq(failureDiagnosisVersions.scope, 'cluster'),
+        eq(failureDiagnosisVersions.status, 'completed'),
+      ),
+    )
+    .orderBy(desc(failureDiagnosisVersions.createdAt), desc(failureDiagnosisVersions.id))
+    .limit(1);
+  return version ?? null;
+}
+
+/** Prior diagnosis + triage note + user feedback. */
+async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const d = await lastCompletedDiagnosis(db, cluster.id);
+  if (!d) return null;
 
   const lines: string[] = ['## Prior Assessment (from last diagnosis)'];
   if (d.category) lines.push(`- Previous category: ${d.category}`);

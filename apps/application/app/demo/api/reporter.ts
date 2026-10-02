@@ -30,6 +30,7 @@ import {
 } from '~~/server/utils/network-request-helpers';
 import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
 import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
@@ -576,6 +577,7 @@ export async function persistRunCases(
   testRunId: number,
   cases: RunCaseInput[],
   deduplicate?: boolean,
+  options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
@@ -753,6 +755,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus,
       blockedBy: c.blockedBy ?? null,
+      ...(options.datedFrom ? { createdAt: executionCreatedAt(c.startedAt, options.datedFrom) } : {}),
     });
     rowInputIndices.push(i);
 
@@ -797,10 +800,10 @@ export async function persistRunCases(
     await db.insert(networkRequests).values(nrValues);
   }
 
-  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  if (!options.keepTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
   await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
-  await syncTestCaseMetadata(db, caseMetaSnapshots);
+  if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
 
   return result;
 }
@@ -1007,6 +1010,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
         metadata: { ...currentMeta, shardDurations: allDurations },
+        // The first shard to report a branch names the run's branch.
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),

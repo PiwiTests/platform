@@ -132,6 +132,10 @@ export interface PrSummaryInput {
   splitLocks?: string[] | null;
   /** True when no previous green run existed to compare against. */
   hasBaseline: boolean;
+  /** Failures of tests that are currently quarantined, counted in `failedTests`. */
+  quarantinedFailures?: number;
+  /** The project's setting: a quarantined failure still turns the commit status red. */
+  quarantineFailsStatus?: boolean;
   /** Uncovered-changes section, when the run was pull-request-stamped with a diff. */
   changeCoverage?: PrChangeCoverage | null;
   /** Locators the diff breaks whose tests this run did not exercise. */
@@ -571,13 +575,19 @@ export interface CommitStatusInput {
   context: string;
 }
 
-/** Build the commit status for a finished run. Descriptions are capped at the
- *  140 characters GitHub accepts. */
+/**
+ * Build the commit status for a finished run. Failures of quarantined tests
+ * leave it green unless the project's `quarantineFailsStatus` says otherwise;
+ * the description counts them either way. Descriptions are capped at the 140
+ * characters GitHub accepts.
+ */
 export function buildCommitStatus(input: PrSummaryInput, context: string): CommitStatusInput {
-  const failing = input.failedTests > 0;
+  const quarantined = Math.min(input.failedTests, Math.max(0, input.quarantinedFailures ?? 0));
+  const failing = input.failedTests - (input.quarantineFailsStatus ? 0 : quarantined) > 0;
   const parts = [`${input.passedTests}/${input.totalTests} passed`];
   if (input.newRegressions.length > 0) parts.push(`${input.newRegressions.length} new`);
   if (input.flakyTests > 0) parts.push(`${input.flakyTests} flaky`);
+  if (quarantined > 0) parts.push(`${quarantined} quarantined`);
 
   return {
     state: failing ? 'failure' : 'success',

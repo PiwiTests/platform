@@ -206,8 +206,8 @@ export async function apiDemoImport(form: FormData): Promise<ImportRunResponse> 
  */
 function createDemoImportPort(): ImportPort {
   return {
-    persistRunCases: (db, projectId, testRunId, cases) =>
-      persistRunCases(db as never, projectId, testRunId, cases as RunCaseInput[]),
+    persistRunCases: (db, projectId, testRunId, cases, options) =>
+      persistRunCases(db as never, projectId, testRunId, cases as RunCaseInput[], false, options),
 
     async storeFile({ projectId, entryName, bytes, digest }) {
       // Content-addressed like the server's blob store, so the same trace

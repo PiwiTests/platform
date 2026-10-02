@@ -44,7 +44,8 @@ change to the route's handler alone.
 
 A probe run is stamped as one, with retries off. It never counts as a real run: no failure clusters, no regression
 signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
-compared with, and nothing in the Test Map but the probe outcomes.
+compared with, and nothing in the Test Map but the probe outcomes. It never moves a pass rate, a duration or the
+`failed` selection either, and leaves a test's tags, owner, locks and locator snapshots as they are.
 A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
 [CLI reference](/reference/cli#probe) lists every flag.
 

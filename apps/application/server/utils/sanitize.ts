@@ -291,14 +291,70 @@ function capStepParams(
   return count > 0 ? out : null;
 }
 
+/** The `category` of the marker step that stands where {@link capSteps} dropped steps. */
+export const DROPPED_STEPS_CATEGORY = 'piwi:dropped';
+
+function stepFailed(step: unknown): boolean {
+  if (!step || typeof step !== 'object' || Array.isArray(step)) return false;
+  const s = step as Record<string, unknown>;
+  return s.failed === true || (s.error != null && s.error !== '');
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 /**
- * Cap the stored steps array (count), and re-normalize each step's `subtitle`
- * and `params` against the ingest limits, masking token-shaped strings. Applied
- * on ingest so a payload that skipped the reporter is bounded all the same.
+ * The steps kept under the count cap, in their original order: every step that
+ * failed or carries an error first (the failing step and the chain around it),
+ * then the earliest steps in the room left. A marker step stands at the first
+ * gap and names how many steps were dropped; it takes the depth and start time
+ * of the next kept step (of the first dropped one when none follows), so the
+ * stored list still rebuilds into a tree.
+ */
+function keepSteps(steps: unknown[], limit: number): unknown[] {
+  if (steps.length <= limit) return steps;
+  const room = Math.max(0, limit - 1);
+  const kept = new Set<number>();
+  steps.forEach((step, i) => {
+    if (kept.size < room && stepFailed(step)) kept.add(i);
+  });
+  for (let i = 0; i < steps.length && kept.size < room; i++) kept.add(i);
+
+  const dropped = steps.length - kept.size;
+  const out: unknown[] = [];
+  let marked = false;
+  steps.forEach((step, i) => {
+    if (kept.has(i)) {
+      out.push(step);
+      return;
+    }
+    if (marked) return;
+    marked = true;
+    const nextKept = steps.findIndex((_, j) => j > i && kept.has(j));
+    const anchor = (nextKept === -1 ? step : steps[nextKept]) as Record<string, unknown> | null;
+    const depth = finiteNumber(anchor?.depth);
+    const startTime = finiteNumber(anchor?.startTime);
+    out.push({
+      title: `${dropped} steps not stored`,
+      category: DROPPED_STEPS_CATEGORY,
+      duration: 0,
+      ...(depth !== null ? { depth } : {}),
+      ...(startTime !== null ? { startTime } : {}),
+    });
+  });
+  return out;
+}
+
+/**
+ * Cap the stored steps array (count), keeping the steps that failed, and
+ * re-normalize each step's `subtitle` and `params` against the ingest limits,
+ * masking token-shaped strings. Applied on ingest so a payload that skipped
+ * the reporter is bounded all the same.
  */
 export function capSteps(value: unknown, limits: IngestLimits): unknown {
   if (!Array.isArray(value)) return value ?? null;
-  return value.slice(0, limits.steps).map((step) => {
+  return keepSteps(value, limits.steps).map((step) => {
     if (!step || typeof step !== 'object' || Array.isArray(step)) return step;
     const s = step as Record<string, unknown>;
     const out: Record<string, unknown> = { ...s };

@@ -17,7 +17,13 @@ import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
-import { getQuarantinedCaseIds, countQuarantinedClusterTests, listQuarantine, addQuarantine } from './quarantine';
+import {
+  getQuarantinedCaseIds,
+  countQuarantinedClusterTests,
+  listQuarantine,
+  addQuarantine,
+  releaseQuarantine,
+} from './quarantine';
 import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
@@ -201,6 +207,7 @@ export async function getFailureCluster(
       fixVerification: cluster.fixVerification ?? null,
       fixCommit: cluster.fixCommit ?? null,
       fixLandedRunId: cluster.fixLandedRunId ?? null,
+      flakeEvidenceRunId: cluster.flakeEvidenceRunId ?? null,
       lastSeenRunId: cluster.lastSeenRunId,
       lastSeenAt: lastRun?.startTime ?? null,
       updatedAt: cluster.updatedAt ?? null,
@@ -318,6 +325,10 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
   return { diagnosis: diag ?? null };
 }
 
+/**
+ * Set a cluster's triage status. The triage note is kept unless one is given:
+ * a string replaces it (empty clears it), `null` clears it.
+ */
 export async function patchClusterStatus(db: DrizzleDB, clusterId: number, status: string, triageNote?: string | null) {
   if (!status || !VALID_STATUSES.includes(status)) {
     return null;
@@ -329,10 +340,10 @@ export async function patchClusterStatus(db: DrizzleDB, clusterId: number, statu
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
 
-  const note = triageNote ?? null;
+  const note = triageNote === undefined ? {} : { triageNote: triageNote?.trim() ? triageNote : null };
   await db
     .update(failureClusters)
-    .set({ status, triageNote: note, updatedAt: new Date() })
+    .set({ status, ...note, updatedAt: new Date() })
     .where(eq(failureClusters.id, clusterId));
 
   const [updated] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
@@ -423,6 +434,31 @@ export async function quarantineClusterTests(
   return { success: true, projectId: cluster.projectId, tests: rows.length, quarantined };
 }
 
+/**
+ * Release every test currently in a cluster from quarantine, through the same
+ * per-test release the project's quarantine table applies. The quarantine rows
+ * stay as history. A test that is not quarantined is left as it is.
+ */
+export async function releaseClusterTests(db: DrizzleDB, clusterId: number, opts: { reason?: string | null } = {}) {
+  const [cluster] = await db
+    .select({ id: failureClusters.id, projectId: failureClusters.projectId })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  if (!cluster) return null;
+
+  const rows = await db
+    .selectDistinct({ testCaseId: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+
+  let released = 0;
+  for (const row of rows) {
+    const result = await releaseQuarantine(db, cluster.projectId, row.testCaseId, opts.reason ?? null);
+    if (result.released) released += 1;
+  }
+  return { success: true, projectId: cluster.projectId, tests: rows.length, released };
+}
+
 /** A single bulk-triage action applied to a set of already-authorized clusters. */
 export type BulkTriage =
   | { action: 'status'; status: string }
@@ -432,7 +468,8 @@ export type BulkTriage =
 /**
  * Apply one triage action to many clusters at once, sharing the validation the
  * single-cluster endpoints use. The caller has already narrowed `ids` to the
- * clusters the user may write. Returns null on an invalid status.
+ * clusters the user may write. A status change keeps each cluster's triage
+ * note. Returns null on an invalid status.
  */
 export async function bulkTriageClusters(
   db: DrizzleDB,
@@ -445,7 +482,7 @@ export async function bulkTriageClusters(
   let set: Record<string, unknown>;
   if (patch.action === 'status') {
     if (!VALID_STATUSES.includes(patch.status)) return null;
-    set = { status: patch.status, triageNote: null, updatedAt: new Date() };
+    set = { status: patch.status, updatedAt: new Date() };
   } else if (patch.action === 'assign') {
     const value = typeof patch.assignee === 'string' && patch.assignee.trim() ? patch.assignee.trim() : null;
     set = { assignee: value, updatedAt: new Date() };

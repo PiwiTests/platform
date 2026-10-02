@@ -10,6 +10,7 @@ import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../../server/database/schema';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import type { DrizzleDB } from './db';
+import { notLabExecution } from './probes';
 
 /** A green sample counts as fresh for this long before another is due. */
 export const GREEN_SAMPLE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -29,9 +30,10 @@ export interface AriaSamplingResult {
 
 /**
  * The set of tests due a fresh green ARIA sample for a project. A test is
- * included when no passing execution carries an ARIA snapshot, or the most
- * recent one that does is older than {@link GREEN_SAMPLE_MAX_AGE_MS}. Empty
- * when the project or the instance declines the `green-samples` capability.
+ * included when no passing execution outside a lab run carries an ARIA
+ * snapshot, or the most recent one that does is older than
+ * {@link GREEN_SAMPLE_MAX_AGE_MS}. Empty when the project or the instance
+ * declines the `green-samples` capability.
  */
 export async function getAriaSampling(
   db: DrizzleDB,
@@ -58,6 +60,7 @@ export async function getAriaSampling(
         eq(testCases.projectId, projectId),
         eq(testRunsCases.status, 'passed'),
         or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
+        notLabExecution(testRunsCases.testRunId),
       ),
     )
     .groupBy(testRunsCases.testCaseId);

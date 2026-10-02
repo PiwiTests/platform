@@ -25,6 +25,7 @@ import { resolveRunBranch } from '../run-branch';
 import { verifyClusterFixes } from '../fix-verification';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { getProjectFlakyTests } from '#shared/handlers/projects';
+import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import {
   buildChangeCoverageStatus,
   buildCommitStatus,
@@ -225,6 +226,8 @@ export async function buildRunPrSummary(
     (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
   );
   const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
+  const quarantinedIds = await getQuarantinedCaseIds(db, run.projectId).catch(() => new Set<number>());
+  const quarantinedFailures = failingRows.filter((row) => quarantinedIds.has(row.testCaseId)).length;
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
   // re-deriving "new versus pre-existing" with a second, divergent rule.
@@ -338,6 +341,8 @@ export async function buildRunPrSummary(
       return held.length ? held : null;
     })(),
     hasBaseline: insights?.hasBaseline ?? false,
+    quarantinedFailures,
+    quarantineFailsStatus: project.quarantineFailsStatus === true,
   };
 }
 

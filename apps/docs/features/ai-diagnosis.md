@@ -28,8 +28,8 @@ past five model calls in a run, the pair becomes a suggestion directly. This run
 whenever an embedding role is configured, independently of auto-diagnose.
 
 Each pair is judged once: the model's no is kept, so the same pair is not sent to the model again. A pair that
-someone dismissed, or that came from [moving tests to a new cluster](./failure-clusters#move-tests-to-a-new-cluster),
-is never merged automatically, however close the two clusters score.
+someone dismissed, or that came from [moving tests to a new cluster](#split-a-cluster-by-hand), is never merged
+automatically, however close the two clusters score.
 
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: clusters are embedded, compared by cosine similarity, and kept apart, adjudicated by a model, or merged depending on the score">
@@ -39,6 +39,14 @@ is never merged automatically, however close the two clusters score.
 With auto-diagnose on, new clusters also get a short **title** from one cheap batched model call per run. Without one,
 a cluster is named from its error kind, locator, route and spec file, such as
 `Timeout on getByLabel('Email address') in checkout.spec.ts`.
+
+### Split a cluster by hand
+
+The opposite of a merge needs no AI. When some of a cluster's tests fail with the same error for a different reason,
+select them in the cluster page's **Affected tests** and choose **Move to a new cluster** (reporter or administrator).
+Their failures move to a new cluster at once, with the triage note you type, and the cluster they left gains a line
+naming the move. Later failures of those tests with the same error join the new cluster, the other tests' failures
+stay where they were, and the two clusters are never merged automatically.
 
 ## Enabling AI diagnosis
 
@@ -112,6 +120,11 @@ The diagnosis, its patch, the locator fix and the verify command come together i
 Every re-diagnose keeps the previous result; a nightly sweep keeps the newest 20 per cluster
 (`PIWI_RETENTION_DIAGNOSIS_VERSIONS`, `0` keeps all). **History** in the panel header lists them
 newest first, with the model, category, confidence and token cost, and shows what changed since each one.
+
+A re-diagnose sends the previous assessment to the model: its category, confidence, summary and root cause, the
+cluster's triage note, and, when you rated it unhelpful, your note and an instruction not to repeat it without new
+evidence. A rating belongs to the version it rated: the new diagnosis starts unrated, and the history keeps the old
+one's thumbs.
 
 A diagnosis is flagged **may be stale** only when the evidence changed since it ran **and** the cluster is still
 failing; the banner says whether new occurrences or new evidence caused it.

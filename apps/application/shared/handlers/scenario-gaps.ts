@@ -9,6 +9,7 @@
  */
 
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import {
   failureClusters,
   graphEdges,
@@ -2073,6 +2074,15 @@ export async function listScenarioGaps(
 export type TriageVerb = 'accept' | 'snooze' | 'dismiss' | 'covered-by';
 export type SnoozeOption = '1-day' | '1-week' | 'until-node-changes';
 export type DismissReason = 'not-worth-testing' | 'covered-elsewhere' | 'wrong';
+
+/** The body of a gap triage: the verb and what it carries. */
+export const gapTriageSchema = z.object({
+  verb: z.enum(['accept', 'snooze', 'dismiss', 'covered-by']),
+  snooze: z.enum(['1-day', '1-week', 'until-node-changes']).optional(),
+  reason: z.enum(['not-worth-testing', 'covered-elsewhere', 'wrong']).optional(),
+  coveringTestCaseId: z.number().int().optional().nullable(),
+  assignedTo: z.string().optional().nullable(),
+});
 
 /** What a triage action carries beyond its verb. */
 export interface TriageInput {

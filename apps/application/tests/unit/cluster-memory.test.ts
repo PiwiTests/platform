@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { eq } from 'drizzle-orm';
 import {
   scoreFixedBefore,
   rankFixedBefore,
@@ -106,5 +107,52 @@ describe('rankFixedBefore', () => {
       { cluster: cluster({ id: 2, errorType: 'timeout', normalizedMessage: 'unrelated' }), cosine: 0.5 }, // too weak
     ];
     expect(rankFixedBefore(open, candidates)).toHaveLength(0);
+  });
+});
+
+describe('findFixedBefore — the earlier diagnosis', () => {
+  async function setup() {
+    const { drizzle } = await import('drizzle-orm/libsql');
+    const { migrate } = await import('drizzle-orm/libsql/migrator');
+    const { createClient } = await import('@libsql/client');
+    const { fileURLToPath } = await import('node:url');
+    const schema = await import('../../server/database/schema.sqlite');
+    delete process.env.PIWI_DATABASE_URL;
+    const { findFixedBefore } = await import('../../server/utils/cluster-memory');
+
+    const db = drizzle(createClient({ url: ':memory:' }), { schema });
+    await migrate(db, {
+      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
+    });
+    await db.insert(schema.projects).values({ id: 1, name: 'shop' });
+    const error = 'Error: expect(locator).toBeVisible() failed';
+    const base = { projectId: 1, errorType: 'assertion', sampleError: error, firstSeenRunId: 1, lastSeenRunId: 1 };
+    await db.insert(schema.failureClusters).values([
+      { ...base, id: 1, fingerprint: 'fp-old', signature: error, status: 'resolved', fixCommit: 'abc1234def' },
+      { ...base, id: 2, fingerprint: 'fp-new', signature: error, status: 'open' },
+    ]);
+    const [open] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, 2));
+    return { db, schema, open: open!, findFixedBefore };
+  }
+
+  it('offers the earlier diagnosis, unless it was rated unhelpful', async () => {
+    const { db, schema, open, findFixedBefore } = await setup();
+    await db.insert(schema.failureDiagnoses).values({
+      clusterId: 1,
+      scope: 'cluster',
+      status: 'completed',
+      summary: 'The cart API returns 500',
+    });
+
+    let [match] = await findFixedBefore(db, open);
+    expect(match?.clusterId).toBe(1);
+    expect(match?.diagnosisTitle).toBe('The cart API returns 500');
+
+    await db.update(schema.failureDiagnoses).set({ feedback: 'down' });
+    [match] = await findFixedBefore(db, open);
+    expect(match?.clusterId).toBe(1);
+    expect(match?.fixCommitShort).toBe('abc1234');
+    expect(match?.diagnosisTitle).toBeNull();
+    expect(match?.diagnosisFeedback).toBe('down');
   });
 });

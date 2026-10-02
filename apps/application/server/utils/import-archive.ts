@@ -144,8 +144,8 @@ function createServerImportPort(): ImportPort {
   const storage = getStorage();
 
   return {
-    persistRunCases: (db, projectId, testRunId, cases) =>
-      persistRunCases(db as never, projectId, testRunId, cases as never),
+    persistRunCases: (db, projectId, testRunId, cases, options) =>
+      persistRunCases(db as never, projectId, testRunId, cases as never, options),
 
     async storeFile({
       projectId,

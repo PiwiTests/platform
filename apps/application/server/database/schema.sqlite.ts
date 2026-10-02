@@ -21,6 +21,7 @@ export const projects = sqliteTable(
     generatedSpecs: text('generated_specs', { mode: 'json' }), // GeneratedSpecSettings — test import and bugs folder for specs rendered from steps
     targets: text('targets', { mode: 'json' }), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
+    quarantineFailsStatus: integer('quarantine_fails_status', { mode: 'boolean' }).notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -231,6 +232,7 @@ export const failureClusters = sqliteTable(
     fixCommit: text('fix_commit'), // commit of that run, when the reporter recorded one
     timeToResolutionMs: integer('time_to_resolution_ms'), // first seen → fix landed
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
+    flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
     lastRerunDispatch: text('last_rerun_dispatch', { mode: 'json' }), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
     bisectResult: text('bisect_result', { mode: 'json' }), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
     // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
