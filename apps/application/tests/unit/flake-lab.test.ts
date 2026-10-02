@@ -359,6 +359,45 @@ describe('recording results', () => {
     // The newest finished reproduce experiment is the control-only one above.
     expect(summary).toMatchObject({ testCaseId: FLAKY, verdict: 'not-reproduced' });
   });
+
+  test('an arm recorded against a load suspect with its threshold counts as the load suspect', () => {
+    const arm = (suspectId: string, verdict: string) => ({
+      key: suspectId,
+      label: 'CPU ×4',
+      suspectId,
+      verdict,
+      runs: 4,
+      matchingFailures: 3,
+      pValue: 0.01,
+    });
+    const experiment = (id: number, arms: unknown[]) =>
+      ({ id, kind: 'reproduce', finishedAt: null, arms }) as unknown as Parameters<
+        typeof lab.latestSuspectResults
+      >[0][0];
+    const results = lab.latestSuspectResults([
+      experiment(2, [arm('load', 'not-reproduced')]),
+      experiment(1, [arm('load:3', 'reproduced')]),
+    ]);
+    expect([...results.keys()]).toEqual(['load']);
+    expect(results.get('load')).toMatchObject({ experimentId: 2, verdict: 'not-reproduced' });
+    expect(lab.latestSuspectResults([experiment(1, [arm('load:7', 'reproduced')])]).get('load')).toMatchObject({
+      verdict: 'reproduced',
+    });
+  });
+
+  test('the flaky list names a reproduced suspect over a higher-ranked one', async () => {
+    const { getTopFlakeSuspects } = await import('../../shared/handlers/flake-profile');
+    const [ranked] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW });
+    expect(ranked!.suspect!.id).toBe('slow-route:GET /api/cart');
+
+    const reproduced = new Map([[FLAKY, new Set([`alongside:${NEIGHBOR}`])]]);
+    const [preferred] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, reproduced });
+    expect(preferred!.suspect!.id).toBe(`alongside:${NEIGHBOR}`);
+
+    // The list reads each test's lab results: the cart suspect reproduced earlier, so it leads.
+    const [item] = await lab.getFlakyListSuspects(db as never, 1, [FLAKY]);
+    expect(item!.suspect!.id).toBe('slow-route:GET /api/cart');
+  });
 });
 
 describe('verify', () => {
