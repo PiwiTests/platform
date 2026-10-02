@@ -14,7 +14,7 @@ import { machineFacts, resourceTotals } from '../../app/utils/resources';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
-const { getRunResources } = await import('../../shared/handlers/run-resources');
+const { getRunResources, getRunResourceTimeline } = await import('../../shared/handlers/run-resources');
 const { saveResourceReportPart, readResourceReport, hasResourceReport } =
   await import('../../shared/handlers/resource-reports');
 const { getTestRun } = await import('../../shared/handlers/test-runs');
@@ -46,10 +46,70 @@ const report = (shardIndex: number | null, leaky = true) =>
     shardIndex,
   });
 
+/** A report with a timeline: two workers, each test a page, the leaky ones left open. */
+const timedReport = (shardIndex: number | null, leaky = true) =>
+  demoResourceReport({
+    leaky,
+    wallMs: 60_000,
+    workers: [
+      {
+        worker: 0,
+        tests: 2,
+        spans: [
+          [1_000_000, 1_020_000],
+          [1_021_000, 1_040_000],
+        ],
+      },
+      { worker: 1, tests: 1, spans: [[1_000_500, 1_050_000]] },
+    ],
+    fixtureFile: 'tests/fixtures.ts',
+    handleTest: { title: 'exports', file: 'tests/reports.spec.ts' },
+    artifactBytes: 5_000_000,
+    shardIndex,
+  });
+
 describe('sanitizeResourceReport', () => {
   test('keeps a report as the reporter sends it', () => {
     const sent = report(null);
     expect(sanitizeResourceReport(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+    const timed = timedReport(null);
+    expect(timed.timeline).not.toBeNull();
+    expect(sanitizeResourceReport(JSON.parse(JSON.stringify(timed)))).toEqual(timed);
+  });
+
+  test('rebuilds the timeline from finite points, bounded', () => {
+    const clean = sanitizeResourceReport({
+      ...timedReport(null),
+      timeline: {
+        startedAt: 1_000_000.4,
+        cpuPct: [[1000, 140], [2000, -1], ['x', 3], [3000.6, 50], 7],
+        memoryBytes: Array.from({ length: 900 }, (_, i) => [i * 5000, 1e9]),
+        pages: [
+          {
+            worker: 0,
+            points: [
+              [0, 1.6],
+              [10, 'x'],
+            ],
+          },
+          { worker: 1, points: [] },
+          { worker: 'a', points: [[0, 1]] },
+        ],
+        extra: true,
+      },
+    })!;
+    expect(clean.timeline).toEqual({
+      startedAt: 1_000_000,
+      cpuPct: [
+        [1000, 100],
+        [3001, 50],
+      ],
+      memoryBytes: Array.from({ length: 600 }, (_, i) => [i * 5000, 1e9]),
+      pages: [{ worker: 0, points: [[0, 2]] }],
+    });
+    expect(
+      sanitizeResourceReport({ ...timedReport(null), timeline: { startedAt: 'now', cpuPct: [[1, 2]] } })!.timeline,
+    ).toBeNull();
   });
 
   test('rejects what is not a report, and drops what does not belong in one', () => {
@@ -191,6 +251,31 @@ describe('getRunResources', () => {
     expect(await getRunResources(db as any, 99)).toBeNull();
     const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, 1));
     expect(project?.capabilities).toEqual({ resources: 'declined' });
+  });
+});
+
+describe('getRunResourceTimeline', () => {
+  test('serves each shard’s timeline with the memory it is drawn against', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'passed', startTime: new Date() });
+    await saveResourceReportPart(db as any, 7, timedReport(1));
+    await saveResourceReportPart(db as any, 7, report(2));
+    const { parts } = (await getRunResourceTimeline(db as any, 7))!;
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ shardIndex: 1, memoryKind: 'pss', memoryCapacityBytes: 16 * 1024 ** 3 });
+    // The shared page from the first test on, each leaky test's page left open, all gone with the worker.
+    expect(parts[0]!.timeline.pages[0]!.points.map(([, n]) => n)).toEqual([1, 2, 3, 0]);
+    expect(Math.max(...parts[0]!.timeline.memoryBytes.map(([, bytes]) => bytes))).toBe(
+      Math.round(timedReport(1).profile!.memory.peakBytes!),
+    );
+    expect(await getRunResourceTimeline(db as any, 99)).toBeNull();
+  });
+
+  test('serves nothing for a project that declined the capability', async () => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout', capabilities: { resources: 'declined' } });
+    await db.insert(schema.testRuns).values({ id: 7, projectId: 1, status: 'passed', startTime: new Date() });
+    await saveResourceReportPart(db as any, 7, timedReport(null));
+    expect(await getRunResourceTimeline(db as any, 7)).toEqual({ parts: [] });
   });
 });
 

@@ -9,12 +9,14 @@ import {
   sanitizeExecutionResources,
   type StoredResourceReport,
 } from '#shared/resource-report';
+import type { WireResourceTimeline } from '#shared/types';
 import { readResourceReport } from './resource-reports';
 
 /**
  * A run's resources, as its Resources tab reads them: the report each of its
  * reporters sent (findings and what the run cost each machine), and the
- * executions that cost the most, from what each one measured.
+ * executions that cost the most, from what each one measured. And the
+ * resources over time, as the run's workers timeline draws them.
  */
 
 /** One execution's cost, as the tab lists it. */
@@ -135,4 +137,37 @@ export async function getRunResources(db: DrizzleDB, runId: number): Promise<Run
     costliest: executions.slice(0, COSTLIEST_CAP),
     measuredExecutions: executions.length,
   };
+}
+
+/** One reporter's resources over time, with what its tracks are drawn against. */
+export interface RunResourceTimelinePart {
+  shardIndex: number | null;
+  timeline: WireResourceTimeline;
+  /** The machine's memory, or its container's limit when lower; null without the run sampler. */
+  memoryCapacityBytes: number | null;
+  /** How the run's memory was measured: PSS, or RSS where PSS could not be read. */
+  memoryKind: 'pss' | 'rss' | null;
+}
+
+/** A run's resources over time, one part per reporter that sent them; null when the run does not exist. */
+export async function getRunResourceTimeline(
+  db: DrizzleDB,
+  runId: number,
+): Promise<{ parts: RunResourceTimelinePart[] } | null> {
+  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return null;
+  if (await isPassiveCapabilityDeclined(db, run.projectId, 'resources')) return { parts: [] };
+  const stored = await readResourceReport(db, runId);
+  const parts: RunResourceTimelinePart[] = [];
+  for (const part of stored.parts) {
+    if (!part.timeline) continue;
+    const machine = part.profile?.machine ?? null;
+    parts.push({
+      shardIndex: part.shardIndex ?? null,
+      timeline: part.timeline,
+      memoryCapacityBytes: machine ? (machine.memoryLimitBytes ?? machine.memoryBytes) || null : null,
+      memoryKind: part.profile?.memory.kind ?? null,
+    });
+  }
+  return { parts };
 }

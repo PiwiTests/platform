@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
+import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
-import { lockColorHex, TIMELINE_HOOK_COLORS } from '~/utils/timeline';
+import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT } from '~/utils/timeline';
+import {
+  ALL_RESOURCE_TRACKS,
+  RESOURCE_TRACK_KINDS,
+  buildResourceBands,
+  shownTracks,
+  type ResourceBand,
+  type ResourceTrackKind,
+  type ResourceTrackVisibility,
+} from '~/utils/resource-tracks';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -12,6 +22,10 @@ const props = defineProps<{
   live?: boolean;
   /** Allowlist of glob patterns classifying which waits count as wasted time. */
   wastedPatterns?: string[] | null;
+  /** The run, for its resources over time. */
+  runId?: number | null;
+  /** Whether a reporter of the run sent resources; the tracks are fetched only then, once the run ended. */
+  hasResources?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -47,7 +61,91 @@ const modelInput = {
   },
 };
 
-const { timelineData, workerRows, laneCount, maxTime, runLocks } = useTimelineModel(modelInput);
+const { timelineData, workerRows, laneCount, maxTime, origin, runLocks } = useTimelineModel(modelInput);
+
+// The resources each reporter measured over time, fetched once the run ended.
+const resourceParts = ref<RunResourceTimelinePart[]>([]);
+async function loadResources(): Promise<void> {
+  if (!props.runId || props.live || !props.hasResources) {
+    resourceParts.value = [];
+    return;
+  }
+  try {
+    const res = await $fetch<{ parts: RunResourceTimelinePart[] }>(`/api/test-runs/${props.runId}/resource-timeline`);
+    resourceParts.value = res.parts ?? [];
+  } catch {
+    resourceParts.value = [];
+  }
+}
+onMounted(loadResources);
+watch(() => [props.runId, props.live, props.hasResources], loadResources);
+
+// Which tracks are shown: a per-browser preference, every track until one is turned off.
+const trackVisibility = useLocalStorage<ResourceTrackVisibility>(
+  'piwi-timeline-resource-tracks',
+  { ...ALL_RESOURCE_TRACKS },
+  { initOnMounted: true, mergeDefaults: true, writeDefaults: false },
+);
+
+const resourceBands = computed<ResourceBand[]>(() =>
+  origin.value === null || resourceParts.value.length === 0
+    ? []
+    : buildResourceBands(resourceParts.value, workerRows.value, origin.value, (props.shardTotal ?? 0) > 1),
+);
+
+/** The tracks the header offers: those some band has data for, with whether they are shown. */
+const resourceTrackOptions = computed(() =>
+  RESOURCE_TRACK_KINDS.filter(({ kind }) => resourceBands.value.some((band) => band.tracks[kind])).map((k) => ({
+    kind: k.kind,
+    label: k.menuLabel,
+    shown: trackVisibility.value[k.kind] !== false,
+  })),
+);
+
+function toggleTrack(kind: ResourceTrackKind): void {
+  trackVisibility.value = { ...trackVisibility.value, [kind]: trackVisibility.value[kind] === false };
+}
+
+/** Each band with the tracks it draws and its height; a band whose tracks are all off takes no room. */
+const bandLayout = computed(() =>
+  resourceBands.value
+    .map((band) => {
+      const tracks = shownTracks(band, trackVisibility.value);
+      const { trackHeight, trackGap, bandGap } = TIMELINE_LAYOUT;
+      return { band, tracks, height: tracks.length > 0 ? tracks.length * (trackHeight + trackGap) + bandGap : 0 };
+    })
+    .filter((entry) => entry.height > 0),
+);
+
+/** Height of the bands drawn above each lane, the lane's own band included: `bandOffsets[lane]`. */
+const bandOffsets = computed(() => {
+  const offsets = new Array<number>(laneCount.value + 1).fill(0);
+  for (const { band, height } of bandLayout.value) {
+    for (let lane = band.firstLane; lane < offsets.length; lane++) offsets[lane]! += height;
+  }
+  return offsets;
+});
+const bandsHeight = computed(() => bandLayout.value.reduce((sum, entry) => sum + entry.height, 0));
+
+function laneOffset(lane: number): number {
+  return bandOffsets.value[lane] ?? bandsHeight.value;
+}
+
+/** Height of the band drawn right above a lane: the gap between the lane and the one before it. */
+function bandAbove(lane: number): number {
+  return laneOffset(lane) - (lane > 0 ? laneOffset(lane - 1) : 0);
+}
+
+/** Y of a band's top: right above its shard's first lane. */
+function bandTop(entry: { band: ResourceBand; height: number }): number {
+  const { rowHeight, axisHeight } = TIMELINE_LAYOUT;
+  return entry.band.firstLane * rowHeight + axisHeight + laneOffset(entry.band.firstLane) - entry.height;
+}
+
+/** The tracks a band draws, for the readout. */
+function tracksFor(band: ResourceBand) {
+  return bandLayout.value.find((entry) => entry.band.key === band.key)?.tracks ?? [];
+}
 
 const expandedCount = computed(() => expandedExecutions.value.size);
 
@@ -151,7 +249,15 @@ const {
   onPointerUp,
   resetView,
   zoomToRange,
-} = useTimelineViewport({ containerRef, maxTime, rowCount, hasData, live: () => props.live });
+} = useTimelineViewport({
+  containerRef,
+  maxTime,
+  rowCount,
+  hasData,
+  live: () => props.live,
+  laneOffset,
+  extraHeight: bandsHeight,
+});
 
 // Header counts: tests, hook sections that failed, wasted waits.
 const testCount = computed(() => timelineData.value.filter((d) => d.kind === 'test').length);
@@ -244,6 +350,30 @@ function onBarMove(event: MouseEvent) {
 function onBarLeave() {
   hover.item = null;
 }
+
+// The moment under the pointer in a resource band, read only by the readout
+// and the line across the rows, like the bars' hover state.
+const resourceHover = reactive<{ band: ResourceBand | null; t: number; pos: { x: number; y: number } }>({
+  band: null,
+  t: 0,
+  pos: { x: 0, y: 0 },
+});
+
+watch(bandLayout, (layout) => {
+  if (resourceHover.band && !layout.some((entry) => entry.band.key === resourceHover.band!.key)) {
+    resourceHover.band = null;
+  }
+});
+
+function onResourceHover(band: ResourceBand, t: number, event: MouseEvent): void {
+  resourceHover.band = band;
+  resourceHover.t = Math.max(0, Math.min(maxTime.value, t));
+  resourceHover.pos = { x: event.clientX, y: event.clientY };
+}
+
+function onResourceLeave(): void {
+  resourceHover.band = null;
+}
 </script>
 
 <template>
@@ -263,9 +393,11 @@ function onBarLeave() {
       :lock-count="runLocks.length"
       :expanded-count="expandedCount"
       :live="live"
+      :resource-tracks="resourceTrackOptions"
       @toggle-hooks="showHooks = $event"
       @toggle-waits="showWaits = $event"
       @toggle-locks="showLocks = $event"
+      @toggle-resource="toggleTrack"
       @collapse-all="collapseAll"
       @reset="resetView"
     />
@@ -328,6 +460,20 @@ function onBarLeave() {
           :tick-marks="tickMarks"
           :content-width="contentWidth"
           :shard-total="shardTotal"
+          :lane-offset="laneOffset"
+          :band-above="bandAbove"
+        />
+
+        <TimelineResourceBand
+          v-for="entry in bandLayout"
+          :key="entry.band.key"
+          :band="entry.band"
+          :tracks="entry.tracks"
+          :y="bandTop(entry)"
+          :px-per-ms="pxPerMs"
+          :plot-width="maxTime * pxPerMs"
+          @hover="onResourceHover"
+          @leave="onResourceLeave"
         />
 
         <TimelineBar
@@ -361,10 +507,13 @@ function onBarLeave() {
           :hooks="hooksFor"
           :hook-geometry="hookGeometry"
         />
+
+        <TimelineResourceCursor :state="resourceHover" :px-per-ms="pxPerMs" :content-height="contentHeight" />
       </svg>
     </div>
 
     <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" />
+    <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />
 </template>

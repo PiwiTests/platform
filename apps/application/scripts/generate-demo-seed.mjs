@@ -1693,7 +1693,11 @@ const RESOURCE_OCCURRENCES = [];
       wallMs: run.duration,
       workers: [...lanes.entries()]
         .sort((a, b) => a[0] - b[0])
-        .map(([worker, lane]) => ({ worker, tests: lane.length })),
+        .map(([worker, lane]) => ({
+          worker,
+          tests: lane.length,
+          spans: lane.map((row) => [row.started_at, row.started_at + (row.duration ?? 0)]),
+        })),
       fixtureFile: 'tests/admin/fixtures.ts',
       handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
       artifactBytes,
@@ -3730,6 +3734,9 @@ const REBASE_SQL = [
   shiftJsonMs('test_runs_cases', 'dialogs', 'closedAt'),
   shiftJsonMs('test_runs_cases', 'attempts', 'startedAt'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
+  `UPDATE test_run_resource_reports SET report = json_set(report, '$.timeline.startedAt', ` +
+    `json_extract(report, '$.timeline.startedAt') + ${D_MS}) ` +
+    `WHERE json_valid(report) AND json_extract(report, '$.timeline.startedAt') IS NOT NULL;`,
   '',
   'DROP TABLE _rebase;',
 ];

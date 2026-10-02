@@ -12,9 +12,11 @@ import type {
   ProcessRole,
   RoleCost,
   RoleUsage,
+  SeriesPoint,
   WireExecutionResources,
   WireResourceFinding,
   WireResourceReport,
+  WireResourceTimeline,
   WireRunProfile,
   WorkerHealth,
 } from '#shared/types';
@@ -45,6 +47,8 @@ const FINDINGS_CAP = 100;
 const SERIES_CAP = 240;
 const WORKERS_CAP = 64;
 const WORKER_POINTS_CAP = 200;
+const TIMELINE_SERIES_CAP = 600;
+const TIMELINE_WORKER_POINTS_CAP = 300;
 const TEXT_CAP = 300;
 
 type Raw = Record<string, unknown>;
@@ -225,6 +229,37 @@ function workerHealth(value: unknown): WorkerHealth | null {
   };
 }
 
+/** A timed series rebuilt: `[ms, value]` pairs of finite, non-negative numbers, each value at most `max`. */
+function points(value: unknown, cap: number, max = Infinity): SeriesPoint[] {
+  if (!Array.isArray(value)) return [];
+  const out: SeriesPoint[] = [];
+  for (const entry of value.slice(0, cap)) {
+    if (!Array.isArray(entry)) continue;
+    const at = num(entry[0]);
+    const v = num(entry[1]);
+    if (at !== null && v !== null) out.push([Math.round(at), Math.min(max, v)]);
+  }
+  return out;
+}
+
+function timeline(value: unknown): WireResourceTimeline | null {
+  const raw = obj(value);
+  const startedAt = raw ? num(raw.startedAt) : null;
+  if (!raw || !startedAt) return null;
+  const pages: WireResourceTimeline['pages'] = [];
+  for (const entry of Array.isArray(raw.pages) ? raw.pages.slice(0, WORKERS_CAP) : []) {
+    const item = obj(entry);
+    const worker = item ? int(item.worker) : null;
+    if (!item || worker === null) continue;
+    const series = points(item.points, TIMELINE_WORKER_POINTS_CAP).map(([at, n]): SeriesPoint => [at, Math.round(n)]);
+    if (series.length > 0) pages.push({ worker, points: series });
+  }
+  const cpuPct = points(raw.cpuPct, TIMELINE_SERIES_CAP, 100);
+  const memoryBytes = points(raw.memoryBytes, TIMELINE_SERIES_CAP);
+  if (cpuPct.length === 0 && memoryBytes.length === 0 && pages.length === 0) return null;
+  return { startedAt: Math.round(startedAt), cpuPct, memoryBytes, pages };
+}
+
 /** A run report as a reporter sent it, rebuilt; null when it is not one. */
 export function sanitizeResourceReport(value: unknown): WireResourceReport | null {
   const raw = obj(value);
@@ -255,6 +290,7 @@ export function sanitizeResourceReport(value: unknown): WireResourceReport | nul
     workers,
     artifactBytes: artifactBytes(raw.artifactBytes) ?? {},
     workerHealth: workerHealth(raw.workerHealth),
+    timeline: timeline(raw.timeline),
   };
 }
 

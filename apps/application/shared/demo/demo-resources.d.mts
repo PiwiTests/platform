@@ -16,7 +16,8 @@ export declare function demoResourceReport(input: {
   leaky?: boolean;
   handle?: boolean;
   wallMs: number;
-  workers: Array<{ worker: number; tests: number }>;
+  /** Each worker, with each of its tests' `[start, end]` in epoch ms, in order, for the report's timeline. */
+  workers: Array<{ worker: number; tests: number; spans?: Array<[number, number]> }>;
   fixtureFile: string;
   handleTest: { title: string; file: string };
   artifactBytes: number;

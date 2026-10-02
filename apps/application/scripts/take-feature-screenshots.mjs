@@ -1952,6 +1952,44 @@ const SCENES = [
     },
   },
   {
+    name: 'run-timeline-resources',
+    description:
+      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, then with memory turned off, then at phone width",
+    // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
+    route: '/test-runs/62?tab=workers',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async run({ page, shoot, settle }) {
+      const band = page.getByTestId('timeline-resource-band').first();
+      await band.waitFor({ timeout: 60000 });
+      await settle();
+      const box = await band.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.5);
+      await page.getByTestId('timeline-resource-tooltip').waitFor();
+      await shoot('hover');
+      await page.mouse.move(0, 0);
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Memory' }).click();
+      await page.keyboard.press('Escape');
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot('toggled');
+      // Back on, so the next visit starts from every track shown.
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Memory' }).click();
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 390, height: 900 });
+      await settle();
+      await shoot('narrow');
+    },
+    outputs: [
+      'run-timeline-resources-hover.png',
+      'run-timeline-resources-toggled.png',
+      'run-timeline-resources-narrow.png',
+    ],
+  },
+  {
     name: 'ai-diagnosis',
     description: 'Failure cluster page: the AI diagnosis card at the foot of the cluster page (dark)',
     tags: ['docs'],

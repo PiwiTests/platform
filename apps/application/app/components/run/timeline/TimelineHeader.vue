@@ -1,5 +1,8 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import type { ResourceTrackKind } from '~/utils/resource-tracks';
+
+const props = defineProps<{
   workerCount: number;
   shardTotal?: number | null;
   testCount: number;
@@ -23,19 +26,35 @@ defineProps<{
   /** How many test rows are currently expanded into their step waterfall. */
   expandedCount?: number;
   live?: boolean;
+  /** The resource tracks the run has data for, with whether each is shown. */
+  resourceTracks?: Array<{ kind: ResourceTrackKind; label: string; shown: boolean }>;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   reset: [];
   toggleHooks: [visible: boolean];
   toggleWaits: [visible: boolean];
   toggleLocks: [visible: boolean];
+  toggleResource: [kind: ResourceTrackKind];
   collapseAll: [];
 }>();
+
+// One checkbox per track; choosing one keeps the menu open so the others can follow.
+const resourceItems = computed(() =>
+  (props.resourceTracks ?? []).map((track) => ({
+    label: track.label,
+    type: 'checkbox' as const,
+    checked: track.shown,
+    onSelect: (e: Event) => {
+      e.preventDefault();
+      emit('toggleResource', track.kind);
+    },
+  })),
+);
 </script>
 
 <template>
-  <div class="flex items-center justify-between mb-2">
+  <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
     <span class="text-xs text-gray-500 inline-flex items-center gap-1"
       ><span
         >{{ workerCount }} worker{{ workerCount > 1 ? 's' : '' }}
@@ -59,7 +78,7 @@ defineEmits<{
       >
       <HelpHint topic="run.timeline" />
     </span>
-    <div class="flex items-center gap-1">
+    <div class="flex flex-wrap items-center gap-1">
       <UButton
         v-if="expandedCount && expandedCount > 0"
         size="xs"
@@ -86,6 +105,18 @@ defineEmits<{
         class="mr-1"
         @update:model-value="$emit('toggleWaits', $event === true)"
       />
+      <UDropdownMenu v-if="resourceItems.length > 0" :items="resourceItems" :content="{ align: 'end' }">
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          trailing-icon="i-lucide-chevron-down"
+          title="Show the machine's CPU, the run's memory and the open pages above the worker rows"
+          data-testid="timeline-resources-menu"
+        >
+          Resources
+        </UButton>
+      </UDropdownMenu>
       <USwitch
         v-if="hasLocks"
         :model-value="showLocks"

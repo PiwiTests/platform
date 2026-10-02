@@ -8,8 +8,10 @@
  * and never closes it: every test after the first finds the earlier tests'
  * pages still open in its worker, those pages keep using CPU and memory, and
  * the machine runs short of both. A clean run closes everything it opens.
- * Deterministic (no randomness), so the seed stays byte-stable. Pure plain JS,
- * run under Node for the generator and in the browser for the simulator.
+ * Both keep a page per worker open from its first test to its last (the
+ * `sharedPage` fixture). Deterministic (no randomness), so the seed stays
+ * byte-stable. Pure plain JS, run under Node for the generator and in the
+ * browser for the simulator.
  */
 
 const MB = 1024 * 1024;
@@ -72,6 +74,77 @@ function busySeries(points, leaky) {
   });
 }
 
+/** How long before the first test the reporter's sampler starts, and how often the demo samples. */
+const SAMPLER_LEAD_MS = 1500;
+const CPU_STEP_MS = 1000;
+const MEMORY_STEP_MS = 2500;
+
+/**
+ * The pages open in one worker over time, from its tests' spans: the shared
+ * page from the first test's start to the last one's end, and each test's own
+ * page during the test, which a leaky test never closes.
+ */
+function pagesOfWorker(spans, startedAt, leaky) {
+  const changes = [];
+  for (const [start, end] of spans) {
+    changes.push([start + 40, 1]);
+    if (!leaky) changes.push([Math.max(start + 41, end - 30), -1]);
+  }
+  const first = spans[0][0];
+  const last = spans[spans.length - 1][1];
+  changes.push([first + 20, 1]);
+  changes.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const points = [];
+  let open = 0;
+  for (const [at, delta] of changes) {
+    open += delta;
+    points.push([Math.round(at - startedAt), open]);
+  }
+  points.push([Math.round(last + 200 - startedAt), 0]);
+  return points;
+}
+
+/**
+ * The run's resources over the tests' span, sampled from a little before the
+ * first one: the machine's CPU every second, the run's memory every two and a
+ * half, peaking at `peakBytes` as far into the tests as `peakAtMs` is into
+ * `wallMs`, and each worker's open pages. Null without the tests' spans.
+ */
+function demoTimeline({ wallMs, workers, leaky, peakBytes, peakAtMs }) {
+  if (workers.length === 0 || !workers.every((w) => Array.isArray(w.spans) && w.spans.length > 0)) return null;
+  const firstTest = Math.min(...workers.map((w) => w.spans[0][0]));
+  const lastTest = Math.max(...workers.map((w) => w.spans[w.spans.length - 1][1]));
+  const origin = firstTest - SAMPLER_LEAD_MS;
+  const span = lastTest + 1000 - origin;
+  const cpuPct = [];
+  for (let at = CPU_STEP_MS, i = 0; at <= span; at += CPU_STEP_MS, i++) {
+    const t = at / span;
+    const base = leaky ? 48 + 46 * t : 57 + 7 * Math.sin(t * 9);
+    cpuPct.push([at, Math.round(Math.min(100, base + 8 * (wobble(i + 11) - 0.5)) * 10) / 10]);
+  }
+  const peakAt = SAMPLER_LEAD_MS + (lastTest - firstTest) * (wallMs > 0 ? peakAtMs / wallMs : 0.5);
+  const memoryBytes = [];
+  for (let at = 0, i = 0; at <= span; at += MEMORY_STEP_MS, i++) {
+    // Leaky: memory climbs with the pages left open; clean: it rises and falls around one peak.
+    const shape = leaky
+      ? 0.25 + 0.75 * Math.min(1, at / peakAt) - (at > peakAt ? 0.05 : 0)
+      : 0.55 + 0.45 * Math.exp(-(((at - peakAt) / (span * 0.3)) ** 2));
+    memoryBytes.push([at, Math.round(peakBytes * shape * (0.97 + 0.02 * wobble(i + 3)))]);
+  }
+  // The peak as the profile states it, at the sample nearest its time.
+  const nearest = memoryBytes.reduce(
+    (best, point, i) => (Math.abs(point[0] - peakAt) < Math.abs(memoryBytes[best][0] - peakAt) ? i : best),
+    0,
+  );
+  memoryBytes[nearest] = [memoryBytes[nearest][0], Math.round(peakBytes)];
+  return {
+    startedAt: origin,
+    cpuPct,
+    memoryBytes,
+    pages: workers.map((w) => ({ worker: w.worker, points: pagesOfWorker(w.spans, origin, leaky) })),
+  };
+}
+
 /**
  * The findings of a leaky run. `fixtureFile` is where the suite's fixtures
  * live, `tests` how many tests used the leaking fixture.
@@ -124,9 +197,10 @@ function handleFinding(handleTest) {
 }
 
 /**
- * The run's report. `workers` lists each worker with how many tests it ran;
- * `artifactBytes` is the sum of the executions' artifacts. `handle` adds the
- * server a test leaves running, which a leaky run always has.
+ * The run's report. `workers` lists each worker with how many tests it ran
+ * and, for the report's timeline, `spans`: each test's `[start, end]` in epoch
+ * ms, in order. `artifactBytes` is the sum of the executions' artifacts.
+ * `handle` adds the server a test leaves running, which a leaky run always has.
  */
 export function demoResourceReport({
   leaky = false,
@@ -147,6 +221,8 @@ export function demoResourceReport({
   for (const finding of findings) counts[finding.verdict] += finding.verdict === 'idle' ? finding.count : 1;
   const seconds = wallMs / 1000;
   const cores = 4;
+  const peakBytes = leaky ? 9.6 * GB : 4.1 * GB;
+  const peakAtMs = Math.round(wallMs * (leaky ? 0.94 : 0.41));
   return {
     v: 1,
     shardIndex,
@@ -186,8 +262,8 @@ export function demoResourceReport({
       },
       memory: {
         kind: 'pss',
-        peakBytes: leaky ? 9.6 * GB : 4.1 * GB,
-        peakAtMs: Math.round(wallMs * (leaky ? 0.94 : 0.41)),
+        peakBytes,
+        peakAtMs,
         largest: { role: 'renderer', bytes: leaky ? 620 * MB : 240 * MB },
         rssFallbacks: 0,
         pressurePct: leaky ? 2.4 : 0,
@@ -211,5 +287,6 @@ export function demoResourceReport({
       loopDelayP99Ms: leaky ? 96 : 27,
       involuntarySwitchesPerTest: leaky ? 2400 : 180,
     },
+    timeline: demoTimeline({ wallMs, workers, leaky, peakBytes, peakAtMs }),
   };
 }

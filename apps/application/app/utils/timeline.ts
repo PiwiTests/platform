@@ -18,6 +18,11 @@ export const TIMELINE_LAYOUT = {
   hookMinWidth: 1,
   /** Narrowest a failed hook section is drawn, so a millisecond teardown failure stays visible. */
   failedHookMinWidth: 8,
+  /** Height of a resource track's plot, and the gap below it. */
+  trackHeight: 22,
+  trackGap: 6,
+  /** Space between a band of resource tracks and the worker rows under it. */
+  bandGap: 6,
   /** Derived: a full row is a bar plus the gap below it. */
   get rowHeight(): number {
     return this.barHeight + this.rowGap;

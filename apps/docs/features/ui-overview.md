@@ -91,6 +91,9 @@ results stream in live. The tabs:
     another: **↻** marks where a new one took over, and the stretch before it is the old process shutting down and
     the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
     or after its last one while the others finished. Hover either to see which it was.
+  - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
+    workers are drawn above the worker rows, on the same axis. Hover a track for its values at that moment; turn each
+    one off from the **Resources** menu. See [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard).
 
 ## Test case detail
 

@@ -7,13 +7,22 @@ const props = defineProps<{
   tickMarks: Array<{ ms: number; x: number; label: string }>;
   contentWidth: number;
   shardTotal?: number | null;
+  /** Height drawn above a lane besides the lanes before it (the resource bands). */
+  laneOffset?: (lane: number) => number;
+  /** Height of the resource band drawn right above a lane. */
+  bandAbove?: (lane: number) => number;
 }>();
 
 const { barHeight, rowGap, axisHeight, rowHeight } = TIMELINE_LAYOUT;
 
-/** Y of a lane's top, below the axis. */
+/** Y of a lane's top, below the axis and the bands above it. */
 function laneTop(lane: number): number {
-  return lane * rowHeight + axisHeight;
+  return lane * rowHeight + axisHeight + (props.laneOffset?.(lane) ?? 0);
+}
+
+/** Y of the top of what belongs to a lane's worker: the band above it, else the lane. */
+function sectionTop(lane: number): number {
+  return laneTop(lane) - (props.bandAbove?.(lane) ?? 0);
 }
 </script>
 
@@ -48,9 +57,9 @@ function laneTop(lane: number): number {
       <line
         v-if="i > 0 && row.shardIndex !== props.workerRows[i - 1]!.shardIndex"
         :x1="0"
-        :y1="laneTop(row.baseLane) - rowGap / 2"
+        :y1="sectionTop(row.baseLane) - rowGap / 2"
         :x2="props.contentWidth"
-        :y2="laneTop(row.baseLane) - rowGap / 2"
+        :y2="sectionTop(row.baseLane) - rowGap / 2"
         stroke="currentColor"
         stroke-dasharray="4,3"
         class="stroke-gray-400 dark:stroke-gray-500"
