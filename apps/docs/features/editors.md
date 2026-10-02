@@ -26,9 +26,9 @@ compared with your files locally.
 
 ## CI failures in the Problems panel
 
-The failures of the latest complete run (whole suite, finished, no lab run) on the checked-out branch, else the
-default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
-is in your workspace (often a page object), else the `test(…)` line. The message is the failure's headline. The run is
+The failures of the latest complete [CI run](/reference/test-metadata#run-origin) (whole suite, finished) on the
+checked-out branch, else the default branch, are errors in the Problems panel, at the line that failed: the call in the
+error's stack when that file is in your workspace (often a page object), else the `test(…)` line. The message is the failure's headline. The run is
 read every minute.
 
 On a failure, the quick fixes are:

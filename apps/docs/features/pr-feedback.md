@@ -62,15 +62,16 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 Once a cluster is fixed, the fastest way to prove it is to re-run exactly the affected tests, and a
 [filtered run that passes them all closes the cluster](./failure-clusters#did-the-fix-work). The cluster page can
 trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
-the cluster's retry arguments (`file:line` specs, `--project` when they share one) and links to the run it started. The
-last dispatch (when, by whom, and a link) shows under the Test evidence header.
+the cluster's retry arguments (each affected test's `file:line` from its latest failure, `--project` when they share
+one) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
+that run recorded no branch. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
 
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and fill in the block for your provider:
 
 | Provider | Target you configure | Token scope |
 |---|---|---|
-| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, and the `workflow_dispatch` input that receives the arguments | `actions:write` (a classic PAT's `workflow` scope) |
+| **GitHub** | Workflow file name (e.g. `e2e.yml`), a ref, the `workflow_dispatch` input that receives the arguments, and optionally the input that receives the dispatch id | `actions:write` (a classic PAT's `workflow` scope) |
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
@@ -99,6 +100,35 @@ jobs:
 On GitLab, read the variable in your test job (`npx playwright test $PW_ARGS`); on Bitbucket, reference it the same way
 inside the `custom:` pipeline you named. GitHub's `workflow_dispatch` returns no run id, so the link goes to the
 workflow's runs page filtered to the branch; GitLab and Bitbucket link straight to the pipeline.
+
+When the re-run finishes, Piwi recognizes it and records its [origin](/reference/test-metadata#run-origin) as `ci-rerun`: by
+GitLab's pipeline id or Bitbucket's build number, which the dispatch answered with, and on GitHub by the dispatch id
+when the workflow passes it on. GitHub rejects an input the workflow does not declare, so that input is a separate,
+optional setting. Declare it and hand it to the reporter as `PIWI_ORIGIN_REF`:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      args:
+        required: false
+        default: ''
+      piwi_dispatch:
+        required: false
+        default: ''
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx playwright test ${{ inputs.args }}
+        env:
+          PIWI_ORIGIN_REF: ${{ inputs.piwi_dispatch }}
+```
+
+Without it, a GitHub run is matched on its branch, a start within six hours of the dispatch, and running exactly the
+dispatched spec files.
 
 ## Limits
 
