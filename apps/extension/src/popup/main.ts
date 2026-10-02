@@ -11,6 +11,7 @@ import { getActiveProjectOverride, setActiveProjectOverride, resolveActiveProjec
 import { workerState } from '../shared/worker-status.js';
 import { initI18n, localizeDocument, t, tn, tNodes, formatNumber } from '../shared/i18n.js';
 import { injectionFailureText } from '../shared/injection-failure.js';
+import { getReplayState, getReplayTab } from '../shared/replay-storage.js';
 
 await initI18n();
 localizeDocument();
@@ -453,8 +454,19 @@ document.getElementById('replay-bug')!.addEventListener('click', () => {
     return;
   }
   void chrome.permissions.request({ origins: [originPattern] }).catch(() => false);
-  void inject('replay-panel.js');
+  const tabId = recordTab.id;
+  void replayInOtherTab(tabId).then((elsewhere) => {
+    if (elsewhere) statusEl.textContent = t('popup_replayElsewhere');
+    else void inject('replay-panel.js');
+  });
 });
+
+/** Whether a replay runs, or waits paused, in a tab other than `tabId`: that tab alone plays it. */
+async function replayInOtherTab(tabId: number): Promise<boolean> {
+  const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]).catch(() => [null, null] as const);
+  if (!state || state.finished || (state.status !== 'running' && state.status !== 'paused')) return false;
+  return bound?.replayId === state.id && bound.tabId !== tabId;
+}
 
 /** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */
 async function showOutdatedWorkerNotice(): Promise<void> {

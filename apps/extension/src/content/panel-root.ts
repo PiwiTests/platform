@@ -64,7 +64,7 @@ export function attachPanelShadow(host: HTMLElement, init: ShadowRootInit): Shad
 
 /** Empties a root made by `attachPanelShadow`, keeping its base rules. */
 export function clearPanelShadow(root: ShadowRoot): void {
-  for (const node of [...root.childNodes]) {
+  for (const node of Array.from(root.childNodes)) {
     if (!(node instanceof Element && node.hasAttribute(BASE_STYLE_ATTRIBUTE))) node.remove();
   }
 }

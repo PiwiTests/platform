@@ -9,7 +9,14 @@ import {
   type RecordingMode,
 } from '../shared/recording-storage.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
-import { getReplayState, newReplayState, setReplayState } from '../shared/replay-storage.js';
+import {
+  getReplayState,
+  getReplayTab,
+  newReplayState,
+  setReplayState,
+  setReplayTab,
+  type ReplayState,
+} from '../shared/replay-storage.js';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { fetchCatalog, fetchLocatorIndex, postToEditor } from '../shared/piwi-client.js';
 import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
@@ -628,6 +635,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     if (state?.tabId === tabId) void clearConditions(false);
   });
   void clearTabViewport(tabId);
+  void endReplayOfClosedTab(tabId);
 });
 
 /** The narrowest and the widest viewport a window is opened at, in CSS pixels. */
@@ -759,9 +767,10 @@ async function handleStartReplay(
     recordingViews?: unknown;
     keepViews?: unknown;
   },
-  tab: chrome.tabs.Tab | undefined,
+  sender: chrome.runtime.MessageSender,
 ): Promise<{ ok: boolean; error?: string }> {
   await i18nReady;
+  const tab = sender.tab;
   const pattern = replayOriginPattern(message.origin);
   if (!pattern || tab?.id == null) return { ok: false, error: t('common_replayNeedsPage') };
   const parsed = parseSteps(message.steps);
@@ -784,6 +793,8 @@ async function handleStartReplay(
     const conditions = await conditionsFor(tab, tab.url);
     await prepareReplayViews(message);
     await setReplayState(conditions.length ? { ...replay, conditions } : replay);
+    // Started from the page it plays on, the replay is that tab's; from an extension page, the first tab to ask.
+    if (!fromExtensionPage(sender)) await setReplayTab({ replayId: replay.id, tabId: tab.id });
     await releaseReplayDebugger();
     await unregisterScripts(REPLAY_SCRIPT_IDS);
     await chrome.scripting.registerContentScripts([
@@ -855,6 +866,63 @@ async function handleReplayFinished(): Promise<void> {
   await showStateBadge();
 }
 
+/** A message from one of the extension's own pages (popup, options, DevTools), not from a content script. */
+function fromExtensionPage(sender: chrome.runtime.MessageSender): boolean {
+  return !!sender.url?.startsWith(chrome.runtime.getURL(''));
+}
+
+/** Claims of a replay's tab, one at a time, so two tabs asking together cannot both get it. */
+let replayTabQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Whether the sender's tab plays the replay: the tab it was started in, else
+ * the first tab to ask. The replay's other tabs on its origin leave it alone;
+ * one stopped while its own tab was on another site ends when another tab asks.
+ */
+function handleReplayTab(message: { replayId?: unknown }, tab: chrome.tabs.Tab | undefined): Promise<{ ok: boolean }> {
+  const answer = replayTabQueue.then(async () => {
+    const state = await getReplayState();
+    if (tab?.id == null || !state || state.id !== message.replayId) return { ok: false };
+    const bound = await getReplayTab();
+    if (bound?.replayId === state.id) {
+      if (bound.tabId === tab.id) return { ok: true };
+      if (state.status !== 'running' && state.status !== 'paused') await endReplay(state);
+      return { ok: false };
+    }
+    await setReplayTab({ replayId: state.id, tabId: tab.id });
+    return { ok: true };
+  });
+  replayTabQueue = answer.catch(() => undefined);
+  return answer;
+}
+
+/** Ends a replay no page of its tab will finish: nothing of it stays registered or attached. */
+async function endReplay(state: ReplayState): Promise<void> {
+  if (state.finished) return;
+  await setReplayState({ ...state, status: state.status === 'done' ? 'done' : 'stopped', finished: true });
+  await handleReplayFinished();
+}
+
+/** Whether a message about the stored replay comes from its tab, or from any tab while none plays it. */
+async function fromReplayTab(tab: chrome.tabs.Tab | undefined): Promise<boolean> {
+  const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]);
+  return !state || bound?.replayId !== state.id || bound.tabId === tab?.id;
+}
+
+/** The replay's tab was closed: the replay ends there. */
+async function endReplayOfClosedTab(tabId: number): Promise<void> {
+  const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]);
+  if (state && bound?.replayId === state.id && bound.tabId === tabId) await endReplay(state);
+}
+
+// A tab the browser swaps for another (a prerendered page shown) keeps playing the replay.
+chrome.tabs.onReplaced?.addListener((addedTabId, removedTabId) => {
+  void replayTabQueue.then(async () => {
+    const bound = await getReplayTab();
+    if (bound?.tabId === removedTabId) await setReplayTab({ ...bound, tabId: addedTabId });
+  });
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'piwi-ping') {
     // Resolves only once session storage is readable from content scripts —
@@ -883,7 +951,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // keep the message channel open for the async response
   }
   if (message?.type === 'piwi-start-replay') {
-    void handleStartReplay(message, sender.tab).then(sendResponse);
+    void handleStartReplay(message, sender).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-replay-tab') {
+    void handleReplayTab(message, sender.tab).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-replay-driver') {
@@ -943,7 +1015,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-replay-finished') {
-    void handleReplayFinished().then(() => sendResponse({ ok: true }));
+    void fromReplayTab(sender.tab).then(async (ours) => {
+      if (ours) await handleReplayFinished();
+      sendResponse({ ok: ours });
+    });
     return true;
   }
   if (message?.type === 'piwi-bug-evidence-source') {

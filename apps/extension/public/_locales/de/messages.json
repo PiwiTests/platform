@@ -445,6 +445,9 @@
   "popup_cannotReplay": {
     "message": "Piwi Picker kann auf dieser Seite keinen Bug-Report abspielen."
   },
+  "popup_replayElsewhere": {
+    "message": "In einem anderen Tab läuft eine Wiedergabe. Stoppen Sie sie dort oder im Piwi-Panel der DevTools, bevor Sie hier abspielen."
+  },
   "popup_notRecordedTab": {
     "message": "Dieser Tab ist nicht der, der aufgezeichnet wird."
   },

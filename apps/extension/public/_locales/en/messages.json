@@ -553,6 +553,10 @@
     "message": "Piwi Picker can’t replay a report on this page.",
     "description": "Popup error on a page that is not a web site."
   },
+  "popup_replayElsewhere": {
+    "message": "A replay is running in another tab. Stop it there, or in the Piwi panel in DevTools, before replaying here.",
+    "description": "Popup status when Replay a bug report is clicked while a replay runs or is paused in another tab, which alone plays it."
+  },
   "popup_notRecordedTab": {
     "message": "This tab is not the one being recorded.",
     "description": "Popup error on “Take a screenshot” in another tab."

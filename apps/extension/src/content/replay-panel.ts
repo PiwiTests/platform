@@ -18,7 +18,6 @@ import {
   appendReplayEvidence,
   getReplayEvidence,
   getReplayState,
-  setReplayState,
   type ReplayEvidence,
   updateReplayState,
   type ReplayState,
@@ -264,6 +263,22 @@ function notifyFinished(): void {
   }
 }
 
+/**
+ * Whether this tab plays the replay, as the background worker says: the tab
+ * it started in, else the first of its origin's tabs to ask. A worker that
+ * does not know the question (one older than this script) leaves it to the tab.
+ */
+async function replayHere(state: ReplayState): Promise<boolean> {
+  try {
+    const answer = (await chrome.runtime.sendMessage({ type: 'piwi-replay-tab', replayId: state.id })) as
+      | { ok?: boolean }
+      | undefined;
+    return answer?.ok !== false;
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The panel
 
@@ -441,7 +456,7 @@ function renderHud(
     const paused = state.status === 'paused';
     controls.appendChild(
       button(paused ? t('replay_continue') : t('replay_pause'), () => {
-        void updateReplayState((s) => ({ ...s, status: paused ? 'running' : 'paused' })).then((s) => {
+        void updateReplayState((s) => ({ ...s, status: paused ? 'running' : 'paused' }), state.id).then((s) => {
           if (s) renderHud(s);
           wakeLoop();
         });
@@ -454,7 +469,7 @@ function renderHud(
     stepBox.type = 'checkbox';
     stepBox.checked = state.stepMode;
     stepBox.addEventListener('change', () => {
-      void updateReplayState((s) => ({ ...s, stepMode: stepBox.checked })).then((s) => {
+      void updateReplayState((s) => ({ ...s, stepMode: stepBox.checked }), state.id).then((s) => {
         if (s) renderHud(s);
         if (!stepBox.checked) wakeLoop();
       });
@@ -465,7 +480,7 @@ function renderHud(
       button(
         t('common_stop'),
         () => {
-          void updateReplayState((s) => ({ ...s, status: 'stopped' })).then(() => wakeLoop());
+          void updateReplayState((s) => ({ ...s, status: 'stopped' }), state.id).then(() => wakeLoop());
         },
         'stop',
       ),
@@ -563,28 +578,39 @@ function renderHud(
 // ---------------------------------------------------------------------------
 // The run
 
+/**
+ * Stores a step's result on the stored replay, so a Pause, a Stop or a change
+ * of step mode made while the step played is kept.
+ */
 async function recordResult(state: ReplayState, index: number, result: ReplayStepResult): Promise<ReplayState> {
-  const results = state.results.slice();
-  results[index] = result;
-  const next: ReplayState = {
-    ...state,
-    results,
-    position: index + 1,
-    cursor: cursor?.position() ?? state.cursor,
-    handOver: null,
-  };
-  await setReplayState(next);
-  return next;
+  const next = await updateReplayState((s) => {
+    const results = s.results.slice();
+    results[index] = result;
+    return { ...s, results, position: index + 1, cursor: cursor?.position() ?? s.cursor, handOver: null };
+  }, state.id);
+  return next ?? state;
+}
+
+/** This page stops playing a replay that ended or was replaced elsewhere: its panel and cursor go. */
+function leaveReplay(): void {
+  endHover();
+  hud?.host.remove();
+  hud = null;
+  cursor?.remove();
+  cursor = null;
 }
 
 async function finish(state: ReplayState, stopped: boolean): Promise<void> {
   await evidenceFlush?.();
   const evidence = await getReplayEvidence(state.evidenceToken).catch(() => null);
-  const steps = sessionFromSteps(state.steps, state.origin).steps;
-  const verdict = replayVerdict(steps, state.results, stopped);
   endHover();
-  const final: ReplayState = { ...state, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null };
-  await setReplayState(final);
+  const final = await updateReplayState(
+    (s) => ({ ...s, status: stopped ? 'stopped' : 'done', cursor: cursor?.position() ?? null, finished: true }),
+    state.id,
+  );
+  if (!final) return leaveReplay();
+  const steps = sessionFromSteps(final.steps, final.origin).steps;
+  const verdict = replayVerdict(steps, final.results, stopped);
   notifyFinished();
   renderHud(final, verdict, evidence);
   (globalThis as ReplayGlobals).__piwiReplayVerdict = verdict;
@@ -681,15 +707,20 @@ type ActResult = { ok: true; driver: ReplayDriver } | { ok: false; reason: strin
  * the replay goes on with the page's own events, from this step; lost once
  * part of it reached the page, the step fails and the replay stops.
  */
-async function act(step: RecordedStep, element: Element | null, dropOn: Element | null): Promise<ActResult> {
+async function act(
+  replayId: string,
+  step: RecordedStep,
+  element: Element | null,
+  dropOn: Element | null,
+): Promise<ActResult> {
   const state = await getReplayState();
-  if (state?.driver?.driver === 'cdp') {
+  if (state?.id === replayId && state.driver?.driver === 'cdp') {
     try {
       return (await actTrusted(step, element, dropOn)) ? { ok: true, driver: 'cdp' } : { ok: false, reason: null };
     } catch (e) {
       if (e instanceof NotActionable) return { ok: false, reason: e.message };
       if (!(e instanceof TrustedInputLost)) throw e;
-      await fallBack(e.reason);
+      await fallBack(e.reason, replayId);
       // Part of the action reached the page: playing it again with events would do it twice.
       if (e.started) return { ok: false, reason: t('replay_reasonInputInterrupted') };
     }
@@ -698,9 +729,10 @@ async function act(step: RecordedStep, element: Element | null, dropOn: Element 
 }
 
 /** The replay goes on with the page's own events, and its panel says why. */
-async function fallBack(reason: FallbackReason): Promise<void> {
-  const next = await updateReplayState((s) =>
-    s.driver?.driver === 'synthetic' ? s : { ...s, driver: { driver: 'synthetic', reason } },
+async function fallBack(reason: FallbackReason, replayId: string): Promise<void> {
+  const next = await updateReplayState(
+    (s) => (s.driver?.driver === 'synthetic' ? s : { ...s, driver: { driver: 'synthetic', reason } }),
+    replayId,
   );
   if (next && loopActive) renderHud(next);
 }
@@ -726,7 +758,7 @@ async function pickDriver(state: ReplayState): Promise<ReplayState> {
       ? { driver: answer.driver, reason: answer.reason ?? null }
       : { driver: 'synthetic' as const, reason: 'unavailable' as const };
   if (state.driver?.driver === choice.driver && state.driver.reason === choice.reason) return state;
-  return (await updateReplayState((s) => ({ ...s, driver: choice }))) ?? state;
+  return (await updateReplayState((s) => ({ ...s, driver: choice }), state.id)) ?? state;
 }
 
 /** The file step waiting for the developer: the names the report gives, and what answers it. */
@@ -782,7 +814,7 @@ async function askForFiles(state: ReplayState, index: number, step: RecordedStep
       const answer = await Promise.race([chosen, waitForRelease().then(() => 'woken' as const)]);
       if (answer !== 'woken') return answer ?? 'skip';
       const latest = await getReplayState();
-      if (!latest || latest.status === 'stopped') return null;
+      if (!latest || latest.id !== state.id || latest.status === 'stopped') return null;
     }
   } finally {
     filePrompt = null;
@@ -979,7 +1011,8 @@ async function handOverStep(
   const current =
     state.handOver?.step === index
       ? state
-      : ((await updateReplayState((s) => ({ ...s, position: index, handOver: { step: index, reason } }))) ?? state);
+      : ((await updateReplayState((s) => ({ ...s, position: index, handOver: { step: index, reason } }), state.id)) ??
+        state);
   cursor?.outline(null);
   const view = await replayStepView(index);
   const step = sessionFromSteps(current.steps, current.origin).steps[index];
@@ -1003,7 +1036,7 @@ async function handOverStep(
     for (;;) {
       const answer = await Promise.race([chosen, waitForRelease().then(() => 'woken' as const)]);
       const latest = await getReplayState();
-      if (!latest || latest.status === 'stopped') return null;
+      if (!latest || latest.id !== state.id || latest.status === 'stopped') return null;
       if (answer !== 'woken') return { answer, state: latest };
       renderHud(latest);
     }
@@ -1026,8 +1059,7 @@ async function playByHand(state: ReplayState, index: number, reason: string): Pr
     await recordResult(handed.state, index, { status: 'skipped', detail: t('replay_stepSkipped') });
     return true;
   }
-  await recordResult(handed.state, index, { status: 'diverged', detail: reason });
-  await finish((await getReplayState())!, false);
+  await finish(await recordResult(handed.state, index, { status: 'diverged', detail: reason }), false);
   return false;
 }
 
@@ -1059,19 +1091,24 @@ async function applyViewport(state: ReplayState, viewport: StepViewport): Promis
       set = false;
     }
   }
-  const next = await updateReplayState((s) => ({
-    ...s,
-    viewport: { width: viewport.width, height: viewport.height, set },
-  }));
+  const next = await updateReplayState(
+    (s) => ({ ...s, viewport: { width: viewport.width, height: viewport.height, set } }),
+    state.id,
+  );
   if (set) await wait(VIEWPORT_LAYOUT_MS);
   return next ?? state;
 }
 
-/** In step mode: waits for Next, then answers the state if the replay is still on this step and running. */
-async function waitForNext(index: number): Promise<ReplayState | null> {
-  await waitForRelease();
+/** The stored replay while it still runs at step `index`; null once it was paused, stopped or replaced. */
+async function runningAt(replayId: string, index: number): Promise<ReplayState | null> {
   const latest = await getReplayState();
-  return latest && latest.status === 'running' && latest.position === index ? latest : null;
+  return latest && latest.id === replayId && latest.status === 'running' && latest.position === index ? latest : null;
+}
+
+/** In step mode: waits for Next, then answers the state if the replay is still on this step and running. */
+async function waitForNext(replayId: string, index: number): Promise<ReplayState | null> {
+  await waitForRelease();
+  return runningAt(replayId, index);
 }
 
 /** Stores what the evidence script relays during the replay; null until this page's replay starts it. */
@@ -1116,9 +1153,13 @@ async function runReplay(): Promise<void> {
   if (loopActive) return;
   loopActive = true;
   waker.reset();
+  /** Set when another replay took this one's place, which this tab may play next. */
+  let replaced = false;
   try {
     let state = await getReplayState();
     if (!state || (state.status !== 'running' && state.status !== 'paused') || state.origin !== location.origin) return;
+    if (!(await replayHere(state))) return;
+    const replayId = state.id;
     document.getElementById(REPLAY_DIALOG_HOST_ID)?.remove();
     if (state.evidenceToken && state.evidenceToken !== evidenceToken) {
       evidenceToken = state.evidenceToken;
@@ -1132,8 +1173,12 @@ async function runReplay(): Promise<void> {
     renderHud(state);
     await waitForPageReady();
     for (;;) {
-      state = await getReplayState();
-      if (!state) return;
+      const latest = await getReplayState();
+      if (!latest || latest.id !== replayId || latest.origin !== location.origin) {
+        replaced = !!latest;
+        return leaveReplay();
+      }
+      state = latest;
       if (state.status === 'stopped') return void (await finish(state, true));
       renderHud(state);
       if (state.status === 'paused') {
@@ -1193,7 +1238,7 @@ async function runReplay(): Promise<void> {
 
       if (step.action === 'assert' || step.action === 'assertVisible') {
         if (state.stepMode) {
-          const latest = await waitForNext(index);
+          const latest = await waitForNext(replayId, index);
           if (!latest) continue;
           state = latest;
         }
@@ -1224,50 +1269,61 @@ async function runReplay(): Promise<void> {
             t('replay_cursorNext', { step: caption(step) }),
           );
         }
-        const latest = await waitForNext(index);
+        const latest = await waitForNext(replayId, index);
         if (!latest) continue;
         state = latest;
       }
       if (step.action === 'setInputFiles' && resolved.element) {
         const files = await askForFiles(state, index, step);
         if (files === null) continue;
-        const latest = (await getReplayState()) ?? state;
         if (files === 'skip') {
-          await recordResult(latest, index, { status: 'skipped', detail: t('replay_fileSkipped') });
+          await recordResult(state, index, { status: 'skipped', detail: t('replay_fileSkipped') });
           continue;
         }
         if (!assignFiles(resolved.element, files)) {
-          await recordResult(latest, index, { status: 'diverged', detail: t('replay_reasonActionFailed') });
-          return void (await finish((await getReplayState())!, false));
+          const failed = await recordResult(state, index, {
+            status: 'diverged',
+            detail: t('replay_reasonActionFailed'),
+          });
+          return void (await finish(failed, false));
         }
-        await recordResult(latest, index, {
+        await recordResult(state, index, {
           status: 'done',
           detail: files.length ? t('replay_fileChosen', { files: files.map((f) => quoted(f.name)).join(', ') }) : null,
         });
         continue;
       }
+      // Paused, stopped, replaced or put in step mode while the step waited for its element: it is not played yet.
+      const current = await runningAt(replayId, index);
+      if (!current || (current.stepMode && !state.stepMode)) continue;
       // Saved before acting: the action may leave the page, and the next one continues from here.
-      const driver = (await getReplayState())?.driver?.driver ?? 'synthetic';
-      const advanced = await recordResult(state, index, { status: 'done', detail: null, driver });
-      const worked = await act(step, resolved.element, dropOn?.ok ? dropOn.element : null);
+      const driver = current.driver?.driver ?? 'synthetic';
+      await recordResult(current, index, { status: 'done', detail: null, driver });
+      const worked = await act(replayId, step, resolved.element, dropOn?.ok ? dropOn.element : null);
       if (!worked.ok) {
         // Back on the step, which the person does or skips.
-        const latest = (await getReplayState()) ?? advanced;
-        const back = { ...latest, position: index, results: latest.results.slice(0, index) };
-        await setReplayState(back);
+        const back = await updateReplayState(
+          (s) => ({ ...s, position: index, results: s.results.slice(0, index) }),
+          replayId,
+        );
+        if (!back) continue;
         if (!(await playByHand(back, index, worked.reason ?? t('replay_reasonActionFailed')))) return;
         continue;
       }
       if (worked.driver !== driver) {
-        await updateReplayState((s) => ({
-          ...s,
-          results: Object.assign(s.results.slice(), { [index]: { ...s.results[index]!, driver: worked.driver } }),
-        }));
+        await updateReplayState(
+          (s) => ({
+            ...s,
+            results: Object.assign(s.results.slice(), { [index]: { ...s.results[index]!, driver: worked.driver } }),
+          }),
+          replayId,
+        );
       }
-      await updateReplayState((s) => ({ ...s, cursor: cursor?.position() ?? s.cursor }));
+      await updateReplayState((s) => ({ ...s, cursor: cursor?.position() ?? s.cursor }), replayId);
     }
   } finally {
     loopActive = false;
+    if (replaced) void runReplay();
   }
 }
 
@@ -1500,9 +1556,15 @@ async function entry(): Promise<void> {
     );
   }
   const [state] = await Promise.all([ensureSessionAccess().then(() => getReplayState()), texts]);
-  if (state && (state.status === 'running' || state.status === 'paused') && state.origin === location.origin) {
-    await runReplay();
-    return;
+  if (state && !state.finished && state.origin === location.origin) {
+    const running = state.status === 'running' || state.status === 'paused';
+    if (await replayHere(state)) {
+      if (running) return void (await runReplay());
+      // Stopped or done while no page of its tab played it (a Stop during a navigation): the verdict shows here.
+      return void (await finish(state, state.status === 'stopped'));
+    }
+    // Another tab plays it. One stopped there has ended now, and this tab may replay a report.
+    if (running) return;
   }
   openChooser(await lastRecordedReport());
 }
@@ -1516,7 +1578,7 @@ if (globals.__piwiReplayEntry) {
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === 'piwi-replay-driver-lost') {
       void getReplayState().then((state) => {
-        if (state && state.id === message.replayId) void fallBack(message.reason ?? 'lost');
+        if (state && state.id === message.replayId) void fallBack(message.reason ?? 'lost', state.id);
       });
       return undefined;
     }

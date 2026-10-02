@@ -445,6 +445,9 @@
   "popup_cannotReplay": {
     "message": "Piwi Picker no puede reproducir un informe en esta página."
   },
+  "popup_replayElsewhere": {
+    "message": "Hay una reproducción en curso en otra pestaña. Deténla allí, o en el panel Piwi de las DevTools, antes de reproducir aquí."
+  },
   "popup_notRecordedTab": {
     "message": "Esta pestaña no es la que se está grabando."
   },

@@ -136,6 +136,17 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
   `chrome.debugger` attaches beside Playwright's own connection, so the specs run on the real extension
   (`tests/e2e/trusted-site.ts`).
 
+### A replay belongs to one tab
+
+`replay-panel.js` is registered for the replay's whole origin, so every tab of it loads the script. The worker keeps
+the replay's tab under `piwiReplayTab` (`getReplayTab`, which only the worker writes): the tab the replay started in,
+or the first to ask (`piwi-replay-tab`) when an extension page started it. Only that tab plays the steps, gets a driver,
+sends input and finishes the replay; the popup's Replay says so in any other tab (`popup_replayElsewhere`). Closing the
+tab ends the replay (`finished`), and a replay stopped while no page of its tab ran shows its verdict on that tab's next
+page, or ends when another tab asks. The page writes the replay's state only through
+`updateReplayState(change, replayId)`, onto the stored state, so a Pause, a Stop or a replay started meanwhile is
+never overwritten by a step that was waiting.
+
 ### Trusted input in a replay
 
 `replay-panel.ts` asks the worker for the driver on each page (`piwi-replay-driver`; the choice is kept in

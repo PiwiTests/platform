@@ -12,7 +12,7 @@ import {
   type Point,
   type ReplayDriver,
 } from '../shared/cdp-input.js';
-import { getReplayState } from '../shared/replay-storage.js';
+import { getReplayState, getReplayTab } from '../shared/replay-storage.js';
 import { restoreTabViewport } from './cdp-conditions.js';
 import { emulateCssViewport, onTabZoomChange, type CssViewport } from './viewport-emulation.js';
 import {
@@ -66,10 +66,11 @@ function macPlatform(): Promise<boolean> {
   return isMac;
 }
 
-/** Whether the tab asking is on the running replay's origin. */
+/** Whether the tab asking plays the running replay: its tab, on its origin. */
 async function replayRunsIn(tab: chrome.tabs.Tab | undefined, replayId: unknown): Promise<boolean> {
-  const state = await getReplayState();
+  const [state, bound] = await Promise.all([getReplayState(), getReplayTab()]);
   if (!state || state.id !== replayId || (state.status !== 'running' && state.status !== 'paused')) return false;
+  if (bound?.replayId === state.id && bound.tabId !== tab?.id) return false;
   try {
     return !!tab?.url && new URL(tab.url).origin === state.origin;
   } catch {

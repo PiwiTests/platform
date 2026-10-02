@@ -103,8 +103,9 @@ const hasAttribute = (name: string) => (node: DomNode) => {
 
 /** The replay panel's own file field, inside its closed shadow root, set as a person's choice sets it. */
 async function chooseInReplayPanel(page: Page, file: string): Promise<void> {
+  // The panel draws the field once the step has found its element, after the position moved on to it.
+  await expect.poll(() => panelNode(page, hasAttribute('data-piwi-replay-file')), { timeout: 20_000 }).not.toBeNull();
   const backendNodeId = await panelNode(page, hasAttribute('data-piwi-replay-file'));
-  expect(backendNodeId).not.toBeNull();
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('DOM.setFileInputFiles', { files: [file], backendNodeId: backendNodeId! });
   await cdp.detach();

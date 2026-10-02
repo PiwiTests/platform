@@ -445,6 +445,9 @@
   "popup_cannotReplay": {
     "message": "Piwi Picker ne peut pas rejouer de rapport sur cette page."
   },
+  "popup_replayElsewhere": {
+    "message": "Un rejeu est en cours dans un autre onglet. Arrêtez-le là-bas, ou dans le panneau Piwi des DevTools, avant de rejouer ici."
+  },
   "popup_notRecordedTab": {
     "message": "Cet onglet n’est pas celui qui est enregistré."
   },

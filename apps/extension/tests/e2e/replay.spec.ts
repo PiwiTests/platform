@@ -272,6 +272,65 @@ test.describe('replay-panel.js', () => {
     await expect(stepByStep).toBeVisible();
   });
 
+  test('a Stop while a step waits for its element is kept, and the step is not played', async ({ context }) => {
+    // The coupon button shows a while after the cart: the replay waits for it.
+    const late = `<!doctype html><html><body><output id="total" data-testid="cart-total">Total: 40</output><script>
+      setTimeout(() => {
+        const b = document.createElement('button');
+        b.dataset.testid = 'add-to-cart';
+        b.textContent = 'Apply coupon';
+        b.onclick = () => (document.getElementById('total').textContent = 'Total: 42');
+        document.body.prepend(b);
+      }, 4000);
+    </script></body></html>`;
+    await context.route(`${ORIGIN}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      await route.fulfill({ contentType: 'text/html', body: url.pathname === '/dashboard' ? late : LOGIN });
+    });
+    await openShadowRoots(context);
+    await stubChrome(context, running());
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    await page.waitForURL('**/dashboard');
+    await expect.poll(async () => (await replayState(page)).results.length).toBe(3);
+    // The page is ready and the replay looks for the button, not there yet.
+    await page.waitForTimeout(1500);
+    await expect(page.getByTestId('add-to-cart')).toHaveCount(0);
+    await page.locator('#piwi-replay-hud-host').getByRole('button', { name: 'Stop' }).click();
+
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as any).__piwiReplayVerdict?.kind ?? null), { timeout: 20_000 })
+      .toBe('stopped');
+    await expect(page.getByTestId('add-to-cart')).toBeAttached();
+    await page.waitForTimeout(500);
+    await expect(page.getByTestId('cart-total')).toHaveText('Total: 40');
+    const state = await replayState(page);
+    expect(state.status).toBe('stopped');
+    expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'done']);
+  });
+
+  test('a replay stopped while no page played it shows its verdict on the next page, not the chooser', async ({
+    context,
+  }) => {
+    await routePages(context, 'buggy');
+    const seed = running();
+    const replay = seed.piwiReplay as Record<string, unknown>;
+    replay.status = 'stopped';
+    replay.position = 1;
+    replay.results = [{ status: 'done', detail: null }];
+    await stubChrome(context, seed);
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as any).__piwiReplayVerdict ?? null))
+      .toEqual({ kind: 'stopped', step: 1 });
+    expect(await page.evaluate(() => !!document.getElementById('piwi-replay-dialog-host'))).toBe(false);
+    expect(await page.evaluate(() => !!document.getElementById('piwi-replay-hud-host'))).toBe(true);
+    expect(await page.evaluate(() => JSON.parse(window.name).session.piwiReplay.finished)).toBe(true);
+  });
+
   test('a Next from the Piwi panel in DevTools plays the step waiting for it', async ({ context }) => {
     await routePages(context, 'buggy');
     await stubChrome(context, running(true));
