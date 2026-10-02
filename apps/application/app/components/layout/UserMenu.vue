@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
-import { DESKTOP_DOWNLOAD_URL, JETBRAINS_PLUGIN_URL, PIWI_PICKER_URL, REPORTER_NPM_URL } from '#shared/companion-links';
+import {
+  DESKTOP_DOWNLOAD_URL,
+  JETBRAINS_PLUGIN_URL,
+  PICKER_STORE_URL,
+  REPORTER_NPM_URL,
+} from '#shared/companion-links';
 import { DOCS_BASE_URL } from '#shared/docs';
 
 defineProps<{
@@ -165,7 +170,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
               label: 'Piwi Picker',
               description: 'Browser extension · Chrome Web Store',
               icon: 'i-lucide-mouse-pointer-click',
-              to: PIWI_PICKER_URL,
+              to: PICKER_STORE_URL,
               target: '_blank',
             },
             {
