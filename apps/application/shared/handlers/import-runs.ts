@@ -14,11 +14,13 @@
  * is told a run appeared. Everything else is shared.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, ne } from 'drizzle-orm';
 import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
+import { resolveRunBranch } from '../../server/utils/run-branch';
+import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
 import { sumFailedAndTimedOut } from '../utils/test-counts';
 import { joinSuitePath } from '../utils/suites';
@@ -67,6 +69,7 @@ export interface ImportPort {
     projectId: number,
     testRunId: number,
     cases: unknown[],
+    options?: PersistRunCasesOptions,
   ): Promise<Array<{ id: number; inputIndex: number }>>;
 
   /**
@@ -176,6 +179,25 @@ export function judgeImportFiles(
   });
 }
 
+/**
+ * How an imported run's executions are persisted: dated from their attempts,
+ * and, when the project already holds a newer run, leaving the tests' current
+ * tags, owner, priority, locks and locator snapshots as they are.
+ */
+export async function importPersistOptions(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number,
+  startTime: Date,
+): Promise<PersistRunCasesOptions> {
+  const [newer] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, projectId), ne(testRuns.id, runId), gt(testRuns.startTime, startTime)))
+    .limit(1);
+  return { datedFrom: startTime, keepTestState: newer !== undefined };
+}
+
 /** Return an already-imported archive's summary, or null when it is new. */
 export async function findImportedRun(
   db: DrizzleDB,
@@ -253,10 +275,12 @@ export async function importBlobReportRun(
       didNotRunTests: parsed.didNotRunTests,
       flakyTests: parsed.flakyTests,
       environment: input.environment ?? null,
+      branch: resolveRunBranch({ scm: parsed.scm }),
       label: input.label ?? null,
       playwrightVersion: parsed.playwrightVersion,
       importHash,
       metadata: {
+        ...(parsed.scm ? { scm: parsed.scm } : {}),
         import: {
           source,
           importedAt: new Date().toISOString(),
@@ -279,6 +303,7 @@ export async function importBlobReportRun(
       projectId,
       run.id,
       parsed.cases.map((entry) => entry.case),
+      await importPersistOptions(db, projectId, run.id, parsed.startTime),
     );
 
     // A repeatEach run collides on the junction's unique key and drops a case;
@@ -481,7 +506,13 @@ export async function importTraceRun(
     // test the run already holds — which makes upload order the attempt order.
     parsed.case.retries = await countPriorAttempts(db, projectId, run.id, parsed.case);
 
-    const inserted = await port.persistRunCases(db, projectId, run.id, [parsed.case]);
+    const inserted = await port.persistRunCases(
+      db,
+      projectId,
+      run.id,
+      [parsed.case],
+      await importPersistOptions(db, projectId, run.id, new Date(parsed.startedAt)),
+    );
     const testRunsCaseId = inserted[0]?.id;
     if (!testRunsCaseId) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
 

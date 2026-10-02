@@ -135,6 +135,8 @@ export default eventHandler(async (event) => {
       // Postgres, so use a CASE expression that runs on both dialects.
       duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`,
       metadata: { ...currentMeta, shardDurations: allDurations },
+      // The first shard to report a branch names the run's branch.
+      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };

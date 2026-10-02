@@ -4,6 +4,7 @@ import { testRuns } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
+import { resolveRunBranch } from '../../../utils/run-branch';
 import { runEventBus } from '../../../utils/run-events';
 import { persistShardToken } from '../../../utils/shard-tokens';
 import { timingSafeEqualStr } from '../../../utils/timing-safe';
@@ -102,6 +103,7 @@ export default eventHandler(async (event) => {
         streamToken,
         totalTests: body.totalTests || 0,
         metadata: sanitizeMetadata(body.metadata || testRun.metadata),
+        branch: resolveRunBranch(body.metadata) ?? testRun.branch,
         playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
         reporterVersion: body.reporterVersion || testRun.reporterVersion,
         isFullRun: body.isFullRun !== false ? 1 : 0,
