@@ -1,5 +1,14 @@
 import { initI18n, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
-import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
+import {
+  bindToTool,
+  endTool,
+  installEscapeToCancel,
+  isToolActive,
+  startTool,
+  teardownToolSurfaces,
+  toolIsCurrent,
+  waitForGlobal,
+} from '../shared/tool-session.js';
 import {
   installPickerOverlay,
   removePickerOverlay,
@@ -18,21 +27,6 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-/** Poll for a global the picker overlay sets, mirroring `pick.ts`'s own helper — the assertion suggester only ever needs the element-pick step, never the anchors step (it suggests assertions against the top-ranked locator, not a refined one). */
-function waitForGlobal<T>(key: string): Promise<T> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const value = (globalThis as any)[key];
-      if (value !== undefined) {
-        resolve(value as T);
-        return;
-      }
-      setTimeout(check, 120);
-    };
-    check();
-  });
-}
-
 async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
@@ -46,7 +40,7 @@ async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<vo
   }, 1200);
 }
 
-async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<void> {
+async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: number): Promise<void> {
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -147,14 +141,6 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   }
 
   return new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      document.removeEventListener('keydown', onKeyDown, true);
-      host.remove();
-      resolve();
-    };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -163,6 +149,11 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
+    const finish = bindToTool(toolEpoch, () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      host.remove();
+      resolve();
+    });
     closeBtn.addEventListener('click', finish);
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
@@ -208,15 +199,15 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
 /**
  * Runs the assertion-suggester flow: pick a single element or region,
  * then suggest ranked `expect(...)` candidates against its top-ranked
- * locator. Reuses the same single-pick mechanism as `pick.ts` (sharing its
- * `__piwiPicking` re-entrancy guard, since both drive the same underlying
- * overlay) but skips the anchors step — this is about assertions, not
- * refining the locator itself.
+ * locator. Reuses the same single-pick mechanism as `pick.ts` but skips the
+ * anchors step — this is about assertions, not refining the locator itself
+ * (it suggests assertions against the top-ranked locator, not a refined one).
+ * Injected again while it runs, it leaves the running one be; any other tool,
+ * a pick included, gives way to it.
  */
 async function runAssertionSuggester(): Promise<void> {
   const g = globalThis as any;
-  if (g.__piwiPicking) return;
-  g.__piwiPicking = true;
+  if (isToolActive('assertion-panel')) return;
   const toolEpoch = startTool('assertion-panel', teardownToolSurfaces);
   installEscapeToCancel();
   const i18nReady = initI18n();
@@ -224,8 +215,8 @@ async function runAssertionSuggester(): Promise<void> {
     clearPickGlobals();
     const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
     installPickerOverlay(overlayArg);
-    const state = await waitForGlobal<string>('__piwiPickState');
-    if (state !== 'picked') return;
+    const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
+    if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
     // Done with the picking overlay — otherwise it stays up behind this
     // tool's own panel, still reading "Analyzing element…".
     removePickerOverlay();
@@ -233,10 +224,11 @@ async function runAssertionSuggester(): Promise<void> {
     const el = g.__piwiPickedElement as Element;
     const suggestion = suggestAssertions(el);
     await i18nReady;
-    await renderAssertionPanel(suggestion);
+    if (!toolIsCurrent(toolEpoch)) return;
+    await renderAssertionPanel(suggestion, toolEpoch);
   } finally {
-    clearPickGlobals();
-    g.__piwiPicking = false;
+    // A flow another tool took over from leaves the pick globals to that tool.
+    if (toolIsCurrent(toolEpoch)) clearPickGlobals();
     endTool(toolEpoch);
   }
 }

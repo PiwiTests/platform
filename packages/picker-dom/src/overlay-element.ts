@@ -323,6 +323,16 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     banner.remove();
     if (g.__piwiRedescribe === redescribe) delete g.__piwiRedescribe;
   };
+  // Everything the overlay put on the page, whatever step it is at: its
+  // listeners, the suppressed pointer events and the post-pick blockers as
+  // well as its nodes.
+  const teardown = () => {
+    removePickingListeners();
+    removeSuppressed();
+    doc.removeEventListener('click', stop, true);
+    doc.removeEventListener('keydown', stop, true);
+    cleanup();
+  };
 
   // A pick committed. `'global'` hands the raw element back to Node (probed
   // later, separately) and tears everything down — the reporter's next step
@@ -398,7 +408,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     });
   };
 
-  g.__piwiPickCleanup = cleanup;
+  g.__piwiPickCleanup = teardown;
   doc.addEventListener('mousemove', onMove, true);
   doc.addEventListener('click', onClick, true);
   doc.addEventListener('keydown', onKey, true);
@@ -410,9 +420,11 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
 }
 
 /**
- * Tears down the element-picking overlay (highlight + banner).
+ * Tears down the element-picking overlay: highlight, banner and chip, and the
+ * capture listeners it holds while picking, so the page gets its clicks and
+ * keys back even when the pick never finished.
  *
- * `installPickerOverlay` deliberately leaves both standing once a pick is
+ * `installPickerOverlay` deliberately leaves its nodes standing once a pick is
  * committed: the reporter's flow hands the element back to Node, which drives
  * whatever comes next, and multi-pick keeps the banner up between picks while
  * only its footer text changes. Anything that finishes with the element
@@ -424,9 +436,9 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
  */
 export function removePickerOverlay(): void {
   const g = globalThis as any;
-  // `installPickerOverlay` stashes the teardown for exactly the nodes it
-  // mounted; prefer it, and fall back to removing by id so a half-torn-down
-  // or re-injected overlay still goes away.
+  // `installPickerOverlay` stashes the teardown for exactly the nodes and
+  // listeners it put on the page; prefer it, and fall back to removing by id
+  // so a half-torn-down or re-injected overlay still goes away.
   const cleanup = g.__piwiPickCleanup;
   if (typeof cleanup === 'function') {
     cleanup();

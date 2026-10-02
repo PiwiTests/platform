@@ -38,6 +38,11 @@ function toggleLintOverlay(): void {
     g.__piwiLintOverlayOff();
     return;
   }
+  // The page is claimed before it is scanned and drawn on: the tool this
+  // replaces takes its surfaces with it here. `off` is set below, before
+  // anything can call this teardown.
+  const toolEpoch = startTool('lint-overlay', () => off());
+  installEscapeToCancel();
 
   const findings = scanForLintIssues();
 
@@ -188,7 +193,6 @@ function toggleLintOverlay(): void {
   };
   const reposition = () => drawBoxes();
 
-  let toolEpoch = 0;
   const off = () => {
     document.removeEventListener('keydown', onKeyDown, true);
     window.removeEventListener('scroll', reposition, true);
@@ -198,8 +202,6 @@ function toggleLintOverlay(): void {
     endTool(toolEpoch);
   };
   g.__piwiLintOverlayOff = off;
-  toolEpoch = startTool('lint-overlay', off);
-  installEscapeToCancel();
   document.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition, true);

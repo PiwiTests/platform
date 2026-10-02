@@ -83,6 +83,12 @@ const MAX_ROWS = 300;
 /** Untested rows that get a generated locator. */
 const MAX_SUGGESTIONS = 60;
 
+/** Where the focus was among what `render` replaces: the key of the nearest keyed element, and the way down from it. */
+interface FocusMark {
+  key: string;
+  path: number[];
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -121,9 +127,14 @@ export class CoveragePanel {
   private readonly titleEl: HTMLElement;
   private readonly subEl: HTMLElement;
   private readonly body: HTMLElement;
+  /** What `render` replaces, above and below the search, which stays put so typing in it keeps its focus. */
+  private readonly upper: HTMLElement;
+  private readonly lower: HTMLElement;
   private readonly foot: HTMLElement;
   private readonly search: HTMLInputElement;
   private readonly toggles = new Map<string, HTMLInputElement>();
+  /** Whether the notes were open in the last render, so a render keeps them as the reader left them. */
+  private notesOpen = false;
 
   constructor(
     parent: ShadowRoot,
@@ -147,19 +158,14 @@ export class CoveragePanel {
     head.append(titles, icons);
 
     this.body = el('div', 'body');
+    this.upper = el('div');
+    this.lower = el('div');
     this.search = el('input', 'search');
     this.search.type = 'search';
     this.search.placeholder = t('coverage_search');
     this.search.setAttribute('aria-label', t('coverage_searchLabel'));
     this.search.addEventListener('input', () => callbacks.onQuery(this.search.value));
-    this.search.addEventListener('keydown', (e) => {
-      // Escape clears the filter before it closes the overlay.
-      if (e.key === 'Escape' && this.search.value) {
-        e.stopPropagation();
-        this.search.value = '';
-        callbacks.onQuery('');
-      }
-    });
+    this.body.append(this.upper, this.search, this.lower);
 
     this.foot = el('div', 'foot');
     const toggles = el('div', 'toggles');
@@ -218,6 +224,40 @@ export class CoveragePanel {
     this.pill.remove();
   }
 
+  /**
+   * What Escape does in the search: clears its text, when it has the focus
+   * and some. True when it did; the overlay calls it before an Escape closes
+   * anything else.
+   */
+  clearSearch(): boolean {
+    if (!this.search.value || !this.search.matches(':focus')) return false;
+    this.search.value = '';
+    this.callbacks.onQuery('');
+    return true;
+  }
+
+  private focusMark(): FocusMark | null {
+    let node = (this.panel.getRootNode() as ShadowRoot).activeElement;
+    if (!node || !(this.upper.contains(node) || this.lower.contains(node))) return null;
+    const path: number[] = [];
+    while (node && node !== this.upper && node !== this.lower) {
+      const key = (node as HTMLElement).dataset.key;
+      if (key) return { key, path };
+      const parent: Element = node.parentElement!;
+      path.unshift([...parent.children].indexOf(node));
+      node = parent;
+    }
+    return null;
+  }
+
+  /** Focuses the counterpart of the element `mark` was taken from in what was just rendered, if there is one. */
+  private restoreFocus(mark: FocusMark | null): void {
+    if (!mark) return;
+    let node: Element | null = this.body.querySelector(`[data-key="${mark.key}"]`);
+    for (const index of mark.path) node = node?.children[index] ?? null;
+    (node as HTMLElement | null)?.focus({ preventScroll: true });
+  }
+
   render(model: PanelModel): void {
     const { state } = model;
     this.panel.classList.toggle('left', state.dock === 'left');
@@ -231,28 +271,38 @@ export class CoveragePanel {
     this.subEl.replaceChildren(where ? `${where} · ${t('common_escToClose')}` : t('common_escToClose'));
     this.renderPill(model);
 
-    const children: Node[] = [];
+    // The page rescans while the reader works in the panel: a render keeps the
+    // focus and the notes where they were.
+    const focus = this.focusMark();
+    const shownNotes = this.lower.querySelector<HTMLDetailsElement>('details.notes');
+    if (shownNotes) this.notesOpen = shownNotes.open;
+
     if (model.status !== 'ready' || !model.context) {
       this.foot.style.display = 'none';
-      children.push(...this.renderMessage(model));
-      this.body.replaceChildren(...children);
+      this.search.hidden = true;
+      this.upper.replaceChildren(...this.renderMessage(model));
+      this.lower.replaceChildren();
+      this.restoreFocus(focus);
       return;
     }
     this.foot.style.display = '';
+    this.search.hidden = false;
     const context = model.context;
+    const upper: Node[] = [];
     if (model.modalOpen) {
-      children.push(el('p', 'message', t('coverage_modalOpen')));
+      upper.push(el('p', 'message', t('coverage_modalOpen')));
     }
-    children.push(...this.renderSummary(model, context));
+    upper.push(...this.renderSummary(model, context));
     const around = this.renderAround(context);
-    if (around) children.push(around);
-    children.push(this.renderTabs(state.tab, context));
-    children.push(this.search);
+    if (around) upper.push(around);
+    upper.push(this.renderTabs(state.tab, context));
     if (this.search.value !== state.query) this.search.value = state.query;
-    children.push(this.renderList(state, context));
+    const lower: Node[] = [this.renderList(state, context)];
     const notes = this.renderNotes(context);
-    if (notes) children.push(notes);
-    this.body.replaceChildren(...children);
+    if (notes) lower.push(notes);
+    this.upper.replaceChildren(...upper);
+    this.lower.replaceChildren(...lower);
+    this.restoreFocus(focus);
   }
 
   private renderPill(model: PanelModel): void {
@@ -284,11 +334,13 @@ export class CoveragePanel {
     if (model.status === 'not-connected' || model.status === 'no-project') {
       const button = el('button', 'primary', t('coverage_openSettings'));
       button.type = 'button';
+      button.dataset.key = 'settings';
       button.addEventListener('click', () => this.callbacks.onOpenSettings());
       out.push(button);
     } else if (model.status === 'error') {
       const button = el('button', 'primary', t('coverage_tryAgain'));
       button.type = 'button';
+      button.dataset.key = 'retry';
       button.addEventListener('click', () => this.callbacks.onRefresh());
       out.push(button);
     }
@@ -306,6 +358,7 @@ export class CoveragePanel {
     if (model.fetchedAt) status.append(` · ${t('coverage_updated', { age: ageLabel(model.fetchedAt) })}`);
     const refresh = el('button', 'link-button', model.refreshing ? t('common_refreshing') : t('common_refresh'));
     refresh.type = 'button';
+    refresh.dataset.key = 'refresh';
     refresh.disabled = model.refreshing;
     refresh.title = t('coverage_refreshTitle');
     refresh.addEventListener('click', () => this.callbacks.onRefresh());
@@ -395,6 +448,7 @@ export class CoveragePanel {
     ] as const) {
       const button = el('button', 'tab', label);
       button.type = 'button';
+      button.dataset.key = `page-${scope}`;
       button.title = title;
       button.setAttribute('aria-pressed', String(model.state.pageScope === scope));
       button.addEventListener('click', () => this.callbacks.onPageScope(scope));
@@ -406,6 +460,7 @@ export class CoveragePanel {
   private renderBranchSelect(model: PanelModel, context: CoverageContext): HTMLSelectElement {
     const { index } = context;
     const select = el('select', 'branch-select');
+    select.dataset.key = 'branch';
     select.setAttribute('aria-label', t('coverage_branch'));
     select.title = t('coverage_branchTitle');
     const option = (value: string, label: string) => {
@@ -430,9 +485,10 @@ export class CoveragePanel {
 
   private renderScopeBar(model: PanelModel): HTMLElement {
     const bar = el('div', 'scope-bar');
-    const button = (text: string, title: string, onClick: () => void, disabled = false) => {
+    const button = (key: string, text: string, title: string, onClick: () => void, disabled = false) => {
       const b = el('button', undefined, text);
       b.type = 'button';
+      b.dataset.key = key;
       b.title = title;
       b.disabled = disabled;
       b.addEventListener('click', onClick);
@@ -449,7 +505,9 @@ export class CoveragePanel {
       );
       bar.append(
         el('span', 'what', t('coverage_clickPart')),
-        button(t('common_cancel'), t('coverage_cancelChoosingTitle'), () => this.callbacks.onCancelChoosing()),
+        button('scope-cancel', t('common_cancel'), t('coverage_cancelChoosingTitle'), () =>
+          this.callbacks.onCancelChoosing(),
+        ),
         keys,
       );
       bar.dataset.mode = 'choosing';
@@ -458,14 +516,22 @@ export class CoveragePanel {
       what.title = model.scopeLabel;
       bar.append(
         what,
-        button(t('coverage_widen'), t('coverage_widenTitle'), () => this.callbacks.onWidenScope(), !model.canWiden),
-        button(t('coverage_wholePage'), t('coverage_wholePageTitle'), () => this.callbacks.onClearScope()),
+        button(
+          'scope-widen',
+          t('coverage_widen'),
+          t('coverage_widenTitle'),
+          () => this.callbacks.onWidenScope(),
+          !model.canWiden,
+        ),
+        button('scope-whole', t('coverage_wholePage'), t('coverage_wholePageTitle'), () =>
+          this.callbacks.onClearScope(),
+        ),
       );
       bar.dataset.mode = 'scoped';
     } else {
       bar.append(
         el('span', 'what', t('coverage_wholePage')),
-        button(t('coverage_limit'), t('coverage_limitTitle'), () => this.callbacks.onChooseScope()),
+        button('scope-limit', t('coverage_limit'), t('coverage_limitTitle'), () => this.callbacks.onChooseScope()),
       );
       bar.dataset.mode = 'page';
     }
@@ -479,8 +545,9 @@ export class CoveragePanel {
     const block = el('div', 'around');
     block.appendChild(el('div', 'hint', t('coverage_aroundHint')));
     const list = el('ul', 'rows');
-    for (const c of scan.containers.slice(0, AROUND_ROWS)) {
+    for (const [i, c] of scan.containers.slice(0, AROUND_ROWS).entries()) {
       const row = this.row(
+        `around-${i}`,
         (on) => this.callbacks.onContainerHover(on ? c.element : null),
         () => this.callbacks.onContainerSelect(c.element),
       );
@@ -512,6 +579,7 @@ export class CoveragePanel {
     ] as const) {
       const button = el('button', 'tab', label);
       button.type = 'button';
+      button.dataset.key = `tab-${id}`;
       button.setAttribute('aria-pressed', String(tab === id));
       button.addEventListener('click', () => this.callbacks.onTab(id));
       tabs.appendChild(button);
@@ -538,8 +606,10 @@ export class CoveragePanel {
     return list;
   }
 
-  private row(onHover: (on: boolean) => void, onSelect: () => void): HTMLLIElement {
+  /** A row of a list; `key` names it across renders, so the focus stays on it when the list is drawn again. */
+  private row(key: string, onHover: (on: boolean) => void, onSelect: () => void): HTMLLIElement {
     const row = el('li', 'row');
+    row.dataset.key = key;
     row.tabIndex = 0;
     row.addEventListener('mouseenter', () => onHover(true));
     row.addEventListener('mouseleave', () => onHover(false));
@@ -567,8 +637,9 @@ export class CoveragePanel {
       ) ||
       c.matches.some((m) => index.locators[m.entry]!.locator.toLowerCase().includes(query));
     const shown = scan.covered.filter((c) => kindShown(state, c) && matches(c));
-    const rows = shown.slice(0, MAX_ROWS).map((c) => {
+    const rows = shown.slice(0, MAX_ROWS).map((c, i) => {
       const row = this.row(
+        `covered-${i}`,
         (on) => this.callbacks.onElementHover(on ? c.element : null),
         () => this.callbacks.onElementSelect(c.element),
       );
@@ -613,6 +684,7 @@ export class CoveragePanel {
     const rows = shown.slice(0, MAX_ROWS).map(({ test, elements }) => {
       const entry = index.tests[test]!;
       const row = this.row(
+        `test-${test}`,
         (on) => this.callbacks.onTestHover(on ? test : null),
         () => this.callbacks.onTestSelect(test),
       );
@@ -655,6 +727,7 @@ export class CoveragePanel {
     const shown = uncovered.filter((u) => !query || u.description.toLowerCase().includes(query));
     const rows = shown.slice(0, MAX_ROWS).map((u, i) => {
       const row = this.row(
+        `untested-${i}`,
         (on) => this.callbacks.onElementHover(on ? u.element : null),
         () => this.callbacks.onElementSelect(u.element),
       );
@@ -838,6 +911,7 @@ export class CoveragePanel {
     const locator = index.locators[row.entry]!.locator;
     const first = row.elements[0]!;
     const item = this.row(
+      `brittle-${row.entry}`,
       (on) => this.callbacks.onElementHover(on ? first : null),
       () => this.callbacks.onElementSelect(first),
     );
@@ -941,6 +1015,8 @@ export class CoveragePanel {
       items.push(errorItem);
     }
     const details = el('details', 'notes');
+    details.dataset.key = 'notes';
+    details.open = this.notesOpen;
     const summary = el(
       'summary',
       undefined,

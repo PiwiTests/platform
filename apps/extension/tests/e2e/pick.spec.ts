@@ -9,6 +9,14 @@ import { stubChromeI18n } from './i18n-stub.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
 
+const activeTool = (page: Page) =>
+  page.evaluate(() => (globalThis as { __piwiActiveTool?: { id: string } }).__piwiActiveTool?.id ?? null);
+
+/** A button inside a form with a test id: picking it opens the anchors step. */
+const ANCHORED = `<!doctype html><html><body style="margin-top:120px">
+  <form data-testid="signup-form"><button id="target" data-testid="join-btn">Join now</button></form>
+</body></html>`;
+
 /**
  * Drives the real built `pick.js` — injected the same way
  * `chrome.scripting.executeScript({ files: ['pick.js'] })` would, since
@@ -87,9 +95,67 @@ test.describe('pick.js', () => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><button id="x">X</button></body></html>`);
     await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect.poll(() => activeTool(page)).toBe('pick');
     await page.keyboard.press('Escape');
-    await expect.poll(() => page.evaluate(() => (globalThis as any).__piwiPicking)).toBe(false);
+    await expect.poll(() => activeTool(page)).toBeNull();
     expect(await page.evaluate(() => !!document.getElementById('piwi-picker-results-host'))).toBe(false);
+  });
+
+  test('Escape at the anchors step skips it, and the results open for the pick still running', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(ANCHORED);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await page.hover('#target');
+    await page.click('#target');
+    await expect(page.getByText('Scope to stable parents')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#piwi-picker-results-host')).toBeAttached();
+    await expect(page.getByText('Scope to stable parents')).toHaveCount(0);
+    expect(await activeTool(page)).toBe('pick');
+
+    // The next Escape closes the results and ends the pick.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#piwi-picker-results-host')).toHaveCount(0);
+    await expect.poll(() => activeTool(page)).toBeNull();
+  });
+
+  test('a pick replaced before its click gives the page back its clicks and arrow keys', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <button id="target" onclick="window.__clicks = (window.__clicks || 0) + 1">Join now</button>
+      <input id="field" onkeydown="if (event.key === 'ArrowDown') window.__arrows = (window.__arrows || 0) + 1">
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.locator('#__piwi_picker_banner')).toHaveCount(1);
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+    await expect.poll(() => activeTool(page)).toBe('lint-overlay');
+    await expect(page.locator('#__piwi_picker_banner')).toHaveCount(0);
+
+    await page.focus('#field');
+    await page.keyboard.press('ArrowDown');
+    expect(await page.evaluate(() => (window as { __arrows?: number }).__arrows)).toBe(1);
+    await page.click('#target');
+    expect(await page.evaluate(() => (window as { __clicks?: number }).__clicks)).toBe(1);
+    expect(await page.evaluate(() => (globalThis as { __piwiPickState?: string }).__piwiPickState)).not.toBe('picked');
+  });
+
+  test('a pick replaced at the anchors step leaves no panel behind and opens no results', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(ANCHORED);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await page.hover('#target');
+    await page.click('#target');
+    await expect(page.getByText('Scope to stable parents')).toBeVisible();
+
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+    await expect.poll(() => activeTool(page)).toBe('lint-overlay');
+    await expect(page.getByText('Scope to stable parents')).toHaveCount(0);
+    // Long enough for the replaced pick to have opened its results, were it still going.
+    await page.waitForTimeout(400);
+    await expect(page.locator('#piwi-picker-results-host')).toHaveCount(0);
+    await expect(page.locator('#piwi-lint-overlay-host')).toBeAttached();
+    expect(await activeTool(page)).toBe('lint-overlay');
   });
 
   test('re-injecting while a pick is already in progress does not double-install the overlay', async ({ context }) => {
@@ -149,7 +215,7 @@ async function pickRows(page: Page, name: string): Promise<PanelRow[]> {
   });
   await page.keyboard.press('Escape');
   await expect(page.locator('#piwi-picker-results-host')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => (globalThis as { __piwiPicking?: boolean }).__piwiPicking)).toBe(false);
+  await expect.poll(() => activeTool(page)).toBeNull();
   return rows;
 }
 

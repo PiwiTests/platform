@@ -141,6 +141,11 @@ function startCoverageOverlay(): void {
     else g.__piwiCoverageOff();
     return;
   }
+  // The page is claimed before the host is mounted: the tool this replaces
+  // takes its surfaces with it here. `off` is set below, before anything can
+  // call this teardown.
+  const toolEpoch = startTool('coverage-overlay', () => off());
+  installEscapeToCancel();
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -865,8 +870,8 @@ function startCoverageOverlay(): void {
     pointer = null;
     if (!hoverFrame) hoverFrame = requestAnimationFrame(hitTest);
   };
-  // Window capture runs before the tool session's document-level Escape: an open card closes first,
-  // then the limit to an element, then the overlay.
+  // Window capture runs before the tool session's document-level Escape: the search's text clears
+  // first, then an open card closes, then the limit to an element, then the overlay.
   const onKeyDown = (e: KeyboardEvent) => {
     if (state.choosingScope) {
       const handled = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key);
@@ -887,7 +892,13 @@ function startCoverageOverlay(): void {
       }
       return;
     }
-    if (e.key !== 'Escape' || (!state.pinned && !state.scope)) return;
+    if (e.key !== 'Escape') return;
+    if (panel.clearSearch()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (!state.pinned && !state.scope) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (state.pinned) pin(null);
@@ -939,7 +950,6 @@ function startCoverageOverlay(): void {
   document.addEventListener('mouseout', onPointerOut, { capture: true, passive: true });
   window.addEventListener('keydown', onKeyDown, true);
 
-  let toolEpoch = 0;
   const off = () => {
     observer.disconnect();
     clearInterval(positionTimer);
@@ -966,8 +976,6 @@ function startCoverageOverlay(): void {
     if (state.choosingScope) stopChoosing();
     setScope(element);
   };
-  toolEpoch = startTool('coverage-overlay', off);
-  installEscapeToCancel();
   bridge();
   void boot();
 }

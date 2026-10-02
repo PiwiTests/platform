@@ -242,6 +242,59 @@ test.describe('coverage overlay on a page', () => {
     await expect(panel.locator('li.row')).toHaveCount(1);
   });
 
+  test('the search keeps its focus while typing, and Escape clears it before it closes the overlay', async ({
+    page,
+    context,
+  }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await panel.getByRole('button', { name: /^Not tested \d+$/ }).click();
+    const rows = panel.locator('li.row');
+    const all = await rows.count();
+    expect(all).toBeGreaterThan(4);
+
+    const search = panel.getByLabel('Filter the list');
+    await search.click();
+    await search.pressSequentially('wishlist');
+    await expect(search).toHaveValue('wishlist');
+    await expect(search).toBeFocused();
+    await expect(rows).toHaveCount(4);
+    for (const text of await rows.allTextContents()) expect(text).toContain('wishlist');
+
+    await page.keyboard.press('Escape');
+    await expect(search).toHaveValue('');
+    await expect(rows).toHaveCount(all);
+    await expect(page.locator(HOST)).toBeAttached();
+    await page.keyboard.press('Escape');
+    await expect(page.locator(HOST)).not.toBeAttached();
+  });
+
+  test('a rescan keeps the focused tab and the open notes', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    const notes = panel.locator('details.notes');
+    await notes.locator('summary').click();
+    await expect(notes).toHaveJSProperty('open', true);
+    const testsTab = panel.getByRole('button', { name: /^Tests \d+$/ });
+    await testsTab.click();
+    await expect(testsTab).toHaveAttribute('aria-pressed', 'true');
+    await expect(testsTab).toBeFocused();
+
+    const scans = (await readCoverage(page)).scans;
+    await page.evaluate(() => {
+      const button = document.createElement('button');
+      button.textContent = 'Gift wrap';
+      document.querySelector('main')!.appendChild(button);
+    });
+    await expect.poll(async () => (await readCoverage(page)).scans).toBeGreaterThan(scans);
+    await expect(testsTab).toBeFocused();
+    await expect(notes).toHaveJSProperty('open', true);
+  });
+
   test('follows the page: added and removed elements rescan', async ({ page, context }) => {
     await stubCoverageChrome(context);
     await openShop(page, '?nodialog');

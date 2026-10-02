@@ -85,11 +85,18 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
 
 **A momentary tool must claim the page through `src/shared/tool-session.ts`.** `startTool(id,
-teardown)` on entry, `endTool(epoch)` when it finishes; starting one tears down its
-predecessor, and Escape cancels the current one. Pass `teardownToolSurfaces` unless the tool
-needs something more specific — note it answers the `__piwiPickState`/`__piwiAnchorState`
-globals, because a pick-driven flow polls those and only resets its re-entry guard in a
-`finally`, so tearing its UI out without an answer strands it for the life of the page. The
+teardown)` on entry, before it mounts anything (the predecessor's teardown runs inside that
+call), and `endTool(epoch)` when it finishes; starting one tears down its predecessor, and
+Escape cancels the current one, which the page then does not see. Every panel or wait a tool
+opens is tied to it with `bindToTool(epoch, close)` (`waitForGlobal` is one), so a teardown
+settles the promise its flow awaits rather than stranding it for the life of the page; the
+flow checks `toolIsCurrent(epoch)` after each `await` and, once it is not current, leaves the
+picker overlay and the pick globals to its successor. A pick-driven tool injected again while
+it runs leaves it be (`isToolActive`); any other tool replaces it. Its teardown is
+`teardownToolSurfaces`: the picking overlay and the anchors step go, listeners included,
+`__piwiPickState`/`__piwiAnchorState` are answered for a flow that waits on them without being
+a tool (the bug recorder's Mark what's wrong), and no other surface on the page is touched.
+Escape during the anchors step is that step's Skip, not a cancel. The
 recorder deliberately stays outside this: it is a capture mode, and stopping it because
 another panel opened would discard a recording in progress.
 

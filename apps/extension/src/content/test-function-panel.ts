@@ -1,5 +1,5 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
+import { startTool, endTool, installEscapeToCancel, toolIsCurrent } from '../shared/tool-session.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { testCatalogAgainstPage, type FunctionTestResult } from './test-function-scan.js';
 import { DomModel } from './engine-aria.js';
@@ -55,11 +55,22 @@ function renderResult(result: FunctionTestResult): HTMLElement {
 }
 
 async function renderPanel(): Promise<void> {
-  document.getElementById(HOST_ID)?.remove();
-
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') finish();
+  };
+  const finish = () => {
+    document.removeEventListener('keydown', onKeyDown, true);
+    host.remove();
+    endTool(toolEpoch);
+  };
+  // The page is claimed before the host is mounted: the tool this replaces,
+  // this panel included, takes its surfaces with it here.
+  const toolEpoch = startTool('test-function-panel', finish);
+  installEscapeToCancel();
+  document.getElementById(HOST_ID)?.remove();
   document.documentElement.appendChild(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
 
@@ -117,6 +128,7 @@ async function renderPanel(): Promise<void> {
   // `getActiveProjectOverride` reads session storage — see `session-access.ts`.
   await ensureSessionAccess();
   const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(), initI18n()]);
+  if (!toolIsCurrent(toolEpoch)) return;
   panel.lang = uiLanguage();
   panel.setAttribute('aria-label', t('functions_title'));
   const activeProject = resolveActiveProject(connection, override, location.href);
@@ -182,7 +194,9 @@ async function renderPanel(): Promise<void> {
 
   // Cache first so the panel is instant and still works with the instance
   // unreachable; the re-fetch below then swaps in anything newer.
-  renderResults(await getCachedCatalog(projectId));
+  const cached = await getCachedCatalog(projectId);
+  if (!toolIsCurrent(toolEpoch)) return;
+  renderResults(cached);
 
   async function revalidate(force: boolean): Promise<void> {
     if (projectId == null) return;
@@ -190,6 +204,7 @@ async function renderPanel(): Promise<void> {
     const previousLabel = refreshBtn.textContent;
     if (force) refreshBtn.textContent = t('common_refreshing');
     const result = await requestCatalogRefresh(projectId, { force });
+    if (!toolIsCurrent(toolEpoch)) return;
     if (result.ok && result.refreshed) renderResults(await getCachedCatalog(projectId));
     refreshBtn.textContent = previousLabel;
     refreshBtn.disabled = false;
@@ -206,27 +221,11 @@ async function renderPanel(): Promise<void> {
   // TTL-guarded so repeated opens don't hit the instance every time.
   void revalidate(false);
 
-  let toolEpoch = 0;
-  const finish = () => {
-    host.remove();
-    endTool(toolEpoch);
-  };
-  toolEpoch = startTool('test-function-panel', finish);
-  installEscapeToCancel();
   closeBtn.addEventListener('click', finish);
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) finish();
   });
-  document.addEventListener(
-    'keydown',
-    function onKeyDown(e) {
-      if (e.key === 'Escape') {
-        document.removeEventListener('keydown', onKeyDown, true);
-        finish();
-      }
-    },
-    true,
-  );
+  document.addEventListener('keydown', onKeyDown, true);
 
   backdrop.appendChild(panel);
   root.appendChild(backdrop);

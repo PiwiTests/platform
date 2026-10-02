@@ -1,4 +1,13 @@
-import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
+import {
+  bindToTool,
+  endTool,
+  installEscapeToCancel,
+  isToolActive,
+  startTool,
+  teardownToolSurfaces,
+  toolIsCurrent,
+  waitForGlobal,
+} from '../shared/tool-session.js';
 import {
   installPickerOverlay,
   removePickerOverlay,
@@ -24,42 +33,26 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-/** Poll for a global the picker overlay sets, mirroring the reporter's `page.waitForFunction` from inside the browser itself. */
-function waitForGlobal<T>(key: string): Promise<T> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const value = (globalThis as any)[key];
-      if (value !== undefined) {
-        resolve(value as T);
-        return;
-      }
-      setTimeout(check, 120);
-    };
-    check();
-  });
-}
-
 /**
  * Runs the full guided pick flow: element pick (snap + tree-walk), optional
  * anchor scoping, ranked alternatives, then the results panel. A single
- * injection of this module runs this once — re-injecting (a second "Pick
- * element" trigger) is guarded against re-entering while one is already
- * active on the page.
+ * injection of this module runs this once. Injected again while a pick runs
+ * (a second "Pick element" trigger), it leaves that pick be; any other tool
+ * running gives way to it.
  */
 async function runPick(): Promise<void> {
   const g = globalThis as any;
-  if (g.__piwiPicking) return;
-  g.__piwiPicking = true;
+  if (isToolActive('pick')) return;
   const toolEpoch = startTool('pick', teardownToolSurfaces);
   installEscapeToCancel();
-  const removeDescribeHook = installDescribeHook();
+  const removeDescribeHook = bindToTool(toolEpoch, installDescribeHook());
   // Read while the user picks, so the results panel opens in the chosen language.
   const i18nReady = initI18n();
   try {
     clearPickGlobals();
     installPickerOverlay({ transport: 'global', failing: null });
-    const state = await waitForGlobal<string>('__piwiPickState');
-    if (state !== 'picked') return;
+    const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
+    if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
     // The element is ours now, so the picking overlay has done its job. Left
     // up it just sits there reading "Analyzing element…" — behind the anchors
     // step, and for the whole life of the results panel.
@@ -80,7 +73,8 @@ async function runPick(): Promise<void> {
         leafLevel: level,
         leafTestId: attrs.attributes['data-testid'] ?? null,
       });
-      const anchorState = await waitForGlobal<string>('__piwiAnchorState');
+      const anchorState = await waitForGlobal<string>('__piwiAnchorState', toolEpoch);
+      if (!toolIsCurrent(toolEpoch)) return;
       if (anchorState === 'done') {
         anchors = g.__piwiPickAnchors ?? [];
         chainLeafCount = g.__piwiPickChainCount;
@@ -96,19 +90,22 @@ async function runPick(): Promise<void> {
     if (checked.length === 0) return;
 
     await i18nReady;
-    await renderResultsPanel(checked, el);
+    if (!toolIsCurrent(toolEpoch)) return;
+    await renderResultsPanel(checked, el, toolEpoch);
   } catch (err) {
     // Without this a throw anywhere after the pick left the overlay frozen on
     // "Analyzing element…" and the rejection unhandled, so the flow looked
     // hung with nothing to explain it.
     console.warn('[Piwi Picker] the pick flow failed:', err);
   } finally {
-    // Belt and braces: covers the early returns above (no locators generated,
-    // pick skipped) as well as anything thrown.
-    removePickerOverlay();
     removeDescribeHook();
-    clearPickGlobals();
-    g.__piwiPicking = false;
+    // Belt and braces: covers the early returns above (no locators generated,
+    // pick skipped) as well as anything thrown. A pick another tool took over
+    // from leaves the overlay and the pick globals to that tool.
+    if (toolIsCurrent(toolEpoch)) {
+      removePickerOverlay();
+      clearPickGlobals();
+    }
     endTool(toolEpoch);
   }
 }

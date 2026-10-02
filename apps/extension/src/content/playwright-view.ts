@@ -43,6 +43,11 @@ function togglePlaywrightView(): void {
     (g.__piwiPlaywrightViewOff as () => void)();
     return;
   }
+  // The page is claimed before the host is mounted: the tool this replaces
+  // takes its surfaces with it here. `off` is set below, before anything can
+  // call this teardown.
+  const toolEpoch = startTool('playwright-view', () => off());
+  installEscapeToCancel();
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -230,7 +235,6 @@ function togglePlaywrightView(): void {
     }
   };
 
-  let toolEpoch = 0;
   const off = () => {
     observer.disconnect();
     clearTimeout(rescanTimer);
@@ -244,8 +248,6 @@ function togglePlaywrightView(): void {
     endTool(toolEpoch);
   };
   g.__piwiPlaywrightViewOff = off;
-  toolEpoch = startTool('playwright-view', off);
-  installEscapeToCancel();
   closeBtn.addEventListener('click', off);
   document.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('scroll', redraw, true);

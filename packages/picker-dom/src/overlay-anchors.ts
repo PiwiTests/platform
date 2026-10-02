@@ -44,8 +44,9 @@ export interface AnchorPickerArg {
  * the combined selection, recomputed against the real page on every toggle
  * (exactly 1 = green). Hovering a row outlines that ancestor in the page and
  * names it in a chip pinned to it. Resolves through `__piwiAnchorState` ('done' | 'skipped'); selected anchors
- * land in `__piwiPickAnchors` (+ `__piwiPickChainCount`). Role resolution
- * reuses the maps passed in `arg` (single source of truth in
+ * land in `__piwiPickAnchors` (+ `__piwiPickChainCount`). While the step
+ * shows, `__piwiAnchorCleanup` holds its teardown (see `removeAnchorPicker`).
+ * Role resolution reuses the maps passed in `arg` (single source of truth in
  * `@piwitests/core`). Must stay fully self-contained.
  */
 export function showAnchorPicker(arg: AnchorPickerArg): void {
@@ -328,6 +329,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     outline.remove();
     outlineLabel.remove();
     pickedOutline.remove();
+    if (g.__piwiAnchorCleanup === cleanup) delete g.__piwiAnchorCleanup;
   };
   const done = (state: 'done' | 'skipped') => {
     g.__piwiPickAnchors = state === 'done' ? rows.filter((_, i) => selected.has(i)).map((r) => r.info) : [];
@@ -372,4 +374,16 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   doc.body.appendChild(outline);
   doc.body.appendChild(outlineLabel);
   doc.body.appendChild(panel);
+}
+
+/**
+ * Tears down the anchors step, if one is showing: its panel, outlines and key
+ * listener. It leaves `__piwiAnchorState` unset: a caller still waiting on it
+ * answers it, or stops waiting. Safe to call more than once.
+ */
+export function removeAnchorPicker(): void {
+  const g = globalThis as any;
+  const cleanup = g.__piwiAnchorCleanup;
+  if (typeof cleanup === 'function') cleanup();
+  delete g.__piwiAnchorCleanup;
 }

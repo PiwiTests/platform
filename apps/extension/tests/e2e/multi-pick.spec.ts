@@ -23,6 +23,9 @@ async function waitForFreshPickBanner(page: Page): Promise<void> {
     .toBe('↑ parent · ↓ child · Esc skip');
 }
 
+const activeTool = (page: Page) =>
+  page.evaluate(() => (globalThis as { __piwiActiveTool?: { id: string } }).__piwiActiveTool?.id ?? null);
+
 /**
  * The between-picks bar, the "no pattern found" message, and the results
  * panel all live in closed shadow roots by design (same reasoning as
@@ -111,7 +114,7 @@ test.describe('multi-pick.js', () => {
 
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-bar-host'))).toBe(false);
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-panel-host'))).toBe(false);
-    await expect.poll(() => page.evaluate(() => (globalThis as any).__piwiMultiPicking)).toBe(false);
+    await expect.poll(() => activeTool(page)).toBeNull();
   });
 
   test('Escape at the between-picks bar cancels the session with no results panel', async ({ context }) => {
@@ -133,7 +136,35 @@ test.describe('multi-pick.js', () => {
 
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-bar-host'))).toBe(false);
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-panel-host'))).toBe(false);
-    await expect.poll(() => page.evaluate(() => (globalThis as any).__piwiMultiPicking)).toBe(false);
+    await expect.poll(() => activeTool(page)).toBeNull();
+  });
+
+  test('another tool started at the between-picks bar ends the session, and multi-pick starts again', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <li id="row1">Alice</li><li id="row2">Bob</li>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+
+    await waitForFreshPickBanner(page);
+    await page.hover('#row1');
+    await page.click('#row1');
+    await waitForFreshPickBanner(page);
+    await page.hover('#row2');
+    await page.click('#row2');
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+    await expect.poll(() => activeTool(page)).toBe('lint-overlay');
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toHaveCount(0);
+    await expect(page.locator('#piwi-lint-overlay-host')).toBeAttached();
+
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    await expect.poll(() => activeTool(page)).toBe('multi-pick');
+    await waitForFreshPickBanner(page);
+    await expect(page.locator('#piwi-lint-overlay-host')).toHaveCount(0);
   });
 
   test('shows a dismissible message and no panel when the picks share no common pattern', async ({ context }) => {

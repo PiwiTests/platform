@@ -20,6 +20,7 @@ import { statusLabel, testTitle } from './coverage-view.js';
 import { attachPanelShadow } from './panel-root.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
+import { bindToTool, toolIsCurrent } from '../shared/tool-session.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -40,10 +41,18 @@ const PIWI_TESTS_SHOWN = 6;
  * With `target` (the picked element) and a connection to a Piwi instance, a
  * section lists the project's tests whose locators reach that element.
  *
- * Resolves once the user dismisses the panel (Escape or the close button).
- * The caller has run `initI18n()`.
+ * Resolves once the user dismisses the panel (Escape, the close button, or
+ * handing the element over to Tested elements), or once the tool started as
+ * `toolEpoch` ends. The caller has run `initI18n()`.
  */
-export async function renderResultsPanel(ranked: CheckedLocator[], target: Element | null = null): Promise<void> {
+export async function renderResultsPanel(
+  ranked: CheckedLocator[],
+  target: Element | null,
+  toolEpoch: number,
+): Promise<void> {
+  let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
+  const paired = (await getEditorPairing().catch(() => null)) !== null;
+  if (!toolIsCurrent(toolEpoch)) return;
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -180,9 +189,6 @@ export async function renderResultsPanel(ranked: CheckedLocator[], target: Eleme
   piwiSection.hidden = true;
   panel.appendChild(piwiSection);
 
-  let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
-  const paired = (await getEditorPairing().catch(() => null)) !== null;
-
   return new Promise<void>((resolve) => {
     let done = false;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -192,14 +198,13 @@ export async function renderResultsPanel(ranked: CheckedLocator[], target: Eleme
         finish();
       }
     };
-    const finish = () => {
-      if (done) return;
+    document.addEventListener('keydown', onKeyDown, true);
+    const finish = bindToTool(toolEpoch, () => {
       done = true;
       document.removeEventListener('keydown', onKeyDown, true);
       host.remove();
       resolve();
-    };
-    document.addEventListener('keydown', onKeyDown, true);
+    });
     closeBtn.addEventListener('click', finish);
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
@@ -268,7 +273,7 @@ export async function renderResultsPanel(ranked: CheckedLocator[], target: Eleme
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
     panel.focus();
-    void fillPiwiSection(piwiSection, ranked, target, () => done);
+    void fillPiwiSection(piwiSection, ranked, target, () => done, finish);
   });
 }
 
@@ -295,13 +300,15 @@ function reportPickCoverage(value: PickCoverage): void {
 /**
  * Connected mode: which of the project's tests reach the picked element,
  * resolved on this page from the project's locator index. Silent when the
- * extension is not connected or no project is mapped to the page.
+ * extension is not connected or no project is mapped to the page. Handing the
+ * element over to Tested elements closes the panel through `close`.
  */
 async function fillPiwiSection(
   section: HTMLElement,
   ranked: CheckedLocator[],
   target: Element | null,
   closed: () => boolean,
+  close: () => void,
 ): Promise<void> {
   reportPickCoverage({ status: 'off' });
   if (!target) return;
@@ -391,7 +398,7 @@ async function fillPiwiSection(
   const openCoverage = (scoped: boolean) => {
     if (scoped) (globalThis as { __piwiCoverageScopeRequest?: Element }).__piwiCoverageScopeRequest = target;
     void chrome.runtime.sendMessage({ type: 'piwi-open-coverage' }).catch(() => undefined);
-    document.getElementById(HOST_ID)?.remove();
+    close();
   };
   const actionButton = (text: string, title: string, onClick: () => void) => {
     const button = document.createElement('button');
