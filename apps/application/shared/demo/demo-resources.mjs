@@ -104,11 +104,47 @@ function pagesOfWorker(spans, startedAt, leaky) {
   return points;
 }
 
+/** A step series' level at `at`: the last point at or before it, zero before the first. */
+function levelAt(points, at) {
+  let level = 0;
+  for (const [t, value] of points) {
+    if (t > at) break;
+    level = value;
+  }
+  return level;
+}
+
+/**
+ * One worker's processes as the sampler reads them: the cores the worker and
+ * its browser use, busy during a test and idle between two, more in a leaky
+ * run for each page earlier tests left rendering; their memory, growing with
+ * every page open in the worker. `pages` is the worker's open pages on the
+ * same clock.
+ */
+function workerTree(worker, spans, origin, pages, leaky) {
+  const from = spans[0][0] - origin;
+  const to = spans[spans.length - 1][1] + 200 - origin;
+  const inTest = (at) => spans.some(([start, end]) => start - origin <= at && at <= end - origin);
+  const cpuCores = [];
+  for (let at = from + CPU_STEP_MS, i = 0; at <= to; at += CPU_STEP_MS, i++) {
+    const leftOpen = leaky ? Math.max(0, levelAt(pages, at) - 2) : 0;
+    const busy = inTest(at) ? 0.55 + 0.2 * wobble(worker * 97 + i) + 0.08 * leftOpen : 0.06 + 0.04 * leftOpen;
+    cpuCores.push([at, Math.round(busy * 100) / 100]);
+  }
+  const memoryBytes = [];
+  for (let at = from, i = 0; at <= to; at += MEMORY_STEP_MS, i++) {
+    const open = levelAt(pages, at);
+    memoryBytes.push([at, Math.round((380 + 140 * open + 20 * wobble(worker * 31 + i)) * MB)]);
+  }
+  return { worker, cpuCores, memoryBytes };
+}
+
 /**
  * The run's resources over the tests' span, sampled from a little before the
  * first one: the machine's CPU every second, the run's memory every two and a
  * half, peaking at `peakBytes` as far into the tests as `peakAtMs` is into
- * `wallMs`, and each worker's open pages. Null without the tests' spans.
+ * `wallMs`, and each worker's open pages and processes. Null without the
+ * tests' spans.
  */
 function demoTimeline({ wallMs, workers, leaky, peakBytes, peakAtMs }) {
   if (workers.length === 0 || !workers.every((w) => Array.isArray(w.spans) && w.spans.length > 0)) return null;
@@ -137,11 +173,13 @@ function demoTimeline({ wallMs, workers, leaky, peakBytes, peakAtMs }) {
     0,
   );
   memoryBytes[nearest] = [memoryBytes[nearest][0], Math.round(peakBytes)];
+  const pages = workers.map((w) => ({ worker: w.worker, points: pagesOfWorker(w.spans, origin, leaky) }));
   return {
     startedAt: origin,
     cpuPct,
     memoryBytes,
-    pages: workers.map((w) => ({ worker: w.worker, points: pagesOfWorker(w.spans, origin, leaky) })),
+    pages,
+    workers: workers.map((w, i) => workerTree(w.worker, w.spans, origin, pages[i].points, leaky)),
   };
 }
 

@@ -74,15 +74,15 @@ leaks](./resource-leaks#in-the-dashboard) found. Below them, the **costliest tes
 browser processes used the most CPU.
 
 The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
-**CPU** busy share, the **memory** the run's processes held (against the container's limit when the run came close to
-it), and, with the capture fixtures, the **pages** open in the workers. Hover a track for the values at that moment and
-the pages each worker had open; a line down the rows shows which tests were running. Each track can be turned off
-from the **Resources** menu, a choice kept per browser. A sharded run draws one set of tracks above each
-shard's workers, since each shard ran on its own machine.
+**CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
+workers. Hover a track for its values then; a line down the rows marks the tests running. Each track can be turned off
+from the **Resources** menu, a choice kept per browser. A sharded run draws one set of tracks above each shard's
+workers, each shard on its own machine.
 
-The same menu draws one metric **under each worker** row, on one scale for all of them: the pages open in that worker,
-or, from what each test cost, the cores its worker and browsers used, the share of the test their browsers spent
-waiting for a CPU (Linux), or its largest browser process. A test's value spans its bar.
+The same menu draws one metric **under each worker** row, on one scale for all of them: its open pages, the CPU and
+memory of the worker and the browsers it started, read with the panel's samples, or the share of each test its browsers
+spent waiting for a CPU (Linux). The sampler tells the workers apart through the capture fixtures; for a worker it
+did not read, a run from an older reporter or on Windows, each test's own cost is drawn across its bar instead.
 
 With the capture fixtures, each execution also carries what its test cost, on its Performance tab: the CPU of the
 worker and of the browser processes it started, the largest of those processes, how busy the worker's event loop was,
@@ -100,8 +100,8 @@ Turn it off, with the resource ledger, through `captureResources: false` (or `PI
 ## Limits
 
 - The dashboard keeps 240 points of the CPU series, averaged from the samples of a longer run. The timeline's tracks keep
-  600 points of CPU and of memory and 300 changes of each worker's open pages, merged in time order on a longer run;
-  memory is read every five seconds, so a short run's memory track has few points.
+  600 points of CPU and of memory, 300 of each worker's, merged in time order on a longer run; memory is read every five
+  seconds, so a short run's memory track has few points.
 - **Sampled.** A process that lives less than a second, or the last second of one that exits, can be missed; a run of a
   few seconds has few samples.
 - **The machine is shared.** Busy, waiting and free memory count every process on the machine, other jobs included;

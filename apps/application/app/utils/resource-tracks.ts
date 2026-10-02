@@ -48,6 +48,8 @@ export interface ResourceBand {
   tracks: Record<ResourceTrackKind, ResourceTrack | null>;
   /** Each lane's open pages, named as its row is, with the row's first lane when the lane has a row. */
   workers: Array<{ name: string; lane: number | null; points: SeriesPoint[] }>;
+  /** Each lane's worker processes with the browsers they started, as the run sampler read them. */
+  sampled: Array<{ lane: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
   memoryKind: 'pss' | 'rss' | null;
 }
 
@@ -119,6 +121,17 @@ export function buildResourceBands(
       byLane.set(name, entry);
     }
     const workers = [...byLane.values()].map(({ name, lane, series }) => ({ name, lane, points: sumSteps(series) }));
+
+    // A lane's processes ran one after another: their readings join in time order.
+    const sampledByLane = new Map<number, { lane: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>();
+    for (const tree of part.timeline.workers ?? []) {
+      const row = shardRows.find((r) => r.processes.includes(tree.worker));
+      if (!row) continue;
+      const entry = sampledByLane.get(row.baseLane) ?? { lane: row.baseLane, cpuCores: [], memoryBytes: [] };
+      entry.cpuCores = [...entry.cpuCores, ...onClock(tree.cpuCores)].sort((a, b) => a[0] - b[0]);
+      entry.memoryBytes = [...entry.memoryBytes, ...onClock(tree.memoryBytes)].sort((a, b) => a[0] - b[0]);
+      sampledByLane.set(row.baseLane, entry);
+    }
     const pages = sumSteps(workers.map((w) => w.points));
     const pagesPeak = peak(pages);
 
@@ -156,6 +169,7 @@ export function buildResourceBands(
             : null,
       },
       workers,
+      sampled: [...sampledByLane.values()],
       memoryKind: part.memoryKind,
     });
   }
@@ -244,7 +258,7 @@ export const WORKER_METRICS: ReadonlyArray<{ kind: WorkerMetricKind; menuLabel: 
   { kind: 'pages', menuLabel: 'Open pages' },
   { kind: 'cpu', menuLabel: 'CPU' },
   { kind: 'wait', menuLabel: 'Waiting for a CPU' },
-  { kind: 'memory', menuLabel: 'Browser memory' },
+  { kind: 'memory', menuLabel: 'Memory' },
 ];
 
 /** One test's value, drawn across its bar. */
@@ -255,20 +269,25 @@ export interface StripSpan {
   title: string;
 }
 
-/** The strip under one worker row: a level held over time, or one value per test. */
+/**
+ * The strip under one worker row: a level held until it changes (open
+ * pages), readings of the worker's processes over time (sampled CPU and
+ * memory), or one value per test, from what each test cost.
+ */
 export interface WorkerStrip {
   /** The row's first lane. */
   lane: number;
   name: string;
-  steps: SeriesPoint[];
+  mode: 'step' | 'line' | 'spans';
+  points: SeriesPoint[];
   spans: StripSpan[];
+  /** Sampled memory: PSS, or RSS where PSS could not be read. */
+  memoryKind: 'pss' | 'rss' | null;
 }
 
 /** The strips of every worker row for one metric, on one scale so the rows compare. */
 export interface WorkerStripSet {
   kind: WorkerMetricKind;
-  /** How the strips draw: a level held until it changes, or a bar per test. */
-  mode: 'step' | 'spans';
   yMax: number;
   /** The value of the strips' top, with its unit. */
   scaleLabel: string;
@@ -296,27 +315,35 @@ function perTestValue(kind: Exclude<WorkerMetricKind, 'pages'>, cost: RunExecuti
 
 function scaleLabel(kind: WorkerMetricKind, yMax: number): string {
   if (kind === 'pages') return `${yMax} page${yMax === 1 ? '' : 's'}`;
-  if (kind === 'cpu') return `${yMax} core${yMax === 1 ? '' : 's'}`;
+  if (kind === 'cpu') return `${round2(yMax)} core${yMax === 1 ? '' : 's'}`;
   if (kind === 'wait') return `${Math.round(yMax)}% wait`;
   return formatSize(yMax);
 }
 
+function sampledSeries(band: ResourceBand, lane: number, kind: 'cpu' | 'memory'): SeriesPoint[] {
+  const tree = band.sampled.find((entry) => entry.lane === lane);
+  return (kind === 'cpu' ? tree?.cpuCores : tree?.memoryBytes) ?? [];
+}
+
 /** The metrics the run has data for, in the menu's order. */
 export function availableWorkerMetrics(bands: ResourceBand[], costs: RunExecutionCost[]): WorkerMetricKind[] {
+  const sampled = bands.flatMap((band) => band.sampled);
   const has: Record<WorkerMetricKind, boolean> = {
     pages: bands.some((band) => band.workers.some((worker) => worker.lane !== null)),
-    cpu: costs.length > 0,
+    cpu: costs.length > 0 || sampled.some((tree) => tree.cpuCores.length > 0),
     wait: costs.some((cost) => cost.runWaitMs !== null),
-    memory: costs.some((cost) => cost.peakRssMb !== null),
+    memory: costs.some((cost) => cost.peakRssMb !== null) || sampled.some((tree) => tree.memoryBytes.length > 0),
   };
   return WORKER_METRICS.map((metric) => metric.kind).filter((kind) => has[kind]);
 }
 
 /**
  * The strips of one metric under every worker row: the pages open in the
- * worker over time, or, from what each test cost, the cores its worker and
- * browsers used, the share of it their browsers spent waiting for a CPU, or
- * its largest browser process. Null when no row has data for the metric.
+ * worker over time; the CPU and memory of the worker and the browsers it
+ * started, as the run sampler read them; and where the sampler did not read a
+ * worker, from what each of its tests cost, the cores its worker and browsers
+ * used, the share of the test their browsers spent waiting for a CPU, or its
+ * largest browser process. Null when no row has data for the metric.
  */
 export function buildWorkerStrips(
   kind: WorkerMetricKind,
@@ -331,25 +358,40 @@ export function buildWorkerStrips(
   const strips = new Map<number, WorkerStrip>(
     input.rows.map((row) => [
       row.baseLane,
-      { lane: row.baseLane, name: rowName(row, input.sharded), steps: [], spans: [] },
+      {
+        lane: row.baseLane,
+        name: rowName(row, input.sharded),
+        mode: kind === 'pages' ? 'step' : 'spans',
+        points: [],
+        spans: [],
+        memoryKind: null,
+      },
     ]),
   );
   let yMax = 0;
-  if (kind === 'pages') {
-    for (const band of input.bands) {
-      for (const worker of band.workers) {
-        const strip = worker.lane === null ? undefined : strips.get(worker.lane);
-        if (!strip) continue;
-        strip.steps = worker.points;
-        yMax = Math.max(yMax, peak(worker.points));
-      }
+  for (const band of input.bands) {
+    for (const worker of kind === 'pages' ? band.workers : []) {
+      const strip = worker.lane === null ? undefined : strips.get(worker.lane);
+      if (!strip) continue;
+      strip.points = worker.points;
+      yMax = Math.max(yMax, peak(worker.points));
     }
-  } else {
+    if (kind !== 'cpu' && kind !== 'memory') continue;
+    for (const tree of band.sampled) {
+      const strip = strips.get(tree.lane);
+      const series = sampledSeries(band, tree.lane, kind);
+      if (!strip || series.length === 0) continue;
+      Object.assign(strip, { mode: 'line', points: series, memoryKind: band.memoryKind });
+      yMax = Math.max(yMax, peak(series));
+    }
+  }
+  if (kind !== 'pages') {
     const costs = new Map(input.costs.map((cost) => [cost.executionId, cost]));
     for (const item of input.tests) {
       const cost = item.kind === 'test' && item.testCaseId != null ? costs.get(item.testCaseId) : undefined;
       const strip = strips.get(item.rowIndex);
-      if (!cost || !strip) continue;
+      // A row the sampler read draws its readings, not its tests' averages.
+      if (!cost || !strip || strip.mode !== 'spans') continue;
       const value = perTestValue(kind, cost, testDuration(item));
       if (value === null) continue;
       strip.spans.push({ start: item.start, end: item.start + item.duration, value, title: item.title });
@@ -357,16 +399,10 @@ export function buildWorkerStrips(
     }
   }
   const drawn = [...strips.values()];
-  if (!drawn.some((strip) => strip.steps.length > 0 || strip.spans.length > 0)) return null;
+  if (!drawn.some((strip) => strip.points.length > 0 || strip.spans.length > 0)) return null;
   // Every value zero (no page left open, no wait): a scale of one, with nothing drawn above the baseline.
   const top = yMax > 0 ? yMax : 1;
-  return {
-    kind,
-    mode: kind === 'pages' ? 'step' : 'spans',
-    yMax: top,
-    scaleLabel: scaleLabel(kind, top),
-    strips: drawn,
-  };
+  return { kind, yMax: top, scaleLabel: scaleLabel(kind, top), strips: drawn };
 }
 
 /** The bars of a strip's tests, x in ms on the timeline's clock and y in px from the strip's top. */
@@ -380,11 +416,18 @@ export function spansPath(spans: StripSpan[], yMax: number, height: number): str
     .join('');
 }
 
-/** What a strip says at `t`: its level then, or the value of the test running then; null between tests. */
+/** What a strip says at `t`: its level or reading then, or the value of the test running then; null when none. */
 export function stripReading(set: WorkerStripSet, strip: WorkerStrip, t: number): string | null {
-  if (set.mode === 'step') {
-    if (strip.steps.length === 0) return null;
-    return `${valueAt(strip.steps, t, true) ?? 0} open`;
+  if (strip.mode === 'step') {
+    if (strip.points.length === 0) return null;
+    return `${valueAt(strip.points, t, true) ?? 0} open`;
+  }
+  if (strip.mode === 'line') {
+    const value = valueAt(strip.points, t, false);
+    if (value === null) return null;
+    if (set.kind === 'cpu') return `${round2(value)} cores, the worker and its browsers`;
+    const kind = strip.memoryKind ? ` (${strip.memoryKind.toUpperCase()})` : '';
+    return `${formatSize(value)}, the worker and its browsers${kind}`;
   }
   const span = strip.spans.find((s) => s.start <= t && t <= s.end);
   if (!span) return null;

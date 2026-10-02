@@ -49,6 +49,8 @@ const WORKERS_CAP = 64;
 const WORKER_POINTS_CAP = 200;
 const TIMELINE_SERIES_CAP = 600;
 const TIMELINE_WORKER_POINTS_CAP = 300;
+/** The most cores a worker's processes are read as using. */
+const CORES_CAP = 1024;
 const TEXT_CAP = 300;
 
 type Raw = Record<string, unknown>;
@@ -254,10 +256,19 @@ function timeline(value: unknown): WireResourceTimeline | null {
     const series = points(item.points, TIMELINE_WORKER_POINTS_CAP).map(([at, n]): SeriesPoint => [at, Math.round(n)]);
     if (series.length > 0) pages.push({ worker, points: series });
   }
+  const workers: NonNullable<WireResourceTimeline['workers']> = [];
+  for (const entry of Array.isArray(raw.workers) ? raw.workers.slice(0, WORKERS_CAP) : []) {
+    const item = obj(entry);
+    const worker = item ? int(item.worker) : null;
+    if (!item || worker === null) continue;
+    const cpuCores = points(item.cpuCores, TIMELINE_WORKER_POINTS_CAP, CORES_CAP);
+    const memoryBytes = points(item.memoryBytes, TIMELINE_WORKER_POINTS_CAP);
+    if (cpuCores.length > 0 || memoryBytes.length > 0) workers.push({ worker, cpuCores, memoryBytes });
+  }
   const cpuPct = points(raw.cpuPct, TIMELINE_SERIES_CAP, 100);
   const memoryBytes = points(raw.memoryBytes, TIMELINE_SERIES_CAP);
-  if (cpuPct.length === 0 && memoryBytes.length === 0 && pages.length === 0) return null;
-  return { startedAt: Math.round(startedAt), cpuPct, memoryBytes, pages };
+  if (cpuPct.length === 0 && memoryBytes.length === 0 && pages.length === 0 && workers.length === 0) return null;
+  return { startedAt: Math.round(startedAt), cpuPct, memoryBytes, pages, workers };
 }
 
 /** A run report as a reporter sent it, rebuilt; null when it is not one. */

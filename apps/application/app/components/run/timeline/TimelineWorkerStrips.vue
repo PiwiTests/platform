@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * The strip under each worker row: one metric for every worker, on one scale
- * so the rows compare. Open pages draw as a level held until it changes, a
- * test's cost as a bar across the test. Each path is built once in
+ * so the rows compare. Open pages draw as a level held until it changes, the
+ * sampler's readings as a line, a test's cost as a bar across the test. Each path is built once in
  * milliseconds and scaled to the zoom by its group's transform, like the
  * resource tracks; the pointer reports the strip and moment under it.
  */
@@ -29,9 +29,9 @@ const { labelWidth, stripPlot } = TIMELINE_LAYOUT;
 const paths = computed(() =>
   props.set.strips.map((strip) => ({
     strip,
-    ...(props.set.mode === 'step'
-      ? seriesPaths(strip.steps, props.set.yMax, true, stripPlot)
-      : { line: '', area: spansPath(strip.spans, props.set.yMax, stripPlot) }),
+    ...(strip.mode === 'spans'
+      ? { line: '', area: spansPath(strip.spans, props.set.yMax, stripPlot) }
+      : seriesPaths(strip.points, props.set.yMax, strip.mode === 'step', stripPlot)),
   })),
 );
 

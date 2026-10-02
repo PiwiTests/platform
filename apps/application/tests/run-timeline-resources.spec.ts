@@ -79,6 +79,17 @@ test.describe('Run timeline resource tracks', () => {
                 ],
               },
             ],
+            // The sampler read worker 1's processes; worker 0's strip falls back to its tests' cost.
+            workers: [
+              {
+                worker: 1,
+                cpuCores: [
+                  [1500, 0.9],
+                  [2500, 1.2],
+                ],
+                memoryBytes: [[2500, 1.5 * GB]],
+              },
+            ],
           },
         },
       },
@@ -140,6 +151,12 @@ test.describe('Run timeline resource tracks', () => {
     const tooltip = page.getByTestId('timeline-worker-strip-tooltip');
     await expect(tooltip).toContainText('Worker 0');
     await expect(tooltip).toContainText('1.5 cores for “adds an item”');
+
+    // Worker 1's strip draws the sampler's readings of its processes.
+    const sampled = (await strips.nth(1).boundingBox())!;
+    await page.mouse.move(sampled.x + sampled.width * 0.25, sampled.y + sampled.height / 2);
+    await expect(tooltip).toContainText('Worker 1');
+    await expect(tooltip).toContainText('cores, the worker and its browsers');
 
     await page.mouse.move(0, 0);
     await page.getByTestId('timeline-resources-menu').click();

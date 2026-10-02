@@ -95,6 +95,18 @@ describe('sanitizeResourceReport', () => {
           { worker: 1, points: [] },
           { worker: 'a', points: [[0, 1]] },
         ],
+        workers: [
+          {
+            worker: 0,
+            cpuCores: [
+              [1000, 2.5],
+              [2000, 5000],
+            ],
+            memoryBytes: [[1000, -4]],
+          },
+          { worker: 1, cpuCores: [], memoryBytes: [] },
+          { worker: null, cpuCores: [[1000, 1]] },
+        ],
         extra: true,
       },
     })!;
@@ -106,6 +118,16 @@ describe('sanitizeResourceReport', () => {
       ],
       memoryBytes: Array.from({ length: 600 }, (_, i) => [i * 5000, 1e9]),
       pages: [{ worker: 0, points: [[0, 2]] }],
+      workers: [
+        {
+          worker: 0,
+          cpuCores: [
+            [1000, 2.5],
+            [2000, 1024],
+          ],
+          memoryBytes: [],
+        },
+      ],
     });
     expect(
       sanitizeResourceReport({ ...timedReport(null), timeline: { startedAt: 'now', cpuPct: [[1, 2]] } })!.timeline,

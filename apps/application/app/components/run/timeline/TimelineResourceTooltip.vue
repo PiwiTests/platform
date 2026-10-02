@@ -66,7 +66,9 @@ const stripRow = computed(() => {
   return {
     name: hovered.strip.name,
     label: metric.menuLabel,
-    value: stripReading(hovered.set, hovered.strip, props.state.t) ?? 'No test ran then',
+    value:
+      stripReading(hovered.set, hovered.strip, props.state.t) ??
+      (hovered.strip.mode === 'spans' ? 'No test ran then' : 'Not read then'),
   };
 });
 

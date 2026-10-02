@@ -263,17 +263,18 @@ describe('the strip under each worker', () => {
 
   test('draws each worker’s open pages on one scale', () => {
     const set = buildWorkerStrips('pages', input)!;
-    expect(set).toMatchObject({ mode: 'step', yMax: 2, scaleLabel: '2 pages' });
-    expect(set.strips.map((strip) => [strip.name, strip.steps.length])).toEqual([
-      ['Worker 0', 5],
-      ['Worker 1', 2],
+    expect(set).toMatchObject({ yMax: 2, scaleLabel: '2 pages' });
+    expect(set.strips.map((strip) => [strip.name, strip.mode, strip.points.length])).toEqual([
+      ['Worker 0', 'step', 5],
+      ['Worker 1', 'step', 2],
     ]);
     expect(stripReading(set, set.strips[0]!, 1500)).toBe('2 open');
   });
 
   test('draws what each test cost across its bar', () => {
     const cpu = buildWorkerStrips('cpu', input)!;
-    expect(cpu).toMatchObject({ mode: 'spans', yMax: 1.5, scaleLabel: '1.5 cores' });
+    expect(cpu).toMatchObject({ yMax: 1.5, scaleLabel: '1.5 cores' });
+    expect(cpu.strips.map((strip) => strip.mode)).toEqual(['spans', 'spans']);
     expect(cpu.strips[0]!.spans).toEqual([
       { start: 0, end: 2000, value: 1.5, title: 'test 1' },
       { start: 2000, end: 6000, value: 0.5, title: 'test 2' },
@@ -296,6 +297,49 @@ describe('the strip under each worker', () => {
     const longBar = { ...bar(1, 0, 0, 6000), reportedDuration: 2000 };
     const set = buildWorkerStrips('cpu', { ...input, tests: [longBar] })!;
     expect(set.strips[0]!.spans[0]).toMatchObject({ end: 6000, value: 1.5 });
+  });
+
+  test('draws the sampler’s readings of a worker’s processes, and per-test values where it read none', () => {
+    const sampledPart = part(null, {
+      timeline: {
+        ...part(null).timeline,
+        // Worker 0 ran as two processes, 0 then 2, one after another.
+        workers: [
+          {
+            worker: 0,
+            cpuCores: [
+              [1000, 0.8],
+              [2000, 1.6],
+            ],
+            memoryBytes: [[1000, 600 * 1024 ** 2]],
+          },
+          { worker: 2, cpuCores: [[7500, 0.4]], memoryBytes: [[7500, 800 * 1024 ** 2]] },
+        ],
+      },
+    });
+    const [sampledBand] = buildResourceBands([sampledPart], rows, 10_000, false);
+    expect(sampledBand!.sampled).toEqual([
+      {
+        lane: 0,
+        cpuCores: [
+          [0, 0.8],
+          [1000, 1.6],
+          [6500, 0.4],
+        ],
+        memoryBytes: [
+          [0, 600 * 1024 ** 2],
+          [6500, 800 * 1024 ** 2],
+        ],
+      },
+    ]);
+    const cpu = buildWorkerStrips('cpu', { ...input, bands: [sampledBand!] })!;
+    expect(cpu.strips.map((strip) => strip.mode)).toEqual(['line', 'spans']);
+    expect(cpu.strips[0]!.spans).toEqual([]);
+    expect(cpu.yMax).toBe(1.6);
+    expect(stripReading(cpu, cpu.strips[0]!, 900)).toBe('1.6 cores, the worker and its browsers');
+    const memory = buildWorkerStrips('memory', { ...input, bands: [sampledBand!] })!;
+    expect(stripReading(memory, memory.strips[0]!, 6000)).toBe('800 MB, the worker and its browsers (PSS)');
+    expect(availableWorkerMetrics([sampledBand!], [])).toEqual(['pages', 'cpu', 'memory']);
   });
 
   test('is null for a metric no row has', () => {
