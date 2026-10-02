@@ -228,6 +228,35 @@ describe('RunSampler', () => {
     expect(profile.disk.leftoverBytes).toBe(4000);
     expect(profile.disk.lowestFreeBytes).toBeGreaterThan(0);
     expect(profile.notMeasured).toEqual([]);
+
+    // Each reading at the time its sample started: the first CPU share needs two readings.
+    const series = sampler.timedSeries();
+    expect(series.startedAt).toBe(1_000_000);
+    expect(series.cpuPct).toEqual([[10_000, cpuShare(3000, 4100)]]);
+    expect(series.memoryBytes.map(([at]) => at)).toEqual([0, 10_000]);
+    expect(series.memoryBytes[series.memoryBytes.length - 1]![1]).toBe(profile.memory.peakBytes);
+  });
+
+  it('keeps a long run’s whole span by merging neighboring points', async () => {
+    let clock = 0;
+    let busy = 0;
+    const procRoot = path.join(dir, 'proc');
+    machine(procRoot, { busy: 0, idle: 0, steal: 0, cpuPsiUs: 0, memPsiUs: 0, availKb: 1 });
+    const sampler = new RunSampler({ platform: 'linux', procRoot, intervalMs: 60_000, tmpDir: dir, now: () => clock });
+    sampler.start();
+    // One more reading than the timed series keeps, each a second apart: half busy.
+    for (let i = 0; i < 3601; i++) {
+      clock += 1000;
+      busy += 50;
+      machine(procRoot, { busy, idle: busy, steal: 0, cpuPsiUs: 0, memPsiUs: 0, availKb: 1 });
+      await (sampler as unknown as { sample(heavy: boolean): Promise<void> }).sample(false);
+    }
+    const { cpuPct } = sampler.timedSeries();
+    expect(cpuPct).toHaveLength(1801);
+    expect(cpuPct[0]).toEqual([1000, 50]);
+    expect(cpuPct[1]).toEqual([3000, 50]);
+    expect(cpuPct[cpuPct.length - 1]).toEqual([3_601_000, 50]);
+    await sampler.stop();
   });
 
   it('reads the tree through ps on macOS, and names what it could not read', async () => {

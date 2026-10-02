@@ -447,6 +447,11 @@ export default class VerifyCaptureReporter implements Reporter {
     }
     check(profile.memory.kind === 'pss' && (profile.memory.peakBytes ?? 0) > 0, `memory: ${JSON.stringify(profile.memory)}`);
     check(profile.disk.lowestFreeBytes !== null, 'free space should be measured');
+    const series = this.sampler!.timedSeries();
+    check(
+      series.cpuPct.length > 0 && series.memoryBytes.length > 0,
+      `CPU and memory should be read over time: ${series.cpuPct.length} and ${series.memoryBytes.length} points`,
+    );
   }
 
   private fail(msg: string): void {

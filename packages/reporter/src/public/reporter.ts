@@ -634,6 +634,7 @@ export class PiwiDashboardReporter {
   private async reportResources(): Promise<void> {
     if (this.options.captureResources === false) return;
     const profile = this.sampler ? await this.sampler.stop() : null;
+    const samples = this.sampler?.timedSeries() ?? null;
     this.sampler = null;
     const censuses = [...this.resourceCensuses];
     if (this.resourcesFile) {
@@ -660,6 +661,7 @@ export class PiwiDashboardReporter {
         this.resourceReport = resourceReportWire({
           report,
           profile,
+          samples,
           censuses,
           artifacts: this.artifactBytes,
           shardIndex: this.shardInfo?.current ?? null,

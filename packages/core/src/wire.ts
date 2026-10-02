@@ -305,6 +305,24 @@ export interface WorkerHealth {
   involuntarySwitchesPerTest: number;
 }
 
+/** One point of a series over time: milliseconds after the series' `startedAt`, and the value then. */
+export type SeriesPoint = [atMs: number, value: number];
+
+/**
+ * What the run used over time, on the clock of the reporter's machine, which
+ * the tests' start times use too. Each series is in time order and bounded.
+ */
+export interface WireResourceTimeline {
+  /** Epoch milliseconds every point counts from. */
+  startedAt: number;
+  /** The machine's busy CPU share, 0 to 100, over the interval ending at each point. Empty without the run sampler. */
+  cpuPct: SeriesPoint[];
+  /** Bytes the run's processes held in memory, as `profile.memory.kind` measures them. */
+  memoryBytes: SeriesPoint[];
+  /** Pages open in each worker, one point at each change. Empty without the capture fixtures. */
+  pages: Array<{ worker: number; points: SeriesPoint[] }>;
+}
+
 /**
  * One reporter's resource report, sent with the run's end: the findings, what
  * the run cost its machine, and the pages open in each worker test after test.
@@ -320,4 +338,6 @@ export interface WireResourceReport {
   workers: Array<{ worker: number; openPages: number[] }>;
   artifactBytes: Partial<Record<ArtifactKind, number>>;
   workerHealth: WorkerHealth | null;
+  /** CPU, memory and open pages over time; absent from reporters before it. */
+  timeline?: WireResourceTimeline | null;
 }

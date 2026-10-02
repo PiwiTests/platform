@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { ResourceCensus } from '../src/internal/capture/resource-ledger.js';
 import {
   REPORT_FINDINGS_CAP,
+  TIMELINE_SERIES_CAP,
+  TIMELINE_WORKER_POINTS_CAP,
   downsample,
+  downsamplePoints,
   executionResources,
   resourceReportWire,
+  resourceTimeline,
 } from '../src/internal/collect/resource-wire.js';
 import type { ResourceReport } from '../src/internal/collect/resource-verdicts.js';
 import type { RunProfile } from '../src/internal/collect/process-sampler.js';
@@ -15,11 +19,11 @@ function census(worker: number, at: number, test: string | null, parts: Partial<
   return { v: 1, worker, pid: 1, at, test: test ? ref(test) : null, born: [], closed: [], open: [], ...parts };
 }
 
-const birth = (id: number, kind: 'page' | 'context') => ({
+const birth = (id: number, kind: 'page' | 'context', at = 0) => ({
   id,
   kind,
   parent: null,
-  at: 0,
+  at,
   phase: 'test' as const,
   fixture: null,
   test: ref('t1'),
@@ -31,6 +35,83 @@ describe('downsample', () => {
     expect(downsample([1, 2, 3], 5)).toEqual([1, 2, 3]);
     expect(downsample([0, 10, 20, 30], 2)).toEqual([5, 25]);
     expect(downsample(Array.from({ length: 1000 }, (_, i) => i), 240)).toHaveLength(240);
+  });
+});
+
+const close = (id: number, at: number) => ({ id, at, phase: 'test' as const, test: ref('t1') });
+
+describe('downsamplePoints', () => {
+  it('keeps a short series, and folds a long one at each slice’s first time', () => {
+    const points: Array<[number, number]> = [
+      [0, 10],
+      [1, 30],
+      [2, 0],
+      [3, 4],
+    ];
+    expect(downsamplePoints(points, 5, 'mean')).toBe(points);
+    expect(downsamplePoints(points, 2, 'mean')).toEqual([
+      [0, 20],
+      [2, 2],
+    ]);
+    expect(downsamplePoints(points, 2, 'max')).toEqual([
+      [0, 30],
+      [2, 4],
+    ]);
+  });
+});
+
+describe('resourceTimeline', () => {
+  it('counts the pages open in each worker at each change, from the censuses', () => {
+    const timeline = resourceTimeline(null, [
+      // Worker 1: a page per test closed with it, and one a test left open.
+      census(1, 1500, 't1', { born: [birth(1, 'context', 1000), birth(2, 'page', 1000)], closed: [close(2, 1400)] }),
+      census(1, 2500, 't2', { born: [birth(3, 'page', 2000), birth(4, 'page', 2000)], closed: [close(3, 2400)] }),
+      census(1, 3000, null, { closed: [close(4, 2900)] }),
+      // Worker 0: its last census leaves a page open, which goes with the worker.
+      census(0, 1800, 't3', { born: [birth(1, 'page', 1200)] }),
+    ]);
+    expect(timeline).toEqual({
+      startedAt: 1000,
+      cpuPct: [],
+      memoryBytes: [],
+      pages: [
+        { worker: 0, points: [[200, 1], [800, 0]] },
+        {
+          worker: 1,
+          points: [
+            [0, 1],
+            [400, 0],
+            [1000, 2],
+            [1400, 1],
+            [1900, 0],
+          ],
+        },
+      ],
+    });
+  });
+
+  it('puts the sampler’s series and the pages on the earliest clock, and is null with nothing measured', () => {
+    const samples = { startedAt: 900, cpuPct: [[1000, 40]] as Array<[number, number]>, memoryBytes: [[0, 5e8]] as Array<[number, number]> };
+    const timeline = resourceTimeline(samples, [census(0, 1200, 't1', { born: [birth(1, 'page', 800)] })]);
+    expect(timeline).toMatchObject({
+      startedAt: 800,
+      cpuPct: [[1100, 40]],
+      memoryBytes: [[100, 5e8]],
+      pages: [{ worker: 0, points: [[0, 1], [400, 0]] }],
+    });
+    expect(resourceTimeline({ startedAt: 1, cpuPct: [], memoryBytes: [] }, [])).toBeNull();
+  });
+
+  it('bounds every series and keeps where a worker’s count settles', () => {
+    const long = Array.from({ length: 5000 }, (_, i): [number, number] => [i * 1000, i % 100]);
+    const born = Array.from({ length: 1000 }, (_, i) => birth(i + 1, 'page', i * 10));
+    const timeline = resourceTimeline({ startedAt: 0, cpuPct: long, memoryBytes: long }, [
+      census(0, 20_000, 't1', { born }),
+    ])!;
+    expect(timeline.cpuPct).toHaveLength(TIMELINE_SERIES_CAP);
+    expect(timeline.memoryBytes).toHaveLength(TIMELINE_SERIES_CAP);
+    expect(timeline.pages[0]!.points).toHaveLength(TIMELINE_WORKER_POINTS_CAP);
+    expect(timeline.pages[0]!.points[timeline.pages[0]!.points.length - 1]).toEqual([20_000, 0]);
   });
 });
 
@@ -96,5 +177,6 @@ describe('resourceReportWire', () => {
       { worker: 1, openPages: [1, 2] },
     ]);
     expect(wire.artifactBytes).toEqual({ trace: 10 });
+    expect(wire.timeline?.pages.map((w) => w.worker)).toEqual([0, 1]);
   });
 });

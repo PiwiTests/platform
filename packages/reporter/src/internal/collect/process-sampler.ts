@@ -12,7 +12,7 @@ import {
   type CpuTicks,
   type ProcessRole,
 } from '../support/system-readers.js';
-import type { RoleUsage, WireRunProfile } from '@piwitests/core/wire';
+import type { RoleUsage, SeriesPoint, WireRunProfile } from '@piwitests/core/wire';
 
 /**
  * The run sampler: what the run cost the machine, read from the operating
@@ -29,6 +29,14 @@ export type { RoleUsage };
 
 /** What a run cost the machine it ran on. */
 export type RunProfile = WireRunProfile;
+
+/** The machine's CPU and the run's memory over time, each point at the time it was read. */
+export interface RunSamples {
+  /** Epoch milliseconds of the first sample; every point counts from it. */
+  startedAt: number;
+  cpuPct: SeriesPoint[];
+  memoryBytes: SeriesPoint[];
+}
 
 export interface SamplerOptions {
   /** The runner's process, whose descendants are the run's processes. */
@@ -51,6 +59,8 @@ export interface SamplerOptions {
 const WALK_FILE_CAP = 10_000;
 /** The most series points kept: an hour at one per second. */
 const SERIES_CAP = 3600;
+/** The most timed points kept per series; past it, neighbors merge two by two. */
+const TIMED_CAP = 3600;
 /** Names Playwright gives the browser profiles and artifact folders it writes in the temp directory. */
 const PLAYWRIGHT_TEMP = /^(playwright_\w+dev_profile-|playwright-artifacts-)/;
 
@@ -64,6 +74,26 @@ interface Tracked {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function mean(a: number, b: number): number {
+  return round1((a + b) / 2);
+}
+
+/**
+ * A timed series with one more point. Past `TIMED_CAP`, neighbors merge two by
+ * two (at the first one's time, their values merged by `merge`), so a long run
+ * keeps its whole span at a coarser step.
+ */
+function pushTimed(points: SeriesPoint[], point: SeriesPoint, merge: (a: number, b: number) => number): SeriesPoint[] {
+  points.push(point);
+  if (points.length <= TIMED_CAP) return points;
+  const merged: SeriesPoint[] = [];
+  for (let i = 0; i < points.length; i += 2) {
+    const next = points[i + 1];
+    merged.push(next ? [points[i]![0], merge(points[i]![1], next[1])] : points[i]!);
+  }
+  return merged;
 }
 
 function pct(part: number, whole: number): number | null {
@@ -157,6 +187,8 @@ export class RunSampler {
   private cpuStart: CpuTicks | null = null;
   private cpuPrevious: CpuTicks | null = null;
   private series: number[] = [];
+  private cpuPoints: SeriesPoint[] = [];
+  private memoryPoints: SeriesPoint[] = [];
   private pressureStart: { cpu: number | null; memory: number | null } = { cpu: null, memory: null };
   private containerStart: ContainerReads | null = null;
   private memoryKind: 'pss' | 'rss' | null = null;
@@ -211,6 +243,11 @@ export class RunSampler {
     return this.profile(await this.leftoverBytes());
   }
 
+  /** The series read so far, each point at the time it was read. */
+  timedSeries(): RunSamples {
+    return { startedAt: this.startedAt, cpuPct: [...this.cpuPoints], memoryBytes: [...this.memoryPoints] };
+  }
+
   private schedule(): void {
     if (this.running) return;
     const heavy = this.samples % this.heavyEvery === 0;
@@ -227,18 +264,21 @@ export class RunSampler {
 
   private async sample(heavy: boolean): Promise<void> {
     this.samples++;
+    // Every reading of this sample is stamped with the time it started.
+    const at = this.now() - this.startedAt;
     const ticks = this.cpuTicks();
     if (ticks && this.cpuPrevious) {
       const busy = pct(ticks.busy - this.cpuPrevious.busy, ticks.total - this.cpuPrevious.total);
       if (busy !== null && this.series.length < SERIES_CAP) this.series.push(busy);
+      if (busy !== null) this.cpuPoints = pushTimed(this.cpuPoints, [at, busy], mean);
     }
     if (ticks) this.cpuPrevious = ticks;
 
     const availableKb = this.linux ? this.proc.memAvailableKb() : Math.round(os.freemem() / 1024);
     if (availableKb !== null) this.lowestAvailableKb = Math.min(this.lowestAvailableKb ?? Infinity, availableKb);
 
-    if (this.linux) await this.sampleLinuxTree(heavy);
-    else if (this.platform === 'darwin' && heavy) await this.samplePsTree();
+    if (this.linux) await this.sampleLinuxTree(heavy, at);
+    else if (this.platform === 'darwin' && heavy) await this.samplePsTree(at);
     if (heavy) await this.sampleDisk();
   }
 
@@ -272,7 +312,7 @@ export class RunSampler {
     return roles;
   }
 
-  private async sampleLinuxTree(heavy: boolean): Promise<void> {
+  private async sampleLinuxTree(heavy: boolean, at: number): Promise<void> {
     const table = this.proc.table();
     const root = table.get(this.rootPid);
     if (!root) return;
@@ -307,10 +347,10 @@ export class RunSampler {
       if (!largest || kb * 1024 > largest.bytes) largest = { role: roles.get(proc.pid) ?? 'other', bytes: kb * 1024 };
     }
     this.memoryKind = memory.some((m) => m.kb !== null && !m.fallback) ? 'pss' : memory.length ? 'rss' : null;
-    this.notePeak(total, largest);
+    this.notePeak(total, largest, at);
   }
 
-  private async samplePsTree(): Promise<void> {
+  private async samplePsTree(at: number): Promise<void> {
     let list;
     try {
       list = parsePsOutput(await this.runPs());
@@ -333,10 +373,11 @@ export class RunSampler {
       if (!largest || proc.rssKb * 1024 > largest.bytes) largest = { role, bytes: proc.rssKb * 1024 };
     }
     this.memoryKind = 'rss';
-    this.notePeak(total, largest);
+    this.notePeak(total, largest, at);
   }
 
-  private notePeak(total: number, largest: { role: ProcessRole; bytes: number } | null): void {
+  private notePeak(total: number, largest: { role: ProcessRole; bytes: number } | null, at: number): void {
+    this.memoryPoints = pushTimed(this.memoryPoints, [at, total], Math.max);
     if (this.peakBytes === null || total > this.peakBytes) {
       this.peakBytes = total;
       this.peakAtMs = this.now() - this.startedAt;
