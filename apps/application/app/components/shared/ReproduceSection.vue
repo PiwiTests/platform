@@ -114,13 +114,12 @@ function bisectHere() {
   });
 }
 
-// ── The bisected commit: the live result of a bisect just run, else the one
-//    persisted on the cluster from a previous session. ──────────────────────────
+// ── The bisected commit: the live result of a bisect of this cluster just run,
+//    else the one persisted on the cluster from a previous session. ────────────
 const liveBisected = computed(() => {
   const id = projectId.value;
   if (id == null) return null;
-  const run = store.runs.value.find((r) => r.kind === 'bisect' && r.projectId === String(id) && r.bisect?.firstBad);
-  const found = run?.bisect?.firstBad;
+  const found = findLiveBisect(store.runs.value, id, props.context?.clusterId ?? null);
   if (!found) return null;
   return {
     sha: found.sha,
