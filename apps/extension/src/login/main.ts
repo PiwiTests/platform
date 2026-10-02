@@ -1,5 +1,5 @@
 import { initI18n, localizeDocument, t, tn, uiLanguage } from '../shared/i18n.js';
-import { setupSnippet, toStorageState, type BrowserCookie } from '../shared/storage-state.js';
+import { cookieOriginPatterns, setupSnippet, toStorageState, type BrowserCookie } from '../shared/storage-state.js';
 
 /**
  * Save login for tests: the tab's cookies, `httpOnly` ones included, and its
@@ -94,7 +94,7 @@ async function start(): Promise<void> {
     status.textContent = '';
     // Asked for inside the click, which the browser requires; the rest waits for the answer.
     void chrome.permissions
-      .request({ permissions: ['cookies'], origins: [`${origin}/*`] })
+      .request({ permissions: ['cookies'], origins: cookieOriginPatterns(new URL(origin).hostname) })
       .then(async (granted) => {
         if (!granted) {
           status.textContent = t('login_denied');

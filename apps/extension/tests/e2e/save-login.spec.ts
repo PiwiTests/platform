@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, test, expect } from '@playwright/test';
 import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { cookieOriginPatterns } from '../../src/shared/storage-state.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -43,7 +44,7 @@ function startSite(): Promise<{ origin: string; close: () => void }> {
 
 test('saves the login as a storageState file a new context logs in with', async () => {
   const site = await startSite();
-  // The grants a person gives in the click that saves: the cookies permission and the site.
+  // The grants a person gives in the click that saves: the cookies permission and the site's host, the port aside.
   const extension = mkdtempSync(path.join(tmpdir(), 'piwi-login-ext-'));
   cpSync(DIST, extension, { recursive: true });
   const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
@@ -53,7 +54,7 @@ test('saves the login as a storageState file a new context logs in with', async 
       ...manifest,
       permissions: [...manifest.permissions, 'cookies'],
       optional_permissions: [],
-      host_permissions: ['http://127.0.0.1/*'],
+      host_permissions: cookieOriginPatterns(new URL(site.origin).hostname),
     }),
   );
   const context = await launchWithExtension(extension);

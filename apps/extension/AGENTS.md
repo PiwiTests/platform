@@ -28,7 +28,8 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   only when the user clicks "Record actions", inside that click's own gesture. Adding a new
   *standing* permission here is still a deliberate, reviewed decision, not a default. `optional_permissions` holds
   `cookies` alone, granted nothing at install: **Save login for tests** (`login.html`, `src/login/main.ts`, pure half
-  `src/shared/storage-state.ts`) requests it with the one site's origin inside its Save click, reads that site's
+  `src/shared/storage-state.ts`) requests it inside its Save click with the site's host for both schemes and any port,
+  and its parent domains (`cookieOriginPatterns`: Chrome checks each cookie by its domain alone), reads that site's
   cookies and `localStorage` once, and downloads them as Playwright's `storageState`; nothing is kept or sent.
   `save-login.spec.ts` loads the file into a new browser context and checks it logs in.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
