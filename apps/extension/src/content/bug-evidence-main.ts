@@ -10,8 +10,10 @@ import { BUG_RELAY, ownOrigin, type BugRelayEntry } from '../shared/bug-relay.js
  * in the isolated world with the recording's token (see `shared/bug-relay.ts`).
  *
  * It only wraps and listens: every wrapped function calls the original with the
- * same arguments and returns what it returns. Nothing here uses `chrome.*`,
- * which the main world does not have.
+ * same arguments and returns what it returns, except `fetch`, which returns a
+ * promise derived from the original's that settles the same way, so a failure
+ * the page leaves unhandled is still reported unhandled. Nothing here uses
+ * `chrome.*`, which the main world does not have.
  */
 
 interface EvidenceGlobals {
@@ -105,27 +107,34 @@ function install(): void {
   if (typeof originalFetch === 'function') {
     window.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
       const result = originalFetch.apply(this, args);
+      let request: { method: string; url: string };
       try {
         const [input, init] = args;
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
-        result.then(
-          (response) => {
-            if (response.status >= 400) noteRequest(method, url, response.status);
-          },
-          (error: unknown) => {
-            // An abort is the page's own decision, not a failure.
-            if (!(error instanceof DOMException && error.name === 'AbortError')) noteRequest(method, url, 0);
-          },
-        );
+        request = { method: init?.method ?? (input instanceof Request ? input.method : 'GET'), url };
       } catch {
         // Unreadable arguments: the request still goes out, unrecorded.
+        return result;
       }
-      return result;
+      // The page gets a promise that settles as the original does: a rejection it leaves unhandled stays unhandled.
+      return result.then(
+        (response) => {
+          if (response.status >= 400) noteRequest(request.method, request.url, response.status);
+          return response;
+        },
+        (error: unknown) => {
+          // An abort is the page's own decision, not a failure.
+          if (!(error instanceof DOMException && error.name === 'AbortError'))
+            noteRequest(request.method, request.url, 0);
+          throw error;
+        },
+      );
     } as typeof fetch;
   }
 
+  // The request each XHR opened last: one used again reports each of its requests once, as itself.
   const requests = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
+  const listening = new WeakSet<XMLHttpRequest>();
   const proto = XMLHttpRequest.prototype;
   const originalOpen = proto.open;
   const originalSend = proto.send;
@@ -134,14 +143,17 @@ function install(): void {
     return (originalOpen as (...a: unknown[]) => void).call(this, method, url, ...rest);
   } as typeof proto.open;
   proto.send = function (this: XMLHttpRequest, ...args: Parameters<XMLHttpRequest['send']>) {
-    const request = requests.get(this);
-    if (request) {
-      const onFailure = () => noteRequest(request.method, request.url, 0);
+    if (requests.has(this) && !listening.has(this)) {
+      listening.add(this);
+      const note = (status: number) => {
+        const request = requests.get(this);
+        if (request) noteRequest(request.method, request.url, status);
+      };
       this.addEventListener('load', () => {
-        if (this.status >= 400) noteRequest(request.method, request.url, this.status);
+        if (this.status >= 400) note(this.status);
       });
-      this.addEventListener('error', onFailure);
-      this.addEventListener('timeout', onFailure);
+      this.addEventListener('error', () => note(0));
+      this.addEventListener('timeout', () => note(0));
     }
     return originalSend.apply(this, args);
   };

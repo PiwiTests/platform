@@ -122,4 +122,76 @@ test.describe('the Network tab', () => {
     await requests.nth(1).click();
     await expect(mock.getByText('DevTools kept no body for this response.')).toBeVisible();
   });
+
+  test('reads a body DevTools hands back as a promise, as Firefox does', async ({ context, extensionId }) => {
+    const shop = await context.newPage();
+    await serveShop(shop);
+    await shop.goto(`${ORIGIN}/cart`);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Network' }).click();
+    await fireDevtoolsEvent(panel, 'requestFinished', {
+      ...har(`${ORIGIN}/api/cart`, 'xhr', 200, 'application/json', '{"total":40}'),
+      __promise: true,
+    });
+    await panel.getByRole('list', { name: 'Network' }).getByRole('button').first().click();
+    await expect(panel.getByRole('region', { name: 'Mock this response' }).locator('pre')).toContainText('"total": 40');
+  });
+
+  test('shows the request clicked last while DevTools still reads the one before', async ({ context, extensionId }) => {
+    const shop = await context.newPage();
+    await serveShop(shop);
+    await shop.goto(`${ORIGIN}/cart`);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Network' }).click();
+    await fireDevtoolsEvent(panel, 'requestFinished', {
+      ...har(`${ORIGIN}/api/slow`, 'fetch', 200, 'application/json', '{"slow":true}'),
+      __delayMs: 1_000,
+    });
+    await fireDevtoolsEvent(
+      panel,
+      'requestFinished',
+      har(`${ORIGIN}/api/fast`, 'fetch', 200, 'application/json', '{}'),
+    );
+    const requests = panel.getByRole('list', { name: 'Network' }).getByRole('button');
+    await requests.nth(0).click();
+    await requests.nth(1).click();
+    const title = panel.getByRole('region', { name: 'Mock this response' }).getByRole('heading');
+    await expect(title).toHaveText(`GET ${ORIGIN}/api/fast`);
+    // The first body arrives after the second click, and leaves the pane as it is.
+    await panel.waitForTimeout(1_500);
+    await expect(title).toHaveText(`GET ${ORIGIN}/api/fast`);
+  });
+
+  test('lists the requests of the site the inspected page moves to', async ({ context, extensionId }) => {
+    const other = 'http://piwi-network-other.test';
+    const shop = await context.newPage();
+    await serveShop(shop);
+    await context.route(`${other}/**`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Orders</title>' }),
+    );
+    await shop.goto(`${ORIGIN}/cart`);
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop);
+    await panel.getByRole('tab', { name: 'Network' }).click();
+    await fireDevtoolsEvent(
+      panel,
+      'requestFinished',
+      har(`${ORIGIN}/api/cart`, 'fetch', 200, 'application/json', CART),
+    );
+    const requests = panel.getByRole('list', { name: 'Network' }).getByRole('button');
+    await expect(requests).toHaveText([/^GET\/api\/cart/]);
+
+    await shop.goto(`${other}/orders`);
+    await fireDevtoolsEvent(panel, 'navigated', `${other}/orders`);
+    await fireDevtoolsEvent(
+      panel,
+      'requestFinished',
+      har(`${other}/api/orders`, 'fetch', 200, 'application/json', '[]'),
+    );
+    await expect(requests).toHaveText([/^GET\/api\/orders/]);
+    await panel.getByRole('checkbox', { name: 'Other sites too' }).check();
+    await expect(requests).toHaveText([
+      /\/\/piwi-network\.test\/api\/cart/,
+      /\/\/piwi-network-other\.test\/api\/orders/,
+    ]);
+  });
 });

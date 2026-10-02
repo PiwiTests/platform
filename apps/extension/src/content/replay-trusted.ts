@@ -106,20 +106,25 @@ function describe(element: Element): string {
 /** How long a covered element is waited for before the step gives up, as Playwright retries its hit check. */
 const COVERED_WAIT_MS = 3_000;
 
+/** The point to act on the element in its own frame's viewport; null when none of it is on screen. */
+function localPoint(element: Element): Point | null {
+  const win = element.ownerDocument.defaultView ?? window;
+  return actionPoint(element.getBoundingClientRect(), { width: win.innerWidth, height: win.innerHeight });
+}
+
 /**
  * The point to act on the element, in the top viewport, once nothing covers
  * it: the element, something inside it, or its label must be what the
  * browser finds there. `requireHit` false takes the point as it is, for an
  * action that does not go through the pointer (a fill, a key press).
+ * `scroll` false leaves the page where it is.
  */
-async function pointFor(element: Element, requireHit = true): Promise<Point> {
+async function pointFor(element: Element, requireHit = true, scroll = true): Promise<Point> {
   const deadline = Date.now() + COVERED_WAIT_MS;
   for (;;) {
-    const r = element.getBoundingClientRect();
-    const win = element.ownerDocument.defaultView ?? window;
-    const local = actionPoint(r, { width: win.innerWidth, height: win.innerHeight });
+    const local = localPoint(element);
     if (!local) {
-      element.scrollIntoView({ block: 'center', inline: 'nearest' });
+      if (scroll) element.scrollIntoView({ block: 'center', inline: 'nearest' });
     } else {
       const hit = requireHit ? await withOwnSurfacesAside(() => hitAt(element, local.x, local.y)) : element;
       if (reaches(element, hit)) {
@@ -314,10 +319,15 @@ export async function trustedDrag(
   cursor: FakeCursor,
   caption: string,
 ): Promise<void> {
+  // The target first: the press lands where the element is once both are on screen.
+  await pointFor(target);
   const from = await glide(element, cursor, caption);
   await cursor.press();
-  const to = await pointFor(target).catch(() => null);
-  if (!to) throw new NotActionable(t('replay_reasonOffscreen', { element: describe(target) }));
+  // Bringing the element on screen may have scrolled the target away: the drag needs both at once.
+  if (!localPoint(target)) {
+    throw new NotActionable(t('replay_reasonDragApart', { element: describe(element), target: describe(target) }));
+  }
+  const to = await pointFor(target, true, false);
   const r = target.getBoundingClientRect();
   cursor.outline(r);
   await cursor.moveTo(to.x, to.y, caption);

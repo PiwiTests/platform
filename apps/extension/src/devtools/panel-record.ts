@@ -61,7 +61,7 @@ async function specFor(state: RecordingState): Promise<string> {
   const session = buildSession(normalizeSteps(state.events), state.events[0]?.timestamp ?? Date.now());
   const href = await evalInPage<string>('location.href');
   const pageUrl = href.ok && typeof href.value === 'string' ? href.value : (session.startUrl ?? '');
-  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
+  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(pageUrl)]);
   const project = resolveActiveProject(connection, override, pageUrl);
   await requestCatalogRefresh(project?.projectId ?? null);
   const catalog = await getCachedCatalog(project?.projectId ?? null);

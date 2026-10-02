@@ -167,7 +167,11 @@ export const COVERAGE_CSS = `
   }
   .panel .link-button:hover { text-decoration-style: solid; }
   .panel .progress { height: 3px; background: rgb(124 58 237 / 0.25); border-radius: 2px; overflow: hidden; margin: 2px 0 8px; }
-  .panel .progress > span { display: block; height: 100%; background: #a78bfa; transition: width 120ms; }
+  /* A transform moves the fill without laying out or painting the overlay again. */
+  .panel .progress > span {
+    display: block; height: 100%; background: #a78bfa; transform-origin: left; transition: transform 120ms;
+    will-change: transform;
+  }
   .panel .scope-bar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 8px; padding: 6px 8px;
     border-radius: 8px; background: rgb(124 58 237 / 0.16); font-size: 12px;

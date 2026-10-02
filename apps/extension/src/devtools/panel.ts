@@ -13,7 +13,7 @@ import {
 } from './inspected.js';
 import { renderRecordTab } from './panel-record.js';
 import { renderReplayTab } from './panel-replay.js';
-import { refreshNetworkList, renderNetworkTab, startNetworkLog } from './panel-network.js';
+import { networkOriginChanged, refreshNetworkList, renderNetworkTab, startNetworkLog } from './panel-network.js';
 import { renderLocatorsTab } from './panel-locators.js';
 import { renderSessionTab } from './panel-session.js';
 import { setUpViewportRow } from './panel-viewport.js';
@@ -49,12 +49,13 @@ const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"
 let current: TabId = 'record';
 let generation = 0;
 
-async function render(): Promise<void> {
+/** Draws the open tab; `pageUrl` is the page's address after a navigation, which the Network tab lists for. */
+async function render(pageUrl?: string): Promise<void> {
   const mine = ++generation;
   const container = document.createElement('div');
   if (current === 'record') await renderRecordTab(container);
   else if (current === 'replay') await renderReplayTab(container);
-  else if (current === 'network') await renderNetworkTab(container);
+  else if (current === 'network') await renderNetworkTab(container, pageUrl);
   else if (current === 'locators') renderLocatorsTab(container);
   else await renderSessionTab(container);
   if (mine !== generation) return;
@@ -182,6 +183,10 @@ async function start(): Promise<void> {
   });
   startNetworkLog(() => {
     if (current === 'network') refreshNetworkList();
+  });
+  // The Network tab lists the page's own origin and sets conditions for it: a page on another one draws it again.
+  chrome.devtools.network.onNavigated.addListener((url) => {
+    if (current === 'network' && networkOriginChanged(url)) void render(url);
   });
   select('record');
   void markLiveTabs();

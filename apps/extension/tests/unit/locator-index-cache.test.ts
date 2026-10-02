@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import {
+  clearCachedLocatorIndexes,
   getCachedLocatorIndex,
   isLocatorIndexStale,
   setCachedLocatorIndex,
@@ -20,6 +21,9 @@ function fakeChromeStorage(quota = Infinity) {
           const next = { ...store, ...values };
           if (JSON.stringify(next).length > quota) throw new Error('QUOTA_BYTES quota exceeded');
           Object.assign(store, values);
+        },
+        remove: async (key: string) => {
+          delete store[key];
         },
       },
     },
@@ -102,5 +106,15 @@ describe('locator index cache', () => {
     now += 1000;
     expect(await setCachedLocatorIndex(10, index(10, 400))).toBe(false);
     expect(await getCachedLocatorIndex(10)).toBeNull();
+  });
+});
+
+describe('clearing the locator index cache', () => {
+  it('drops every project’s index', async () => {
+    await setCachedLocatorIndex(1, index(1));
+    await setCachedLocatorIndex(2, index(2), 'develop');
+    await clearCachedLocatorIndexes();
+    expect(await getCachedLocatorIndex(1)).toBeNull();
+    expect(await getCachedLocatorIndex(2, 'develop')).toBeNull();
   });
 });

@@ -11,13 +11,15 @@ interface EngineResult {
 /**
  * Test-only entry: evaluates many locator expressions with one engine (one
  * evaluation pass, shared caches and prefixes, as the coverage overlay runs
- * it) and answers each with the `data-eid` of the elements found.
+ * it) and answers each with the `data-eid` of the elements found; `strict`
+ * resolves frame owners as an action does.
  */
 (globalThis as unknown as Record<string, unknown>).__piwiEngineQueryAll = (
   expressions: string[],
   testIdAttributes?: string[],
+  strict?: boolean,
 ): EngineResult[] => {
-  const engine = createLocatorEngine(document, { testIdAttributes });
+  const engine = createLocatorEngine(document, { testIdAttributes, strict });
   return expressions.map((expression) => {
     try {
       return { ids: engine.queryAll(parseLocatorChain(expression)).map((element) => element.getAttribute('data-eid')) };

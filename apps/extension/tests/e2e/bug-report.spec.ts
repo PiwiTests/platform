@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
-import { readStoredEvents, stubChromeStorage } from './recording-stub.js';
+import { dispatchRuntimeMessage, readStoredEvents, stubChromeStorage } from './recording-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { routeShop, SHOP_ORIGIN } from './bug-shop.js';
 import { readStoredZip } from '../zip-reader.js';
@@ -31,7 +31,7 @@ const PNG =
 async function startBugRecording(
   context: BrowserContext,
   screenshot: { ok: boolean },
-  options: { language?: string } = {},
+  options: { language?: string; path?: string; init?: (context: BrowserContext) => Promise<void> } = {},
 ): Promise<Page> {
   await stubChromeStorage(context, {
     session: {
@@ -49,9 +49,10 @@ async function startBugRecording(
     },
   });
   if (options.language) await stubChromeI18n(context, options.language);
+  await options.init?.(context);
   await context.addInitScript({ path: path.join(DIST, 'bug-evidence-main.js') });
   const page = await context.newPage();
-  await page.goto(`${SHOP_ORIGIN}/cart`);
+  await page.goto(`${SHOP_ORIGIN}${options.path ?? '/cart'}`);
   await attachRecorder(page);
   return page;
 }
@@ -96,6 +97,60 @@ function panelLang(page: Page, hostId: string, selector: string): Promise<string
 async function readClipboard(page: Page): Promise<string> {
   return page.evaluate(() => navigator.clipboard.readText());
 }
+
+/** A sign-in page: a password a button shows in clear, a card number its autocomplete names, and a plain field. */
+const LOGIN_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign in</title></head><body><main>
+  <h1>Sign in</h1>
+  <label for="user">User</label> <input id="user" value="ana" />
+  <label for="pw">Password</label> <input id="pw" type="password" />
+  <button type="button" id="show" onclick="pw.type = pw.type === 'password' ? 'text' : 'password'">Show password</button>
+  <label for="card">Card number</label> <input id="card" autocomplete="cc-number" value="4111111111111111" />
+</main></body></html>`;
+
+async function routeLogin(context: BrowserContext): Promise<void> {
+  await context.route(`${SHOP_ORIGIN}/login`, (route) => route.fulfill({ contentType: 'text/html', body: LOGIN_PAGE }));
+}
+
+/**
+ * Holds each message of `delays` back for its delay, as a screenshot takes
+ * time, and keeps the recorder's surfaces that are visible once it has passed:
+ * what the screenshot would show. `__piwiInFlight` counts those held, by type.
+ */
+async function slowMessages(context: BrowserContext, delays: Record<string, number>): Promise<void> {
+  await context.addInitScript((delayOf) => {
+    const g = globalThis as any;
+    const runtime = g.chrome.runtime;
+    const send = runtime.sendMessage;
+    g.__piwiShown = [] as string[];
+    g.__piwiInFlight = {} as Record<string, number>;
+    runtime.sendMessage = async (message: { type?: string } | undefined) => {
+      const type = message?.type ?? '';
+      const delay = delayOf[type];
+      if (delay != null) {
+        g.__piwiInFlight[type] = (g.__piwiInFlight[type] ?? 0) + 1;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        for (const id of ['piwi-record-hud-host', 'piwi-record-frame-host', 'piwi-bug-dialog-host']) {
+          const host = document.getElementById(id);
+          if (type === 'piwi-bug-screenshot' && host && getComputedStyle(host).visibility !== 'hidden')
+            g.__piwiShown.push(id);
+        }
+        g.__piwiInFlight[type]--;
+      }
+      return send(message);
+    };
+  }, delays);
+}
+
+const inFlight = (page: Page, type: string): Promise<number> =>
+  page.evaluate((t) => (globalThis as any).__piwiInFlight[t] ?? 0, type);
+
+const shownInScreenshots = (page: Page): Promise<string[]> => page.evaluate(() => (globalThis as any).__piwiShown);
+
+const visibility = (page: Page, id: string): Promise<string | null> =>
+  page.evaluate((hostId) => {
+    const host = document.getElementById(hostId);
+    return host ? getComputedStyle(host).visibility : null;
+  }, id);
 
 test.describe('Report a bug', () => {
   test('records the flow, what is wrong, what is missing and the evidence, and exports a failing test', async ({
@@ -600,6 +655,153 @@ test.describe('Report a bug', () => {
     expect(spec).toMatch(
       /setViewportSize\(\{ width: 390, height: 664 \}\);\n {2}await page\.getByRole\('button', \{ name: 'Apply' \}\)\.click\(\);/,
     );
+  });
+
+  test('a password shown in clear stays out of Mark what’s wrong and of the outline, as a card number does', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    await routeLogin(context);
+    const page = await startBugRecording(context, { ok: true }, { path: '/login' });
+    await page.locator('#pw').click();
+    await page.keyboard.type('s3cr');
+    await page.locator('#show').click();
+    await page.locator('#pw').click();
+    await page.keyboard.type('et!');
+
+    await pressHudButton(page, 'mark');
+    await page.hover('#pw');
+    await page.click('#pw');
+    const dialog = page.locator('#piwi-bug-dialog-host').getByRole('dialog', { name: 'Mark what’s wrong' });
+    await expect(dialog).toBeVisible();
+    // Its states only: no value, text or name, so what it holds is never shown or kept.
+    await expect(dialog.getByRole('option')).toHaveText(['It should be hidden', 'It should be grayed out, not usable']);
+    await expect(dialog.getByText('What it should show')).toBeHidden();
+    await expect(dialog).not.toContainText('s3cr');
+    await dialog.getByRole('button', { name: 'Add to the report' }).click();
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+    await expect.poll(() => screenshotCount(page)).toBe(1);
+
+    const events = await readStoredEvents(page);
+    expect(events.find((e) => e.kind === 'assert')?.assertion).toMatchObject({
+      matcher: 'toBeHidden',
+      expected: null,
+      actual: 'visible',
+    });
+    const outline = (await readEvidence(page)).outline as string;
+    expect(outline).toContain('- textbox "User": ana');
+    expect(outline).toContain('- textbox "Password"\n');
+    expect(outline).toContain('- textbox "Card number"');
+    for (const secret of ['s3cr', 'et!', '4111']) {
+      expect(outline).not.toContain(secret);
+      expect(JSON.stringify(events)).not.toContain(secret);
+    }
+  });
+
+  test('the HUD and the border are in no screenshot, even redrawn during one, and come back once the last ends', async ({
+    context,
+  }) => {
+    test.setTimeout(60_000);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(
+      context,
+      { ok: true },
+      { init: (c) => slowMessages(c, { 'piwi-bug-screenshot': 1000, 'piwi-bug-step-view': 800 }) },
+    );
+    // The view of the first step is taken as the page is reached, with the surfaces hidden.
+    await expect.poll(() => visibility(page, 'piwi-record-hud-host')).toBe('visible');
+    // The HUD redraws while the screenshot of a mark is taken: an evidence entry has come in.
+    await pressHudButton(page, 'mark');
+    await page.hover('#total');
+    await page.click('#total');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    await page.keyboard.type('Total: 45');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => inFlight(page, 'piwi-bug-screenshot')).toBe(1);
+    await page.evaluate(() => console.error('Late failure'));
+    await expect.poll(() => screenshotCount(page)).toBe(1);
+    expect(await shownInScreenshots(page)).toEqual([]);
+
+    // A screenshot from the popup while the view of the next step is taken: both hide the surfaces.
+    await page.locator('#coupon').click();
+    await expect.poll(() => inFlight(page, 'piwi-bug-step-view')).toBe(1);
+    await dispatchRuntimeMessage(page, { type: 'piwi-bug-take-screenshot' });
+    await expect.poll(() => screenshotCount(page)).toBe(2);
+    expect(await shownInScreenshots(page)).toEqual([]);
+    await expect.poll(() => visibility(page, 'piwi-record-frame-host')).toBe('visible');
+    await expect.poll(() => visibility(page, 'piwi-record-hud-host')).toBe('visible');
+
+    // The HUD redraws while the screenshot of Finish is taken.
+    await pressHudButton(page, 'finish');
+    await expect.poll(() => inFlight(page, 'piwi-bug-screenshot')).toBe(1);
+    await page.evaluate(() => console.error('Failure at the end'));
+    await expect.poll(() => hostPresent(page, 'piwi-record-review-host'), { timeout: 10_000 }).toBe(true);
+    expect(await shownInScreenshots(page)).toEqual([]);
+  });
+
+  test('a screenshot session storage has no room for leaves a note, and Finish still finishes', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(
+      context,
+      { ok: true },
+      {
+        // Session storage with no room for a screenshot.
+        init: async (c) => {
+          await c.addInitScript(() => {
+            const session = (globalThis as any).chrome.storage.session;
+            const set = session.set;
+            session.set = async (values: Record<string, unknown>) => {
+              if ('piwiBugScreenshots' in values) throw new Error('Session storage quota bytes exceeded.');
+              return set(values);
+            };
+          });
+        },
+      },
+    );
+    await pressHudButton(page, 'wrongPage');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.type('/cart/discounted');
+    await page.keyboard.press('Enter');
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'assert').length).toBe(1);
+    await page.waitForTimeout(500);
+
+    await pressHudButton(page, 'finish');
+    await expect.poll(() => hostPresent(page, 'piwi-record-review-host')).toBe(true);
+    expect(await hostPresent(page, 'piwi-record-hud-host')).toBe(false);
+    await expect(
+      page
+        .locator('#piwi-record-review-host')
+        .getByText('No screenshot: The screenshot was too large to keep in this browser’s storage.'),
+    ).toBeVisible();
+    expect((await readEvidence(page)).context).toMatchObject({ path: '/cart' });
+  });
+
+  test('two screenshots taken at once are both kept', async ({ context }) => {
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(
+      context,
+      { ok: true },
+      {
+        // Reading the screenshots takes a while, as reading session storage does in the browser.
+        init: async (c) => {
+          await c.addInitScript(() => {
+            const session = (globalThis as any).chrome.storage.session;
+            const get = session.get;
+            session.get = async (key: string) => {
+              const value = await get(key);
+              if (key === 'piwiBugScreenshots') await new Promise((resolve) => setTimeout(resolve, 100));
+              return value;
+            };
+          });
+        },
+      },
+    );
+    await dispatchRuntimeMessage(page, { type: 'piwi-bug-take-screenshot' }, { type: 'piwi-bug-take-screenshot' });
+    await expect.poll(() => screenshotCount(page)).toBe(2);
+    expect((await readEvidence(page)).screenshots).toBe(2);
   });
 
   test('the outline has roles, names, states and values, never a password, and stops at 400 lines', async ({

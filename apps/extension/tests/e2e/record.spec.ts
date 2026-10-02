@@ -105,8 +105,20 @@ const FILES_PAGE = `<!doctype html><html><body>
     style="height: 80px; border: 1px dashed">Done</section>
 </body></html>`;
 
+/** Password fields a button shows in clear, before or after typing, and fields whose autocomplete names a secret. */
+const REVEAL_PAGE = `<!doctype html><html><body>
+  <label>Password <input id="pw" type="password" /></label>
+  <button id="show" type="button" onclick="pw.type = pw.type === 'password' ? 'text' : 'password'">Show password</button>
+  <label>PIN <input id="pin" type="password" /></label>
+  <button id="show-pin" type="button" onclick="pin.type = 'text'">Show PIN</button>
+  <label>Card number <input id="card" autocomplete="cc-number" /></label>
+  <label>Code <input id="otp" autocomplete="one-time-code" /></label>
+  <label>Name <input id="name" /></label>
+</body></html>`;
+
 /** The pages by path; any other path is the login page. */
 const PAGES: Record<string, string> = {
+  '/reveal': REVEAL_PAGE,
   '/dashboard': DASHBOARD_PAGE,
   '/bare': BARE_FORM_PAGE,
   '/links': LINKS_PAGE,
@@ -369,6 +381,45 @@ test.describe('record-panel.js', () => {
     const fillStep = steps.find((s) => s.action === 'fill');
     expect(fillStep?.redacted).toBe(true);
     expect(fillStep?.value).toBeNull();
+  });
+
+  test('a password shown in clear, before or after typing, and a card number or a one-time code are never captured', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/reveal');
+    await page.locator('#pw').click();
+    await page.keyboard.type('s3cr');
+    await page.locator('#show').click();
+    await expect(page.locator('#pw')).toHaveAttribute('type', 'text');
+    await page.locator('#pw').click();
+    await page.keyboard.type('et!');
+    await page.keyboard.press('Control+Alt+q');
+    // Shown in clear before it is ever focused.
+    await page.locator('#show-pin').click();
+    await page.locator('#pin').click();
+    await page.keyboard.type('4321');
+    await page.locator('#card').click();
+    await page.keyboard.type('4111111111111111');
+    await page.locator('#otp').click();
+    await page.keyboard.type('987654');
+    await page.locator('#name').click();
+    await page.keyboard.type('alice');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.value === 'alice'))
+      .toBe(true);
+    const events = await readStoredEvents(page);
+    for (const secret of ['s3c', 'et!', '4321', '4111', '9876']) expect(JSON.stringify(events)).not.toContain(secret);
+    expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual([]);
+    const fills = normalizeSteps(events).filter((s) => s.action === 'fill');
+    expect(fills.map((s) => [s.target?.accessibleName, s.value, s.redacted])).toEqual([
+      ['Password', null, true],
+      ['Password', null, true],
+      ['PIN', null, true],
+      ['Card number', null, true],
+      ['Code', null, true],
+      ['Name', 'alice', false],
+    ]);
   });
 
   test('a password field inside an open shadow root is never captured: no key it holds, its fill redacted', async ({

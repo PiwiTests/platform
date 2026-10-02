@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Locator scoping</title>
+  </head>
+  <body>
+    <button type="button">Top</button>
+    <section id="frames">
+      <iframe id="f1" title="First payment" src="/frame.html" width="300" height="150"></iframe>
+      <iframe id="f2" title="Second payment" src="/frame.html" width="300" height="150"></iframe>
+    </section>
+    <main id="m">
+      <section><span>A</span></section>
+    </main>
+    <div id="scope">
+      <span>B</span>
+      <section><span>C</span></section>
+    </div>
+    <x-host id="x-host"></x-host>
+    <p>
+      <span class="md:visible">Responsive</span>
+      <input id="loginForm:text" aria-label="Login text" />
+    </p>
+    <script>
+      document.getElementById('x-host').attachShadow({ mode: 'open' }).innerHTML =
+        '<button type="button">Host button</button>';
+    </script>
+  </body>
+</html>

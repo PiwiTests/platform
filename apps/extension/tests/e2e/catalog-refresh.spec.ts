@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect, openOptions } from './fixtures.js';
+import { localStorageText, storedSecret } from './secrets.js';
 
 /**
  * A function added in the dashboard after the options page saved still reaches
@@ -32,9 +33,12 @@ let baseUrl: string;
 /** Mutated mid-test to model someone adding a function in the dashboard. */
 let catalog = [entry(1, 'login')];
 let requestCount = 0;
+/** The `X-API-Key` of each catalog request, by the server it reached. */
+let keysSent: Array<{ server: string; key: string | undefined }> = [];
 
-test.beforeAll(async () => {
-  server = createServer((req, res) => {
+/** Answers a catalog request with the current catalog, as a Piwi instance does. */
+function catalogServer(name: string): Server {
+  return createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     // The client sends `X-API-Key`, which makes this a non-simple request, so
     // the browser preflights it. A real Piwi instance doesn't answer this —
@@ -50,6 +54,7 @@ test.beforeAll(async () => {
     }
     if (req.url?.includes('/test-functions')) {
       requestCount++;
+      keysSent.push({ server: name, key: req.headers['x-api-key'] as string | undefined });
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ items: catalog.map((e) => ({ id: e.id, name: e.name, entry: e })) }));
       return;
@@ -57,12 +62,20 @@ test.beforeAll(async () => {
     res.statusCode = 404;
     res.end('{}');
   });
+}
+
+test.beforeAll(async () => {
+  server = catalogServer('instance');
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
 test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+test.beforeEach(() => {
+  keysSent = [];
 });
 
 test.describe.serial('catalog refresh', () => {
@@ -162,6 +175,52 @@ test.describe.serial('catalog refresh', () => {
     // Forcing bypasses the TTL — what the panel's Refresh button does.
     expect(await refresh(true)).toMatchObject({ ok: true, refreshed: true });
     expect(requestCount).toBe(afterFirst + 1);
+  });
+
+  test('the API key stays out of what content scripts read, and goes only to its instance', async ({
+    context,
+    extensionId,
+  }) => {
+    catalog = [entry(1, 'login')];
+    const other = catalogServer('elsewhere');
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const elsewhere = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
+    try {
+      const page = await context.newPage();
+      await openOptions(page, extensionId);
+      // Kept beside the settings, as an earlier version kept it.
+      await page.evaluate(async (url) => {
+        await chrome.storage.local.set({
+          piwiConnection: {
+            instanceUrl: url,
+            apiKey: 'pd_test',
+            projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Demo' }],
+          },
+          piwiCatalogCache: {},
+        });
+      }, baseUrl);
+      const refresh = () =>
+        page.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-refresh-catalog', projectId: 1, force: true }));
+
+      expect(await refresh()).toMatchObject({ ok: true, refreshed: true, count: 1 });
+      expect(keysSent).toEqual([{ server: 'instance', key: 'pd_test' }]);
+      // The worker moved it out of `chrome.storage.local` into its own IndexedDB.
+      expect(await localStorageText(page)).not.toContain('pd_test');
+      expect(await storedSecret(page, 'instance')).toEqual({ apiKey: 'pd_test', origin: baseUrl });
+
+      // A content script rewrites the instance address: the worker still asks, but without the key.
+      await page.evaluate(async (url) => {
+        const stored = (await chrome.storage.local.get('piwiConnection')).piwiConnection as object;
+        await chrome.storage.local.set({ piwiConnection: { ...stored, instanceUrl: url } });
+      }, elsewhere);
+      expect(await refresh()).toMatchObject({ ok: true, refreshed: true });
+      expect(keysSent).toEqual([
+        { server: 'instance', key: 'pd_test' },
+        { server: 'elsewhere', key: undefined },
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
   });
 
   test('a refresh with no connection configured fails cleanly rather than throwing', async ({

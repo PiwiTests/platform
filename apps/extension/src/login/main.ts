@@ -93,8 +93,13 @@ async function start(): Promise<void> {
   save.addEventListener('click', () => {
     status.textContent = '';
     // Asked for inside the click, which the browser requires; the rest waits for the answer.
-    void chrome.permissions
-      .request({ permissions: ['cookies'], origins: cookieOriginPatterns(new URL(origin).hostname) })
+    const permission = chrome.permissions.request({
+      permissions: ['cookies'],
+      origins: cookieOriginPatterns(new URL(origin).hostname),
+    });
+    // Disabled until the file is saved, so a second click downloads no second copy.
+    save.disabled = true;
+    void permission
       .then(async (granted) => {
         if (!granted) {
           status.textContent = t('login_denied');
@@ -110,6 +115,9 @@ async function start(): Promise<void> {
       })
       .catch((err: unknown) => {
         status.textContent = t('login_failed', { error: err instanceof Error ? err.message : String(err) });
+      })
+      .finally(() => {
+        save.disabled = false;
       });
   });
 }

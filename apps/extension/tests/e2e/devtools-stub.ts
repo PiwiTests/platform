@@ -37,13 +37,29 @@ function installDevtoolsStub(seed: { tabId: number; har: unknown[] }): void {
     __piwiDevtoolsHar: unknown[];
   };
   g.__piwiDevtoolsHar = seed.har;
-  // A network entry carries its body as `__body`, handed out by `getContent` as DevTools does.
+  // A network entry carries its body as `__body`, handed out by `getContent` as Chrome's DevTools does, after
+  // `__delayMs`; with `__promise`, as Firefox's does: a promise of the body and its MIME type, and no callback.
   const withContent = (entry: unknown) => {
     if (!entry || typeof entry !== 'object' || !('request' in entry)) return entry;
-    const e = entry as { __body?: string | null; __encoding?: string };
+    const e = entry as {
+      __body?: string | null;
+      __encoding?: string;
+      __delayMs?: number;
+      __promise?: boolean;
+      response?: { content?: { mimeType?: string } };
+    };
+    const body = e.__body ?? null;
+    if (e.__promise) {
+      const value = [body, e.response?.content?.mimeType ?? ''];
+      return { ...e, getContent: () => new Promise((resolve) => setTimeout(() => resolve(value), e.__delayMs ?? 0)) };
+    }
     return {
       ...e,
-      getContent: (cb: (content: string | null, encoding: string) => void) => cb(e.__body ?? null, e.__encoding ?? ''),
+      getContent: (cb: (content: string | null, encoding: string) => void) => {
+        const give = () => cb(body, e.__encoding ?? '');
+        if (e.__delayMs) setTimeout(give, e.__delayMs);
+        else give();
+      },
     };
   };
   g.__piwiDevtoolsFire = (name, ...args) => {

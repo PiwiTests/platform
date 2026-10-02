@@ -112,6 +112,21 @@ test.describe('assertion-panel.js', () => {
     expect(await clippedInShadows(page)).toEqual([]);
   });
 
+  test('shows nothing a password field holds, and copies no line with it', async ({ context }) => {
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <label>Password <input id="target" type="password" value="hunter2" /></label>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'assertion-panel.js') });
+    await page.hover('#target');
+    await page.click('#target');
+    const panel = page.locator('#piwi-assertion-panel-host').getByRole('dialog');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('button.copy')).toHaveCount(2);
+    await expect(panel).not.toContainText('hunter2');
+  });
+
   test('lays out in German without clipping', async ({ context }) => {
     await openShadowRoots(context);
     await stubChromeI18n(context, 'de');

@@ -44,6 +44,9 @@ const SHOP = `<!doctype html><html><body>
   };
 </script></body></html>`;
 
+/** A page under `/app/` whose base URL is `/api/`: its relative requests go to `/api/…`. */
+const BASED = `<!doctype html><html><head><base href="/api/"></head><body>Orders</body></html>`;
+
 const PIXEL = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -53,15 +56,23 @@ interface Fixtures {
   site: string;
   context: BrowserContext;
   extensionId: string;
+  /** Whether the extension has `debugger`; without it, as in Firefox, the page's wrapper applies the conditions. */
+  debuggingProtocol: boolean;
 }
 
 /** The real extension, granted the local site as a person grants it from the panel's click. */
 const test = base.extend<Fixtures>({
+  debuggingProtocol: [true, { option: true }],
   site: async ({}, use) => {
     const server = http.createServer((request, response) => {
       if (request.url?.startsWith('/api/cart')) {
         response.setHeader('content-type', 'application/json');
         response.end(JSON.stringify({ total: 40 }));
+        return;
+      }
+      if (request.url?.startsWith('/app/')) {
+        response.setHeader('content-type', 'text/html');
+        response.end(BASED);
         return;
       }
       if (request.url?.startsWith('/pic.png')) {
@@ -76,13 +87,14 @@ const test = base.extend<Fixtures>({
     await use(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
     server.close();
   },
-  context: async ({}, use) => {
+  context: async ({ debuggingProtocol }, use) => {
     const extension = mkdtempSync(path.join(tmpdir(), 'piwi-conditions-ext-'));
     cpSync(DIST, extension, { recursive: true });
     const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
+    const permissions = (manifest.permissions as string[]).filter((p) => debuggingProtocol || p !== 'debugger');
     writeFileSync(
       path.join(extension, 'manifest.json'),
-      JSON.stringify({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
+      JSON.stringify({ ...manifest, permissions, host_permissions: ['http://127.0.0.1/*'] }),
     );
     const context = await launchWithExtension(extension);
     await use(context);
@@ -286,4 +298,117 @@ test('conditions turned off while they are still being turned on end with nothin
   await expect.poll(() => attached(context, tabId)).toBe(false);
   await shop.waitForLoadState();
   expect(await load(shop, 'fetch')).toMatchObject({ result: 'total 40' });
+});
+
+/** Waits until the page's wrapper holds the conditions with these ids. */
+async function wrapperHolds(page: Page, ids: string[]): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          (window as unknown as { __piwiRequestConditions?: { conditions: Array<{ id: string }> } })
+            .__piwiRequestConditions?.conditions ?? []
+        ).map((c) => c.id),
+      ),
+    )
+    .toEqual(ids);
+}
+
+/** Sends an XHR for the cart and aborts it at once, as a typeahead drops a request it no longer needs: what the page sees. */
+function sendAndAbort(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      new Promise<string[]>((resolve) => {
+        const seen: string[] = [];
+        const xhr = new XMLHttpRequest();
+        for (const type of ['readystatechange', 'load', 'error', 'abort', 'loadend']) {
+          xhr.addEventListener(type, () => seen.push(`${type} ${xhr.readyState}`));
+        }
+        xhr.open('GET', `/api/cart?_=${Date.now()}`);
+        xhr.send();
+        xhr.abort();
+        seen.push(`aborted ${xhr.readyState} ${xhr.status}`);
+        // Past any delay: nothing more arrives.
+        setTimeout(() => resolve(seen), 2_500);
+      }),
+  );
+}
+
+/** Sends the cart request on the page's one XHR, made on the first call: its state once opened, then as it ends. */
+function sendAgain(page: Page): Promise<string> {
+  return page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const w = window as unknown as { reused?: XMLHttpRequest };
+        const xhr = (w.reused ??= new XMLHttpRequest());
+        xhr.open('GET', `/api/cart?_=${Date.now()}`);
+        const opened = `${xhr.readyState} ${xhr.status}`;
+        xhr.onloadend = () => resolve(`${opened} → ${xhr.readyState} ${xhr.status} ${xhr.responseText}`);
+        xhr.send();
+      }),
+  );
+}
+
+test.describe('without the debugging protocol, through the page’s wrapper', () => {
+  test.use({ debuggingProtocol: false });
+
+  test('an XHR the page aborts while it is held back ends as the browser ends it', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const native = await sendAndAbort(shop);
+    expect(native).toEqual(['readystatechange 1', 'readystatechange 4', 'abort 4', 'loadend 4', 'aborted 0 0']);
+
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    const slowCart = { ...failCart, id: 'slow', kind: 'delay', delayMs: 1_500 };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [slowCart] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['slow']);
+    expect(await sendAndAbort(shop)).toEqual(native);
+  });
+
+  test('an XHR the wrapper answered starts afresh when the page opens it again', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['cart']);
+    expect(await sendAgain(shop)).toBe('1 0 → 4 500 Internal Server Error');
+    const failOther = { ...failCart, id: 'other', pattern: '**/api/other' };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [failOther] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['other']);
+    expect(await sendAgain(shop)).toBe('1 0 → 4 200 {"total":40}');
+  });
+
+  test('a relative request is matched where it goes, against the page’s base URL', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const orders = await context.newPage();
+    await orders.goto(`${site}/app/orders`);
+    const tabId = await tabIdOf(context, extensionId, `${site}/app/orders`);
+    const sender = await extensionPage(context, extensionId);
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+    await wrapperHolds(orders, ['cart']);
+    const statuses = await orders.evaluate(async () => {
+      const viaFetch = (await fetch(`cart?_=${Date.now()}`)).status;
+      const viaXhr = await new Promise<number>((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `cart?_=${Date.now()}`);
+        xhr.onloadend = () => resolve(xhr.status);
+        xhr.send();
+      });
+      return [viaFetch, viaXhr];
+    });
+    expect(statuses).toEqual([500, 500]);
+  });
 });

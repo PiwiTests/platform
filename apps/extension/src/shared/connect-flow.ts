@@ -28,20 +28,42 @@ export interface WaitOptions {
   signal?: AbortSignal;
 }
 
+const CANCELLED = Symbol('cancelled');
+
+/** `work`, or `CANCELLED` as soon as `signal` aborts, whichever comes first. */
+function unlessAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T | typeof CANCELLED> {
+  if (!signal) return work;
+  if (signal.aborted) return Promise.resolve(CANCELLED);
+  return new Promise((resolve, reject) => {
+    const abort = () => resolve(CANCELLED);
+    signal.addEventListener('abort', abort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', abort);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** Polls until an answer other than pending; an abort ends the wait at once, mid-sleep or mid-poll. */
 export async function waitForApproval(opts: WaitOptions): Promise<ConnectOutcome> {
   const deadline = opts.now() + opts.expiresIn * 1000;
   let intervalMs = Math.max(1, opts.interval) * 1000;
   while (opts.now() < deadline) {
-    await opts.sleep(intervalMs);
-    if (opts.signal?.aborted) return { status: 'cancelled' };
-    let answer: ConnectPoll;
+    if ((await unlessAborted(opts.sleep(intervalMs), opts.signal)) === CANCELLED) return { status: 'cancelled' };
+    let answer: ConnectPoll | typeof CANCELLED;
     try {
-      answer = await opts.poll();
+      answer = await unlessAborted(opts.poll(), opts.signal);
     } catch {
       // A dropped request is retried at the next interval; the deadline still bounds the wait.
       continue;
     }
-    if (opts.signal?.aborted) return { status: 'cancelled' };
+    if (answer === CANCELLED || opts.signal?.aborted) return { status: 'cancelled' };
     if (answer.status === 'pending') continue;
     if (answer.status === 'slow_down') {
       intervalMs = Math.max(intervalMs, answer.interval * 1000);

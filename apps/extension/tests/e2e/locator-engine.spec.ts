@@ -1,7 +1,7 @@
 import { test, expect, selectors, type Page } from '@playwright/test';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { engineBundle, servePages, tagElements } from './engine-bundle.js';
-import { EDGE_CASES, LOCATOR_CASES } from './locator-cases.js';
+import { EDGE_CASES, LOCATOR_CASES, SCOPING_CASES } from './locator-cases.js';
 import { playwrightLocator } from './playwright-locator.js';
 
 /**
@@ -20,6 +20,10 @@ const EXPECTED_REFUSALS = new Set([
   "getByRole('link', { level: 1 })",
   "locator('invalid[[[')",
   "locator('button:nth-match(2)')",
+  "frameLocator('#f1').filter({ hasText: 'Pay' })",
+  "locator('#f2').contentFrame().or(getByRole('button', { name: 'Top' }))",
+  "frameLocator('#f1')",
+  "frameLocator('section').getByRole('button')",
 ]);
 
 interface Outcome {
@@ -40,25 +44,32 @@ async function playwrightOutcome(page: Page, expression: string): Promise<Outcom
   }
 }
 
-async function engineOutcomes(page: Page, expressions: string[], testIdAttributes?: string[]): Promise<Outcome[]> {
+async function engineOutcomes(
+  page: Page,
+  expressions: string[],
+  testIdAttributes?: string[],
+  strict = false,
+): Promise<Outcome[]> {
   return page.evaluate(
-    ([list, attributes]) =>
+    ([list, attributes, strictFrames]) =>
       (
-        globalThis as unknown as { __piwiEngineQueryAll: (e: string[], a?: string[]) => Outcome[] }
-      ).__piwiEngineQueryAll(list, attributes),
-    [expressions, testIdAttributes] as const,
+        globalThis as unknown as {
+          __piwiEngineQueryAll: (e: string[], a?: string[], s?: boolean) => Outcome[];
+        }
+      ).__piwiEngineQueryAll(list, attributes, strictFrames),
+    [expressions, testIdAttributes, strict] as const,
   );
 }
 
 async function openFixture(page: Page, file = 'locator-kinds.html'): Promise<void> {
   await servePages(page, ORIGIN);
   await page.goto(`${ORIGIN}/${file}`);
-  if (file === 'locator-kinds.html') {
-    await page
-      .frameLocator('#child-frame')
-      .frameLocator('#grandchild')
-      .getByRole('button', { name: 'Verify' })
-      .waitFor();
+  const frames: Record<string, string[]> = {
+    'locator-kinds.html': ['#child-frame'],
+    'locator-scoping.html': ['#f1', '#f2'],
+  };
+  for (const owner of frames[file] ?? []) {
+    await page.frameLocator(owner).frameLocator('#grandchild').getByRole('button', { name: 'Verify' }).waitFor();
   }
   await tagElements(page);
   await page.addScriptTag({ path: await engineBundle() });
@@ -109,6 +120,34 @@ test.describe('locator engine matches Playwright', () => {
       expect(matchedSomething).toBeGreaterThan(expressions.length / 3);
     });
   }
+
+  for (const [group, expressions] of Object.entries(SCOPING_CASES)) {
+    test(`scoping: ${group}`, async ({ page }) => {
+      await openFixture(page, 'locator-scoping.html');
+      const { mismatches, matchedSomething } = await compare(page, expressions);
+      expect(mismatches, mismatches.join('\n')).toEqual([]);
+      expect(matchedSomething).toBeGreaterThan(expressions.length / 3);
+    });
+  }
+
+  test('a strict engine refuses several frame owners, as an action does', async ({ page }) => {
+    await openFixture(page, 'locator-scoping.html');
+    const expressions = [
+      "frameLocator('iframe').getByRole('button', { name: 'Cancel' })",
+      "frameLocator('iframe').first().getByRole('button', { name: 'Cancel' })",
+      "frameLocator('#f2').getByRole('button', { name: 'Cancel' })",
+    ];
+    const engine = await engineOutcomes(page, expressions, undefined, true);
+    expect(engine[0]!.error).toMatch(/strict mode violation/);
+    for (const [i, expression] of expressions.entries()) {
+      const action = await playwrightLocator(page, expression)
+        .click({ trial: true, timeout: 2000 })
+        .then(() => null)
+        .catch((error: Error) => error.message.split('\n')[0]!);
+      expect(engine[i]!.error !== undefined, `${expression}: playwright ${action ?? 'clicked'}`).toBe(action !== null);
+      if (action === null) expect(engine[i]!.ids).toHaveLength(1);
+    }
+  });
 
   test('getByTestId reads the configured test id attribute', async ({ page }) => {
     await openFixture(page);

@@ -187,36 +187,66 @@ export function driverText(choice: ReplayState['driver']): string {
 export interface Waker {
   /** Resolves on the next `wake`, or at once when one came since the last wait. */
   wait(): Promise<void>;
+  /**
+   * Waits for the next wake or for `other`, whichever comes first. When
+   * `other` does, the wait ends there, and a wake that comes with it or after
+   * it is kept for the next wait.
+   */
+  until<T>(other: Promise<T>): Promise<{ woken: true } | { woken: false; value: T }>;
   wake(): void;
+  /** Lets a wait in progress through, and keeps nothing when the loop is busy. */
+  wakeWaiting(): void;
   /** Forgets a wake that came before this loop started. */
   reset(): void;
 }
 
 /**
  * What the replay loop waits on in step mode and when paused: Next, turning
- * step mode off, Continue or Stop. A wake that comes while the loop is still
- * busy with a step (waiting for the page to settle) is kept for its next
- * wait, rather than lost with the loop left waiting for a click already made.
+ * step mode off or Stop, kept when they come while the loop is still busy
+ * with a step (waiting for the page to settle) rather than lost with the loop
+ * left waiting for a click already made. Pause and Continue only let a wait
+ * in progress through: a busy loop reads them from the state at its next
+ * step, and a kept wake would play the step after it without its Next.
  */
 export function createWaker(): Waker {
   let release: (() => void) | null = null;
   let early = false;
+  const wait = (): Promise<void> => {
+    if (early) {
+      early = false;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      release = () => {
+        release = null;
+        resolve();
+      };
+    });
+  };
   return {
-    wait() {
-      if (early) {
-        early = false;
-        return Promise.resolve();
-      }
-      return new Promise((resolve) => {
-        release = () => {
-          release = null;
-          resolve();
-        };
+    wait,
+    async until<T>(other: Promise<T>) {
+      let woken = false;
+      const waiting = wait().then(() => {
+        woken = true;
       });
+      const ours = release;
+      const first = await Promise.race([
+        waiting.then(() => ({ woken: true }) as const),
+        other.then((value) => ({ woken: false, value }) as const),
+      ]);
+      if (!first.woken) {
+        if (release === ours) release = null;
+        if (woken) early = true;
+      }
+      return first;
     },
     wake() {
       if (release) release();
       else early = true;
+    },
+    wakeWaiting() {
+      release?.();
     },
     reset() {
       early = false;

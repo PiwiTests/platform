@@ -1249,6 +1249,22 @@
   "lint_allGood": {
     "message": "Cada botón, enlace y campo de esta página tiene un test id, un nombre o un lugar estable en la página."
   },
+  "lint_checking": {
+    "message": "Buscando elementos difíciles de localizar…"
+  },
+  "lint_truncated": {
+    "message": "Se revisaron los primeros $checked$ de los $total$ botones, enlaces y campos de esta página.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "800"
+      },
+      "total": {
+        "content": "$2",
+        "example": "1200"
+      }
+    }
+  },
   "lint_copyChecklist": {
     "message": "Copiar como lista de tareas Markdown"
   },
@@ -1959,6 +1975,9 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotNotKept": {
+    "message": "La captura de pantalla era demasiado grande para guardarla en el almacenamiento de este navegador."
   },
   "bug_stepShows": {
     "message": "muestra «$text$»",
@@ -2802,6 +2821,19 @@
       "element": {
         "content": "$1",
         "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_reasonDragApart": {
+    "message": "Arrastrar necesita $element$ y $target$ en pantalla a la vez, y no caben juntos.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "div \"Card\""
+      },
+      "target": {
+        "content": "$2",
+        "example": "div \"Done\""
       }
     }
   },

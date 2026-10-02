@@ -119,7 +119,7 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 | `activeTab` | acts on the tab you are looking at, only when you click the toolbar icon or press the shortcut |
 | `debugger` (Chrome and Edge) | trusted input for a [replay](./replay-a-bug-report), a bug report's console, requests and screenshots, and DevTools' [throttling](./devtools#slow-down-or-fail-a-request). Attached only while one of them runs, under Chrome's bar saying Piwi Picker started debugging the browser; **Cancel** there falls back to the page's own events. Nothing leaves your machine |
 | `scripting` | injects the picker or the recorder into that tab on demand; no content script runs on pages you did not ask it to |
-| `storage` | keeps your copy format and, only if you connect, the instance URL, API key, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
+| `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens are kept in the extension's own database, which scripts it runs in web pages cannot read. The session and the running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
 | `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>` |
 
@@ -128,7 +128,7 @@ written in the extension's language; page texts, locators, test ids, `steps.json
 Optional and off by default. In the settings (the popup's gear button), type your instance's address and click
 **Connect**, then **Allow** in the tab that opens: Piwi Picker receives its own API key. Which project applies on a
 page comes from URL patterns kept on the instance, per project, and from any you keep in this browser; the popup's
-**Active project** select overrides both for the session. See [Extension connection](./extension-connection).
+**Active project** select overrides both on the tab's site for the session. See [Extension connection](./extension-connection).
 
 Function catalogs refresh in the background; **Refresh** in Test functions fetches them now. **A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
 

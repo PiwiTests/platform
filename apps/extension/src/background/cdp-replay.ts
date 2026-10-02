@@ -48,11 +48,20 @@ onTabZoomChange((tabId) => {
 const VIEWPORT_MAX = 10_000;
 /** Replays whose session ended without them (the person cancelled the bar): they go on with the page's events. */
 const lostReplays = new Map<string, FallbackReason>();
+/** What stops listening to each replayed tab's top-frame navigations. */
+const navigationWatches = new Map<number, () => void>();
+
+function stopWatching(tabId: number): void {
+  navigationWatches.get(tabId)?.();
+  navigationWatches.delete(tabId);
+}
 
 onDebuggerLost((tabId, purposes, reason) => {
   if (!purposes.includes('replay')) return;
   const replayId = replayOfTab.get(tabId);
   replayOfTab.delete(tabId);
+  sizedTabs.delete(tabId);
+  stopWatching(tabId);
   if (replayId) lostReplays.set(replayId, reason);
   // The replay script hears it now rather than at its next step, and says so in its panel.
   void chrome.tabs.sendMessage(tabId, { type: 'piwi-replay-driver-lost', replayId, reason }).catch(() => undefined);
@@ -78,6 +87,37 @@ async function replayRunsIn(tab: chrome.tabs.Tab | undefined, replayId: unknown)
   }
 }
 
+function originOf(url: unknown): string | null {
+  try {
+    return typeof url === 'string' ? new URL(url).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lets go of the tab once its top frame shows a page off the replay's origin,
+ * or the replay no longer runs. The protocol reports it for any origin, where
+ * `chrome.tabs.onUpdated` gives no address for a page the extension has no
+ * access to.
+ */
+function watchNavigation(tabId: number): void {
+  stopWatching(tabId);
+  const stop = onDebuggerEvent(tabId, (method, params) => {
+    if (method !== 'Page.frameNavigated') return;
+    const frame = params.frame as { parentId?: string; url?: string } | undefined;
+    if (!frame || frame.parentId) return;
+    const origin = originOf(frame.url);
+    void getReplayState().then((state) => {
+      const running = state?.status === 'running' || state?.status === 'paused';
+      if ((!running || origin !== state.origin) && navigationWatches.get(tabId) === stop) {
+        void releaseReplayTab(tabId);
+      }
+    });
+  });
+  navigationWatches.set(tabId, stop);
+}
+
 /**
  * The driver for the replay running in the sender's tab: trusted input when the
  * tab's session attaches, the page's own events otherwise, with why.
@@ -94,6 +134,8 @@ export async function handleReplayDriver(
   const lost = lostReplays.get(String(message.replayId));
   if (lost) return { driver: 'synthetic', reason: lost };
   if (!debuggerAvailable()) return chooseDriver({ available: false, attached: false, previous });
+  // A new session holds no viewport the replay set before.
+  if (!holdsDebugger(tab.id, 'replay')) sizedTabs.delete(tab.id);
   const attached = await acquireDebugger(tab.id, 'replay');
   if (!attached.ok) {
     return {
@@ -102,6 +144,7 @@ export async function handleReplayDriver(
     };
   }
   replayOfTab.set(tab.id, String(message.replayId));
+  watchNavigation(tab.id);
   // A click that opens a file chooser must not open the browser's dialog: the file step asks for the file.
   await sendCommand(tab.id, 'Page.enable').catch(() => undefined);
   await sendCommand(tab.id, 'Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined);
@@ -207,7 +250,8 @@ export async function handleReplayInput(
 /**
  * Sets the viewport the steps were recorded at on the replay's tab, through
  * its session: only while the replay acts with trusted input, since without
- * the protocol nothing can size a tab's page.
+ * the protocol nothing can size a tab's page. The replay asks on each page; a
+ * tab already at that size is left as it is.
  */
 export async function handleReplayViewport(
   message: { replayId?: unknown; width?: unknown; height?: unknown },
@@ -219,6 +263,8 @@ export async function handleReplayViewport(
   if (!(await replayRunsIn(tab, message.replayId)) || !holdsDebugger(tab.id, 'replay')) {
     return { ok: false, error: 'not attached' };
   }
+  const sized = sizedTabs.get(tab.id);
+  if (sized?.width === width && sized.height === height) return { ok: true };
   try {
     await emulateCssViewport(tab.id, { width, height });
     sizedTabs.set(tab.id, { width, height });
@@ -235,6 +281,7 @@ export async function handleReplayViewport(
  */
 export async function releaseReplayTab(tabId: number): Promise<void> {
   replayOfTab.delete(tabId);
+  stopWatching(tabId);
   const sized = sizedTabs.delete(tabId);
   if (holdsDebugger(tabId, 'replay')) {
     await sendCommand(tabId, 'Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined);

@@ -4,6 +4,7 @@ import type { BrowserContext } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
+import { servePages } from './engine-bundle.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -22,35 +23,49 @@ const DIST = path.join(here, '..', '..', 'dist');
 async function stubStorage(
   context: BrowserContext,
   seed: { piwiConnection?: unknown; piwiCatalogCache?: unknown } = {},
+  /** Which storage area's reads throw, as they do before the worker opens session storage to content scripts. */
+  failing: 'local' | 'session' | null = null,
 ): Promise<void> {
-  await context.addInitScript((initialSeed) => {
-    const store: Record<string, unknown> = { ...initialSeed };
-    const session: Record<string, unknown> = {};
-    (globalThis as any).chrome = {
-      storage: {
-        local: {
-          get: async (key: string) => ({ [key]: store[key] }),
-          set: async (values: Record<string, unknown>) => Object.assign(store, values),
-          remove: async (key: string) => {
-            delete store[key];
+  await context.addInitScript(
+    ({ initialSeed, failingArea }) => {
+      const store: Record<string, unknown> = { ...initialSeed };
+      const session: Record<string, unknown> = {};
+      const fail = (area: string) => {
+        if (area === failingArea) throw new Error(`Access to storage is not allowed from this context.`);
+      };
+      (globalThis as any).chrome = {
+        storage: {
+          local: {
+            get: async (key: string) => {
+              fail('local');
+              return { [key]: store[key] };
+            },
+            set: async (values: Record<string, unknown>) => Object.assign(store, values),
+            remove: async (key: string) => {
+              delete store[key];
+            },
+          },
+          session: {
+            get: async (key: string) => {
+              fail('session');
+              return { [key]: session[key] };
+            },
+            set: async (values: Record<string, unknown>) => Object.assign(session, values),
+            remove: async (key: string) => {
+              delete session[key];
+            },
           },
         },
-        session: {
-          get: async (key: string) => ({ [key]: session[key] }),
-          set: async (values: Record<string, unknown>) => Object.assign(session, values),
-          remove: async (key: string) => {
-            delete session[key];
+        // No worker: the panel's catalog refresh fails quietly and it shows the cached catalog.
+        runtime: {
+          sendMessage: async () => {
+            throw new Error('Could not establish connection. Receiving end does not exist.');
           },
         },
-      },
-      // No worker: the panel's catalog refresh fails quietly and it shows the cached catalog.
-      runtime: {
-        sendMessage: async () => {
-          throw new Error('Could not establish connection. Receiving end does not exist.');
-        },
-      },
-    };
-  }, seed);
+      };
+    },
+    { initialSeed: seed, failingArea: failing },
+  );
   await stubChromeI18n(context);
 }
 
@@ -105,7 +120,94 @@ test.describe('test-function-panel.js', () => {
     await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-test-function-host'))).toBe(true);
     await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
-    expect(await page.evaluate(() => document.querySelectorAll('#piwi-test-function-host').length)).toBe(1);
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll('#piwi-test-function-host').length)).toBe(1);
+  });
+
+  const CONNECTED = {
+    instanceUrl: 'https://piwi.test',
+    apiKey: '',
+    projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Test project' }],
+  };
+
+  test('counts what Playwright finds: not a hidden copy, and inside web components', async ({ context }) => {
+    await stubStorage(context, {
+      piwiConnection: CONNECTED,
+      piwiCatalogCache: {
+        '1': {
+          entries: [
+            {
+              ...CATALOG_ENTRY,
+              name: 'openPricing',
+              steps: [{ action: 'click', target: { role: 'link', name: 'Pricing' } }],
+            },
+            {
+              ...CATALOG_ENTRY,
+              id: 2,
+              name: 'checkOut',
+              steps: [{ action: 'click', target: { role: 'button', name: 'Check out' } }],
+            },
+          ],
+          fetchedAt: Date.now(),
+        },
+      },
+    });
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <nav class="desktop"><a href="/pricing">Pricing</a></nav>
+      <nav class="mobile" style="display:none"><a href="/pricing">Pricing</a></nav>
+      <cart-widget></cart-widget>
+      <script>
+        customElements.define('cart-widget', class extends HTMLElement {
+          constructor() {
+            super();
+            this.attachShadow({ mode: 'open' }).innerHTML = '<button>Check out</button>';
+          }
+        });
+      </script>
+    </body></html>`);
+    await expect(page.getByRole('link', { name: 'Pricing' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Check out' })).toHaveCount(1);
+    await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
+
+    const panel = page.locator('#piwi-test-function-host .panel');
+    await expect(panel.locator('.row.ready')).toHaveCount(2);
+    await expect(panel.locator('.row.ready .step')).toHaveText(['click() → one element', 'click() → one element']);
+  });
+
+  test('opens when the session storage cannot be read, from the URL mapping alone', async ({ context }) => {
+    await stubStorage(
+      context,
+      { piwiConnection: CONNECTED, piwiCatalogCache: { '1': { entries: [CATALOG_ENTRY], fetchedAt: Date.now() } } },
+      'session',
+    );
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    // A page with an origin: the project chosen in the popup is kept per origin, in session storage.
+    await servePages(page, 'https://shop.test', {
+      'shop.html': `<!doctype html><html><body><button>Add to cart</button></body></html>`,
+    });
+    await page.goto('https://shop.test/shop.html');
+    await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
+    const panel = page.locator('#piwi-test-function-host .panel');
+    await expect(panel.locator('.row.ready')).toContainText('addToCart');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#piwi-test-function-host')).toHaveCount(0);
+  });
+
+  test('leaves nothing over the page when the settings cannot be read', async ({ context }) => {
+    await stubStorage(context, {}, 'local');
+    const page = await context.newPage();
+    await page.setContent(
+      `<!doctype html><html><body><button onclick="this.textContent = 'Clicked'">Add to cart</button></body></html>`,
+    );
+    await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as { __piwiActiveTool?: unknown }).__piwiActiveTool ?? null))
+      .toBeNull();
+    await expect(page.locator('#piwi-test-function-host')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add to cart' }).click({ timeout: 2000 });
+    await expect(page.getByRole('button')).toHaveText('Clicked');
   });
 
   /** Opens the panel in `language` over a page with one ready and one ambiguous function. */

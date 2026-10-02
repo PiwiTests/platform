@@ -1249,6 +1249,22 @@
   "lint_allGood": {
     "message": "Chaque bouton, lien et champ de cette page a un test id, un nom ou une place stable dans la page."
   },
+  "lint_checking": {
+    "message": "Recherche des éléments difficiles à cibler…"
+  },
+  "lint_truncated": {
+    "message": "Seuls les $checked$ premiers des $total$ boutons, liens et champs de cette page ont été contrôlés.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "800"
+      },
+      "total": {
+        "content": "$2",
+        "example": "1 200"
+      }
+    }
+  },
   "lint_copyChecklist": {
     "message": "Copier en liste de tâches Markdown"
   },
@@ -1959,6 +1975,9 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotNotKept": {
+    "message": "La capture d’écran était trop volumineuse pour être conservée dans le stockage de ce navigateur."
   },
   "bug_stepShows": {
     "message": "affiche « $text$ »",
@@ -2802,6 +2821,19 @@
       "element": {
         "content": "$1",
         "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_reasonDragApart": {
+    "message": "Le glisser-déposer a besoin de $element$ et de $target$ à l’écran en même temps, et ils n’y tiennent pas ensemble.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "div \"Card\""
+      },
+      "target": {
+        "content": "$2",
+        "example": "div \"Done\""
       }
     }
   },

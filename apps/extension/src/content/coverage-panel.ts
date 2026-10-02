@@ -111,6 +111,11 @@ async function copyText(text: string, button: HTMLButtonElement): Promise<void> 
   setTimeout(() => (button.textContent = original), 1200);
 }
 
+/** The progress bar's fill, as a transform: it moves without laying out or painting the panel again. */
+function progressTransform({ done, total }: { done: number; total: number }): string {
+  return `scaleX(${total ? done / total : 0})`;
+}
+
 /** The page in the subtitle, saying which of the URL mapping's path prefixes were removed or added to key it. */
 function subtitlePage(context: CoverageContext): string | null {
   const { pageKey: page, prefixRemoved: removed, prefixAdded: added } = context;
@@ -135,6 +140,8 @@ export class CoveragePanel {
   private readonly toggles = new Map<string, HTMLInputElement>();
   /** Whether the notes were open in the last render, so a render keeps them as the reader left them. */
   private notesOpen = false;
+  /** The fill of the progress bar the last render drew, while the page is checked. */
+  private progressFill: HTMLElement | null = null;
 
   constructor(
     parent: ShadowRoot,
@@ -258,8 +265,14 @@ export class CoveragePanel {
     (node as HTMLElement | null)?.focus({ preventScroll: true });
   }
 
+  /** Moves the progress bar the last render drew, without drawing the rest of the panel again. */
+  setProgress(scanning: { done: number; total: number }): void {
+    if (this.progressFill) this.progressFill.style.transform = progressTransform(scanning);
+  }
+
   render(model: PanelModel): void {
     const { state } = model;
+    this.progressFill = null;
     this.panel.classList.toggle('left', state.dock === 'left');
     this.pill.classList.toggle('left', state.dock === 'left');
     this.panel.style.display = state.collapsed ? 'none' : '';
@@ -369,7 +382,8 @@ export class CoveragePanel {
     if (model.scanning) {
       const bar = el('div', 'progress');
       const fill = el('span');
-      fill.style.width = `${model.scanning.total ? Math.round((model.scanning.done / model.scanning.total) * 100) : 0}%`;
+      fill.style.transform = progressTransform(model.scanning);
+      this.progressFill = fill;
       bar.appendChild(fill);
       bar.title = t('coverage_checking');
       out.push(bar);

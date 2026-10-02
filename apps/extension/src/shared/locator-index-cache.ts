@@ -85,3 +85,8 @@ export async function setCachedLocatorIndex(
   await chrome.storage.local.set({ [CACHE_KEY]: Object.fromEntries(kept) }).catch(() => undefined);
   return false;
 }
+
+/** Drops every cached index: on Disconnect, and when another instance's projects take over. */
+export async function clearCachedLocatorIndexes(): Promise<void> {
+  await chrome.storage.local.remove(CACHE_KEY);
+}

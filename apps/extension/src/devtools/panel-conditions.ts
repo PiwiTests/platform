@@ -13,7 +13,7 @@ import {
 } from '../shared/request-conditions.js';
 import { mockUrlPattern } from '../shared/mock-code.js';
 import { sessionArea } from '../shared/session-area.js';
-import { inspectedTabId, sitePattern } from './inspected.js';
+import { inspectedTabId, requestSiteAccess, sitePattern } from './inspected.js';
 import { button, el } from './ui.js';
 import type { NetworkEntry } from './panel-network.js';
 
@@ -115,7 +115,7 @@ export async function pageConditions(origin: string | null, report: (text: strin
     const pattern = sitePattern(origin);
     if (!origin || !pattern) return report(t('devtools_conditionsNoPage'));
     // Inside the change: the browser shows the request only during it.
-    void chrome.permissions.request({ origins: [pattern] }).then(async (granted) => {
+    void requestSiteAccess(pattern).then(async (granted) => {
       if (!granted) return report(t('devtools_conditionsNeedAccess'));
       const throttle = isThrottle(network.value) ? network.value : null;
       const cpuRate = cpu.value ? Number(cpu.value) : null;
@@ -157,7 +157,7 @@ export function conditionActions(entry: NetworkEntry, origin: string | null): HT
       delayMs: kind === 'delay' ? delayMs : 0,
     };
     // Inside the click: the browser shows the request only during it.
-    void chrome.permissions.request({ origins: [pattern] }).then(async (granted) => {
+    void requestSiteAccess(pattern).then(async (granted) => {
       if (!granted) return report(t('devtools_conditionsNeedAccess'));
       const others = (await conditionsOnThisTab()).filter(
         (c) => c.method !== condition.method || c.pattern !== condition.pattern,

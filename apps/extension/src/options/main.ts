@@ -6,6 +6,9 @@ import {
   clearConnectionSettings,
   applyServerSync,
   mappedProjects,
+  getInstanceApiKey,
+  setInstanceApiKey,
+  clearInstanceApiKey,
   type ConnectionSettings,
 } from '../shared/connection-settings.js';
 import {
@@ -32,6 +35,10 @@ import { normalizePathPrefix, parsePathPrefix } from '@piwitests/core/page-key';
 import { waitForApproval } from '../shared/connect-flow.js';
 import { describeClient } from '../shared/client-info.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
+import { clearActiveProjectOverrides } from '../shared/active-project.js';
+import { clearCachedLocatorIndexes } from '../shared/locator-index-cache.js';
+import { moveLegacySecrets } from '../shared/legacy-secrets.js';
+import { clearRecordIntent } from '../shared/recording-storage.js';
 import {
   LANGUAGES,
   browserCatalogLanguage,
@@ -50,6 +57,7 @@ import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
 
 await initI18n();
 localizeDocument();
+await moveLegacySecrets();
 
 const instanceUrlEl = document.getElementById('instance-url') as HTMLInputElement;
 const connectBtn = document.getElementById('connect') as HTMLButtonElement;
@@ -103,10 +111,21 @@ let projectOptions: ProjectOption[] = [];
 let mappings: EditableMapping[] = [];
 /** The stored settings as last read or written: the instance's patterns and account name live here. */
 let stored: ConnectionSettings = await getConnectionSettings();
+/** The API key kept for `stored`'s instance, as the page opened. */
+const storedApiKey = await getInstanceApiKey(stored.instanceUrl).catch(() => '');
 /** Set while a Connect is waiting for the user to answer on the instance; aborting it stops the wait. */
 let pendingConnect: AbortController | null = null;
 /** Why the last read of the instance's patterns failed, shown under them; empty after a good read. */
 let serverSyncError = '';
+/**
+ * Bumped by Disconnect and by every connection kept. A write that an action
+ * began under an earlier value is dropped, so a sync still waiting on the
+ * instance never brings back what Disconnect removed, nor an earlier
+ * instance's patterns.
+ */
+let connectionEpoch = 0;
+/** Set while Add to Piwi sends a pattern, so its button stays disabled. */
+let addingToServer = false;
 
 type StatusKind = 'ok' | 'error' | '';
 
@@ -132,7 +151,7 @@ function setPill(pill: HTMLElement, on: boolean, onKey: MessageKey, offKey: Mess
 }
 
 /**
- * Grants this extension host access to the Piwi instance's own origin.
+ * Asks for host access to the Piwi instance's own origin.
  *
  * Needed because the dashboard API doesn't send CORS headers, so a
  * cross-origin fetch from an extension context only succeeds with a host
@@ -142,24 +161,56 @@ function setPill(pill: HTMLElement, on: boolean, onKey: MessageKey, offKey: Mess
  * this page last fetched.
  *
  * `chrome.permissions.request` only counts while the user gesture is still
- * live, so callers must invoke this before awaiting anything else in the
- * click handler. Granted narrowly — the one instance origin, never the broad
- * http/https patterns the manifest declares as merely requestable.
+ * live (Firefox refuses it anywhere else), so callers invoke this first in the
+ * click handler, before anything is awaited, and it calls the request itself
+ * at once: an origin already granted resolves true without a prompt. Granted
+ * narrowly — the one instance origin, never the broad http/https patterns the
+ * manifest declares as merely requestable.
  */
-async function ensureInstanceHostPermission(instanceUrl: string): Promise<boolean> {
-  let origin: string;
+function requestInstanceHostPermission(instanceUrl: string): Promise<boolean> {
   try {
-    origin = new URL(instanceUrl).origin;
+    const origin = new URL(instanceUrl).origin;
+    return requestOrigins([`${origin}/*`]);
   } catch {
-    return false;
+    return Promise.resolve(false);
   }
-  const originPattern = `${origin}/*`;
-  if (await chrome.permissions.contains({ origins: [originPattern] })) return true;
-  try {
-    return await chrome.permissions.request({ origins: [originPattern] });
-  } catch {
-    return false;
-  }
+}
+
+/**
+ * `chrome.permissions.request` for `origins`, called at once. Its grant is not
+ * a recording's: a "Record actions" intent still parked is cleared with the
+ * request, or the grant would start that recording.
+ */
+function requestOrigins(origins: string[]): Promise<boolean> {
+  const granted = chrome.permissions.request({ origins }).catch(() => false);
+  void clearRecordIntent().catch(() => undefined);
+  return granted;
+}
+
+/**
+ * Writes `change(current)` over the stored settings and returns true, unless
+ * the epoch has moved past `epoch` or the stored instance is no longer
+ * `instanceUrl` (another settings page disconnected, or connected elsewhere).
+ */
+async function writeConnection(
+  epoch: number,
+  instanceUrl: string,
+  change: (current: ConnectionSettings) => ConnectionSettings,
+): Promise<boolean> {
+  const current = await getConnectionSettings();
+  if (epoch !== connectionEpoch || current.instanceUrl !== instanceUrl) return false;
+  stored = change(current);
+  await setConnectionSettings(stored);
+  return true;
+}
+
+/** What belongs to the instance kept until now: each site's Active project, and the cached catalogs and locator indexes. */
+async function forgetInstanceData(): Promise<void> {
+  await Promise.all([
+    clearActiveProjectOverrides().catch(() => undefined),
+    clearCachedLocatorIndexes(),
+    pruneCachedCatalogs([]),
+  ]);
 }
 
 function renderMappings(): void {
@@ -388,7 +439,7 @@ function renderAddSite(): void {
   }
   if (editable.some((p) => String(p.id) === previous)) addProjectEl.value = previous;
   else if (editable.length === 1) addProjectEl.value = String(editable[0]!.id);
-  addToServerBtn.disabled = editable.length === 0;
+  addToServerBtn.disabled = addingToServer || editable.length === 0;
   addNoteEl.hidden = editable.length > 0;
   addNoteEl.textContent = editable.length > 0 ? '' : t('options_addNoEditable');
 }
@@ -396,17 +447,19 @@ function renderAddSite(): void {
 /**
  * Reads the instance's URL patterns into the stored settings. Keeps the
  * previous copy when the instance cannot be read, so resolving a page's
- * project keeps working offline.
+ * project keeps working offline. Writes nothing, and answers false, once
+ * Disconnect or another connection came after `epoch`.
  */
-async function syncServerPatterns(settings: ConnectionSettings): Promise<boolean> {
+async function syncServerPatterns(settings: ConnectionSettings, epoch: number): Promise<boolean> {
   try {
     const answer = await fetchServerPatterns(settings);
-    stored = applyServerSync({ ...(await getConnectionSettings()), ...pick(settings) }, answer, Date.now());
-    await setConnectionSettings(stored);
-    serverSyncError = '';
-    return true;
+    const written = await writeConnection(epoch, settings.instanceUrl, (current) =>
+      applyServerSync(current, answer, Date.now()),
+    );
+    if (written) serverSyncError = '';
+    return written;
   } catch (err) {
-    serverSyncError = err instanceof Error ? err.message : String(err);
+    if (epoch === connectionEpoch) serverSyncError = err instanceof Error ? err.message : String(err);
     return false;
   } finally {
     renderServerMappings();
@@ -414,14 +467,14 @@ async function syncServerPatterns(settings: ConnectionSettings): Promise<boolean
   }
 }
 
-/** The connection fields of `settings`: what a sync must not lose when it rewrites the stored copy. */
-function pick(settings: ConnectionSettings): Pick<ConnectionSettings, 'instanceUrl' | 'apiKey'> {
-  return { instanceUrl: settings.instanceUrl, apiKey: settings.apiKey };
-}
-
-/** Fetches and caches the function catalog of every mapped project; returns the counts the status line reports. */
+/**
+ * Fetches and caches the function catalog of every mapped project; returns the
+ * counts the status line reports. Stops caching once Disconnect or another
+ * connection came after `epoch`.
+ */
 async function refreshCatalogs(
   settings: ConnectionSettings,
+  epoch: number,
 ): Promise<{ projects: number; functions: number; failed: number }> {
   const projectIds = mappedProjects(settings).map((p) => p.projectId);
   let functions = 0;
@@ -429,13 +482,14 @@ async function refreshCatalogs(
   for (const projectId of projectIds) {
     try {
       const catalog = await fetchCatalog(settings, projectId);
+      if (epoch !== connectionEpoch) break;
       await setCachedCatalog(projectId, catalog);
       functions += catalog.length;
     } catch {
       failed++;
     }
   }
-  await pruneCachedCatalogs(projectIds);
+  if (epoch === connectionEpoch) await pruneCachedCatalogs(projectIds);
   return { projects: projectIds.length, functions, failed };
 }
 
@@ -446,10 +500,11 @@ function syncedProjectOptions(): ProjectOption[] {
 
 async function loadInitial(): Promise<void> {
   const settings = stored;
+  const epoch = connectionEpoch;
   instanceUrlEl.value = settings.instanceUrl;
-  apiKeyEl.value = settings.apiKey;
+  apiKeyEl.value = storedApiKey;
   // A key typed by hand stays visible where it was typed.
-  apiKeyFallback.open = settings.apiKey !== '' && settings.serverSyncedAt === 0;
+  apiKeyFallback.open = storedApiKey !== '' && settings.serverSyncedAt === 0;
   mappings = settings.projectMappings.map((m) => ({
     urlPattern: m.urlPattern,
     projectId: m.projectId,
@@ -465,12 +520,14 @@ async function loadInitial(): Promise<void> {
   prefillAddSite();
 
   if (settings.instanceUrl) {
-    if (await syncServerPatterns(settings)) {
+    if (await syncServerPatterns(settings, epoch)) {
       projectOptions = syncedProjectOptions();
       renderMappings();
     }
     try {
-      projectOptions = await fetchProjects(settings);
+      const projects = await fetchProjects(settings);
+      if (epoch !== connectionEpoch) return;
+      projectOptions = projects;
       renderMappings();
     } catch {
       // Instance unreachable at load time: the lines keep the projects the last sync read.
@@ -496,7 +553,6 @@ function prefillAddSite(): void {
 }
 
 function setConnecting(active: boolean): void {
-  connectBtn.disabled = active;
   connectPanel.hidden = !active;
   if (!active) connectCodeLine.replaceChildren();
 }
@@ -504,17 +560,23 @@ function setConnecting(active: boolean): void {
 connectBtn.addEventListener('click', () => {
   const instanceUrl = instanceUrlEl.value.trim();
   // Before any await, so the click still counts as the user gesture.
-  const permission = ensureInstanceHostPermission(instanceUrl);
+  const permission = requestInstanceHostPermission(instanceUrl);
+  // Disabled until this connect ends, so a second click starts no second one.
+  connectBtn.disabled = true;
   void (async () => {
-    if (!instanceUrl) {
-      setStatus(t('common_enterInstanceUrl'), 'error');
-      return;
+    try {
+      if (!instanceUrl) {
+        setStatus(t('common_enterInstanceUrl'), 'error');
+        return;
+      }
+      if (!(await permission)) {
+        setStatus(t('options_accessDenied'), 'error');
+        return;
+      }
+      await connect(instanceUrl);
+    } finally {
+      connectBtn.disabled = false;
     }
-    if (!(await permission)) {
-      setStatus(t('options_accessDenied'), 'error');
-      return;
-    }
-    await connect(instanceUrl);
   })();
 });
 
@@ -525,12 +587,13 @@ connectCancelBtn.addEventListener('click', () => {
 /**
  * Connects in one step: the instance shows a code on a page where the signed-in
  * user allows Piwi Picker, and the answer to the next poll carries an API key
- * created for them.
+ * created for them. The page it opens for that is closed however the wait ends.
  */
 async function connect(instanceUrl: string): Promise<void> {
   pendingConnect?.abort();
   const controller = new AbortController();
   pendingConnect = controller;
+  const epoch = connectionEpoch;
   setStatus(t('options_connectStarting'));
   let tabId: number | undefined;
   try {
@@ -559,23 +622,32 @@ async function connect(instanceUrl: string): Promise<void> {
       return;
     }
     if (tabId != null) await chrome.tabs.remove(tabId).catch(() => undefined);
+    tabId = undefined;
     const previous = await getConnectionSettings();
+    // Disconnected while the answer was on its way: nothing is kept.
+    if (epoch !== connectionEpoch) return;
+    const sameInstance = previous.instanceUrl === instanceUrl;
     const next: ConnectionSettings = {
       ...previous,
       instanceUrl,
-      apiKey: outcome.apiKey,
       connectedAs: outcome.user?.name ?? '',
       // Another instance's patterns and projects do not apply to this one.
-      ...(previous.instanceUrl === instanceUrl ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0 }),
+      ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0 }),
     };
+    const kept = ++connectionEpoch;
+    await setInstanceApiKey(instanceUrl, outcome.apiKey);
+    if (kept !== connectionEpoch) return;
     stored = next;
     await setConnectionSettings(next);
+    if (!sameInstance) await forgetInstanceData();
     apiKeyEl.value = outcome.apiKey;
     apiKeyFallback.open = false;
-    await syncServerPatterns(next);
+    await syncServerPatterns(next, kept);
+    if (kept !== connectionEpoch) return;
     projectOptions = syncedProjectOptions();
     renderMappings();
-    const catalogs = await refreshCatalogs(stored);
+    const catalogs = await refreshCatalogs(stored, kept);
+    if (kept !== connectionEpoch) return;
     const parts = [
       outcome.user ? t('options_connectedAs', { name: outcome.user.name }) : t('options_connectedNoAuth'),
       tn('options_serverPatterns', stored.serverMappings.length),
@@ -585,6 +657,7 @@ async function connect(instanceUrl: string): Promise<void> {
   } catch (err) {
     setStatus(err instanceof Error ? err.message : String(err), 'error');
   } finally {
+    if (tabId != null) await chrome.tabs.remove(tabId).catch(() => undefined);
     if (pendingConnect === controller) pendingConnect = null;
     setConnecting(false);
   }
@@ -593,15 +666,16 @@ async function connect(instanceUrl: string): Promise<void> {
 refreshServerBtn.addEventListener('click', () => {
   const settings = stored;
   // Before any await, so the click still counts as the user gesture.
-  const permission = ensureInstanceHostPermission(settings.instanceUrl);
+  const permission = requestInstanceHostPermission(settings.instanceUrl);
+  const epoch = connectionEpoch;
   void (async () => {
     await permission;
     setMappingsStatus(t('options_serverReading'));
-    if (await syncServerPatterns(settings)) {
+    if (await syncServerPatterns(settings, epoch)) {
       projectOptions = syncedProjectOptions();
       renderMappings();
       setMappingsStatus(tn('options_serverPatterns', stored.serverMappings.length), 'ok');
-    } else {
+    } else if (epoch === connectionEpoch) {
       setMappingsStatus(t('options_serverSyncFailed', { error: serverSyncError }), 'error');
     }
   })();
@@ -610,41 +684,52 @@ refreshServerBtn.addEventListener('click', () => {
 addToServerBtn.addEventListener('click', () => {
   const pattern = addPatternEl.value.trim();
   const projectId = addProjectEl.value ? Number(addProjectEl.value) : null;
+  if (!pattern) {
+    setMappingsStatus(t('options_addNeedsPattern'), 'error');
+    return;
+  }
+  if (projectId == null) {
+    setMappingsStatus(t('options_addNeedsProject'), 'error');
+    return;
+  }
+  const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
+  if (prefixError) {
+    setMappingsStatus(prefixError, 'error');
+    return;
+  }
+  const label = addProjectEl.selectedOptions[0]?.textContent ?? `#${projectId}`;
+  const settings = stored;
+  const epoch = connectionEpoch;
+  // Disabled until the pattern is sent, so a second click sends it once.
+  addingToServer = true;
+  addToServerBtn.disabled = true;
   void (async () => {
-    if (!pattern) {
-      setMappingsStatus(t('options_addNeedsPattern'), 'error');
-      return;
-    }
-    if (projectId == null) {
-      setMappingsStatus(t('options_addNeedsProject'), 'error');
-      return;
-    }
-    const prefixError = prefixesError(addPrefixEl.value, addTestPrefixEl.value);
-    if (prefixError) {
-      setMappingsStatus(prefixError, 'error');
-      return;
-    }
-    const label = addProjectEl.selectedOptions[0]?.textContent ?? `#${projectId}`;
     try {
-      await addServerPattern(stored, projectId, {
-        pattern,
-        environment: addEnvironmentEl.value.trim() || null,
-        branch: addBranchEl.value.trim() || null,
-        pathPrefix: normalizePathPrefix(addPrefixEl.value),
-        testPathPrefix: normalizePathPrefix(addTestPrefixEl.value),
-      });
-    } catch (err) {
-      setMappingsStatus(err instanceof Error ? err.message : String(err), 'error');
-      return;
+      try {
+        await addServerPattern(settings, projectId, {
+          pattern,
+          environment: addEnvironmentEl.value.trim() || null,
+          branch: addBranchEl.value.trim() || null,
+          pathPrefix: normalizePathPrefix(addPrefixEl.value),
+          testPathPrefix: normalizePathPrefix(addTestPrefixEl.value),
+        });
+      } catch (err) {
+        setMappingsStatus(err instanceof Error ? err.message : String(err), 'error');
+        return;
+      }
+      addPatternEl.value = '';
+      addEnvironmentEl.value = '';
+      addBranchEl.value = '';
+      addPrefixEl.value = '';
+      addTestPrefixEl.value = '';
+      await syncServerPatterns(settings, epoch);
+      await refreshCatalogs(stored, epoch);
+      if (epoch !== connectionEpoch) return;
+      setMappingsStatus(t('options_added', { pattern, project: label }), 'ok');
+    } finally {
+      addingToServer = false;
+      renderAddSite();
     }
-    addPatternEl.value = '';
-    addEnvironmentEl.value = '';
-    addBranchEl.value = '';
-    addPrefixEl.value = '';
-    addTestPrefixEl.value = '';
-    await syncServerPatterns(stored);
-    await refreshCatalogs(stored);
-    setMappingsStatus(t('options_added', { pattern, project: label }), 'ok');
   })();
 });
 
@@ -682,7 +767,8 @@ addLocallyBtn.addEventListener('click', () => {
 apiKeySaveBtn.addEventListener('click', () => {
   const typed = { instanceUrl: instanceUrlEl.value.trim(), apiKey: apiKeyEl.value.trim() };
   // Before any await, so the click still counts as the user gesture.
-  const permission = ensureInstanceHostPermission(typed.instanceUrl);
+  const permission = requestInstanceHostPermission(typed.instanceUrl);
+  const epoch = connectionEpoch;
   void (async () => {
     if (!typed.instanceUrl) {
       setStatus(t('common_enterInstanceUrl'), 'error');
@@ -696,29 +782,37 @@ apiKeySaveBtn.addEventListener('click', () => {
     const sameInstance = stored.instanceUrl === typed.instanceUrl;
     const settings: ConnectionSettings = {
       ...stored,
-      ...typed,
+      instanceUrl: typed.instanceUrl,
       ...(sameInstance ? {} : { serverMappings: [], serverProjects: [], serverSyncedAt: 0, connectedAs: '' }),
     };
-    const result = await testConnection(settings);
+    const result = await testConnection(settings, typed.apiKey);
     if (!result.ok) {
       setStatus(result.error, 'error');
       return;
     }
+    // Disconnected while the instance was tested: nothing is kept.
+    if (epoch !== connectionEpoch) return;
+    const kept = ++connectionEpoch;
+    await setInstanceApiKey(settings.instanceUrl, typed.apiKey);
+    if (kept !== connectionEpoch) return;
     stored = settings;
     await setConnectionSettings(settings);
-    await syncServerPatterns(settings);
+    if (!sameInstance) await forgetInstanceData();
+    await syncServerPatterns(settings, kept);
     try {
       projectOptions = await fetchProjects(settings);
     } catch {
       projectOptions = syncedProjectOptions();
     }
+    if (kept !== connectionEpoch) return;
     renderMappings();
-    const catalogs = await refreshCatalogs(stored);
+    const catalogs = await refreshCatalogs(stored, kept);
+    if (kept !== connectionEpoch) return;
     const parts = [tn('options_connected', projectOptions.length)];
     // The API key travels on every catalog fetch; over plain HTTP it travels in
     // the clear. Worth saying once, at the moment the choice is made — not a
     // reason to refuse a local instance on `http://localhost`.
-    if (/^http:\/\//i.test(settings.instanceUrl) && settings.apiKey) parts.push(t('options_plainHttp'));
+    if (/^http:\/\//i.test(settings.instanceUrl) && typed.apiKey) parts.push(t('options_plainHttp'));
     if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
     setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
   })();
@@ -726,10 +820,12 @@ apiKeySaveBtn.addEventListener('click', () => {
 
 /** Save keeps the lines of this browser, then fetches the catalogs of the projects they map. */
 saveBtn.addEventListener('click', () => {
+  const instanceUrl = stored.instanceUrl;
   // Before any await, so the click still counts as the user gesture.
-  const permission = ensureInstanceHostPermission(stored.instanceUrl);
+  const permission = requestInstanceHostPermission(instanceUrl);
+  const epoch = connectionEpoch;
   void (async () => {
-    if (!stored.instanceUrl.trim()) {
+    if (!instanceUrl.trim()) {
       setMappingsStatus(t('common_enterInstanceUrl'), 'error');
       return;
     }
@@ -743,21 +839,18 @@ saveBtn.addEventListener('click', () => {
     const valid = mappings.filter((m) => m.urlPattern.trim() && m.projectId != null);
     const incompleteCount = mappings.length - valid.length;
 
-    const settings: ConnectionSettings = {
-      ...(await getConnectionSettings()),
-      projectMappings: valid.map((m) => ({
-        urlPattern: m.urlPattern.trim(),
-        projectId: m.projectId!,
-        projectLabel: m.projectLabel,
-        ...(m.branch.trim() ? { branch: m.branch.trim() } : {}),
-        ...pathPrefixFields(m.pathPrefix, m.testPathPrefix),
-      })),
-    };
-    stored = settings;
-    await setConnectionSettings(settings);
-    await syncServerPatterns(settings);
+    const projectMappings = valid.map((m) => ({
+      urlPattern: m.urlPattern.trim(),
+      projectId: m.projectId!,
+      projectLabel: m.projectLabel,
+      ...(m.branch.trim() ? { branch: m.branch.trim() } : {}),
+      ...pathPrefixFields(m.pathPrefix, m.testPathPrefix),
+    }));
+    if (!(await writeConnection(epoch, instanceUrl, (current) => ({ ...current, projectMappings })))) return;
+    await syncServerPatterns(stored, epoch);
 
-    const catalogs = await refreshCatalogs(stored);
+    const catalogs = await refreshCatalogs(stored, epoch);
+    if (epoch !== connectionEpoch) return;
 
     const parts = [tn('options_saved', valid.length)];
     if (incompleteCount > 0) parts.push(tn('options_skipped', incompleteCount));
@@ -796,13 +889,16 @@ async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> 
 }
 
 disconnectBtn.addEventListener('click', () => {
+  // At once: a write any earlier action still has to make is dropped from here on.
+  connectionEpoch++;
+  pendingConnect?.abort();
   void (async () => {
     const previousUrl = stored.instanceUrl;
-    pendingConnect?.abort();
     await clearConnectionSettings();
+    await clearInstanceApiKey().catch(() => undefined);
     stored = await getConnectionSettings();
     serverSyncError = '';
-    await pruneCachedCatalogs([]);
+    await forgetInstanceData();
     await revokeInstanceHostPermission(previousUrl);
     instanceUrlEl.value = '';
     apiKeyEl.value = '';
@@ -905,7 +1001,7 @@ editorPairBtn.addEventListener('click', () => {
     return;
   }
   // Requested before anything is awaited: the permission prompt needs the live click.
-  const granted = chrome.permissions.request({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+  const granted = requestOrigins([editorOriginPattern(pairing)]);
   void (async () => {
     if (!(await granted)) {
       writeStatus(editorStatusEl, t('options_editorPermission'), 'error');
@@ -971,7 +1067,6 @@ async function keepDesktopPairing(url: string, token: string): Promise<void> {
 }
 
 function setDesktopPairing(active: boolean): void {
-  desktopPairBtn.disabled = active;
   desktopPairPanel.hidden = !active;
   if (!active) desktopCodeLine.replaceChildren();
 }
@@ -987,10 +1082,13 @@ desktopPairBtn.addEventListener('click', () => {
     setDesktopStatus(t('options_desktopNotLoopback'), 'error');
     return;
   }
-  const granted = chrome.permissions.request({ origins: [`${url}/*`] }).catch(() => false);
+  const granted = requestOrigins([`${url}/*`]);
+  // Disabled until this pairing ends, so a second click starts no second one.
+  desktopPairBtn.disabled = true;
   void (async () => {
     if (!(await granted)) {
       setDesktopStatus(t('options_desktopNeedsAccess'), 'error');
+      desktopPairBtn.disabled = false;
       return;
     }
     pendingDesktopPairing?.abort();
@@ -1028,6 +1126,7 @@ desktopPairBtn.addEventListener('click', () => {
     } finally {
       if (pendingDesktopPairing === controller) pendingDesktopPairing = null;
       setDesktopPairing(false);
+      desktopPairBtn.disabled = false;
     }
   })();
 });
@@ -1049,7 +1148,7 @@ document.getElementById('desktop-save')!.addEventListener('click', () => {
     return;
   }
   // Asked first, while the click still counts as a user gesture; the one loopback origin only.
-  const granted = chrome.permissions.request({ origins: [`${url}/*`] }).catch(() => false);
+  const granted = requestOrigins([`${url}/*`]);
   void (async () => {
     if (!(await granted)) {
       setDesktopStatus(t('options_desktopNeedsAccess'), 'error');

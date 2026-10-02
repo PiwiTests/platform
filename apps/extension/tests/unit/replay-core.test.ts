@@ -344,6 +344,44 @@ describe('createWaker', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(freshThrough).toBe(false);
   });
+
+  it('ends at the other answer when it comes first, and keeps a wake that comes after it', async () => {
+    // The person answered a hand-over, then clicked Next while the loop was still busy.
+    const waker = createWaker();
+    await expect(waker.until(Promise.resolve('done'))).resolves.toEqual({ woken: false, value: 'done' });
+    waker.wake();
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('keeps a wake that comes in the same moment as the other answer', async () => {
+    const waker = createWaker();
+    let answer!: (value: string) => void;
+    const answered = waker.until(new Promise<string>((resolve) => (answer = resolve)));
+    answer('done');
+    waker.wake();
+    await expect(answered).resolves.toEqual({ woken: false, value: 'done' });
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('ends at a wake that comes first', async () => {
+    const waker = createWaker();
+    const answered = waker.until(new Promise<string>(() => undefined));
+    waker.wake();
+    await expect(answered).resolves.toEqual({ woken: true });
+  });
+
+  it('lets a wait in progress through on a wake of a waiting loop, and keeps nothing when none waits', async () => {
+    // Pause and Continue: the loop reads them from the state, so a busy loop needs no wake from them.
+    const waker = createWaker();
+    const waiting = waker.wait();
+    waker.wakeWaiting();
+    await expect(waiting).resolves.toBeUndefined();
+    waker.wakeWaiting();
+    let through = false;
+    void waker.wait().then(() => (through = true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(through).toBe(false);
+  });
 });
 
 describe('evidenceLines', () => {

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import {
   BRITTLE_TESTS,
   CARD_TEST,
@@ -15,6 +15,7 @@ import {
 } from './coverage-fixtures.js';
 import { servePages } from './engine-bundle.js';
 import { readCatalog } from './i18n-stub.js';
+import { playwrightLocator } from './playwright-locator.js';
 import { clippedInShadows } from './shadow.js';
 
 /**
@@ -432,6 +433,71 @@ test.describe('coverage overlay on a page', () => {
     await injectCoverage(page, 'closed');
     await expect(page.locator(HOST)).not.toBeAttached();
   });
+
+  test('a locator suggested right after a page change counts what the page holds now', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await panel.getByRole('button', { name: /^Not tested \d+$/ }).click();
+    await expect(panel.locator('li.row', { hasText: 'button "Subscribe"' }).locator('code')).toHaveText(
+      "getByRole('button', { name: 'Subscribe' })",
+    );
+
+    // A second Subscribe button, then the list filtered before the rescan: its suggestion is checked again.
+    const shown = await page.evaluate(async () => {
+      const scans = () => (globalThis as unknown as { __piwiCoverage: { scans: number } }).__piwiCoverage.scans;
+      const before = scans();
+      const button = document.createElement('button');
+      button.textContent = 'Subscribe';
+      document.querySelector('footer')!.appendChild(button);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const list = document.querySelector('#piwi-coverage-host')!.shadowRoot!.querySelector('.panel')!;
+      const search = list.querySelector<HTMLInputElement>('input.search')!;
+      search.value = 'subscribe';
+      search.dispatchEvent(new Event('input'));
+      return {
+        rescanned: scans() !== before,
+        locators: [...list.querySelectorAll('li.row code')].map((code) => code.textContent!),
+      };
+    });
+    expect(shown.rescanned).toBe(false);
+    expect(shown.locators).toHaveLength(1);
+    expect(shown.locators[0]).not.toBe("getByRole('button', { name: 'Subscribe' })");
+    await expect(playwrightLocator(page, shown.locators[0]!)).toHaveCount(1);
+  });
+
+  test('closed before the index arrives, it does nothing with the late answer', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: null });
+    await openShop(page, '?nodialog');
+    await page.evaluate(() => {
+      const g = globalThis as Record<string, unknown>;
+      g.__piwiTestRefreshAnswer = new Promise((resolve) => (g.__piwiTestAnswer = resolve));
+    });
+    await injectCoverage(page, 'loading');
+    await injectCoverage(page, 'closed');
+    await expect(page.locator(HOST)).not.toBeAttached();
+
+    await page.evaluate(
+      (index) =>
+        (globalThis as unknown as { __piwiTestAnswer: (answer: unknown) => void }).__piwiTestAnswer({
+          ok: true,
+          refreshed: true,
+          index,
+        }),
+      shopIndex(),
+    );
+    await page.waitForTimeout(800);
+    // A change inside a web component, which an open overlay rescans for.
+    await page.evaluate(() =>
+      document
+        .querySelector('rating-stars')!
+        .shadowRoot!.querySelector('button')!
+        .setAttribute('aria-label', 'No star'),
+    );
+    await page.waitForTimeout(1500);
+    expect(await readCoverage(page)).toEqual({ status: 'closed' });
+  });
 });
 
 test.describe('coverage overlay states', () => {
@@ -515,7 +581,8 @@ test.describe('coverage overlay states', () => {
   });
 });
 
-test('scans a large page against a large index without freezing it', async ({ page, context }) => {
+/** A catalog page of 1,200 products, and an index of 600 tests using five locators each. */
+async function openBigShop(page: Page, context: BrowserContext): Promise<void> {
   const products = 1200;
   const tests = Array.from({ length: 600 }, (_, i) => ({
     title: `product ${i}`,
@@ -547,6 +614,10 @@ test('scans a large page against a large index without freezing it', async ({ pa
     },
   });
   await page.goto('https://big.test/big.html');
+}
+
+test('scans a large page against a large index without freezing it', async ({ page, context }) => {
+  await openBigShop(page, context);
   // Count animation frames while the scan runs: a scan in slices leaves the page painting.
   await page.evaluate(() => {
     const g = globalThis as Record<string, unknown>;
@@ -570,6 +641,46 @@ test('scans a large page against a large index without freezing it', async ({ pa
   expect(elapsed).toBeLessThan(20_000);
   const frames = await page.evaluate(() => (globalThis as unknown as Record<string, number>).__frames);
   expect(frames).toBeGreaterThan(3);
+});
+
+test('rescans a large page about as fast as it first scanned it, the panel open', async ({ page, context }) => {
+  await openBigShop(page, context);
+  await injectCoverage(page);
+  const first = (await readCoverage(page)).durationMs!;
+  await page.evaluate(() => document.querySelector('main')!.append(document.createElement('hr')));
+  await page.waitForFunction(
+    () => (globalThis as unknown as { __piwiCoverage: { scans: number } }).__piwiCoverage.scans >= 2,
+    undefined,
+    { timeout: 50_000 },
+  );
+  expect((await readCoverage(page)).durationMs!).toBeLessThan(first * 2);
+});
+
+test('a page change in the middle of a scan is in what that scan finds', async ({ page, context }) => {
+  await openBigShop(page, context);
+  await injectCoverage(page);
+  expect((await readCoverage(page)).scans).toBe(1);
+  await page.evaluate(() => document.querySelector('main')!.append(document.createElement('hr')));
+  // While the rescan runs (its progress bar is up), the link one test looks for appears.
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('#piwi-coverage-host')!.shadowRoot!.querySelector('.panel')!;
+    if (!panel.querySelector('.progress')) return false;
+    const link = document.createElement('a');
+    link.href = '/missing-7';
+    link.textContent = 'Missing page 7';
+    document.querySelector('main')!.prepend(link);
+    return true;
+  });
+  await page.waitForFunction(
+    () => (globalThis as unknown as { __piwiCoverage: { scans: number } }).__piwiCoverage.scans >= 2,
+  );
+  const coverage = await readCoverage(page);
+  expect(coverage.scans).toBe(2);
+  expect(coverage.covered.find((c) => c.description === 'link "Missing page 7"')).toMatchObject({
+    kind: 'operated',
+    tests: ['product 7'],
+  });
+  expect(coverage.unmatched).toBe(599);
 });
 
 test.describe('coverage overlay limited to one element', () => {
@@ -808,6 +919,53 @@ test.describe('coverage overlay: locators at risk', () => {
     await expect(panel.locator('.meter-label')).toContainText('6 tested elements reached through brittle locators');
     await panel.getByLabel('Brittle').uncheck();
     await expect(page.locator(`${HOST} .box.brittle`)).toHaveCount(0);
+  });
+
+  test('opens without a long freeze on a page with hundreds of brittle locators', async ({ page, context }) => {
+    const products = 400;
+    const tests = Array.from({ length: products }, (_, i) => ({
+      title: `adds product ${i}`,
+      suite: ['legacy'],
+      file: 'tests/legacy.spec.ts',
+      status: 'passed' as const,
+      uses: [[`locator('#product-${i} > div > button.primary')`, ['click'], i + 1]] as Array<
+        [string, string[], number]
+      >,
+    }));
+    const cards = Array.from(
+      { length: products },
+      (_, i) => `<article class="card" id="product-${i}"><h3>Product ${i}</h3>
+        <div><button class="primary">Add to cart</button><button>Details</button></div></article>`,
+    ).join('');
+    await servePages(page, 'https://brittle.test', {
+      'brittle.html': `<!doctype html><html><body><main>${cards}</main></body></html>`,
+    });
+    await stubCoverageChrome(context, {
+      cached: shopIndex(tests),
+      connection: {
+        instanceUrl: INSTANCE_URL,
+        apiKey: '',
+        projectMappings: [{ urlPattern: 'https://brittle.test/**', projectId: 1, projectLabel: 'Brittle' }],
+      },
+    });
+    await page.goto('https://brittle.test/brittle.html');
+    await page.evaluate(() => {
+      const g = globalThis as unknown as { __longTasks: number[] };
+      g.__longTasks = [];
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) g.__longTasks.push(entry.duration);
+      }).observe({ type: 'longtask', buffered: true });
+    });
+    await injectCoverage(page);
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const longest = await page.evaluate(() =>
+      Math.max(0, ...(globalThis as unknown as { __longTasks: number[] }).__longTasks),
+    );
+    expect(longest).toBeLessThan(1500);
+    // The At risk tab still offers what it offers for each.
+    const coverage = await readCoverage(page);
+    expect(coverage.brittle).toHaveLength(products);
+    expect(coverage.brittle[0]).toMatchObject({ count: 1, replacement: 'add-test-id' });
   });
 
   test('the At risk tab copies the replacement and the edit to make', async ({ page, context }) => {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
 import type { Page } from '@playwright/test';
+import { openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -192,6 +193,31 @@ test.describe('multi-pick.js', () => {
 
     await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-multi-pick-message-host'))).toBe(false);
+  });
+
+  test('counts the position among the rows Playwright finds, a hidden copy aside', async ({ context }) => {
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <ul>
+        <li style="display:none">Loading…</li>
+        <li id="row1">Loading…</li>
+        <li id="row2">Loading…</li>
+      </ul>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    for (const row of ['#row1', '#row2']) {
+      await waitForFreshPickBanner(page);
+      await page.hover(row);
+      await page.click(row);
+    }
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+    await page.keyboard.press('Enter');
+
+    const locators = page.locator('#piwi-multi-pick-panel-host .row code');
+    await expect(locators).toHaveText([`getByRole('listitem').nth(0)`, `getByRole('listitem').nth(1)`]);
+    await expect(page.getByRole('listitem').nth(0)).toHaveAttribute('id', 'row1');
+    await expect(page.getByRole('listitem').nth(1)).toHaveAttribute('id', 'row2');
   });
 
   test('re-injecting while a session is already in progress does not start a second one', async ({ context }) => {

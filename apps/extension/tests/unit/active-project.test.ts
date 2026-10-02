@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  clearActiveProjectOverrides,
   getActiveProjectOverride,
   setActiveProjectOverride,
   resolveActiveProject,
@@ -28,19 +29,59 @@ beforeEach(() => {
 });
 
 describe('active project override (chrome.storage.session)', () => {
+  const shopPage = 'https://staging.shop.test/cart';
+
   it('starts unset', async () => {
-    expect(await getActiveProjectOverride()).toBeNull();
+    expect(await getActiveProjectOverride(shopPage)).toBeNull();
   });
 
   it('round-trips a set override', async () => {
-    await setActiveProjectOverride({ projectId: 5, projectLabel: 'Shop' });
-    expect(await getActiveProjectOverride()).toEqual({ projectId: 5, projectLabel: 'Shop' });
+    await setActiveProjectOverride(shopPage, { projectId: 5, projectLabel: 'Shop' });
+    expect(await getActiveProjectOverride(shopPage)).toEqual({ projectId: 5, projectLabel: 'Shop' });
   });
 
   it('clearing with null removes it', async () => {
-    await setActiveProjectOverride({ projectId: 5, projectLabel: 'Shop' });
-    await setActiveProjectOverride(null);
-    expect(await getActiveProjectOverride()).toBeNull();
+    await setActiveProjectOverride(shopPage, { projectId: 5, projectLabel: 'Shop' });
+    await setActiveProjectOverride(shopPage, null);
+    expect(await getActiveProjectOverride(shopPage)).toBeNull();
+  });
+
+  it('applies to the site it was chosen on, every page of it, and no other', async () => {
+    await setActiveProjectOverride(shopPage, { projectId: 5, projectLabel: 'Shop' });
+    expect(await getActiveProjectOverride('https://staging.shop.test/account?x=1')).toEqual({
+      projectId: 5,
+      projectLabel: 'Shop',
+    });
+    expect(await getActiveProjectOverride('https://other.test/')).toBeNull();
+    expect(await getActiveProjectOverride('http://staging.shop.test/cart')).toBeNull();
+    await setActiveProjectOverride('https://other.test/', { projectId: 7, projectLabel: 'Other' });
+    expect(await getActiveProjectOverride(shopPage)).toEqual({ projectId: 5, projectLabel: 'Shop' });
+    await setActiveProjectOverride(shopPage, null);
+    expect(await getActiveProjectOverride('https://other.test/a')).toEqual({ projectId: 7, projectLabel: 'Other' });
+  });
+
+  it('a content script reads the choice for its own page', async () => {
+    vi.stubGlobal('location', new URL(shopPage));
+    try {
+      await setActiveProjectOverride(shopPage, { projectId: 5, projectLabel: 'Shop' });
+      expect(await getActiveProjectOverride()).toEqual({ projectId: 5, projectLabel: 'Shop' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a page with no origin has no choice', async () => {
+    await setActiveProjectOverride('about:blank', { projectId: 5, projectLabel: 'Shop' });
+    expect(await getActiveProjectOverride('about:blank')).toBeNull();
+    expect(await getActiveProjectOverride('')).toBeNull();
+  });
+
+  it('clearing drops every site’s choice', async () => {
+    await setActiveProjectOverride(shopPage, { projectId: 5, projectLabel: 'Shop' });
+    await setActiveProjectOverride('https://other.test/', { projectId: 7, projectLabel: 'Other' });
+    await clearActiveProjectOverrides();
+    expect(await getActiveProjectOverride(shopPage)).toBeNull();
+    expect(await getActiveProjectOverride('https://other.test/')).toBeNull();
   });
 });
 
@@ -49,7 +90,6 @@ const settings = (
   serverMappings: ConnectionSettings['serverMappings'] = [],
 ): ConnectionSettings => ({
   instanceUrl: 'https://piwi.test',
-  apiKey: '',
   projectMappings: mappings,
   serverMappings,
   serverProjects: [],

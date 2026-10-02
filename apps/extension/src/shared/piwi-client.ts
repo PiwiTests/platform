@@ -1,7 +1,7 @@
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import type { ConnectionSettings, ServerPatternsAnswer } from './connection-settings';
+import { getInstanceApiKey, type ConnectionSettings, type ServerPatternsAnswer } from './connection-settings.js';
 import type { ClientInfo } from './client-info.js';
 import type { ConnectPoll } from './connect-flow.js';
 import type { DesktopSettings } from './desktop-settings.js';
@@ -19,7 +19,10 @@ import { t } from './i18n.js';
  * the developer confirmed its preview) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
- * connected mode is opt-in and clearly separated).
+ * connected mode is opt-in and clearly separated). The key is read here from
+ * the secret area (`getInstanceApiKey`), and only for the origin it was given
+ * for; no request follows a redirect, so neither it nor the desktop app's token
+ * goes anywhere but the address asked.
  *
  * These requests need a host permission for the instance's origin: the
  * dashboard API sends no CORS headers, and `X-API-Key` makes them non-simple
@@ -75,8 +78,15 @@ function listItems<T>(body: unknown): T[] {
   return Array.isArray(items) ? (items as T[]) : [];
 }
 
-function authHeaders(settings: ConnectionSettings): HeadersInit {
-  return settings.apiKey.trim() ? { 'X-API-Key': settings.apiKey.trim() } : {};
+/** The key header for the instance `settings` names: the key given for that origin, or `apiKey` when one is passed. */
+async function authHeaders(settings: ConnectionSettings, apiKey?: string): Promise<Record<string, string>> {
+  const key = (apiKey ?? (await getInstanceApiKey(settings.instanceUrl))).trim();
+  return key ? { 'X-API-Key': key } : {};
+}
+
+/** `fetch` that refuses a redirect rather than following it with the request's headers. */
+function request(url: string, init: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, redirect: 'error' });
 }
 
 /**
@@ -97,12 +107,16 @@ function timeout(): AbortSignal {
 
 export type ConnectionCheckResult = { ok: true } | { ok: false; error: string };
 
-/** Hits `/api/projects/menu` — cheap, always available, and exercises auth the same way the rest of the client does. */
-export async function testConnection(settings: ConnectionSettings): Promise<ConnectionCheckResult> {
+/**
+ * Hits `/api/projects/menu` — cheap, always available, and exercises auth the
+ * same way the rest of the client does. `apiKey` is a key typed and not kept
+ * yet; without it, the kept one is sent.
+ */
+export async function testConnection(settings: ConnectionSettings, apiKey?: string): Promise<ConnectionCheckResult> {
   if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_enterInstanceUrl') };
   try {
-    const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
-      headers: authHeaders(settings),
+    const res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
+      headers: await authHeaders(settings, apiKey),
       signal: timeout(),
     });
     if (res.status === 401 || res.status === 403) return { ok: false, error: t('common_apiKeyRejected') };
@@ -115,8 +129,8 @@ export async function testConnection(settings: ConnectionSettings): Promise<Conn
 
 export async function fetchProjects(settings: ConnectionSettings): Promise<ProjectOption[]> {
   if (!settings.instanceUrl.trim()) return [];
-  const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
-    headers: authHeaders(settings),
+  const res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
+    headers: await authHeaders(settings),
     signal: timeout(),
   });
   if (!res.ok) throw new Error(t('common_projectsFailed', { status: res.status }));
@@ -132,8 +146,8 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
  */
 export async function fetchCatalog(settings: ConnectionSettings, projectId: number): Promise<TestFunctionEntry[]> {
   if (!settings.instanceUrl.trim()) return [];
-  const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/test-functions`, {
-    headers: authHeaders(settings),
+  const res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/test-functions`, {
+    headers: await authHeaders(settings),
     signal: timeout(),
   });
   if (!res.ok) throw new Error(t('common_catalogFailed', { status: res.status }));
@@ -162,10 +176,13 @@ export async function fetchLocatorIndex(
 ): Promise<LocatorIndex> {
   if (!settings.instanceUrl.trim()) throw new Error(t('common_notConnected'));
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
-  const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`, {
-    headers: authHeaders(settings),
-    signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
-  });
+  const res = await request(
+    `${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`,
+    {
+      headers: await authHeaders(settings),
+      signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
+    },
+  );
   if (res.status === 401 || res.status === 403) throw new Error(t('common_projectKeyRejected'));
   if (res.status === 404) throw new Error(t('common_noLocatorIndex'));
   if (!res.ok) throw new Error(t('common_locatorIndexStatus', { status: res.status }));
@@ -196,7 +213,7 @@ export interface ConnectStart {
 }
 
 async function postJson(url: string, body: unknown): Promise<Response> {
-  return fetch(url, {
+  return request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -268,8 +285,8 @@ export async function fetchServerPatterns(settings: ConnectionSettings): Promise
   if (!settings.instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
   let res: Response;
   try {
-    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/extension/url-patterns`, {
-      headers: authHeaders(settings),
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/extension/url-patterns`, {
+      headers: await authHeaders(settings),
       signal: timeout(),
     });
   } catch {
@@ -300,9 +317,9 @@ export async function addServerPattern(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/url-patterns`, {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/url-patterns`, {
       method: 'POST',
-      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      headers: { ...(await authHeaders(settings)), 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
       signal: timeout(),
     });
@@ -327,7 +344,7 @@ export async function postToEditor(
   payload: EditorSendPayload,
 ): Promise<{ ok: true; file: string | null } | { ok: false; error: string }> {
   try {
-    const res = await fetch(pairing.url, {
+    const res = await request(pairing.url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${pairing.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -401,9 +418,9 @@ export async function sendBugReport(
   }
   let res: Response;
   try {
-    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
       method: 'POST',
-      headers: authHeaders(settings),
+      headers: await authHeaders(settings),
       body: form,
       signal: AbortSignal.timeout(60_000),
     });
@@ -440,10 +457,13 @@ export interface BugReportIntake {
 export async function fetchBugReportIntake(settings: ConnectionSettings, projectId: number): Promise<BugReportIntake> {
   const none: BugReportIntake = { tracker: null, projectKey: null, canCreate: false, fileEvery: false, stepShots: 0 };
   try {
-    const res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports/intake`, {
-      headers: authHeaders(settings),
-      signal: timeout(),
-    });
+    const res = await request(
+      `${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports/intake`,
+      {
+        headers: await authHeaders(settings),
+        signal: timeout(),
+      },
+    );
     if (!res.ok) return none;
     const body = (await res.json()) as Partial<BugReportIntake>;
     return {
@@ -470,8 +490,8 @@ export interface BugReportSummary {
 export async function fetchBugReports(settings: ConnectionSettings, projectId: number): Promise<BugReportSummary[]> {
   let res: Response;
   try {
-    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
-      headers: authHeaders(settings),
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/bug-reports`, {
+      headers: await authHeaders(settings),
       signal: timeout(),
     });
   } catch {
@@ -487,8 +507,8 @@ export async function fetchBugReports(settings: ConnectionSettings, projectId: n
 export async function fetchBugReportSteps(settings: ConnectionSettings, id: number): Promise<unknown> {
   let res: Response;
   try {
-    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
-      headers: authHeaders(settings),
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
+      headers: await authHeaders(settings),
       signal: timeout(),
     });
   } catch {
@@ -516,15 +536,18 @@ export async function fetchBugReportStepShot(
 } | null> {
   const base = normalizeBaseUrl(settings.instanceUrl);
   try {
-    const detail = await fetch(`${base}/api/bug-reports/${id}`, { headers: authHeaders(settings), signal: timeout() });
+    const detail = await request(`${base}/api/bug-reports/${id}`, {
+      headers: await authHeaders(settings),
+      signal: timeout(),
+    });
     if (!detail.ok) return null;
     const body = (await detail.json()) as {
       evidence?: { stepShots?: Array<{ step?: unknown; box?: unknown; viewport?: unknown }> };
     };
     const shot = body.evidence?.stepShots?.find((s) => s.step === step);
     if (!shot) return null;
-    const image = await fetch(`${base}/api/bug-reports/${id}/step-shots/${step}`, {
-      headers: authHeaders(settings),
+    const image = await request(`${base}/api/bug-reports/${id}/step-shots/${step}`, {
+      headers: await authHeaders(settings),
       signal: timeout(),
     });
     if (!image.ok || image.headers.get('content-type') !== 'image/jpeg') return null;
@@ -558,9 +581,9 @@ export async function sendReproduction(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}/reproductions`, {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}/reproductions`, {
       method: 'POST',
-      headers: { ...authHeaders(settings), 'Content-Type': 'application/json' },
+      headers: { ...(await authHeaders(settings)), 'Content-Type': 'application/json' },
       body: JSON.stringify(send),
       signal: timeout(),
     });
@@ -586,7 +609,7 @@ function desktopRefusal(res: Response): string {
 /** Checks the pairing: `GET /api/desktop/reporter-config` answers only with the app's token. */
 export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionCheckResult> {
   try {
-    const res = await fetch(`${desktop.url}/api/desktop/reporter-config`, {
+    const res = await request(`${desktop.url}/api/desktop/reporter-config`, {
       headers: desktopHeaders(desktop),
       signal: timeout(),
     });
@@ -645,7 +668,7 @@ export async function startDesktopPairing(url: string, client: ClientInfo): Prom
  * unexpected answer, which the caller retries.
  */
 export async function pollDesktopPairing(url: string, pairing: DesktopPairingStart): Promise<ConnectPoll> {
-  const res = await fetch(`${url}/api/desktop/picker-pairings/${pairing.id}`, {
+  const res = await request(`${url}/api/desktop/picker-pairings/${pairing.id}`, {
     headers: { 'x-pairing-secret': pairing.secret },
     signal: timeout(),
   });
@@ -684,7 +707,7 @@ export async function sendReproRequest(
 ): Promise<{ id: string; windowOpen: boolean }> {
   let res: Response;
   try {
-    res = await fetch(`${desktop.url}/api/desktop/repro-requests`, {
+    res = await request(`${desktop.url}/api/desktop/repro-requests`, {
       method: 'POST',
       headers: { ...desktopHeaders(desktop), 'Content-Type': 'application/json' },
       body: JSON.stringify(send),
@@ -714,7 +737,7 @@ export interface ReproRequestState {
 export async function fetchReproRequest(desktop: DesktopSettings, id: string): Promise<ReproRequestState> {
   let res: Response;
   try {
-    res = await fetch(`${desktop.url}/api/desktop/repro-requests/${encodeURIComponent(id)}`, {
+    res = await request(`${desktop.url}/api/desktop/repro-requests/${encodeURIComponent(id)}`, {
       headers: desktopHeaders(desktop),
       signal: timeout(),
     });

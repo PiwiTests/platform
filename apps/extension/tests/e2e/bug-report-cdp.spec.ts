@@ -27,7 +27,13 @@ const block = (id: string, color: string) =>
 const LONG = `<!doctype html><html><body style="margin:0">${block('top', '#00f')}
   <div style="height:2000px"></div>${block('far', '#f00')}<div style="height:2000px"></div></body></html>`;
 
-test.use({ pages: { '/first': FIRST, '/second': SECOND, '/long': LONG } });
+// Another site the flow goes through, such as a sign-in page: served on `localhost`, an origin the recording was not granted.
+const SIGN_IN = `<!doctype html><html><head><script>console.error('sign-in page failed')</script></head><body>
+  <img src="/missing-logo.png" alt="">
+  <script>fetch('/api/fail-session')</script>
+</body></html>`;
+
+test.use({ pages: { '/first': FIRST, '/second': SECOND, '/long': LONG, '/sign-in': SIGN_IN } });
 
 interface Evidence {
   console: Array<{ level: string; source: string; message: string; page: string }>;
@@ -100,6 +106,101 @@ test('collects the console, failed requests and screenshots through the debuggin
 
   await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
   expect(await debuggerAttached(worker, tabId)).toBe(false);
+});
+
+test('keeps the recorded origin only: nothing of another site the tab goes through, nor of an isolated world', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/first`);
+  const tabId = await tabIdOf(worker, `${site}/first`);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  const cdp = () =>
+    worker.evaluate(
+      async () => (await chrome.storage.session.get('piwiBugCdpEvidence')).piwiBugCdpEvidence as Evidence,
+    );
+  await expect.poll(async () => (await cdp())?.debugging).toEqual({ state: 'on', reason: null });
+
+  // A script of another world on the recorded page, as another extension's content script runs.
+  const session = await context.newCDPSession(page);
+  const { frameTree } = (await session.send('Page.getFrameTree')) as { frameTree: { frame: { id: string } } };
+  const { executionContextId } = await session.send('Page.createIsolatedWorld', {
+    frameId: frameTree.frame.id,
+    worldName: 'another extension',
+  });
+  await session.send('Runtime.evaluate', {
+    expression: "console.error('from an isolated world')",
+    contextId: executionContextId,
+  });
+  await session.detach();
+
+  // Through another site and back, as a sign-in does.
+  const signIn = page.waitForResponse('**/api/fail-session');
+  await page.goto(`${site.replace('127.0.0.1', 'localhost')}/sign-in`);
+  await signIn;
+  await page.goto(`${site}/second`);
+  await page.locator('#load').click();
+  await expect
+    .poll(async () => (await cdp()).requests.map((r) => `${r.method} ${r.url} ${r.status}`).sort())
+    .toEqual(['GET /api/fail?id=%3Credacted%3E 500', 'GET /missing.js 404', 'GET /missing.png 404']);
+  const evidence = await cdp();
+  expect(evidence.console.map((c) => `${c.page} ${c.message}`)).toEqual(['/second boot failed']);
+  await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
+});
+
+test('the popup’s Finish bug report finishes as the page’s Finish does, with its screenshot and outline', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/first`);
+  const tabId = await tabIdOf(worker, `${site}/first`);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+
+  // The popup, opened over the recorded tab.
+  const popup = await context.newPage();
+  await popup.addInitScript(
+    (tab) => {
+      chrome.tabs.query = (async () => [tab]) as unknown as typeof chrome.tabs.query;
+    },
+    { id: tabId, url: `${site}/first`, active: true },
+  );
+  await popup.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html`);
+  await expect(popup.locator('#record-label')).toContainText('Finish bug report');
+  await popup.locator('#record').click();
+
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
+  const stored = () =>
+    worker.evaluate(async () => {
+      const all: Record<string, any> = await chrome.storage.session.get([
+        'piwiBugScreenshots',
+        'piwiBugEvidence',
+        'piwiRecording',
+      ]);
+      return {
+        moments: ((all.piwiBugScreenshots ?? []) as Array<{ moment: string }>).map((s) => s.moment),
+        outline: (all.piwiBugEvidence?.outline ?? null) as string | null,
+        active: all.piwiRecording?.active as boolean,
+      };
+    });
+  await expect.poll(stored).toMatchObject({ moments: ['finish'], active: false });
+  expect((await stored()).outline).toContain('- link "Next"');
 });
 
 test('keeps a screenshot of the page as each step began, with its element, in the .piwibug', async ({

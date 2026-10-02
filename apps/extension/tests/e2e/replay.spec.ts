@@ -140,11 +140,12 @@ const REPORT: PiwiSteps = {
 function running(
   stepMode = false,
   startPage: { recorded: string; actual: string } | null = null,
+  steps: PiwiSteps = REPORT,
 ): Record<string, unknown> {
   return {
     piwiReplay: {
       id: 'r1',
-      steps: REPORT,
+      steps,
       origin: ORIGIN,
       position: 0,
       results: [],
@@ -331,6 +332,25 @@ test.describe('replay-panel.js', () => {
     expect(await page.evaluate(() => JSON.parse(window.name).session.piwiReplay.finished)).toBe(true);
   });
 
+  test('its panel takes clicks above a modal dialog the page opened, and plays the step inside it', async ({
+    context,
+  }) => {
+    const modalLogin = `<!doctype html><html><body><dialog id="login">
+      <input id="username" data-testid="username-field" aria-label="Username" />
+      <button data-testid="login-submit">Log in</button>
+    </dialog><script>document.getElementById('login').showModal();</script></body></html>`;
+    await context.route(`${ORIGIN}/**`, (route) => route.fulfill({ contentType: 'text/html', body: modalLogin }));
+    await stubChrome(context, running(true));
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    await expect.poll(async () => (await replayState(page)).results.length).toBe(1);
+    // A real click, which a panel left under the dialog does not take.
+    await page.locator('#piwi-replay-hud-host').getByRole('button', { name: 'Next step' }).click({ timeout: 5000 });
+    await expect(page.getByTestId('username-field')).toHaveValue('alice');
+  });
+
   test('a Next from the Piwi panel in DevTools plays the step waiting for it', async ({ context }) => {
     await routePages(context, 'buggy');
     await stubChrome(context, running(true));
@@ -497,6 +517,167 @@ test.describe('replay-panel.js', () => {
     expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
     const state = await replayState(page);
     expect(state.results[3]).toEqual({ status: 'skipped', detail: 'Skipped.' });
+  });
+
+  /** Opens the login page, then a page that answers 204 and leaves the tab where it is. */
+  const EXPORT: PiwiSteps = {
+    ...REPORT,
+    title: 'Export',
+    steps: [
+      REPORT.steps[0]!,
+      { action: 'goto', target: null, value: '/export', redacted: false, pageUrl: '/export', timestamp: 1 },
+      {
+        action: 'assert',
+        target: target('login-submit', 'button', 'Log in'),
+        value: null,
+        redacted: false,
+        pageUrl: '/login',
+        timestamp: 2,
+        assertion: { matcher: 'toBeVisible', expected: null, actual: null, negated: false, note: null },
+      },
+    ],
+  };
+
+  async function routeExport(context: BrowserContext): Promise<void> {
+    await context.route(`${ORIGIN}/**`, async (route) => {
+      if (new URL(route.request().url()).pathname === '/export') await route.fulfill({ status: 204 });
+      else await route.fulfill({ contentType: 'text/html', body: LOGIN });
+    });
+  }
+
+  test('a goto that leaves the tab on its page goes to the person, and the replay goes on once they skip it', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routeExport(context);
+    await stubChrome(context, running(false, null, EXPORT));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText(
+      'Step 2 could not be played here. This step happened on /export, and the tab is on /login.',
+      { timeout: 25_000 },
+    );
+    await hud.getByRole('button', { name: 'Skip this step' }).click();
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 20_000 }).toBe('done');
+    expect((await replayState(page)).results.map((r) => r.status)).toEqual(['done', 'skipped', 'passed']);
+  });
+
+  test('a Stop while a goto waits for a page that never comes ends the replay there', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeExport(context);
+    await stubChrome(context, running(false, null, EXPORT));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    await expect.poll(async () => (await replayState(page)).results.length, { timeout: 20_000 }).toBe(2);
+    await page.locator('#piwi-replay-hud-host').getByRole('button', { name: 'Stop' }).click();
+    await expect
+      .poll(() => page.evaluate(() => (globalThis as any).__piwiReplayVerdict ?? null), { timeout: 5_000 })
+      .toEqual({ kind: 'stopped', step: 1 });
+    expect((await replayState(page)).results.map((r) => r.status)).toEqual(['done']);
+  });
+
+  test('a Next clicked just after the person did a step plays the step after it', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'broken');
+    await stubChrome(context, running(true));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    const next = hud.getByRole('button', { name: 'Next step' });
+    // The first step opens the login page again, where the replay goes on.
+    await expect(hud).toContainText('step 2 of 5', { timeout: 20_000 });
+    await next.click();
+    await expect(hud).toContainText('step 3 of 5');
+    await next.click();
+    await page.waitForURL('**/dashboard');
+    await expect(hud).toContainText('Step 4 could not be played here.', { timeout: 20_000 });
+    // The replay is still busy with what follows the step when Next comes.
+    await page.evaluate(() => {
+      const root = document.getElementById('piwi-replay-hud-host')!.shadowRoot!;
+      const named = (name: string) => [...root.querySelectorAll('button')].find((b) => b.textContent === name)!;
+      named('I did it, continue').click();
+      setTimeout(() => named('Next step').click(), 30);
+    });
+    expect(await verdict(page)).toMatchObject({ kind: 'reproduced', step: 4 });
+  });
+
+  test('a Pause and a Continue while a step waits for its element leave the step waiting for Next', async ({
+    context,
+  }) => {
+    // The coupon button shows a while after the cart.
+    const late = `<!doctype html><html><body><output id="total" data-testid="cart-total">Total: 40</output><script>
+      setTimeout(() => {
+        const b = document.createElement('button');
+        b.dataset.testid = 'add-to-cart';
+        b.textContent = 'Apply coupon';
+        b.onclick = () => (document.getElementById('total').textContent = 'Total: 42');
+        document.body.prepend(b);
+      }, 4000);
+    </script></body></html>`;
+    await context.route(`${ORIGIN}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      await route.fulfill({ contentType: 'text/html', body: url.pathname === '/dashboard' ? late : LOGIN });
+    });
+    await openShadowRoots(context);
+    await stubChrome(context, running(true));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    const next = hud.getByRole('button', { name: 'Next step' });
+    const played = async () => (await replayState(page)).results.length;
+    // The first step opens the login page again, where the replay goes on.
+    await expect(hud).toContainText('step 2 of 5', { timeout: 20_000 });
+    await next.click();
+    await expect(hud).toContainText('step 3 of 5');
+    await next.click();
+    await page.waitForURL('**/dashboard');
+    await expect.poll(played).toBe(3);
+    await page.waitForTimeout(1000);
+    await expect(page.getByTestId('add-to-cart')).toHaveCount(0);
+    await hud.getByRole('button', { name: 'Pause' }).click();
+    await hud.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByTestId('add-to-cart')).toBeAttached({ timeout: 10_000 });
+    await page.waitForTimeout(1500);
+    expect(await played()).toBe(3);
+    await expect(page.getByTestId('cart-total')).toHaveText('Total: 40');
+    await next.click();
+    await expect(page.getByTestId('cart-total')).toHaveText('Total: 42');
+  });
+
+  test('looks for a handed-over step’s elements with one locator engine each time', async ({ context }) => {
+    // Every scan of the whole page, which each new engine makes once.
+    await context.addInitScript(() => {
+      const all = Document.prototype.querySelectorAll;
+      (globalThis as any).__piwiPageScans = 0;
+      Document.prototype.querySelectorAll = function (this: Document, selectors: string) {
+        if (selectors === '*') (globalThis as any).__piwiPageScans++;
+        return all.call(this, selectors);
+      } as typeof all;
+    });
+    await openShadowRoots(context);
+    await routePages(context, 'broken');
+    const alternatives = [
+      { locator: "getByTestId('add-to-cart')", method: 'getByTestId', score: 100 },
+      { locator: "getByRole('button', { name: 'Apply coupon' })", method: 'getByRole', score: 90 },
+      { locator: "getByText('Apply coupon')", method: 'getByText', score: 80 },
+    ];
+    const steps = REPORT.steps.map((s, i) => (i === 3 ? { ...s, target: { ...s.target!, alternatives } } : s));
+    await stubChrome(context, running(false, null, { ...REPORT, steps }));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud.locator('.locs .piwi-loc')).toHaveCount(3, { timeout: 20_000 });
+    const scans = () => page.evaluate(() => (globalThis as any).__piwiPageScans as number);
+    const before = await scans();
+    await page.waitForTimeout(2000);
+    // About five looks, each scanning the page once or twice whatever the number of locators.
+    expect((await scans()) - before).toBeLessThanOrEqual(14);
   });
 });
 

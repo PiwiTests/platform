@@ -20,6 +20,7 @@ import {
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { fetchCatalog, fetchLocatorIndex, postToEditor } from '../shared/piwi-client.js';
 import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
+import { moveLegacySecrets } from '../shared/legacy-secrets.js';
 import type { SendToEditorResult } from '../shared/editor-send.js';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
@@ -87,6 +88,9 @@ let i18nReady = initI18n();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && LANGUAGE_KEY in changes) i18nReady = initI18n();
 });
+
+// A secret an older version kept where content scripts can read it moves to the secret area as the worker starts.
+void moveLegacySecrets();
 
 // An update ships new texts: the stored copy of the chosen catalog is read again.
 chrome.runtime.onInstalled.addListener(() => {
@@ -249,7 +253,7 @@ async function handleStartRecording(
     }
     // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the report
     // starts in. The page's script above stays registered for the other tabs, and takes over if this fails.
-    if (mode === 'bug') await startBugDebugger(tabId);
+    if (mode === 'bug') await startBugDebugger(tabId, originPattern);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['record-panel.js'] });
     await i18nReady;
     await chrome.action.setBadgeText({ text: t(mode === 'bug' ? 'badge_bug' : 'badge_recording') });

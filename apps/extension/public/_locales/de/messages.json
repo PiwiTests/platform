@@ -1249,6 +1249,22 @@
   "lint_allGood": {
     "message": "Jeder Button, jeder Link und jedes Feld hier hat eine Test-ID, einen Namen oder einen festen Platz auf der Seite."
   },
+  "lint_checking": {
+    "message": "Suche nach schwer ansteuerbaren Elementen…"
+  },
+  "lint_truncated": {
+    "message": "Geprüft wurden die ersten $checked$ der $total$ Buttons, Links und Felder dieser Seite.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "800"
+      },
+      "total": {
+        "content": "$2",
+        "example": "1.200"
+      }
+    }
+  },
   "lint_copyChecklist": {
     "message": "Als Markdown-Checkliste kopieren"
   },
@@ -1959,6 +1975,9 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotNotKept": {
+    "message": "Der Screenshot war zu groß, um ihn im Speicher dieses Browsers aufzubewahren."
   },
   "bug_stepShows": {
     "message": "zeigt „$text$“",
@@ -2802,6 +2821,19 @@
       "element": {
         "content": "$1",
         "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_reasonDragApart": {
+    "message": "Das Ziehen braucht $element$ und $target$ gleichzeitig auf dem Bildschirm, und beide passen nicht zusammen darauf.",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "div \"Card\""
+      },
+      "target": {
+        "content": "$2",
+        "example": "div \"Done\""
       }
     }
   },

@@ -20,7 +20,7 @@ import { derivePattern, type PatternResult } from './multi-pick-derive.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
-import { installDescribeHook } from './verified-locators.js';
+import { createPageEngine, installDescribeHook } from './verified-locators.js';
 import { attachPanelShadow } from './panel-root.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -369,7 +369,11 @@ async function runMultiPick(): Promise<void> {
       picked.push(el);
     }
 
-    const result = derivePattern(picked, ROLE_MAPS);
+    const engine = createPageEngine(document);
+    const result = derivePattern(picked, ROLE_MAPS, {
+      elements: engine.elements(),
+      isHidden: (el) => engine.model.isHiddenForAria(el),
+    });
     if (result.rows.length === 0) {
       await showMessage(t('multipick_noPattern'), toolEpoch);
       return;

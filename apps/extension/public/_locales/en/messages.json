@@ -1533,6 +1533,24 @@
     "message": "Every button, link and field here has a test id, a name, or a stable place in the page.",
     "description": "Lint overlay: shown under the title when nothing was found."
   },
+  "lint_checking": {
+    "message": "Looking for elements hard to target…",
+    "description": "Lint overlay: panel title while the page is checked, before the findings are shown."
+  },
+  "lint_truncated": {
+    "message": "Checked the first $checked$ of the $total$ buttons, links and fields on this page.",
+    "description": "Lint overlay: under the title when the page has more buttons, links and fields than the overlay checks. $checked$ is how many it checked, $total$ how many the page has; both are numbers.",
+    "placeholders": {
+      "checked": {
+        "content": "$1",
+        "example": "800"
+      },
+      "total": {
+        "content": "$2",
+        "example": "1,200"
+      }
+    }
+  },
   "lint_copyChecklist": {
     "message": "Copy as a Markdown checklist",
     "description": "Lint overlay: button that copies every finding as a Markdown checklist, to paste into a ticket. The checklist itself stays in English."
@@ -2360,6 +2378,10 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotNotKept": {
+    "message": "The screenshot was too large to keep in this browser’s storage.",
+    "description": "Report a bug: warning when a screenshot was taken but session storage had no room left for it, so the report has none."
   },
   "bug_stepShows": {
     "message": "shows \"$text$\"",
@@ -3350,6 +3372,20 @@
       "element": {
         "content": "$1",
         "example": "button \"Apply\""
+      }
+    }
+  },
+  "replay_reasonDragApart": {
+    "message": "The drag needs $element$ and $target$ on screen at once, and they do not fit together.",
+    "description": "Why a replay's drag step could not be done with trusted input: the element dragged and the one it is dropped on are too far apart to be on screen together. $element$ and $target$ are a tag and a name from the page, such as div \"Card\".",
+    "placeholders": {
+      "element": {
+        "content": "$1",
+        "example": "div \"Card\""
+      },
+      "target": {
+        "content": "$2",
+        "example": "div \"Done\""
       }
     }
   },

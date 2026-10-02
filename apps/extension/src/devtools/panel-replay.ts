@@ -16,10 +16,11 @@ const REPLAY_WAKE_MESSAGE = 'piwi-replay-wake';
 
 /**
  * Tells the replay script, in every tab of the replayed site, that the state
- * changed. `wake` releases a wait for Next or Continue; a pause only redraws,
- * so the wake is not taken for a Next later.
+ * changed. `wake: true` (Next step, Stop) releases a wait for Next or
+ * Continue, or is kept for the next one; `'waiting'` (Pause, Continue) only
+ * releases a wait in progress, so it is never taken for a Next later.
  */
-async function notifyReplay(origin: string, wake: boolean): Promise<void> {
+async function notifyReplay(origin: string, wake: boolean | 'waiting'): Promise<void> {
   let tabs: chrome.tabs.Tab[] = [];
   try {
     tabs = await chrome.tabs.query({ url: `${origin}/*` });
@@ -53,7 +54,7 @@ function glyph(result: ReplayStepResult | undefined, current: boolean): string {
   }
 }
 
-async function change(state: ReplayState, next: Partial<ReplayState>, wake: boolean): Promise<void> {
+async function change(state: ReplayState, next: Partial<ReplayState>, wake: boolean | 'waiting'): Promise<void> {
   await updateReplayState((s) => ({ ...s, ...next }));
   await notifyReplay(state.origin, wake);
 }
@@ -87,7 +88,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
   if (!done) {
     actions.push(
       button(paused ? t('replay_continue') : t('replay_pause'), () => {
-        void change(state, { status: paused ? 'running' : 'paused' }, paused);
+        void change(state, { status: paused ? 'running' : 'paused' }, 'waiting');
       }),
     );
     if (state.stepMode) {

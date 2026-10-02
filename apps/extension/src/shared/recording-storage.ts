@@ -94,7 +94,10 @@ export async function discardRecording(): Promise<void> {
  * code that awaited the grant before it can message the worker, so a first
  * recording would need a second click. The popup writes this intent
  * inside the same click, then `chrome.permissions.onAdded` in the worker reads
- * it back when the grant lands (see `decideRecordIntent`).
+ * it back when the grant lands (see `decideRecordIntent`). The popup opening
+ * again and the DevTools pages asking for a site (`requestSiteAccess`) clear
+ * it: by then that prompt is answered, and the next grant for the site is not
+ * a recording's.
  */
 const RECORD_INTENT_KEY = 'piwiRecordIntent';
 
@@ -115,7 +118,7 @@ export interface RecordIntent {
  * (the options page granting the instance origin, say) than a slow answer to
  * this prompt, so the worker ignores it instead of starting a surprise recording.
  */
-export const RECORD_INTENT_TTL_MS = 60_000;
+export const RECORD_INTENT_TTL_MS = 30_000;
 
 export async function setRecordIntent(intent: Omit<RecordIntent, 'createdAt'>): Promise<void> {
   await sessionArea().set({ [RECORD_INTENT_KEY]: { ...intent, createdAt: Date.now() } });

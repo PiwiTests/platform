@@ -251,3 +251,46 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   const bodyCode = source.base64 ? `Buffer.from(${literal(body)}, 'base64')` : literal(body);
   return { code: wrap(`route.fulfill({ ${status}${type}body: ${bodyCode} })`), file: null, hidden: count.n };
 }
+
+/** A response body as DevTools keeps it: text, or base64 when `base64`; null when it kept none. */
+export interface ResponseBody {
+  text: string | null;
+  base64: boolean;
+}
+
+/** An entry of DevTools' network log, as far as its body goes. */
+export interface LoggedRequest {
+  getContent?: unknown;
+  response?: { content?: { text?: string; encoding?: string } };
+}
+
+/**
+ * The body of a request DevTools logged, through its `getContent`: Chrome calls
+ * back with the content and its encoding; Firefox returns a promise of the
+ * content and its MIME type, and the entry's own `encoding` says whether it is
+ * base64. The entry's `content` is the fallback when DevTools gives none.
+ */
+export function responseBody(request: LoggedRequest): Promise<ResponseBody> {
+  const content = request.response?.content;
+  const kept = (text: unknown, encoding: unknown): ResponseBody => ({
+    text: typeof text === 'string' ? text : (content?.text ?? null),
+    base64: (typeof encoding === 'string' ? encoding : content?.encoding) === 'base64',
+  });
+  const getContent = request.getContent;
+  if (typeof getContent !== 'function') return Promise.resolve(kept(null, undefined));
+  return new Promise((resolve) => {
+    try {
+      const returned: unknown = getContent.call(request, (text: unknown, encoding: unknown) =>
+        resolve(kept(text, encoding)),
+      );
+      if (returned && typeof (returned as PromiseLike<unknown>).then === 'function') {
+        (returned as PromiseLike<unknown>).then(
+          (value) => resolve(kept(Array.isArray(value) ? value[0] : value, undefined)),
+          () => resolve(kept(null, undefined)),
+        );
+      }
+    } catch {
+      resolve(kept(null, undefined));
+    }
+  });
+}

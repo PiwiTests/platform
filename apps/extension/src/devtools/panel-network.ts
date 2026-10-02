@@ -1,5 +1,12 @@
 import { formatNumber, t, tn } from '../shared/i18n.js';
-import { mockCode, type MockKind, type MockSource, mockUrlPattern } from '../shared/mock-code.js';
+import {
+  mockCode,
+  type MockKind,
+  type MockSource,
+  mockUrlPattern,
+  responseBody,
+  type ResponseBody,
+} from '../shared/mock-code.js';
 import { copyText, inspectedOrigin } from './inspected.js';
 import { conditionActions, pageConditions, renderConditions } from './panel-conditions.js';
 import { button, el, emptyState, flash } from './ui.js';
@@ -22,7 +29,7 @@ export interface NetworkEntry {
   /** Milliseconds from the request to the end of the response. */
   time: number;
   /** The response body, as DevTools kept it. */
-  body(): Promise<{ text: string | null; base64: boolean }>;
+  body(): Promise<ResponseBody>;
   /** A `fetch` or XHR call, rather than a document, a script, an image… */
   api: boolean;
 }
@@ -37,7 +44,7 @@ const NOT_API_MIME =
 
 type HarEntry = Omit<chrome.devtools.network.Request, 'getContent'> & {
   _resourceType?: string;
-  getContent?: (callback: (content: string, encoding: string) => void) => void;
+  getContent?: unknown;
 };
 
 let nextId = 1;
@@ -58,17 +65,7 @@ function toEntry(har: HarEntry): NetworkEntry {
     mimeType: har.response.content?.mimeType ?? '',
     time: Math.round(har.time ?? 0),
     api: isApiCall(har),
-    body: () =>
-      new Promise((resolve) => {
-        if (typeof har.getContent === 'function') {
-          har.getContent((content, encoding) =>
-            resolve({ text: content ?? har.response.content?.text ?? null, base64: encoding === 'base64' }),
-          );
-        } else {
-          const content = har.response.content;
-          resolve({ text: content?.text ?? null, base64: content?.encoding === 'base64' });
-        }
-      }),
+    body: () => responseBody(har),
   };
 }
 
@@ -151,6 +148,8 @@ function field(id: string, label: string, control: HTMLInputElement | HTMLSelect
 
 async function renderMock(pane: HTMLElement, entry: NetworkEntry): Promise<void> {
   const { text, base64 } = await entry.body();
+  // Another request was clicked while DevTools read this one's body.
+  if (view.selected !== entry.id) return;
   const source: MockSource = {
     method: entry.method,
     url: entry.url,
@@ -291,12 +290,18 @@ async function showSelected(): Promise<void> {
   await renderMock(dom.detail, selected);
 }
 
+/** Whether the page at `url` is on another origin than the one the tab was drawn for. */
+export function networkOriginChanged(url: string): boolean {
+  return !!dom && originOf(url) !== dom.origin;
+}
+
 /**
  * Draws the tab: the conditions on, across the top; the requests on the left,
  * most recent last; the selected one on the right, to mock, slow down or fail.
+ * The page's origin is read in the page, or from `pageUrl` after a navigation.
  */
-export async function renderNetworkTab(container: HTMLElement): Promise<void> {
-  const origin = await inspectedOrigin();
+export async function renderNetworkTab(container: HTMLElement, pageUrl?: string): Promise<void> {
+  const origin = pageUrl === undefined ? await inspectedOrigin() : originOf(pageUrl);
   const strip = el('section', 'conditions-strip');
   strip.setAttribute('aria-label', t('devtools_conditionsTitle'));
 

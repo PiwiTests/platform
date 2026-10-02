@@ -1,6 +1,6 @@
-import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
-import { scanForLintIssues, type LintFinding } from './lint-scan.js';
+import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
+import { startTool, endTool, installEscapeToCancel, toolIsCurrent } from '../shared/tool-session.js';
+import { scanForLintIssues, type LintFinding, type LintScan } from './lint-scan.js';
 import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-lint-overlay-host';
@@ -30,7 +30,9 @@ async function copyText(text: string, el: HTMLElement): Promise<void> {
  * One-keystroke (from the popup) audit overlay: outlines every
  * interactive element that would score badly as a locator target right now,
  * with a suggested `data-testid` per element and a Markdown checklist export.
- * A second trigger toggles it back off, same pattern as the Playwright view.
+ * The panel opens at once and fills in when the scan, which works in slices,
+ * is done. A second trigger toggles it back off, same pattern as the
+ * Playwright view.
  */
 function toggleLintOverlay(): void {
   const g = globalThis as any;
@@ -43,23 +45,8 @@ function toggleLintOverlay(): void {
   // anything can call this teardown.
   const toolEpoch = startTool('lint-overlay', () => off());
   installEscapeToCancel();
-
-  const findings = scanForLintIssues();
-
-  // Exposed for lint-scan.spec.ts: scanForLintIssues calls @piwitests/core's
-  // generateAlternatives, which has its own private module-level helpers
-  // that Function.prototype.toString() reconstruction (the trick
-  // derivePattern's own tests use) can't carry along —
-  // real bundling is the only way to exercise it correctly, so results are
-  // bridged out here the same way picker state is bridged through other
-  // well-known globals elsewhere in this extension.
-  g.__piwiLintFindings = findings.map((f) => ({
-    tag: f.element.tagName.toLowerCase(),
-    role: f.role,
-    accessibleName: f.accessibleName,
-    suggestedTestId: f.suggestedTestId,
-    bestScore: f.bestScore,
-  }));
+  let closed = false;
+  delete g.__piwiLintFindings;
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -89,7 +76,8 @@ function toggleLintOverlay(): void {
       line-height: 1; padding: 2px 7px; border-radius: 6px;
     }
     .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .empty { color: #9ca3af; font-size: 12.5px; overflow-wrap: anywhere; hyphens: auto; }
+    .empty, .notice { color: #9ca3af; font-size: 12.5px; overflow-wrap: anywhere; hyphens: auto; }
+    .notice { margin-bottom: 8px; }
     .export {
       display: block; width: 100%; margin-bottom: 10px; padding: 6px 10px; border-radius: 6px;
       border: 1px solid #f87171; background: rgba(248,113,113,.12); color: inherit; font: inherit;
@@ -104,11 +92,15 @@ function toggleLintOverlay(): void {
       word-break: break-all; cursor: pointer; border: 1px dashed rgba(128,128,128,.4); border-radius: 5px; padding: 3px 6px;
     }
     @media (prefers-color-scheme: light) {
-      .empty, .row .name { color: #6b7280; }
+      .empty, .notice, .row .name { color: #6b7280; }
       .row .tag { color: #b91c1c; }
     }
   `;
   root.appendChild(style);
+
+  // The boxes sit under the panel.
+  const layer = document.createElement('div');
+  root.appendChild(layer);
 
   const panel = document.createElement('div');
   panel.className = 'panel';
@@ -120,7 +112,7 @@ function toggleLintOverlay(): void {
   header.className = 'header';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = findings.length === 0 ? t('lint_none') : tn('lint_found', findings.length);
+  title.textContent = t('lint_checking');
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
   closeBtn.type = 'button';
@@ -128,13 +120,29 @@ function toggleLintOverlay(): void {
   closeBtn.textContent = '×';
   header.append(title, closeBtn);
   panel.appendChild(header);
+  root.appendChild(panel);
 
-  if (findings.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = t('lint_allGood');
-    panel.appendChild(empty);
-  } else {
+  let findings: LintFinding[] = [];
+
+  const showFindings = (scan: LintScan) => {
+    title.textContent = findings.length === 0 ? t('lint_none') : tn('lint_found', findings.length);
+    if (scan.checked < scan.interactive) {
+      const notice = document.createElement('div');
+      notice.className = 'notice';
+      notice.textContent = t('lint_truncated', {
+        checked: formatNumber(scan.checked),
+        total: formatNumber(scan.interactive),
+      });
+      panel.appendChild(notice);
+    }
+
+    if (findings.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = t('lint_allGood');
+      panel.appendChild(empty);
+      return;
+    }
     const exportBtn = document.createElement('button');
     exportBtn.className = 'export';
     exportBtn.type = 'button';
@@ -163,26 +171,30 @@ function toggleLintOverlay(): void {
       row.append(head, code);
       panel.appendChild(row);
     }
-  }
+  };
 
   const boxes: HTMLDivElement[] = [];
+  /** Every element's box is read before any outline moves, so the page lays out once per draw. */
   const drawBoxes = () => {
-    for (const b of boxes) b.remove();
-    boxes.length = 0;
-    for (const f of findings) {
-      const r = f.element.getBoundingClientRect();
+    const rects = findings.map((f) => f.element.getBoundingClientRect());
+    while (boxes.length < rects.length) {
       const box = document.createElement('div');
       box.className = 'box';
-      box.style.left = `${r.left}px`;
-      box.style.top = `${r.top}px`;
-      box.style.width = `${r.width}px`;
-      box.style.height = `${r.height}px`;
-      root.appendChild(box);
+      layer.appendChild(box);
       boxes.push(box);
     }
+    rects.forEach((r, i) => {
+      boxes[i]!.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;`;
+    });
   };
-  drawBoxes();
-  root.appendChild(panel);
+  let frame = 0;
+  const reposition = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      drawBoxes();
+    });
+  };
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -191,9 +203,10 @@ function toggleLintOverlay(): void {
       off();
     }
   };
-  const reposition = () => drawBoxes();
 
   const off = () => {
+    closed = true;
+    cancelAnimationFrame(frame);
     document.removeEventListener('keydown', onKeyDown, true);
     window.removeEventListener('scroll', reposition, true);
     window.removeEventListener('resize', reposition, true);
@@ -206,6 +219,27 @@ function toggleLintOverlay(): void {
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition, true);
   closeBtn.addEventListener('click', off);
+
+  void scanForLintIssues({ keepGoing: () => !closed && toolIsCurrent(toolEpoch) }).then((scan) => {
+    if (!scan || closed || !toolIsCurrent(toolEpoch)) return;
+    findings = scan.findings;
+    // Exposed for lint-scan.spec.ts: scanForLintIssues calls @piwitests/core's
+    // generateAlternatives, which has its own private module-level helpers
+    // that Function.prototype.toString() reconstruction (the trick
+    // derivePattern's own tests use) can't carry along —
+    // real bundling is the only way to exercise it correctly, so results are
+    // bridged out here the same way picker state is bridged through other
+    // well-known globals elsewhere in this extension.
+    g.__piwiLintFindings = findings.map((f) => ({
+      tag: f.element.tagName.toLowerCase(),
+      role: f.role,
+      accessibleName: f.accessibleName,
+      suggestedTestId: f.suggestedTestId,
+      bestScore: f.bestScore,
+    }));
+    showFindings(scan);
+    drawBoxes();
+  });
 }
 
 void initI18n().then(toggleLintOverlay);

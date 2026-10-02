@@ -18,7 +18,8 @@ import { t } from '../shared/i18n.js';
 /**
  * The bug-report requests to the connected instance, made here for the tab's
  * content scripts: they never hold the API key and never reach the network.
- * The project is always resolved again from the sending tab's URL.
+ * The project is always resolved again from the sending tab's URL, with the
+ * Active project chosen for that tab's site.
  */
 
 /** Set once a report has been sent from this browser profile, so the preview explains sending only the first time. */
@@ -33,7 +34,7 @@ async function targetFor(tab: chrome.tabs.Tab | undefined): Promise<Target | nul
   const settings = await getConnectionSettings();
   if (!settings.instanceUrl.trim()) return null;
   const url = tab?.url ?? '';
-  return { settings, project: resolveActiveProject(settings, await getActiveProjectOverride(), url) };
+  return { settings, project: resolveActiveProject(settings, await getActiveProjectOverride(url), url) };
 }
 
 function instanceHost(settings: ConnectionSettings): string {

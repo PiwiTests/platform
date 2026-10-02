@@ -10,8 +10,10 @@ import {
  * `fetch` and `XMLHttpRequest` and applies the conditions the isolated-world
  * script posts (`request-conditions.ts`) to the calls whose method and URL
  * match. A delay holds the request back before it goes out; an error answers
- * 500 without sending it; a failure rejects as the network does. Documents,
- * scripts, images and a service worker's requests go past it.
+ * 500 without sending it; a failure rejects as the network does. An XHR held
+ * back ends with the page's `abort()`, which fires the browser's own events, or
+ * with a new `open()`. Documents, scripts, images and a service worker's
+ * requests go past it.
  *
  * It imports nothing that touches `chrome.*`: the main world has none. Until
  * the first conditions arrive, a request waits for them, at most
@@ -49,9 +51,10 @@ function install(): void {
           setTimeout(resolve, WAIT_MS);
         });
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Against the document's base URL, as the browser resolves a request's URL.
   const absolute = (url: string) => {
     try {
-      return new URL(url, location.href).href;
+      return new URL(url, document.baseURI).href;
     } catch {
       return url;
     }
@@ -79,9 +82,40 @@ function install(): void {
   const proto = XMLHttpRequest.prototype;
   const originalOpen = proto.open;
   const originalSend = proto.send;
+  const originalAbort = proto.abort;
   const requests = new WeakMap<XMLHttpRequest, { method: string; url: string; async: boolean }>();
+  /** The sends held back, each with its timer once its delay or answer is due. */
+  const held = new WeakMap<XMLHttpRequest, { timer?: ReturnType<typeof setTimeout> }>();
+  /** What an answer given here sets on the XHR itself, over the browser's own getters. */
+  const ANSWERED = [
+    'readyState',
+    'status',
+    'statusText',
+    'responseText',
+    'response',
+    'responseURL',
+    'getAllResponseHeaders',
+    'getResponseHeader',
+  ];
+
+  const define = (xhr: XMLHttpRequest, name: string, value: unknown) =>
+    Object.defineProperty(xhr, name, { configurable: true, value });
+  const forget = (xhr: XMLHttpRequest) => {
+    for (const name of ANSWERED) delete (xhr as unknown as Record<string, unknown>)[name];
+  };
+  /** Drops the send `xhr` holds back; true when there was one. */
+  const release = (xhr: XMLHttpRequest): boolean => {
+    const send = held.get(xhr);
+    if (!send) return false;
+    clearTimeout(send.timer);
+    held.delete(xhr);
+    return true;
+  };
 
   proto.open = function open(this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+    // Opening again ends the request before, as the browser's own open() does: a send held back, an answer given.
+    release(this);
+    forget(this);
     requests.set(this, { method, url: absolute(String(url)), async: rest[0] !== false });
     return (originalOpen as (...args: unknown[]) => void).call(this, method, url, ...rest);
   } as typeof proto.open;
@@ -89,15 +123,14 @@ function install(): void {
   /** Ends `xhr` as if the server had answered `status`, or as a network error when 0. */
   const settle = (xhr: XMLHttpRequest, url: string, status: number) => {
     const text = status ? 'Internal Server Error' : '';
-    const define = (name: string, value: unknown) => Object.defineProperty(xhr, name, { configurable: true, value });
-    define('readyState', 4);
-    define('status', status);
-    define('statusText', status ? 'Internal Server Error' : '');
-    define('responseText', text);
-    define('response', text);
-    define('responseURL', status ? url : '');
-    define('getAllResponseHeaders', () => (status ? 'content-type: text/plain\r\n' : ''));
-    define('getResponseHeader', (name: string) =>
+    define(xhr, 'readyState', 4);
+    define(xhr, 'status', status);
+    define(xhr, 'statusText', status ? 'Internal Server Error' : '');
+    define(xhr, 'responseText', text);
+    define(xhr, 'response', text);
+    define(xhr, 'responseURL', status ? url : '');
+    define(xhr, 'getAllResponseHeaders', () => (status ? 'content-type: text/plain\r\n' : ''));
+    define(xhr, 'getResponseHeader', (name: string) =>
       status && name.toLowerCase() === 'content-type' ? 'text/plain' : null,
     );
     xhr.dispatchEvent(new Event('readystatechange'));
@@ -110,15 +143,45 @@ function install(): void {
     const request = requests.get(this);
     // A synchronous request cannot wait: it goes out as it is.
     if (!request?.async) return originalSend.call(this, body);
+    const send: { timer?: ReturnType<typeof setTimeout> } = {};
+    held.set(this, send);
+    const after = (ms: number, then: () => void) => {
+      send.timer = setTimeout(() => {
+        if (held.get(this) !== send) return;
+        held.delete(this);
+        then();
+      }, ms);
+    };
     const apply = () => {
+      if (held.get(this) !== send) return;
       const condition = conditionFor(hook.conditions, request.method, request.url);
-      if (condition?.kind === 'error') setTimeout(() => settle(this, request.url, 500));
-      else if (condition?.kind === 'abort') setTimeout(() => settle(this, request.url, 0));
-      else if (condition?.kind === 'delay') setTimeout(() => originalSend.call(this, body), condition.delayMs);
-      else originalSend.call(this, body);
+      if (condition?.kind === 'error') after(0, () => settle(this, request.url, 500));
+      else if (condition?.kind === 'abort') after(0, () => settle(this, request.url, 0));
+      else if (condition?.kind === 'delay') after(condition.delayMs, () => originalSend.call(this, body));
+      else {
+        held.delete(this);
+        originalSend.call(this, body);
+      }
     };
     if (hook.known) apply();
     else void whenKnown().then(apply);
+  };
+
+  // The browser knows nothing of a send held back or of an answer given here, and its abort() leaves them as they
+  // are: the XHR ends here instead, unsent, after the events of a request aborted on its way.
+  proto.abort = function abort(this: XMLHttpRequest) {
+    const wasHeld = release(this);
+    const answered = Object.prototype.hasOwnProperty.call(this, 'readyState');
+    const result = originalAbort.call(this);
+    if (wasHeld || answered) forget(this);
+    if (wasHeld) {
+      define(this, 'readyState', 4);
+      this.dispatchEvent(new Event('readystatechange'));
+      this.dispatchEvent(new ProgressEvent('abort'));
+      this.dispatchEvent(new ProgressEvent('loadend'));
+    }
+    if (wasHeld || answered) define(this, 'readyState', 0);
+    return result;
   };
 }
 

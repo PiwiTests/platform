@@ -114,14 +114,20 @@ export async function getBugEvidence(): Promise<StoredBugEvidence> {
  */
 let writeQueue: Promise<unknown> = Promise.resolve();
 
-function update(change: (current: StoredBugEvidence) => StoredBugEvidence): Promise<StoredBugEvidence> {
-  const run = writeQueue.then(async () => {
-    const next = change(await getPageEvidence());
-    await sessionArea().set({ [EVIDENCE_KEY]: next });
-    return next;
-  });
+function queued<T>(write: () => Promise<T>): Promise<T> {
+  const run = writeQueue.then(write);
   writeQueue = run.catch(() => undefined);
   return run;
+}
+
+async function writeEvidence(change: (current: StoredBugEvidence) => StoredBugEvidence): Promise<StoredBugEvidence> {
+  const next = change(await getPageEvidence());
+  await sessionArea().set({ [EVIDENCE_KEY]: next });
+  return next;
+}
+
+function update(change: (current: StoredBugEvidence) => StoredBugEvidence): Promise<StoredBugEvidence> {
+  return queued(() => writeEvidence(change));
 }
 
 /** Adds console entries and failed requests, keeping the first of each up to the limit and counting the rest. */
@@ -160,14 +166,18 @@ export async function getBugScreenshots(): Promise<StoredBugScreenshot[]> {
 /**
  * Keeps a screenshot, at most `BUG_EVIDENCE_LIMITS.screenshots`: once full, a
  * new one replaces the last, so the latest moment (usually Finish) is always
- * there. Clears the note saying why one was missing.
+ * there. Clears the note saying why one was missing. In the same queue as the
+ * other writes, so two screenshots taken at once are both kept. Rejects when
+ * session storage has no room for it.
  */
-export async function addBugScreenshot(shot: StoredBugScreenshot): Promise<void> {
-  const shots = await getBugScreenshots();
-  if (shots.length >= BUG_EVIDENCE_LIMITS.screenshots) shots[shots.length - 1] = shot;
-  else shots.push(shot);
-  await sessionArea().set({ [SCREENSHOTS_KEY]: shots });
-  await update((current) => ({ ...current, screenshotNote: null, screenshots: shots.length }));
+export function addBugScreenshot(shot: StoredBugScreenshot): Promise<void> {
+  return queued(async () => {
+    const shots = await getBugScreenshots();
+    if (shots.length >= BUG_EVIDENCE_LIMITS.screenshots) shots[shots.length - 1] = shot;
+    else shots.push(shot);
+    await sessionArea().set({ [SCREENSHOTS_KEY]: shots });
+    await writeEvidence((current) => ({ ...current, screenshotNote: null, screenshots: shots.length }));
+  });
 }
 
 export async function clearBugEvidence(): Promise<void> {

@@ -25,6 +25,7 @@ import {
 } from '@piwitests/core/bug-report';
 import { parseLocatorChain, renderLocatorChain } from '@piwitests/core/locator-chain';
 import { suggestAssertions } from './assertion-suggest.js';
+import { isSensitiveField } from './sensitive-fields.js';
 import { DomModel } from './engine-aria.js';
 import { createLocatorEngine } from './locator-engine.js';
 import { buildOutline, outlineRoot } from './bug-outline.js';
@@ -48,7 +49,9 @@ import {
   copyToClipboard,
   downloadBlob,
   fileStamp,
+  hideSurfaces,
   isOwnHost,
+  mountSurface,
 } from './record-ui.js';
 import {
   addBugScreenshot,
@@ -92,9 +95,13 @@ export interface BugRecorderHooks {
 const NO_SCREENSHOT_NOTE =
   'Chrome lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose Take a screenshot.';
 
+/** Why a report has no screenshot when session storage had no room for the last one, as the report stores it. */
+const SCREENSHOT_NOT_KEPT_NOTE = 'The screenshot was too large to keep in this browser’s storage.';
+
 /** A stored screenshot note in the interface language; a note this module does not know stays as it is. */
 function screenshotNoteText(note: string): string {
   if (note === NO_SCREENSHOT_NOTE) return t('bug_screenshotBlocked', { action: t('popup_takeScreenshot') });
+  if (note === SCREENSHOT_NOT_KEPT_NOTE) return t('bug_screenshotNotKept');
   if (note === NO_SCREENSHOT_TAKEN) return t('bug_noScreenshotNone');
   return note;
 }
@@ -182,30 +189,21 @@ function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-/** Hides a host until the returned function is called. */
-function hide(host: HTMLElement | null): () => void {
-  if (!host) return () => undefined;
-  const previous = host.style.visibility;
-  host.style.visibility = 'hidden';
-  return () => {
-    host.style.visibility = previous;
-  };
-}
-
-/** Hides the recorder's own surfaces for the duration of `run`, so a screenshot or a pick shows only the page. */
+/** Hides the recorder's own surfaces for the duration of `run`, so a screenshot shows only the page. */
 async function withSurfacesHidden<T>(run: () => Promise<T>): Promise<T> {
-  const restore = [HUD_HOST_ID, FRAME_HOST_ID, BUG_DIALOG_HOST_ID].map((id) => hide(document.getElementById(id)));
+  const show = hideSurfaces([HUD_HOST_ID, FRAME_HOST_ID, BUG_DIALOG_HOST_ID]);
   try {
     return await run();
   } finally {
-    for (const show of restore) show();
+    show();
   }
 }
 
 /**
  * Asks the background worker for a screenshot of this tab and keeps it. Chrome
  * allows one only under the `activeTab` grant; without it the report notes why
- * there is none instead of asking for a wider permission.
+ * there is none instead of asking for a wider permission. Never rejects: a
+ * screenshot session storage has no room for leaves a note saying so.
  */
 export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', step: number | null): Promise<boolean> {
   const response = await withSurfacesHidden(async () => {
@@ -220,11 +218,15 @@ export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', 
       return undefined;
     }
   });
-  if (response?.ok && typeof response.dataUrl === 'string' && response.dataUrl.startsWith('data:image/')) {
-    await addBugScreenshot({ moment, step, takenAt: Date.now(), dataUrl: response.dataUrl });
-    return true;
+  try {
+    if (response?.ok && typeof response.dataUrl === 'string' && response.dataUrl.startsWith('data:image/')) {
+      await addBugScreenshot({ moment, step, takenAt: Date.now(), dataUrl: response.dataUrl });
+      return true;
+    }
+    await setBugEvidenceFields({ screenshotNote: NO_SCREENSHOT_NOTE });
+  } catch {
+    await setBugEvidenceFields({ screenshotNote: SCREENSHOT_NOT_KEPT_NOTE }).catch(() => undefined);
   }
-  await setBugEvidenceFields({ screenshotNote: NO_SCREENSHOT_NOTE });
   return false;
 }
 
@@ -369,7 +371,7 @@ function openBugDialog<T>(
   const host = document.createElement('div');
   host.id = BUG_DIALOG_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = PANEL_CSS;
@@ -486,12 +488,18 @@ const STATE_MATCHERS = new Set<AssertionMatcher>(['toBeVisible', 'toBeHidden', '
 /** What `actual` holds for an element named in Something is missing. */
 const MISSING_ACTUAL = 'not on the page';
 
-/** What can be said to be wrong about an element: its value, text or name, or the opposite of each state it is in. */
+/**
+ * What can be said to be wrong about an element: its value, text or name, or
+ * the opposite of each state it is in. A field that holds a secret
+ * (`isSensitiveField`) offers its states only, so what it holds is never shown
+ * or kept.
+ */
 function expectedChoices(element: Element): { locator: string | null; choices: ExpectedChoice[] } {
   const suggestion = suggestAssertions(element);
   const choices: ExpectedChoice[] = [];
+  const secret = isSensitiveField(element);
   for (const c of suggestion.candidates) {
-    if (c.detail == null) continue;
+    if (c.detail == null || secret) continue;
     if (c.method === 'toHaveValue') choices.push({ matcher: c.method, label: t('bug_itsValue'), actual: c.detail });
     if (c.method === 'toHaveText') choices.push({ matcher: c.method, label: t('bug_itsText'), actual: c.detail });
     if (c.method === 'toHaveAccessibleName')
@@ -702,7 +710,7 @@ export function runMarkFlow(hooks: BugRecorderHooks): Promise<void> {
   return exclusive(async () => {
     hooks.setPaused(true);
     // Out of the way while picking, so the HUD itself cannot be picked.
-    let showHud = hide(document.getElementById(HUD_HOST_ID));
+    let showHud = hideSurfaces([HUD_HOST_ID]);
     try {
       clearPickGlobals();
       installPickerOverlay({ transport: 'global', failing: null });
@@ -853,7 +861,7 @@ export function renderBugHud(
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed', delegatesFocus: true });
   const style = document.createElement('style');
   style.textContent = `

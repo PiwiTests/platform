@@ -1,6 +1,7 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel } from '../shared/tool-session.js';
 import { attachPanelShadow } from './panel-root.js';
+import { LOCATOR_ATTRIBUTES } from './observed-attributes.js';
 import { scanPlaywrightView, type ViewLabel } from './playwright-view-scan.js';
 
 const HOST_ID = 'piwi-playwright-view-host';
@@ -9,6 +10,8 @@ const HOST_ID = 'piwi-playwright-view-host';
 const MAX_DRAWN = 400;
 /** How long the page stays still before a change to it is scanned again. */
 const RESCAN_MS = 600;
+/** What can change a label besides the attributes every overlay follows: what makes an element look operable. */
+const OBSERVED_ATTRIBUTES = [...LOCATOR_ATTRIBUTES, 'tabindex', 'onclick'];
 const NAME_CHARS = 40;
 
 interface ViewSummary {
@@ -48,6 +51,7 @@ function togglePlaywrightView(): void {
   // call this teardown.
   const toolEpoch = startTool('playwright-view', () => off());
   installEscapeToCancel();
+  let closed = false;
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -204,10 +208,28 @@ function togglePlaywrightView(): void {
     layer.replaceChildren(...nodes);
   };
 
-  const scan = (): void => {
-    labels = scanPlaywrightView(document);
+  let rescanTimer: ReturnType<typeof setTimeout> | undefined;
+  const rescanSoon = () => {
+    clearTimeout(rescanTimer);
+    rescanTimer = setTimeout(() => void scan(), RESCAN_MS);
+  };
+  let scanning = false;
+  /** The page changed while a scan ran: another follows it. */
+  let changed = false;
+  const scan = async (): Promise<void> => {
+    if (scanning) {
+      changed = true;
+      return;
+    }
+    scanning = true;
+    changed = false;
+    const next = await scanPlaywrightView(document, { keepGoing: () => !closed });
+    scanning = false;
+    if (!next || closed) return;
+    labels = next;
     summarize();
     draw();
+    if (changed) rescanSoon();
   };
 
   let frame = 0;
@@ -215,11 +237,9 @@ function togglePlaywrightView(): void {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(draw);
   };
-  let rescanTimer: ReturnType<typeof setTimeout> | undefined;
   const observer = new MutationObserver((mutations) => {
     if (mutations.every((m) => m.target === host || host.contains(m.target as Node))) return;
-    clearTimeout(rescanTimer);
-    rescanTimer = setTimeout(scan, RESCAN_MS);
+    rescanSoon();
   });
 
   filter.addEventListener('change', () => {
@@ -236,6 +256,7 @@ function togglePlaywrightView(): void {
   };
 
   const off = () => {
+    closed = true;
     observer.disconnect();
     clearTimeout(rescanTimer);
     cancelAnimationFrame(frame);
@@ -252,8 +273,14 @@ function togglePlaywrightView(): void {
   document.addEventListener('keydown', onKeyDown, true);
   window.addEventListener('scroll', redraw, true);
   window.addEventListener('resize', redraw, true);
-  scan();
-  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  void scan();
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: OBSERVED_ATTRIBUTES,
+  });
 }
 
 void initI18n().then(togglePlaywrightView);

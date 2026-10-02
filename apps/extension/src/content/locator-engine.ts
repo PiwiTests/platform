@@ -4,8 +4,8 @@
  * accessible names, ARIA states, hidden elements), the text engines keep the
  * innermost matching elements, CSS pierces open shadow roots, `and`/`or`/
  * `filter`/`nth` compose the same way, and `contentFrame()`/`frameLocator()`
- * enter same-origin frames. The chain comes from the shared parser
- * (`@piwitests/core/locator-chain`), never from `eval`.
+ * enter the same-origin frame of the first owner they match. The chain comes
+ * from the shared parser (`@piwitests/core/locator-chain`), never from `eval`.
  *
  * One engine is one evaluation pass: every lookup is cached until the engine is
  * dropped, and prefixes shared by many chains are evaluated once, so thousands
@@ -25,11 +25,9 @@ import {
   ARIA_PRESSED_ROLES,
   ARIA_SELECTED_ROLES,
   DomModel,
-  isDocumentNode,
   isElementNode,
   legacyTextMatcher,
   normalizeWhiteSpace,
-  parentElementOrShadowHost,
   tagNameOf,
   textMatcher,
   type TextMatchKind,
@@ -41,6 +39,7 @@ import {
   parseCssSelectorList,
   queryCss,
   queryXPath,
+  sortInDomOrder,
   splitSelectorParts,
   type CssHost,
   type CssSelectorList,
@@ -53,6 +52,11 @@ export interface LocatorEngineOptions {
   testIdAttributes?: string[];
   /** Elements left out of every result, such as the extension's own overlay host. */
   ignore?: (element: Element) => boolean;
+  /**
+   * Resolve frame owners as an action does: more than one is a strict mode
+   * violation. Otherwise the first owner's frame is entered, as `count()` does.
+   */
+  strict?: boolean;
 }
 
 export interface LocatorEngine {
@@ -69,9 +73,32 @@ type Scope = Document | Element;
 
 interface ChainState {
   nodes: Scope[];
-  /** Where nested `and()`/`or()` locators start: the page, the frame entered, or the `has` element. */
-  root: Scope;
+  /**
+   * Where nested `and()`/`or()` locators start: the page, the frame entered, or
+   * the `has` element. Null once the chain entered a frame that isn't there:
+   * nothing after it matches.
+   */
+  root: Scope | null;
+  /** The nodes are the owners a frame locator matched: `first()`/`nth()` pick among them, a locating call enters the first. */
+  frame?: boolean;
 }
+
+/** The calls a frame locator offers, `owner()` included; any other is not available on one. */
+const FRAME_LOCATOR_CALLS = new Set([
+  'getByRole',
+  'getByText',
+  'getByLabel',
+  'getByPlaceholder',
+  'getByAltText',
+  'getByTitle',
+  'getByTestId',
+  'locator',
+  'frameLocator',
+  'first',
+  'last',
+  'nth',
+  'owner',
+]);
 
 interface RoleOptions {
   name?: string | RegExp;
@@ -126,49 +153,13 @@ function chainArg(arg: LocatorArg | undefined, what: string): LocatorChain {
   throw new LocatorEngineError(`${what} expects a locator`);
 }
 
-/** Sort elements into tree order, open shadow roots after the light children of their host. */
-export function sortInDomOrder(elements: Iterable<Element>): Element[] {
-  interface Entry {
-    children: Element[];
-    taken: boolean;
-  }
-  const entries = new Map<Element, Entry>();
-  const roots: Element[] = [];
-  const append = (element: Element): Entry => {
-    const existing = entries.get(element);
-    if (existing) return existing;
-    const parent = parentElementOrShadowHost(element);
-    if (parent) append(parent).children.push(element);
-    else roots.push(element);
-    const entry: Entry = { children: [], taken: false };
-    entries.set(element, entry);
-    return entry;
+/** `hasText`/`hasNotText`: a regular expression is tested on each element from the start, as a fresh one would be. */
+function filterTextMatcher(value: string | RegExp): TextMatcher {
+  if (typeof value === 'string') return textMatcher(value, false).matcher;
+  return (text) => {
+    value.lastIndex = 0;
+    return value.test(text.full);
   };
-  for (const element of elements) append(element).taken = true;
-  const out: Element[] = [];
-  const visit = (element: Element) => {
-    const entry = entries.get(element)!;
-    if (entry.taken) out.push(element);
-    if (entry.children.length > 1) {
-      const wanted = new Set(entry.children);
-      const ordered: Element[] = [];
-      for (
-        let child = element.firstElementChild;
-        child && ordered.length < wanted.size;
-        child = child.nextElementSibling
-      ) {
-        if (wanted.has(child)) ordered.push(child);
-      }
-      let shadowChild = element.shadowRoot ? element.shadowRoot.firstElementChild : null;
-      for (; shadowChild && ordered.length < wanted.size; shadowChild = shadowChild.nextElementSibling) {
-        if (wanted.has(shadowChild)) ordered.push(shadowChild);
-      }
-      entry.children = ordered;
-    }
-    entry.children.forEach(visit);
-  };
-  roots.forEach(visit);
-  return out;
 }
 
 /** Playwright's `nth=`: a slice of one, with `-1` meaning the last element. */
@@ -180,7 +171,7 @@ function nthOf<T>(nodes: T[], index: number): T[] {
 class Engine implements LocatorEngine, CssHost {
   readonly model = new DomModel();
   private readonly directShadowRoots = new Map<Node, ShadowRoot[]>();
-  private readonly everyElementUnder = new Map<Node, Element[]>();
+  private readonly cssUnder = new Map<Node, Map<string, Element[]>>();
   private readonly roleIndex = new Map<Node, Map<string, Element[]>>();
   private readonly labelled = new Map<Node, Element[]>();
   private readonly testIdIndex = new Map<Node, { all: Element[]; byValue: Map<string, Element[]> }>();
@@ -191,10 +182,11 @@ class Engine implements LocatorEngine, CssHost {
     private readonly doc: Document,
     private readonly testIdAttributes: string[],
     private readonly ignore: ((element: Element) => boolean) | undefined,
+    private readonly strict: boolean,
   ) {}
 
   queryAll(chain: LocatorChain): Element[] {
-    return this.evaluate(chain, this.doc).nodes.filter(isElementNode);
+    return this.elementsOf(this.evaluate(chain, this.doc));
   }
 
   elements(root: Document | Element = this.doc): Element[] {
@@ -207,16 +199,25 @@ class Engine implements LocatorEngine, CssHost {
     const cached = this.directShadowRoots.get(root);
     if (cached) return cached;
     const out: ShadowRoot[] = [];
-    const own = (root as Element).shadowRoot;
-    if (own && !this.ignore?.(root as Element)) out.push(own);
-    for (const element of Array.from(root.querySelectorAll('*'))) {
-      if (element.shadowRoot && !this.ignore?.(element)) out.push(element.shadowRoot);
+    const doc = root.ownerDocument;
+    // A document without open shadow roots has none under any of its elements.
+    const none = !!doc && isElementNode(root) && root.getRootNode() === doc && !this.shadowRootsUnder(doc).length;
+    if (!none) {
+      const own = (root as Element).shadowRoot;
+      if (own && !this.ignore?.(root as Element)) out.push(own);
+      for (const element of Array.from(root.querySelectorAll('*'))) {
+        if (element.shadowRoot && !this.ignore?.(element)) out.push(element.shadowRoot);
+      }
     }
     this.directShadowRoots.set(root, out);
     return out;
   }
 
   queryCssUnder(root: Document | Element, css: string): Element[] {
+    let byCss = this.cssUnder.get(root);
+    if (!byCss) this.cssUnder.set(root, (byCss = new Map()));
+    const cached = byCss.get(css);
+    if (cached) return cached;
     const out: Element[] = [];
     const visit = (node: Document | Element | ShadowRoot) => {
       for (const element of Array.from(node.querySelectorAll(css))) {
@@ -225,16 +226,12 @@ class Engine implements LocatorEngine, CssHost {
       for (const shadow of this.shadowRootsUnder(node)) visit(shadow);
     };
     visit(root);
+    byCss.set(css, out);
     return out;
   }
 
   private allElementsUnder(root: Scope): Element[] {
-    let cached = this.everyElementUnder.get(root);
-    if (!cached) {
-      cached = this.queryCssUnder(root, '*');
-      this.everyElementUnder.set(root, cached);
-    }
-    return cached;
+    return this.queryCssUnder(root, '*');
   }
 
   /** The elements under `root` that have a label `getByLabel` can match, in page order. */
@@ -317,7 +314,12 @@ class Engine implements LocatorEngine, CssHost {
   }
 
   private nested(chain: LocatorChain, root: Scope): Element[] {
-    return this.evaluate(chain, root).nodes.filter(isElementNode);
+    return this.elementsOf(this.evaluate(chain, root));
+  }
+
+  private elementsOf(state: ChainState): Element[] {
+    if (state.frame) throw new LocatorEngineError('a frame locator needs a locator after it');
+    return state.nodes.filter(isElementNode);
   }
 
   private unionOver(nodes: Scope[], query: (scope: Scope) => Iterable<Scope>): Scope[] {
@@ -328,7 +330,16 @@ class Engine implements LocatorEngine, CssHost {
 
   private apply(call: LocatorCall, state: ChainState): ChainState {
     const what = `${call.method}()`;
-    const { nodes, root } = state;
+    if (state.frame && !FRAME_LOCATOR_CALLS.has(call.method)) {
+      throw new LocatorEngineError(`${what} is not available on a frame locator`);
+    }
+    if (!state.frame && call.method === 'owner') throw new LocatorEngineError('owner() needs a frame locator');
+    const picksOwners = call.method === 'first' || call.method === 'last' || call.method === 'nth';
+    const frame = call.method === 'frameLocator' || call.method === 'contentFrame' || (!!state.frame && picksOwners);
+    if (state.frame && !picksOwners && call.method !== 'owner') state = this.enterFrame(state.nodes);
+    if (state.root === null) return { nodes: [], root: null, frame };
+    const nodes = state.nodes;
+    const root = state.root;
     switch (call.method) {
       case 'getByRole': {
         const role = call.args[0];
@@ -401,19 +412,12 @@ class Engine implements LocatorEngine, CssHost {
         const selector = call.args[0];
         if (selector?.type !== 'string')
           throw new LocatorEngineError('frameLocator() without a selector is not supported');
-        return this.enterFrame(this.evaluateSelector(selector.value, nodes));
+        return { nodes: this.evaluateSelector(selector.value, nodes), root, frame };
       }
       case 'contentFrame':
-        return this.enterFrame(nodes);
-      case 'owner': {
-        const owners = nodes.map((node) => {
-          if (!isDocumentNode(node)) throw new LocatorEngineError('owner() needs a frame');
-          const owner = node.defaultView?.frameElement;
-          if (!owner) throw new LocatorEngineError('owner() needs a frame');
-          return owner;
-        });
-        return { nodes: [...new Set(owners)], root: owners[0]?.ownerDocument ?? this.doc };
-      }
+        return { nodes, root, frame };
+      case 'owner':
+        return { nodes, root };
       case 'filter':
         return { nodes: this.applyFilters(nodes, this.filters(optionsOf(call.args[0], what), what)), root };
       case 'and': {
@@ -429,14 +433,14 @@ class Engine implements LocatorEngine, CssHost {
         return { nodes: sortInDomOrder(union), root };
       }
       case 'first':
-        return { nodes: nthOf(nodes, 0), root };
+        return { nodes: nthOf(nodes, 0), root, frame };
       case 'last':
-        return { nodes: nthOf(nodes, -1), root };
+        return { nodes: nthOf(nodes, -1), root, frame };
       case 'nth': {
         const index = call.args[0];
         if (index?.type !== 'number' || !Number.isInteger(index.value))
           throw new LocatorEngineError('nth() needs an integer');
-        return { nodes: nthOf(nodes, index.value), root };
+        return { nodes: nthOf(nodes, index.value), root, frame };
       }
       case 'visible':
         return { nodes: this.applyFilters(nodes, { visible: true }), root };
@@ -445,14 +449,18 @@ class Engine implements LocatorEngine, CssHost {
     }
   }
 
-  /** A frame-owner element becomes its frame's document; Playwright resolves it strictly, so more than one is an error. */
+  /** The first owner's frame document, as Playwright enters it; a strict engine refuses more than one owner. */
   private enterFrame(nodes: Scope[]): ChainState {
     const owners = nodes.filter(isElementNode);
-    if (owners.length > 1) {
-      throw new LocatorEngineError(`strict mode violation: the frame selector matched ${owners.length} elements`);
+    if (this.strict && owners.length > 1) {
+      throw new LocatorEngineError(
+        `strict mode violation: the frame selector matched ${owners.length} elements`,
+        undefined,
+        owners.length,
+      );
     }
     const owner = owners[0];
-    if (!owner) return { nodes: [], root: this.doc };
+    if (!owner) return { nodes: [], root: null };
     const tag = tagNameOf(owner);
     if (tag !== 'IFRAME' && tag !== 'FRAME') throw new LocatorEngineError(`<${tag.toLowerCase()}> is not a frame`);
     let frameDoc: Document | null = null;
@@ -596,8 +604,8 @@ class Engine implements LocatorEngine, CssHost {
   }
 
   private applyFilters(nodes: Scope[], filters: Filters): Scope[] {
-    const hasText = filters.hasText !== undefined ? textMatcher(filters.hasText, false).matcher : null;
-    const hasNotText = filters.hasNotText !== undefined ? textMatcher(filters.hasNotText, false).matcher : null;
+    const hasText = filters.hasText !== undefined ? filterTextMatcher(filters.hasText) : null;
+    const hasNotText = filters.hasNotText !== undefined ? filterTextMatcher(filters.hasNotText) : null;
     if (!hasText && !hasNotText && !filters.has && !filters.hasNot && filters.visible === undefined) return nodes;
     return nodes.filter((node) => {
       if (!isElementNode(node)) return false;
@@ -618,7 +626,7 @@ class Engine implements LocatorEngine, CssHost {
       switch (part.name) {
         case 'css': {
           const list = this.cssList(body);
-          current = this.unionOver(current, (scope) => queryCss(this, list, scope, sortInDomOrder));
+          current = this.unionOver(current, (scope) => queryCss(this, list, scope));
           break;
         }
         case 'xpath':
@@ -664,5 +672,5 @@ class Engine implements LocatorEngine, CssHost {
 /** A fresh evaluation pass over `doc`. */
 export function createLocatorEngine(doc: Document, options: LocatorEngineOptions = {}): LocatorEngine {
   const attributes = (options.testIdAttributes ?? []).map((name) => name.trim()).filter(Boolean);
-  return new Engine(doc, attributes.length ? attributes : ['data-testid'], options.ignore);
+  return new Engine(doc, attributes.length ? attributes : ['data-testid'], options.ignore, options.strict ?? false);
 }

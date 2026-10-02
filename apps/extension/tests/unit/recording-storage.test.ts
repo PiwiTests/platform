@@ -257,4 +257,12 @@ describe('decideRecordIntent', () => {
   it('still starts right at the TTL boundary', () => {
     expect(decideRecordIntent(intent, ['https://x.test/*'], 1_000 + RECORD_INTENT_TTL_MS).action).toBe('start');
   });
+
+  it('takes a grant 45 seconds after the prompt for some other flow’s', () => {
+    expect(decideRecordIntent(intent, ['https://x.test/*'], 1_000 + 45_000)).toEqual({ action: 'clear' });
+  });
+
+  it('ignores a grant of a wider pattern for the site, as Save login asks for', () => {
+    expect(decideRecordIntent(intent, ['*://x.test/*', '*://test/*'], 1_500)).toEqual({ action: 'ignore' });
+  });
 });

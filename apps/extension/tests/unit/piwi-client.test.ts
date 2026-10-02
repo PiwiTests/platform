@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, afterEach } from 'vitest';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   fetchCatalog,
   fetchLocatorIndex,
@@ -6,8 +6,20 @@ import {
   normalizeBaseUrl,
   projectCatalogUrl,
   projectLocatorsUrl,
+  testConnection,
   testCaseUrl,
+  testDesktop,
 } from '../../src/shared/piwi-client';
+import { setInstanceApiKey } from '../../src/shared/connection-settings';
+import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
+import type * as SecretStore from '../../src/shared/secret-store';
+
+// The extension's IndexedDB, in memory: the client reads the key from it.
+const secrets = memorySecretArea();
+vi.mock('../../src/shared/secret-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof SecretStore>()),
+  secretArea: () => secrets,
+}));
 
 describe('normalizeBaseUrl', () => {
   test('trims whitespace and a trailing slash', () => {
@@ -60,7 +72,6 @@ describe('dashboard deep links', () => {
 describe('responses as the dashboard sends them', () => {
   const settings = {
     instanceUrl: 'https://piwi.example.com',
-    apiKey: 'pd_key',
     projectMappings: [],
     serverMappings: [],
     serverProjects: [],
@@ -74,6 +85,16 @@ describe('responses as the dashboard sends them', () => {
         async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
       ),
     );
+  const lastCall = () => {
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    return calls[calls.length - 1] as [string, RequestInit];
+  };
+
+  beforeEach(async () => {
+    (globalThis as any).chrome = { storage: { local: memoryLocalStorage().local } };
+    secrets.data.clear();
+    await setInstanceApiKey('https://piwi.example.com', 'pd_key');
+  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -125,6 +146,32 @@ describe('responses as the dashboard sends them', () => {
     expect(call[0]).toBe('https://piwi.example.com/api/projects/1/locator-index?branch=feature%2Fx');
     expect(index).toMatchObject({ branch: null, defaultBranch: '', branches: [] });
     expect(index.locators[0]!.uses[0]!.branches).toEqual([]);
+  });
+
+  test('the key goes only to the instance it was given for', async () => {
+    answer({ items: [] });
+    await fetchProjects({ ...settings, instanceUrl: 'https://piwi.example.com/' });
+    expect(lastCall()[1].headers).toEqual({ 'X-API-Key': 'pd_key' });
+    // The stored address changed behind the settings page's back: the request goes keyless.
+    await fetchProjects({ ...settings, instanceUrl: 'https://elsewhere.example.com' });
+    expect(lastCall()[0]).toBe('https://elsewhere.example.com/api/projects/menu');
+    expect(lastCall()[1].headers).toEqual({});
+  });
+
+  test('a key typed and not kept yet is what Save and test sends', async () => {
+    answer({ items: [] });
+    expect(await testConnection({ ...settings, instanceUrl: 'https://new.example.com' }, 'pd_typed')).toEqual({
+      ok: true,
+    });
+    expect(lastCall()[1].headers).toEqual({ 'X-API-Key': 'pd_typed' });
+  });
+
+  test('no request to the instance or the desktop app follows a redirect', async () => {
+    answer({ items: [] });
+    await fetchCatalog(settings, 1);
+    expect(lastCall()[1].redirect).toBe('error');
+    await testDesktop({ url: 'http://127.0.0.1:4318', token: 'pd_desktop' });
+    expect(lastCall()[1]).toMatchObject({ redirect: 'error', headers: { 'x-piwi-token': 'pd_desktop' } });
   });
 
   test('fetchLocatorIndex explains a rejected key, a missing endpoint and a malformed answer', async () => {

@@ -29,7 +29,7 @@ const CUSTOM = 'custom';
 async function projectViewports(url: string | undefined): Promise<LocatorIndexViewport[]> {
   const connection = await getConnectionSettings();
   if (!isConnected(connection)) return [];
-  const override = await getActiveProjectOverride().catch(() => null);
+  const override = await getActiveProjectOverride(url ?? '').catch(() => null);
   const project = url ? resolveActiveProject(connection, override, url) : override;
   if (!project) return [];
   const branch = resolveLocatorBranch(

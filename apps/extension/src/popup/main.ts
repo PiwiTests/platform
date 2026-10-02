@@ -175,11 +175,10 @@ const AUTO_OPTION_VALUE = '';
 
 /** Populates and pre-selects the active-project picker: hidden until connected, otherwise offering every mapped project plus "Auto" (clears the manual override, falling back to URL-pattern matching). */
 async function refreshActiveProjectSelect(): Promise<void> {
-  const [connection, override, tab] = await Promise.all([
-    getConnectionSettings(),
-    getActiveProjectOverride(),
-    activeTab(),
-  ]);
+  const [connection, tab] = await Promise.all([getConnectionSettings(), activeTab()]);
+  // The choice belongs to the tab's site.
+  const tabUrl = tab?.url ?? '';
+  const override = await getActiveProjectOverride(tabUrl);
 
   connected = isConnected(connection);
   coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
@@ -218,12 +217,12 @@ async function refreshActiveProjectSelect(): Promise<void> {
   activeProjectSelect.addEventListener('change', () => {
     void (async () => {
       if (activeProjectSelect.value === AUTO_OPTION_VALUE) {
-        await setActiveProjectOverride(null);
+        await setActiveProjectOverride(tabUrl, null);
         return;
       }
       const projectId = Number(activeProjectSelect.value);
       const projectLabel = activeProjectSelect.selectedOptions[0]?.textContent ?? `#${projectId}`;
-      await setActiveProjectOverride({ projectId, projectLabel });
+      await setActiveProjectOverride(tabUrl, { projectId, projectLabel });
     })();
   });
 }
@@ -350,7 +349,27 @@ async function startRecordingFlow(
   window.close();
 }
 
+/**
+ * Finishes a bug report as the page's own Finish does (a screenshot, the
+ * outline, the evidence still on its way): answers false when no recorder of
+ * this tab takes it.
+ */
+async function finishBugInPage(): Promise<boolean> {
+  const tab = await activeTab();
+  if (tab?.id == null) return false;
+  try {
+    const answer = (await chrome.tabs.sendMessage(tab.id, { type: 'piwi-bug-finish' })) as { ok?: boolean } | undefined;
+    return answer?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
 async function stopRecordingFlow(): Promise<void> {
+  if (uiMode === 'bug' && (await finishBugInPage())) {
+    window.close();
+    return;
+  }
   await stopRecording();
   try {
     // The worker owns the fan-out that tears the HUD and border down in every
@@ -476,6 +495,9 @@ async function showOutdatedWorkerNotice(): Promise<void> {
   document.getElementById('worker-reload')!.addEventListener('click', () => chrome.runtime.reload());
 }
 
+// A "Record actions" prompt that closed the last popup has been answered by the time this one opens: an intent
+// still parked would start a recording when another flow's grant for the site lands.
+void clearRecordIntent().catch(() => undefined);
 recordBtn.disabled = true;
 bugBtn.disabled = true;
 void refreshRecordButton().catch(() => {

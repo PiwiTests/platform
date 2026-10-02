@@ -2,13 +2,13 @@ import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, toolIsCurrent } from '../shared/tool-session.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { testCatalogAgainstPage, type FunctionTestResult } from './test-function-scan.js';
-import { DomModel } from './engine-aria.js';
+import { createPageEngine } from './verified-locators.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
-import { getConnectionSettings } from '../shared/connection-settings.js';
+import { getConnectionSettings, type ConnectionSettings } from '../shared/connection-settings.js';
 import { projectCatalogUrl } from '../shared/piwi-client.js';
-import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
+import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
 import { attachPanelShadow } from './panel-root.js';
 
 const HOST_ID = 'piwi-test-function-host';
@@ -58,10 +58,12 @@ async function renderPanel(): Promise<void> {
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
+  let closed = false;
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') finish();
   };
   const finish = () => {
+    closed = true;
     document.removeEventListener('keydown', onKeyDown, true);
     host.remove();
     endTool(toolEpoch);
@@ -70,6 +72,26 @@ async function renderPanel(): Promise<void> {
   // this panel included, takes its surfaces with it here.
   const toolEpoch = startTool('test-function-panel', finish);
   installEscapeToCancel();
+  /** False once the panel is closed or another tool took over: what an `await` brings back is then dropped. */
+  const live = () => !closed && toolIsCurrent(toolEpoch);
+
+  // `getActiveProjectOverride` reads session storage — see `session-access.ts`.
+  let connection: ConnectionSettings;
+  let override: ActiveProject | null;
+  try {
+    await ensureSessionAccess();
+    [connection, override] = await Promise.all([
+      getConnectionSettings(),
+      getActiveProjectOverride().catch(() => null),
+      initI18n(),
+    ]);
+  } catch {
+    finish();
+    return;
+  }
+  if (!live()) return;
+
+  // Mounted once there is a panel to show, so a read that fails leaves nothing over the page.
   document.getElementById(HOST_ID)?.remove();
   document.documentElement.appendChild(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
@@ -124,11 +146,6 @@ async function renderPanel(): Promise<void> {
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
   panel.tabIndex = -1;
-
-  // `getActiveProjectOverride` reads session storage — see `session-access.ts`.
-  await ensureSessionAccess();
-  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(), initI18n()]);
-  if (!toolIsCurrent(toolEpoch)) return;
   panel.lang = uiLanguage();
   panel.setAttribute('aria-label', t('functions_title'));
   const activeProject = resolveActiveProject(connection, override, location.href);
@@ -185,17 +202,31 @@ async function renderPanel(): Promise<void> {
       resultsEl.appendChild(empty);
       return;
     }
-    const model = new DomModel();
-    const results = testCatalogAgainstPage(catalog, MAPS, (el) => model.normalizedAccessibleName(el, false) || null);
+    const engine = createPageEngine(document);
+    const results = testCatalogAgainstPage(catalog, MAPS, {
+      elements: engine.elements(),
+      nameOf: (el) => engine.model.normalizedAccessibleName(el, false) || null,
+      isHidden: (el) => engine.model.isHiddenForAria(el),
+    });
     const order = { ready: 0, partial: 1, 'not-found': 2 };
     results.sort((a, b) => order[a.verdict] - order[b.verdict]);
     for (const result of results) resultsEl.appendChild(renderResult(result));
   }
 
+  closeBtn.addEventListener('click', finish);
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) finish();
+  });
+  document.addEventListener('keydown', onKeyDown, true);
+
+  backdrop.appendChild(panel);
+  root.appendChild(backdrop);
+  panel.focus();
+
   // Cache first so the panel is instant and still works with the instance
   // unreachable; the re-fetch below then swaps in anything newer.
   const cached = await getCachedCatalog(projectId);
-  if (!toolIsCurrent(toolEpoch)) return;
+  if (!live()) return;
   renderResults(cached);
 
   async function revalidate(force: boolean): Promise<void> {
@@ -204,8 +235,12 @@ async function renderPanel(): Promise<void> {
     const previousLabel = refreshBtn.textContent;
     if (force) refreshBtn.textContent = t('common_refreshing');
     const result = await requestCatalogRefresh(projectId, { force });
-    if (!toolIsCurrent(toolEpoch)) return;
-    if (result.ok && result.refreshed) renderResults(await getCachedCatalog(projectId));
+    if (!live()) return;
+    if (result.ok && result.refreshed) {
+      const refreshed = await getCachedCatalog(projectId);
+      if (!live()) return;
+      renderResults(refreshed);
+    }
     refreshBtn.textContent = previousLabel;
     refreshBtn.disabled = false;
     if (!result.ok && force) {
@@ -220,16 +255,6 @@ async function renderPanel(): Promise<void> {
   // Opening the panel is itself a "show me the current catalog" request —
   // TTL-guarded so repeated opens don't hit the instance every time.
   void revalidate(false);
-
-  closeBtn.addEventListener('click', finish);
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) finish();
-  });
-  document.addEventListener('keydown', onKeyDown, true);
-
-  backdrop.appendChild(panel);
-  root.appendChild(backdrop);
-  panel.focus();
 }
 
 /** Re-injecting while the panel is already open just re-runs the scan against the page's current state instead of stacking a second host. */

@@ -80,11 +80,17 @@ test('saves the login as a storageState file a new context logs in with', async 
     await expect(login.getByText(`Site: ${site.origin}`)).toBeVisible();
     await expect(login.getByRole('note')).toContainText('Use a test account');
 
+    let downloads = 0;
+    login.on('download', () => downloads++);
     const download = login.waitForEvent('download');
-    await login.getByRole('button', { name: 'Save login file' }).click();
+    // A double click saves one file.
+    await login.getByRole('button', { name: 'Save login file' }).dblclick();
     const file = await (await download).path();
     expect((await download).suggestedFilename()).toBe('user.json');
     await expect(login.getByRole('status')).toHaveText('Saved user.json with 2 cookies. 1 localStorage entry.');
+    // Long enough for a second save to have downloaded too.
+    await login.waitForTimeout(500);
+    expect(downloads).toBe(1);
     const state = JSON.parse(readFileSync(file, 'utf8'));
     expect(state.cookies.find((c: { name: string }) => c.name === 'sid')).toMatchObject({
       value: 's3cr3t',

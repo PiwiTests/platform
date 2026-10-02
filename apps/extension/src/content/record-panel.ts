@@ -12,7 +12,8 @@ import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch }
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { classifyInputKind, isPasswordInput } from './record-capture.js';
+import { classifyInputKind } from './record-capture.js';
+import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
 import { parentElementOrShadowHost } from './engine-aria.js';
 import { HoverTracker, cssHoverSubjects, outermostFirst } from './hover-reveal.js';
@@ -49,6 +50,7 @@ import {
   copyToClipboard,
   downloadBlob,
   fileStamp,
+  mountSurface,
 } from './record-ui.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
@@ -108,15 +110,15 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
  * ⌘), and a character pressed outside a field, a page's own shortcut.
  *
  * A character typed with AltGr (which also sets Ctrl and Alt on Windows) or
- * with Option on a Mac (`©`) is typing, not a shortcut. In a password field,
- * and when the focus is inside a closed shadow root (`hiddenFocus`), which may
- * hold one, only an unmodified key of `RECORDED_KEYS` is recorded, so no key
- * a password holds is ever written down.
+ * with Option on a Mac (`©`) is typing, not a shortcut. In a field that holds
+ * a secret (`isSensitiveField`), and when the focus is inside a closed shadow
+ * root (`hiddenFocus`), which may hold one, only an unmodified key of
+ * `RECORDED_KEYS` is recorded, so no key a password holds is ever written down.
  */
 function recordedKey(e: KeyboardEvent, focused: Element | null, hiddenFocus: boolean): string | null {
   if (MODIFIER_KEYS.has(e.key)) return null;
   if (e.getModifierState?.('AltGraph')) return null;
-  const secret = hiddenFocus || !!focused?.closest('input[type="password" i]');
+  const secret = hiddenFocus || (!!focused && isSensitiveField(focused));
   const inField = secret || !!focused?.closest(TEXT_FIELDS);
   const typedWithOption =
     IS_MAC && e.altKey && !e.metaKey && !e.ctrlKey && [...e.key].length === 1 && e.key.trim() !== '';
@@ -368,7 +370,7 @@ function ensureRecordingFrame(): void {
   const host = document.createElement('div');
   host.id = FRAME_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = `
@@ -398,7 +400,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
 
   const style = document.createElement('style');
@@ -769,11 +771,15 @@ async function handleBugFinish(): Promise<void> {
     const state = await getRecordingState();
     if (!state.active) return;
     await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
-    const evidence = await getBugEvidence();
-    await setBugEvidenceFields({
-      context: await currentBugContext(),
-      ...(evidence.outline ? {} : { outline: outlineAround(null) }),
-    });
+    // A write session storage refuses leaves the report without its context, never unfinished.
+    await getBugEvidence()
+      .then(async (evidence) =>
+        setBugEvidenceFields({
+          context: await currentBugContext(),
+          ...(evidence.outline ? {} : { outline: outlineAround(null) }),
+        }),
+      )
+      .catch(() => undefined);
     await handleStop();
   } finally {
     g.__piwiBugFinishing = false;
@@ -1057,8 +1063,17 @@ function attachListeners(): void {
     attributeFilter: ['style', 'hidden'],
     attributeOldValue: true,
   });
+  // A field shown in clear (`type` from `password` to `text`) stays a secret.
+  const fieldChanges = new MutationObserver(rememberChangedFields);
+  fieldChanges.observe(document.documentElement, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['type', 'autocomplete'],
+    attributeOldValue: true,
+  });
   controller.signal.addEventListener('abort', () => {
     mutations.disconnect();
+    fieldChanges.disconnect();
     if (hoverTracker === tracker) hoverTracker = null;
   });
 
@@ -1076,7 +1091,11 @@ function attachListeners(): void {
   document.addEventListener(
     'focusin',
     (e) => {
-      if (e.isTrusted && !withinOwnUi(e)) watchShadowRoots(e);
+      if (!e.isTrusted || withinOwnUi(e)) return;
+      watchShadowRoots(e);
+      // A field focused as a secret stays one: its value is never recorded, whatever its type becomes.
+      const el = deepTarget(e);
+      if (el) isSensitiveField(el);
     },
     opts,
   );
@@ -1139,11 +1158,10 @@ function attachListeners(): void {
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
       // A checkbox or a radio fires `input` too; its `change` records it as a check.
       if (el instanceof HTMLInputElement && UNFILLABLE_INPUT_TYPES.has(el.type)) return;
-      const typeAttr = el instanceof HTMLInputElement ? el.type : null;
-      const passwordField = isPasswordInput(el.tagName, typeAttr);
-      // The raw value never enters the event at all for a password field —
-      // redacting later in normalizeSteps would still mean the plaintext sat
-      // in chrome.storage.session in the meantime.
+      const passwordField = isSensitiveField(el);
+      // The raw value never enters the event at all for a field that holds a
+      // secret — redacting later in normalizeSteps would still mean the
+      // plaintext sat in chrome.storage.session in the meantime.
       captureEvent(
         buildEvent('input', el, {
           // Cached per field: the probe behind a target is a document-wide walk,
@@ -1238,7 +1256,8 @@ function attachListeners(): void {
 
 /**
  * Listens for a stop that came from somewhere other than this page's own HUD —
- * the popup's Stop button, or the HUD in a different tab of the same recording.
+ * the popup's Stop button, or the HUD in a different tab of the same recording
+ * — and for the popup's Finish of a bug report and its screenshot.
  * The service worker fans the stop out with `chrome.tabs.sendMessage`, which is
  * the only thing that reaches a content script: `chrome.runtime.sendMessage`
  * goes to extension pages and the worker, never here, so a stop from the popup
@@ -1259,6 +1278,18 @@ function installStopListener(): void {
         if (state.active && state.bugToken) startPageRelay(state.bugToken);
         scheduleHudRefresh();
       });
+    }
+    if (message?.type === 'piwi-bug-finish' && recorderGlobals().__piwiRecordCapture) {
+      // The popup's Finish: answered once the page knows it records a bug, then finished as the HUD's Finish is.
+      void getRecordingState().then(
+        (state) => {
+          const bug = state.active && recordingMode(state) === 'bug';
+          sendResponse({ ok: bug });
+          if (bug) void handleBugFinish();
+        },
+        () => sendResponse({ ok: false }),
+      );
+      return true;
     }
     if (message?.type === 'piwi-bug-take-screenshot' && recorderGlobals().__piwiRecordCapture) {
       // Answered at once: the popup that asked closes as soon as it hears back.
