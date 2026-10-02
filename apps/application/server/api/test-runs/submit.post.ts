@@ -14,7 +14,8 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
-import { mergeResourceReport, sanitizeResourceReport } from '#shared/resource-report';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -107,11 +108,10 @@ export default eventHandler(async (event) => {
           // Portable "max of two values": SQLite's scalar MAX(a,b) is an aggregate in
           // Postgres, so use a CASE expression that runs on both dialects.
           duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
-          ...(incomingResources && {
-            resourceReport: mergeResourceReport(existingRun.resourceReport, incomingResources),
-          }),
         })
         .where(eq(testRuns.id, existingRun.id));
+      // This shard's resource report, in its own row next to the other shards'.
+      if (incomingResources) await saveResourceReportPart(db, existingRun.id, incomingResources);
       await applyReporterKeep(db, existingRun.id, body.keep);
 
       // Insert test cases if provided
@@ -239,7 +239,6 @@ export default eventHandler(async (event) => {
       shardsFinished: isSharded ? 0 : undefined,
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? null,
-      resourceReport: incomingResources ? mergeResourceReport(null, incomingResources) : null,
     })
     .returning();
 
@@ -251,6 +250,7 @@ export default eventHandler(async (event) => {
       message: 'Failed to create test run',
     });
   }
+  if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
   await applyReporterKeep(db, testRun.id, body.keep);
 
   // Insert test cases if provided and calculate flaky tests

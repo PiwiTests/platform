@@ -1659,10 +1659,12 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
 // worker for a while. Each run carries what its executions cost and its report,
 // as the reporter sends them, and the findings' history is written as the
 // server records it on finish.
+const TEST_RUN_RESOURCE_REPORTS = [];
 const RESOURCE_FINDINGS = [];
 const RESOURCE_OCCURRENCES = [];
 {
   const webRuns = TEST_RUNS.filter((run) => run.project_id === 5).sort((a, b) => b.start_time - a.start_time);
+  const reportByRun = new Map();
   for (const [index, run] of webRuns.slice(0, 4).entries()) {
     const leaky = index === 0;
     const lanes = new Map();
@@ -1685,28 +1687,31 @@ const RESOURCE_OCCURRENCES = [];
         artifactBytes += Object.values(row.resources.artifactBytes).reduce((sum, n) => sum + n, 0);
       });
     }
-    run.resource_report = {
-      v: 1,
-      parts: [
-        demoResourceReport({
-          leaky,
-          handle: true,
-          wallMs: run.duration,
-          workers: [...lanes.entries()]
-            .sort((a, b) => a[0] - b[0])
-            .map(([worker, lane]) => ({ worker, tests: lane.length })),
-          fixtureFile: 'tests/admin/fixtures.ts',
-          handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
-          artifactBytes,
-        }),
-      ],
-    };
+    const report = demoResourceReport({
+      leaky,
+      handle: true,
+      wallMs: run.duration,
+      workers: [...lanes.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([worker, lane]) => ({ worker, tests: lane.length })),
+      fixtureFile: 'tests/admin/fixtures.ts',
+      handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
+      artifactBytes,
+    });
+    reportByRun.set(run.id, report);
+    TEST_RUN_RESOURCE_REPORTS.push({
+      id: TEST_RUN_RESOURCE_REPORTS.length + 1,
+      run_id: run.id,
+      shard: 0,
+      report,
+      updated_at: run.updated_at,
+    });
   }
 
   // The history, oldest run first, as recordRunResourceFindings writes it.
   const byFingerprint = new Map();
   for (const run of webRuns.slice(0, 4).reverse()) {
-    for (const finding of run.resource_report.parts[0].findings) {
+    for (const finding of reportByRun.get(run.id).findings) {
       const fingerprint = resourceFingerprint(finding);
       let row = byFingerprint.get(fingerprint);
       if (!row) {
@@ -3694,6 +3699,7 @@ const REBASE_SQL = [
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
   `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -4608,6 +4614,7 @@ const lines = [
   '-- Flake-lab experiments and their arms (references test_cases)',
   insert('flake_experiments', FLAKE_EXPERIMENTS),
   insert('flake_arms', FLAKE_ARMS),
+  insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
   insert('resource_findings', RESOURCE_FINDINGS),
   insert('resource_occurrences', RESOURCE_OCCURRENCES),
   '',

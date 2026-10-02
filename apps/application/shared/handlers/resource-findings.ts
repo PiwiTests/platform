@@ -4,19 +4,22 @@ import type { DrizzleDB } from './db';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import { readStoredResourceReport } from '#shared/resource-report';
-import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
+import { readResourceReport } from './resource-reports';
+import { openingLine, resourceFingerprint, resourceGroup } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding, WireResourceReport } from '#shared/types';
 
 /**
  * A project's resource findings across runs, the way failure clusters are kept:
- * each finding has an identity (`#shared/resource-fingerprint.mjs`), the runs
- * it first and last showed in, and a fix. Five full runs of the default branch
- * without it, with the capture fixtures on, record it fixed from the first of
- * them; it reopens when it shows again. A finding is new to a branch when no
- * earlier run of the branch the run compares with (the pull request's target,
- * else the default branch) showed it, which is what the gate's `maxNewLeaks`
- * and the pull-request comment read.
+ * each finding has an identity (`#shared/resource-fingerprint.mjs`: where it
+ * was opened, line included), the runs it first and last showed in, and a fix.
+ * Five full runs of the default branch without it, with the capture fixtures
+ * on, record it fixed from the first of them; it reopens when it shows again.
+ * A finding is new to a branch when no earlier run of the branch the run
+ * compares with (the pull request's target, else the default branch) showed
+ * it, which is what the gate's `maxNewLeaks` and the pull-request comment
+ * read. A finding that shows under a new identity, where an open finding of
+ * the same group no longer shows, has moved with an edit above its line: it
+ * keeps that finding's history and is not new.
  */
 
 /** Full default-branch runs without a finding that record it fixed. */
@@ -74,7 +77,6 @@ async function readRun(db: DrizzleDB, runId: number): Promise<RunFacts | null> {
       id: testRuns.id,
       projectId: testRuns.projectId,
       startTime: testRuns.startTime,
-      resourceReport: testRuns.resourceReport,
       branch: testRuns.branch,
       metadata: testRuns.metadata,
       isFullRun: testRuns.isFullRun,
@@ -86,7 +88,7 @@ async function readRun(db: DrizzleDB, runId: number): Promise<RunFacts | null> {
     id: run.id,
     projectId: run.projectId,
     startTime: run.startTime,
-    parts: readStoredResourceReport(run.resourceReport).parts,
+    parts: (await readResourceReport(db, run.id)).parts,
     branch: run.branch ?? resolveRunBranch(run.metadata),
     metadata: run.metadata,
     isFullRun: run.isFullRun === 1,
@@ -123,6 +125,27 @@ export async function recordRunResourceFindings(db: DrizzleDB, runId: number): P
         .where(and(eq(resourceFindings.projectId, run.projectId), inArray(resourceFindings.fingerprint, fingerprints)))
     : [];
   const byFingerprint = new Map(existing.map((row) => [row.fingerprint, row]));
+  // A finding the run shows under an identity it never had may be an open one
+  // the run no longer shows, moved by an edit above its line: it keeps that
+  // finding's history, under its new identity.
+  const unmatched = found.filter((f) => !byFingerprint.has(f.fingerprint));
+  const moved = unmatched.length
+    ? pairMoved(
+        unmatched,
+        (
+          await db
+            .select()
+            .from(resourceFindings)
+            .where(
+              and(
+                eq(resourceFindings.projectId, run.projectId),
+                eq(resourceFindings.status, 'open'),
+                lt(resourceFindings.lastSeenAt, run.startTime),
+              ),
+            )
+        ).filter((row) => !fingerprints.includes(row.fingerprint)),
+      )
+    : new Map<RunFinding, typeof resourceFindings.$inferSelect>();
   const recorded = new Set(
     (
       await db
@@ -135,8 +158,9 @@ export async function recordRunResourceFindings(db: DrizzleDB, runId: number): P
   const now = new Date();
   const reopened: number[] = [];
   const seenIds = new Set<number>();
-  for (const { fingerprint, finding } of found) {
-    const row = byFingerprint.get(fingerprint);
+  for (const item of found) {
+    const { fingerprint, finding } = item;
+    const row = byFingerprint.get(fingerprint) ?? moved.get(item);
     let findingId: number;
     if (!row) {
       const [inserted] = await db
@@ -166,6 +190,7 @@ export async function recordRunResourceFindings(db: DrizzleDB, runId: number): P
       await db
         .update(resourceFindings)
         .set({
+          ...(row.fingerprint !== fingerprint && { fingerprint }),
           ...(latest && {
             place: finding.where,
             site: finding.site ?? null,
@@ -298,10 +323,66 @@ export async function runFindingsNovelty(db: DrizzleDB, runId: number): Promise<
         )
     ).map((row) => row.fingerprint),
   );
+  // A finding the base branch never showed under this identity may have moved
+  // there: an open finding of its group, shown on the base branch before this
+  // run, that this run no longer shows.
+  const unseen = found.filter((f) => !seenBefore.has(f.fingerprint));
+  const shown = new Set(found.map((f) => f.fingerprint));
+  const moved = unseen.length
+    ? pairMoved(
+        unseen,
+        (
+          await db
+            .selectDistinct({ id: resourceFindings.id, fingerprint: resourceFindings.fingerprint })
+            .from(resourceOccurrences)
+            .innerJoin(resourceFindings, eq(resourceFindings.id, resourceOccurrences.findingId))
+            .innerJoin(testRuns, eq(testRuns.id, resourceOccurrences.runId))
+            .where(
+              and(
+                eq(resourceFindings.projectId, run.projectId),
+                eq(resourceFindings.status, 'open'),
+                ne(resourceOccurrences.runId, run.id),
+                lt(testRuns.startTime, run.startTime),
+                onBase,
+              ),
+            )
+        ).filter((row) => !shown.has(row.fingerprint)),
+      )
+    : new Map();
   return {
     baseBranch,
-    findings: found.map((f) => ({ ...f, isNew: !seenBefore.has(f.fingerprint) })),
+    findings: found.map((f) => ({ ...f, isNew: !seenBefore.has(f.fingerprint) && !moved.has(f) })),
   };
+}
+
+/**
+ * Pair each finding with an open finding of the same group (the same identity
+ * without line numbers) it may have moved from, the closest lines first; each
+ * candidate pairs once. A finding left unpaired is a new one.
+ */
+export function pairMoved<T extends { fingerprint: string }, U extends { fingerprint: string }>(
+  findings: T[],
+  candidates: U[],
+): Map<T, U> {
+  const options: Array<{ finding: T; candidate: U; distance: number }> = [];
+  for (const finding of findings) {
+    const group = resourceGroup(finding.fingerprint);
+    const line = openingLine(finding.fingerprint);
+    for (const candidate of candidates) {
+      if (candidate.fingerprint === finding.fingerprint || resourceGroup(candidate.fingerprint) !== group) continue;
+      const from = openingLine(candidate.fingerprint);
+      options.push({ finding, candidate, distance: line !== null && from !== null ? Math.abs(line - from) : 0 });
+    }
+  }
+  options.sort((a, b) => a.distance - b.distance);
+  const pairs = new Map<T, U>();
+  const taken = new Set<U>();
+  for (const { finding, candidate } of options) {
+    if (pairs.has(finding) || taken.has(candidate)) continue;
+    pairs.set(finding, candidate);
+    taken.add(candidate);
+  }
+  return pairs;
 }
 
 /** A finding as its history reads, for the tab, the tools and the comment. */

@@ -84,9 +84,15 @@ capability, a leaky run in the demo seed and in the run simulator, and the docs.
 **PR 4 built 2026-10-01**: finding history and fix verification, the gate's leak rules, the pull-request line, two MCP
 tools, and each finding's history on the Resources tab. What changed while building PR 4:
 
-- A finding's identity drops line numbers from where it was opened, so an edit above the line keeps its history; two
-  leaks in one file from the same fixture or call share it. The identity is plain JS
+- A finding's identity is where it was opened, line included, so each opening line is its own finding and counts on
+  its own in the gate. A finding that shows under a new identity while an open finding of the same identity without
+  line numbers no longer shows has moved with an edit above its line: it takes that finding's history and is not new;
+  the closest lines pair first. (A first version dropped line numbers, which folded every leak of a file into one.) A
+  pull request that fixes one leak and opens another in the same file reads as a move. The identity is plain JS
   (`shared/resource-fingerprint.mjs`), so the demo seed writes the same rows the server does.
+- Each shard's report is its own row (`test_run_resource_reports`), written whole by its finish. A first version kept
+  one JSON value per run that each finish read, merged and wrote back, so two shards finishing at once could lose one
+  shard's report.
 - Runs are ordered by start time, not by id: an imported run can be older than runs stored before it.
 - A clean run vouches for a finding only when it is a full run of the default branch (a run with no branch counts as
   one) whose report could have shown it: with the fixtures on, or any report for a probable leak. The first of the five

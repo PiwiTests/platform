@@ -44,6 +44,7 @@ export const {
   flakeArms,
   resourceFindings,
   resourceOccurrences,
+  testRunResourceReports,
   networkRequests,
   accountTokens,
   notificationChannels,

@@ -34,6 +34,7 @@ import {
   graphNodes,
   probes,
   bugReports,
+  testRunResourceReports,
 } from '../../server/database/schema';
 import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
@@ -306,11 +307,12 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
       db,
       scoped
         ? db
-            .select({ id: testRuns.id })
-            .from(testRuns)
-            .where(and(eq(testRuns.projectId, pid), isNotNull(testRuns.resourceReport)))
+            .select({ id: testRunResourceReports.id })
+            .from(testRunResourceReports)
+            .innerJoin(testRuns, eq(testRunResourceReports.runId, testRuns.id))
+            .where(eq(testRuns.projectId, pid))
             .limit(1)
-        : db.select({ id: testRuns.id }).from(testRuns).where(isNotNull(testRuns.resourceReport)).limit(1),
+        : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
     ),
   ]);
 

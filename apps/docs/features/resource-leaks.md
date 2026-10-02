@@ -96,10 +96,10 @@ The execution page's Performance tab shows what that one test cost and what it l
 
 ## In CI
 
-Each finding keeps a history across runs: the run it was first seen in and the runs that showed it. A leak is fixed once
-five full runs of the default branch, with the fixtures on, came without it, and reopens if it shows again. On the
-Resources tab each finding says whether it is new to the base branch (the pull request's target, else the default
-branch), or since which run it has been there.
+Each finding keeps a history: the run it was first seen in and the runs that showed it. A leak is fixed once
+five full runs of the default branch, with the fixtures on, came without it, and reopens if it shows again. A leak that
+an edit above its line moved keeps its history. On the Resources tab each finding says whether it is new to the base
+branch (the pull request's target, else the default branch), or since which run it has been there.
 
 Three places read it:
 

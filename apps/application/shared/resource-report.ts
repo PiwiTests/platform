@@ -1,11 +1,12 @@
 /**
- * The resource data a reporter sends, made safe to store and merged per run.
+ * The resource data a reporter sends, made safe to store.
  *
- * A run's `resource_report` holds one part per reporter that ran it: a sharded
- * run gets one per shard, each measured on its own machine. Every incoming
- * report and execution cost is rebuilt field by field here, with bounded
- * arrays and strings and finite numbers only, so an arbitrary submitter cannot
- * store more than this shape allows. Pure, so the server and the demo share it.
+ * A run has one report per reporter that ran it: a sharded run gets one per
+ * shard, each measured on its own machine and stored as its own row
+ * (`shared/handlers/resource-reports.ts`). Every incoming report and execution
+ * cost is rebuilt field by field here, with bounded arrays and strings and
+ * finite numbers only, so an arbitrary submitter cannot store more than this
+ * shape allows. Pure, so the server and the demo share it.
  */
 import type {
   ProcessRole,
@@ -18,7 +19,7 @@ import type {
   WorkerHealth,
 } from '#shared/types';
 
-/** What `test_runs.resource_report` stores. */
+/** A run's report: the part each of its reporters sent, in shard order. */
 export interface StoredResourceReport {
   v: 1;
   parts: WireResourceReport[];
@@ -44,7 +45,6 @@ const FINDINGS_CAP = 100;
 const SERIES_CAP = 240;
 const WORKERS_CAP = 64;
 const WORKER_POINTS_CAP = 200;
-const PARTS_CAP = 64;
 const TEXT_CAP = 300;
 
 type Raw = Record<string, unknown>;
@@ -256,28 +256,6 @@ export function sanitizeResourceReport(value: unknown): WireResourceReport | nul
     artifactBytes: artifactBytes(raw.artifactBytes) ?? {},
     workerHealth: workerHealth(raw.workerHealth),
   };
-}
-
-/** The stored report, read back; an empty one when nothing valid is stored. */
-export function readStoredResourceReport(value: unknown): StoredResourceReport {
-  const raw = obj(value);
-  const parts = Array.isArray(raw?.parts) ? raw.parts : [];
-  return {
-    v: 1,
-    parts: parts.map(sanitizeResourceReport).filter((p): p is WireResourceReport => p !== null),
-  };
-}
-
-/**
- * Fold one reporter's report into what the run already stores: it replaces the
- * part of the same shard (a retried finish), and the parts stay in shard order.
- */
-export function mergeResourceReport(stored: unknown, incoming: WireResourceReport): StoredResourceReport {
-  const current = readStoredResourceReport(stored).parts.filter(
-    (part) => (part.shardIndex ?? null) !== (incoming.shardIndex ?? null),
-  );
-  const parts = [...current, incoming].sort((a, b) => (a.shardIndex ?? 0) - (b.shardIndex ?? 0)).slice(0, PARTS_CAP);
-  return { v: 1, parts };
 }
 
 /** The CPU of an execution's browser processes, when its worker could read them (Linux). */

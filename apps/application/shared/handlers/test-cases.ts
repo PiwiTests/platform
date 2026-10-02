@@ -439,7 +439,7 @@ export async function getTestRunCase(
     }
   }
 
-  const { streamToken: _streamToken, resourceReport: _resourceReport, ...testRunPublic } = testRun ?? {};
+  const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
   // cluster and owner — built from what is already loaded above. The owner

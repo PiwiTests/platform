@@ -25,7 +25,8 @@ import { resolveMaxUploadBytes } from '../../utils/upload-limits';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
-import { mergeResourceReport, sanitizeResourceReport } from '#shared/resource-report';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -359,7 +360,6 @@ export default eventHandler(async (event) => {
         reporterVersion: (testRunData.reporterVersion as string | null | undefined) || null,
         isFullRun: testRunData.isFullRun !== false ? 1 : 0,
         filterDetails: (testRunData.filterDetails as Record<string, unknown> | null | undefined) || null,
-        resourceReport: incomingResources ? mergeResourceReport(null, incomingResources) : null,
       })
       .returning();
 
@@ -376,6 +376,7 @@ export default eventHandler(async (event) => {
       id: resultTestRun.id,
       projectId: resultTestRun.projectId,
     };
+    if (incomingResources) await saveResourceReportPart(db, resultTestRun.id, incomingResources);
     await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
 
     runEventBus.publishGlobal({

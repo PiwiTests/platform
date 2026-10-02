@@ -6,10 +6,10 @@ import { isPassiveCapabilityDeclined } from './capabilities';
 import {
   browserCpuMs,
   peakRssMb,
-  readStoredResourceReport,
   sanitizeExecutionResources,
   type StoredResourceReport,
 } from '#shared/resource-report';
+import { readResourceReport } from './resource-reports';
 
 /**
  * A run's resources, as its Resources tab reads them: the report each of its
@@ -67,16 +67,13 @@ const COSTLIEST_CAP = 20;
 
 /** A run's resources; null when the run does not exist. */
 export async function getRunResources(db: DrizzleDB, runId: number): Promise<RunResources | null> {
-  const [run] = await db
-    .select({ projectId: testRuns.projectId, resourceReport: testRuns.resourceReport })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
+  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
   if (!run) return null;
   if (await isPassiveCapabilityDeclined(db, run.projectId, 'resources')) {
     return { report: null, baseBranch: null, history: {}, costliest: [], measuredExecutions: 0 };
   }
 
-  const stored = readStoredResourceReport(run.resourceReport);
+  const stored = await readResourceReport(db, runId);
   const rows = await db
     .select({
       executionId: testRunsCases.id,

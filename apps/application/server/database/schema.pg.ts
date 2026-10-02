@@ -102,7 +102,6 @@ export const testRuns = pgTable(
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: jsonb('metadata'), // Additional metadata as JSON
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
-    resourceReport: jsonb('resource_report'), // { v: 1, parts: WireResourceReport[] } — one part per shard: resource findings and what the run cost its machine
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
@@ -1939,10 +1938,11 @@ export const flakeArms = pgTable(
 );
 
 // A resource finding across runs: one per project and identity (its verdict,
-// kind, scope and where it was opened, without line numbers;
+// kind, scope and where it was opened, line included;
 // shared/resource-fingerprint.mjs), with the runs it first and last showed in.
-// It is fixed once five full runs of the default branch, with the capture
-// fixtures on, came without it, and reopened when it shows again.
+// An edit above the line moves it to a new identity, which it takes on with its
+// history. It is fixed once five full runs of the default branch, with the
+// capture fixtures on, came without it, and reopened when it shows again.
 export const resourceFindings = pgTable(
   'resource_findings',
   {
@@ -2005,5 +2005,28 @@ export const resourceOccurrences = pgTable(
   (t) => ({
     findingRunIdx: uniqueIndex('idx_resource_occurrences_finding_run').on(t.findingId, t.runId),
     runIdx: index('idx_resource_occurrences_run').on(t.runId),
+  }),
+);
+
+// What each reporter of a run measured about resources (WireResourceReport):
+// one row per shard, 0 for a run that was not sharded. Each shard's finish
+// writes its own row whole, so shards finishing at once never overwrite each
+// other's, and a retried finish replaces its row. Read folded in shard order
+// by shared/handlers/resource-reports.ts.
+export const testRunResourceReports = pgTable(
+  'test_run_resource_reports',
+  {
+    id: serial('id').primaryKey(),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    shard: integer('shard').notNull().default(0),
+    report: jsonb('report').notNull(), // rebuilt field by field on ingest (shared/resource-report.ts)
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    runShardIdx: uniqueIndex('idx_test_run_resource_reports_run_shard').on(t.runId, t.shard),
   }),
 );

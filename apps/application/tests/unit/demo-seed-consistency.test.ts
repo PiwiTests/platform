@@ -752,11 +752,10 @@ describe('demo examples hold in the seed', () => {
     }
     if (want.resources) {
       expect(want.run, `${id}: resources needs a run`).toBeTruthy();
-      const [row] = q(`select resource_report from test_runs where id = ${want.run!.id}`);
-      const report = JSON.parse(String(row?.resource_report ?? 'null')) as {
-        parts: Array<{ counts: { leaked: number } }>;
-      } | null;
-      const leaks = (report?.parts ?? []).reduce((sum, part) => sum + part.counts.leaked, 0);
+      const parts = q(`select report from test_run_resource_reports where run_id = ${want.run!.id}`).map(
+        (row) => JSON.parse(String(row.report)) as { counts: { leaked: number } },
+      );
+      const leaks = parts.reduce((sum, part) => sum + part.counts.leaked, 0);
       expect(leaks, `${id}: the run's report names a leak`).toBeGreaterThan(0);
     }
     if (want.cluster) {
@@ -799,15 +798,14 @@ describe('demo examples hold in the seed', () => {
 // from the seeded reports: one per identity, with the runs that showed it.
 describe('resource findings match the seeded reports', () => {
   test('each finding is the identity of the findings its runs reported, and counts those runs', () => {
-    const runs = q(`select id, resource_report from test_runs where resource_report is not null`) as Array<{
-      id: number;
-      resource_report: string;
-    }>;
+    const runs = q(`select run_id, report from test_run_resource_reports`) as Array<{ run_id: number; report: string }>;
     expect(runs.length).toBeGreaterThan(0);
     const runsByFingerprint = new Map<string, number[]>();
-    for (const run of runs) {
-      const report = JSON.parse(run.resource_report) as { parts: Array<{ findings: WireResourceFinding[] }> };
-      for (const finding of report.parts.flatMap((part) => part.findings)) {
+    for (const run of runs.map((row) => ({
+      id: row.run_id,
+      report: JSON.parse(row.report) as { findings: WireResourceFinding[] },
+    }))) {
+      for (const finding of run.report.findings) {
         const fingerprint = resourceFingerprint(finding);
         runsByFingerprint.set(fingerprint, [...(runsByFingerprint.get(fingerprint) ?? []), run.id]);
       }

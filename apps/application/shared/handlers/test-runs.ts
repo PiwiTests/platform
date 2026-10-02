@@ -31,6 +31,7 @@ import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { notLabRun } from './probes';
 import { isPassiveCapabilityDeclined } from './capabilities';
+import { hasResourceReport } from './resource-reports';
 import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
@@ -213,7 +214,7 @@ export async function getTestRun(
     }
   }
 
-  const { streamToken: _streamToken, resourceReport, ...testRunPublic } = testRun;
+  const { streamToken: _streamToken, ...testRunPublic } = testRun;
 
   let keptByName: string | null = null;
   if (testRun.keptBy) {
@@ -268,7 +269,8 @@ export async function getTestRun(
     keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
-    hasResources: resourceReport != null && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
+    hasResources:
+      (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
     project: projectPublic,
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
@@ -382,7 +384,7 @@ export async function getTestRunSummary(db: DrizzleDB, id: number) {
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.testRunId, id));
 
-  const { streamToken: _streamToken, resourceReport: _resourceReport, ...testRunPublic } = testRun;
+  const { streamToken: _streamToken, ...testRunPublic } = testRun;
 
   return {
     ...testRunPublic,
