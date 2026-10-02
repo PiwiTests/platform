@@ -5,7 +5,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
     summary: 'Update failure cluster status',
-    description: 'Updates the status (open, resolved, ignored) and optional triage note for a failure cluster.',
+    description:
+      'Updates the status (open, resolved, ignored) of a failure cluster. A `triageNote` string replaces the note (empty clears it), `null` clears it, and an omitted one keeps it.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter'],
   },

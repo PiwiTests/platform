@@ -2242,7 +2242,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const note = typeof params.triageNote === 'string' ? params.triageNote : undefined;
     const result = await patchClusterStatus(db, id, status, note);
     if (!result) return null;
-    return dropNulls({ id, status, triageNote: note || null, ok: true });
+    return dropNulls({ id, status, triageNote: result.cluster?.triageNote ?? null, ok: true });
   },
 
   // ── set_cluster_base_commit ────────────────────────────────────────────────

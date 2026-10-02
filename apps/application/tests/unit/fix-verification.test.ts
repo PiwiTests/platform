@@ -26,6 +26,7 @@ vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
     fetchChanges: async () => ({ files: changedFiles.map((filename) => ({ filename })) }),
     getCommitAuthor: async () => commitAuthor,
+    getDefaultBranch: async () => 'main',
   }),
 }));
 
@@ -33,7 +34,7 @@ vi.mock('../../server/utils/scm', () => ({
 // import time when PIWI_DATABASE_URL is set, so clear it before the module
 // under test (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { verifyClusterFixes, appendTriageNote } = await import('../../server/utils/fix-verification');
+const { verifyClusterFixes, appendTriageNote, classifyQuietRun } = await import('../../server/utils/fix-verification');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -42,8 +43,13 @@ let clusterSeq = 0;
 
 const REMOTE = 'https://github.com/acme/shop.git';
 
-async function insertRun(status: 'passed' | 'failed', commit: string, opts: { isFullRun?: boolean } = {}) {
+async function insertRun(
+  status: 'passed' | 'failed',
+  commit: string,
+  opts: { isFullRun?: boolean; branch?: string } = {},
+) {
   const id = ++runSeq;
+  const branch = opts.branch ?? 'main';
   await db.insert(schema.testRuns).values({
     id,
     projectId: 1,
@@ -51,7 +57,8 @@ async function insertRun(status: 'passed' | 'failed', commit: string, opts: { is
     startTime: new Date(Date.UTC(2026, 0, 1) + id * 3_600_000),
     isFullRun: opts.isFullRun === false ? 0 : 1,
     environment: 'staging',
-    metadata: { scm: { commit, remoteUrl: REMOTE, branch: 'main' } },
+    branch,
+    metadata: { scm: { commit, remoteUrl: REMOTE, branch } },
   });
   return id;
 }
@@ -306,5 +313,68 @@ describe('verifyClusterFixes — status transitions', () => {
     const mine = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
     expect(mine?.event).toBe('cluster.fixed');
     expect(mine?.payload).toMatchObject({ fixAuthor: { name: 'Ada Lovelace', email: 'ada@example.com' } });
+  });
+});
+
+describe('classifyQuietRun', () => {
+  const base = { runBranch: 'main', runCommit: 'b', failedBranch: 'main', failedCommit: 'a', defaultBranch: 'main' };
+
+  test('a new commit on the failing branch is a fix', () => {
+    expect(classifyQuietRun(base)).toBe('fix');
+  });
+
+  test('the failing commit is flake evidence, whatever the branch', () => {
+    expect(classifyQuietRun({ ...base, runCommit: 'a' })).toBe('same-commit');
+  });
+
+  test('another branch counts only when it is the default branch', () => {
+    expect(classifyQuietRun({ ...base, runBranch: 'feature/x' })).toBe('other-branch');
+    expect(classifyQuietRun({ ...base, failedBranch: 'feature/x' })).toBe('fix');
+    expect(classifyQuietRun({ ...base, runBranch: null })).toBe('other-branch');
+  });
+
+  test('unknown commits and branches on both sides are not compared', () => {
+    expect(classifyQuietRun({ ...base, runCommit: null })).toBe('fix');
+    expect(classifyQuietRun({ ...base, runBranch: null, failedBranch: null, defaultBranch: null })).toBe('fix');
+  });
+});
+
+describe('verifyClusterFixes — which quiet runs count', () => {
+  test('a pass at the failing commit is flake evidence; a pass at a new default-branch commit is the fix', async () => {
+    const failing = await insertRun('failed', 'c0ffee1');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+
+    const rerun = await insertRun('passed', 'c0ffee1');
+    await insertCase(rerun, 'passed', null);
+    expect(await verifyClusterFixes(db, rerun)).toEqual([]);
+    let row = await cluster(clusterId);
+    expect(row.fixLandedRunId).toBeNull();
+    expect(row.status).toBe('open');
+    expect(row.flakeEvidenceRunId).toBe(rerun);
+    expect(emitted.filter((e) => e.event === 'cluster.fixed')).toEqual([]);
+
+    const next = await insertRun('passed', 'c0ffee2');
+    await insertCase(next, 'passed', null);
+    const fixed = await verifyClusterFixes(db, next);
+    expect(fixed.map((f) => f.clusterId)).toEqual([clusterId]);
+    row = await cluster(clusterId);
+    expect(row.fixLandedRunId).toBe(next);
+    expect(row.fixCommit).toBe('c0ffee2');
+  });
+
+  test('a pass on another branch records nothing; a pass on the cluster’s own branch records the fix', async () => {
+    const failing = await insertRun('failed', 'dd00001', { branch: 'feature/cart' });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+
+    const elsewhere = await insertRun('passed', 'dd00002', { branch: 'feature/other' });
+    await insertCase(elsewhere, 'passed', null);
+    expect(await verifyClusterFixes(db, elsewhere)).toEqual([]);
+    expect((await cluster(clusterId)).fixLandedRunId).toBeNull();
+
+    const sameBranch = await insertRun('passed', 'dd00003', { branch: 'feature/cart' });
+    await insertCase(sameBranch, 'passed', null);
+    expect((await verifyClusterFixes(db, sameBranch)).map((f) => f.clusterId)).toEqual([clusterId]);
   });
 });

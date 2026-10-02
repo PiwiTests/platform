@@ -37,7 +37,7 @@ vi.mock('../../server/utils/scm', () => ({
 // PIWI_DATABASE_URL is set, so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 const { refreshOpenHealActions } = await import('../../server/utils/heal/pr-state');
-const { hasOpenPrCapacity } = await import('../../server/utils/heal/policy');
+const { hasOpenPrCapacity, queueHealAction } = await import('../../server/utils/heal/policy');
 const { findHealActionForCallSite, mapHealActionsByCluster } = await import('../../server/utils/heal/lookup');
 const { getAnalyticsProgress } = await import('../../shared/handlers/analytics/progress');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
@@ -109,6 +109,7 @@ beforeAll(async () => {
     { id: 1, name: 'checkout' },
     { id: 2, name: 'search' },
   ]);
+  await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
 });
 
 beforeEach(async () => {
@@ -228,6 +229,28 @@ describe('refreshOpenHealActions', () => {
 
     expect(scm.lookups).toEqual([oldest.prNumber, middle.prNumber]);
     expect(scm.lookups).not.toContain(newest.prNumber);
+  });
+
+  test('a PR that stays open moves to the back, so the next pass reaches the newer ones', async () => {
+    const first = await seedAction({ updatedAt: new Date('2026-01-01T00:00:00Z') });
+    const second = await seedAction({ updatedAt: new Date('2026-01-02T00:00:00Z') });
+    const third = await seedAction({ updatedAt: new Date('2026-01-03T00:00:00Z') });
+
+    await refreshOpenHealActions(db as never, { limit: 2 });
+    await refreshOpenHealActions(db as never, { limit: 2 });
+
+    expect(scm.lookups).toEqual([first.prNumber, second.prNumber, third.prNumber, first.prNumber]);
+  });
+
+  test('an action with no token or no PR also moves to the back', async () => {
+    const noPr = await seedAction({ prNumber: null, updatedAt: new Date('2026-01-01T00:00:00Z') });
+    const later = await seedAction({ updatedAt: new Date('2026-01-02T00:00:00Z') });
+
+    await refreshOpenHealActions(db as never, { limit: 1 });
+    await refreshOpenHealActions(db as never, { limit: 1 });
+
+    expect(scm.lookups).toEqual([later.prNumber]);
+    expect(await statusOf(noPr.id)).toBe('opened');
   });
 });
 
@@ -351,5 +374,44 @@ describe('heal action history', () => {
     expect(await statusOf(merged.id)).toBeUndefined();
     expect(await statusOf(closed.id)).toBeUndefined();
     expect(await statusOf(pending.id)).toBe('pending');
+  });
+
+  test('retention keeps a PR left open for 31 days, and its key keeps a duplicate from being queued', async () => {
+    const stale = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    const opened = await seedAction({ status: 'opened', updatedAt: stale });
+    const [row] = await db.select().from(schema.healActions).where(eq(schema.healActions.id, opened.id));
+
+    expect(await pruneHealActions(db as never, 30)).toBe(0);
+    expect(await statusOf(opened.id)).toBe('opened');
+
+    const queued = await queueHealAction(db as never, {
+      projectId: 1,
+      runId: 1,
+      dedupeKey: row!.dedupeKey,
+      payload: row!.payload as never,
+    });
+    expect(queued).toBe(false);
+    expect(await db.select().from(schema.healActions)).toHaveLength(1);
+  });
+
+  test('a failed or skipped action frees its key: the same edit is queued again on the same row', async () => {
+    for (const status of ['failed', 'skipped']) {
+      await db.delete(schema.healActions);
+      const settled = await seedAction({ status });
+      const [row] = await db.select().from(schema.healActions).where(eq(schema.healActions.id, settled.id));
+
+      const queued = await queueHealAction(db as never, {
+        projectId: 1,
+        runId: 1,
+        dedupeKey: row!.dedupeKey,
+        payload: row!.payload as never,
+      });
+
+      expect(queued).toBe(true);
+      const rows = await db.select().from(schema.healActions);
+      expect(rows.map((r) => [r.id, r.status, r.attempts, r.result, r.runId])).toEqual([
+        [settled.id, 'pending', 0, null, 1],
+      ]);
+    }
   });
 });

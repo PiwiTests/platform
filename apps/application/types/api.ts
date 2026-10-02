@@ -374,6 +374,8 @@ export interface ProjectWithTestRuns {
   serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
+  quarantineFailsStatus?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -397,6 +399,8 @@ export interface ProjectDetails {
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
+  quarantineFailsStatus?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -1024,6 +1028,8 @@ export interface ClusterResolutionFields {
   fixCommit: string | null;
   timeToResolutionMs: number | null;
   fixVerification: FixVerification | null;
+  /** The latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix. */
+  flakeEvidenceRunId?: number | null;
 }
 
 /**

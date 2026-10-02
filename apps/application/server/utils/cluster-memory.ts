@@ -191,7 +191,8 @@ export async function findFixedBefore(db: DrizzleDB, cluster: ClusterRow): Promi
       fixCommitUrl: row.fixCommit ? commitUrl(repositoryUrl, row.fixCommit) : null,
       triageNote: row.triageNote,
       owner: tests.get(row.id)?.owner ?? null,
-      diagnosisTitle: diag?.summary ?? null,
+      // A diagnosis rated unhelpful is not offered as how the cluster was fixed.
+      diagnosisTitle: diag?.feedback === 'down' ? null : (diag?.summary ?? null),
       diagnosisFeedback: diag?.feedback ?? null,
       reason: match.reason,
       score: match.score,

@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, targets, and tags. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires administrator role.',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, targets, and tags. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires administrator role.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator'],
   },
@@ -44,6 +44,8 @@ const updateProjectSchema = z.object({
     .optional()
     .nullable(),
   ciRerun: ciRerunSchema.optional().nullable(),
+  /** True turns the commit status red on a quarantined failure; false (the default) leaves it green. */
+  quarantineFailsStatus: z.boolean().optional(),
   /** Test import and bugs folder for specs rendered from bug reports; null clears them. */
   generatedSpecs: generatedSpecSettingsSchema.optional().nullable(),
   /** Per-project targets on catalog metrics; null clears them. */
@@ -80,6 +82,7 @@ export default eventHandler(async (event) => {
     openApiUrl,
     serverProbes,
     ciRerun,
+    quarantineFailsStatus,
     generatedSpecs,
     targets,
     tagIds,
@@ -113,6 +116,7 @@ export default eventHandler(async (event) => {
             ? null
             : resolveServerProbeSettings(serverProbes),
       ciRerun: resolvedCiRerun,
+      quarantineFailsStatus,
       generatedSpecs:
         generatedSpecs === undefined
           ? undefined

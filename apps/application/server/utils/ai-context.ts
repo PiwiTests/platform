@@ -8,6 +8,7 @@ import {
   networkRequests,
   files,
   failureDiagnoses,
+  failureDiagnosisVersions,
   failureClusters,
 } from '../database/schema';
 import type { FailureCluster } from '../database/schema';
@@ -1202,9 +1203,12 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
   return lines.join('\n');
 }
 
-/** Prior diagnosis + triage note + user feedback. */
-async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
-  const prev = await db
+/**
+ * The cluster's last completed diagnosis: the stored row when it is completed,
+ * otherwise the newest completed version snapshotted before a re-run reset it.
+ */
+async function lastCompletedDiagnosis(db: DbClient, clusterId: number) {
+  const [current] = await db
     .select({
       status: failureDiagnoses.status,
       category: failureDiagnoses.category,
@@ -1215,11 +1219,37 @@ async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Pro
       feedbackNote: failureDiagnoses.feedbackNote,
     })
     .from(failureDiagnoses)
-    .where(eq(failureDiagnoses.clusterId, cluster.id))
+    .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')))
     .limit(1);
+  if (current?.status === 'completed') return current;
 
-  const d = prev[0];
-  if (!d || d.status !== 'completed') return null;
+  const [version] = await db
+    .select({
+      status: failureDiagnosisVersions.status,
+      category: failureDiagnosisVersions.category,
+      confidence: failureDiagnosisVersions.confidence,
+      summary: failureDiagnosisVersions.summary,
+      rootCause: failureDiagnosisVersions.rootCause,
+      feedback: failureDiagnosisVersions.feedback,
+      feedbackNote: failureDiagnosisVersions.feedbackNote,
+    })
+    .from(failureDiagnosisVersions)
+    .where(
+      and(
+        eq(failureDiagnosisVersions.clusterId, clusterId),
+        eq(failureDiagnosisVersions.scope, 'cluster'),
+        eq(failureDiagnosisVersions.status, 'completed'),
+      ),
+    )
+    .orderBy(desc(failureDiagnosisVersions.createdAt), desc(failureDiagnosisVersions.id))
+    .limit(1);
+  return version ?? null;
+}
+
+/** Prior diagnosis + triage note + user feedback. */
+async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const d = await lastCompletedDiagnosis(db, cluster.id);
+  if (!d) return null;
 
   const lines: string[] = ['## Prior Assessment (from last diagnosis)'];
   if (d.category) lines.push(`- Previous category: ${d.category}`);

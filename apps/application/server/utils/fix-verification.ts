@@ -17,6 +17,12 @@
  * is failing again is marked `regressed`, because a fix that did not hold is
  * worth more than no record at all.
  *
+ * A quiet run counts as a fix only when it could have carried one: its commit
+ * differs from the commit the cluster last failed at, and it ran on the branch
+ * the cluster last failed on or on the default branch. A pass at the failing
+ * commit (a CI retry, a re-run from the dashboard) is stored as flake evidence
+ * on the cluster instead; a pass on another branch says nothing about this one.
+ *
  * The verdict moves the triage status only when the evidence is strong:
  * `diagnosis-verified` resolves an open cluster, `regressed` reopens a resolved
  * one, each appending a system line to the triage note. `stopped-failing`
@@ -36,6 +42,7 @@ import { parseUnifiedDiff, stripAbPrefix } from '#shared/patch';
 import type { FixAuthor, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
 import { resolveRunBranch } from './run-branch';
+import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { enqueueFixPolicies, enqueueRegressionPolicies, enqueueStillFailingPolicy } from './integrations/policies';
 import type { DbClient } from '../database';
@@ -54,6 +61,31 @@ export interface VerifiedFix {
   timeToResolutionMs: number | null;
   /** Tests that were failing and now pass. */
   testCount: number;
+}
+
+/** What a run in which every affected test passed says about a cluster. */
+export type QuietRunVerdict = 'fix' | 'same-commit' | 'other-branch';
+
+/**
+ * Whether a run that passed every test of a cluster records a fix. Unknown
+ * commits are not compared; an unknown branch matches only another unknown
+ * branch.
+ */
+export function classifyQuietRun(input: {
+  runBranch: string | null;
+  runCommit: string | null;
+  failedBranch: string | null;
+  failedCommit: string | null;
+  defaultBranch: string | null;
+}): QuietRunVerdict {
+  const runCommit = input.runCommit?.trim() || null;
+  const failedCommit = input.failedCommit?.trim() || null;
+  if (runCommit && failedCommit && runCommit === failedCommit) return 'same-commit';
+  const runBranch = input.runBranch?.trim() || null;
+  const failedBranch = input.failedBranch?.trim() || null;
+  if (runBranch === failedBranch) return 'fix';
+  if (runBranch != null && runBranch === input.defaultBranch) return 'fix';
+  return 'other-branch';
 }
 
 /** Append a system-written line to a triage note, keeping what a person wrote. */
@@ -192,7 +224,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
   }
 
   const [project] = await db
-    .select({ name: projects.name, label: projects.label })
+    .select({ name: projects.name, label: projects.label, defaultBranch: projects.defaultBranch })
     .from(projects)
     .where(eq(projects.id, run.projectId));
   const projectName = project?.label || project?.name || `Project #${run.projectId}`;
@@ -309,18 +341,40 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
   const referencedRunIds = [...new Set(candidates.flatMap((c) => [c.lastSeenRunId, c.firstSeenRunId]))];
   const referencedRuns = referencedRunIds.length
     ? await db
-        .select({ id: testRuns.id, metadata: testRuns.metadata, startTime: testRuns.startTime })
+        .select({
+          id: testRuns.id,
+          branch: testRuns.branch,
+          metadata: testRuns.metadata,
+          startTime: testRuns.startTime,
+        })
         .from(testRuns)
         .where(inArray(testRuns.id, referencedRunIds))
     : [];
   const commitByRunId = new Map<number, string | null>(
     referencedRuns.map((row) => [row.id, ((row.metadata as RunMetadata | null)?.scm?.commit ?? null) as string | null]),
   );
+  const branchByRunId = new Map<number, string | null>(
+    referencedRuns.map((row) => [row.id, row.branch ?? resolveRunBranch(row.metadata)]),
+  );
   const startTimeByRunId = new Map<number, Date | null>(
     referencedRuns.map((row) => [row.id, row.startTime instanceof Date ? row.startTime : null]),
   );
 
   const fixed: VerifiedFix[] = [];
+
+  // Resolved once, and only when a run on another branch than the cluster's
+  // needs it.
+  let defaultBranch: string | null | undefined;
+  const resolveProjectDefaultBranch = async (): Promise<string | null> => {
+    if (defaultBranch === undefined) {
+      defaultBranch = await resolveDefaultBranch(
+        db,
+        { id: run.projectId, defaultBranch: project?.defaultBranch ?? null },
+        run.metadata,
+      ).catch(() => null);
+    }
+    return defaultBranch;
+  };
 
   for (const cluster of candidates) {
     const clusterCases = casesByCluster.get(cluster.id);
@@ -337,8 +391,23 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     }
     if (!allGreen) continue;
 
-    let verification: VerifiedFix['verification'] = 'stopped-failing';
     const fromCommit = commitByRunId.get(cluster.lastSeenRunId) ?? null;
+    const failedBranch = branchByRunId.get(cluster.lastSeenRunId) ?? null;
+    const runBranch = runScope.branch ?? null;
+    const quiet = classifyQuietRun({
+      runBranch,
+      runCommit: currentCommit,
+      failedBranch,
+      failedCommit: fromCommit,
+      defaultBranch: runBranch && runBranch !== failedBranch ? await resolveProjectDefaultBranch() : null,
+    });
+    if (quiet === 'same-commit') {
+      await db.update(failureClusters).set({ flakeEvidenceRunId: runId }).where(eq(failureClusters.id, cluster.id));
+      continue;
+    }
+    if (quiet === 'other-branch') continue;
+
+    let verification: VerifiedFix['verification'] = 'stopped-failing';
     if (repositoryUrl && fromCommit && currentCommit) {
       const files = await diagnosedFiles(db, cluster.id);
       if (await changeTouchedFiles(db, run.projectId, repositoryUrl, fromCommit, currentCommit, files)) {

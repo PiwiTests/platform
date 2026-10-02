@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * Project settings → Source control: the repository token and default branch,
- * the CI re-run target per provider, and where the specs generated from bug
- * reports go. The token is write-only: a blank field keeps the stored one.
+ * whether quarantined failures fail the commit status, the CI re-run target per
+ * provider, and where the specs generated from bug reports go. The token is write-only: a blank field keeps the stored one.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
 
@@ -13,6 +13,7 @@ const { state, dirty } = useStoredForm(() => {
   const ci = props.project.ciRerun;
   return {
     defaultBranch: props.project.defaultBranch || '',
+    quarantineFailsStatus: props.project.quarantineFailsStatus === true,
     ciRerun: {
       enabled: ci?.enabled ?? false,
       github: {
@@ -39,6 +40,7 @@ async function submit() {
     {
       scmToken: scmToken.value.trim() || undefined,
       defaultBranch: state.value.defaultBranch || null,
+      quarantineFailsStatus: state.value.quarantineFailsStatus,
       ciRerun: state.value.ciRerun,
       generatedSpecs: {
         testImport: state.value.generatedSpecs.testImport.trim() || null,
@@ -103,6 +105,14 @@ async function removeToken() {
           description="Baselines, flakiness and trends fall back to this branch. Leave empty to resolve it from the SCM provider (else 'main')."
         >
           <UInput v-model="state.defaultBranch" placeholder="e.g. main" class="w-full sm:max-w-xs font-mono" />
+        </UFormField>
+
+        <UFormField
+          label="Commit status"
+          name="quarantineFailsStatus"
+          description="The run's commit status stays green when only quarantined tests failed, and counts them. Turn this on to fail it on any failure."
+        >
+          <USwitch v-model="state.quarantineFailsStatus" label="Quarantined failures fail the commit status" />
         </UFormField>
 
         <UFormField
