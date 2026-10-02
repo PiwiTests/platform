@@ -69,6 +69,22 @@ describe('a test that runs in several browser projects', () => {
   });
 });
 
+describe('runs that move no report', () => {
+  test.each(['bug', 'bisect', 'reproduce', 'flake-lab'])('a %s run leaves the reports where they are', async (kind) => {
+    await db
+      .update(schema.testRuns)
+      .set({ metadata: { piwiOrigin: { kind } } })
+      .where(eq(schema.testRuns.id, 2));
+    await db
+      .insert(schema.testRunsCases)
+      .values([{ testRunId: 2, testCaseId: 2, testMeta: { bug: '2' }, ...fixedIn('chromium') }]);
+
+    expect(await applyBugReportLifecycle(db as never, 2)).toEqual([]);
+    const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 2));
+    expect(report!.status).toBe('test-committed');
+  });
+});
+
 describe('the bug.looks_fixed notification', () => {
   test('names only tests that did not already look fixed on the previous run of the branch', async () => {
     await db.insert(schema.testRunsCases).values([

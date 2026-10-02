@@ -111,7 +111,10 @@ describe('importBlobReportRun', () => {
 
     const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, result.runId));
     expect(run!.branch).toBe('feature/pay');
-    expect(run!.metadata).toMatchObject({ scm: { commit: 'abc123', branch: 'feature/pay' } });
+    expect(run!.metadata).toMatchObject({
+      scm: { commit: 'abc123', branch: 'feature/pay' },
+      piwiOrigin: { kind: 'import' },
+    });
   });
 
   test("an archive older than the newest run keeps the tests' current metadata and dates its executions from their attempts", async () => {

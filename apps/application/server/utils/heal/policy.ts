@@ -8,6 +8,7 @@
  * edit backed by high-confidence captured evidence. The chosen edit set is
  * snapshotted into a durable `heal_actions` row; the dispatcher does the writes.
  */
+import { isEligibleRun, runOrigin } from '#shared/run-eligibility';
 import { and, count, eq, inArray } from 'drizzle-orm';
 import { healActions, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
 import { getLocatorHealingBatch } from '../locator-healing';
@@ -159,6 +160,7 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
   if (!run) return skip('run not found');
   if (!settings.projects.includes(run.projectId)) return skip('project not allowlisted');
   if (run.isFullRun === 0) return skip('not a full run');
+  if (!isEligibleRun(run, 'auto-heal')) return skip(`a ${runOrigin(run.metadata)} run`);
 
   const meta = (run.metadata as RunMetadata | null) ?? null;
   const branch = run.branch ?? resolveRunBranch(run.metadata);

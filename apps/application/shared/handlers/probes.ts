@@ -9,7 +9,7 @@
  * the ledger and upsert the results.
  */
 
-import { and, eq, inArray, isNull, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   graphEdges,
   graphNodes,
@@ -17,11 +17,10 @@ import {
   projects,
   quarantinedTests,
   testCases,
-  testRuns,
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
-import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
+import { eligibleExecutionSql } from '../run-eligibility';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
 import { resolveProjectStates } from './capabilities';
 import {
@@ -49,77 +48,16 @@ export const PROBE_INCONCLUSIVE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 /** The fraction of the budget reserved for server (level-two) items when enabled. */
 export const SERVER_PROBE_BUDGET_SHARE = 0.5;
 
-/** The run-metadata flag that stamps a run as a probe run (never a real run). */
-export const PROBE_RUN_METADATA_KEY = 'piwiProbe';
-
-/** True when a run's metadata stamps it as a probe run. */
-export function isProbeRun(metadata: unknown): boolean {
-  return (
-    !!metadata && typeof metadata === 'object' && (metadata as Record<string, unknown>)[PROBE_RUN_METADATA_KEY] === true
-  );
-}
-
-/**
- * SQL predicate keeping only runs that are not probe runs: the SQL form of
- * `!isProbeRun(metadata)`, for queries that aggregate or limit in the database.
- * The flag is matched in the serialized JSON, with and without the space
- * PostgreSQL's `jsonb` text output puts after the colon.
- */
-function notProbeRun(metadata: SQLWrapper): SQL {
-  const compact = `%"${PROBE_RUN_METADATA_KEY}":true%`;
-  const spaced = `%"${PROBE_RUN_METADATA_KEY}": true%`;
-  return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;
-}
-
-/**
- * The run-metadata key that stamps a run as a flake-lab run: one arm of a flake
- * experiment, `{ experimentId, armId }`. Shared with the reporter through
- * `@piwitests/core/flake-plan`.
- */
-export { FLAKE_LAB_RUN_METADATA_KEY };
-
-/** True when a run's metadata stamps it as a flake-lab run. */
-export function isFlakeLabRun(metadata: unknown): boolean {
-  if (!metadata || typeof metadata !== 'object') return false;
-  const stamp = (metadata as Record<string, unknown>)[FLAKE_LAB_RUN_METADATA_KEY];
-  return !!stamp && typeof stamp === 'object';
-}
-
-/**
- * SQL predicate keeping only runs that are not flake-lab runs: the SQL form of
- * `!isFlakeLabRun(metadata)`. The stamp is an object, matched in the serialized
- * JSON with and without the space PostgreSQL's `jsonb` text output puts after
- * the colon.
- */
-function notFlakeLabRun(metadata: SQLWrapper): SQL {
-  const compact = `%"${FLAKE_LAB_RUN_METADATA_KEY}":{%`;
-  const spaced = `%"${FLAKE_LAB_RUN_METADATA_KEY}": {%`;
-  return sql`(${metadata} IS NULL OR (CAST(${metadata} AS TEXT) NOT LIKE ${compact} AND CAST(${metadata} AS TEXT) NOT LIKE ${spaced}))`;
-}
-
-/**
- * True for a lab run, one that replays tests under conditions Piwi injected: a
- * probe run or a flake-lab run. A lab run never counts as a real run, so it
- * stays out of flakiness, history, regressions, clusters, notifications and
- * every other analysis of how the suite behaves.
- */
-export function isLabRun(metadata: unknown): boolean {
-  return isProbeRun(metadata) || isFlakeLabRun(metadata);
-}
-
-/** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. */
-export function notLabRun(metadata: SQLWrapper): SQL {
-  return sql`(${notProbeRun(metadata)} AND ${notFlakeLabRun(metadata)})`;
-}
-
-/**
- * SQL predicate on an execution's run id keeping only executions of runs that
- * are not lab runs, for queries over `test_runs_cases` that do not join
- * `test_runs` (a left join from test cases, a correlated subquery).
- */
-export function notLabExecution(testRunId: SQLWrapper): SQL {
-  return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${notLabRun(testRuns.metadata)})`;
-}
+// The lab stamps and their SQL forms are cases of the run eligibility rule.
+export {
+  FLAKE_LAB_RUN_METADATA_KEY,
+  PROBE_RUN_METADATA_KEY,
+  isFlakeLabRun,
+  isLabRun,
+  isProbeRun,
+  notLabExecution,
+  notLabRun,
+} from '../run-eligibility';
 
 /** One (test, route, fault) pair the plan asks a probe run to apply. */
 export interface ProbePlanItem {
@@ -482,7 +420,9 @@ export async function buildProbePlan(
 /**
  * Test cases that must not be probed: a currently-quarantined test, or one whose
  * most recent execution failed or timed out. A probe replays a *passing* test, so
- * probing one of these records a false "noticed".
+ * probing one of these records a false "noticed". The most recent execution is
+ * read from the runs eligible as a baseline, so a lab arm, a bisect step or a
+ * reproduction never decides it.
  */
 async function loadUnprobableTestIds(db: DrizzleDB, projectId: number, ids: number[]): Promise<Set<number>> {
   const excluded = new Set<number>();
@@ -504,7 +444,7 @@ async function loadUnprobableTestIds(db: DrizzleDB, projectId: number, ids: numb
     const maxRows = await db
       .select({ testCaseId: testRunsCases.testCaseId, maxId: sql<number>`max(${testRunsCases.id})` })
       .from(testRunsCases)
-      .where(inArray(testRunsCases.testCaseId, slice))
+      .where(and(inArray(testRunsCases.testCaseId, slice), eligibleExecutionSql('baseline', testRunsCases.testRunId)))
       .groupBy(testRunsCases.testCaseId);
     const maxIds = maxRows.map((r) => Number(r.maxId)).filter((n) => Number.isFinite(n));
     if (maxIds.length === 0) continue;

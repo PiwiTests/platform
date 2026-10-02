@@ -195,6 +195,10 @@ describe('PIWI_ENV_VARS registry', () => {
       // Set by the desktop shell for a repro run and read by the spec it
       // writes (see `shared/desktop-repro.ts`), never by the server.
       'PIWI_REPRO_RESULT',
+      // Set by a launcher on the Playwright process and read by the reporter,
+      // which stamps them on the run as `piwiOrigin`; the app reads the stamp.
+      'PIWI_ORIGIN',
+      'PIWI_ORIGIN_REF',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);

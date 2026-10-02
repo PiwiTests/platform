@@ -13,7 +13,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { networkRequests, testCases, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { loadSelectionCatalog, type CatalogRow } from './selections';
-import { notLabExecution } from './probes';
+import { eligibleExecutionSql } from '../run-eligibility';
 import { locksSpanningTests } from '../selection';
 
 /** A proposed tag for one test, with the evidence for it. */
@@ -74,7 +74,7 @@ export const DEFAULT_SMOKE_BUDGET_MS = 5 * 60 * 1000;
 /** Minimum pass rate for a test to be trusted in a smoke suite. */
 const SMOKE_MIN_PASS_RATE = 0.99;
 
-/** Per-test set of distinct route patterns the test has exercised outside lab runs. */
+/** Per-test set of distinct route patterns the test has exercised in runs the selection catalog reads. */
 async function loadRouteCoverage(db: DrizzleDB, projectId: number): Promise<Map<number, Set<string>>> {
   const rows = await db
     .select({ testCaseId: testRunsCases.testCaseId, route: networkRequests.normalizedUrl })
@@ -85,7 +85,7 @@ async function loadRouteCoverage(db: DrizzleDB, projectId: number): Promise<Map<
       and(
         eq(testCases.projectId, projectId),
         isNotNull(networkRequests.normalizedUrl),
-        notLabExecution(testRunsCases.testRunId),
+        eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
       ),
     )
     .groupBy(testRunsCases.testCaseId, networkRequests.normalizedUrl);
