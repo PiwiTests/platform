@@ -1656,9 +1656,11 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
 // context per test and never closes it, so every test after the first finds
 // the earlier tests' pages still open in its worker. The three runs before it
 // close what they open, but one of their tests has left a server running in its
-// worker for a while. Each run carries what its executions cost and its report,
-// as the reporter sends them, and the findings' history is written as the
-// server records it on finish.
+// worker for a while. The run before the newest ran as two CI shards, each on
+// its own machine with its own workers, so it carries one report per shard.
+// Each run carries what its executions cost and its report, as the reporter
+// sends them, and the findings' history is written as the server records it
+// on finish.
 const TEST_RUN_RESOURCE_REPORTS = [];
 const RESOURCE_FINDINGS = [];
 const RESOURCE_OCCURRENCES = [];
@@ -1667,45 +1669,74 @@ const RESOURCE_OCCURRENCES = [];
   const reportByRun = new Map();
   for (const [index, run] of webRuns.slice(0, 4).entries()) {
     const leaky = index === 0;
-    const lanes = new Map();
-    for (const row of TEST_RUNS_CASES) {
-      if (row.test_run_id !== run.id || row.worker_index === null || row.status === 'didnotrun') continue;
+    const rows = TEST_RUNS_CASES.filter(
+      (row) => row.test_run_id === run.id && row.worker_index !== null && row.status !== 'didnotrun',
+    );
+    if (index === 1) {
+      // Two shards: the first half of the workers ran on shard 1, the rest on
+      // shard 2, each shard numbering its own workers from 0 as Playwright does.
+      const workers = [...new Set(rows.map((row) => row.worker_index))].sort((a, b) => a - b);
+      const half = Math.ceil(workers.length / 2);
+      for (const row of rows) {
+        const position = workers.indexOf(row.worker_index);
+        row.shard_index = position < half ? 1 : 2;
+        row.worker_index = position < half ? position : position - half;
+      }
+      run.shard_total = 2;
+      run.shard_index = 1;
+      run.shards_finished = 2;
+    }
+    const shards = new Map();
+    for (const row of rows) {
+      const shard = row.shard_index ?? null;
+      const lanes = shards.get(shard) ?? new Map();
       const lane = lanes.get(row.worker_index) ?? [];
       lane.push(row);
       lanes.set(row.worker_index, lane);
+      shards.set(shard, lanes);
     }
-    let artifactBytes = 0;
-    for (const lane of lanes.values()) {
-      lane.sort((a, b) => a.started_at - b.started_at);
-      lane.forEach((row, position) => {
-        row.resources = demoExecutionResources({
-          seq: row.id,
-          durationMs: row.duration ?? 0,
-          openAtStart: position,
-          leaky,
+    const parts = [];
+    for (const [shard, lanes] of [...shards.entries()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))) {
+      let artifactBytes = 0;
+      for (const lane of lanes.values()) {
+        lane.sort((a, b) => a.started_at - b.started_at);
+        lane.forEach((row, position) => {
+          row.resources = demoExecutionResources({
+            seq: row.id,
+            durationMs: row.duration ?? 0,
+            openAtStart: position,
+            leaky,
+          });
+          artifactBytes += Object.values(row.resources.artifactBytes).reduce((sum, n) => sum + n, 0);
         });
-        artifactBytes += Object.values(row.resources.artifactBytes).reduce((sum, n) => sum + n, 0);
+      }
+      const report = demoResourceReport({
+        leaky,
+        // The server left running belongs to one worker, so to one shard.
+        handle: shard === null || shard === 1,
+        wallMs: run.duration,
+        workers: [...lanes.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([worker, lane]) => ({
+            worker,
+            tests: lane.length,
+            spans: lane.map((row) => [row.started_at, row.started_at + (row.duration ?? 0)]),
+          })),
+        fixtureFile: 'tests/admin/fixtures.ts',
+        handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
+        artifactBytes,
+        shardIndex: shard,
+      });
+      parts.push(report);
+      TEST_RUN_RESOURCE_REPORTS.push({
+        id: TEST_RUN_RESOURCE_REPORTS.length + 1,
+        run_id: run.id,
+        shard: shard ?? 0,
+        report,
+        updated_at: run.updated_at,
       });
     }
-    const report = demoResourceReport({
-      leaky,
-      handle: true,
-      wallMs: run.duration,
-      workers: [...lanes.entries()]
-        .sort((a, b) => a[0] - b[0])
-        .map(([worker, lane]) => ({ worker, tests: lane.length })),
-      fixtureFile: 'tests/admin/fixtures.ts',
-      handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
-      artifactBytes,
-    });
-    reportByRun.set(run.id, report);
-    TEST_RUN_RESOURCE_REPORTS.push({
-      id: TEST_RUN_RESOURCE_REPORTS.length + 1,
-      run_id: run.id,
-      shard: 0,
-      report,
-      updated_at: run.updated_at,
-    });
+    reportByRun.set(run.id, { findings: parts.flatMap((part) => part.findings) });
   }
 
   // The history, oldest run first, as recordRunResourceFindings writes it.
@@ -3730,6 +3761,9 @@ const REBASE_SQL = [
   shiftJsonMs('test_runs_cases', 'dialogs', 'closedAt'),
   shiftJsonMs('test_runs_cases', 'attempts', 'startedAt'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
+  `UPDATE test_run_resource_reports SET report = json_set(report, '$.timeline.startedAt', ` +
+    `json_extract(report, '$.timeline.startedAt') + ${D_MS}) ` +
+    `WHERE json_valid(report) AND json_extract(report, '$.timeline.startedAt') IS NOT NULL;`,
   '',
   'DROP TABLE _rebase;',
 ];

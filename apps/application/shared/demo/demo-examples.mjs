@@ -75,6 +75,15 @@ export const DEMO_EXAMPLES = [
     route: '/test-runs/62?tab=resources',
     expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
   },
+  {
+    id: 'resources-leaky-timeline',
+    doc: 'features/cpu-memory-disk',
+    title: 'Web Dashboard › the newest run’s Timeline tab',
+    shows:
+      'Above the worker rows, the machine’s CPU and the run’s memory climb with the pages its login fixture leaves open; hover them for the values at each moment.',
+    route: '/test-runs/62?tab=workers',
+    expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
+  },
 ];
 
 /** The examples a docs page renders, in registry order. */

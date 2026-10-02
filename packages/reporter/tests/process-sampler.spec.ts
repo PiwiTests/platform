@@ -46,13 +46,20 @@ function proc(
   write(path.join(root, String(pid), 'schedstat'), `0 ${p.waitMs * 1e6} 0\n`);
   write(path.join(root, String(pid), 'cmdline'), p.cmdline.split(' ').join('\0'));
   write(path.join(root, String(pid), 'status'), `Name:\t${p.comm}\nVmHWM:\t${p.rssKb} kB\nVmRSS:\t${p.rssKb} kB\n`);
-  if (p.pssKb !== undefined) write(path.join(root, String(pid), 'smaps_rollup'), `Rss: ${p.rssKb} kB\nPss:   ${p.pssKb} kB\n`);
+  if (p.pssKb !== undefined)
+    write(path.join(root, String(pid), 'smaps_rollup'), `Rss: ${p.rssKb} kB\nPss:   ${p.pssKb} kB\n`);
 }
 
-function machine(root: string, m: { busy: number; idle: number; steal: number; cpuPsiUs: number; memPsiUs: number; availKb: number }) {
+function machine(
+  root: string,
+  m: { busy: number; idle: number; steal: number; cpuPsiUs: number; memPsiUs: number; availKb: number },
+) {
   write(path.join(root, 'stat'), `cpu  ${m.busy} 0 0 ${m.idle} 0 0 0 ${m.steal} 0 0\ncpu0 1 2 3\n`);
   write(path.join(root, 'meminfo'), `MemTotal: 16000000 kB\nMemAvailable: ${m.availKb} kB\n`);
-  write(path.join(root, 'pressure', 'cpu'), `some avg10=0.00 avg60=0.00 avg300=0.00 total=${m.cpuPsiUs}\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n`);
+  write(
+    path.join(root, 'pressure', 'cpu'),
+    `some avg10=0.00 avg60=0.00 avg300=0.00 total=${m.cpuPsiUs}\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n`,
+  );
   write(path.join(root, 'pressure', 'memory'), `some avg10=0.00 avg60=0.00 avg300=0.00 total=${m.memPsiUs}\n`);
 }
 
@@ -74,14 +81,22 @@ describe('system readers', () => {
 
   it('parses schedstat, /proc/stat, pressure files and ps output', () => {
     expect(parseSchedstat('123 5000000 9')).toBe(5);
-    expect(parseCpuTicks('cpu  10 1 4 100 3 1 1 2 0 0\n')).toEqual({ busy: 17, idle: 100, iowait: 3, steal: 2, total: 122 });
+    expect(parseCpuTicks('cpu  10 1 4 100 3 1 1 2 0 0\n')).toEqual({
+      busy: 17,
+      idle: 100,
+      iowait: 3,
+      steal: 2,
+      total: 122,
+    });
     expect(parseCpuTicks('intr 1 2 3')).toBeNull();
     expect(parsePsiTotal('some avg10=1.00 avg60=0.00 avg300=0.00 total=4242\nfull avg10=0 total=1')).toBe(4242);
     expect(parsePsTime('1:02.50')).toBe(62_500);
     expect(parsePsTime('01:00:03')).toBe(3_603_000);
     expect(parsePsTime('2-00:00:01')).toBe(172_801_000);
     expect(
-      parsePsOutput('  10     1  2048   0:01.20 /usr/bin/node runner.js\n  11    10  1024 0:00.30 /Apps/Chromium Helper --type=renderer\n'),
+      parsePsOutput(
+        '  10     1  2048   0:01.20 /usr/bin/node runner.js\n  11    10  1024 0:00.30 /Apps/Chromium Helper --type=renderer\n',
+      ),
     ).toEqual([
       { pid: 10, ppid: 1, rssKb: 2048, cpuMs: 1200, command: '/usr/bin/node runner.js' },
       { pid: 11, ppid: 10, rssKb: 1024, cpuMs: 300, command: '/Apps/Chromium Helper --type=renderer' },
@@ -169,11 +184,51 @@ describe('RunSampler', () => {
 
     let clock = 1_000_000;
     machine(procRoot, { busy: 1000, idle: 9000, steal: 0, cpuPsiUs: 0, memPsiUs: 0, availKb: 8_000_000 });
-    proc(procRoot, 100, { ppid: 1, comm: 'node', cmdline: 'node playwright test', ticks: 50, waitMs: 5, pssKb: 50_000, rssKb: 90_000 });
-    proc(procRoot, 200, { ppid: 100, comm: 'node', cmdline: 'node /pw/lib/worker/workerProcessEntry.js', ticks: 10, waitMs: 1, pssKb: 80_000, rssKb: 120_000 });
-    proc(procRoot, 300, { ppid: 200, comm: 'chrome', cmdline: '/pw/chromium/chrome --headless', ticks: 20, waitMs: 2, pssKb: 60_000, rssKb: 200_000 });
-    proc(procRoot, 400, { ppid: 100, comm: 'sh', cmdline: 'sh -c npm run dev', ticks: 1, waitMs: 0, pssKb: 1_000, rssKb: 2_000 });
-    proc(procRoot, 401, { ppid: 400, comm: 'node', cmdline: 'node vite', ticks: 100, waitMs: 10, pssKb: 40_000, rssKb: 70_000 });
+    proc(procRoot, 100, {
+      ppid: 1,
+      comm: 'node',
+      cmdline: 'node playwright test',
+      ticks: 50,
+      waitMs: 5,
+      pssKb: 50_000,
+      rssKb: 90_000,
+    });
+    proc(procRoot, 200, {
+      ppid: 100,
+      comm: 'node',
+      cmdline: 'node /pw/lib/worker/workerProcessEntry.js',
+      ticks: 10,
+      waitMs: 1,
+      pssKb: 80_000,
+      rssKb: 120_000,
+    });
+    proc(procRoot, 300, {
+      ppid: 200,
+      comm: 'chrome',
+      cmdline: '/pw/chromium/chrome --headless',
+      ticks: 20,
+      waitMs: 2,
+      pssKb: 60_000,
+      rssKb: 200_000,
+    });
+    proc(procRoot, 400, {
+      ppid: 100,
+      comm: 'sh',
+      cmdline: 'sh -c npm run dev',
+      ticks: 1,
+      waitMs: 0,
+      pssKb: 1_000,
+      rssKb: 2_000,
+    });
+    proc(procRoot, 401, {
+      ppid: 400,
+      comm: 'node',
+      cmdline: 'node vite',
+      ticks: 100,
+      waitMs: 10,
+      pssKb: 40_000,
+      rssKb: 70_000,
+    });
 
     const sampler = new RunSampler({
       rootPid: 100,
@@ -191,10 +246,41 @@ describe('RunSampler', () => {
     // Ten seconds later: CPU spent, a renderer born, the output written, a peak reached.
     clock += 10_000;
     machine(procRoot, { busy: 4000, idle: 10_000, steal: 100, cpuPsiUs: 2_000_000, memPsiUs: 0, availKb: 6_000_000 });
-    proc(procRoot, 200, { ppid: 100, comm: 'node', cmdline: 'node /pw/lib/worker/workerProcessEntry.js', ticks: 310, waitMs: 41, pssKb: 90_000, rssKb: 130_000 });
-    proc(procRoot, 300, { ppid: 200, comm: 'chrome', cmdline: '/pw/chromium/chrome --headless', ticks: 120, waitMs: 12, pssKb: 70_000, rssKb: 210_000 });
-    proc(procRoot, 301, { ppid: 300, comm: 'chrome', cmdline: '/pw/chromium/chrome --type=renderer', ticks: 500, waitMs: 300, rssKb: 150_000 });
-    proc(procRoot, 401, { ppid: 400, comm: 'node', cmdline: 'node vite', ticks: 200, waitMs: 10, pssKb: 40_000, rssKb: 70_000 });
+    proc(procRoot, 200, {
+      ppid: 100,
+      comm: 'node',
+      cmdline: 'node /pw/lib/worker/workerProcessEntry.js',
+      ticks: 310,
+      waitMs: 41,
+      pssKb: 90_000,
+      rssKb: 130_000,
+    });
+    proc(procRoot, 300, {
+      ppid: 200,
+      comm: 'chrome',
+      cmdline: '/pw/chromium/chrome --headless',
+      ticks: 120,
+      waitMs: 12,
+      pssKb: 70_000,
+      rssKb: 210_000,
+    });
+    proc(procRoot, 301, {
+      ppid: 300,
+      comm: 'chrome',
+      cmdline: '/pw/chromium/chrome --type=renderer',
+      ticks: 500,
+      waitMs: 300,
+      rssKb: 150_000,
+    });
+    proc(procRoot, 401, {
+      ppid: 400,
+      comm: 'node',
+      cmdline: 'node vite',
+      ticks: 200,
+      waitMs: 10,
+      pssKb: 40_000,
+      rssKb: 70_000,
+    });
     write(path.join(outputDir, 'cart-adds', 'trace.zip'), 'x'.repeat(10_000));
     write(path.join(tmpDir, 'playwright-artifacts-new', 'video.webm'), 'x'.repeat(5_000));
     write(path.join(cgroupRoot, 'memory.peak'), '900000000\n');
@@ -228,11 +314,49 @@ describe('RunSampler', () => {
     expect(profile.disk.leftoverBytes).toBe(4000);
     expect(profile.disk.lowestFreeBytes).toBeGreaterThan(0);
     expect(profile.notMeasured).toEqual([]);
+
+    // Each reading at the time its sample started: the first CPU share needs two readings.
+    const series = sampler.timedSeries();
+    expect(series.startedAt).toBe(1_000_000);
+    expect(series.cpuPct).toEqual([[10_000, cpuShare(3000, 4100)]]);
+    expect(series.memoryBytes.map(([at]) => at)).toEqual([0, 10_000]);
+    // The worker and the browser it started, with the renderer born since: 9 s of CPU over 10 s.
+    expect(series.workers).toHaveLength(1);
+    expect(series.workers[0]).toMatchObject({ pid: 200, cpuCores: [[10_000, 0.9]] });
+    expect(series.workers[0]!.memoryBytes[series.workers[0]!.memoryBytes.length - 1]).toEqual([
+      10_000,
+      (90_000 + 70_000 + 150_000) * 1024,
+    ]);
+    expect(series.memoryBytes[series.memoryBytes.length - 1]![1]).toBe(profile.memory.peakBytes);
   });
+
+  it('keeps a long run’s whole span by merging neighboring points', async () => {
+    let clock = 0;
+    let busy = 0;
+    const procRoot = path.join(dir, 'proc');
+    machine(procRoot, { busy: 0, idle: 0, steal: 0, cpuPsiUs: 0, memPsiUs: 0, availKb: 1 });
+    const sampler = new RunSampler({ platform: 'linux', procRoot, intervalMs: 60_000, tmpDir: dir, now: () => clock });
+    sampler.start();
+    // One more reading than the timed series keeps, each a second apart: half busy. Only the
+    // CPU counters change between readings.
+    for (let i = 0; i < 3601; i++) {
+      clock += 1000;
+      busy += 50;
+      fs.writeFileSync(path.join(procRoot, 'stat'), `cpu  ${busy} 0 0 ${busy} 0 0 0 0 0 0\ncpu0 1 2 3\n`);
+      await (sampler as unknown as { sample(heavy: boolean): Promise<void> }).sample(false);
+    }
+    const { cpuPct } = sampler.timedSeries();
+    expect(cpuPct).toHaveLength(1801);
+    expect(cpuPct[0]).toEqual([1000, 50]);
+    expect(cpuPct[1]).toEqual([3000, 50]);
+    expect(cpuPct[cpuPct.length - 1]).toEqual([3_601_000, 50]);
+    await sampler.stop();
+  }, 20_000);
 
   it('reads the tree through ps on macOS, and names what it could not read', async () => {
     let clock = 0;
-    let ps = '  100     1  50000   0:01.00 /usr/local/bin/node playwright test\n  200   100  90000   0:02.00 /usr/local/bin/node /pw/lib/worker/workerProcessEntry.js\n';
+    let ps =
+      '  100     1  50000   0:01.00 /usr/local/bin/node playwright test\n  200   100  90000   0:02.00 /usr/local/bin/node /pw/lib/worker/workerProcessEntry.js\n';
     const sampler = new RunSampler({
       rootPid: 100,
       platform: 'darwin',
@@ -245,7 +369,9 @@ describe('RunSampler', () => {
     });
     sampler.start();
     clock += 5000;
-    ps = ps.replace('0:02.00', '0:04.50') + '  300   200 300000   0:03.00 /Apps/Chromium.app/Contents/MacOS/Chromium --headless\n';
+    ps =
+      ps.replace('0:02.00', '0:04.50') +
+      '  300   200 300000   0:03.00 /Apps/Chromium.app/Contents/MacOS/Chromium --headless\n';
     const profile = await sampler.stop();
     expect(profile.cpu.byRole).toEqual({
       runner: { cpuMs: 0, runWaitMs: null, processes: 1 },
@@ -253,12 +379,28 @@ describe('RunSampler', () => {
       browser: { cpuMs: 3000, runWaitMs: null, processes: 1 },
     });
     expect(profile.memory).toMatchObject({ kind: 'rss', peakBytes: (50_000 + 90_000 + 300_000) * 1024 });
+    // The worker's 2.5 s and its new browser's 3 s over the 5 s between the two reads.
+    expect(sampler.timedSeries().workers).toEqual([
+      {
+        pid: 200,
+        cpuCores: [[5000, 1.1]],
+        memoryBytes: [
+          [0, 90_000 * 1024],
+          [5000, (90_000 + 300_000) * 1024],
+        ],
+      },
+    ]);
     expect(profile.cpu.pressurePct).toBeNull();
     expect(profile.notMeasured).toEqual(['time waiting for a CPU', 'steal', 'CPU pressure']);
   });
 
   it('measures only the machine where the tree cannot be read', async () => {
-    const sampler = new RunSampler({ platform: 'win32', procRoot: path.join(dir, 'no-proc'), intervalMs: 60_000, tmpDir: dir });
+    const sampler = new RunSampler({
+      platform: 'win32',
+      procRoot: path.join(dir, 'no-proc'),
+      intervalMs: 60_000,
+      tmpDir: dir,
+    });
     sampler.start();
     const profile = await sampler.stop();
     expect(profile.cpu.byRole).toBeNull();

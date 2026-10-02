@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { ResourceCensus } from '../src/internal/capture/resource-ledger.js';
 import {
   REPORT_FINDINGS_CAP,
+  TIMELINE_SERIES_CAP,
+  TIMELINE_WORKER_POINTS_CAP,
   downsample,
+  downsamplePoints,
   executionResources,
   resourceReportWire,
+  resourceTimeline,
 } from '../src/internal/collect/resource-wire.js';
 import type { ResourceReport } from '../src/internal/collect/resource-verdicts.js';
 import type { RunProfile } from '../src/internal/collect/process-sampler.js';
@@ -15,11 +19,11 @@ function census(worker: number, at: number, test: string | null, parts: Partial<
   return { v: 1, worker, pid: 1, at, test: test ? ref(test) : null, born: [], closed: [], open: [], ...parts };
 }
 
-const birth = (id: number, kind: 'page' | 'context') => ({
+const birth = (id: number, kind: 'page' | 'context', at = 0) => ({
   id,
   kind,
   parent: null,
-  at: 0,
+  at,
   phase: 'test' as const,
   fixture: null,
   test: ref('t1'),
@@ -30,7 +34,147 @@ describe('downsample', () => {
   it('keeps a short series and averages a long one into at most the cap', () => {
     expect(downsample([1, 2, 3], 5)).toEqual([1, 2, 3]);
     expect(downsample([0, 10, 20, 30], 2)).toEqual([5, 25]);
-    expect(downsample(Array.from({ length: 1000 }, (_, i) => i), 240)).toHaveLength(240);
+    expect(
+      downsample(
+        Array.from({ length: 1000 }, (_, i) => i),
+        240,
+      ),
+    ).toHaveLength(240);
+  });
+});
+
+const close = (id: number, at: number) => ({ id, at, phase: 'test' as const, test: ref('t1') });
+
+describe('downsamplePoints', () => {
+  it('keeps a short series, and folds a long one at each slice’s first time', () => {
+    const points: Array<[number, number]> = [
+      [0, 10],
+      [1, 30],
+      [2, 0],
+      [3, 4],
+    ];
+    expect(downsamplePoints(points, 5, 'mean')).toBe(points);
+    expect(downsamplePoints(points, 2, 'mean')).toEqual([
+      [0, 20],
+      [2, 2],
+    ]);
+    expect(downsamplePoints(points, 2, 'max')).toEqual([
+      [0, 30],
+      [2, 4],
+    ]);
+  });
+});
+
+describe('resourceTimeline', () => {
+  it('counts the pages open in each worker at each change, from the censuses', () => {
+    const timeline = resourceTimeline(null, [
+      // Worker 1: a page per test closed with it, and one a test left open.
+      census(1, 1500, 't1', { born: [birth(1, 'context', 1000), birth(2, 'page', 1000)], closed: [close(2, 1400)] }),
+      census(1, 2500, 't2', { born: [birth(3, 'page', 2000), birth(4, 'page', 2000)], closed: [close(3, 2400)] }),
+      census(1, 3000, null, { closed: [close(4, 2900)] }),
+      // Worker 0: its last census leaves a page open, which goes with the worker.
+      census(0, 1800, 't3', { born: [birth(1, 'page', 1200)] }),
+    ]);
+    expect(timeline).toEqual({
+      startedAt: 1000,
+      cpuPct: [],
+      memoryBytes: [],
+      workers: [],
+      pages: [
+        {
+          worker: 0,
+          points: [
+            [200, 1],
+            [800, 0],
+          ],
+        },
+        {
+          worker: 1,
+          points: [
+            [0, 1],
+            [400, 0],
+            [1000, 2],
+            [1400, 1],
+            [1900, 0],
+          ],
+        },
+      ],
+    });
+  });
+
+  it('puts the sampler’s series and the pages on the earliest clock, and is null with nothing measured', () => {
+    const samples = {
+      startedAt: 900,
+      cpuPct: [[1000, 40]] as Array<[number, number]>,
+      memoryBytes: [[0, 5e8]] as Array<[number, number]>,
+      workers: [],
+    };
+    const timeline = resourceTimeline(samples, [census(0, 1200, 't1', { born: [birth(1, 'page', 800)] })]);
+    expect(timeline).toMatchObject({
+      startedAt: 800,
+      cpuPct: [[1100, 40]],
+      memoryBytes: [[100, 5e8]],
+      pages: [
+        {
+          worker: 0,
+          points: [
+            [0, 1],
+            [400, 0],
+          ],
+        },
+      ],
+    });
+    expect(resourceTimeline({ startedAt: 1, cpuPct: [], memoryBytes: [], workers: [] }, [])).toBeNull();
+  });
+
+  it('names each sampled worker process by the worker index its censuses give it', () => {
+    const tree = (pid: number, from: number) => ({
+      pid,
+      cpuCores: [[from, 1.2]] as Array<[number, number]>,
+      memoryBytes: [[from, 4e8]] as Array<[number, number]>,
+    });
+    const timeline = resourceTimeline(
+      // Process 700 ran worker 0, then, once it exited, its id came back for worker 3.
+      {
+        startedAt: 1000,
+        cpuPct: [[0, 50]],
+        memoryBytes: [],
+        workers: [tree(700, 1000), tree(701, 1000), tree(700, 9000), tree(999, 1000)],
+      },
+      [census(0, 3000, 't1', { pid: 700 }), census(1, 3000, 't2', { pid: 701 }), census(3, 10_500, 't3', { pid: 700 })],
+    )!;
+    // Process 999 (no census names it) is left out.
+    expect(timeline.workers).toEqual([
+      { worker: 0, cpuCores: [[1000, 1.2]], memoryBytes: [[1000, 4e8]] },
+      { worker: 1, cpuCores: [[1000, 1.2]], memoryBytes: [[1000, 4e8]] },
+      { worker: 3, cpuCores: [[9000, 1.2]], memoryBytes: [[9000, 4e8]] },
+    ]);
+  });
+
+  it('keeps a run with many workers within the budget, each series at least 60 points', () => {
+    const series = Array.from({ length: 2000 }, (_, i): [number, number] => [i * 1000, 1]);
+    const workers = Array.from({ length: 64 }, (_, i) => ({ pid: 100 + i, cpuCores: series, memoryBytes: series }));
+    const censuses = workers.map((w, i) => census(i, 5000, `t${i}`, { pid: w.pid }));
+    const timeline = resourceTimeline({ startedAt: 0, cpuPct: [], memoryBytes: series, workers }, censuses)!;
+    expect(timeline.workers).toHaveLength(64);
+    expect(timeline.workers![0]!.cpuCores).toHaveLength(60);
+    const few = resourceTimeline(
+      { startedAt: 0, cpuPct: [], memoryBytes: series, workers: workers.slice(0, 2) },
+      censuses,
+    )!;
+    expect(few.workers![0]!.cpuCores).toHaveLength(TIMELINE_WORKER_POINTS_CAP);
+  });
+
+  it('bounds every series and keeps where a worker’s count settles', () => {
+    const long = Array.from({ length: 5000 }, (_, i): [number, number] => [i * 1000, i % 100]);
+    const born = Array.from({ length: 1000 }, (_, i) => birth(i + 1, 'page', i * 10));
+    const timeline = resourceTimeline({ startedAt: 0, cpuPct: long, memoryBytes: long, workers: [] }, [
+      census(0, 20_000, 't1', { born }),
+    ])!;
+    expect(timeline.cpuPct).toHaveLength(TIMELINE_SERIES_CAP);
+    expect(timeline.memoryBytes).toHaveLength(TIMELINE_SERIES_CAP);
+    expect(timeline.pages[0]!.points).toHaveLength(TIMELINE_WORKER_POINTS_CAP);
+    expect(timeline.pages[0]!.points[timeline.pages[0]!.points.length - 1]).toEqual([20_000, 0]);
   });
 });
 
@@ -39,7 +183,15 @@ describe('executionResources', () => {
     const resources = executionResources(
       census(0, 10, 't1', {
         metrics: {
-          worker: { cpuMs: 120, involuntarySwitches: 4, loopUtilization: 0.3, loopDelayP99Ms: 21, loopDelayMaxMs: 40, heapUsedMb: 60, fds: 33 },
+          worker: {
+            cpuMs: 120,
+            involuntarySwitches: 4,
+            loopUtilization: 0.3,
+            loopDelayP99Ms: 21,
+            loopDelayMaxMs: 40,
+            heapUsedMb: 60,
+            fds: 33,
+          },
           roles: { renderer: { cpuMs: 900, runWaitMs: 12, peakRssMb: 140, processes: 2 } },
         },
         openAtStart: { contexts: 2, pages: 5 },
@@ -81,8 +233,21 @@ describe('resourceReportWire', () => {
       artifacts: { trace: 10, video: 0, screenshot: 0, other: 0 },
       shardIndex: 2,
       censuses: [
-        census(1, 10, 't1', { born: [birth(1, 'context'), birth(2, 'page')], open: [{ id: 1, pages: 1 }, { id: 2, used: true }] }),
-        census(1, 20, 't2', { born: [birth(3, 'page')], open: [{ id: 1, pages: 2 }, { id: 2, used: true }, { id: 3, used: true }] }),
+        census(1, 10, 't1', {
+          born: [birth(1, 'context'), birth(2, 'page')],
+          open: [
+            { id: 1, pages: 1 },
+            { id: 2, used: true },
+          ],
+        }),
+        census(1, 20, 't2', {
+          born: [birth(3, 'page')],
+          open: [
+            { id: 1, pages: 2 },
+            { id: 2, used: true },
+            { id: 3, used: true },
+          ],
+        }),
         census(1, 30, null, { open: [] }),
         census(0, 15, 't3', { born: [birth(1, 'page')], open: [] }),
       ],
@@ -96,5 +261,6 @@ describe('resourceReportWire', () => {
       { worker: 1, openPages: [1, 2] },
     ]);
     expect(wire.artifactBytes).toEqual({ trace: 10 });
+    expect(wire.timeline?.pages.map((w) => w.worker)).toEqual([0, 1]);
   });
 });

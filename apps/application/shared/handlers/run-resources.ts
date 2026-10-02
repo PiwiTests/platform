@@ -9,12 +9,14 @@ import {
   sanitizeExecutionResources,
   type StoredResourceReport,
 } from '#shared/resource-report';
+import type { WireResourceTimeline } from '#shared/types';
 import { readResourceReport } from './resource-reports';
 
 /**
  * A run's resources, as its Resources tab reads them: the report each of its
  * reporters sent (findings and what the run cost each machine), and the
- * executions that cost the most, from what each one measured.
+ * executions that cost the most, from what each one measured. And the
+ * resources over time, as the run's workers timeline draws them.
  */
 
 /** One execution's cost, as the tab lists it. */
@@ -135,4 +137,72 @@ export async function getRunResources(db: DrizzleDB, runId: number): Promise<Run
     costliest: executions.slice(0, COSTLIEST_CAP),
     measuredExecutions: executions.length,
   };
+}
+
+/** One reporter's resources over time, with what its tracks are drawn against. */
+export interface RunResourceTimelinePart {
+  shardIndex: number | null;
+  timeline: WireResourceTimeline;
+  /** The machine's memory, or its container's limit when lower; null without the run sampler. */
+  memoryCapacityBytes: number | null;
+  /** How the run's memory was measured: PSS, or RSS where PSS could not be read. */
+  memoryKind: 'pss' | 'rss' | null;
+}
+
+/** What one execution cost, as its worker measured it from the test's start to its end. */
+export interface RunExecutionCost {
+  executionId: number;
+  /** CPU of the worker process and of the browser processes it started. */
+  cpuMs: number;
+  /** Time the browser processes waited for a CPU (Linux); null where the platform cannot tell. */
+  runWaitMs: number | null;
+  /** The largest browser process at its peak, in MB. */
+  peakRssMb: number | null;
+}
+
+/** A run's resources over time, as its workers timeline draws them. */
+export interface RunResourceTimeline {
+  /** One part per reporter that sent a timeline. */
+  parts: RunResourceTimelinePart[];
+  /** Each execution that carried its cost. */
+  executions: RunExecutionCost[];
+}
+
+/** A run's resources over time and each execution's cost; null when the run does not exist. */
+export async function getRunResourceTimeline(db: DrizzleDB, runId: number): Promise<RunResourceTimeline | null> {
+  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return null;
+  if (await isPassiveCapabilityDeclined(db, run.projectId, 'resources')) return { parts: [], executions: [] };
+  const stored = await readResourceReport(db, runId);
+  const parts: RunResourceTimelinePart[] = [];
+  for (const part of stored.parts) {
+    if (!part.timeline) continue;
+    const machine = part.profile?.machine ?? null;
+    parts.push({
+      shardIndex: part.shardIndex ?? null,
+      timeline: part.timeline,
+      memoryCapacityBytes: machine ? (machine.memoryLimitBytes ?? machine.memoryBytes) || null : null,
+      memoryKind: part.profile?.memory.kind ?? null,
+    });
+  }
+
+  const rows = await db
+    .select({ executionId: testRunsCases.id, resources: testRunsCases.resources })
+    .from(testRunsCases)
+    .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.resources)));
+  const executions: RunExecutionCost[] = [];
+  for (const row of rows) {
+    const resources = sanitizeExecutionResources(row.resources);
+    if (!resources) continue;
+    const waits = Object.values(resources.roles ?? {})
+      .map((cost) => cost?.runWaitMs)
+      .filter((ms): ms is number => typeof ms === 'number');
+    executions.push({
+      executionId: row.executionId,
+      cpuMs: resources.workerCpuMs + (browserCpuMs(resources) ?? 0),
+      runWaitMs: waits.length > 0 ? waits.reduce((sum, ms) => sum + ms, 0) : null,
+      peakRssMb: peakRssMb(resources),
+    });
+  }
+  return { parts, executions };
 }

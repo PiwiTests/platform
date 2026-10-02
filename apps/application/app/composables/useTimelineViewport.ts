@@ -14,6 +14,10 @@ interface TimelineViewportOptions {
   hasData: ComputedRef<boolean>;
   /** Getter for the run's live state — panning/zoom are disabled while live. */
   live: () => boolean | undefined;
+  /** Height drawn above a lane besides the lanes before it (the resource bands); none by default. */
+  laneOffset?: (lane: number) => number;
+  /** Height of everything drawn between the lanes (the resource bands), added to the content's. */
+  extraHeight?: ComputedRef<number>;
 }
 
 /** Multiplier applied per wheel notch — multiplicative so zooming feels uniform at every level. */
@@ -37,6 +41,7 @@ const TICK_STEPS_MS = [
  */
 export function useTimelineViewport(opts: TimelineViewportOptions) {
   const { containerRef, maxTime, rowCount, hasData, live } = opts;
+  const laneOffset = opts.laneOffset ?? (() => 0);
   const { labelWidth, sidePadding, axisHeight, rowHeight } = TIMELINE_LAYOUT;
 
   const zoom = ref(1);
@@ -47,7 +52,7 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
 
   const pxPerMs = computed(() => 0.5 * zoom.value);
   const contentWidth = computed(() => maxTime.value * pxPerMs.value + labelWidth + sidePadding);
-  const contentHeight = computed(() => rowCount.value * rowHeight + axisHeight);
+  const contentHeight = computed(() => rowCount.value * rowHeight + axisHeight + (opts.extraHeight?.value ?? 0));
 
   function getBarX(item: BarGeometry): number {
     return item.start * pxPerMs.value + labelWidth;
@@ -58,7 +63,7 @@ export function useTimelineViewport(opts: TimelineViewportOptions) {
   }
 
   function getBarTop(item: BarGeometry): number {
-    return item.rowIndex * rowHeight + axisHeight;
+    return item.rowIndex * rowHeight + axisHeight + laneOffset(item.rowIndex);
   }
 
   function computeFitZoom(): number {

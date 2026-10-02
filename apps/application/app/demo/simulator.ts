@@ -110,9 +110,10 @@ export interface DemoScenario {
   /**
    * Send what each test cost and the run's resource report, as a reporter
    * with the capture fixtures does; `leaky` is a suite whose login fixture
-   * leaves a browser context open in every test.
+   * leaves a browser context open in every test, `clean` one that closes
+   * what it opens.
    */
-  resources?: 'leaky';
+  resources?: 'leaky' | 'clean';
   metadata: () => Record<string, unknown>;
   tests: () => SimTest[];
 }
@@ -892,12 +893,13 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
   {
     id: 'sharded',
     label: 'Sharded run (2 shards)',
-    description: 'Tests split across 2 parallel CI shards that merge into one run',
+    description: 'Tests split across 2 parallel CI shards that merge into one run, each with its own machine',
     icon: 'i-lucide-layers',
     speed: 2.5,
     workers: 3,
     shardCount: 2,
     environment: 'ci',
+    resources: 'clean',
     metadata: () =>
       buildMetadata({
         branch: 'main',
@@ -1171,9 +1173,9 @@ async function runSingleSimulation(
   let queueIndex = 0;
   let virtualEnd = virtualStart;
 
-  // What each execution cost, when the scenario sends it, and how many tests
-  // each worker ran, for the run's report.
-  const testsByWorker = new Map<number, number>();
+  // What each execution cost, when the scenario sends it, and the tests each
+  // worker ran (their virtual spans), for the run's report.
+  const testsByWorker = new Map<number, Array<[number, number]>>();
   let artifactBytes = 0;
   let executionSeq = 0;
   function executionResources(durationMs: number, openAtStart: number) {
@@ -1336,7 +1338,9 @@ async function runSingleSimulation(
         ]);
 
         ranInWorker++;
-        testsByWorker.set(workerIndex, ranInWorker);
+        const spans = testsByWorker.get(workerIndex) ?? [];
+        spans.push([startedAt, startedAt + attemptDuration]);
+        testsByWorker.set(workerIndex, spans);
         virtualNow += WORKER_GAP_MS;
         finalDuration = attemptDuration;
       }
@@ -1419,7 +1423,7 @@ async function runSingleSimulation(
               wallMs: virtualEnd - virtualStart,
               workers: [...testsByWorker.entries()]
                 .sort((a, b) => a[0] - b[0])
-                .map(([worker, ran]) => ({ worker, tests: ran })),
+                .map(([worker, spans]) => ({ worker, tests: spans.length, spans })),
               fixtureFile: 'tests/checkout/fixtures.ts',
               handleTest: { title: CHECKOUT_TESTS.at(-1)!.title, file: CHECKOUT_TESTS.at(-1)!.file },
               artifactBytes,

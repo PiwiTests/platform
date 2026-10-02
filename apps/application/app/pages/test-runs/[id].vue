@@ -851,6 +851,8 @@ const moreMenuItems = computed(() => {
               :shard-total="testRun?.shardTotal ?? null"
               :live="isLive"
               :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
+              :run-id="Number(runId)"
+              :has-resources="testRun?.hasResources ?? false"
               @select-test-case="handleSelectTestCase"
             />
             <RunTimelineExtras

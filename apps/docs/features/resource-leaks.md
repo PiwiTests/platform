@@ -82,12 +82,13 @@ reporter entry's options.
 
 ## In the dashboard
 
-The reporter sends the findings with the run. A run that has them shows a **Resources** tab:
+A run whose reporter sent findings shows a **Resources** tab:
 
 - the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
 - the findings, each with the line or fixture that opened the object, a click from your editor;
-- **Open pages by worker**: how many pages each worker still had open at the end of each of its tests. A leak climbs
-  test after test, a clean worker stays flat;
+- **Open pages by worker**: the pages each worker still had open at the end of each of its tests, which the run's
+  [Timeline tab](./cpu-memory-disk#in-the-dashboard) draws over time. A leak climbs test after test, a clean worker
+  stays flat;
 - the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
 - the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
 

@@ -73,6 +73,17 @@ the CPU busy over the run and the moment memory peaked, the same lines as the pa
 leaks](./resource-leaks#in-the-dashboard) found. Below them, the **costliest tests**: the tests whose worker and
 browser processes used the most CPU.
 
+The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
+**CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
+workers. Hover a track for its values then; a line down the rows marks the tests running. Each track can be turned off
+from the **Resources** menu, a choice kept per browser. A sharded run draws one set of tracks above each shard's
+workers, each shard on its own machine.
+
+The same menu draws one metric **under each worker** row, on one scale for all of them: its open pages, the CPU and
+memory of the worker and the browsers it started, read with the panel's samples, or the share of each test its browsers
+spent waiting for a CPU (Linux). The sampler tells the workers apart through the capture fixtures; for a worker it
+did not read, a run from an older reporter or on Windows, each test's own cost is drawn across its bar instead.
+
 With the capture fixtures, each execution also carries what its test cost, on its Performance tab: the CPU of the
 worker and of the browser processes it started, the largest of those processes, how busy the worker's event loop was,
 and the pages it found already open and left open. A test that found pages open paid for what an earlier one left.
@@ -88,13 +99,21 @@ Turn it off, with the resource ledger, through `captureResources: false` (or `PI
 
 ## Limits
 
-- The dashboard keeps 240 points of the CPU series, averaged from the samples of a longer run.
+- The dashboard keeps 240 points of the CPU series, averaged from the samples of a longer run. The timeline's tracks keep
+  600 points of CPU and of memory, 300 of each worker's, merged in time order on a longer run; memory is read every five
+  seconds, so a short run's memory track has few points.
 - **Sampled.** A process that lives less than a second, or the last second of one that exits, can be missed; a run of a
   few seconds has few samples.
 - **The machine is shared.** Busy, waiting and free memory count every process on the machine, other jobs included;
   only the CPU by role and the peak memory are the run's own.
 - A browser the tests reach over the network (`connectOptions`, a grid) runs elsewhere and is not measured.
 - A container's peak memory counts from the container's start, so it is named only when the run raised it.
+
+## Try it in the demo
+
+The [live demo](https://piwitests.dev/demo/) holds a leaky run whose machine runs short of CPU and memory.
+
+<DemoExamples />
 
 ## Related
 

@@ -419,6 +419,8 @@ export function useTimelineModel(props: TimelineModelInput): {
   laneCount: ComputedRef<number>;
   shardGroups: ComputedRef<ShardGroup[]>;
   maxTime: ComputedRef<number>;
+  /** Epoch ms of the timeline's zero, its first test's start; null when no test carries a start. */
+  origin: ComputedRef<number | null>;
   runLocks: ComputedRef<string[]>;
   lockSummary: ComputedRef<LockSummary[]>;
 } {
@@ -689,5 +691,7 @@ export function useTimelineModel(props: TimelineModelInput): {
 
   const lockSummary = computed(() => computeLockSummary(timelineData.value, maxTime.value));
 
-  return { timelineData, workerRows, laneCount, shardGroups, maxTime, runLocks, lockSummary };
+  const origin = computed(() => (hasStartedAt.value ? minStartedAt.value : null));
+
+  return { timelineData, workerRows, laneCount, shardGroups, maxTime, origin, runLocks, lockSummary };
 }
