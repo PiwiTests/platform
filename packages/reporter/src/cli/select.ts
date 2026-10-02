@@ -405,7 +405,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
   printWarnings(impact);
   if (impact.impact.widened) {
     console.error(
-      `piwi run: impact widened to the full suite (${impact.impact.unmappedSourceFiles.length} unmapped source file(s))`,
+      `piwi run: impact widened to the full suite (${impact.impact.unmappedSourceFiles.length} changed file(s) not fully mapped to tests)`,
     );
     return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
