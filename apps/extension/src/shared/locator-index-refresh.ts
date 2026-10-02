@@ -7,7 +7,8 @@ import { t } from './i18n.js';
  * Content scripts cannot fetch it themselves (no API key, no host permission),
  * so they render from `locator-index-cache.ts` first and call this to
  * revalidate. A refreshed index comes back in the answer, since it may be too
- * large to cache.
+ * large to cache. From a content script, the worker refreshes only the
+ * project the page's own address maps to.
  */
 export type LocatorIndexRefreshResult =
   | { ok: true; refreshed: false; index: null }

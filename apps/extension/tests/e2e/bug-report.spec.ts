@@ -30,7 +30,7 @@ const PNG =
  */
 async function startBugRecording(
   context: BrowserContext,
-  screenshot: { ok: boolean },
+  screenshot: { ok: boolean; reason?: string },
   options: { language?: string; path?: string; init?: (context: BrowserContext) => Promise<void> } = {},
 ): Promise<Page> {
   await stubChromeStorage(context, {
@@ -45,7 +45,9 @@ async function startBugRecording(
       },
     },
     responses: {
-      'piwi-bug-screenshot': screenshot.ok ? { ok: true, dataUrl: PNG } : { ok: false, error: 'activeTab' },
+      'piwi-bug-screenshot': screenshot.ok
+        ? { ok: true, dataUrl: PNG }
+        : { ok: false, error: 'activeTab', reason: screenshot.reason ?? 'not-granted' },
     },
   });
   if (options.language) await stubChromeI18n(context, options.language);
@@ -802,6 +804,123 @@ test.describe('Report a bug', () => {
     await dispatchRuntimeMessage(page, { type: 'piwi-bug-take-screenshot' }, { type: 'piwi-bug-take-screenshot' });
     await expect.poll(() => screenshotCount(page)).toBe(2);
     expect((await readEvidence(page)).screenshots).toBe(2);
+  });
+
+  test('an evidence entry updates the HUD in place: the focus stays on its button', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await page.waitForTimeout(1000);
+    await page.focus('#piwi-record-hud-host');
+    await page.evaluate(() => {
+      (document.getElementById('piwi-record-hud-host') as HTMLElement & { __same?: boolean }).__same = true;
+      console.error('While the HUD has focus');
+    });
+    await expect(page.locator('#piwi-record-hud-host').getByText('1 console error')).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => (document.getElementById('piwi-record-hud-host') as { __same?: boolean } | null)?.__same,
+      ),
+    ).toBe(true);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('piwi-record-hud-host');
+  });
+
+  test('a dialog the page removes is cancelled: capture goes on, and the page has its Escape back', async ({
+    context,
+  }) => {
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await pressHudButton(page, 'missing');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    await page.evaluate(() => {
+      const g = globalThis as { __escapes?: number };
+      g.__escapes = 0;
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') g.__escapes!++;
+      });
+      document.getElementById('piwi-bug-dialog-host')!.remove();
+    });
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => (globalThis as { __escapes?: number }).__escapes)).toBe(1);
+    await page.fill('#coupon', 'X1');
+    await page.getByRole('button', { name: 'Apply' }).click();
+    await expect
+      .poll(async () => (await readStoredEvents(page)).map((e) => e.kind))
+      .toEqual(['viewport', 'navigate', 'keydown', 'input', 'click']);
+    // Another way to mark what is wrong opens.
+    await pressHudButton(page, 'wrongPage');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+  });
+
+  test('a stop during Mark’s pick takes the pick down', async ({ context }) => {
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await pressHudButton(page, 'mark');
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+    await dispatchRuntimeMessage(page, { type: 'piwi-recording-stopped' });
+    await expect(page.getByText('click any element to generate locators')).toBeHidden();
+    await page.click('#total');
+    await page.waitForTimeout(300);
+    expect(await hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+  });
+
+  test('a Pick started during Mark’s pick leaves it be, and picks once it is over', async ({ context }) => {
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await pressHudButton(page, 'mark');
+    const overlay = page.getByText('click any element to generate locators');
+    await expect(overlay).toBeVisible();
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await page.hover('#total');
+    await page.click('#total');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(true);
+    await page.waitForTimeout(500);
+    expect(await hostPresent(page, 'piwi-picker-results-host')).toBe(false);
+    await page.keyboard.press('Escape');
+    await expect.poll(() => hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(overlay).toBeVisible();
+    await page.hover('#total');
+    await page.click('#total');
+    await page.waitForTimeout(500);
+    expect(await hostPresent(page, 'piwi-bug-dialog-host')).toBe(false);
+  });
+
+  for (const [reason, note] of [
+    ['not-in-front', 'The tab was not the one in front, and the browser captures only the tab on screen.'],
+    ['failed', 'The browser could not take the screenshot.'],
+  ] as const) {
+    test(`the note says why there is no screenshot: ${reason}`, async ({ context }) => {
+      await routeShop(context, { fixed: false });
+      const page = await startBugRecording(context, { ok: false, reason });
+      await dispatchRuntimeMessage(page, { type: 'piwi-bug-take-screenshot' });
+      await expect.poll(async () => (await readEvidence(page)).screenshotNote ?? null).toBe(note);
+      await expect(page.locator('#piwi-record-hud-host')).toBeAttached();
+    });
+  }
+
+  test('in Firefox, the note on the grant a screenshot needs names Firefox', async ({ context }) => {
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(
+      context,
+      { ok: false },
+      {
+        init: async (c) => {
+          await c.addInitScript(() => {
+            Object.defineProperty(navigator, 'userAgent', {
+              get: () => 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0',
+            });
+          });
+        },
+      },
+    );
+    await dispatchRuntimeMessage(page, { type: 'piwi-bug-take-screenshot' });
+    await expect
+      .poll(async () => (await readEvidence(page)).screenshotNote ?? null)
+      .toBe(
+        'Firefox lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose Take a screenshot.',
+      );
   });
 
   test('the outline has roles, names, states and values, never a password, and stops at 400 lines', async ({

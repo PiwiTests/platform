@@ -43,7 +43,8 @@ While a bug report records, Piwi Picker keeps:
   as Piwi does for routes, and no header or body is ever read.
 - **An outline of the page** around the element you marked: roles, names, states and field values, in the YAML form
   Playwright's ARIA snapshots use, at most 400 lines. Piwi Picker builds it from its own reading of the page, so it
-  is an outline, not Playwright's snapshot. Password fields never show their value.
+  is an outline, not Playwright's snapshot. Password fields, and fields for a card number, its security code or a
+  one-time code, never show their value.
 - **Screenshots**, at each mark, at Finish and when you ask for one, three at most.
 - **A screenshot of each step**: the page as the step began, with the element it acts on, for whoever has to
   [play that step by hand](./replay-a-bug-report#when-a-step-cannot-be-played). They show the whole page: leave them out
@@ -94,8 +95,8 @@ tab and choose **Take a screenshot**.
   [desktop app](./desktop#importing-local-files) open. It is a zip archive: rename it to `.zip` to look inside, or to
   attach it to a GitHub issue. [`piwi codegen`](/reference/cli#codegen) renders its `steps.json` for any project.
 
-Typed values stay as you typed them, except passwords, which are never recorded: the spec reads them from an
-environment variable. Look over the report before you share it.
+Typed values stay as you typed them, except passwords, card numbers, their security codes and one-time codes, which
+are never recorded: the spec reads them from an environment variable. Look over the report before you share it.
 
 With the extension connected to an instance, **Send to Piwi…** shows exactly what would be sent, with a box per kind of
 evidence, and sends it only when you click **Send**. The instance keeps the report, writes its failing test for the

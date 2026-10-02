@@ -116,8 +116,15 @@ const REVEAL_PAGE = `<!doctype html><html><body>
   <label>Name <input id="name" /></label>
 </body></html>`;
 
+/** An editable note that takes plain text only, and a comment box editable by its bare attribute. */
+const EDITABLE_PAGE = `<!doctype html><html><body>
+  <div contenteditable="plaintext-only" aria-label="Note" data-testid="note"></div>
+  <div contenteditable aria-label="Comment"><p>Looks <b>good</b> to me</p></div>
+</body></html>`;
+
 /** The pages by path; any other path is the login page. */
 const PAGES: Record<string, string> = {
+  '/editable': EDITABLE_PAGE,
   '/reveal': REVEAL_PAGE,
   '/dashboard': DASHBOARD_PAGE,
   '/bare': BARE_FORM_PAGE,
@@ -317,6 +324,47 @@ test.describe('record-panel.js', () => {
       ['press', 'Escape', null],
       // A checkbox fires `input` as well as `change`: one step, never a fill.
       ['check', null, 'remember-me'],
+    ]);
+  });
+
+  test('typing in an element that takes plain text only is no key press', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/editable`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await page.getByTestId('note').click();
+    await page.keyboard.type('ab');
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(200);
+    expect(normalizeSteps(await readStoredEvents(page)).map((s) => s.action)).toEqual(['goto', 'click']);
+  });
+
+  test('a click inside an editable element is a click on the element', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/editable`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    await page.getByText('good').click();
+    await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(2);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    // The box itself, not the bold word clicked: an editable element has no role of its own, as in Playwright.
+    expect(
+      steps.map((s) => [s.action, s.target?.tagName.toLowerCase() ?? null, s.target?.accessibleName ?? null]),
+    ).toEqual([
+      ['goto', null, null],
+      ['click', 'div', 'Comment'],
     ]);
   });
 
@@ -627,6 +675,33 @@ test.describe('record-panel.js', () => {
     expect((await readStoredEvents(page)).length).toBe(before);
   });
 
+  test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {
+    const page = await recordingInProgress(context);
+    const navigations = async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length;
+    await expect.poll(navigations).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    await expect.poll(navigations).toBe(2);
+    expect(await page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    // Capture goes on, once.
+    await page.getByTestId('remember-me').click();
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'change').length).toBe(1);
+    await page.waitForTimeout(200);
+    expect((await readStoredEvents(page)).filter((e) => e.kind === 'change')).toHaveLength(1);
+  });
+
+  test('a page restored from the back/forward cache after the recording stopped lets go of it', async ({ context }) => {
+    const page = await recordingInProgress(context);
+    await setRecordingActive(page, false);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(false);
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-frame-host'))).toBe(false);
+    expect(await page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(false);
+    const before = (await readStoredEvents(page)).length;
+    await page.click('#username');
+    await page.waitForTimeout(200);
+    expect((await readStoredEvents(page)).length).toBe(before);
+  });
+
   test('stopping shows the review panel, and Copy as TypeScript substitutes a matching catalog function', async ({
     context,
   }) => {
@@ -869,6 +944,14 @@ test.describe('record-panel.js in French and German', () => {
     expect(hud.text).toContain('Enregistrement : 2 étapes');
     expect(hud.text).toMatch(/Dernier locator/i);
     expect(hud.text).toContain(`getByTestId('add-to-cart')`);
+    // The locator is highlighted as every panel shows one.
+    expect(
+      await page.evaluate(
+        () =>
+          document.getElementById('piwi-record-hud-host')!.shadowRoot!.querySelectorAll('.piwi-loc .piwi-tok-fn')
+            .length,
+      ),
+    ).toBe(1);
     expect(hud.text).toMatch(/Fonctions de test correspondantes/i);
     expect(hud.text).toContain('addToCart');
     expect(hud.text).toContain('prête');
@@ -881,7 +964,7 @@ test.describe('record-panel.js in French and German', () => {
     const review = (await shadowOf(page, 'piwi-record-review-host'))!;
     expect(review.text).toContain('2 étapes enregistrées');
     expect(review.text).toContain('1 étape correspond à l’une de vos fonctions de test');
-    expect(review.text).toContain('fill — Coupon = « SPRING10 »');
+    expect(review.text).toContain('Saisir « SPRING10 » dans le champ de texte « Coupon »');
     expect(review.text).toContain('Copier en TypeScript (avec vos fonctions)');
     expect(review.text).toContain('Copier en TypeScript sans vos fonctions');
     expect(review.text).toContain('Télécharger les étapes');

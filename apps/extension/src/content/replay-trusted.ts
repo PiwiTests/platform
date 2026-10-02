@@ -3,6 +3,8 @@ import { t } from '../shared/i18n.js';
 import { DomModel } from './engine-aria.js';
 import { parentOf } from './hover-reveal.js';
 import { OWN_HOST_IDS } from './record-ui.js';
+import { optionFor, WHOLE_VALUE_TYPES } from './replay-actions.js';
+import { quoted, wait } from './replay-core.js';
 import type { FakeCursor } from './replay-cursor.js';
 
 /**
@@ -41,7 +43,7 @@ export function setTrustedReplay(id: string): void {
 }
 
 async function send(ops: InputOp[]): Promise<void> {
-  let answer: { ok: boolean; lost?: boolean; started?: boolean; error?: string; reason?: FallbackReason } | undefined;
+  let answer: { ok: boolean; started?: boolean; error?: string; reason?: FallbackReason } | undefined;
   try {
     answer = await chrome.runtime.sendMessage({ type: 'piwi-replay-input', replayId, ops });
   } catch (e) {
@@ -49,10 +51,6 @@ async function send(ops: InputOp[]): Promise<void> {
   }
   if (answer?.ok) return;
   throw new TrustedInputLost(answer?.error ?? t('common_workerNoAnswer'), answer?.started ?? false, answer?.reason);
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** The origin of each frame's content around `element`, innermost first, in its parent's viewport. */
@@ -100,7 +98,7 @@ function describe(element: Element): string {
   const model = new DomModel();
   const name = model.accessibleName(element, false);
   const tag = element.tagName.toLowerCase();
-  return name ? `${tag} "${name.slice(0, 60)}"` : tag;
+  return name ? `${tag} ${quoted(name.slice(0, 60))}` : tag;
 }
 
 /** How long a covered element is waited for before the step gives up, as Playwright retries its hit check. */
@@ -172,13 +170,24 @@ function sendAside(ops: InputOp[]): Promise<void> {
   return withOwnSurfacesAside(() => send(ops));
 }
 
-/** The fake cursor glides to the point in the top viewport, where the real pointer then goes. */
-async function glide(element: Element, cursor: FakeCursor, caption: string, requireHit = true): Promise<Point> {
+/**
+ * The fake cursor glides to the point in the top viewport, where the real
+ * pointer then goes; with `press`, it shows its press there before the point
+ * is checked a last time, so the input follows that check at once.
+ */
+async function glide(
+  element: Element,
+  cursor: FakeCursor,
+  caption: string,
+  requireHit = true,
+  press = false,
+): Promise<Point> {
   const point = await pointFor(element, requireHit);
   const r = element.getBoundingClientRect();
   const origin = frameOrigins(element).reduce((sum, o) => ({ x: sum.x + o.x, y: sum.y + o.y }), { x: 0, y: 0 });
   cursor.outline({ left: r.left + origin.x, top: r.top + origin.y, width: r.width, height: r.height });
   await cursor.moveTo(point.x, point.y, caption);
+  if (press) await cursor.press();
   // The page may have moved while the cursor glided.
   return pointFor(element, requireHit);
 }
@@ -200,8 +209,7 @@ export async function trustedClick(
   caption: string,
   count: 1 | 2 = 1,
 ): Promise<void> {
-  const point = await glide(element, cursor, caption);
-  await cursor.press();
+  const point = await glide(element, cursor, caption, true, true);
   cursor.outline(null);
   await sendAside([{ op: 'click', ...point, count }]);
 }
@@ -224,9 +232,6 @@ export async function trustedCheck(
   await wait(50);
   return current() === checked;
 }
-
-/** Fields whose value is only valid whole: Playwright sets them in one go, and so does the replay. */
-const WHOLE_VALUE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
 
 function selectContents(element: HTMLElement): void {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
@@ -303,8 +308,7 @@ export async function trustedSelect(
 ): Promise<boolean> {
   await trustedHover(element, cursor, caption, false);
   if (!(element instanceof HTMLSelectElement)) return false;
-  const option =
-    [...element.options].find((o) => o.value === value) ?? [...element.options].find((o) => o.label === value);
+  const option = optionFor(element, value);
   if (!option) return false;
   element.focus({ preventScroll: true });
   element.value = option.value;
@@ -321,8 +325,7 @@ export async function trustedDrag(
 ): Promise<void> {
   // The target first: the press lands where the element is once both are on screen.
   await pointFor(target);
-  const from = await glide(element, cursor, caption);
-  await cursor.press();
+  const from = await glide(element, cursor, caption, true, true);
   // Bringing the element on screen may have scrolled the target away: the drag needs both at once.
   if (!localPoint(target)) {
     throw new NotActionable(t('replay_reasonDragApart', { element: describe(element), target: describe(target) }));

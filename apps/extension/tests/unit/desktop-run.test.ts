@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { coerceDesktopSettings, desktopOrigin } from '../../src/shared/desktop-settings';
-import { asReplayVerdict } from '../../src/content/desktop-run-panel';
+import { asReplayVerdict, reproStatus } from '../../src/content/desktop-run-panel';
+import { verdictText } from '../../src/content/replay-core';
 
 describe('the desktop app pairing', () => {
   test('takes only plain http on this machine’s loopback, as an origin', () => {
@@ -38,5 +39,27 @@ describe('the desktop app’s verdict', () => {
       reason: 'Test timeout',
     });
     expect(asReplayVerdict({ kind: 'not-reproduced' })).toEqual({ kind: 'not-reproduced' });
+    expect(asReplayVerdict({ kind: 'completed' })).toEqual({ kind: 'completed' });
+  });
+
+  test('says a stopped run without naming a step it never gave', () => {
+    const stopped = asReplayVerdict({ kind: 'stopped' });
+    expect(stopped).toEqual({ kind: 'stopped', step: null });
+    expect(verdictText(stopped!, [])).toEqual({
+      title: 'Stopped',
+      detail: 'The run ended before the last step: it was stopped, or could not start.',
+    });
+  });
+
+  test('is none for a verdict or a status this version does not read', () => {
+    expect(asReplayVerdict({ kind: 'flaky', step: 2 })).toBeNull();
+    expect(asReplayVerdict({ kind: 'reproduced', step: -1, found: null })).toBeNull();
+    expect(asReplayVerdict({ kind: 'reproduced', step: 1, found: 4 })).toBeNull();
+    expect(asReplayVerdict({ kind: 'diverged', step: 1 })).toBeNull();
+    expect(asReplayVerdict(null)).toBeNull();
+    expect(asReplayVerdict('reproduced')).toBeNull();
+    expect(reproStatus('running')).toBe('running');
+    expect(reproStatus('queued')).toBeNull();
+    expect(reproStatus(undefined)).toBeNull();
   });
 });

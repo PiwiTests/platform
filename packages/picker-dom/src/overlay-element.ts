@@ -1,5 +1,17 @@
 import type { ProbeArg } from './types.js';
 
+/** The overlay's texts a host may give in its own language; each one left out is the English default. */
+export interface PickerOverlayStrings {
+  /** The banner's heading for the `'global'` transport with no failing locator. */
+  banner?: string;
+  /** The banner's foot before an element is hovered: the keys. */
+  keys?: string;
+  /** The banner's foot while an element is hovered. */
+  keysHovering?: string;
+  /** The banner's foot once an element is picked. */
+  analyzing?: string;
+}
+
 /** Configuration for `installPickerOverlay` — see the function doc for the transport split. */
 export interface PickerOverlayArg {
   transport: 'global' | 'postMessage';
@@ -7,6 +19,8 @@ export interface PickerOverlayArg {
   failing?: string | null;
   /** Probe arguments for the inline probe the `'postMessage'` transport performs on pick. */
   probeArg?: ProbeArg;
+  /** The banner's texts, for a host that shows another language than English. */
+  strings?: PickerOverlayStrings;
 }
 
 /**
@@ -31,6 +45,8 @@ export interface PickerOverlayArg {
  *    `globalThis.__piwiSnapshotExtras` (`onPick`/`onClose`) for its own
  *    snapshot-only chrome (search, highlight hints, extended inertness).
  *
+ * The banner is in English unless `arg.strings` gives its texts.
+ *
  * The hovered element's locator is shown twice — in a chip pinned to the
  * element itself and on its own line in the banner. Both render whatever
  * `globalThis.__piwiDescribeElement(el)` returns when a host installs one (the
@@ -53,6 +69,16 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     return;
   }
   const Z = 2147483600;
+  const words = {
+    banner: 'Piwi inspector — click any element to generate locators for it',
+    keys: '↑ parent · ↓ child · Esc skip',
+    keysHovering: 'click to pick · ↑ parent · ↓ child · Esc skip',
+    analyzing: 'Analyzing element…',
+  };
+  for (const key of Object.keys(words) as Array<keyof typeof words>) {
+    const given = arg.strings?.[key];
+    if (typeof given === 'string' && given) words[key] = given;
+  }
 
   // A light hairline outside the purple ring and a dark one outside that, so the
   // highlight keeps its edge over white, black and busy backgrounds alike.
@@ -93,12 +119,10 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
   const hlLocator = (expr: string): string => `<code style="font-family:${MONO}">${hlTokens(expr)}</code>`;
   const head = doc.createElement('div');
-  head.innerHTML =
-    arg.transport === 'postMessage'
-      ? 'Click an element to generate locators'
-      : arg.failing
-        ? `Piwi locator picker — click the element that should replace ${hlLocator(arg.failing)}`
-        : 'Piwi inspector — click any element to generate locators for it';
+  if (arg.transport === 'postMessage') head.textContent = 'Click an element to generate locators';
+  else if (arg.failing)
+    head.innerHTML = `Piwi locator picker — click the element that should replace ${hlLocator(arg.failing)}`;
+  else head.textContent = words.banner;
   // The hovered element's locator, given a line of its own at reading size
   // rather than tucked into the hint text.
   const locatorLine = doc.createElement('div');
@@ -109,7 +133,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const foot = doc.createElement('div');
   foot.id = '__piwi_picker_foot';
   foot.style.cssText = 'color:#9ca3af;margin-top:6px;font-size:12px;';
-  foot.textContent = '↑ parent · ↓ child · Esc skip';
+  foot.textContent = words.keys;
   banner.appendChild(head);
   banner.appendChild(locatorLine);
   banner.appendChild(foot);
@@ -277,7 +301,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
       locatorLine.style.display = 'block';
     }
     placeLabel(r);
-    foot.textContent = 'click to pick · ↑ parent · ↓ child · Esc skip';
+    foot.textContent = words.keysHovering;
   };
 
   const redescribe = () => {
@@ -383,13 +407,13 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
       g.__piwiSnapshotExtras?.onPick?.();
       doc.addEventListener('click', stop, true);
       doc.addEventListener('keydown', stop, true);
-      foot.textContent = 'Analyzing element…';
+      foot.textContent = words.analyzing;
       g.parent.postMessage({ type: 'elementPicked', attrs }, '*');
     } else {
       removeSuppressed();
       g.__piwiPickedElement = el;
       g.__piwiPickState = 'picked';
-      foot.textContent = 'Analyzing element…';
+      foot.textContent = words.analyzing;
     }
   };
 

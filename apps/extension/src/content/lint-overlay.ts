@@ -2,6 +2,7 @@ import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { startTool, endTool, installEscapeToCancel, toolIsCurrent } from '../shared/tool-session.js';
 import { scanForLintIssues, type LintFinding, type LintScan } from './lint-scan.js';
 import { attachPanelShadow } from './panel-root.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const HOST_ID = 'piwi-lint-overlay-host';
 
@@ -11,19 +12,6 @@ function markdownChecklist(findings: LintFinding[]): string {
     return `- [ ] \`${f.element.tagName.toLowerCase()}\` (role: ${f.role}${name}) — add \`data-testid="${f.suggestedTestId}"\``;
   });
   return lines.join('\n');
-}
-
-async function copyText(text: string, el: HTMLElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = el.textContent;
-  el.textContent = t('common_copied');
-  setTimeout(() => {
-    el.textContent = original;
-  }, 1200);
 }
 
 /**
@@ -147,7 +135,7 @@ function toggleLintOverlay(): void {
     exportBtn.className = 'export';
     exportBtn.type = 'button';
     exportBtn.textContent = t('lint_copyChecklist');
-    exportBtn.addEventListener('click', () => void copyText(markdownChecklist(findings), exportBtn));
+    exportBtn.addEventListener('click', () => void copyWithFeedback(markdownChecklist(findings), exportBtn));
     panel.appendChild(exportBtn);
 
     for (const f of findings) {
@@ -167,7 +155,7 @@ function toggleLintOverlay(): void {
       const code = document.createElement('code');
       code.textContent = attribute;
       code.title = t('common_clickToCopy');
-      code.addEventListener('click', () => void copyText(attribute, code));
+      code.addEventListener('click', () => void copyWithFeedback(attribute, code));
       row.append(head, code);
       panel.appendChild(row);
     }

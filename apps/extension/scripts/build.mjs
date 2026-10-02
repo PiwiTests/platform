@@ -1,5 +1,5 @@
 // Builds the extension into dist/ (Chrome, Edge) and dist-firefox/ (Firefox),
-// which differ only in their manifest (Firefox's has no `debugger`). Content scripts and the background
+// which differ only in their manifest (see `chromiumManifest`, `firefoxManifest`). Content scripts and the background
 // service worker are each built as a standalone IIFE (no shared chunks) via
 // Vite's library mode, since chrome.scripting.executeScript({ files: [...] })
 // injects them as plain classic scripts with no module resolution — unlike
@@ -33,10 +33,13 @@ export function chromiumManifest(manifest) {
 
 /**
  * The manifest Firefox loads: `manifest.json` without `debugger`, which Firefox
- * does not have. Every feature that uses it falls back to what works without it.
+ * does not have (every feature that uses it falls back to what works without
+ * it), and without `minimum_chrome_version`, a Chromium key Firefox does not
+ * know: its floor is `browser_specific_settings.gecko.strict_min_version`.
  */
 export function firefoxManifest(manifest) {
-  return { ...manifest, permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger') };
+  const { minimum_chrome_version: _chromiumOnly, ...rest } = manifest;
+  return { ...rest, permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger') };
 }
 
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
@@ -77,6 +80,27 @@ function defines(buildId) {
   return { __PIWI_BUILD_ID__: JSON.stringify(buildId) };
 }
 
+/** The stamp a release build of `version` carries instead of the build time. */
+function releaseBuildId(version) {
+  return `v${version}`;
+}
+
+/**
+ * Whether `dir` holds a release build of `version`: its background bundle
+ * carries that release's stamp, as a string literal in any of the quotes the
+ * minifier writes.
+ */
+export function isReleaseBuild(dir, version) {
+  let bundle;
+  try {
+    bundle = readFileSync(path.join(dir, 'background.js'), 'utf8');
+  } catch {
+    return false;
+  }
+  const stamp = releaseBuildId(version);
+  return ['"', "'", '`'].some((quote) => bundle.includes(`${quote}${stamp}${quote}`));
+}
+
 async function buildStandalone(name, entry, buildId) {
   await build({
     root,
@@ -103,7 +127,7 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  const buildId = release ? `v${manifest.version}` : new Date().toISOString();
+  const buildId = release ? releaseBuildId(manifest.version) : new Date().toISOString();
 
   for (const [name, entry] of STANDALONE_ENTRIES) await buildStandalone(name, entry, buildId);
 

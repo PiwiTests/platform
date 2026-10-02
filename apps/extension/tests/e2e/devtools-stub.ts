@@ -16,6 +16,8 @@ export interface DevtoolsStubOptions {
   contentScript?: boolean;
   /** Network entries `getHAR` answers with. */
   har?: unknown[];
+  /** Runs before each `inspectedWindow.eval`, which waits for the promise it returns. */
+  beforeEval?: (expression: string) => Promise<void> | void;
 }
 
 function installDevtoolsStub(seed: { tabId: number; har: unknown[] }): void {
@@ -99,6 +101,7 @@ export async function openDevtoolsPage(
 ): Promise<Page> {
   const page = await context.newPage();
   await page.exposeFunction('__piwiTestEval', async (expression: string, contentScript: boolean) => {
+    await options.beforeEval?.(expression);
     if (contentScript && options.contentScript === false) {
       return [undefined, { isError: true, code: 'E_NOTFOUND', description: 'Object not found: %s' }];
     }

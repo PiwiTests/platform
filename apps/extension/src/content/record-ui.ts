@@ -1,4 +1,4 @@
-import { t } from '../shared/i18n.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 /** The recorder's page surfaces, shared by `record-panel.ts` and `bug-panel.ts`. */
 
@@ -78,29 +78,7 @@ export function isOwnHost(element: Element): boolean {
 }
 
 export async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-/** Save a file through the page's own download handling. */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.style.display = 'none';
-  document.documentElement.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  await copyWithFeedback(text, btn);
 }
 
 /** `2026-09-27-14-03`, for file names. */

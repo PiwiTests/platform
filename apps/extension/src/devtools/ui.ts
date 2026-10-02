@@ -1,5 +1,7 @@
 /** Small pieces the DevTools pages share: buttons, empty states and their icons. */
 
+import { flashLabel } from '../shared/clipboard.js';
+
 const SVG = 'http://www.w3.org/2000/svg';
 
 /** Outline icons, 24 × 24, drawn with the page's stroke. */
@@ -51,9 +53,5 @@ export function emptyState(name: IconName, text: string, ...actions: HTMLElement
 
 /** Shows `done` on a button for a moment, then its label again. */
 export function flash(btn: HTMLButtonElement, done: string): void {
-  const original = btn.textContent;
-  btn.textContent = done;
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
+  flashLabel(btn, done);
 }

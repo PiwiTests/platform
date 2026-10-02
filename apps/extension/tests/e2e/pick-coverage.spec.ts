@@ -31,11 +31,12 @@ const activeTool = (page: Page) =>
 /** Pick an element; `up` walks that many steps to its containers before the click commits. */
 async function pick(page: Page, selector: string, up = 0): Promise<void> {
   await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
-  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  await expect(page.locator('#__piwi_picker_banner')).toBeVisible();
   await page.hover(selector);
   for (let i = 0; i < up; i++) await page.keyboard.press('ArrowUp');
   await page.click(selector);
-  const skip = page.getByRole('button', { name: 'Skip (Esc)' });
+  // The anchors step's Skip, in the language the test runs in.
+  const skip = page.getByRole('button', { name: /\((Esc|Échap)\)$/ });
   const results = page.locator(`${RESULTS} .panel`);
   await expect(skip.or(results)).toBeVisible();
   if (await skip.isVisible()) await skip.click();

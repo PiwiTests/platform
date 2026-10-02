@@ -27,8 +27,9 @@ export const LEFT_OUT_VALUE = '…';
 
 /**
  * A typed value shorter than this is taken out only where it is a whole part
- * (a field's text, a URL's segment or query value, an outline's value), never
- * from inside other text: "0" would make "Error 500" read "Error 5…".
+ * (a field's text, a URL's segment or query value, an outline's value, a word
+ * of its own in a console message), never from inside other text: "0" would
+ * make "Error 500" read "Error 5…".
  */
 const MIN_SCRUBBED_LENGTH = 3;
 
@@ -65,6 +66,8 @@ function decodeUrlPart(part: string): string {
 interface Scrubber {
   /** Free text: every form of each value, the longest first, so a value inside another goes with it. */
   text(text: string): string;
+  /** A console message: as free text, and a short value where it stands as a word of its own. */
+  words(text: string): string;
   /** A field's whole text, such as an element's name. */
   whole(text: string): string;
   /** A locator, whose quoted strings are whole texts. */
@@ -94,9 +97,20 @@ function scrubber(values: string[]): Scrubber {
       : null;
   const shortQuoted =
     short.length > 0 ? new RegExp(`'(?:${short.flatMap(locatorForms).map(escapeRegExp).join('|')})'`, 'g') : null;
+  const shortWord =
+    short.length > 0
+      ? new RegExp(
+          `(?<![\\p{L}\\p{N}])(?:${short
+            .flatMap((v) => [v, JSON.stringify(v).slice(1, -1)])
+            .map(escapeRegExp)
+            .join('|')})(?![\\p{L}\\p{N}])`,
+          'gu',
+        )
+      : null;
   const text = (input: string) => (pattern ? input.replace(pattern, LEFT_OUT_VALUE) : input);
   return {
     text,
+    words: (input) => (shortWord ? text(input).replace(shortWord, LEFT_OUT_VALUE) : text(input)),
     whole: (input) => (shortSet.has(input) ? LEFT_OUT_VALUE : text(input)),
     locator: (input) => (shortQuoted ? text(input).replace(shortQuoted, `'${LEFT_OUT_VALUE}'`) : text(input)),
     url: (input) =>
@@ -159,7 +173,7 @@ export function reportToSend(report: BugReport, choices: SendChoices): BugReport
         ...source,
         console: source.console.map((entry) => ({
           ...entry,
-          message: scrub.text(entry.message),
+          message: scrub.words(entry.message),
           page: scrub.url(entry.page),
         })),
         requests: source.requests.map((request) => ({

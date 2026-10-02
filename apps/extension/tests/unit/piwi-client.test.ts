@@ -1,15 +1,14 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   fetchCatalog,
   fetchLocatorIndex,
   fetchProjects,
-  normalizeBaseUrl,
-  projectCatalogUrl,
-  projectLocatorsUrl,
   testConnection,
-  testCaseUrl,
   testDesktop,
 } from '../../src/shared/piwi-client';
+import { normalizeBaseUrl, projectCatalogUrl, projectLocatorsUrl, testCaseUrl } from '../../src/shared/instance-links';
 import { setInstanceApiKey } from '../../src/shared/connection-settings';
 import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
 import type * as SecretStore from '../../src/shared/secret-store';
@@ -181,5 +180,55 @@ describe('responses as the dashboard sends them', () => {
     await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('no locator index');
     answer({ unexpected: true });
     await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('not a locator index');
+    answer({ projectId: 1, locators: [{ locator: "getByText('A')" }], tests: [] });
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('not a locator index');
+  });
+
+  test('an answer that is not JSON, such as a sign-in page, says the instance is not Piwi', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<!doctype html><title>Sign in</title>', { status: 200 })),
+    );
+    const notPiwi = 'The instance answered with something that is not Piwi';
+    await expect(fetchCatalog(settings, 1)).rejects.toThrow(notPiwi);
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow(notPiwi);
+    expect(await testConnection(settings)).toEqual({ ok: false, error: expect.stringContaining(notPiwi) });
+  });
+
+  test('Save and test names a redirect, which no request follows, asking again without the key', async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.redirect === 'error') throw new TypeError('Failed to fetch');
+      return { type: 'opaqueredirect', status: 0 } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await testConnection({ ...settings, instanceUrl: 'http://piwi.example.com' })).toEqual({
+      ok: false,
+      error: expect.stringContaining('answered with a redirect'),
+    });
+    expect(fetchMock.mock.calls[1]).toEqual([
+      'http://piwi.example.com/api/projects/menu',
+      { redirect: 'manual', signal: expect.anything() },
+    ]);
+    // No answer at all, redirected or not.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    expect(await testConnection(settings)).toEqual({
+      ok: false,
+      error: expect.stringContaining('could not reach the instance'),
+    });
+  });
+});
+
+describe('the requests to the instance', () => {
+  test('are never imported by a content script, which would hold the key in the page', () => {
+    const contentDir = path.resolve(import.meta.dirname, '..', '..', 'src', 'content');
+    const importers = readdirSync(contentDir).filter((file) =>
+      /from '\.\.\/shared\/piwi-client\.js'/.test(readFileSync(path.join(contentDir, file), 'utf8')),
+    );
+    expect(importers).toEqual([]);
   });
 });

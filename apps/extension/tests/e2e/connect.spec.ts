@@ -488,7 +488,7 @@ test.describe.serial('connect in one step', () => {
     }
   });
 
-  test('the Active project chosen on one site applies there only, and Disconnect forgets it', async ({
+  test('the Active project chosen on one site applies there only, and Disconnect forgets it with the branch chosen', async ({
     context,
     extensionId,
   }) => {
@@ -535,6 +535,9 @@ test.describe.serial('connect in one step', () => {
     await popup.reload();
     await expect(select).toHaveValue('');
 
+    // The branch Tested elements reads for a project, chosen in its panel.
+    await popup.evaluate(() => chrome.storage.session.set({ piwiLocatorBranchOverride: { '2': 'feature/x' } }));
+
     const options = await context.newPage();
     await openOptions(options, extensionId);
     await options.getByRole('button', { name: 'Disconnect' }).click();
@@ -542,6 +545,7 @@ test.describe.serial('connect in one step', () => {
     expect(
       await options.evaluate(async () => ({
         override: (await chrome.storage.session.get('piwiActiveProjectOverride')).piwiActiveProjectOverride,
+        branch: (await chrome.storage.session.get('piwiLocatorBranchOverride')).piwiLocatorBranchOverride,
         index: (await chrome.storage.local.get('piwiLocatorIndexCache')).piwiLocatorIndexCache,
       })),
     ).toEqual({});
@@ -606,4 +610,26 @@ test('the worker moves secrets kept in chrome.storage.local to its own IndexedDB
   } finally {
     await context.close();
   }
+});
+
+test('Send to editor answers, rather than leaving the panel waiting, when the pairing kept is not one', async ({
+  context,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  // Kept as an earlier version kept it: the worker moves it to its own IndexedDB as it reads it.
+  await page.evaluate(() =>
+    chrome.storage.local.set({ piwiEditorPairing: { url: 'not an address', token: 'editor_token_0123456789' } }),
+  );
+  const answer = await page.evaluate(() =>
+    Promise.race([
+      chrome.runtime.sendMessage({
+        type: 'piwi-send-to-editor',
+        payload: { kind: 'locator', text: "getByRole('link')" },
+      }),
+      new Promise((resolve) => setTimeout(() => resolve('no answer'), 5_000)),
+    ]),
+  );
+  expect(answer).toEqual({ ok: false, error: expect.stringContaining('This is not a pairing address') });
 });

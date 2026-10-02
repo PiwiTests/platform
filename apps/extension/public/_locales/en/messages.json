@@ -113,6 +113,14 @@
     "message": "Piwi Picker could not reach the instance: check the address, and that it is running.",
     "description": "Options: the connection test got no answer."
   },
+  "common_instanceNotPiwi": {
+    "message": "The instance answered with something that is not Piwi: check the address, and that no sign-in page stands in front of it.",
+    "description": "Options and the in-page tools: the instance answered, but not with Piwi’s data (a sign-in page, another site)."
+  },
+  "common_instanceRedirects": {
+    "message": "The instance answered with a redirect, which Piwi Picker does not follow: enter the address it leads to, such as https:// rather than http://.",
+    "description": "Options: the connection test was redirected to another address, which the extension never follows."
+  },
   "common_desktopUnreachable": {
     "message": "The desktop app does not answer. Is it running?",
     "description": "The paired desktop app did not answer."
@@ -237,19 +245,19 @@
     "message": "Connect to your Piwi instance to see what your tests reach",
     "description": "Popup tile hint, under “Tested elements”, when no Piwi instance is set up. One line."
   },
-  "popup_playwrightView": {
+  "devtools_playwrightView": {
     "message": "Playwright view",
     "description": "Button in the toolbar of the DevTools Piwi panel: turns on labels showing each element as a Playwright test sees it. “Playwright” is a product name."
   },
-  "popup_saveLogin": {
+  "devtools_saveLogin": {
     "message": "Save login for tests",
     "description": "Button in the toolbar of the DevTools Piwi panel: opens the page that saves the site's login as a Playwright storageState file."
   },
-  "popup_viewport": {
+  "devtools_viewportLabel": {
     "message": "Open this page at a viewport",
     "description": "Piwi panel in DevTools, viewport bar: label of the select that opens the inspected page at a chosen viewport size."
   },
-  "popup_viewportProject": {
+  "devtools_viewportProject": {
     "message": "$project$ ($size$)",
     "description": "Piwi panel in DevTools, viewport select: one of the project's Playwright projects. $project$ is its name, like Mobile Safari; $size$ its viewport, like 390×844.",
     "placeholders": {
@@ -263,27 +271,27 @@
       }
     }
   },
-  "popup_viewportCustom": {
+  "devtools_viewportCustom": {
     "message": "Size typed by hand",
     "description": "Piwi panel in DevTools, viewport select: the option that shows width and height fields."
   },
-  "popup_viewportWidth": {
+  "devtools_viewportWidth": {
     "message": "Width",
     "description": "Piwi panel in DevTools, viewport bar: accessible name of the width field, in CSS pixels."
   },
-  "popup_viewportHeight": {
+  "devtools_viewportHeight": {
     "message": "Height",
     "description": "Piwi panel in DevTools, viewport bar: accessible name of the height field, in CSS pixels."
   },
-  "popup_viewportOnly": {
+  "devtools_viewportOnly": {
     "message": "Viewport only: no touch, pixel ratio or user agent.",
     "description": "Piwi panel in DevTools, viewport bar: what the new window or the tab does not emulate. Short."
   },
-  "popup_viewportHere": {
+  "devtools_viewportHere": {
     "message": "In this tab",
     "description": "Piwi panel in DevTools, viewport bar: button that sets the viewport of the inspected tab itself, rather than opening a window. Short."
   },
-  "popup_viewportHereOn": {
+  "devtools_viewportHereOn": {
     "message": "This tab shows its page at $size$.",
     "description": "Piwi panel in DevTools, viewport bar: the tab shows its page at a viewport set from the bar. $size$ is a width × height such as 390×844.",
     "placeholders": {
@@ -293,17 +301,17 @@
       }
     }
   },
-  "popup_viewportReset": {
+  "devtools_viewportReset": {
     "message": "Back to the window’s size",
     "description": "Piwi panel in DevTools, viewport bar: link that puts the tab back to its window's size."
   },
-  "popup_viewportHereUnavailable": {
+  "devtools_viewportHereUnavailable": {
     "message": "This browser gives extensions no debugging protocol to set the tab’s own viewport: open a window instead.",
-    "description": "Popup, viewport row: the tab's own viewport cannot be set in a browser without the debugging protocol (Firefox)."
+    "description": "Piwi panel in DevTools, viewport bar: the tab's own viewport cannot be set in a browser without the debugging protocol (Firefox)."
   },
-  "popup_viewportHereRefused": {
+  "devtools_viewportHereRefused": {
     "message": "The browser refused the debugging session: $error$",
-    "description": "Popup, viewport row: the browser refused the debugging session the tab's own viewport needs. $error$ is the browser's words.",
+    "description": "Piwi panel in DevTools, viewport bar: the browser refused the debugging session the tab's own viewport needs. $error$ is the browser's words.",
     "placeholders": {
       "error": {
         "content": "$1",
@@ -311,9 +319,9 @@
       }
     }
   },
-  "popup_viewportInvalid": {
+  "devtools_viewportInvalid": {
     "message": "Open a web page, at a width and height between $min$ and $max$ pixels.",
-    "description": "Popup, viewport row: the page or the size cannot be opened. $min$ and $max$ are sizes in pixels.",
+    "description": "Piwi panel in DevTools, viewport bar: the page or the size cannot be opened. $min$ and $max$ are sizes in pixels.",
     "placeholders": {
       "max": {
         "content": "$1",
@@ -1315,6 +1323,10 @@
     "message": "Copied",
     "description": "A copy button’s label for a second after a successful copy."
   },
+  "common_copyFailed": {
+    "message": "Not copied",
+    "description": "A copy button’s label for a second when the browser refused to write to the clipboard. Short: it replaces the button’s own label."
+  },
   "common_sentToEditor": {
     "message": "Sent",
     "description": "A Send to editor button’s label for a second after the editor accepted what was sent."
@@ -1657,29 +1669,115 @@
   },
   "session_nameLabel": {
     "message": "Name for this element",
-    "description": "Session panel: accessible name of the text field where the user names the element just chosen."
+    "description": "Piwi sidebar in DevTools, Add to session: accessible name of the text field where the user names the element just chosen."
   },
   "session_namePlaceholder": {
     "message": "Name, e.g. submitButton",
-    "description": "Session panel: placeholder of the name field. “submitButton” is an example of a code name: keep it as it is."
+    "description": "Piwi sidebar in DevTools, Add to session: placeholder of the name field. “submitButton” is an example of a code name: keep it as it is."
   },
   "session_nameRequired": {
     "message": "Type a name.",
-    "description": "Session panel: error under the name field when it is empty."
+    "description": "Piwi sidebar in DevTools, Add to session: error under the name field when it is empty."
   },
   "session_nameInvalid": {
     "message": "Use only letters without accents, digits, _ or $$, and do not start with a digit.",
-    "description": "Session panel: error under the name field when the name cannot be a code name. $$ writes a dollar sign."
+    "description": "Piwi sidebar in DevTools, Add to session: error under the name field when the name cannot be a code name. $$ writes a dollar sign."
+  },
+  "session_nameReserved": {
+    "message": "The page object already uses the name $name$: choose another one.",
+    "description": "Piwi sidebar in DevTools, Add to session: error under the name field when the exported page object uses that name itself (page, constructor). $name$ is the name typed, kept as code.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "page"
+      }
+    }
   },
   "session_nameTaken": {
     "message": "\"$name$\" is already in the list.",
-    "description": "Session panel: error under the name field when another element of the list has that name. $name$ is the name typed.",
+    "description": "Piwi sidebar in DevTools, Add to session: error under the name field when another element of the list has that name. $name$ is the name typed.",
     "placeholders": {
       "name": {
         "content": "$1",
         "example": "submitButton"
       }
     }
+  },
+  "pick_overlayBanner": {
+    "message": "Piwi inspector — click any element to generate locators for it",
+    "description": "Picking overlay: the banner at the top of the page while an element is picked (Pick an element, Multi-pick, Assertions, Context for an AI agent)."
+  },
+  "pick_overlayKeys": {
+    "message": "↑ parent · ↓ child · Esc skip",
+    "description": "Picking overlay: the line under the banner before the pointer is on an element. ↑ and ↓ are the arrow keys, which move the pick to the element’s parent or child; Esc skips the pick. Short."
+  },
+  "pick_overlayKeysHovering": {
+    "message": "click to pick · ↑ parent · ↓ child · Esc skip",
+    "description": "Picking overlay: the line under the banner while the pointer is on an element, as pick_overlayKeys with the click first. Short."
+  },
+  "pick_overlayAnalyzing": {
+    "message": "Analyzing element…",
+    "description": "Picking overlay: the line under the banner once an element is picked, while its locators are worked out."
+  },
+  "pick_anchorsTitle": {
+    "message": "Scope to stable parents (optional)",
+    "description": "Pick an element, anchors step: title of the panel listing the picked element’s parents, any of which the locator may start from."
+  },
+  "pick_anchorsHint": {
+    "message": "Pick one or more parents to anchor the locator to. Hover a row to see the parent.",
+    "description": "Pick an element, anchors step: the hint under the title."
+  },
+  "pick_anchorsNoneSelected": {
+    "message": "No parents selected — standard alternatives only.",
+    "description": "Pick an element, anchors step: the line under the list when no parent is selected: the results will list the usual locators only."
+  },
+  "pick_anchorsMatchesOne": {
+    "message": "✓ Selection matches exactly 1 element",
+    "description": "Pick an element, anchors step: the line under the list when the selected parents and the element find one element on the page."
+  },
+  "pick_anchorsMatchesMany": {
+    "message": "✗ Selection matches $count$ elements",
+    "description": "Pick an element, anchors step: as pick_anchorsMatchesOne, when they find several or none. $count$ is any number but 1, 0 included.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "pick_anchorsCountUnavailable": {
+    "message": "Match count unavailable",
+    "description": "Pick an element, anchors step: the line under the list when the number of elements found cannot be counted."
+  },
+  "pick_anchorsContainsOne": {
+    "message": "contains exactly 1 matching element",
+    "description": "Pick an element, anchors step: under a parent, how many elements like the picked one it contains. Lower case: it follows the parent’s code."
+  },
+  "pick_anchorsContainsMany": {
+    "message": "contains $count$ matching elements",
+    "description": "Pick an element, anchors step: as pick_anchorsContainsOne. $count$ is any number but 1, or ? when it cannot be counted.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      }
+    }
+  },
+  "pick_anchorsNeedsTestId": {
+    "message": "add a data-testid to make this usable",
+    "description": "Pick an element, anchors step: under a parent the locator cannot start from, which has no test id, id or named role. data-testid is code, kept as it is. Lower case."
+  },
+  "pick_anchorsNoHook": {
+    "message": "no stable hook",
+    "description": "Pick an element, anchors step: next to a parent’s tag, in place of its test id, id or role, when it has none."
+  },
+  "pick_anchorsUse": {
+    "message": "Use selected parents",
+    "description": "Pick an element, anchors step: button that builds the locators from the selected parents."
+  },
+  "pick_anchorsSkip": {
+    "message": "Skip (Esc)",
+    "description": "Pick an element, anchors step: button that goes to the results without a parent; Esc does the same. Short."
   },
   "pick_panelLabel": {
     "message": "Locators for the chosen element",
@@ -2083,6 +2181,10 @@
       }
     }
   },
+  "functions_cacheFailed": {
+    "message": "The test functions kept in this browser could not be read. Refresh to download them again.",
+    "description": "Test functions: shown instead of the list when the functions downloaded before cannot be read from the browser’s storage. “Refresh” is the button in the panel’s header (common_refresh)."
+  },
   "functions_ready": {
     "message": "Ready to use here",
     "description": "Test functions: badge next to a function when every one of its steps finds exactly one element on the page. Short. In French it agrees with “fonction” (feminine)."
@@ -2247,20 +2349,6 @@
     "message": "No steps were recorded.",
     "description": "Recorder review panel: body when the recording has no step."
   },
-  "record_stepValue": {
-    "message": "$step$ = \"$value$\"",
-    "description": "Recorder review panel, one line per step, in a code font: $step$ is the Playwright action and its target (“fill — Email”), $value$ the text typed or chosen, as it was on the page. Only the quotes change.",
-    "placeholders": {
-      "step": {
-        "content": "$1",
-        "example": "fill — Email"
-      },
-      "value": {
-        "content": "$2",
-        "example": "alice@example.com"
-      }
-    }
-  },
   "record_copyCode": {
     "message": "Copy as TypeScript",
     "description": "Recorder review panel: main button, copies the recording as the code of a Playwright test."
@@ -2378,6 +2466,24 @@
         "example": "Take a screenshot"
       }
     }
+  },
+  "bug_screenshotBlockedFirefox": {
+    "message": "Firefox lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose \"$action$\".",
+    "description": "Report a bug, in Firefox: warning when no screenshot could be taken without the grant opening Piwi Picker on the tab gives. $action$ is the name of the popup’s “Take a screenshot” button.",
+    "placeholders": {
+      "action": {
+        "content": "$1",
+        "example": "Take a screenshot"
+      }
+    }
+  },
+  "bug_screenshotNotInFront": {
+    "message": "The tab was not the one in front, and the browser captures only the tab on screen.",
+    "description": "Report a bug: why there is no screenshot when the recorded tab was in the background. A sentence, also shown after “No screenshot:”."
+  },
+  "bug_screenshotFailed": {
+    "message": "The browser could not take the screenshot.",
+    "description": "Report a bug: why there is no screenshot when the browser failed to take it for another reason. A sentence, also shown after “No screenshot:”."
   },
   "bug_screenshotNotKept": {
     "message": "The screenshot was too large to keep in this browser’s storage.",
@@ -2918,7 +3024,7 @@
     }
   },
   "bug_sendNoProject": {
-    "message": "No project of your Piwi instance matches this page. Add this site in the settings, or choose the project in the popup.",
+    "message": "No project of your Piwi instance matches this page. Add this site in the settings, or choose the project in Piwi Picker’s menu.",
     "description": "Send to Piwi: no project of the connected instance applies to this page."
   },
   "bug_staysLocalUntilSent": {
@@ -3252,6 +3358,10 @@
         "example": "3"
       }
     }
+  },
+  "replay_verdictStoppedNoStep": {
+    "message": "The run ended before the last step: it was stopped, or could not start.",
+    "description": "Run with Playwright dialog: verdict detail under “Stopped” when the desktop app’s run was stopped or could not start, without saying at which step."
   },
   "replay_reasonNoLocator": {
     "message": "The report does not say how to find this element.",
@@ -3813,6 +3923,10 @@
     "message": "The request expired before it was started.",
     "description": "Run with Playwright dialog: the request was not started in time, or the desktop app no longer knows it."
   },
+  "replay_desktopNoVerdict": {
+    "message": "The desktop app sent no verdict Piwi Picker can show: see the run in the app’s window.",
+    "description": "Run with Playwright dialog: the desktop app finished the run without a verdict, or answered with a status or a verdict this version does not know."
+  },
   "replay_fileLabel": {
     "message": "The bug report’s .piwibug, or its steps.json",
     "description": "Replay dialog: aria-label of the file field."
@@ -3884,6 +3998,16 @@
   "replay_zipNoSteps": {
     "message": "$file$ has no steps.json: choose the .piwibug saved by Piwi Picker, or its steps.json.",
     "description": "Replay dialog error: the chosen archive holds no steps.json. $file$ is the file’s name.",
+    "placeholders": {
+      "file": {
+        "content": "$1",
+        "example": "bug.piwibug"
+      }
+    }
+  },
+  "replay_zipUnreadable": {
+    "message": "$file$ cannot be read: choose the .piwibug saved by Piwi Picker, or its steps.json.",
+    "description": "Replay dialog error: the chosen archive is damaged, its steps.json cannot be unpacked. $file$ is the file’s name.",
     "placeholders": {
       "file": {
         "content": "$1",
@@ -5459,10 +5583,6 @@
     "message": "Piwi Picker was rebuilt without being reloaded, and its background worker still runs the previous build. Reload the extension from its menu, or from the browser’s extensions page.",
     "description": "Error shown by a tool when the background worker does not know its message: the extension was rebuilt (a developer’s local build) but not reloaded."
   },
-  "devtools_ranking": {
-    "message": "Ranking the selected element…",
-    "description": "DevTools, Elements panel, Piwi sidebar: shown while the selected element's locators are being worked out."
-  },
   "devtools_selectElement": {
     "message": "Select an element in the Elements panel to see its locators.",
     "description": "DevTools, Piwi sidebar: when no element is selected in the Elements panel."
@@ -5998,7 +6118,7 @@
     }
   },
   "login_noSite": {
-    "message": "Open this from the toolbar popup on a web page: it saves the login of that page’s site.",
+    "message": "Open this from the Piwi panel in DevTools, on a web page: it saves the login of that page’s site.",
     "description": "Save login page: opened without a web page to save the login of."
   },
   "login_holds": {
@@ -6046,6 +6166,16 @@
       "error": {
         "content": "$1",
         "example": "No tab with id: 12"
+      }
+    }
+  },
+  "login_siteChanged": {
+    "message": "The tab shows another site now: go back to $site$ in it, then save again.",
+    "description": "Save login page: the tab it was opened for shows another site by now, so nothing is saved. $site$ is the site the page was opened for, like https://shop.example.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
       }
     }
   },
@@ -6129,6 +6259,16 @@
     "message": "Applied to every request of this tab through Chrome’s debugging protocol: Chrome shows its debugging bar until you turn them all off.",
     "description": "DevTools, Piwi panel, Network tab, under the conditions on: they go through Chrome's debugging protocol, and Chrome's debugging bar is expected."
   },
+  "devtools_conditionsSetFor": {
+    "message": "Set for $site$: they apply while the tab shows that site.",
+    "description": "DevTools, Piwi panel, Network tab, under the conditions on: the inspected page is on another site than the one they were set for. $site$ is that site, like https://shop.example.",
+    "placeholders": {
+      "site": {
+        "content": "$1",
+        "example": "https://shop.example"
+      }
+    }
+  },
   "devtools_conditionsLostCanceled": {
     "message": "The debugging bar was cancelled: throttling is off, and the requests’ conditions now reach only the page’s fetch and XHR calls.",
     "description": "DevTools, Piwi panel, Network tab: the person cancelled Chrome's debugging bar while conditions were on."
@@ -6205,6 +6345,10 @@
     "message": "Open in a new window",
     "description": "Piwi panel in DevTools, viewport bar: button opening the inspected page in a new window at the chosen viewport. Short."
   },
+  "devtools_locatorPlaceholder": {
+    "message": "getByLabel('Email')",
+    "description": "DevTools, Piwi panel, Locators tab: example in the empty locator field. Keep getByLabel('…') as it is; the field's label, Email, may be translated."
+  },
   "devtools_locatorsHint": {
     "message": "Type a locator: the elements it finds on this page are listed, as Playwright finds them. Hover one to outline it on the page; Reveal selects it in the Elements panel.",
     "description": "DevTools, Piwi panel, Locators tab: shown while the field is empty."
@@ -6216,6 +6360,10 @@
   "devtools_reveal": {
     "message": "Reveal",
     "description": "DevTools, Piwi panel, Locators tab: button beside a found element that selects it in DevTools' Elements panel. One short word."
+  },
+  "devtools_revealFailed": {
+    "message": "This element could not be selected in the Elements panel: it may no longer be on the page. Try the locator again.",
+    "description": "DevTools, Piwi panel, Locators tab: under the elements found, when Reveal could not select one, most often because the page removed it."
   },
   "devtools_matchesListed": {
     "message": "Only the first $shown$ are listed.",

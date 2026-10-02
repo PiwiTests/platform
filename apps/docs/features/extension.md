@@ -36,6 +36,7 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 
 Install **[Piwi Picker from the Chrome Web Store ↗](https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe)**.
 The listing covers Edge too: click **Allow** on its *Allow extensions from other stores* banner once, then **Get**.
+It needs Chrome or Edge 118 or later.
 
 Every tool in the popup has a key shown on its tile (`1` records, `2` picks, `T` opens Tested elements, `B`
 reports a bug). One tool runs at a time and **Esc** cancels it; recording runs until its own **Stop**. The developer
@@ -86,7 +87,7 @@ list, across pages. A click on what a hover shows (row actions, a
 hover menu) is recorded after that hover. **Stop** opens the
 review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
 [steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
-[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured: the spec reads them from `process.env`.
+[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose `autocomplete` names it: the spec reads them from `process.env`.
 
 ## Matching functions
 

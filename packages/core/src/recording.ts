@@ -479,9 +479,8 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
       // A checkbox/radio click that will also fire `change` is handled there; a plain click on anything else records here.
       if (ev.inputType === 'checkbox' || ev.inputType === 'radio') continue;
       // Enter on a focused button or link fires `keydown` *and* a synthetic
-      // `click`. The press already records the intent, so keeping both made the
-      // generated spec activate the same control twice — a duplicate submit on
-      // any real form.
+      // `click`. The press already records the intent: the click would make the
+      // generated spec activate the same control a second time.
       const prev = steps[steps.length - 1];
       if (
         prev?.action === 'press' &&

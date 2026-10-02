@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, test, expect } from '@playwright/test';
+import { chromium, test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { extensionWorker, launchWithExtension } from './fixtures.js';
 import { cookieOriginPatterns } from '../../src/shared/storage-state.js';
 
@@ -42,9 +42,11 @@ function startSite(): Promise<{ origin: string; close: () => void }> {
   });
 }
 
-test('saves the login as a storageState file a new context logs in with', async () => {
-  const site = await startSite();
-  // The grants a person gives in the click that saves: the cookies permission and the site's host, the port aside.
+/**
+ * The extension with the grants a person gives in the click that saves: the cookies permission and the site's host,
+ * the port aside.
+ */
+async function launchGranted(origin: string): Promise<{ context: BrowserContext; extensionId: string }> {
   const extension = mkdtempSync(path.join(tmpdir(), 'piwi-login-ext-'));
   cpSync(DIST, extension, { recursive: true });
   const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
@@ -54,28 +56,34 @@ test('saves the login as a storageState file a new context logs in with', async 
       ...manifest,
       permissions: [...manifest.permissions, 'cookies'],
       optional_permissions: [],
-      host_permissions: cookieOriginPatterns(new URL(site.origin).hostname),
+      host_permissions: cookieOriginPatterns(new URL(origin).hostname),
     }),
   );
   const context = await launchWithExtension(extension);
+  return { context, extensionId: (await extensionWorker(context)).url().split('/')[2]! };
+}
+
+/** Save login for tests, opened for the tab showing `url`, as the Piwi panel opens it. */
+async function openSaveLogin(context: BrowserContext, extensionId: string, url: string): Promise<Page> {
+  const login = await context.newPage();
+  await login.goto(`chrome-extension://${extensionId}/popup.html`);
+  const tabId = await login.evaluate(async (u) => (await chrome.tabs.query({ url: u }))[0]?.id, url);
+  await login.goto(`chrome-extension://${extensionId}/login.html?tabId=${tabId}&url=${encodeURIComponent(url)}`);
+  return login;
+}
+
+test('saves the login as a storageState file a new context logs in with', async () => {
+  const site = await startSite();
+  const { context, extensionId } = await launchGranted(site.origin);
   const browser = await chromium.launch({ channel: 'chromium' });
   try {
-    const extensionId = (await extensionWorker(context)).url().split('/')[2]!;
     const page = await context.newPage();
     await page.goto(`${site.origin}/login`);
     await expect(page.getByText('Logged in')).toBeVisible();
     await page.goto(`${site.origin}/account`);
     await expect(page.locator('#who')).toHaveText('Hello Ada');
 
-    const login = await context.newPage();
-    await login.goto(`chrome-extension://${extensionId}/popup.html`);
-    const tabId = await login.evaluate(
-      async (url) => (await chrome.tabs.query({ url: `${url}/*` }))[0]?.id,
-      site.origin,
-    );
-    await login.goto(
-      `chrome-extension://${extensionId}/login.html?tabId=${tabId}&url=${encodeURIComponent(`${site.origin}/account`)}`,
-    );
+    const login = await openSaveLogin(context, extensionId, `${site.origin}/account`);
     await expect(login.getByRole('heading', { name: 'Save login for tests' })).toBeVisible();
     await expect(login.getByText(`Site: ${site.origin}`)).toBeVisible();
     await expect(login.getByRole('note')).toContainText('Use a test account');
@@ -113,5 +121,34 @@ test('saves the login as a storageState file a new context logs in with', async 
     await browser.close();
     await context.close();
     site.close();
+  }
+});
+
+test('saves nothing once the tab shows another site than the one it was opened for', async () => {
+  const site = await startSite();
+  // Another port of the same host: the host permission covers it, the origin differs.
+  const other = await startSite();
+  const { context, extensionId } = await launchGranted(site.origin);
+  try {
+    const page = await context.newPage();
+    await page.goto(`${site.origin}/login`);
+    await page.goto(`${site.origin}/account`);
+    const login = await openSaveLogin(context, extensionId, `${site.origin}/account`);
+    await expect(login.getByText(`Site: ${site.origin}`)).toBeVisible();
+    await page.goto(`${other.origin}/login`);
+    await expect(page.getByText('Logged in')).toBeVisible();
+
+    let downloads = 0;
+    login.on('download', () => downloads++);
+    await login.getByRole('button', { name: 'Save login file' }).click();
+    await expect(login.getByRole('status')).toHaveText(
+      `The tab shows another site now: go back to ${site.origin} in it, then save again.`,
+    );
+    await login.waitForTimeout(500);
+    expect(downloads).toBe(0);
+  } finally {
+    await context.close();
+    site.close();
+    other.close();
   }
 });

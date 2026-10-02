@@ -7,9 +7,10 @@ import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings, type ConnectionSettings } from '../shared/connection-settings.js';
-import { projectCatalogUrl } from '../shared/piwi-client.js';
+import { projectCatalogUrl } from '../shared/instance-links.js';
 import { getActiveProjectOverride, resolveActiveProject, type ActiveProject } from '../shared/active-project.js';
 import { attachPanelShadow } from './panel-root.js';
+import { holdFocus } from './modal-panel.js';
 
 const HOST_ID = 'piwi-test-function-host';
 const MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
@@ -59,6 +60,7 @@ async function renderPanel(): Promise<void> {
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   let closed = false;
+  let releaseFocus = () => {};
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') finish();
   };
@@ -66,6 +68,7 @@ async function renderPanel(): Promise<void> {
     closed = true;
     document.removeEventListener('keydown', onKeyDown, true);
     host.remove();
+    releaseFocus();
     endTool(toolEpoch);
   };
   // The page is claimed before the host is mounted: the tool this replaces,
@@ -221,13 +224,27 @@ async function renderPanel(): Promise<void> {
 
   backdrop.appendChild(panel);
   root.appendChild(backdrop);
-  panel.focus();
+  releaseFocus = holdFocus(panel);
+
+  /** The cached catalog, or null, saying so in the list, when it cannot be read. */
+  const readCatalog = async (): Promise<Awaited<ReturnType<typeof getCachedCatalog>> | null> => {
+    try {
+      return await getCachedCatalog(projectId);
+    } catch {
+      if (!live()) return null;
+      const failed = document.createElement('div');
+      failed.className = 'empty';
+      failed.textContent = t('functions_cacheFailed');
+      resultsEl.replaceChildren(failed);
+      return null;
+    }
+  };
 
   // Cache first so the panel is instant and still works with the instance
   // unreachable; the re-fetch below then swaps in anything newer.
-  const cached = await getCachedCatalog(projectId);
+  const cached = await readCatalog();
   if (!live()) return;
-  renderResults(cached);
+  if (cached) renderResults(cached);
 
   async function revalidate(force: boolean): Promise<void> {
     if (projectId == null) return;
@@ -237,9 +254,9 @@ async function renderPanel(): Promise<void> {
     const result = await requestCatalogRefresh(projectId, { force });
     if (!live()) return;
     if (result.ok && result.refreshed) {
-      const refreshed = await getCachedCatalog(projectId);
+      const refreshed = await readCatalog();
       if (!live()) return;
-      renderResults(refreshed);
+      if (refreshed) renderResults(refreshed);
     }
     refreshBtn.textContent = previousLabel;
     refreshBtn.disabled = false;

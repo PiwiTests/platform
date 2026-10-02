@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
+import { REVEAL_EXPRESSION } from '../../src/shared/devtools-selection.js';
 import { launchWithExtension } from './fixtures.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -127,7 +128,7 @@ test('the real DevTools loads the devtools page, and $0 reaches the ranking scri
     await evaluateIn(
       devtoolsPage!,
       `new Promise((resolve) => chrome.devtools.inspectedWindow.eval('__piwiDevtools.mark(1)', { useContentScriptContext: true }, () =>
-        chrome.devtools.inspectedWindow.eval("(() => { const el = document.querySelector('[data-piwi-devtools-reveal]'); el.removeAttribute('data-piwi-devtools-reveal'); inspect(el); return true; })()", resolve)))`,
+        chrome.devtools.inspectedWindow.eval(${JSON.stringify(REVEAL_EXPRESSION)}, resolve)))`,
     );
     await expect
       .poll(async () => {

@@ -328,14 +328,15 @@ export async function captureThroughDebugger(tabId: number, format: 'png' | 'jpe
 
 /**
  * Called when a bug recording's session ends without being released (the
- * person cancelled the bar): the page's own script takes over, and the HUD
- * says so.
+ * person cancelled the bar): the page's own script takes over from the time
+ * kept as `endedAt`, and the HUD says so.
  */
 export function onBugDebuggerLost(fallback: (reason: FallbackReason) => Promise<void>): void {
   onDebuggerLost((tabId, purposes, reason) => {
     if (!purposes.includes('bug')) return;
+    const endedAt = Date.now();
     collectors.get(tabId)?.stop();
     collectors.delete(tabId);
-    void setDebugging({ state: 'off', reason }).then(() => fallback(reason));
+    void setDebugging({ state: 'off', reason, endedAt }).then(() => fallback(reason));
   });
 }

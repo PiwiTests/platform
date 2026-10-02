@@ -905,7 +905,14 @@ test.describe('coverage overlay: locators at risk', () => {
       // Every stable locator for it also finds the other cards' buttons.
       replacement: 'add-test-id',
     });
-    expect(price).toMatchObject({ rules: ['css-class', 'css-class', 'position'], replacement: 'add-test-id' });
+    // The card holding "Blue mug" sets it apart from the other prices, and its role, paragraph, from the card's other texts.
+    expect(price).toMatchObject({
+      rules: ['css-class', 'css-class', 'position'],
+      replacement: {
+        recommended: "getByRole('article').filter({ hasText: 'Blue mug' }).getByRole('paragraph')",
+        durable: null,
+      },
+    });
     // Finding four buttons, no single element to build a replacement from.
     expect(buttons).toMatchObject({ count: 4, replacement: null });
     expect(checkout).toMatchObject({
@@ -1076,6 +1083,35 @@ test.describe('coverage overlay: what tests do on this page', () => {
     expect(coverage.pageScoped).toBe(false);
     expect(coverage.missing).toEqual([]);
     expect(coverage.covered.some((c) => c.description === 'button "Subscribe"')).toBe(true);
+  });
+
+  test('the rows show their locators as highlighted code', async ({ page, context }) => {
+    await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, ...PAGE_TESTS]) });
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    const first = panel.locator('li.row .detail.mono').first().locator('.piwi-loc');
+    await expect(first).toHaveText(/^(getBy|locator)/);
+    await expect(first.locator('.piwi-tok-fn').first()).toBeAttached();
+
+    await panel.getByRole('button', { name: /^Not tested \d+$/ }).click();
+    const hint = panel.locator('li.row', { hasText: 'button "Subscribe"' }).locator('.detail', { hasText: 'Found by' });
+    await expect(hint.locator('.piwi-loc')).toHaveText("getByRole('button', { name: 'Subscribe' })");
+    await expect(hint.locator('.piwi-loc .piwi-tok-fn')).toHaveText('getByRole');
+  });
+
+  test('a row is a button the keyboard reaches, its own Copy locator beside it', async ({ page, context }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await injectCoverage(page);
+    const panel = page.locator(`${HOST} .panel`);
+    await panel.getByRole('button', { name: /^Not tested \d+$/ }).click();
+    const row = panel.locator('li.row', { hasText: 'button "Subscribe"' });
+    const select = row.getByRole('button', { name: 'button "Subscribe"', exact: true });
+    await select.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator(`${HOST} .card.pinned`)).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Copy locator' })).toBeVisible();
   });
 
   test('the collapsed pill says what tests will not find as the page loads', async ({ page, context }) => {

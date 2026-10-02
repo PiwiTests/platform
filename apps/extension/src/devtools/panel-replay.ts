@@ -1,13 +1,8 @@
 import { sessionFromSteps } from '@piwitests/core/steps';
 import { conditionText } from '../shared/condition-words.js';
 import { t } from '../shared/i18n.js';
-import {
-  getReplayState,
-  updateReplayState,
-  type ReplayState,
-  type ReplayStepResult,
-} from '../shared/replay-storage.js';
-import { driverText, replayVerdict, verdictText, type ReplayVerdict } from '../content/replay-core.js';
+import { getReplayState, updateReplayState, type ReplayState } from '../shared/replay-storage.js';
+import { driverText, replayVerdict, stepGlyph, verdictText, type ReplayVerdict } from '../content/replay-core.js';
 import { stepRow, viewHead } from './panel-record.js';
 import { button, el, emptyState } from './ui.js';
 
@@ -34,24 +29,6 @@ async function notifyReplay(origin: string, wake: boolean | 'waiting'): Promise<
         : chrome.tabs.sendMessage(tab.id, { type: REPLAY_WAKE_MESSAGE, wake }).catch(() => undefined),
     ),
   );
-}
-
-function glyph(result: ReplayStepResult | undefined, current: boolean): string {
-  if (current) return '▸';
-  switch (result?.status) {
-    case 'done':
-    case 'passed':
-    case 'manual':
-      return '✓';
-    case 'failed':
-      return '✗';
-    case 'diverged':
-      return '!';
-    case 'skipped':
-      return '–';
-    default:
-      return '·';
-  }
 }
 
 async function change(state: ReplayState, next: Partial<ReplayState>, wake: boolean | 'waiting'): Promise<void> {
@@ -117,7 +94,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
   steps.forEach((step, index) => {
     const result = state.results[index];
     const current = !done && index === state.position;
-    const row = stepRow(step, glyph(result, current));
+    const row = stepRow(step, stepGlyph(result, current));
     if (current) row.classList.add('current');
     if (result?.status) row.dataset.status = result.status;
     if (result?.detail) row.appendChild(el('div', 'detail', result.detail));

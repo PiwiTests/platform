@@ -22,7 +22,9 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
 - `manifest.json` — MV3 manifest. Standing permissions stay at `activeTab` + `debugger` + `scripting` +
   `storage` — no static host permissions, no `<all_urls>`, no remote code. `debugger` is in the Chromium
   manifest only: `scripts/build.mjs` (`firefoxManifest`) leaves it out of `dist-firefox/`, and
-  `build-manifests.test.ts` checks it. `optional_host_permissions`
+  `build-manifests.test.ts` checks it. `minimum_chrome_version` (118) is Chromium-only too: from that version Chrome
+  keeps the worker running while a debugging session is attached, and the sessions' state (`debugger.ts`,
+  `cdp-*.ts`, `step-views.ts`) lives in the worker's memory. `optional_host_permissions`
   (`http://*/*`, `https://*/*`) is declared but **granted nothing by default** — the popup
   requests a single origin (`https://<the-recorded-site>/*`) from `chrome.permissions.request`
   only when the user clicks "Record actions", inside that click's own gesture. Adding a new
@@ -30,7 +32,8 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   `cookies` alone, granted nothing at install: **Save login for tests** (`login.html`, `src/login/main.ts`, pure half
   `src/shared/storage-state.ts`) requests it inside its Save click with the site's host for both schemes and any port,
   and its parent domains (`cookieOriginPatterns`: Chrome checks each cookie by its domain alone), reads that site's
-  cookies and `localStorage` once, and downloads them as Playwright's `storageState`; nothing is kept or sent.
+  cookies and `localStorage` once, and downloads them as Playwright's `storageState`; nothing is kept or sent, and
+  nothing is saved once the tab shows another origin than the one the page was opened for.
   `save-login.spec.ts` loads the file into a new browser context and checks it logs in.
   `browser_specific_settings.gecko.id` is Firefox's required stable add-on ID (Chromium ignores
   the key); don't change it once the add-on is published to AMO — a new ID creates a separate
@@ -52,7 +55,9 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   to survive `Function.prototype.toString()` here, unlike the packages/reporter/dashboard pickers).
   `record-panel.ts` is the one exception: it's also registered dynamically
   (`chrome.scripting.registerContentScripts`, scoped to the granted origin) so it re-attaches
-  itself on every navigation for the lifetime of a recording — see `background/index.ts`.
+  itself on every navigation for the lifetime of a recording — see `background/index.ts`. A page
+  the browser restores from its back/forward cache runs no script again: the recorder attaches
+  there on `pageshow` (`persisted`), or lets go of the page when the recording ended meanwhile.
   A bug recording (**Report a bug**, `bug-panel.ts`) registers a second script beside it,
   `bug-evidence-main.ts`, in the page's **main world** — see "The main-world evidence script" below.
 - `src/background/` — the service worker. Handles the `chrome.commands` keyboard shortcut
@@ -61,7 +66,9 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   `chrome.permissions.onAdded` fallback that starts a recording when the grant prompt closed
   the popup — see below) — the only places `chrome.scripting.registerContentScripts`/
   `unregisterContentScripts` and `chrome.action.*` are called from, since content scripts can't
-  reach either API.
+  reach either API. A message that names a tab or an address for the worker to act on, which only the extension's own
+  pages send (`EXTENSION_PAGE_MESSAGES`: starting a recording, the viewport and request-condition messages, the
+  language), is refused from anything else (`fromExtensionPage`, `senders.ts`).
 - `src/popup/` — the toolbar popup. Plain TypeScript + DOM, no UI framework — keep it that
   way unless the popup's own complexity genuinely outgrows it. It holds the tools that act on the page, for testers and
   developers alike: **Record actions** and **Pick an element** first, then **Report a bug** and **Replay a bug
@@ -79,7 +86,8 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   **Piwi**; the patterns kept in this browser, a table whose **Save** keeps only them; a folded **Add a site** form);
   **Desktop app** (below); **Send to editor**. Same plain TypeScript + DOM approach as the popup. Opened via
   `chrome.runtime.openOptionsPage()`, or as `options.html#add=<pattern>` from the popup's **Add this site**, which
-  opens the Add a site form, never linked to from a content script. `main.ts` awaits the language catalog and the
+  opens the Add a site form filled in (a line of this browser with the pattern while the form waits for a first sync
+  of the instance's projects), never linked to from a content script. `main.ts` awaits the language catalog and the
   stored settings before it attaches a listener, then sets `html[data-ready]`: an e2e spec opens the page with
   `openOptions` (`tests/e2e/fixtures.ts`), and calls `optionsReady` after a `reload()`, before it clicks anything.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
@@ -94,8 +102,9 @@ flow checks `toolIsCurrent(epoch)` after each `await` and, once it is not curren
 picker overlay and the pick globals to its successor. A pick-driven tool injected again while
 it runs leaves it be (`isToolActive`); any other tool replaces it. Its teardown is
 `teardownToolSurfaces`: the picking overlay and the anchors step go, listeners included,
-`__piwiPickState`/`__piwiAnchorState` are answered for a flow that waits on them without being
-a tool (the bug recorder's Mark what's wrong), and no other surface on the page is touched.
+`__piwiPickState`/`__piwiAnchorState` are answered for a flow that waits on them, and no other
+surface on the page is touched. The bug recorder's Mark what's wrong claims the page as `pick`
+for its pick alone, so a Pick started meanwhile leaves it be.
 Escape during the anchors step is that step's Skip, not a cancel. The
 recorder deliberately stays outside this: it is a capture mode, and stopping it because
 another panel opened would discard a recording in progress.
@@ -123,13 +132,14 @@ Chrome shows "Piwi Picker started debugging this browser" while a session is att
 - **Attach only while a feature the person started needs it, and detach the moment it ends.** Every session goes
   through `src/background/debugger.ts`: `acquireDebugger(tabId, purpose)` attaches once per tab and
   `releaseDebugger` detaches when no purpose holds the tab. The purposes are a replay (`cdp-replay.ts`, attached on
-  the replay's first page, let go by `piwi-replay-finished`, a new replay, or the tab leaving the origin, which
+  the replay's first page, let go by `piwi-replay-finished`, a new replay, a command the browser refuses (the replay
+  goes on with the page's events), or the tab leaving the origin, which
   `Page.frameNavigated` reports for any origin, where `tabs.onUpdated` gives no address without a grant; it also sets
   the viewport the steps were recorded at, `piwi-replay-viewport`, again on each page, and gives the tab its size back,
   or the popup's viewport, as it lets go) and a bug recording (`cdp-evidence.ts`, the tab the report starts in, let go when the
   recording stops or is discarded), the
   DevTools panel's conditions (`cdp-conditions.ts`, held while any condition or throttling is on) and a viewport set in
-  the tab from the popup (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
+  the tab from the DevTools panel (held until **Back to the window's size** or the tab closes). A purpose that lets go of a tab
   another still holds ends its own emulation first (`Fetch.disable`, network and CPU back to normal,
   `Emulation.clearDeviceMetricsOverride`). Nothing stays attached in the background.
 - **A viewport is set in CSS pixels, through `emulateCssViewport`** (`viewport-emulation.ts`). The protocol's size is
@@ -168,7 +178,7 @@ a pointer-driven one, once both ends are on screen together). Date, time and col
 value set as Playwright sets them. The replay's panel lets the pointer through while input is sent, and keeps its own
 pointer and focus events from the page (a click on Next leaves the page's focus and its open menu as they are); a key
 press with no element goes to the page's element that last had focus. Input lost before it reached the page (the bar
-cancelled) replays the step with the page's own events (`replay-actions.ts`); lost after part of it did (the button
+cancelled, a command refused) replays the step with the page's own events (`replay-actions.ts`); lost after part of it did (the button
 went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice; each step result keeps its `driver`, and
 the panels show it. A file step asks the developer for the file in the replay's panel (a report names files, never
 carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
@@ -206,8 +216,9 @@ secret found in `chrome.storage.local`, where older versions kept them, is moved
 page opens, and by each read of it (`legacy-secrets.ts`): written to IndexedDB first, removed after, and one already
 kept there wins.
 
-The buttons that start something (**Connect**, **Pair** and **Add to Piwi** in the settings, **Save login file** in
-`login.html`) disable themselves inside the click, after the permission request, until it ends. A write the settings
+The buttons that start something (**Connect**, **Save and test**, **Save**, **Pair**, **Pair by hand**'s **Save and
+test** and **Add to Piwi** in the settings, **Save login file** in `login.html`) disable themselves inside the click,
+after the permission request, until it ends (`whileRunning` in the settings). A write the settings
 page makes once an answer arrives goes through `writeConnection`: dropped when **Disconnect** or another connection
 came meanwhile (`connectionEpoch`) or the stored instance is no longer the one it read, so a sync still in flight never
 brings back a connection Disconnect removed.
@@ -226,7 +237,7 @@ instance's in this browser. Matching uses the URL (via `urlMatches`/`globToRegEx
 matcher a catalog entry's own `urlPattern` gate uses). Every consumer that needs "which project
 applies here" (record-panel's HUD and review panel, test-function-panel, the popup's select)
 calls this one function rather than re-deriving it. **Disconnect**, and connecting to another instance, drop every
-site's override with the cached catalogs and locator indexes.
+site's override and every project's branch choice (`locator-branch.ts`) with the cached catalogs and locator indexes.
 
 **No recording is ever sent to the instance**, and a bug report only through **Send to Piwi…**: the URL patterns,
 each mapped project's catalog and locator index, and its bug reports (Replay's list) are fetched; what is sent is a URL
@@ -244,7 +255,8 @@ app's window shows who asks with a code the card shows too, and the poll after t
 app's token, once, which the card keeps after `testDesktop` accepts it. **Pair by hand** takes the token pasted from the
 app's **Connect Piwi Picker** instead. Either way the options page requests that one loopback origin inside the click,
 and **Unpair** gives it back. The dialog shows the payload before **Send**. The request is JSON with `x-piwi-token`, holds steps and never code, and the app runs nothing
-before the developer confirms it in its window; the dialog then polls the request for the verdict.
+before the developer confirms it in its window; the dialog then polls the request for the verdict, read field by field
+(`reproStatus`, `asReplayVerdict`): a status or a verdict it does not know says so in one line.
 
 A replay registers `bug-evidence-main.js` in the page's main world beside `replay-panel.js`, for as long as it runs,
 under the replay's `evidenceToken`; the panel keeps the entries apart from the replay state (`piwiReplayEvidence`) and
@@ -252,17 +264,21 @@ lists them under the verdict. **Share result** (`share-result.ts`, worker side `
 verdict on the report it came from (`bugReportId`, set only for a report chosen from the instance), after a preview:
 the verdict, the origin it ran on and the user agent, `POST /api/bug-reports/:id/reproductions`.
 Only `piwi-client.ts` makes those requests, from exactly two
-contexts: `src/options/` (connecting, saving, reading and adding URL patterns) and the background worker's `piwi-refresh-catalog` /
-`piwi-refresh-locator-index` handlers and its bug-report messages (`src/background/bug-reports.ts`:
-`piwi-bug-send-target`, `piwi-send-bug-report`, `piwi-list-bug-reports`, `piwi-get-bug-report`), which resolve the
-project again from the sending tab's URL and never take one from the page. **Never from a content script**, so the API key never
-reaches a page's JS context — `record-panel.ts`/`test-function-panel.ts`/`coverage-overlay.ts`
-read the cache and, when they need fresher data, ask the worker via `catalog-refresh.ts` /
-`locator-index-refresh.ts` rather than fetching themselves. Keep it that way.
+contexts: `src/options/` (connecting, saving, reading and adding URL patterns, pairing the desktop app) and the
+background worker: its `piwi-refresh-catalog` / `piwi-refresh-locator-index` handlers (`project-refresh.ts`, which
+fetch for a content script only the project its tab's URL maps to, and take a whole project id), its bug-report
+messages (`src/background/bug-reports.ts`: `piwi-bug-send-target`, `piwi-send-bug-report`, `piwi-list-bug-reports`,
+`piwi-get-bug-report`, which resolve the project again from the sending tab's URL and never take one from the page;
+`piwi-share-reproduction`, which records a verdict only on the stored replay's report or one sent to the desktop app;
+and `piwi-replay-step-view`, for the stored replay's report) and the desktop app's (`piwi-desktop-repro`,
+`piwi-desktop-repro-status`). **Never from a content script**, so the API key never reaches a page's JS context —
+`record-panel.ts`/`test-function-panel.ts`/`coverage-overlay.ts` read the cache and, when they need fresher data, ask
+the worker via `catalog-refresh.ts` / `locator-index-refresh.ts` rather than fetching themselves, and build their links
+into the dashboard with `instance-links.ts`, which fetches nothing; `piwi-client.test.ts` fails on a content script
+importing `piwi-client.ts`. Keep it that way.
 
-Staleness matters here: the catalog used to be written only by the options page's save
-handler, so a function added in the dashboard afterwards never reached the extension at all.
-The panels now render from cache first (instant, and fine with the instance unreachable) and
+Staleness matters here: a function added in the dashboard reaches the extension without the options page saving again.
+The panels render from cache first (instant, and fine with the instance unreachable) and
 revalidate in the background, TTL-guarded by `CATALOG_TTL_MS`; the "Test functions" panel also
 has an explicit Refresh that forces past the TTL. `refreshHud` runs on **every captured step**
 during a recording — never add a fetch to it; the record panel refreshes once per page load
@@ -293,8 +309,8 @@ elements none reaches. The data is `GET /api/projects/:id/locator-index`
 (`LocatorIndex` in `packages/core/src/locator-index.ts`, built by `getLocatorIndex` in
 `apps/application/server/utils/locator-usages.ts`), fetched by the worker and cached in
 `chrome.storage.local` by `locator-index-cache.ts` (TTL `LOCATOR_INDEX_TTL_MS`, the last
-`LOCATOR_INDEX_CACHE_PROJECTS` indexes; an index that does not fit the quota comes back in the
-worker's reply uncached). An index describes one branch: `locator-branch.ts` resolves it from the
+`LOCATOR_INDEX_CACHE_PROJECTS` indexes within `LOCATOR_INDEX_CACHE_BUDGET`, 4 MB of JSON; an index larger than that,
+or one that does not fit the quota, comes back in the worker's reply uncached). An index describes one branch: `locator-branch.ts` resolves it from the
 panel's choice for the session, else the URL mapping's `branch`, else the default branch, and the
 cache keeps one entry per project and branch.
 The open page is compared with the index's page keys only through `pageHere` (`src/shared/page-here.ts`): it removes
@@ -309,11 +325,16 @@ The chains are evaluated by an in-page reimplementation of Playwright's selector
   `roleUtils.ts`/`selectorUtils.ts`. Pure DOM, no `instanceof` (frames are other realms).
 - `engine-selector.ts` — CSS (piercing open shadow roots, Playwright's `:has-text()`, `:text()`,
   `:visible`, `:scope`, …) and XPath. `:is()`, `:where()`, `:not()` and `:has()` are evaluated
-  here, as Playwright does: inside the scope and through open shadow roots.
+  here, as Playwright does: inside the scope and through open shadow roots. A text pseudo-class takes quoted strings
+  (`:has-text(Tailwind)` fails once matched against an element, as in Playwright); pseudo-elements and two combinators
+  in a row are refused.
 - `locator-engine.ts` — `createLocatorEngine(doc, { testIdAttributes, ignore, strict })`: evaluates a
   parsed `locator-chain` (every `getBy*`, `locator()`, `>>` parts, `filter`, `and`/`or`,
   `nth`/`first`/`last`, frames). A frame locator enters its first owner, as `count()` does, and
-  `first()`/`nth()` on it pick the owner; `strict` refuses several owners, as an action does.
+  `first()`/`nth()` on it pick the owner; `strict` refuses several owners, as an action does. `frameLocator()` with no
+  selector searches the page and every frame below it, and refuses elements found in more than one. A frame inside a
+  locator nested in `and()`, `or()`, `has`/`hasNot` or `locator(locator)` is refused, as Playwright refuses it, unless
+  the nested chain starts with the outer chain's own frame prefix, which is dropped (`prepareChain`).
   Caches per engine instance, so build one per scan.
 - `coverage-scan.ts` — the pure half: runs every chain of the index in time slices, starting over
   with a new engine (twice at most) when the page changes under it, and reports covered/uncovered
@@ -341,14 +362,17 @@ frame's prefix.
 Every tool that names an element or offers a locator for it goes through `verified-locators.ts`, the same path the
 recorder takes:
 
-- **Names** come from `DomModel` (`accessibleNameOf`): "Regressions 5" for a tab showing a count badge, where
-  `textContent` reads "Regressions5". The probe's `approximateAccessibleName` is only the fallback when the model finds
-  no name.
-- **Ranking** (`rankElement`) is `generateAlternatives` without the probe's estimated match counts, and
-  **`checkLocators`** runs every candidate through an engine over the page (`createPageEngine`, blind to the
-  extension's own elements): verified first, a candidate finding the element among others narrowed (exact, then
-  `.filter({ hasText })`, then a landmark, dialog, row or test-id scope) at one point under it, one finding only others
-  dropped, `.first()`/`.nth()` last. `keepAmbiguous` also returns the others with the engine's count, which is what the
+- **Names and roles** come from `DomModel` (`accessibleNameOf`, `model.role`): "Regressions 5" for a tab showing a
+  count badge, where `textContent` reads "Regressions5", and `columnheader` for a `<th>`, which `generateAlternatives`
+  takes as its `role` option. The probe's `approximateAccessibleName` is only the fallback when the model finds no name.
+- **Ranking** (`rankElement`) is `generateAlternatives` without the probe's estimated match counts. Given an engine
+  (`engine`, or a `model` from `createPageEngine`), the probe runs with `countMatches: false` and the anchors are
+  counted with the engine's indexes, built once for a whole scan, on a page of any size; without one (a single pick,
+  the recorder), the probe counts them, walking the page. **`checkLocators`** runs every candidate through an engine
+  over the page (`createPageEngine`, blind to the extension's own elements): verified first, a candidate finding the
+  element among others narrowed (exact, then `.filter({ hasText })`, then a landmark, dialog, row or test-id scope, the
+  test id read from the engine's `testIdAttributes`) at one point under it, one finding only others dropped,
+  `.first()`/`.nth()` last. `keepAmbiguous` also returns the others with the engine's count, which is what the
   Pick results panel shows. `verifiedLocators` (the recorder), `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
@@ -360,8 +384,10 @@ recorder takes:
 - **Counts** (the DevTools Locators tab) come from the same engine; nothing in the extension estimates a count.
 
 `pick.spec.ts` picks each case of `tests/e2e/pages/pick-cases.html` (a tab with a count badge, a name that is a
-substring of another, a link in the nav and in main, buttons sharing an `aria-label`) and has real Playwright click the
-top locator the results panel offers. A new naming or narrowing case goes there.
+substring of another, a link in the nav and in main, buttons sharing an `aria-label`, a column header, a search field
+with suggestions, a banner) and has real Playwright click the top locator the results panel offers. A new naming or
+narrowing case goes there; one the picker cannot click (it snaps to an ancestor carrying a `role`, so a grid's cell
+is its grid) goes into `locator-engine.spec.ts`'s ranking tests (`__piwiRankTop`).
 
 **`locator-engine.spec.ts` is a differential test against real Playwright**: every expression in
 `locator-cases.ts` is resolved by the engine bundle (`engine-entry.ts`) and by a real
@@ -400,10 +426,13 @@ moved, and it is taken again under the same id, once the page settles or as the 
 JPEG as wide as the viewport in CSS pixels in its own IndexedDB
 (`shared/step-views.ts`: a content script's IndexedDB is the page's, and session storage cannot hold a hundred
 screenshots); the finish panel asks for them back (`piwi-bug-step-views`) and writes `evidence.stepShots` and
-`steps/<nnn>.jpg`, unless the reporter leaves them out. A recording that starts or is discarded clears them.
+`steps/<nnn>.jpg`, unless the reporter leaves them out. A recording that starts or is discarded clears them, and so
+does the worker as it starts when session storage holds no recording (the browser session ended: `clearStaleViews`,
+which clears a replay's views when it holds no replay).
 
 **A step a replay cannot play goes to the person.** When a step finds no element (or not the one it needs), the flow is
-on another page (a goto whose page never comes, a 204 or a download, included), or its action fails, `replay-panel.ts`
+on another page (a goto whose page never comes, a 204 or a download, included; a goto is followed only to an http or
+https address on the replay's origin), or its action fails (a file step's element takes no file), `replay-panel.ts`
 sets `ReplayState.handOver` and shows why, the step in words
 and its screenshot, outlined where the recording found its element (`piwi-replay-step-view`): **I did it, continue**
 records it as `manual`, **Skip this step** as `skipped`, **Stop here** as `diverged` and ends the replay. The panel
@@ -428,7 +457,9 @@ its documents, their URLs written against it; a sign-in on another site adds not
 Only the worker writes what it collects, under its own key (`CDP_EVIDENCE_KEY`); `getBugEvidence` merges it with what
 the page relays. The main-world script stays registered: the recorder asks `piwi-bug-evidence-source` and keeps its
 relay quiet in the tab the worker collects from, so nothing is counted twice, and starts it when the session is lost
-(`piwi-bug-debugger-lost`). The HUD says the debugging bar is expected (`bug_debuggingOn`), and why it went.
+(`piwi-bug-debugger-lost`), from the time it ended (`DebuggingState.endedAt`): the script leaves out what it held
+from before. Stop and Finish wait for the worker's answer to `piwi-recording-stopped`, which comes once the session's
+last entries are stored. The HUD says the debugging bar is expected (`bug_debuggingOn`), and why it went.
 `bug-report-cdp.spec.ts` covers it on the real extension.
 
 **Without it, screenshots need `activeTab`.** `chrome.tabs.captureVisibleTab` refuses under the recorder's
@@ -438,8 +469,10 @@ that starts a report grants `activeTab` until the tab navigates; after that the 
 why there is no screenshot, and the popup's tile, during a bug recording, asks the page for one
 (opening the popup is the grant). Never answer this with `<all_urls>`. The popup's **Finish bug report** asks the page
 too (`piwi-bug-finish`), which finishes as the HUD's Finish does (the relay's last entries, a screenshot, the outline),
-and stops the recording itself only when no recorder of the tab answers. A screenshot session storage has no room
-for leaves a note in the report (`bug_screenshotNotKept`) and never keeps Finish from finishing.
+and stops the recording itself only when no recorder of the tab answers. The note a report keeps follows the
+worker's reason (`ScreenshotFailure`: no grant, in the words of Chrome or Firefox, the tab not in front, or another
+failure). A screenshot session storage has no room for leaves a note in the report (`bug_screenshotNotKept`) and
+never keeps Finish from finishing.
 
 ### The main-world evidence script
 
@@ -458,8 +491,10 @@ JavaScript world, so:
   and reports the request it opened last.
 - It never reads a header or a body; a URL keeps its path with ids collapsed and query values
   removed (`reportedRequestUrl`, built on `normalizeRoute`).
-- It talks to the isolated-world recorder only by `window.postMessage` (`shared/bug-relay.ts`), and
-  the page sees those messages. The per-recording token keeps out entries from another recording,
+- It talks to the isolated-world recorder only by `window.postMessage` (`shared/bug-relay.ts`; the recorder and the
+  replay listen through `relayEvidence`, which stores in batches; as the page is left, what is pending goes to the
+  worker in one message, `piwi-relay-left`, since a read and a write of session storage started then never finish,
+  and the worker keeps it for the recording or the replay whose token it carries), and the page sees those messages. The per-recording token keeps out entries from another recording,
   not a page that means harm; `readRelayedEntry` rebuilds every entry field by field and truncates
   it, and storage caps each kind at 100. Treat everything it relays as page-controlled text.
 
@@ -489,8 +524,9 @@ revealed the pressed element or an ancestor, and records a `hover` step for each
   hover shows (a row read as "Invoice 42Delete"), through the same verified locators as the click.
 
 Played with trusted input, a replay's hover is the browser's own. With the page's own events (Firefox, a session
-refused or cancelled), it emulates CSS `:hover` (`hover-emulation.ts`): a constructed sheet repeats
-the `:hover` rules with the `data-piwi-hover` attribute in place of `:hover`, and `dispatchHover` sets the attribute on
+refused or cancelled), it emulates CSS `:hover` (`hover-emulation.ts`): a constructed sheet in each document (the
+page, a same-origin frame) repeats that document's
+`:hover` rules with the `data-piwi-hover` attribute in place of `:hover`, and `dispatchHover` sets the attribute on
 the element pointed at and its ancestors, moving it with each step and removing everything when the replay ends. The
 pointer events it sends follow the element tree: leaves for the ancestors it left, enters for the ones it entered.
 `hover.spec.ts` records, replays and runs the spec of each kind of reveal on `tests/e2e/pages/hover-*.html`.
@@ -533,7 +569,8 @@ scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (butto
   (Pause, Continue, as the in-page panel's own), releasing only a wait in progress.
 - **Locators and Session** (`panel-locators.ts`, `panel-session.ts`): Locators calls the DevTools content script
   (`__piwiDevtools.query`, `highlight`, `mark`, through `src/devtools/page-script.ts`) and reveals a match by marking
-  it with `data-piwi-devtools-reveal`, then running `inspect()` on it in the page's world, which needs no permission.
+  it with `data-piwi-devtools-reveal` (one element at a time), then running `inspect()` on it in the page's world, found
+  in the document or an open shadow root, which needs no permission; a match that has left the page is said so.
   Session reads the pick session (`SESSION_KEY`) and redraws when it changes.
 - **Network and Mock this response** (`panel-network.ts`, pure half `src/shared/mock-code.ts`): requests come only
   from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
@@ -544,20 +581,23 @@ scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (butto
   test body against a real page.
 - **Slow down or fail a request** (`panel-conditions.ts`, pure half `src/shared/request-conditions.ts`): the panel asks
   for the page's origin inside the click and sends `piwi-set-conditions` with the requests' conditions, the whole
-  page's network (`throttle`: fast 3G, slow 3G, offline) and CPU (`cpuRate`); the background worker keeps one tab's
-  state in session storage (`CONDITIONS_KEY`). In Chrome and Edge (`via: 'debugger'`, `cdp-conditions.ts`) the
+  page's network (`throttle`: fast 3G, slow 3G, offline) and CPU (`cpuRate`); the background worker sets them only on
+  a tab that shows that origin, and keeps one tab's state in session storage (`CONDITIONS_KEY`). In Chrome and Edge (`via: 'debugger'`, `cdp-conditions.ts`) the
   `Fetch` domain pauses every request of the tab and delays, fails or answers it while the tab shows the conditions'
   origin, and `Network.emulateNetworkConditions` and `Emulation.setCPUThrottlingRate` throttle it; the Network tab's
   **Every kind** lists documents, scripts and images to put a condition on. Without the protocol, or once its bar is
   cancelled (`lost`, the throttling dropped), `via: 'page'`: `request-conditions-main.js` (main world) wraps `fetch`
   and XHR and, like the evidence script, imports nothing that touches `chrome.*`. It matches a relative URL as the
-  browser resolves it (`document.baseURI`); an XHR it holds back ends on the page's `abort()`, with the events the
-  browser's own fires, or on a new `open()`, which also drops an answer it gave. Either way the worker registers
+  browser resolves it (`document.baseURI`); a fetch it holds back rejects as soon as its signal aborts; an XHR it holds
+  back counts its timeout from `send()`, gets `loadstart` from the wrapper only when it never goes out (the browser
+  fires its own for one that does), and ends on the page's `abort()`, with the events the browser's own fires, its
+  upload's included, or on a new `open()`, which also drops an answer it gave. Either way the worker registers
   `request-conditions.js` (isolated) for that origin at `document_start` (and the main-world script only with `page`),
   and injects them now. The isolated script asks `piwi-get-conditions` (answered for that tab only), posts to the main
   world by `window.postMessage` what the wrapper applies (`forPage`, none with the protocol) and draws the banner.
   Turning them off, or closing the tab, unregisters both and lets the session go, and turning them off reloads the tab.
-  A replay started meanwhile carries the requests' conditions (`ReplayState.conditions`) and its panel lists them.
+  The Network tab's strip acts on the origin the conditions were set for, and once the page is on another, names it
+  and offers Turn all off alone. A replay started meanwhile carries the requests' conditions (`ReplayState.conditions`) and its panel lists them.
   `request-conditions.spec.ts` drives both paths against a real server.
 - **Open this page at a viewport** (**Viewport** in the panel's toolbar shows its bar, `src/devtools/panel-viewport.ts`;
   the inspected tab's address is read in the page, since a DevTools page holds no `activeTab` grant): the sizes are the active
@@ -591,6 +631,12 @@ one is open the surface lives at its end, and goes back to the document's root e
 page. A popover surface (the Tested elements overlay) and a dialog that lays out `position: fixed` children in its own
 box (a `transform`, a `filter`, containment) are left alone. `picker-dom`'s overlay and anchors step mount inside an
 open modal dialog the same way. `modal-dialog.spec.ts` covers it.
+
+**A panel over the page with a backdrop is modal through `holdFocus`** (`src/content/modal-panel.ts`): `aria-modal`,
+the focus on its first control, Tab kept inside, and the focus given back as it closes (the pick results, multi-pick,
+Assertions, Context for an AI agent, Test functions). **A copy button goes through `copyWithFeedback`**
+(`src/shared/clipboard.ts`, extension pages too): the copy command when the clipboard API refuses, Copied or Not copied
+for a moment, and the button's own label back however often it is clicked.
 
 ## Rules
 
@@ -643,7 +689,9 @@ open modal dialog the same way. `modal-dialog.spec.ts` covers it.
   it already awaits, and each panel sets `lang` from `uiLanguage()` on its root inside the shadow DOM.
 - Reuse `@piwitests/picker-dom`'s exports (`installPickerOverlay`, `showAnchorPicker`,
   probe, role-resolution, syntax highlighting) rather than re-deriving picker logic here —
-  that package exists so this workspace doesn't become a third hand-synced copy.
+  that package exists so this workspace doesn't become a third hand-synced copy. Its texts are English unless the
+  host gives them: pass `strings: pickerOverlayStrings()` / `anchorPickerStrings()` (`src/content/picker-strings.ts`,
+  from the catalogs) once `initI18n()` has run.
 - **A locator is always rendered through `highlightLocator`, inside a `.piwi-loc` element,
   in a panel whose `<style>` includes `LOCATOR_SYNTAX_CSS`** — never as bare `textContent`.
   The token colors live in that stylesheet (dark-first, with a light-scheme override) because

@@ -116,11 +116,11 @@ export function mockUrlPattern(url: string): string {
   return `**${path}?${params.join('&')}`;
 }
 
-/** Replaces the values of credential fields in a JSON value, counting them. */
+/** Replaces the values of credential fields in a JSON value, counting them. Every key is kept, `__proto__` too. */
 function hideInJson(value: unknown, count: { n: number }): unknown {
   if (Array.isArray(value)) return value.map((item) => hideInJson(item, count));
   if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
+    const out: Record<string, unknown> = Object.create(null);
     for (const [key, item] of Object.entries(value)) {
       if (SECRET_FIELD.test(key) && (typeof item === 'string' || typeof item === 'number')) {
         count.n++;
@@ -163,6 +163,24 @@ function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
   } catch {
     return { ok: false };
   }
+}
+
+/** `text`, valid JSON, without the white space between its tokens. */
+function compactJson(text: string): string {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (inString) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inString = false;
+    } else if (c === '"') {
+      inString = true;
+      out += c;
+    } else if (c !== ' ' && c !== '\n' && c !== '\r' && c !== '\t') out += c;
+  }
+  return out;
 }
 
 /** `cart` for `/api/cart`, `orders-42` for `/api/orders/42/`, `response` when nothing is left. */
@@ -229,13 +247,16 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   let json: { ok: true; value: unknown } | { ok: false } = { ok: false };
   if (!source.base64 && (isJsonType(contentType) || /^\s*[[{]/.test(body))) json = parseJson(body);
   if (json.ok && !options.reveal) json = { ok: true, value: hideInJson(json.value, count) };
+  // With nothing hidden, a body that reading would change (an integer past 2^53, a `\u` escape) goes out as it came.
+  const asIs = json.ok && count.n === 0 && JSON.stringify(json.value) !== compactJson(body);
+  if (asIs) json = { ok: false };
   if (!json.ok && !source.base64 && !options.reveal && /x-www-form-urlencoded/i.test(contentType)) {
     body = hideInForm(body, count);
   }
 
   const text = json.ok ? JSON.stringify(json.value, null, 2) : body;
   if (text.length > maxInline) {
-    const extension = json.ok ? 'json' : source.base64 ? 'bin' : 'txt';
+    const extension = json.ok || asIs ? 'json' : source.base64 ? 'bin' : 'txt';
     const path = `mocks/${mockFileName(source.url)}.${extension}`;
     const type = contentType ? `contentType: ${literal(contentType)}, ` : '';
     return {

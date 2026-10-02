@@ -180,10 +180,9 @@ export function waitForGlobal<T>(key: string, epoch: number): Promise<T | undefi
  * anchors step, listeners included. The tool's own panels close through
  * `bindToTool`; no other surface on the page is touched.
  *
- * It also answers `__piwiPickState`/`__piwiAnchorState` for a flow that waits
- * on them without being a tool, such as the bug recorder's Mark what's wrong:
- * its overlay is the one this removes, and "skipped" lets it unwind through
- * the cancel path it already has.
+ * It also answers `__piwiPickState`/`__piwiAnchorState` with "skipped" when
+ * nothing has yet, so a flow waiting on them, such as the bug recorder's Mark
+ * what's wrong, unwinds through the cancel path it already has.
  */
 export function teardownToolSurfaces(): void {
   const g = globalThis as unknown as { __piwiPickState?: string; __piwiAnchorState?: string };

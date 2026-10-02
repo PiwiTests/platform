@@ -189,6 +189,14 @@ describe('reportToSend, leaving the typed values out', () => {
     expect(sent.evidence.console[0]!.message).toBe('Error 500');
     expect(sent.evidence.outline).toBe(`- main:\n  - spinbutton "Quantity": ${LEFT_OUT_VALUE}\n  - text: Page 10`);
   });
+
+  test('takes a short value out of a console message where it stands as a word of its own', () => {
+    const typed = typedReport(['42', 'é']);
+    typed.evidence.console[0]!.message = 'Order 42 failed (error 5420, "42"), é not allowed in café';
+    expect(reportToSend(typed, leaveOut).evidence.console[0]!.message).toBe(
+      `Order ${LEFT_OUT_VALUE} failed (error 5420, "${LEFT_OUT_VALUE}"), ${LEFT_OUT_VALUE} not allowed in café`,
+    );
+  });
 });
 
 describe('screenshotsToSend', () => {

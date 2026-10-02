@@ -1,10 +1,13 @@
 import { initI18n, localizeDocument, t, tn, uiLanguage } from '../shared/i18n.js';
 import { cookieOriginPatterns, setupSnippet, toStorageState, type BrowserCookie } from '../shared/storage-state.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
+import { downloadBlob } from '../shared/download.js';
+import { webOrigin } from '../shared/web-origin.js';
 
 /**
  * Save login for tests: the tab's cookies, `httpOnly` ones included, and its
  * origin's `localStorage`, written as Playwright's `storageState` file. Opened
- * from the popup or the Piwi panel with the tab's id and address. The
+ * from the Piwi panel in DevTools with the tab's id and address. The
  * `cookies` permission and the site's host permission are asked for in the
  * click that saves, for that one site; nothing is read before.
  */
@@ -12,15 +15,6 @@ import { cookieOriginPatterns, setupSnippet, toStorageState, type BrowserCookie 
 const params = new URLSearchParams(location.search);
 const tabId = Number(params.get('tabId'));
 const pageUrl = params.get('url') ?? '';
-
-function webOrigin(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : null;
-  } catch {
-    return null;
-  }
-}
 
 async function readCookies(origin: string): Promise<BrowserCookie[]> {
   const { hostname } = new URL(origin);
@@ -32,7 +26,8 @@ async function readCookies(origin: string): Promise<BrowserCookie[]> {
   return [...byUrl, ...byDomain];
 }
 
-async function readLocalStorage(): Promise<Array<[string, string]>> {
+/** The `localStorage` of the document the tab holds now, with that document's origin. */
+async function readLocalStorage(): Promise<{ origin: string; entries: Array<[string, string]> }> {
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
@@ -41,33 +36,15 @@ async function readLocalStorage(): Promise<Array<[string, string]>> {
         const name = localStorage.key(i);
         if (name !== null) entries.push([name, localStorage.getItem(name) ?? '']);
       }
-      return entries;
+      return { origin: location.origin, entries };
     },
   });
-  return (result?.result as Array<[string, string]> | undefined) ?? [];
-}
-
-function download(text: string, filename: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  const read = result?.result as { origin?: unknown; entries?: Array<[string, string]> } | undefined;
+  return { origin: typeof read?.origin === 'string' ? read.origin : '', entries: read?.entries ?? [] };
 }
 
 function copyButton(button: HTMLButtonElement, text: () => string): void {
-  button.addEventListener('click', () => {
-    void navigator.clipboard.writeText(text()).then(() => {
-      const original = button.textContent;
-      button.textContent = t('common_copied');
-      setTimeout(() => {
-        button.textContent = original;
-      }, 1200);
-    });
-  });
+  button.addEventListener('click', () => void copyWithFeedback(text(), button));
 }
 
 async function start(): Promise<void> {
@@ -106,8 +83,13 @@ async function start(): Promise<void> {
           return;
         }
         const [cookies, storage] = await Promise.all([readCookies(origin), readLocalStorage()]);
-        const state = toStorageState(cookies, origin, storage);
-        download(`${JSON.stringify(state, null, 2)}\n`, 'user.json');
+        // The tab shows another site by now: what it holds is not this site's login.
+        if (storage.origin !== origin) {
+          status.textContent = t('login_siteChanged', { site: origin });
+          return;
+        }
+        const state = toStorageState(cookies, origin, storage.entries);
+        downloadBlob(new Blob([`${JSON.stringify(state, null, 2)}\n`], { type: 'application/json' }), 'user.json');
         status.textContent = `${tn('login_savedCookies', state.cookies.length)} ${tn(
           'login_savedStorage',
           state.origins[0]?.localStorage.length ?? 0,

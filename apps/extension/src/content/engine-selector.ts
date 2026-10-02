@@ -105,8 +105,15 @@ export function splitSelectorParts(selector: string): SelectorPart[] {
 type PlainPseudo = 'has-text' | 'text' | 'text-is' | 'text-matches' | 'visible' | 'scope';
 type SelectorPseudo = 'is' | 'where' | 'not' | 'has';
 
-/** A Playwright pseudo-class inside a compound selector, evaluated here rather than by the browser. */
-type CssFunction = { name: PlainPseudo; args: string[] } | { name: SelectorPseudo; list: CssSelectorList };
+/**
+ * A Playwright pseudo-class inside a compound selector, evaluated here rather
+ * than by the browser. `invalid` is the error Playwright raises once it
+ * matches the pseudo-class against an element: a text argument not written as
+ * a quoted string.
+ */
+type CssFunction =
+  | { name: PlainPseudo; args: string[]; invalid?: string }
+  | { name: SelectorPseudo; list: CssSelectorList };
 
 interface CssCompound {
   /** The native part, handed to `Element.matches()`; empty for `*`. */
@@ -129,6 +136,13 @@ export type CssSelectorList = CssComplex[];
 const EVALUATED_PSEUDOS = new Set(['has-text', 'text', 'text-is', 'text-matches', 'visible', 'scope']);
 const SELECTOR_PSEUDOS = new Set(['is', 'where', 'not', 'has']);
 const UNSUPPORTED_PSEUDOS = new Set(['light', 'nth-match', 'left-of', 'right-of', 'above', 'below', 'near']);
+/** How many quoted strings each text pseudo-class takes, at least and at most. */
+const TEXT_PSEUDO_ARGS: Partial<Record<PlainPseudo, [number, number]>> = {
+  'has-text': [1, 1],
+  text: [1, 1],
+  'text-is': [1, 1],
+  'text-matches': [1, 2],
+};
 
 /** Split `text` at a top-level character, skipping quotes, brackets, parentheses and escapes. */
 function splitTopLevel(text: string, separator: string): string[] {
@@ -165,27 +179,44 @@ function splitTopLevel(text: string, separator: string): string[] {
   return out;
 }
 
-function unquoteCssArg(arg: string): string {
-  const trimmed = arg.trim();
-  if (trimmed.length >= 2 && (trimmed[0] === '"' || trimmed[0] === "'") && trimmed.endsWith(trimmed[0]!)) {
-    let out = '';
-    const inner = trimmed.slice(1, -1);
-    for (let i = 0; i < inner.length; i++) {
-      if (inner[i] !== '\\') {
-        out += inner[i];
-        continue;
-      }
-      const hex = /^[0-9a-fA-F]{1,6}\s?/.exec(inner.slice(i + 1));
-      if (hex) {
-        out += String.fromCodePoint(parseInt(hex[0].trim(), 16));
-        i += hex[0].length;
-        continue;
-      }
-      if (i + 1 < inner.length) out += inner[++i];
+/** The value of a pseudo-class argument written as one quoted CSS string, or null when it is anything else. */
+function cssString(arg: string): string | null {
+  const text = arg.trim();
+  const quote = text[0];
+  if (text.length < 2 || (quote !== '"' && quote !== "'")) return null;
+  let out = '';
+  for (let i = 1; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === quote) return i === text.length - 1 ? out : null;
+    if (c !== '\\') {
+      out += c;
+      continue;
     }
-    return out;
+    const hex = /^[0-9a-fA-F]{1,6}\s?/.exec(text.slice(i + 1));
+    if (hex) {
+      out += String.fromCodePoint(parseInt(hex[0].trim(), 16));
+      i += hex[0].length;
+      continue;
+    }
+    if (i + 1 < text.length) out += text[++i];
   }
-  return trimmed;
+  return null;
+}
+
+/** A Playwright pseudo-class evaluated here, with its arguments; a text one also records how Playwright refuses them. */
+function plainPseudo(name: PlainPseudo, inner: string | undefined): CssFunction {
+  const raw = inner === undefined ? [] : splitTopLevel(inner, ',');
+  const values = raw.map(cssString);
+  const args = values.map((value, k) => value ?? raw[k]!.trim());
+  const arity = TEXT_PSEUDO_ARGS[name];
+  if (!arity || (values.length >= arity[0] && values.length <= arity[1] && values.every((v) => v !== null))) {
+    return { name, args };
+  }
+  const invalid =
+    name === 'text-matches'
+      ? '"text-matches" engine expects a regexp body and optional regexp flags'
+      : `"${name}" engine expects a single string`;
+  return { name, args, invalid };
 }
 
 /** Pull Playwright's pseudo-classes out of one compound, leaving the native CSS. */
@@ -212,10 +243,12 @@ function parseCompound(text: string): CssCompound {
     if (c === ']') depthBracket--;
     if (c === '(') depthParen++;
     if (c === ')') depthParen--;
-    if (c === ':' && depthBracket === 0 && depthParen === 0 && text[i + 1] !== ':') {
+    if (c === ':' && depthBracket === 0 && depthParen === 0 && text[i + 1] === ':') {
+      throw new LocatorEngineError(`pseudo-elements are not supported: "${text}"`);
+    }
+    if (c === ':' && depthBracket === 0 && depthParen === 0) {
       const name = /^[-\w]+/.exec(text.slice(i + 1))?.[0] ?? '';
       let end = i + 1 + name.length;
-      let args: string[] = [];
       let inner: string | undefined;
       if (text[end] === '(') {
         let depth = 0;
@@ -240,13 +273,12 @@ function parseCompound(text: string): CssCompound {
         }
         if (j >= text.length) throw new LocatorEngineError(`unterminated :${name}( in selector`);
         inner = text.slice(end + 1, j);
-        args = splitTopLevel(inner, ',').map(unquoteCssArg);
         end = j + 1;
       }
       const lower = name.toLowerCase();
       if (UNSUPPORTED_PSEUDOS.has(lower)) throw new LocatorEngineError(`:${name}() is not supported`);
       if (EVALUATED_PSEUDOS.has(lower)) {
-        funcs.push({ name: lower as PlainPseudo, args });
+        funcs.push(plainPseudo(lower as PlainPseudo, inner));
         i = end - 1;
         continue;
       }
@@ -308,6 +340,7 @@ function parseComplex(text: string): CssComplex {
     if (depthParen === 0 && depthBracket === 0 && !quote) {
       if (c === '>' || c === '+' || c === '~') {
         flush();
+        if (pending !== null) throw new LocatorEngineError(`two combinators in a row in "${text}"`);
         if (steps.length === 0)
           steps.push({ compound: { css: '', funcs: [{ name: 'scope', args: [] }] }, combinator: '' });
         pending = c;
@@ -454,6 +487,9 @@ function matchesFunc(host: CssHost, element: Element, func: CssFunction, ctx: Cs
       return element === scopeElement(ctx);
     case 'visible':
       return model.isVisible(element);
+  }
+  if (func.invalid) throw new LocatorEngineError(func.invalid);
+  switch (func.name) {
     case 'has-text': {
       const needle = normalizeWhiteSpace(func.args[0] ?? '').toLowerCase();
       if (element.nodeName === 'SCRIPT' || element.nodeName === 'NOSCRIPT' || element.nodeName === 'STYLE')

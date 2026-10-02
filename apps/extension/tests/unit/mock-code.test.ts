@@ -91,6 +91,25 @@ describe('mockCode', () => {
     expect(JSON.parse(result.file!.content).rows).toHaveLength(50);
   });
 
+  it('answers a JSON body that a round-trip would change with the body as it came, unless a value is hidden', () => {
+    const body = '{"id":12345678901234567890,"__proto__":{"admin":true},"name":"caf\\u00e9"}';
+    const { code, hidden } = mockCode({ ...cart, body });
+    expect(hidden).toBe(0);
+    expect(code).toContain(
+      `route.fulfill({ contentType: 'application/json', body: '${body.replace(/\\/g, '\\\\')}' })`,
+    );
+
+    const big = mockCode({ ...cart, body }, { maxInlineBody: 10 });
+    expect(big.code).toContain("path: 'mocks/cart.json'");
+    expect(big.file!.content).toBe(body);
+
+    // A value hidden: the body is written again, every key kept.
+    const withToken = mockCode({ ...cart, body: '{"__proto__":{"admin":true},"token":"abc"}' });
+    expect(withToken.hidden).toBe(1);
+    expect(withToken.code).toContain('"__proto__": {');
+    expect(withToken.code).toContain(`"token": "${HIDDEN_VALUE}"`);
+  });
+
   it('writes an error or a network failure for the same route', () => {
     expect(mockCode(cart, { kind: 'error' }).code).toBe(
       "await page.route('**/api/cart', (route) =>\n  route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' }),\n);",

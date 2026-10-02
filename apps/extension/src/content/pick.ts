@@ -18,6 +18,7 @@ import {
 } from '@piwitests/picker-dom';
 import { headingLevel, TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { initI18n } from '../shared/i18n.js';
+import { anchorPickerStrings, pickerOverlayStrings } from './picker-strings.js';
 import { renderResultsPanel } from './results-panel.js';
 import { checkLocators, installDescribeHook, rankElement, ROLE_SOURCES } from './verified-locators.js';
 
@@ -46,11 +47,12 @@ async function runPick(): Promise<void> {
   const toolEpoch = startTool('pick', teardownToolSurfaces);
   installEscapeToCancel();
   const removeDescribeHook = bindToTool(toolEpoch, installDescribeHook());
-  // Read while the user picks, so the results panel opens in the chosen language.
-  const i18nReady = initI18n();
   try {
+    // The overlay, the anchors step and the results speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     clearPickGlobals();
-    installPickerOverlay({ transport: 'global', failing: null });
+    installPickerOverlay({ transport: 'global', failing: null, strings: pickerOverlayStrings() });
     const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
     if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
     // The element is ours now, so the picking overlay has done its job. Left
@@ -72,6 +74,7 @@ async function runPick(): Promise<void> {
         leafRole: role,
         leafLevel: level,
         leafTestId: attrs.attributes['data-testid'] ?? null,
+        strings: anchorPickerStrings(),
       });
       const anchorState = await waitForGlobal<string>('__piwiAnchorState', toolEpoch);
       if (!toolIsCurrent(toolEpoch)) return;
@@ -88,14 +91,10 @@ async function runPick(): Promise<void> {
     // Checked on the page as it is when the panel opens: verified first, then the others with their real count.
     const checked = checkLocators(el, ranked, { keepAmbiguous: true });
     if (checked.length === 0) return;
-
-    await i18nReady;
-    if (!toolIsCurrent(toolEpoch)) return;
     await renderResultsPanel(checked, el, toolEpoch);
   } catch (err) {
-    // Without this a throw anywhere after the pick left the overlay frozen on
-    // "Analyzing element…" and the rejection unhandled, so the flow looked
-    // hung with nothing to explain it.
+    // A throw anywhere after the pick is logged, and the overlay goes below:
+    // left up, it would read "Analyzing element…" for good.
     console.warn('[Piwi Picker] the pick flow failed:', err);
   } finally {
     removeDescribeHook();

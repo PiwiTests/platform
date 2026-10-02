@@ -175,6 +175,25 @@ describe('replayVerdict', () => {
     });
   });
 
+  it('says a page reached as reported when it is the address the report gives, on the replay’s origin', () => {
+    const page: RecordedStep = {
+      ...click,
+      action: 'assert',
+      assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart?step=2', negated: false, note: null },
+    };
+    const found = (url: string) => [
+      { status: 'done' as const, detail: null },
+      { status: 'failed' as const, detail: null, found: url },
+    ];
+    expect(replayVerdict([click, page], found(`${ORIGIN}/cart?step=2`), false)).toEqual({
+      kind: 'reproduced',
+      step: 1,
+      found: `${ORIGIN}/cart?step=2`,
+      sameAsReported: true,
+    });
+    expect(replayVerdict([click, page], found(`${ORIGIN}/cart`), false)).toMatchObject({ sameAsReported: false });
+  });
+
   it('is stopped when the replay was stopped before the end', () => {
     expect(replayVerdict([click, check], [{ status: 'done', detail: null }], true)).toEqual({
       kind: 'stopped',
@@ -230,6 +249,31 @@ describe('readReportFile', () => {
     });
     const json = new TextEncoder().encode(JSON.stringify(doc));
     expect(await readReportFile('steps.json', json)).toEqual({ steps: doc, views: [] });
+  });
+
+  /** The archive with its first entry marked as deflated, its bytes left as stored: data no inflater reads. */
+  function inflatesNothing(zip: Uint8Array): Uint8Array {
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    view.setUint16(8, 8, true);
+    view.setUint16(view.getUint32(zip.length - 22 + 16, true) + 10, 8, true);
+    return zip;
+  }
+
+  it('says, in the interface language, that an archive whose steps cannot be inflated cannot be read', async () => {
+    const broken = inflatesNothing(createZip([{ name: 'steps.json', data: new Uint8Array([0xff, 0xff, 0xff, 0xff]) }]));
+    await expect(readReportFile('bug.zip', broken)).rejects.toThrow(/^bug\.zip cannot be read/);
+    setBrowserLanguage('fr');
+    await expect(readReportFile('bug.zip', broken)).rejects.toThrow(/^Impossible de lire bug\.zip/);
+  });
+
+  it('reads the steps alone when the evidence cannot be inflated', async () => {
+    const archive = inflatesNothing(
+      createZip([
+        { name: 'evidence.json', data: new Uint8Array([0xff, 0xff, 0xff, 0xff]) },
+        { name: 'steps.json', data: JSON.stringify(doc) },
+      ]),
+    );
+    expect(await readReportFile('bug.zip', archive)).toEqual({ steps: doc, views: [] });
   });
 
   it('reads the steps alone when the evidence cannot be read or an image is missing', async () => {

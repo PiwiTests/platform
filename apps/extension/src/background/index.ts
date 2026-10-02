@@ -8,7 +8,6 @@ import {
   serveAppendRecordingEvent,
   type RecordingMode,
 } from '../shared/recording-storage.js';
-import { getConnectionSettings } from '../shared/connection-settings.js';
 import {
   getReplayState,
   getReplayTab,
@@ -18,15 +17,12 @@ import {
   type ReplayState,
 } from '../shared/replay-storage.js';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
-import { fetchCatalog, fetchLocatorIndex, postToEditor } from '../shared/piwi-client.js';
+import { postToEditor } from '../shared/piwi-client.js';
 import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
 import type { SendToEditorResult } from '../shared/editor-send.js';
-import type { EditorSendPayload } from '@piwitests/core/editor-send';
-import { setCachedCatalog, isCatalogStale } from '../shared/catalog-cache.js';
-import type { RefreshCatalogResult } from '../shared/catalog-refresh.js';
-import { isLocatorIndexStale, setCachedLocatorIndex } from '../shared/locator-index-cache.js';
-import type { LocatorIndexRefreshResult } from '../shared/locator-index-refresh.js';
+import type { ScreenshotFailure } from '../shared/bug-storage.js';
+import { parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
 import { BUILD_ID } from '../shared/build-id.js';
 import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
 import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
@@ -55,6 +51,8 @@ import {
   setTabViewport,
 } from './cdp-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
+import { handleRefreshCatalog, handleRefreshLocatorIndex } from './project-refresh.js';
+import { fromExtensionPage } from './senders.js';
 import {
   handleReplayDriver,
   handleReplayInput,
@@ -71,6 +69,7 @@ import {
   handleStepView,
   prepareReplayViews,
 } from './step-views.js';
+import { handleRelayLeft } from './relay-left.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -262,12 +261,12 @@ async function handleStartRecording(
   } catch (err) {
     // `startRecording` has already written `active: true`, so a failure after it
     // would leave a recording that captures nothing while the popup offers
-    // "Stop recording (0)". Unwind everything this function may have put in place.
-    await discardRecording().catch(() => undefined);
+    // "Stop recording (0)". Unwind everything this function may have put in place:
+    // the debugging session first, since letting it go writes what it still holds.
     await stopBugDebugger().catch(() => undefined);
+    await discardRecording().catch(() => undefined);
     await unregisterScripts(RECORDING_SCRIPT_IDS);
-    await chrome.action.setBadgeText({ text: '' }).catch(() => undefined);
-    await i18nReady;
+    await showStateBadge().catch(() => undefined);
     return { ok: false, error: err instanceof Error ? err.message : t('common_recordingStartFailed') };
   }
 }
@@ -342,12 +341,10 @@ chrome.permissions.onAdded.addListener((permissions) => {
  * Tells every tab still running the recorder that capture is over, so each one
  * drops its HUD and its "this tab is being recorded" border.
  *
- * `chrome.tabs.sendMessage` rather than `chrome.runtime.sendMessage`: the
- * latter reaches extension pages and this worker but never a content script,
- * so a stop from the popup left the recorder's surfaces standing on every page
- * it was attached to. Scoped to the origin the user granted for this recording
- * — the only tabs the script was ever registered for, and the only ones this
- * extension has host access to.
+ * `chrome.tabs.sendMessage`, since `chrome.runtime.sendMessage` reaches
+ * extension pages and this worker but never a content script. Scoped to the
+ * origin the user granted for this recording — the only tabs the script was
+ * ever registered for, and the only ones this extension has host access to.
  */
 async function notifyRecorderTabs(
   originPattern: string | null,
@@ -377,7 +374,8 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
   const { grantedOriginPattern } = await getRecordingState();
   await stopBugDebugger();
   await unregisterScripts(RECORDING_SCRIPT_IDS);
-  await chrome.action.setBadgeText({ text: '' });
+  // A replay still running keeps its badge.
+  await showStateBadge();
   // The sender, if it was a content script, has already torn itself down.
   await notifyRecorderTabs(grantedOriginPattern, senderTabId);
 }
@@ -396,74 +394,21 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
  */
 async function handleBugScreenshot(
   tab: chrome.tabs.Tab | undefined,
-): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string; reason: ScreenshotFailure }> {
   await i18nReady;
-  if (tab?.id == null || tab.windowId == null) return { ok: false, error: t('common_screenshotNoTab') };
+  if (tab?.id == null || tab.windowId == null) {
+    return { ok: false, error: t('common_screenshotNoTab'), reason: 'failed' };
+  }
   const viaDebugger = await captureThroughDebugger(tab.id);
   if (viaDebugger) return { ok: true, dataUrl: viaDebugger };
-  if (!tab.active) return { ok: false, error: t('common_screenshotTabHidden') };
+  if (!tab.active) return { ok: false, error: t('common_screenshotTabHidden'), reason: 'not-in-front' };
   try {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     return { ok: true, dataUrl };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-/**
- * Re-fetches one project's function catalog into the cache. This lives in the
- * background worker rather than in the panels that display the catalog for
- * the same reason as in `piwi-client.ts`: the API key must never be
- * reachable from a web page's JS context. Content scripts ask for a refresh
- * over `chrome.runtime.sendMessage` (`catalog-refresh.ts`) and only ever read
- * the resulting cache, so a function added in the dashboard reaches the
- * extension without saving the options page again.
- */
-async function handleRefreshCatalog(projectId: unknown, force: boolean): Promise<RefreshCatalogResult> {
-  await i18nReady;
-  if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
-    return { ok: false, error: t('common_noProject') };
-  }
-  const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
-
-  if (!force && !(await isCatalogStale(projectId))) return { ok: true, refreshed: false, count: null };
-
-  try {
-    const entries = await fetchCatalog(settings, projectId);
-    await setCachedCatalog(projectId, entries);
-    return { ok: true, refreshed: true, count: entries.length };
-  } catch (err) {
-    // The caller already rendered whatever was cached, so a failed refresh
-    // degrades to "showing older data" rather than showing nothing.
-    return { ok: false, error: err instanceof Error ? err.message : t('common_catalogRefreshFailed') };
-  }
-}
-
-/**
- * Re-fetches one project's locator index for the coverage overlay, which (a
- * content script) cannot hold the API key. Answers with the index itself when
- * it re-fetched, because a large index may not fit the storage cache.
- */
-async function handleRefreshLocatorIndex(
-  projectId: unknown,
-  force: boolean,
-  requestedBranch: unknown,
-): Promise<LocatorIndexRefreshResult> {
-  await i18nReady;
-  if (typeof projectId !== 'number' || !Number.isFinite(projectId)) {
-    return { ok: false, error: t('common_noProject') };
-  }
-  const branch = typeof requestedBranch === 'string' && requestedBranch.trim() ? requestedBranch.trim() : null;
-  const settings = await getConnectionSettings();
-  if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_notConnected') };
-  if (!force && !(await isLocatorIndexStale(projectId, branch))) return { ok: true, refreshed: false, index: null };
-  try {
-    const index = await fetchLocatorIndex(settings, projectId, branch);
-    await setCachedLocatorIndex(projectId, index, branch);
-    return { ok: true, refreshed: true, index };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : t('common_locatorIndexFailed') };
+    const error = err instanceof Error ? err.message : String(err);
+    // Chrome and Firefox name the grant they want: `activeTab` (or `<all_urls>`).
+    return { ok: false, error, reason: /activeTab|all_urls/i.test(error) ? 'not-granted' : 'failed' };
   }
 }
 
@@ -475,11 +420,6 @@ async function getConditionsState(): Promise<ConditionsState | null> {
   return value && typeof value.tabId === 'number' && Array.isArray(value.conditions) ? value : null;
 }
 
-/**
- * Turns the conditions off: the scripts are unregistered, the debugging
- * session is let go, and the tab they were on reloads, since its `fetch` and
- * XHR stay wrapped until it does.
- */
 /** Setting and clearing the conditions run one at a time, so a quick on then off ends off. */
 let conditionsQueue: Promise<unknown> = Promise.resolve();
 
@@ -489,6 +429,11 @@ function inConditionsQueue<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/**
+ * Turns the conditions off: the scripts are unregistered, the debugging
+ * session is let go, and the tab they were on reloads, since its `fetch` and
+ * XHR stay wrapped until it does.
+ */
 function clearConditions(reload: boolean): Promise<void> {
   return inConditionsQueue(() => clearConditionsNow(reload));
 }
@@ -567,12 +512,16 @@ async function setConditionsNow(message: SetConditionsMessage): Promise<{ ok: bo
     await clearConditionsNow(true);
     return { ok: true };
   }
-  // Conditions apply to one tab: the tab that had them lets go, and reloads when its `fetch` and XHR were wrapped.
-  const previous = await getConditionsState();
-  if (previous && previous.tabId !== message.tabId) await clearConditionsNow(previous.via !== 'debugger');
   if (!(await chrome.permissions.contains({ origins: [pattern] }))) {
     return { ok: false, error: t('devtools_conditionsNeedAccess') };
   }
+  // Only on a tab that shows the origin they are for.
+  if (originOf((await chrome.tabs.get(message.tabId).catch(() => null))?.url) !== message.origin) {
+    return { ok: false, error: t('devtools_conditionsNoPage') };
+  }
+  // Conditions apply to one tab: the tab that had them lets go, and reloads when its `fetch` and XHR were wrapped.
+  const previous = await getConditionsState();
+  if (previous && previous.tabId !== message.tabId) await clearConditionsNow(previous.via !== 'debugger');
   const base: ConditionsState = {
     tabId: message.tabId,
     origin: message.origin as string,
@@ -620,18 +569,23 @@ onConditionsDebuggerLost((tabId, reason) => {
   });
 });
 
+/** The origin of `url`; null for none or an address that is not one. */
+function originOf(url: string | undefined): string | null {
+  try {
+    return url ? new URL(url).origin : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The conditions for the tab asking, on the origin they were set for; none for any other tab. */
 async function conditionsFor(
   tab: chrome.tabs.Tab | undefined,
   url: string | undefined,
 ): Promise<ConditionsState['conditions']> {
   const state = await getConditionsState();
-  if (!state || tab?.id !== state.tabId || !url) return [];
-  try {
-    return new URL(url).origin === state.origin ? state.conditions : [];
-  } catch {
-    return [];
-  }
+  if (!state || tab?.id !== state.tabId) return [];
+  return originOf(url) === state.origin ? state.conditions : [];
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -677,11 +631,11 @@ async function handleSetTabViewport(message: {
   const size = (value: unknown) =>
     typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
   if (typeof tabId !== 'number' || !size(width) || !size(height)) {
-    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+    return { ok: false, error: t('devtools_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
   }
-  if (!debuggerAvailable()) return { ok: false, error: t('popup_viewportHereUnavailable') };
+  if (!debuggerAvailable()) return { ok: false, error: t('devtools_viewportHereUnavailable') };
   const result = await setTabViewport({ tabId, width: width as number, height: height as number });
-  return result.ok ? result : { ok: false, error: t('popup_viewportHereRefused', { error: result.error }) };
+  return result.ok ? result : { ok: false, error: t('devtools_viewportHereRefused', { error: result.error }) };
 }
 
 /**
@@ -700,7 +654,7 @@ async function handleOpenViewport(message: {
   const size = (value: unknown) =>
     typeof value === 'number' && Number.isInteger(value) && value >= VIEWPORT_MIN && value <= VIEWPORT_MAX;
   if (typeof url !== 'string' || !/^https?:\/\//.test(url) || !size(width) || !size(height)) {
-    return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+    return { ok: false, error: t('devtools_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
   }
   try {
     const w = width as number;
@@ -718,7 +672,7 @@ async function handleOpenViewport(message: {
     });
     const tabId = created?.tabs?.[0]?.id;
     if (created?.id == null || tabId == null)
-      return { ok: false, error: t('popup_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
+      return { ok: false, error: t('devtools_viewportInvalid', { min: VIEWPORT_MIN, max: VIEWPORT_MAX }) };
     // The window's size as set, which `windows.get` may not report yet, and the viewport it gave.
     let outer = { width: created.width ?? w, height: created.height ?? h };
     let inner = await tabSize(tabId);
@@ -752,6 +706,9 @@ function replayOriginPattern(origin: unknown): string | null {
   }
 }
 
+/** Replay starts, one at a time, so two cannot interleave their scripts' registrations. */
+let replayStartQueue: Promise<unknown> = Promise.resolve();
+
 /**
  * Starts a replay of a steps document on one origin: the steps are checked
  * again here, the state goes to session storage, and the replay script is
@@ -759,18 +716,29 @@ function replayOriginPattern(origin: unknown): string | null {
  * It needs the origin's host permission, which Replay in the popup requests
  * and a bug recording on the same site already holds.
  */
-async function handleStartReplay(
-  message: {
-    steps?: unknown;
-    origin?: unknown;
-    stepMode?: unknown;
-    inject?: unknown;
-    startOn?: unknown;
-    bugReportId?: unknown;
-    views?: unknown;
-    recordingViews?: unknown;
-    keepViews?: unknown;
-  },
+function handleStartReplay(
+  message: StartReplayMessage,
+  sender: chrome.runtime.MessageSender,
+): Promise<{ ok: boolean; error?: string }> {
+  const run = replayStartQueue.then(() => startReplayNow(message, sender));
+  replayStartQueue = run.catch(() => undefined);
+  return run;
+}
+
+interface StartReplayMessage {
+  steps?: unknown;
+  origin?: unknown;
+  stepMode?: unknown;
+  inject?: unknown;
+  startOn?: unknown;
+  bugReportId?: unknown;
+  views?: unknown;
+  recordingViews?: unknown;
+  keepViews?: unknown;
+}
+
+async function startReplayNow(
+  message: StartReplayMessage,
   sender: chrome.runtime.MessageSender,
 ): Promise<{ ok: boolean; error?: string }> {
   await i18nReady;
@@ -835,7 +803,10 @@ async function handleStartReplay(
 
 /** From a pick or recording panel: post to the paired editor, which inserts at its cursor. */
 async function handleSendToEditor(payload: EditorSendPayload): Promise<SendToEditorResult> {
-  const pairing = await getEditorPairing();
+  await i18nReady;
+  const stored = await getEditorPairing();
+  // Checked as a pasted pairing is: a loopback address and a token.
+  const pairing = stored ? parsePairing(`${stored.url}#${stored.token}`) : null;
   if (!pairing) return { ok: false, error: t('options_editorInvalid') };
   if (!(await chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }))) {
     return { ok: false, error: t('options_editorPermission') };
@@ -868,11 +839,6 @@ async function handleReplayFinished(): Promise<void> {
   await releaseReplayDebugger();
   await unregisterScripts(REPLAY_SCRIPT_IDS);
   await showStateBadge();
-}
-
-/** A message from one of the extension's own pages (popup, options, DevTools), not from a content script. */
-function fromExtensionPage(sender: chrome.runtime.MessageSender): boolean {
-  return !!sender.url?.startsWith(chrome.runtime.getURL(''));
 }
 
 /** Claims of a replay's tab, one at a time, so two tabs asking together cannot both get it. */
@@ -927,7 +893,24 @@ chrome.tabs.onReplaced?.addListener((addedTabId, removedTabId) => {
   });
 });
 
+/**
+ * Messages only the extension's own pages send: each names a tab or an
+ * address to act on, which a content script never chooses.
+ */
+const EXTENSION_PAGE_MESSAGES = new Set([
+  'piwi-start-recording',
+  'piwi-set-tab-viewport',
+  'piwi-clear-tab-viewport',
+  'piwi-open-viewport',
+  'piwi-set-conditions',
+  'piwi-set-language',
+]);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (EXTENSION_PAGE_MESSAGES.has(message?.type) && !fromExtensionPage(sender)) {
+    sendResponse({ ok: false });
+    return undefined;
+  }
   if (message?.type === 'piwi-ping') {
     // Resolves only once session storage is readable from content scripts —
     // the whole point of the ping. The build lets the caller tell whether this
@@ -1029,6 +1012,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ debugger: collectsThroughDebugger(sender.tab?.id) });
     return undefined;
   }
+  if (message?.type === 'piwi-relay-left') {
+    void handleRelayLeft(message).then(sendResponse, () => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.type === 'piwi-bug-screenshot') {
     void handleBugScreenshot(sender.tab).then(sendResponse);
     return true;
@@ -1083,11 +1070,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-get-bug-report') {
-    void i18nReady.then(() => handleGetBugReport(message.id)).then(sendResponse);
+    void i18nReady.then(() => handleGetBugReport(message.id, sender.tab)).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-refresh-catalog') {
-    void handleRefreshCatalog(message.projectId, message.force === true).then(sendResponse);
+    void i18nReady.then(() => handleRefreshCatalog(message, sender)).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-open-coverage') {
@@ -1106,7 +1093,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-refresh-locator-index') {
-    void handleRefreshLocatorIndex(message.projectId, message.force === true, message.branch).then(sendResponse);
+    void i18nReady.then(() => handleRefreshLocatorIndex(message, sender)).then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-recording-stopped') {

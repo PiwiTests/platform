@@ -27,7 +27,7 @@ export interface AssertionSuggestion {
  * itself works from), `toHaveAccessibleName` (the name Playwright computes,
  * from `DomModel`), and `toBeVisible` as the
  * universal fallback. Ordered most-specific-to-the-element first.
- * `toMatchAriaSnapshot` is deliberately out of scope, same as A5.
+ * `toMatchAriaSnapshot` is not suggested.
  *
  * Depends (via `deriveTopLocator`) on `generateAlternatives`, which — like
  * `scanForLintIssues` — has its own web of private module-level helpers that

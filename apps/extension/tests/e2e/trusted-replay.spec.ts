@@ -317,6 +317,70 @@ test('after the debugging bar is cancelled, the replay goes on with the page’s
   expect(await debuggerAttached(worker, tabId)).toBe(false);
 });
 
+test('a protocol command that fails lets the session go, and the replay goes on with the page’s own events', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const url = `${site}/clicks`;
+  const doc = stepsDoc('Command fails', site, [
+    step('goto', '/clicks', { value: '/clicks' }),
+    step('click', '/clicks', { target: target('first', 'button', 'First') }),
+    step('click', '/clicks', { target: target('second', 'button', 'Second') }),
+    expectText('/clicks', 'log', 'First script; Second script;'),
+  ]);
+  const page = await startReplay(control, context, site, doc, '/clicks', true);
+  const tabId = await tabIdOf(worker, url);
+  const next = () =>
+    worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'piwi-replay-wake', wake: true }), tabId);
+
+  await expect.poll(async () => (await replayState(worker)).driver?.driver, { timeout: 30_000 }).toBe('cdp');
+  await expect.poll(async () => (await replayState(worker)).position).toBe(1);
+  await expect
+    .poll(
+      () =>
+        page
+          .evaluate(
+            () =>
+              (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type ===
+                'reload' && document.getElementById('piwi-replay-cursor-host') !== null,
+          )
+          .catch(() => false),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+  // The browser refuses the first mouse command, the session still attached.
+  await worker.evaluate(() => {
+    const debuggerApi = chrome.debugger as unknown as {
+      sendCommand: (target: unknown, method: string, params?: unknown) => Promise<unknown>;
+    };
+    const send = debuggerApi.sendCommand.bind(chrome.debugger);
+    let refused = false;
+    debuggerApi.sendCommand = (target, method, params) => {
+      if (refused || method !== 'Input.dispatchMouseEvent') return send(target, method, params);
+      refused = true;
+      return Promise.reject(new Error('Internal error'));
+    };
+  });
+  await next();
+  await expect(page.getByTestId('log')).toHaveText('First script;', { timeout: 20_000 });
+  await expect.poll(async () => (await replayState(worker)).driver).toEqual({ driver: 'synthetic', reason: 'lost' });
+  // The replay no longer uses the session: the debugging bar goes while it still runs.
+  await expect.poll(() => debuggerAttached(worker, tabId)).toBe(false);
+  expect((await replayState(worker)).status).toBe('running');
+  await next();
+  await expect.poll(async () => (await replayState(worker)).position).toBe(3);
+  await next();
+  const state = await finished(worker);
+  expect(state.results.map((r) => [r.status, r.driver ?? null])).toEqual([
+    ['done', null],
+    ['done', 'synthetic'],
+    ['done', 'synthetic'],
+    ['passed', null],
+  ]);
+});
+
 test('plays the steps at the viewport they were recorded at, then gives the tab its size back', async ({
   context,
   control,

@@ -22,8 +22,9 @@ import {
   type CoverageTab,
   type ViewState,
 } from './coverage-view.js';
-import { testCaseUrl } from '../shared/piwi-client.js';
+import { testCaseUrl } from '../shared/instance-links.js';
 import { formatNumber, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 export type PanelStatus = 'loading' | 'not-connected' | 'no-project' | 'error' | 'ready';
 
@@ -100,15 +101,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-async function copyText(text: string, button: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = button.textContent;
-  button.textContent = t('common_copied');
-  setTimeout(() => (button.textContent = original), 1200);
+/** A locator, highlighted: a `code` in a row of its own, a `span` inside a line of text. */
+function locatorCode(tag: 'code' | 'span', locator: string): HTMLElement {
+  const node = el(tag, 'piwi-loc');
+  node.innerHTML = highlightLocator(locator);
+  return node;
 }
 
 /** The progress bar's fill, as a transform: it moves without laying out or painting the panel again. */
@@ -560,15 +557,16 @@ export class CoveragePanel {
     block.appendChild(el('div', 'hint', t('coverage_aroundHint')));
     const list = el('ul', 'rows');
     for (const [i, c] of scan.containers.slice(0, AROUND_ROWS).entries()) {
+      const label = el('span', 'label', c.description);
       const row = this.row(
         `around-${i}`,
+        label,
         (on) => this.callbacks.onContainerHover(on ? c.element : null),
         () => this.callbacks.onContainerSelect(c.element),
       );
       row.dataset.kind = c.kind;
       row.title = t('coverage_aroundRowTitle');
       row.appendChild(el('span', `swatch ${c.kind}`));
-      const label = el('span', 'label', c.description);
       row.appendChild(label);
       row.appendChild(el('span', 'count', tn('coverage_testCount', c.tests.length)));
       list.appendChild(row);
@@ -620,17 +618,23 @@ export class CoveragePanel {
     return list;
   }
 
-  /** A row of a list; `key` names it across renders, so the focus stays on it when the list is drawn again. */
-  private row(key: string, onHover: (on: boolean) => void, onSelect: () => void): HTMLLIElement {
+  /**
+   * A row of a list; `key` names it across renders, so the focus stays on it
+   * when the list is drawn again. The whole row takes the pointer; `label`,
+   * which the caller puts in it, is the button the keyboard reaches, so the
+   * row's own links and buttons are not inside another button.
+   */
+  private row(key: string, label: HTMLElement, onHover: (on: boolean) => void, onSelect: () => void): HTMLLIElement {
     const row = el('li', 'row');
     row.dataset.key = key;
-    row.tabIndex = 0;
     row.addEventListener('mouseenter', () => onHover(true));
     row.addEventListener('mouseleave', () => onHover(false));
-    row.addEventListener('focus', () => onHover(true));
-    row.addEventListener('blur', () => onHover(false));
     row.addEventListener('click', onSelect);
-    row.addEventListener('keydown', (e) => {
+    label.tabIndex = 0;
+    label.setAttribute('role', 'button');
+    label.addEventListener('focus', () => onHover(true));
+    label.addEventListener('blur', () => onHover(false));
+    label.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         onSelect();
@@ -652,15 +656,16 @@ export class CoveragePanel {
       c.matches.some((m) => index.locators[m.entry]!.locator.toLowerCase().includes(query));
     const shown = scan.covered.filter((c) => kindShown(state, c) && matches(c));
     const rows = shown.slice(0, MAX_ROWS).map((c, i) => {
+      const label = el('span', 'label', c.description);
       const row = this.row(
         `covered-${i}`,
+        label,
         (on) => this.callbacks.onElementHover(on ? c.element : null),
         () => this.callbacks.onElementSelect(c.element),
       );
       if (state.pinned === c.element) row.classList.add('active');
       row.dataset.kind = c.kind;
       row.appendChild(el('span', `swatch ${c.kind}`));
-      const label = el('span', 'label', c.description);
       label.title = c.description;
       row.appendChild(label);
       const count = el('span', 'count', tn('coverage_testCount', c.tests.length));
@@ -669,11 +674,10 @@ export class CoveragePanel {
       if (health) count.prepend(el('span', `dot ${health}`), ' ');
       row.appendChild(count);
       const first = index.locators[c.matches[0]!.entry]!.locator;
-      const detail = el(
-        'span',
-        'detail mono',
-        `${c.visible ? '' : `${t('coverage_hiddenNow')} · `}${first}${c.matches.length > 1 ? ` +${c.matches.length - 1}` : ''}`,
-      );
+      const detail = el('span', 'detail mono');
+      if (!c.visible) detail.append(`${t('coverage_hiddenNow')} · `);
+      detail.append(locatorCode('span', first));
+      if (c.matches.length > 1) detail.append(` +${c.matches.length - 1}`);
       detail.title = c.matches.map((m) => index.locators[m.entry]!.locator).join('\n');
       row.appendChild(detail);
       return row;
@@ -697,8 +701,10 @@ export class CoveragePanel {
     });
     const rows = shown.slice(0, MAX_ROWS).map(({ test, elements }) => {
       const entry = index.tests[test]!;
+      const label = el('span', 'label', testTitle(entry));
       const row = this.row(
         `test-${test}`,
+        label,
         (on) => this.callbacks.onTestHover(on ? test : null),
         () => this.callbacks.onTestSelect(test),
       );
@@ -707,7 +713,6 @@ export class CoveragePanel {
       dot.style.borderRadius = '50%';
       dot.title = statusLabel(entry.status);
       row.appendChild(dot);
-      const label = el('span', 'label', testTitle(entry));
       label.title = testTitle(entry);
       row.appendChild(label);
       row.appendChild(el('span', 'count', tn('coverage_elementCount', elements.length)));
@@ -740,14 +745,15 @@ export class CoveragePanel {
     const scoped = isScoped(context.scan);
     const shown = uncovered.filter((u) => !query || u.description.toLowerCase().includes(query));
     const rows = shown.slice(0, MAX_ROWS).map((u, i) => {
+      const label = el('span', 'label', u.description);
       const row = this.row(
         `untested-${i}`,
+        label,
         (on) => this.callbacks.onElementHover(on ? u.element : null),
         () => this.callbacks.onElementSelect(u.element),
       );
       row.dataset.kind = 'uncovered';
       row.appendChild(el('span', 'swatch uncovered'));
-      const label = el('span', 'label', u.description);
       label.title = u.description;
       row.appendChild(label);
       row.appendChild(el('span', 'count'));
@@ -758,12 +764,12 @@ export class CoveragePanel {
         const pages = [...new Set(entry.uses.flatMap((use) => (use.pages ?? []).map((p) => context.index.pages?.[p])))]
           .filter(Boolean)
           .slice(0, 2);
-        const hint = el(
-          'span',
-          'detail',
-          pages.length
-            ? t('coverage_foundElsewhere', { locator: entry.locator, pages: pages.join(', ') })
-            : t('coverage_foundElsewhereOther', { locator: entry.locator }),
+        const hint = el('span', 'detail');
+        const locator = locatorCode('span', entry.locator);
+        hint.append(
+          ...(pages.length
+            ? tNodes('coverage_foundElsewhere', { locator, pages: pages.join(', ') })
+            : tNodes('coverage_foundElsewhereOther', { locator })),
         );
         hint.title = elsewhere.map((e) => context.index.locators[e]!.locator).join('\n');
         row.appendChild(hint);
@@ -779,7 +785,7 @@ export class CoveragePanel {
         copy.title = t('coverage_copyLocatorTitle');
         copy.addEventListener('click', (e) => {
           e.stopPropagation();
-          void copyText(suggestion, copy);
+          void copyWithFeedback(suggestion, copy);
         });
         actions.appendChild(copy);
         row.appendChild(actions);
@@ -924,14 +930,15 @@ export class CoveragePanel {
     const { index, scan } = context;
     const locator = index.locators[row.entry]!.locator;
     const first = row.elements[0]!;
+    const label = el('span', 'label', row.count > 1 ? tn('coverage_elementCount', row.count) : scan.describe(first));
     const item = this.row(
       `brittle-${row.entry}`,
+      label,
       (on) => this.callbacks.onElementHover(on ? first : null),
       () => this.callbacks.onElementSelect(first),
     );
     item.dataset.kind = 'brittle';
     item.appendChild(el('span', 'swatch brittle'));
-    const label = el('span', 'label', row.count > 1 ? tn('coverage_elementCount', row.count) : scan.describe(first));
     label.title = row.elements.map((e) => scan.describe(e)).join('\n');
     item.appendChild(label);
     const count = el('span', 'count', tn('coverage_testCount', row.tests.length));
@@ -964,7 +971,8 @@ export class CoveragePanel {
       code.title = t('coverage_replacementTitle');
       item.appendChild(code);
       if (replacement.durable) {
-        const durable = el('span', 'detail', t('coverage_mostStable', { locator: replacement.durable.locator }));
+        const durable = el('span', 'detail');
+        durable.append(...tNodes('coverage_mostStable', { locator: locatorCode('span', replacement.durable.locator) }));
         durable.title = replacement.durable.locator;
         item.appendChild(durable);
       }
@@ -974,14 +982,14 @@ export class CoveragePanel {
       copy.title = t('coverage_copyReplacementTitle');
       copy.addEventListener('click', (e) => {
         e.stopPropagation();
-        void copyText(next, copy);
+        void copyWithFeedback(next, copy);
       });
       const edit = el('button', undefined, t('coverage_copyEdit'));
       edit.type = 'button';
       edit.title = t('coverage_copyEditTitle');
       edit.addEventListener('click', (e) => {
         e.stopPropagation();
-        void copyText(editText(row.callSites, locator, next), edit);
+        void copyWithFeedback(editText(row.callSites, locator, next), edit);
       });
       actions.append(copy, edit);
       item.appendChild(actions);
@@ -1022,7 +1030,7 @@ export class CoveragePanel {
       const list = el('ul');
       for (const error of scan.errors.slice(0, 20)) {
         const li = el('li');
-        li.append(el('code', undefined, index.locators[error.entry]!.locator), ` — ${error.message}`);
+        li.append(locatorCode('code', index.locators[error.entry]!.locator), ` — ${error.message}`);
         list.appendChild(li);
       }
       errorItem.appendChild(list);

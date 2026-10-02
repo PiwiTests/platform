@@ -7,9 +7,9 @@ import type { LocatorIndex } from '@piwitests/core/locator-index';
  * revalidate. Only the worker writes it (`piwi-refresh-locator-index`).
  *
  * An index can weigh megabytes and `chrome.storage.local` is capped, so the
- * cache keeps the few projects opened last and drops the rest; when even that
- * does not fit, the worker answers with the index directly and nothing is
- * cached.
+ * cache keeps the few projects opened last, within a budget of its own, and
+ * drops the rest; an index larger than the budget, or one that does not fit
+ * even alone, is not cached and the worker answers with it directly.
  */
 const CACHE_KEY = 'piwiLocatorIndexCache';
 
@@ -23,6 +23,13 @@ export const LOCATOR_INDEX_TTL_MS = 60_000;
 
 /** Indexes (a project and a branch) kept in the cache, most recently fetched first. */
 export const LOCATOR_INDEX_CACHE_PROJECTS = 3;
+
+/**
+ * The JSON the cache keeps, in characters, every index together: a share of
+ * `chrome.storage.local`'s 10 MB, which leaves the settings and the catalogs
+ * their room.
+ */
+export const LOCATOR_INDEX_CACHE_BUDGET = 4 * 1024 * 1024;
 
 interface CacheEntry {
   index: LocatorIndex;
@@ -57,8 +64,9 @@ export async function isLocatorIndexStale(
 }
 
 /**
- * Store a project's index, evicting the projects fetched longest ago. Returns
- * false when it does not fit even alone; the cache is then left without it.
+ * Store a project's index, evicting the projects fetched longest ago, and
+ * those beyond the budget. Returns false when it is larger than the budget or
+ * does not fit even alone; the cache is then left without it.
  */
 export async function setCachedLocatorIndex(
   projectId: number,
@@ -67,12 +75,21 @@ export async function setCachedLocatorIndex(
 ): Promise<boolean> {
   const key = cacheKey(projectId, branch);
   const store = await readStore();
-  const kept = Object.entries(store)
+  const entry: CacheEntry = { index, fetchedAt: Date.now() };
+  const size = JSON.stringify(entry).length;
+  const withinBudget = size <= LOCATOR_INDEX_CACHE_BUDGET;
+  const others = Object.entries(store)
     .filter(([id]) => id !== key)
     .sort(([, a], [, b]) => b.fetchedAt - a.fetchedAt)
     .slice(0, LOCATOR_INDEX_CACHE_PROJECTS - 1);
-  const entry: CacheEntry = { index, fetchedAt: Date.now() };
-  for (let others = kept.length; others >= 0; others--) {
+  let used = withinBudget ? size : 0;
+  const kept: Array<[string, CacheEntry]> = [];
+  for (const other of others) {
+    used += JSON.stringify(other[1]).length;
+    if (used > LOCATOR_INDEX_CACHE_BUDGET) break;
+    kept.push(other);
+  }
+  for (let others = kept.length; withinBudget && others >= 0; others--) {
     try {
       await chrome.storage.local.set({
         [CACHE_KEY]: { [key]: entry, ...Object.fromEntries(kept.slice(0, others)) },

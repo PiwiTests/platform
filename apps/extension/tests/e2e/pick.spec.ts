@@ -46,9 +46,8 @@ test.describe('pick.js', () => {
     // results-panel.ts) so its contents aren't reachable through Playwright's
     // locator engine; the host existing confirms the flow reached the end.
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-picker-results-host'))).toBe(true);
-    // …and the picking overlay must be gone by then. It used to survive to the
-    // end of the flow still reading "Analyzing element…", which looked exactly
-    // like a pick that had hung.
+    // …and the picking overlay is gone by then: one left reading "Analyzing
+    // element…" at the end of the flow would look exactly like a pick that hung.
     await expect(page.locator('#__piwi_picker_banner')).toHaveCount(0);
   });
 
@@ -252,6 +251,13 @@ test.describe('pick.js offers locators Playwright resolves to the picked element
     { name: 'failed', title: "a name that is a substring of another ('Failed' beside '3 failed')" },
     { name: 'link', title: 'the same link in the nav and in main' },
     { name: 'popup', title: 'two buttons sharing an aria-label, showing different text' },
+    { name: 'th', title: 'a table column header', top: "getByRole('columnheader', { name: 'Price' })" },
+    {
+      name: 'combobox',
+      title: 'a search field with suggestions, a combobox',
+      top: "getByRole('combobox', { name: 'Find a run' })",
+    },
+    { name: 'banner', title: 'a page header, a banner landmark', top: "getByRole('banner', { name: 'Site header' })" },
   ];
   for (const { name, title, top } of cases) {
     test(title, async ({ context }) => {
@@ -299,5 +305,142 @@ test.describe('pick.js offers locators Playwright resolves to the picked element
     const shown = (await preview.textContent())!.trim();
     await expect(playwrightLocator(page, shown)).toHaveCount(1);
     expect(await playwrightLocator(page, shown).getAttribute('data-case')).toBe('link');
+  });
+});
+
+const RESULTS = '#piwi-picker-results-host';
+
+/** Picks `#target` on a page served from an https origin, where the clipboard works, and opens its results, in an open shadow root. */
+async function openResults(context: BrowserContext, before?: (page: Page) => Promise<void>): Promise<Page> {
+  await stubChromeI18n(context);
+  const page = await context.newPage();
+  await servePages(page, ORIGIN, {
+    'results.html': `<!doctype html><html><body style="margin-top:120px">
+      <input id="search" aria-label="Search"><button id="target">Join now</button>
+    </body></html>`,
+  });
+  await page.goto(`${ORIGIN}/results.html`);
+  await page.evaluate(() => {
+    (globalThis as { __piwiTestOpenShadow?: boolean }).__piwiTestOpenShadow = true;
+  });
+  await before?.(page);
+  await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  await page.hover('#target');
+  await page.click('#target');
+  await expect(page.locator(`${RESULTS} .panel`)).toBeVisible();
+  return page;
+}
+
+test.describe('pick.js results panel', () => {
+  test('a copy button clicked twice within a second goes back to its own label', async ({ context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const page = await openResults(context);
+    const copyAll = page.locator(`${RESULTS} .header-actions button.copy`);
+    const label = (await copyAll.textContent())!;
+    expect(label).toMatch(/^Copy all \d+$/);
+    await copyAll.click();
+    await expect(copyAll).toHaveText('Copied');
+    await copyAll.click();
+    await expect(copyAll).toHaveText('Copied');
+    // Past the second click's moment, not only the first's.
+    await page.waitForTimeout(1600);
+    await expect(copyAll).toHaveText(label);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+      "getByRole('button', { name: 'Join now' })",
+    );
+  });
+
+  test('a copy the browser refuses says so, then shows the label again', async ({ context }) => {
+    const page = await openResults(context, (p) =>
+      p.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: { writeText: () => Promise.reject(new DOMException('Write permission denied.', 'NotAllowedError')) },
+        });
+        document.execCommand = () => false;
+      }),
+    );
+    const copyAll = page.locator(`${RESULTS} .header-actions button.copy`);
+    const label = (await copyAll.textContent())!;
+    await copyAll.click();
+    await expect(copyAll).toHaveText('Not copied');
+    await expect(copyAll).toHaveText(label);
+  });
+
+  test('where the clipboard API refuses, the copy command copies', async ({ context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const page = await openResults(context, (p) =>
+      p.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: { writeText: () => Promise.reject(new DOMException('Document is not focused.', 'NotAllowedError')) },
+        });
+      }),
+    );
+    const row = page.locator(`${RESULTS} .row`).first();
+    const locator = (await row.locator('code').textContent())!;
+    const copy = row.locator('button.copy').first();
+    await expect(copy).toHaveText('Locator');
+    await copy.click();
+    await expect(copy).toHaveText('Copied');
+    await expect(copy).toBeFocused();
+    // The page's own clipboard, under the stub.
+    const copied = await page.evaluate(() =>
+      (Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard')!.get!.call(navigator) as Clipboard).readText(),
+    );
+    expect(copied).toBe(`page.${locator}`);
+  });
+
+  test('the copy mode chosen in one row is marked in every row, as Send to editor sends it', async ({ context }) => {
+    const page = await openResults(context);
+    const rows = page.locator(`${RESULTS} .row`);
+    expect(await rows.count()).toBeGreaterThan(1);
+    await rows.nth(1).getByRole('button', { name: 'Assertion', exact: true }).click();
+    for (const row of await rows.all()) {
+      await expect(row.getByRole('button', { name: 'Assertion', exact: true })).toHaveAttribute('data-active', 'true');
+      await expect(row.getByRole('button', { name: 'Locator', exact: true })).toHaveAttribute('data-active', 'false');
+    }
+  });
+
+  test('holds the focus while open, and gives it back as it closes', async ({ context }) => {
+    const page = await openResults(context, (p) => p.locator('#search').focus());
+    const panel = page.locator(`${RESULTS} .panel`);
+    await expect(panel).toHaveAttribute('role', 'dialog');
+    await expect(panel).toHaveAttribute('aria-modal', 'true');
+    const first = page.locator(`${RESULTS} .header-actions button.copy`);
+    const last = panel.locator('button').last();
+    await expect(first).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(last).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(first).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    await expect(page.locator('#search')).toBeFocused();
+  });
+});
+
+test.describe('pick.js in another language', () => {
+  test('the picking overlay and the anchors step speak French', async ({ context }) => {
+    await stubChromeI18n(context, 'fr');
+    const page = await context.newPage();
+    await page.setContent(ANCHORED);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.locator('#__piwi_picker_banner')).toContainText(
+      'Inspecteur Piwi, cliquez sur un élément pour générer ses locators',
+    );
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ enfant · Échap pour passer');
+    await page.hover('#target');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText(
+      'cliquez pour choisir · ↑ parent · ↓ enfant · Échap pour passer',
+    );
+    await page.click('#target');
+    await expect(page.getByText('Limiter à des parents stables (facultatif)')).toBeVisible();
+    await expect(page.getByText('Aucun parent choisi, les locators habituels seulement.')).toBeVisible();
+    await expect(page.getByText('contient exactement 1 élément correspondant')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Utiliser les parents choisis' })).toBeVisible();
+    await page.getByRole('button', { name: 'Passer (Échap)' }).click();
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-picker-results-host'))).toBe(true);
   });
 });

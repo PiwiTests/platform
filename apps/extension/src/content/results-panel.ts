@@ -12,15 +12,17 @@ import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
 import { ALL_BRANCHES } from '@piwitests/core/locator-index';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
-import { projectLocatorsUrl, testCaseUrl } from '../shared/piwi-client.js';
+import { projectLocatorsUrl, testCaseUrl } from '../shared/instance-links.js';
 import { elementReach, pageView, scanCoverage, type ReachGroup } from './coverage-scan.js';
 import { chainStabilities, usePlace } from './coverage-risk.js';
 import { actionLabel, stabilityText } from '../shared/core-words.js';
 import { statusLabel, testTitle } from './coverage-view.js';
 import { attachPanelShadow } from './panel-root.js';
+import { holdFocus } from './modal-panel.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { bindToTool, toolIsCurrent } from '../shared/tool-session.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const HOST_ID = 'piwi-picker-results-host';
 
@@ -41,9 +43,9 @@ const PIWI_TESTS_SHOWN = 6;
  * With `target` (the picked element) and a connection to a Piwi instance, a
  * section lists the project's tests whose locators reach that element.
  *
- * Resolves once the user dismisses the panel (Escape, the close button, or
- * handing the element over to Tested elements), or once the tool started as
- * `toolEpoch` ends. The caller has run `initI18n()`.
+ * Resolves once the user dismisses the panel (Escape, the close button, a
+ * click outside it, or handing the element over to Tested elements), or once
+ * the tool started as `toolEpoch` ends. The caller has run `initI18n()`.
  */
 export async function renderResultsPanel(
   ranked: CheckedLocator[],
@@ -179,7 +181,7 @@ export async function renderResultsPanel(
   copyAll.type = 'button';
   copyAll.textContent = tn('pick_copyAll', ranked.length);
   copyAll.title = t('pick_copyAllHint');
-  copyAll.addEventListener('click', () => void copyToClipboard(ranked.map((alt) => alt.locator).join('\n'), copyAll));
+  copyAll.addEventListener('click', () => void copyWithFeedback(ranked.map((alt) => alt.locator).join('\n'), copyAll));
   headerActions.append(copyAll, closeBtn);
   header.append(titleWrap, headerActions);
   panel.appendChild(header);
@@ -191,6 +193,7 @@ export async function renderResultsPanel(
 
   return new Promise<void>((resolve) => {
     let done = false;
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -203,6 +206,7 @@ export async function renderResultsPanel(
       done = true;
       document.removeEventListener('keydown', onKeyDown, true);
       host.remove();
+      releaseFocus();
       resolve();
     });
     closeBtn.addEventListener('click', finish);
@@ -231,14 +235,16 @@ export async function renderResultsPanel(
         const btn = document.createElement('button');
         btn.className = 'copy';
         btn.type = 'button';
+        btn.dataset.mode = mode;
         btn.dataset.active = String(mode === activeMode);
         btn.textContent = copyModeLabel(mode);
         btn.addEventListener('click', () => {
-          void copyToClipboard(renderCopyMode(alt, mode), btn);
+          void copyWithFeedback(renderCopyMode(alt, mode), btn);
           activeMode = mode;
           void setLastCopyMode(mode);
-          for (const sibling of copyRow.querySelectorAll('button.copy')) {
-            (sibling as HTMLElement).dataset.active = String(sibling === btn);
+          // The mode is the panel's: every row marks it, and each row's Send to editor sends it.
+          for (const other of panel.querySelectorAll<HTMLElement>('button.copy[data-mode]')) {
+            other.dataset.active = String(other.dataset.mode === mode);
           }
         });
         copyRow.appendChild(btn);
@@ -272,7 +278,7 @@ export async function renderResultsPanel(
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
     void fillPiwiSection(piwiSection, ranked, target, () => done, finish);
   });
 }
@@ -531,17 +537,4 @@ function verdictBadge(alt: CheckedLocator): HTMLElement | null {
     case 'unchecked':
       return null;
   }
-}
-
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
 }

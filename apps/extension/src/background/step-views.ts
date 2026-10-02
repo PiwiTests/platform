@@ -15,6 +15,7 @@ import {
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { fetchBugReportStepShot } from '../shared/piwi-client.js';
 import { getReplayState } from '../shared/replay-storage.js';
+import { sessionArea } from '../shared/session-area.js';
 import { captureThroughDebugger } from './cdp-evidence.js';
 
 /**
@@ -102,7 +103,11 @@ export async function handleGetStepViews(message: { ids?: unknown }): Promise<St
   return getRecordingViews(ids.slice(0, BUG_EVIDENCE_LIMITS.stepShots)).catch(() => []);
 }
 
-/** A recording that starts, or one discarded, leaves no view behind. */
+/**
+ * A recording that starts, or one discarded, leaves no view behind; nor does a
+ * browser session that ended, whose recording and replay went with its
+ * session storage (see {@link clearStaleViews}).
+ */
 export function clearViewsWithRecording(): void {
   chrome.storage.onChanged.addListener((changes, area) => {
     const change = area === 'session' ? changes[RECORDING_KEY] : undefined;
@@ -111,6 +116,26 @@ export function clearViewsWithRecording(): void {
     const previous = change.oldValue as RecordingState | undefined;
     if (!next || next.startedAt !== previous?.startedAt) void clearRecordingViews().catch(() => undefined);
   });
+  void clearStaleViews();
+}
+
+/**
+ * As the worker starts: the recording's views go when session storage holds
+ * no recording, and the replay's when it holds no replay. Session storage is
+ * emptied with the browser session, and no change is heard then.
+ */
+export async function clearStaleViews(): Promise<void> {
+  const [recording, replay] = await Promise.all([
+    sessionArea()
+      .get(RECORDING_KEY)
+      .then((stored) => stored[RECORDING_KEY])
+      .catch(() => null),
+    getReplayState().catch(() => null),
+  ]);
+  await Promise.all([
+    recording === undefined ? clearRecordingViews().catch(() => undefined) : undefined,
+    replay ? undefined : setReplayViews([]).catch(() => undefined),
+  ]);
 }
 
 /** The step screenshots a replay can show, at most one per step of a steps document. */
@@ -168,11 +193,14 @@ export async function prepareReplayViews(message: {
   await setReplayViews(views).catch(() => undefined);
 }
 
+/** The last step screenshot fetched from the instance, by replay and step: a hand-over asks again on each page. */
+let fetchedView: { replayId: string; step: number; view: ReplayStepView | null } | null = null;
+
 /**
  * The screenshot of a replayed step, for the person the replay hands it to:
  * the one the replay was started with, or, for a report from the connected
- * instance, the one the instance keeps, fetched only for a step handed over.
- * Null when the report has none.
+ * instance, the one the instance keeps, fetched only for the step the running
+ * replay hands over, once. Null when the report has none.
  */
 export async function handleReplayStepView(message: { step?: unknown }): Promise<ReplayStepView | null> {
   const step = stepOf(message.step);
@@ -180,11 +208,17 @@ export async function handleReplayStepView(message: { step?: unknown }): Promise
   const kept = await getReplayView(step).catch(() => null);
   if (kept) return kept;
   const replay = await getReplayState();
+  const running = replay?.status === 'running' || replay?.status === 'paused';
+  if (!replay?.bugReportId || !running || replay.handOver?.step !== step) return null;
+  if (fetchedView?.replayId === replay.id && fetchedView.step === step) return fetchedView.view;
   const settings = await getConnectionSettings();
-  if (!replay?.bugReportId || !settings.instanceUrl.trim()) return null;
+  if (!settings.instanceUrl.trim()) return null;
   const shot = await fetchBugReportStepShot(settings, replay.bugReportId, step);
-  if (!shot) return null;
-  const box = boxOf(shot.box);
-  const view = { step, dataUrl: shot.dataUrl, box, viewport: viewportOf(shot.viewport) };
-  return view.dataUrl.length <= REPLAY_VIEW_MAX_LENGTH ? view : null;
+  const view = shot ? { step, dataUrl: shot.dataUrl, box: boxOf(shot.box), viewport: viewportOf(shot.viewport) } : null;
+  fetchedView = {
+    replayId: replay.id,
+    step,
+    view: view && view.dataUrl.length <= REPLAY_VIEW_MAX_LENGTH ? view : null,
+  };
+  return fetchedView.view;
 }

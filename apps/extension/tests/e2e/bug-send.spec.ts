@@ -294,7 +294,7 @@ test.describe('Send to Piwi, in the real extension', () => {
         return;
       }
       if (req.method === 'GET' && req.url === '/api/bug-reports/37') {
-        res.end(JSON.stringify({ title: 'Coupon not applied', steps: sampleReport().steps }));
+        res.end(JSON.stringify({ projectId: 7, title: 'Coupon not applied', steps: sampleReport().steps }));
         return;
       }
       res.statusCode = 404;
@@ -423,7 +423,10 @@ test.describe('Send to Piwi, in the real extension', () => {
       expect(steps.ok).toBe(true);
       expect(steps.steps).toMatchObject({ title: 'Coupon not applied', steps: [{ action: 'goto', value: '/cart' }] });
 
-      // Share result: the verdict, where it ran and the browser, on the report.
+      // Share result: the verdict, where it ran and the browser, on the report the replay played.
+      expect(
+        await fromTab({ type: 'piwi-start-replay', steps: steps.steps, origin: SHOP_ORIGIN, bugReportId: 37 }),
+      ).toEqual({ ok: true });
       expect(await fromTab({ type: 'piwi-share-target' })).toEqual({ instance: new URL(instance).host });
       expect(
         await fromTab({

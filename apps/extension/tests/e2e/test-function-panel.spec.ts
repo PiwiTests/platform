@@ -23,8 +23,8 @@ const DIST = path.join(here, '..', '..', 'dist');
 async function stubStorage(
   context: BrowserContext,
   seed: { piwiConnection?: unknown; piwiCatalogCache?: unknown } = {},
-  /** Which storage area's reads throw, as they do before the worker opens session storage to content scripts. */
-  failing: 'local' | 'session' | null = null,
+  /** Which storage area's reads throw, as they do before the worker opens session storage to content scripts; `catalog` for the cached catalog's read alone. */
+  failing: 'local' | 'session' | 'catalog' | null = null,
 ): Promise<void> {
   await context.addInitScript(
     ({ initialSeed, failingArea }) => {
@@ -38,6 +38,7 @@ async function stubStorage(
           local: {
             get: async (key: string) => {
               fail('local');
+              if (key === 'piwiCatalogCache') fail('catalog');
               return { [key]: store[key] };
             },
             set: async (values: Record<string, unknown>) => Object.assign(store, values),
@@ -208,6 +209,22 @@ test.describe('test-function-panel.js', () => {
     await expect(page.locator('#piwi-test-function-host')).toHaveCount(0);
     await page.getByRole('button', { name: 'Add to cart' }).click({ timeout: 2000 });
     await expect(page.getByRole('button')).toHaveText('Clicked');
+  });
+
+  test('says so when the cached catalog cannot be read, and holds the focus', async ({ context }) => {
+    await stubStorage(context, { piwiConnection: CONNECTED }, 'catalog');
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><button>Add to cart</button></body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'test-function-panel.js') });
+    const panel = page.locator('#piwi-test-function-host .panel');
+    await expect(panel.locator('.empty')).toHaveText(
+      'The test functions kept in this browser could not be read. Refresh to download them again.',
+    );
+    await expect(panel).toHaveAttribute('aria-modal', 'true');
+    await expect(panel.getByRole('link', { name: /Test project/ })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(panel.getByRole('button', { name: 'Close' })).toBeFocused();
   });
 
   /** Opens the panel in `language` over a page with one ready and one ambiguous function. */

@@ -66,6 +66,18 @@ test.describe('the Network tab', () => {
     const requests = panel.getByRole('list', { name: 'Network' }).getByRole('button');
     await expect(requests).toHaveCount(1);
     await expect(requests.first()).toContainText('GET/api/cart?_=1695820800000200');
+    // The status sits at the right of its column, as its heading does, in the row's own weight.
+    expect(
+      await requests.first().evaluate((row) => {
+        const [, path, status] = [...row.children] as HTMLElement[];
+        const text = document.createRange();
+        text.selectNodeContents(status!);
+        return {
+          gap: Math.round(status!.getBoundingClientRect().right - text.getBoundingClientRect().right),
+          sameWeight: getComputedStyle(status!).fontWeight === getComputedStyle(path!).fontWeight,
+        };
+      }),
+    ).toEqual({ gap: 0, sameWeight: true });
     await panel.getByRole('checkbox', { name: 'Other sites too' }).check();
     await expect(requests).toHaveCount(2);
 
@@ -193,5 +205,43 @@ test.describe('the Network tab', () => {
       /\/\/piwi-network\.test\/api\/cart/,
       /\/\/piwi-network-other\.test\/api\/orders/,
     ]);
+  });
+
+  test('a draw of the tab overtaken by a later one leaves the list to the later one', async ({
+    context,
+    extensionId,
+  }) => {
+    const other = 'http://piwi-network-other.test';
+    const shop = await context.newPage();
+    await serveShop(shop);
+    await context.route(`${other}/**`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Orders</title>' }),
+    );
+    await shop.goto(`${ORIGIN}/cart`);
+    let held: Promise<void> | null = null;
+    let release = () => {};
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, {
+      beforeEval: (expression) => (expression === 'location.origin' && held ? held : undefined),
+    });
+    await panel.getByRole('tab', { name: 'Network' }).click();
+    await expect(panel.getByText('No request yet.')).toBeVisible();
+
+    // Opened again while the page's origin is slow to come, and drawn once more as the page moves meanwhile.
+    held = new Promise((resolve) => (release = resolve));
+    await panel.getByRole('tab', { name: 'Record' }).click();
+    await panel.getByRole('tab', { name: 'Network' }).click();
+    await shop.goto(`${other}/orders`);
+    await fireDevtoolsEvent(panel, 'navigated', `${other}/orders`);
+    await expect(panel.getByText('No request yet.')).toBeVisible();
+    release();
+    held = null;
+    await panel.waitForTimeout(300);
+
+    await fireDevtoolsEvent(
+      panel,
+      'requestFinished',
+      har(`${other}/api/orders`, 'fetch', 200, 'application/json', '[]'),
+    );
+    await expect(panel.getByRole('list', { name: 'Network' }).getByRole('button')).toHaveText([/^GET\/api\/orders/]);
   });
 });

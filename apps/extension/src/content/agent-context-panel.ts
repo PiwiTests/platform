@@ -12,6 +12,9 @@ import {
 import { installPickerOverlay, removePickerOverlay, type PickerOverlayArg } from '@piwitests/picker-dom';
 import { buildAgentContext } from './agent-context.js';
 import { attachPanelShadow } from './panel-root.js';
+import { pickerOverlayStrings } from './picker-strings.js';
+import { holdFocus } from './modal-panel.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const HOST_ID = 'piwi-agent-context-host';
 
@@ -19,19 +22,6 @@ const PICK_GLOBALS = ['__piwiPickState', '__piwiPickedElement'] as const;
 
 function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
-}
-
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
 }
 
 function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
@@ -127,10 +117,11 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
   copyBtn.className = 'copy';
   copyBtn.type = 'button';
   copyBtn.textContent = t('common_copy');
-  copyBtn.addEventListener('click', () => void copyToClipboard(context, copyBtn));
+  copyBtn.addEventListener('click', () => void copyWithFeedback(context, copyBtn));
   panel.appendChild(copyBtn);
 
   return new Promise<void>((resolve) => {
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -142,6 +133,7 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
     const finish = bindToTool(toolEpoch, () => {
       document.removeEventListener('keydown', onKeyDown, true);
       host.remove();
+      releaseFocus();
       resolve();
     });
     closeBtn.addEventListener('click', finish);
@@ -151,7 +143,7 @@ function renderContextPanel(context: string, toolEpoch: number): Promise<void> {
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
   });
 }
 
@@ -168,10 +160,12 @@ async function runAgentContextPanel(): Promise<void> {
   if (isToolActive('agent-context-panel')) return;
   const toolEpoch = startTool('agent-context-panel', teardownToolSurfaces);
   installEscapeToCancel();
-  const i18nReady = initI18n();
   try {
+    // The overlay and the panel speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     clearPickGlobals();
-    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
+    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null, strings: pickerOverlayStrings() };
     installPickerOverlay(overlayArg);
     const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
     if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
@@ -181,8 +175,6 @@ async function runAgentContextPanel(): Promise<void> {
 
     const el = g.__piwiPickedElement as Element;
     const context = buildAgentContext(el, location.href);
-    await i18nReady;
-    if (!toolIsCurrent(toolEpoch)) return;
     await renderContextPanel(context, toolEpoch);
   } finally {
     // A flow another tool took over from leaves the pick globals to that tool.

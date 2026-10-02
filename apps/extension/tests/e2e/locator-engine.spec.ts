@@ -24,6 +24,24 @@ const EXPECTED_REFUSALS = new Set([
   "locator('#f2').contentFrame().or(getByRole('button', { name: 'Top' }))",
   "frameLocator('#f1')",
   "frameLocator('section').getByRole('button')",
+  "locator('div:has-text(Payment)')",
+  "locator('p:text(welcome)')",
+  "locator('span:text-is(Only)')",
+  'locator(\':text-matches("Hel+o", i)\')',
+  "locator('div::before')",
+  "locator('main > > article')",
+  "frameLocator().getByRole('button')",
+  "frameLocator().first().getByRole('button')",
+  'frameLocator().owner()',
+  "frameLocator().getByText('Enter the code sent to your phone')",
+  "frameLocator().getByLabel('Code').or(frameLocator().getByText('Verify'))",
+  "getByRole('button', { name: 'Submit' }).or(frameLocator('#child-frame').getByRole('button'))",
+  "getByRole('button', { name: 'Submit' }).and(locator('#child-frame').contentFrame().getByRole('button'))",
+  "locator('section').filter({ has: frameLocator('#child-frame').getByRole('button') })",
+  "locator('body').filter({ hasNot: frameLocator('#child-frame').getByText('Cancel') })",
+  "locator('main').locator(frameLocator('#child-frame').getByRole('button'))",
+  "frameLocator('#child-frame').getByRole('button').or(frameLocator('iframe').getByText('Card details'))",
+  "frameLocator('#child-frame').getByRole('button').or(frameLocator('#child-frame').frameLocator('#grandchild').getByRole('button'))",
 ]);
 
 interface Outcome {
@@ -162,6 +180,90 @@ test.describe('locator engine matches Playwright', () => {
       const { mismatches, matchedSomething } = await compare(page, expressions, ['data-qa']);
       expect(mismatches, mismatches.join('\n')).toEqual([]);
       expect(matchedSomething).toBe(3);
+    } finally {
+      selectors.setTestIdAttribute('data-testid');
+    }
+  });
+
+  test('the ranking gives each element the role Playwright gives it', async ({ page }) => {
+    await openFixture(page);
+    const cases = [
+      { selector: 'thead th', role: 'columnheader', top: "getByRole('columnheader', { name: 'Order' })" },
+      { selector: 'tbody th[scope=row]', role: 'rowheader', top: "getByRole('rowheader', { name: '#1001' })" },
+      { selector: '[role=grid] td', role: 'gridcell', top: "getByRole('gridcell', { name: 'A1' })" },
+    ];
+    for (const { selector, role, top } of cases) {
+      const eid = await page.locator(selector).first().getAttribute('data-eid');
+      for (const withEngine of [true, false]) {
+        const ranked = await page.evaluate(
+          ([s, w]) =>
+            (
+              globalThis as unknown as {
+                __piwiRankTop: (s: string, w: boolean) => { role: string | null; locator: string | null };
+              }
+            ).__piwiRankTop(s, w),
+          [selector, withEngine] as const,
+        );
+        expect(ranked, `${selector}, counted by ${withEngine ? 'an engine' : 'the probe'}`).toEqual({
+          role,
+          locator: top,
+        });
+        expect(await playwrightOutcome(page, top)).toEqual({ ids: [eid] });
+      }
+    }
+  });
+
+  test('a scan scopes an item of a long list by its text, however many elements the page has', async ({ page }) => {
+    const items = Array.from(
+      { length: 1500 },
+      (_, i) => `<li><h3>Product ${i} mug</h3><p>In stock</p><button type="button">Remove</button></li>`,
+    );
+    await servePages(page, ORIGIN, {
+      'long-list.html': `<!doctype html><html><body><ul>${items.join('')}</ul></body></html>`,
+    });
+    await page.goto(`${ORIGIN}/long-list.html`);
+    await page.addScriptTag({ path: await engineBundle() });
+    const ranked = await page.evaluate(() =>
+      (
+        globalThis as unknown as {
+          __piwiRankTop: (s: string, w: boolean) => { role: string | null; locator: string | null };
+        }
+      ).__piwiRankTop('li:nth-child(43) button', true),
+    );
+    const top = "getByRole('listitem').filter({ hasText: 'Product 42 mug' }).getByRole('button')";
+    expect(ranked).toEqual({ role: 'button', locator: top });
+    await tagElements(page);
+    expect(await playwrightOutcome(page, top)).toEqual({
+      ids: [await page.locator('li:nth-child(43) button').getAttribute('data-eid')],
+    });
+  });
+
+  test('a candidate is narrowed inside an ancestor carrying the configured test id attribute', async ({ page }) => {
+    await servePages(page, ORIGIN, {
+      'test-id-scopes.html': `<!doctype html><html><body><ul>
+        <li data-qa="order-1001" data-testid="row">Order 1001 <button type="button">Delete</button></li>
+        <li data-qa="order-1002" data-testid="row">Order 1002 <button type="button" id="target">Delete</button></li>
+      </ul></body></html>`,
+    });
+    await page.goto(`${ORIGIN}/test-id-scopes.html`);
+    await tagElements(page);
+    await page.addScriptTag({ path: await engineBundle() });
+    const checked = await page.evaluate(
+      (candidates) =>
+        (
+          globalThis as unknown as {
+            __piwiCheckLocators: (s: string, l: string[], a?: string[]) => Array<{ locator: string; verdict: string }>;
+          }
+        ).__piwiCheckLocators('#target', candidates, ['data-qa']),
+      ["getByRole('button', { name: 'Delete' })"],
+    );
+    const narrowed = "getByTestId('order-1002').getByRole('button', { name: 'Delete', exact: true })";
+    expect(checked).toEqual([{ locator: narrowed, verdict: 'narrowed' }]);
+    selectors.setTestIdAttribute('data-qa');
+    try {
+      expect(await playwrightOutcome(page, narrowed)).toEqual({
+        ids: [await page.locator('#target').getAttribute('data-eid')],
+      });
     } finally {
       selectors.setTestIdAttribute('data-testid');
     }

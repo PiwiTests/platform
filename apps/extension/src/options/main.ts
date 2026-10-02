@@ -37,6 +37,7 @@ import { describeClient } from '../shared/client-info.js';
 import { setCachedCatalog, pruneCachedCatalogs } from '../shared/catalog-cache.js';
 import { clearActiveProjectOverrides } from '../shared/active-project.js';
 import { clearCachedLocatorIndexes } from '../shared/locator-index-cache.js';
+import { clearLocatorBranchOverrides } from '../shared/locator-branch.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
 import { clearRecordIntent } from '../shared/recording-storage.js';
 import {
@@ -106,7 +107,7 @@ interface EditableMapping {
   testPathPrefix: string;
 }
 
-/** Populated by "Test connection" (or on load, if already connected) — the pool a mapping row's project `<select>` draws from. */
+/** The pool a mapping row's project `<select>` draws from: the instance's project list, else the last sync's projects. */
 let projectOptions: ProjectOption[] = [];
 let mappings: EditableMapping[] = [];
 /** The stored settings as last read or written: the instance's patterns and account name live here. */
@@ -142,6 +143,14 @@ function setStatus(text: string, kind: StatusKind = ''): void {
 /** The Project mappings card's status line. */
 function setMappingsStatus(text: string, kind: StatusKind = ''): void {
   writeStatus(mappingsStatusEl, text, kind);
+}
+
+/** Runs `work` with `button` disabled until it ends, so a second click starts no second one. */
+function whileRunning(button: HTMLButtonElement, work: () => Promise<void>): void {
+  button.disabled = true;
+  void work().finally(() => {
+    button.disabled = false;
+  });
 }
 
 /** A card's badge: on (Connected, Paired) or off. */
@@ -204,10 +213,14 @@ async function writeConnection(
   return true;
 }
 
-/** What belongs to the instance kept until now: each site's Active project, and the cached catalogs and locator indexes. */
+/**
+ * What belongs to the instance kept until now: each site's Active project, each project's branch chosen in Tested
+ * elements, and the cached catalogs and locator indexes.
+ */
 async function forgetInstanceData(): Promise<void> {
   await Promise.all([
     clearActiveProjectOverrides().catch(() => undefined),
+    clearLocatorBranchOverrides().catch(() => undefined),
     clearCachedLocatorIndexes(),
     pruneCachedCatalogs([]),
   ]);
@@ -493,7 +506,7 @@ async function refreshCatalogs(
   return { projects: projectIds.length, functions, failed };
 }
 
-/** The mapping select's projects: the ones "Test connection" listed, else the ones the last sync read. */
+/** The projects the last sync of URL patterns read: every project the instance shows this account. */
 function syncedProjectOptions(): ProjectOption[] {
   return stored.serverProjects.map((p) => ({ id: p.id, name: p.label, label: p.label }));
 }
@@ -517,13 +530,14 @@ async function loadInitial(): Promise<void> {
   renderMappings();
   renderServerMappings();
   renderInstanceState();
-  prefillAddSite();
+  const offered = prefillAddSite();
 
   if (settings.instanceUrl) {
     if (await syncServerPatterns(settings, epoch)) {
       projectOptions = syncedProjectOptions();
       renderMappings();
     }
+    if (offered && epoch === connectionEpoch) showOfferedSite(offered);
     try {
       const projects = await fetchProjects(settings);
       if (epoch !== connectionEpoch) return;
@@ -535,21 +549,53 @@ async function loadInitial(): Promise<void> {
   }
 }
 
-/** `options.html#add=<pattern>`, as the popup opens it for a site no pattern covers: fill the form in. */
-function prefillAddSite(): void {
+/**
+ * `options.html#add=<pattern>`, as the popup opens it for a site no pattern covers: fills the Add a site form in.
+ * Answers the pattern when the form waits for the instance's projects, hidden, for {@link showOfferedSite}.
+ */
+function prefillAddSite(): string | null {
   const match = /^#add=(.+)$/.exec(location.hash);
-  if (!match) return;
+  if (!match) return null;
+  let pattern: string;
   try {
-    addPatternEl.value = decodeURIComponent(match[1]!);
+    pattern = decodeURIComponent(match[1]!);
   } catch {
-    return;
+    return null;
   }
   history.replaceState(null, '', location.pathname);
+  addPatternEl.value = pattern;
   (addSiteEl as HTMLDetailsElement).open = true;
-  requestAnimationFrame(() => {
-    (addSiteEl.hidden ? addMappingBtn : addPatternEl).scrollIntoView({ block: 'center' });
-    if (!addSiteEl.hidden) addPatternEl.focus();
+  if (addSiteEl.hidden) return pattern;
+  requestAnimationFrame(() => showField(addPatternEl));
+  return null;
+}
+
+/**
+ * The site the popup offered, once the instance has been read: in the Add a site form it opened, or, the instance's
+ * projects still unread, as a line of this browser whose project is left to choose.
+ */
+function showOfferedSite(pattern: string): void {
+  if (!addSiteEl.hidden) {
+    showField(addPatternEl);
+    return;
+  }
+  addPatternEl.value = '';
+  mappings.push({
+    urlPattern: pattern,
+    projectId: null,
+    projectLabel: '',
+    branch: '',
+    pathPrefix: '',
+    testPathPrefix: '',
   });
+  renderMappings();
+  const project = mappingsEl.querySelector<HTMLSelectElement>('.mapping-row:last-child .mapping-project');
+  if (project) showField(project);
+}
+
+function showField(field: HTMLElement): void {
+  field.scrollIntoView({ block: 'center' });
+  field.focus();
 }
 
 function setConnecting(active: boolean): void {
@@ -769,7 +815,7 @@ apiKeySaveBtn.addEventListener('click', () => {
   // Before any await, so the click still counts as the user gesture.
   const permission = requestInstanceHostPermission(typed.instanceUrl);
   const epoch = connectionEpoch;
-  void (async () => {
+  whileRunning(apiKeySaveBtn, async () => {
     if (!typed.instanceUrl) {
       setStatus(t('common_enterInstanceUrl'), 'error');
       return;
@@ -815,7 +861,7 @@ apiKeySaveBtn.addEventListener('click', () => {
     if (/^http:\/\//i.test(settings.instanceUrl) && typed.apiKey) parts.push(t('options_plainHttp'));
     if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
     setStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
-  })();
+  });
 });
 
 /** Save keeps the lines of this browser, then fetches the catalogs of the projects they map. */
@@ -824,7 +870,7 @@ saveBtn.addEventListener('click', () => {
   // Before any await, so the click still counts as the user gesture.
   const permission = requestInstanceHostPermission(instanceUrl);
   const epoch = connectionEpoch;
-  void (async () => {
+  whileRunning(saveBtn, async () => {
     if (!instanceUrl.trim()) {
       setMappingsStatus(t('common_enterInstanceUrl'), 'error');
       return;
@@ -868,7 +914,7 @@ saveBtn.addEventListener('click', () => {
     }
     if (catalogs.failed > 0) parts.push(tn('options_catalogsFailed', catalogs.failed));
     setMappingsStatus(parts.join(' '), catalogs.failed > 0 ? 'error' : 'ok');
-  })();
+  });
 });
 
 /**
@@ -1002,7 +1048,7 @@ editorPairBtn.addEventListener('click', () => {
   }
   // Requested before anything is awaited: the permission prompt needs the live click.
   const granted = requestOrigins([editorOriginPattern(pairing)]);
-  void (async () => {
+  whileRunning(editorPairBtn, async () => {
     if (!(await granted)) {
       writeStatus(editorStatusEl, t('options_editorPermission'), 'error');
       return;
@@ -1010,7 +1056,7 @@ editorPairBtn.addEventListener('click', () => {
     await setEditorPairing(pairing);
     editorAddressEl.value = '';
     await renderEditorPairing();
-  })();
+  });
 });
 
 editorUnpairBtn.addEventListener('click', () => {
@@ -1136,7 +1182,8 @@ document.getElementById('desktop-pair-cancel')!.addEventListener('click', () => 
 });
 
 /** Pair by hand: the address and the token pasted from the app's Setup page. */
-document.getElementById('desktop-save')!.addEventListener('click', () => {
+const desktopSaveBtn = document.getElementById('desktop-save') as HTMLButtonElement;
+desktopSaveBtn.addEventListener('click', () => {
   const url = desktopOrigin(desktopUrlEl.value);
   const token = desktopTokenEl.value.trim();
   if (!url) {
@@ -1149,14 +1196,14 @@ document.getElementById('desktop-save')!.addEventListener('click', () => {
   }
   // Asked first, while the click still counts as a user gesture; the one loopback origin only.
   const granted = requestOrigins([`${url}/*`]);
-  void (async () => {
+  whileRunning(desktopSaveBtn, async () => {
     if (!(await granted)) {
       setDesktopStatus(t('options_desktopNeedsAccess'), 'error');
       return;
     }
     setDesktopStatus(t('options_testing'));
     await keepDesktopPairing(url, token);
-  })();
+  });
 });
 
 desktopForgetBtn.addEventListener('click', () => {

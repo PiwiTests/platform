@@ -242,4 +242,20 @@ describe('the viewport set in a tab', () => {
     expect(browser.attached.has(7)).toBe(false);
     expect(browser.attached.has(8)).toBe(true);
   });
+
+  it('gives a replay that sized the tab its own size back when the panel’s viewport is reset', async () => {
+    const replayId = await runningReplay();
+    const { handleReplayDriver, handleReplayViewport } = await import('../../src/background/cdp-replay.js');
+    const { clearTabViewport, setTabViewport } = await import('../../src/background/cdp-conditions.js');
+    await handleReplayDriver({ replayId, previous: null }, TAB);
+    expect(await handleReplayViewport({ replayId, width: 800, height: 600 }, TAB)).toEqual({ ok: true });
+    await setTabViewport({ tabId: 7, width: 390, height: 664 });
+    await clearTabViewport(7);
+    const emulation = browser.commands.filter((c) => c.method.startsWith('Emulation.'));
+    expect(emulation[emulation.length - 1]).toMatchObject({
+      method: 'Emulation.setDeviceMetricsOverride',
+      params: { width: 800, height: 600 },
+    });
+    expect(browser.attached.has(7)).toBe(true);
+  });
 });

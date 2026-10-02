@@ -7,6 +7,7 @@ import {
 } from '@piwitests/core/bug-report';
 import { sessionArea } from './session-area.js';
 import type { FallbackReason } from './cdp-input.js';
+import type { RelayedEntries } from './bug-relay.js';
 
 /**
  * A bug recording's evidence, in `chrome.storage.session` beside the recording
@@ -22,10 +23,19 @@ const SCREENSHOTS_KEY = 'piwiBugScreenshots';
 /** What the background worker collects through the debugging protocol; only the worker writes it. */
 export const CDP_EVIDENCE_KEY = 'piwiBugCdpEvidence';
 
+/**
+ * Why the background worker took no screenshot for a bug report: the tab has
+ * no `activeTab` grant (`not-granted`), it is not the one in front
+ * (`not-in-front`), or the browser failed for another reason (`failed`).
+ */
+export type ScreenshotFailure = 'not-granted' | 'not-in-front' | 'failed';
+
 /** Whether a bug recording collects through the debugging protocol, and why not when it does not. */
 export interface DebuggingState {
   state: 'on' | 'off';
   reason: FallbackReason | null;
+  /** When a session that was on ended: what the page noted before then, the session collected. */
+  endedAt?: number;
 }
 
 export interface CdpEvidence {
@@ -184,4 +194,19 @@ export async function clearBugEvidence(): Promise<void> {
   await sessionArea().remove(EVIDENCE_KEY);
   await sessionArea().remove(SCREENSHOTS_KEY);
   await sessionArea().remove(CDP_EVIDENCE_KEY);
+}
+
+/**
+ * Hands the entries a page relayed for the recording or the replay `token`
+ * names to the background worker, as the page is left: one message, which the
+ * worker finishes whatever becomes of the page (`background/relay-left.ts`).
+ */
+export function storeAsPageLeaves(token: string, entries: RelayedEntries): void {
+  try {
+    void Promise.resolve(chrome.runtime.sendMessage({ type: 'piwi-relay-left', token, entries })).catch(
+      () => undefined,
+    );
+  } catch {
+    // The extension context is gone: nothing is left to store them.
+  }
 }

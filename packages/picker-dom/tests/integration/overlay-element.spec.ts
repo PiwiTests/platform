@@ -72,6 +72,41 @@ test.describe('installPickerOverlay — global transport (live page)', () => {
     await expect(page.locator('#__piwi_picker_locator')).toContainText("getByRole('button', { name: 'submit' })");
   });
 
+  test('speaks English by default, and the host’s texts when it gives them', async ({ page }) => {
+    await page.setContent(FIXTURE);
+    await install(page, { transport: 'global', failing: null });
+    const banner = page.locator('#__piwi_picker_banner');
+    await expect(banner).toContainText('Piwi inspector — click any element to generate locators for it');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('↑ parent · ↓ child · Esc skip');
+    await dispatchKey(page, 'Escape');
+
+    await page.evaluate(() => delete (globalThis as any).__piwiPickState);
+    await install(page, {
+      transport: 'global',
+      failing: null,
+      strings: {
+        banner: 'Inspecteur Piwi, cliquez sur un élément',
+        keys: '↑ parent · ↓ enfant',
+        keysHovering: 'cliquez pour choisir',
+        analyzing: 'Analyse…',
+      },
+    });
+    await expect(banner).toHaveText(/^Inspecteur Piwi, cliquez sur un élément/);
+    const foot = page.locator('#__piwi_picker_foot');
+    await expect(foot).toHaveText('↑ parent · ↓ enfant');
+    await page.hover('#submit');
+    await expect(foot).toHaveText('cliquez pour choisir');
+    await page.click('#submit');
+    await expect(foot).toHaveText('Analyse…');
+  });
+
+  test('a text the host leaves empty keeps its English', async ({ page }) => {
+    await page.setContent(FIXTURE);
+    await install(page, { transport: 'global', failing: null, strings: { banner: '', keys: 'keys only' } });
+    await expect(page.locator('#__piwi_picker_banner')).toContainText('Piwi inspector — click any element');
+    await expect(page.locator('#__piwi_picker_foot')).toHaveText('keys only');
+  });
+
   test('ArrowUp walks to the parent before the click commits', async ({ page }) => {
     await page.setContent(FIXTURE);
     await install(page, { transport: 'global', failing: null });

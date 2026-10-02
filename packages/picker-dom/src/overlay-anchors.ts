@@ -26,6 +26,30 @@ export interface PickedLeafInfo {
   level: number | null;
 }
 
+/**
+ * The anchors step's texts a host may give in its own language; each one left
+ * out is the English default. `{count}` in a text stands for a number.
+ */
+export interface AnchorPickerStrings {
+  title?: string;
+  hint?: string;
+  /** The footer with no parent selected. */
+  noneSelected?: string;
+  matchesOne?: string;
+  /** `{count}` elements, any count but one. */
+  matchesMany?: string;
+  countUnavailable?: string;
+  /** Under a parent: what it contains. */
+  containsOne?: string;
+  containsMany?: string;
+  /** Under a parent that cannot be selected. */
+  needsTestId?: string;
+  /** A parent with no test id, id or role, in place of its hook. */
+  noHook?: string;
+  use?: string;
+  skip?: string;
+}
+
 /** Arguments for `showAnchorPicker` — the role maps mirror the single source of truth in `@piwitests/core`. */
 export interface AnchorPickerArg {
   tagRoles: Record<string, string>;
@@ -34,6 +58,8 @@ export interface AnchorPickerArg {
   leafRole: string;
   leafLevel: number | null;
   leafTestId: string | null;
+  /** The panel's texts, for a host that shows another language than English. */
+  strings?: AnchorPickerStrings;
 }
 
 /**
@@ -47,7 +73,8 @@ export interface AnchorPickerArg {
  * land in `__piwiPickAnchors` (+ `__piwiPickChainCount`). While the step
  * shows, `__piwiAnchorCleanup` holds its teardown (see `removeAnchorPicker`).
  * Role resolution reuses the maps passed in `arg` (single source of truth in
- * `@piwitests/core`). Must stay fully self-contained.
+ * `@piwitests/core`). The panel is in English unless `arg.strings` gives its
+ * texts. Must stay fully self-contained.
  */
 export function showAnchorPicker(arg: AnchorPickerArg): void {
   const g = globalThis as any;
@@ -59,6 +86,25 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   }
   const Z = 2147483600;
   const { tagRoles, inputRoles, roleSources, leafRole, leafLevel, leafTestId } = arg;
+  const words = {
+    title: 'Scope to stable parents (optional)',
+    hint: 'Pick one or more parents to anchor the locator to. Hover a row to see the parent.',
+    noneSelected: 'No parents selected — standard alternatives only.',
+    matchesOne: '✓ Selection matches exactly 1 element',
+    matchesMany: '✗ Selection matches {count} elements',
+    countUnavailable: 'Match count unavailable',
+    containsOne: 'contains exactly 1 matching element',
+    containsMany: 'contains {count} matching elements',
+    needsTestId: 'add a data-testid to make this usable',
+    noHook: 'no stable hook',
+    use: 'Use selected parents',
+    skip: 'Skip (Esc)',
+  };
+  for (const key of Object.keys(words) as Array<keyof typeof words>) {
+    const given = arg.strings?.[key];
+    if (typeof given === 'string' && given) words[key] = given;
+  }
+  const counted = (template: string, n: number | string) => template.replace('{count}', String(n));
 
   const roleOf = (n: any): string | null => {
     const explicit = n.getAttribute && n.getAttribute('role');
@@ -76,11 +122,17 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     return al && /^\d+$/.test(al) ? Number(al) : null;
   };
 
+  // A role the maps cannot give the picked element itself (one only the
+  // host's accessibility model computes, such as a paragraph's) cannot be
+  // counted from them: its counts are unavailable rather than 0.
+  const leafCountable = !!leafTestId || roleOf(el) === leafRole;
+
   // Leaf matches inside a scope: same data-testid when the element has one,
-  // otherwise same resolved role (level-scoped for headings).
+  // otherwise same resolved role (level-scoped for headings). -1 when unknown.
   const leafMatches = (scope: any): number => {
     try {
       if (leafTestId) return scope.querySelectorAll(`[data-testid=${JSON.stringify(leafTestId)}]`).length;
+      if (!leafCountable) return -1;
       const nodes = scope.querySelectorAll(roleSources);
       if (nodes.length > 2000) return -1;
       let matched = 0;
@@ -160,7 +212,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
           ? `${role} "${ariaLabel}"`
           : role
             ? `role ${role}`
-            : 'no stable hook';
+            : words.noHook;
     rows.push({
       node,
       info,
@@ -199,15 +251,16 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     `left:${pr.left}px;top:${pr.top}px;width:${pr.width}px;height:${pr.height}px;`;
   const panel = doc.createElement('div');
   panel.style.cssText =
-    `position:fixed;top:12px;right:12px;z-index:${Z + 3};width:340px;max-height:82vh;overflow:auto;` +
+    `position:fixed;top:12px;right:12px;z-index:${Z + 3};width:min(340px,calc(100vw - 56px));` +
+    'max-height:82vh;overflow:auto;' +
     'background:#111827;color:#f9fafb;border-radius:10px;padding:16px;' +
     'font:12px/1.5 system-ui,sans-serif;box-shadow:0 8px 40px rgba(0,0,0,.5);';
   const title = doc.createElement('div');
   title.style.cssText = 'font-weight:600;font-size:13px;margin-bottom:2px;';
-  title.textContent = 'Scope to stable parents (optional)';
+  title.textContent = words.title;
   const sub = doc.createElement('div');
   sub.style.cssText = 'color:#9ca3af;margin-bottom:10px;';
-  sub.textContent = 'Pick one or more parents to anchor the locator to. Hover a row to see the parent.';
+  sub.textContent = words.hint;
   panel.appendChild(title);
   panel.appendChild(sub);
 
@@ -246,7 +299,8 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     let total = 0;
     for (const s of scopes) {
       const c = leafMatches(s);
-      if (c > 0) total += c;
+      if (c < 0) return -1;
+      total += c;
       if (total > 50) return total;
     }
     return total;
@@ -254,7 +308,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
 
   const refreshFooter = () => {
     if (selected.size === 0) {
-      footer.textContent = 'No parents selected — standard alternatives only.';
+      footer.textContent = words.noneSelected;
       footer.style.color = '#9ca3af';
       g.__piwiPickChainCount = undefined;
       return;
@@ -262,10 +316,10 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     const c = chainCount();
     g.__piwiPickChainCount = c;
     if (c === 1) {
-      footer.textContent = '✓ Selection matches exactly 1 element';
+      footer.textContent = words.matchesOne;
       footer.style.color = '#4ade80';
     } else {
-      footer.textContent = c < 0 ? 'Match count unavailable' : `✗ Selection matches ${c} elements`;
+      footer.textContent = c < 0 ? words.countUnavailable : counted(words.matchesMany, c);
       footer.style.color = '#fbbf24';
     }
   };
@@ -285,11 +339,14 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     code.textContent = `<${row.info.tag}> ${row.hookLabel}`;
     const hint = doc.createElement('span');
     hint.style.cssText = 'color:#9ca3af;';
+    const inside = row.info.scopedLeafCount ?? -1;
     hint.textContent = row.selectable
-      ? row.info.scopedLeafCount === 1
-        ? 'contains exactly 1 matching element'
-        : `contains ${row.info.scopedLeafCount ?? '?'} matching elements`
-      : 'add a data-testid to make this usable';
+      ? inside === 1
+        ? words.containsOne
+        : inside < 0
+          ? words.countUnavailable
+          : counted(words.containsMany, inside)
+      : words.needsTestId;
     text.appendChild(code);
     text.appendChild(hint);
     line.appendChild(box);
@@ -348,7 +405,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   const useBtn = doc.createElement('button');
   useBtn.style.cssText =
     'flex:1;background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:8px;cursor:pointer;font:600 12px system-ui;';
-  useBtn.textContent = 'Use selected parents';
+  useBtn.textContent = words.use;
   useBtn.addEventListener('click', (e: any) => {
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -357,7 +414,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   const skipBtn = doc.createElement('button');
   skipBtn.style.cssText =
     'background:none;border:1px solid #374151;color:#9ca3af;border-radius:6px;padding:8px 10px;cursor:pointer;font:12px system-ui;';
-  skipBtn.textContent = 'Skip (Esc)';
+  skipBtn.textContent = words.skip;
   skipBtn.addEventListener('click', (e: any) => {
     e.preventDefault();
     e.stopImmediatePropagation();

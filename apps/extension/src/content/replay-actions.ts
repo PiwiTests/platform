@@ -8,7 +8,7 @@ import { endHoverEmulation, hoverElement } from './hover-emulation.js';
 import { parentOf } from './hover-reveal.js';
 import { isOwnHost } from './record-ui.js';
 import type { FakeCursor } from './replay-cursor.js';
-import type { Observation } from './replay-core.js';
+import { wait, type Observation } from './replay-core.js';
 
 /**
  * How the replay finds each step's element and acts on it in the page.
@@ -26,10 +26,6 @@ import type { Observation } from './replay-core.js';
 export const ACTION_TIMEOUT_MS = 10_000;
 export const ASSERT_TIMEOUT_MS = 5_000;
 const POLL_MS = 100;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -366,9 +362,10 @@ export async function performDrag(
 
 /**
  * Fields whose value is only valid whole (`09:30`, `2026-09-27`, `#22c55e`):
- * a browser drops a partial one, so the replay sets them in one go.
+ * a browser drops a partial one, so the replay sets them in one go, as
+ * Playwright does.
  */
-const WHOLE_VALUE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
+export const WHOLE_VALUE_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
 
 /** Typed in steps a person can follow, at most about a second and a half whatever its length. */
 export async function performFill(
@@ -429,6 +426,12 @@ export async function performCheck(
   return input.checked === checked;
 }
 
+/** The option a `selectOption` step chooses: by its value, else by its label, as Playwright looks for it. */
+export function optionFor(select: HTMLSelectElement, value: string): HTMLOptionElement | undefined {
+  const options = [...select.options];
+  return options.find((o) => o.value === value) ?? options.find((o) => o.label === value);
+}
+
 export async function performSelect(
   element: Element,
   value: string,
@@ -439,8 +442,7 @@ export async function performSelect(
   await cursor.press();
   cursor.outline(null);
   if (!(element instanceof HTMLSelectElement)) return false;
-  const option =
-    [...element.options].find((o) => o.value === value) ?? [...element.options].find((o) => o.label === value);
+  const option = optionFor(element, value);
   if (!option) return false;
   element.focus({ preventScroll: true });
   element.value = option.value;

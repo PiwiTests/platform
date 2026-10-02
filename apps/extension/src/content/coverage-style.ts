@@ -202,7 +202,8 @@ export const COVERAGE_CSS = `
     display: grid; grid-template-columns: 10px 1fr auto; gap: 1px 8px; align-items: center; padding: 6px 8px;
     border-radius: 7px; cursor: pointer;
   }
-  .panel li.row:hover, .panel li.row:focus-visible, .panel li.row.active { background: rgb(128 128 128 / 0.16); outline: none; }
+  .panel li.row:hover, .panel li.row:has(> .label:focus-visible), .panel li.row.active { background: rgb(128 128 128 / 0.16); }
+  .panel li.row > .label:focus-visible { outline: none; }
   .panel li.row.focused { background: rgb(124 58 237 / 0.22); }
   .panel li.row .swatch { width: 10px; height: 10px; border-radius: 3px; }
   .swatch.operated { background: #10b981; }

@@ -5,6 +5,7 @@
   "version": "0.45.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
+  "minimum_chrome_version": "118",
   "homepage_url": "https://piwitests.dev/features/extension",
   "browser_specific_settings": {
     "gecko": {

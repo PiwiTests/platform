@@ -1,5 +1,6 @@
 import { CURSOR_HOST_ID, SHARED_STYLE } from './record-ui.js';
 import { attachPanelShadow } from './panel-root.js';
+import { wait } from './replay-core.js';
 
 /**
  * The replay's fake cursor: an arrow that glides to each element before the
@@ -30,10 +31,6 @@ function reducedMotion(): boolean {
   } catch {
     return false;
   }
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function createCursor(start: { x: number; y: number } | null): FakeCursor {

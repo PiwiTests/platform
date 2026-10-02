@@ -5,6 +5,7 @@ import {
   getCachedLocatorIndex,
   isLocatorIndexStale,
   setCachedLocatorIndex,
+  LOCATOR_INDEX_CACHE_BUDGET,
   LOCATOR_INDEX_CACHE_PROJECTS,
   LOCATOR_INDEX_TTL_MS,
 } from '../../src/shared/locator-index-cache.js';
@@ -106,6 +107,22 @@ describe('locator index cache', () => {
     now += 1000;
     expect(await setCachedLocatorIndex(10, index(10, 400))).toBe(false);
     expect(await getCachedLocatorIndex(10)).toBeNull();
+  });
+
+  it('keeps within a budget of its own, and caches no index larger than it', async () => {
+    const perLocator = JSON.stringify(index(1, 20_000).locators[19_999]).length + 1;
+    const share = (fraction: number) => Math.round((fraction * LOCATOR_INDEX_CACHE_BUDGET) / perLocator);
+    expect(await setCachedLocatorIndex(1, index(1, share(0.6)))).toBe(true);
+    now += 1000;
+    // Two of them are more than the budget: the older one goes.
+    expect(await setCachedLocatorIndex(2, index(2, share(0.6)))).toBe(true);
+    expect(await getCachedLocatorIndex(1)).toBeNull();
+    expect(await getCachedLocatorIndex(2)).not.toBeNull();
+    now += 1000;
+    // One larger than the budget is not cached, and the others stay.
+    expect(await setCachedLocatorIndex(3, index(3, share(1.1)))).toBe(false);
+    expect(await getCachedLocatorIndex(3)).toBeNull();
+    expect(await getCachedLocatorIndex(2)).not.toBeNull();
   });
 });
 

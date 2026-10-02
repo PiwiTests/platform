@@ -100,12 +100,109 @@ test('collects the console, failed requests and screenshots through the debuggin
     (id) => (globalThis as { __piwiCancelDebugging?: (id: number) => Promise<void> }).__piwiCancelDebugging!(id),
     tabId,
   );
-  await expect.poll(async () => (await cdp()).debugging).toEqual({ state: 'off', reason: 'canceled' });
+  await expect
+    .poll(async () => (await cdp()).debugging)
+    .toEqual({ state: 'off', reason: 'canceled', endedAt: expect.any(Number) });
   await page.locator('#warn').click();
   await expect.poll(async () => ((await relayed())?.console ?? []).map((c) => c.message)).toContain('after cancel');
+  // What the session collected before the cancel is not relayed again.
+  await page.waitForTimeout(500);
+  expect(((await relayed())?.console ?? []).map((c) => c.message)).toEqual(['after cancel']);
+  expect((await relayed())?.requests ?? []).toEqual([]);
 
   await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
   expect(await debuggerAttached(worker, tabId)).toBe(false);
+});
+
+test('in another tab of the recording, the page’s script relays, and an entry logged as the page is left is kept', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/first`);
+  const tabId = await tabIdOf(worker, `${site}/first`);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  const relayed = async () =>
+    (
+      (
+        (await worker.evaluate(
+          async () => (await chrome.storage.session.get('piwiBugEvidence')).piwiBugEvidence ?? null,
+        )) as Evidence | null
+      )?.console ?? []
+    ).map((c) => c.message);
+
+  const other = await context.newPage();
+  await other.goto(`${site}/first?other`);
+  await expect.poll(() => other.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+  await other.waitForTimeout(500);
+  await other.evaluate(() => {
+    console.error('Leaving with an error');
+    // Within the relay's batch, once its message has come in.
+    setTimeout(() => (location.href = '/second'), 20);
+  });
+  await other.waitForURL('**/second');
+  await expect.poll(relayed).toContain('Leaving with an error');
+  await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
+});
+
+test('Finish waits for the worker: an error logged as it finishes is in the report', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${site}/first`);
+  const tabId = await tabIdOf(worker, `${site}/first`);
+  const started = await control.evaluate(
+    ({ tabId, pattern }) =>
+      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    { tabId, pattern: `${site}/*` },
+  );
+  expect(started).toEqual({ ok: true });
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+  await page.waitForTimeout(1000);
+  // The worker's writes of what it collects take a while, as on a busy browser.
+  await worker.evaluate(() => {
+    const session = chrome.storage.session;
+    const set = session.set.bind(session);
+    (session as { set: (items: Record<string, unknown>) => Promise<void> }).set = async (items) => {
+      if ('piwiBugCdpEvidence' in items) await new Promise((resolve) => setTimeout(resolve, 500));
+      return set(items);
+    };
+  });
+  // The page logs an error the moment the HUD shows again after Finish's screenshot, just before the report opens.
+  await page.evaluate(() => {
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const host = record.target as HTMLElement;
+        if (host.id !== 'piwi-record-hud-host' || !record.oldValue?.includes('hidden')) continue;
+        if (host.style.visibility === 'hidden') continue;
+        observer.disconnect();
+        console.error('Failure at the end');
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+      attributeOldValue: true,
+      subtree: true,
+    });
+  });
+  await clickInShadow(page, 'Finish');
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
+  const download = page.waitForEvent('download');
+  await clickInShadow(page, 'Download .piwibug');
+  const files = readStoredZip(new Uint8Array(await readFile((await (await download).path())!)));
+  const evidence = JSON.parse(new TextDecoder().decode(files.get('evidence.json')));
+  expect(evidence.evidence.console.map((c: { message: string }) => c.message)).toEqual(['Failure at the end']);
 });
 
 test('keeps the recorded origin only: nothing of another site the tab goes through, nor of an isolated world', async ({

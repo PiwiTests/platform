@@ -18,6 +18,9 @@ import {
 } from '@piwitests/picker-dom';
 import { suggestAssertions, type AssertionSuggestion } from './assertion-suggest.js';
 import { attachPanelShadow } from './panel-root.js';
+import { pickerOverlayStrings } from './picker-strings.js';
+import { holdFocus } from './modal-panel.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const HOST_ID = 'piwi-assertion-panel-host';
 
@@ -25,19 +28,6 @@ const PICK_GLOBALS = ['__piwiPickState', '__piwiPickedElement'] as const;
 
 function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
-}
-
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
 }
 
 async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: number): Promise<void> {
@@ -141,6 +131,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
   }
 
   return new Promise<void>((resolve) => {
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -152,6 +143,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
     const finish = bindToTool(toolEpoch, () => {
       document.removeEventListener('keydown', onKeyDown, true);
       host.remove();
+      releaseFocus();
       resolve();
     });
     closeBtn.addEventListener('click', finish);
@@ -171,7 +163,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
       btn.className = 'copy';
       btn.type = 'button';
       btn.textContent = t('common_copy');
-      btn.addEventListener('click', () => void copyToClipboard(candidate.expectLine, btn));
+      btn.addEventListener('click', () => void copyWithFeedback(candidate.expectLine, btn));
       top.append(method, btn);
       row.appendChild(top);
 
@@ -192,7 +184,7 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: 
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
   });
 }
 
@@ -210,10 +202,12 @@ async function runAssertionSuggester(): Promise<void> {
   if (isToolActive('assertion-panel')) return;
   const toolEpoch = startTool('assertion-panel', teardownToolSurfaces);
   installEscapeToCancel();
-  const i18nReady = initI18n();
   try {
+    // The overlay and the panel speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     clearPickGlobals();
-    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
+    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null, strings: pickerOverlayStrings() };
     installPickerOverlay(overlayArg);
     const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
     if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
@@ -223,8 +217,6 @@ async function runAssertionSuggester(): Promise<void> {
 
     const el = g.__piwiPickedElement as Element;
     const suggestion = suggestAssertions(el);
-    await i18nReady;
-    if (!toolIsCurrent(toolEpoch)) return;
     await renderAssertionPanel(suggestion, toolEpoch);
   } finally {
     // A flow another tool took over from leaves the pick globals to that tool.

@@ -32,23 +32,26 @@ function install(): void {
   const pending: BugRelayEntry[] = [];
   const sent = { console: 0, request: 0 };
 
-  const send = (item: BugRelayEntry): void => {
+  const post = (item: BugRelayEntry, to: string): void => {
     const limit = item.kind === 'console' ? BUG_EVIDENCE_LIMITS.console : BUG_EVIDENCE_LIMITS.requests;
     if (sent[item.kind] >= limit) return;
     sent[item.kind]++;
-    if (!token) {
-      if (pending.length < BUFFER_LIMIT) pending.push(item);
-      return;
-    }
-    window.postMessage({ source: BUG_RELAY.ENTRY, token, item }, ownOrigin());
+    window.postMessage({ source: BUG_RELAY.ENTRY, token: to, item }, ownOrigin());
+  };
+
+  const send = (item: BugRelayEntry): void => {
+    if (token) post(item, token);
+    else if (pending.length < BUFFER_LIMIT) pending.push(item);
   };
 
   window.addEventListener('message', (e: MessageEvent) => {
     if (e.source !== window) return;
-    const data = e.data as { source?: unknown; token?: unknown } | null;
+    const data = e.data as { source?: unknown; token?: unknown; since?: unknown } | null;
     if (data?.source !== BUG_RELAY.HELLO || typeof data.token !== 'string' || !data.token) return;
     token = data.token;
-    for (const item of pending.splice(0)) window.postMessage({ source: BUG_RELAY.ENTRY, token, item }, ownOrigin());
+    // What was noted before `since` reached the report another way: the debugging session collected it.
+    const since = typeof data.since === 'number' && Number.isFinite(data.since) ? data.since : -Infinity;
+    for (const item of pending.splice(0)) if (item.entry.time >= since) post(item, token);
   });
 
   const stringify = (value: unknown): string => {

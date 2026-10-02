@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
 import type { Page } from '@playwright/test';
 import { openShadowRoots } from './shadow.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -218,6 +219,36 @@ test.describe('multi-pick.js', () => {
     await expect(locators).toHaveText([`getByRole('listitem').nth(0)`, `getByRole('listitem').nth(1)`]);
     await expect(page.getByRole('listitem').nth(0)).toHaveAttribute('id', 'row1');
     await expect(page.getByRole('listitem').nth(1)).toHaveAttribute('id', 'row2');
+  });
+
+  test('the panel shows the base locator as code, and marks the copy mode chosen in every row', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <ul><li id="row1">Alice - active</li><li id="row2">Bob - active</li></ul>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    for (const row of ['#row1', '#row2']) {
+      await waitForFreshPickBanner(page);
+      await page.hover(row);
+      await page.click(row);
+    }
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+    await page.keyboard.press('Enter');
+
+    const panel = page.locator('#piwi-multi-pick-panel-host .panel');
+    const title = panel.locator('.title');
+    await expect(title).toHaveText("2 locators built on getByRole('listitem')");
+    await expect(title.locator('.piwi-loc')).toHaveText("getByRole('listitem')");
+    await expect(title.locator('.piwi-loc .piwi-tok-fn')).toHaveText('getByRole');
+    await expect(panel).toHaveAttribute('aria-modal', 'true');
+
+    const rows = panel.locator('.row');
+    await rows.nth(1).getByRole('button', { name: 'Action', exact: true }).click();
+    for (const row of await rows.all()) {
+      await expect(row.getByRole('button', { name: 'Action', exact: true })).toHaveAttribute('data-active', 'true');
+    }
   });
 
   test('re-injecting while a session is already in progress does not start a second one', async ({ context }) => {

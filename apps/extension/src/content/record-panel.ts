@@ -4,14 +4,17 @@ import {
   RECORDED_KEYS,
   type RawCaptureEvent,
   type RecordedTarget,
-  type RecordedStep,
   type StepAssertion,
   type StepView,
 } from '@piwitests/core/recording';
 import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { describeStepInWords } from '@piwitests/core/bug-report';
+import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
+import { interfacePhrases } from '../shared/core-words.js';
+import { relayEvidence } from '../shared/bug-relay.js';
 import { classifyInputKind } from './record-capture.js';
 import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
@@ -26,8 +29,9 @@ import {
   recordingMode,
   type RecordingState,
 } from '../shared/recording-storage.js';
-import { getBugEvidence, setBugEvidenceFields } from '../shared/bug-storage.js';
+import { appendBugEntries, getBugEvidence, setBugEvidenceFields, storeAsPageLeaves } from '../shared/bug-storage.js';
 import {
+  cancelBugPick,
   captureStepView,
   currentBugContext,
   outlineAround,
@@ -36,8 +40,8 @@ import {
   runMarkFlow,
   runMissingFlow,
   runWrongPageFlow,
-  startEvidenceRelay,
   takeBugScreenshot,
+  updateBugHudEvidence,
   type BugRecorderHooks,
 } from './bug-panel.js';
 import {
@@ -48,10 +52,10 @@ import {
   OWN_HOST_IDS,
   SHARED_STYLE,
   copyToClipboard,
-  downloadBlob,
   fileStamp,
   mountSurface,
 } from './record-ui.js';
+import { downloadBlob } from '../shared/download.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
@@ -63,7 +67,7 @@ import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 
 /** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping, though not the identical algorithm. */
 const ACTIONABLE_SELECTOR =
-  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable="true"], [data-testid]';
+  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable]:not([contenteditable="false" i]), [data-testid]';
 
 /** Where an arrow key moves through choices rather than a caret or the page, and so is worth replaying. */
 const ARROW_KEY_WIDGETS =
@@ -72,9 +76,14 @@ const ARROW_KEY_WIDGETS =
 /** Inputs Playwright's `fill` refuses: their `input` event is not a fill. */
 const UNFILLABLE_INPUT_TYPES = new Set(['checkbox', 'radio', 'file', 'submit', 'button', 'reset', 'image', 'hidden']);
 
-/** Fields a character typed into is text, not a shortcut. */
+/** Fields a character typed into is text, not a shortcut; {@link inTextField} adds the editable elements. */
 const TEXT_FIELDS =
-  'textarea, select, [contenteditable=""], [contenteditable="true"], input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="range"], [type="color"], [type="image"])';
+  'textarea, select, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="file"], [type="range"], [type="color"], [type="image"])';
+
+/** Whether `el` takes what is typed as text: a text field, or an element the page lets the person edit. */
+function inTextField(el: Element | null | undefined): boolean {
+  return !!el && (!!el.closest(TEXT_FIELDS) || (el as Partial<HTMLElement>).isContentEditable === true);
+}
 const MODIFIER_KEYS = new Set([
   'Control',
   'Shift',
@@ -119,7 +128,7 @@ function recordedKey(e: KeyboardEvent, focused: Element | null, hiddenFocus: boo
   if (MODIFIER_KEYS.has(e.key)) return null;
   if (e.getModifierState?.('AltGraph')) return null;
   const secret = hiddenFocus || (!!focused && isSensitiveField(focused));
-  const inField = secret || !!focused?.closest(TEXT_FIELDS);
+  const inField = secret || inTextField(focused);
   const typedWithOption =
     IS_MAC && e.altKey && !e.metaKey && !e.ctrlKey && [...e.key].length === 1 && e.key.trim() !== '';
   // A letter or digit by its key, whatever Alt or a layout made of it.
@@ -406,6 +415,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   const style = document.createElement('style');
   style.textContent = `
     ${SHARED_STYLE}
+    ${LOCATOR_SYNTAX_CSS}
     .bar {
       display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb;
       border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
@@ -478,7 +488,8 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     locTitle.className = 'section-title';
     locTitle.textContent = t('record_lastLocator');
     const code = document.createElement('code');
-    code.textContent = lastTarget.alternatives[0].locator;
+    code.className = 'piwi-loc';
+    code.innerHTML = highlightLocator(lastTarget.alternatives[0].locator);
     bar.append(locTitle, code);
   }
 
@@ -519,16 +530,6 @@ function renderMatchRow(m: RankedFunctionMatch): HTMLElement {
     : `${formatNumber(m.matchedIndices.length)}/${formatNumber(m.entry.steps.length)}`;
   row.append(name, barWrap, badge);
   return row;
-}
-
-function describeStep(step: RecordedStep): string {
-  const target = step.target;
-  const label = target?.testId
-    ? `testId=${target.testId}`
-    : (target?.accessibleName ?? target?.text ?? target?.tagName ?? '');
-  const value = step.redacted ? '••••••' : step.value;
-  const described = `${step.action}${label ? ` — ${label}` : ''}`;
-  return value ? t('record_stepValue', { step: described, value }) : described;
 }
 
 /** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
@@ -634,11 +635,8 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   closeBtn.className = 'close';
   closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
-  // Every close path goes through one function, so the document-level Escape
-  // listener below is always detached with the panel. Registering it and only
-  // removing it on Escape itself meant closing any other way (the ×, the
-  // backdrop, Discard) left it attached to the page for good, and each reopen
-  // stacked another.
+  // Every close path (the ×, the backdrop, Discard, Escape) goes through one
+  // function, which detaches the document-level Escape listener below with the panel.
   const closeController = new AbortController();
   const closePanel = (): void => {
     closeController.abort();
@@ -664,7 +662,7 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
       idx.textContent = formatNumber(i + 1);
       const desc = document.createElement('span');
       desc.className = 'step-desc';
-      desc.textContent = describeStep(step);
+      desc.textContent = describeStepInWords(step, interfacePhrases());
       row.append(idx, desc);
       const span = withCatalog.matchedSpans.find((s) => i >= s.startStep && i <= s.endStep);
       if (span) {
@@ -746,14 +744,29 @@ async function renderReviewPanel(state: RecordingState): Promise<void> {
   panel.focus();
 }
 
+/** The longest Stop waits for the worker's answer before it opens the review. */
+const STOP_ANSWER_MS = 2000;
+
+/**
+ * Tells the worker the recording stopped. Its answer comes once it has stored
+ * what its debugging session still held, which the review then shows.
+ */
+function tellWorkerStopped(): Promise<unknown> {
+  try {
+    const answer = Promise.resolve(chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' })).catch(
+      () => undefined,
+    );
+    return Promise.race([answer, new Promise((resolve) => setTimeout(resolve, STOP_ANSWER_MS))]);
+  } catch {
+    // Extension context can be gone (e.g. reloaded mid-recording) — the storage write already stuck.
+    return Promise.resolve();
+  }
+}
+
 async function handleStop(): Promise<void> {
   const state = await stopRecording();
   stopCapture();
-  try {
-    chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' });
-  } catch {
-    // Extension context can be gone (e.g. reloaded mid-recording) — the storage write above already stuck.
-  }
+  await tellWorkerStopped();
   await renderReviewPanel(state);
 }
 
@@ -767,7 +780,7 @@ async function handleBugFinish(): Promise<void> {
   if (g.__piwiBugFinishing) return;
   g.__piwiBugFinishing = true;
   try {
-    await g.__piwiBugRelayFlush?.();
+    await g.__piwiBugRelayStop?.();
     const state = await getRecordingState();
     if (!state.active) return;
     await takeBugScreenshot('finish', normalizeSteps(state.events).length - 1);
@@ -912,8 +925,10 @@ interface RecorderGlobals {
   __piwiRecordCapture?: AbortController;
   /** Set while a bug report's pick or dialog is open: nothing is captured meanwhile. */
   __piwiRecordPaused?: boolean;
-  /** Stores the evidence entries received but not stored yet. */
-  __piwiBugRelayFlush?: () => Promise<void>;
+  /** Stores the evidence entries received but not stored yet, and stops the relay. */
+  __piwiBugRelayStop?: () => Promise<void>;
+  /** Whether this document's back/forward cache listener is already registered. */
+  __piwiRecordPageShow?: boolean;
   /** Guards Finish against a second click while it runs. */
   __piwiBugFinishing?: boolean;
   /** Serializes concurrent injections of this script into one document. */
@@ -927,8 +942,9 @@ function recorderGlobals(): RecorderGlobals {
 }
 
 /**
- * Ends capture on this page: detaches the listeners, drops the HUD, and drops
- * the border that says the tab is being recorded.
+ * Ends capture on this page: detaches the listeners, ends a bug report's pick
+ * and closes its dialog, drops the HUD, and drops the border that says the tab
+ * is being recorded.
  *
  * Idempotent, and safe when nothing was ever attached — it runs both from the
  * HUD's own Stop button and from a stop initiated elsewhere (the popup, or
@@ -939,7 +955,7 @@ function stopCapture(): void {
   const g = recorderGlobals();
   g.__piwiRecordCapture?.abort();
   g.__piwiRecordCapture = undefined;
-  g.__piwiBugRelayFlush = undefined;
+  cancelBugPick();
   stopViews();
   g.__piwiRecordPaused = false;
   document.getElementById(HUD_HOST_ID)?.remove();
@@ -1242,7 +1258,7 @@ function attachListeners(): void {
       if (!key) return;
       // Escape and a page's shortcuts go to whatever has focus, as the replay
       // sends them: their target is often the page itself, which no locator names.
-      const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
+      const shortcut = key.includes('+') ? !inTextField(focused) : [...key].length === 1;
       const onPage = !focused || focused === document.body || focused === document.documentElement;
       const el = key === 'Escape' || shortcut || onPage ? null : focused;
       if (key === 'Enter' && focused instanceof HTMLInputElement && focused.form) {
@@ -1273,9 +1289,10 @@ function installStopListener(): void {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
     if (message?.type === 'piwi-bug-debugger-lost') {
-      // The debugging session ended: the page's own script, registered all along, relays from now on.
-      void getRecordingState().then((state) => {
-        if (state.active && state.bugToken) startPageRelay(state.bugToken);
+      // The debugging session ended: the page's own script, registered all along, relays from then on; what it
+      // noted before, the session collected.
+      void Promise.all([getRecordingState(), getBugEvidence().catch(() => null)]).then(([state, evidence]) => {
+        if (state.active && state.bugToken) startPageRelay(state.bugToken, evidence?.debugging?.endedAt ?? Date.now());
         scheduleHudRefresh();
       });
     }
@@ -1314,24 +1331,37 @@ function installStopListener(): void {
  * an already-stopped recording still shows something useful instead of
  * nothing.
  */
-async function runRecordPanel(): Promise<void> {
+async function runRecordPanel(restored = false): Promise<void> {
   const g = recorderGlobals();
-  // Chained rather than latched: this script is injected both by the dynamic
-  // registration (on every navigation) and one-off from the popup, and the two
-  // can land together. A plain boolean guard would let both pass the
-  // "already capturing?" check below before either had attached — and, worse,
-  // a guard that stayed latched after a stop made the review panel
-  // unreachable, since a re-injection returned before rendering anything.
-  // Errors are swallowed into the chain so one bad run never blocks the next:
-  // the usual cause is the worker not having widened session-storage access
-  // yet, which is transient.
+  installPageShowListener();
+  // Each run waits for the one before it: this script is injected both by the
+  // dynamic registration (on every navigation) and one-off from the popup, and
+  // the two can land together. Chained, the second sees the capture the first
+  // attached, and a run after a stop still renders the review panel. A failed
+  // run never blocks the next: the usual cause is the worker not having
+  // widened session-storage access yet, which is transient.
   g.__piwiRecordPanelRun = (g.__piwiRecordPanelRun ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => initRecordPanel())
+    .then(() => initRecordPanel(restored))
     .catch((err: unknown) => {
       console.warn('[Piwi Picker] recorder failed to start on this page:', err);
     });
   await g.__piwiRecordPanelRun;
+}
+
+/**
+ * A page the browser restores from its back/forward cache runs no script
+ * again, and heard no message while it was cached: the recorder runs as on a
+ * page the recording reaches, or lets go of the page when the recording ended
+ * meanwhile. Registered once per document.
+ */
+function installPageShowListener(): void {
+  const g = recorderGlobals();
+  if (g.__piwiRecordPageShow) return;
+  g.__piwiRecordPageShow = true;
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) void runRecordPanel(true);
+  });
 }
 
 /**
@@ -1350,12 +1380,33 @@ async function evidenceThroughDebugger(): Promise<boolean> {
   }
 }
 
-/** Listens to the main-world evidence script for this recording, once per document. */
-function startPageRelay(token: string): void {
+/**
+ * Listens to the main-world evidence script for this recording, once per
+ * capture, and stores what it relays; with `since`, what it noted from then
+ * on only.
+ */
+function startPageRelay(token: string, since?: number): void {
   const g = recorderGlobals();
   const capture = g.__piwiRecordCapture;
-  if (!capture || g.__piwiBugRelayFlush) return;
-  g.__piwiBugRelayFlush = startEvidenceRelay(token, capture.signal, scheduleHudRefresh);
+  if (!capture || g.__piwiBugRelayStop) return;
+  const stop = relayEvidence(
+    token,
+    async (entries) => {
+      await appendBugEntries(entries);
+      void showRelayedEvidence();
+    },
+    { since, signal: capture.signal, leave: (entries) => storeAsPageLeaves(token, entries) },
+  );
+  g.__piwiBugRelayStop = stop;
+  capture.signal.addEventListener('abort', () => {
+    if (g.__piwiBugRelayStop === stop) g.__piwiBugRelayStop = undefined;
+  });
+}
+
+/** What the page relayed, on the HUD: its evidence line updated in place, or the HUD drawn when there is none. */
+async function showRelayedEvidence(): Promise<void> {
+  const evidence = await getBugEvidence().catch(() => null);
+  if (!evidence || !updateBugHudEvidence(evidence)) scheduleHudRefresh();
 }
 
 /** How long the window keeps its size before a resize counts, so a drag records its end only. */
@@ -1434,7 +1485,8 @@ function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
   });
 }
 
-async function initRecordPanel(): Promise<void> {
+/** `restored`: the page came back from the back/forward cache, and attaches as a page the recording reaches. */
+async function initRecordPanel(restored: boolean): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
   // override loads alongside, so the HUD paints no later for it.
   const [state] = await Promise.all([ensureSessionAccess().then(getRecordingState), initI18n()]);
@@ -1442,13 +1494,14 @@ async function initRecordPanel(): Promise<void> {
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
     // first — a border that outlives the capture it signals is worse than no
-    // border at all — then show whatever is left to review.
+    // border at all — then show whatever is left to review, unless the page
+    // only came back from the cache: the review is the stopping tab's.
     stopCapture();
-    if (state.events.length > 0) await renderReviewPanel(state);
+    if (state.events.length > 0 && !restored) await renderReviewPanel(state);
     return;
   }
 
-  if (recorderGlobals().__piwiRecordCapture) {
+  if (recorderGlobals().__piwiRecordCapture && !restored) {
     // Already capturing in this document; a second injection only refreshes.
     await refreshHud();
     return;

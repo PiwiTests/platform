@@ -17,6 +17,14 @@ export interface ProbeArg {
   roleSources?: string;
   /** Compute `rolePosition` and ancestor-anchor candidates. The live picker always wants these; the snapshot picker never does (no anchors step there). */
   includeStructural: boolean;
+  /**
+   * Count how many elements each candidate matches: `selectorCounts`,
+   * `rolePosition` and every anchor's counts, each a walk of the document or
+   * of an ancestor's subtree. True unless set: a caller that counts with an
+   * index of its own turns it off, and the anchors then carry what identifies
+   * them and no count, whatever the size of the page.
+   */
+  countMatches?: boolean;
 }
 
 /** Element shape the in-page probe returns — structural view of what the picker overlays need. */

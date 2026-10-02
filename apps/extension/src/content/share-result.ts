@@ -1,4 +1,5 @@
 import { t } from '../shared/i18n.js';
+import { askWorker, button } from './replay-ui.js';
 
 /**
  * Share result: records a verdict on the bug report it came from, on the
@@ -22,38 +23,23 @@ export function shareable(kind: string): kind is SharedVerdict['verdict'] {
   return kind === 'reproduced' || kind === 'not-reproduced' || kind === 'diverged';
 }
 
-async function ask<T>(message: Record<string, unknown>, fallback: T): Promise<T> {
-  try {
-    return ((await chrome.runtime.sendMessage(message)) as T | undefined) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 /** The Share result row, to append under a verdict. */
 export function shareResultRow(shared: SharedVerdict): HTMLElement {
   const row = document.createElement('div');
   row.className = 'share';
+  /** A line of the row: a note, or an error in the panel's error style. */
   const say = (text: string, role: 'status' | 'alert' = 'status') => {
     const line = document.createElement('div');
-    line.className = 'sub';
+    line.className = role === 'alert' ? 'message' : 'sub';
     line.setAttribute('role', role);
     line.textContent = text;
     return line;
-  };
-  const button = (label: string, onClick: () => void, className = '') => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    if (className) b.className = className;
-    b.addEventListener('click', onClick);
-    return b;
   };
 
   const start = () =>
     row.replaceChildren(
       button(t('replay_share'), () => {
-        void ask<{ instance: string | null }>({ type: 'piwi-share-target' }, { instance: null }).then(
+        void askWorker<{ instance: string | null }>({ type: 'piwi-share-target' }, { instance: null }).then(
           ({ instance }) => {
             if (!instance) return row.replaceChildren(say(t('common_notConnected'), 'alert'));
             const preview = shared.origin
@@ -69,7 +55,7 @@ export function shareResultRow(shared: SharedVerdict): HTMLElement {
       t('replay_desktopSend'),
       () => {
         b.disabled = true;
-        void ask<{ ok: boolean; error?: string }>(
+        void askWorker<{ ok: boolean; error?: string }>(
           { type: 'piwi-share-reproduction', ...shared },
           { ok: false, error: t('common_workerNoAnswer') },
         ).then((answer) => {

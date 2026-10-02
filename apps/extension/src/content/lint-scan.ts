@@ -13,7 +13,7 @@ export interface LintFinding {
 
 export interface LintScan {
   findings: LintFinding[];
-  /** The interactive elements of the page, open shadow roots included. */
+  /** The interactive elements of the page, open shadow roots included, those hidden from the accessibility tree aside. */
   interactive: number;
   /** How many of them were checked: every one, or the first `MAX_CHECKED` in page order. */
   checked: number;
@@ -58,7 +58,7 @@ export interface LintScanOptions {
  * locator target right now: no locator but a positional one finds it
  * alone — no test id, no name that tells it apart, and no unique structural
  * anchor either. The elements and their roles are the ones `getByRole` sees
- * (`DomModel`, open shadow roots included); the ranking and its check against
+ * (`DomModel`, open shadow roots included, hidden ones left out); the ranking and its check against
  * the page are the Pick results' own (`rankElement`, `checkLocators`), read as
  * a pass/fail signal instead of a ranked list, with one engine for the whole
  * scan. Works in slices so the page stays responsive; answers null when
@@ -79,7 +79,7 @@ export async function scanForLintIssues(options: LintScanOptions = {}): Promise<
   const interactive: Array<{ element: Element; role: string }> = [];
   for (const element of engine.elements()) {
     const role = model.role(element);
-    if (role && INTERACTIVE_ROLES.has(role)) interactive.push({ element, role });
+    if (role && INTERACTIVE_ROLES.has(role) && !model.isHiddenForAria(element)) interactive.push({ element, role });
   }
   const checked = Math.min(interactive.length, MAX_CHECKED);
   let sliceStart = performance.now();

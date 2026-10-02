@@ -75,6 +75,31 @@ test.describe('assertion-panel.js', () => {
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-assertion-panel-host'))).toBe(false);
   });
 
+  test('holds the focus while open, and gives it back as it closes', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <input id="search" aria-label="Search"><button id="target" data-testid="submit-btn">Submit</button>
+    </body></html>`);
+    await page.locator('#search').focus();
+    await page.addScriptTag({ path: path.join(DIST, 'assertion-panel.js') });
+    await page.hover('#target');
+    await page.click('#target');
+    const panel = page.locator('#piwi-assertion-panel-host .panel');
+    await expect(panel).toHaveAttribute('aria-modal', 'true');
+    const close = panel.getByRole('button', { name: 'Close' });
+    const lastCopy = panel.getByRole('button', { name: 'Copy', exact: true }).last();
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(lastCopy).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#piwi-assertion-panel-host')).toHaveCount(0);
+    await expect(page.locator('#search')).toBeFocused();
+  });
+
   test('speaks French: title, locator line, buttons and lang', async ({ context }) => {
     await openShadowRoots(context);
     await stubChromeI18n(context, 'fr');

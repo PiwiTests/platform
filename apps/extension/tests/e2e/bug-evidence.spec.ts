@@ -44,6 +44,33 @@ function relayedRequests(page: Page): Promise<string[]> {
 }
 
 test.describe('bug-evidence-main.js', () => {
+  test('a token sent with a time leaves out what was noted before it', async ({ context }) => {
+    await context.addInitScript({ path: path.join(DIST, 'bug-evidence-main.js') });
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><head><script>console.error('as the page loads')</script></head><body></body></html>`,
+      }),
+    );
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/`);
+    const relayed = await page.evaluate(async () => {
+      const items: Array<{ entry: { message: string } }> = [];
+      window.addEventListener('message', (e) => {
+        if (e.data?.source === 'piwi-bug-evidence:entry') items.push(e.data.item);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const since = Date.now();
+      console.error('after the time');
+      window.postMessage({ source: 'piwi-bug-evidence:hello', token: 't'.repeat(32), since }, '*');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      console.error('once relaying');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return items.map((item) => item.entry.message);
+    });
+    expect(relayed).toEqual(['after the time', 'once relaying']);
+  });
+
   test('a failing fetch the page leaves unhandled is still an unhandled rejection, once', async ({ context }) => {
     const page = await pageWithEvidenceScript(context);
     await page.evaluate(() => {

@@ -18,6 +18,7 @@ import { renderLocatorsTab } from './panel-locators.js';
 import { renderSessionTab } from './panel-session.js';
 import { setUpViewportRow } from './panel-viewport.js';
 import { SESSION_KEY } from '../shared/session-storage.js';
+import { patternOrigin } from '../shared/web-origin.js';
 
 /**
  * The Piwi panel in DevTools. It mirrors what runs on the page, from the same
@@ -49,8 +50,11 @@ const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"
 let current: TabId = 'record';
 let generation = 0;
 
-/** Draws the open tab; `pageUrl` is the page's address after a navigation, which the Network tab lists for. */
-async function render(pageUrl?: string): Promise<void> {
+/**
+ * Draws the open tab; `pageUrl` is the page's address after a navigation, which the Network tab lists for. False when
+ * a later draw took its place.
+ */
+async function render(pageUrl?: string): Promise<boolean> {
   const mine = ++generation;
   const container = document.createElement('div');
   if (current === 'record') await renderRecordTab(container);
@@ -58,10 +62,11 @@ async function render(pageUrl?: string): Promise<void> {
   else if (current === 'network') await renderNetworkTab(container, pageUrl);
   else if (current === 'locators') renderLocatorsTab(container);
   else await renderSessionTab(container);
-  if (mine !== generation) return;
+  if (mine !== generation) return false;
   content.classList.toggle('flush', current === 'network');
   content.setAttribute('aria-labelledby', `tab-${current}`);
   content.replaceChildren(...container.childNodes);
+  return true;
 }
 
 /** A dot on Record while a recording runs, and on Replay while a replay does, whatever tab is open. */
@@ -77,14 +82,17 @@ async function markLiveTabs(): Promise<void> {
   for (const tab of tabButtons) tab.dataset.live = String(live[tab.dataset.tab as TabId]);
 }
 
-function select(tab: TabId): void {
+/** Opens `tab`. Opened with a click, the Locators tab puts the caret in its field; the arrow keys keep it on the tabs. */
+function select(tab: TabId, byClick = false): void {
   current = tab;
   for (const button of tabButtons) {
     const selected = button.dataset.tab === tab;
     button.setAttribute('aria-selected', String(selected));
     button.tabIndex = selected ? 0 : -1;
   }
-  void render();
+  void render().then((drawn) => {
+    if (drawn && byClick) content.querySelector<HTMLInputElement>('.locator-input')?.focus();
+  });
 }
 
 /** Turns the Playwright view on or off in the inspected tab, asking for the site first when the extension has no access. */
@@ -99,7 +107,7 @@ async function togglePlaywrightView(): Promise<void> {
     notice.replaceChildren(text);
     return;
   }
-  text.textContent = t('devtools_noAccess', { site: pattern.replace(/\/\*$/, '') });
+  text.textContent = t('devtools_noAccess', { site: patternOrigin(pattern) });
   const allow = document.createElement('button');
   allow.type = 'button';
   allow.className = 'primary';
@@ -156,8 +164,9 @@ async function start(): Promise<void> {
   // Wired before the texts load: a tab clicked meanwhile opens once they have,
   // after the Record tab the start opens.
   for (const button of tabButtons) {
-    const open = (tab: HTMLButtonElement) => void texts.then(() => select(tab.dataset.tab as TabId));
-    button.addEventListener('click', () => open(button));
+    const open = (tab: HTMLButtonElement, byClick = false) =>
+      void texts.then(() => select(tab.dataset.tab as TabId, byClick));
+    button.addEventListener('click', () => open(button, true));
     button.addEventListener('keydown', (event) => {
       if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
       const index = tabButtons.indexOf(button);

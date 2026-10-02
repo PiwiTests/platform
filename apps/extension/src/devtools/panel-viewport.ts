@@ -5,6 +5,7 @@ import { formatNumber, t } from '../shared/i18n.js';
 import { getLocatorBranchOverride, resolveLocatorBranch } from '../shared/locator-branch.js';
 import { getCachedLocatorIndex } from '../shared/locator-index-cache.js';
 import { requestLocatorIndex } from '../shared/locator-index-refresh.js';
+import { sessionArea } from '../shared/session-area.js';
 
 /**
  * The Piwi panel's viewport bar: open the inspected page in a new window at the
@@ -54,7 +55,7 @@ export async function setUpViewportRow(tab: () => Promise<ViewportTab>, report: 
   const options = viewports.map((v, i) => {
     const option = document.createElement('option');
     option.value = String(i);
-    option.textContent = t('popup_viewportProject', {
+    option.textContent = t('devtools_viewportProject', {
       project: v.project,
       size: `${formatNumber(v.width)}×${formatNumber(v.height)}`,
     });
@@ -62,7 +63,7 @@ export async function setUpViewportRow(tab: () => Promise<ViewportTab>, report: 
   });
   const customOption = document.createElement('option');
   customOption.value = CUSTOM;
-  customOption.textContent = t('popup_viewportCustom');
+  customOption.textContent = t('devtools_viewportCustom');
   select.replaceChildren(...options, customOption);
   const showCustom = () => {
     custom.hidden = select.value !== CUSTOM;
@@ -85,12 +86,14 @@ export async function setUpViewportRow(tab: () => Promise<ViewportTab>, report: 
   here.hidden = typeof chrome.debugger?.attach !== 'function';
   const showCurrent = async () => {
     const page = await tab();
-    const values: Record<string, unknown> = await chrome.storage.session.get(TAB_VIEWPORT_KEY).catch(() => ({}));
+    const values: Record<string, unknown> = await sessionArea()
+      .get(TAB_VIEWPORT_KEY)
+      .catch(() => ({}));
     const all = values[TAB_VIEWPORT_KEY] as Record<string, { width: number; height: number }> | undefined;
     const stored = all?.[page.id];
     currentRow.hidden = !stored;
     if (stored && !currentRow.hidden) {
-      currentText.textContent = t('popup_viewportHereOn', {
+      currentText.textContent = t('devtools_viewportHereOn', {
         size: `${formatNumber(stored.width)}×${formatNumber(stored.height)}`,
       });
     }

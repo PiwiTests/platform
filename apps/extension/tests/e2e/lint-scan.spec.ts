@@ -145,6 +145,16 @@ test.describe('scanForLintIssues (via the real built lint-overlay.js)', () => {
     expect(longest).toBeLessThan(500);
   });
 
+  test('leaves out the elements hidden from the accessibility tree, as getByRole does', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body>
+      <div style="display:none"><button></button><button></button></div>
+      <div aria-hidden="true"><button></button></div>
+      <button data-testid="submit-btn">Submit</button>
+    </body></html>`);
+    expect(await scan(page)).toEqual([]);
+  });
+
   test('ignores non-interactive roles (headings, regions) even when anonymous', async ({ context }) => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body>

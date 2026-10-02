@@ -6,17 +6,20 @@ import type { ClientInfo } from './client-info.js';
 import type { ConnectPoll } from './connect-flow.js';
 import type { DesktopSettings } from './desktop-settings.js';
 import type { PiwiSteps } from '@piwitests/core/steps';
+import { bugReportUrl, normalizeBaseUrl } from './instance-links.js';
 import { t } from './i18n.js';
 
 /**
- * Talks to a Piwi instance, and to the editor Piwi Picker is paired with — the
- * only place in this extension that makes a network call. Called from the
- * options page (connecting, saving, reading and adding URL patterns) and the
- * background service worker (`piwi-refresh-catalog`, `piwi-refresh-locator-index`,
- * `piwi-send-to-editor`, and the bug-report messages: `piwi-send-bug-report` once
+ * Talks to a Piwi instance, and to the desktop app and the editor Piwi Picker
+ * is paired with — the only place in this extension that makes a network call.
+ * Called from the options page (connecting, saving, reading and adding URL
+ * patterns, pairing the desktop app) and the background service worker
+ * (`piwi-refresh-catalog`, `piwi-refresh-locator-index`, `piwi-send-to-editor`,
+ * the bug-report messages: `piwi-bug-send-target`, `piwi-send-bug-report` once
  * the reporter has confirmed the preview, `piwi-list-bug-reports`,
- * `piwi-get-bug-report`, and `piwi-desktop-repro` to the paired desktop app once
- * the developer confirmed its preview) only,
+ * `piwi-get-bug-report`, `piwi-replay-step-view` and `piwi-share-reproduction`,
+ * and the desktop app's: `piwi-desktop-repro` once the developer confirmed its
+ * preview, and `piwi-desktop-repro-status`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -34,41 +37,6 @@ export interface ProjectOption {
   id: number;
   name: string;
   label: string | null;
-}
-
-/** Exported so anything building a link into the dashboard (not just this client's own fetches) normalizes the same way — e.g. `projectCatalogUrl` below. */
-export function normalizeBaseUrl(instanceUrl: string): string {
-  return instanceUrl.trim().replace(/\/+$/, '');
-}
-
-/** Deep link to a project's "Test functions" catalog page in the dashboard — used by `test-function-panel.ts`'s "Manage catalog" link. */
-export function projectCatalogUrl(instanceUrl: string, projectId: number): string {
-  return `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/test-functions`;
-}
-
-/**
- * Deep link to a project's Locators page, with locators to check prefilled one
- * per line, on `branch` (null for the default branch, `*` for every branch).
- */
-export function projectLocatorsUrl(
-  instanceUrl: string,
-  projectId: number,
-  locators: string[] = [],
-  branch: string | null = null,
-  page: string | null = null,
-): string {
-  const base = `${normalizeBaseUrl(instanceUrl)}/projects/${projectId}/locators`;
-  const query = [
-    ...(locators.length ? [`q=${encodeURIComponent(locators.join('\n'))}`] : []),
-    ...(branch ? [`branch=${encodeURIComponent(branch)}`] : []),
-    ...(page ? [`page=${encodeURIComponent(page)}`] : []),
-  ];
-  return query.length ? `${base}?${query.join('&')}` : base;
-}
-
-/** Deep link to a test case's page in the dashboard. */
-export function testCaseUrl(instanceUrl: string, testCaseId: number): string {
-  return `${normalizeBaseUrl(instanceUrl)}/test-cases/${testCaseId}`;
 }
 
 /** The list a dashboard list endpoint answers: `{ items }`, or a bare array. */
@@ -93,8 +61,8 @@ function request(url: string, init: RequestInit): Promise<Response> {
  * How long to wait on an instance before giving up.
  *
  * Every call here is either something the user is watching (the options page's
- * Test connection / Save) or a background revalidation whose caller has already
- * rendered from cache. Neither has anything to gain from waiting indefinitely,
+ * Connect, or Save and test) or a background revalidation whose caller has
+ * already rendered from cache. Neither has anything to gain from waiting indefinitely,
  * and an unresponsive host — a stale URL, a VPN-only address, a hung server —
  * would leave the options page's status stuck on "Testing…" with no way
  * forward but a reload.
@@ -103,6 +71,31 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 function timeout(): AbortSignal {
   return AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+}
+
+/**
+ * The JSON an instance answered. Anything else (a sign-in page in front of the
+ * instance, another site at that address) throws a message saying so.
+ */
+async function instanceJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch (err) {
+    throw new Error(err instanceof SyntaxError ? t('common_instanceNotPiwi') : t('common_instanceUnreachable'));
+  }
+}
+
+/**
+ * Why a request to `url` got no answer: a redirect, which no request here
+ * follows, told apart by asking again without the key and without following
+ * it; else the instance is out of reach.
+ */
+async function unreachableReason(err: unknown, url: string): Promise<string> {
+  if (err instanceof TypeError) {
+    const probe = await fetch(url, { redirect: 'manual', signal: timeout() }).catch(() => null);
+    if (probe?.type === 'opaqueredirect') return t('common_instanceRedirects');
+  }
+  return t('common_instanceUnreachable');
 }
 
 export type ConnectionCheckResult = { ok: true } | { ok: false; error: string };
@@ -114,16 +107,20 @@ export type ConnectionCheckResult = { ok: true } | { ok: false; error: string };
  */
 export async function testConnection(settings: ConnectionSettings, apiKey?: string): Promise<ConnectionCheckResult> {
   if (!settings.instanceUrl.trim()) return { ok: false, error: t('common_enterInstanceUrl') };
+  const url = `${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`;
+  let res: Response;
   try {
-    const res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/menu`, {
-      headers: await authHeaders(settings, apiKey),
-      signal: timeout(),
-    });
-    if (res.status === 401 || res.status === 403) return { ok: false, error: t('common_apiKeyRejected') };
-    if (!res.ok) return { ok: false, error: t('common_instanceStatus', { status: res.status }) };
+    res = await request(url, { headers: await authHeaders(settings, apiKey), signal: timeout() });
+  } catch (err) {
+    return { ok: false, error: await unreachableReason(err, url) };
+  }
+  if (res.status === 401 || res.status === 403) return { ok: false, error: t('common_apiKeyRejected') };
+  if (!res.ok) return { ok: false, error: t('common_instanceStatus', { status: res.status }) };
+  try {
+    await instanceJson(res);
     return { ok: true };
-  } catch {
-    return { ok: false, error: t('common_instanceUnreachable') };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
 }
 
@@ -134,26 +131,31 @@ export async function fetchProjects(settings: ConnectionSettings): Promise<Proje
     signal: timeout(),
   });
   if (!res.ok) throw new Error(t('common_projectsFailed', { status: res.status }));
-  return listItems<ProjectOption>(await res.json());
+  return listItems<ProjectOption>(await instanceJson(res));
 }
 
 /**
  * One project's function catalog, ready to hand to
- * `rankFunctionMatches`/`matchFunctionAt`/`renderSpec`. Takes `projectId`
- * explicitly rather than reading it off `settings` — a connection now maps
- * many projects (`ConnectionSettings.projectMappings`), so the caller (the
- * options page, once per distinct mapped project) decides which one.
+ * `rankFunctionMatches`/`matchFunctionAt`/`renderSpec`. A connection maps
+ * many projects (`ConnectionSettings.projectMappings`), so the caller names
+ * one: the options page once per mapped project, the background worker the
+ * project a panel asks about.
  */
 export async function fetchCatalog(settings: ConnectionSettings, projectId: number): Promise<TestFunctionEntry[]> {
   if (!settings.instanceUrl.trim()) return [];
-  const res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/test-functions`, {
-    headers: await authHeaders(settings),
-    signal: timeout(),
-  });
+  let res: Response;
+  try {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/test-functions`, {
+      headers: await authHeaders(settings),
+      signal: timeout(),
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
   if (!res.ok) throw new Error(t('common_catalogFailed', { status: res.status }));
-  const body = (await res.json()) as { testFunctions?: unknown };
-  const rows = listItems<{ entry: TestFunctionEntry }>(Array.isArray(body.testFunctions) ? body.testFunctions : body);
-  return rows.map((row) => row.entry).filter(Boolean);
+  const body = (await instanceJson(res)) as { testFunctions?: unknown } | null;
+  const rows = listItems<{ entry: TestFunctionEntry }>(Array.isArray(body?.testFunctions) ? body.testFunctions : body);
+  return rows.map((row) => row?.entry).filter(Boolean);
 }
 
 /**
@@ -176,20 +178,25 @@ export async function fetchLocatorIndex(
 ): Promise<LocatorIndex> {
   if (!settings.instanceUrl.trim()) throw new Error(t('common_notConnected'));
   const query = branch ? `?branch=${encodeURIComponent(branch)}` : '';
-  const res = await request(
-    `${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`,
-    {
+  let res: Response;
+  try {
+    res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/projects/${projectId}/locator-index${query}`, {
       headers: await authHeaders(settings),
       signal: AbortSignal.timeout(LOCATOR_INDEX_TIMEOUT_MS),
-    },
-  );
+    });
+  } catch {
+    throw new Error(t('common_instanceUnreachable'));
+  }
   if (res.status === 401 || res.status === 403) throw new Error(t('common_projectKeyRejected'));
   if (res.status === 404) throw new Error(t('common_noLocatorIndex'));
   if (!res.ok) throw new Error(t('common_locatorIndexStatus', { status: res.status }));
-  const body = (await res.json()) as LocatorIndex;
-  if (!body || !Array.isArray(body.locators) || !Array.isArray(body.tests)) {
-    throw new Error(t('common_locatorIndexInvalid'));
-  }
+  const body = (await instanceJson(res)) as LocatorIndex | null;
+  const wellFormed =
+    !!body &&
+    Array.isArray(body.locators) &&
+    Array.isArray(body.tests) &&
+    body.locators.every((entry) => !!entry && typeof entry === 'object' && Array.isArray(entry.uses));
+  if (!wellFormed) throw new Error(t('common_locatorIndexInvalid'));
   const defaultBranch = typeof body.defaultBranch === 'string' ? body.defaultBranch : '';
   return {
     ...body,
@@ -198,7 +205,7 @@ export async function fetchLocatorIndex(
     branches: Array.isArray(body.branches) ? body.branches : [],
     locators: body.locators.map((entry) => ({
       ...entry,
-      uses: entry.uses.map((use) => ({ ...use, branches: Array.isArray(use.branches) ? use.branches : [] })),
+      uses: entry.uses.map((use) => ({ ...use, branches: Array.isArray(use?.branches) ? use.branches : [] })),
     })),
   };
 }
@@ -227,16 +234,17 @@ async function postJson(url: string, body: unknown): Promise<Response> {
  */
 export async function startConnect(instanceUrl: string, client: ClientInfo): Promise<ConnectStart> {
   if (!instanceUrl.trim()) throw new Error(t('common_enterInstanceUrl'));
+  const url = `${normalizeBaseUrl(instanceUrl)}/api/extension/connect`;
   let res: Response;
   try {
-    res = await postJson(`${normalizeBaseUrl(instanceUrl)}/api/extension/connect`, client);
-  } catch {
-    throw new Error(t('common_instanceUnreachable'));
+    res = await postJson(url, client);
+  } catch (err) {
+    throw new Error(await unreachableReason(err, url));
   }
   if (res.status === 404 || res.status === 405) throw new Error(t('options_connectUnsupported'));
   if (res.status === 429) throw new Error(t('options_connectTooMany'));
   if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
-  const body = (await res.json()) as Partial<ConnectStart>;
+  const body = ((await instanceJson(res)) ?? {}) as Partial<ConnectStart>;
   if (
     typeof body.deviceCode !== 'string' ||
     typeof body.userCode !== 'string' ||
@@ -259,7 +267,12 @@ export async function pollConnect(instanceUrl: string, deviceCode: string): Prom
   const res = await postJson(`${normalizeBaseUrl(instanceUrl)}/api/extension/connect/token`, { deviceCode });
   if (res.status === 429) return { status: 'slow_down', interval: 30 };
   if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
-  const body = (await res.json()) as { status?: unknown; interval?: unknown; apiKey?: unknown; user?: unknown };
+  const body = ((await instanceJson(res)) ?? {}) as {
+    status?: unknown;
+    interval?: unknown;
+    apiKey?: unknown;
+    user?: unknown;
+  };
   switch (body.status) {
     case 'pending':
     case 'denied':
@@ -295,7 +308,7 @@ export async function fetchServerPatterns(settings: ConnectionSettings): Promise
   if (res.status === 401 || res.status === 403) throw new Error(t('common_apiKeyRejected'));
   if (res.status === 404) throw new Error(t('options_serverUnsupported'));
   if (!res.ok) throw new Error(t('common_instanceStatus', { status: res.status }));
-  const body = (await res.json()) as Partial<ServerPatternsAnswer>;
+  const body = ((await instanceJson(res)) ?? {}) as Partial<ServerPatternsAnswer>;
   return {
     user: body.user && typeof body.user.name === 'string' ? { name: body.user.name } : null,
     items: Array.isArray(body.items) ? body.items : [],
@@ -356,11 +369,6 @@ export async function postToEditor(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-}
-
-/** Deep link to a bug report's page in the dashboard. */
-function bugReportUrl(instanceUrl: string, id: number): string {
-  return `${normalizeBaseUrl(instanceUrl)}/bug-reports/${id}`;
 }
 
 /** What Send to Piwi sends: the report as JSON, the language it is written in, and its PNG screenshots. */
@@ -428,7 +436,10 @@ export async function sendBugReport(
     throw new Error(t('common_instanceUnreachable'));
   }
   if (!res.ok) throw new Error(await refusal(res));
-  const body = (await res.json()) as { id?: unknown; issue?: { status?: unknown; key?: unknown } | null };
+  const body = ((await instanceJson(res)) ?? {}) as {
+    id?: unknown;
+    issue?: { status?: unknown; key?: unknown } | null;
+  };
   if (typeof body.id !== 'number') throw new Error(t('common_instanceStatus', { status: res.status }));
   const issue =
     body.issue && typeof body.issue.status === 'string'
@@ -498,13 +509,16 @@ export async function fetchBugReports(settings: ConnectionSettings, projectId: n
     throw new Error(t('common_instanceUnreachable'));
   }
   if (!res.ok) throw new Error(await refusal(res));
-  return listItems<BugReportSummary>(await res.json()).filter(
-    (r) => typeof r.id === 'number' && r.status !== 'closed' && r.status !== 'dismissed',
+  return listItems<BugReportSummary>(await instanceJson(res)).filter(
+    (r) => typeof r?.id === 'number' && r.status !== 'closed' && r.status !== 'dismissed',
   );
 }
 
-/** A bug report's steps document, with the report's title, for Replay. */
-export async function fetchBugReportSteps(settings: ConnectionSettings, id: number): Promise<unknown> {
+/** A bug report's steps document, with the report's title, for Replay, and the project the report belongs to. */
+export async function fetchBugReportSteps(
+  settings: ConnectionSettings,
+  id: number,
+): Promise<{ steps: unknown; projectId: number | null }> {
   let res: Response;
   try {
     res = await request(`${normalizeBaseUrl(settings.instanceUrl)}/api/bug-reports/${id}`, {
@@ -515,8 +529,11 @@ export async function fetchBugReportSteps(settings: ConnectionSettings, id: numb
     throw new Error(t('common_instanceUnreachable'));
   }
   if (!res.ok) throw new Error(await refusal(res));
-  const body = (await res.json()) as { title?: unknown; steps?: unknown };
-  return { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null };
+  const body = ((await instanceJson(res)) ?? {}) as { title?: unknown; steps?: unknown; projectId?: unknown };
+  return {
+    steps: { ...(body.steps as object), title: typeof body.title === 'string' ? body.title : null },
+    projectId: typeof body.projectId === 'number' ? body.projectId : null,
+  };
 }
 
 /**
@@ -600,6 +617,15 @@ function desktopHeaders(desktop: DesktopSettings): Record<string, string> {
   return { 'x-piwi-token': desktop.token };
 }
 
+/** The JSON the desktop app answered; anything else is not the app. */
+async function desktopJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    throw new Error(t('common_desktopUnsupported'));
+  }
+}
+
 function desktopRefusal(res: Response): string {
   if (res.status === 401) return t('common_desktopRejected');
   if (res.status === 404) return t('common_desktopUnsupported');
@@ -675,7 +701,7 @@ export async function pollDesktopPairing(url: string, pairing: DesktopPairingSta
   // Gone: the app restarted and lost it, as good as expired.
   if (res.status === 404) return { status: 'expired' };
   if (!res.ok) throw new Error(t('common_desktopStatus', { status: res.status }));
-  const body = (await res.json()) as { status?: unknown; token?: unknown };
+  const body = ((await desktopJson(res)) ?? {}) as { status?: unknown; token?: unknown };
   switch (body.status) {
     case 'waiting':
       return { status: 'pending' };
@@ -717,7 +743,7 @@ export async function sendReproRequest(
     throw new Error(t('common_desktopUnreachable'));
   }
   if (!res.ok) throw new Error(desktopRefusal(res));
-  const body = (await res.json()) as { id?: unknown; windowOpen?: unknown };
+  const body = ((await desktopJson(res)) ?? {}) as { id?: unknown; windowOpen?: unknown };
   if (typeof body.id !== 'string') throw new Error(t('common_desktopStatus', { status: res.status }));
   return { id: body.id, windowOpen: body.windowOpen === true };
 }
@@ -746,6 +772,6 @@ export async function fetchReproRequest(desktop: DesktopSettings, id: string): P
   }
   if (res.status === 404) return { status: 'expired', verdict: null };
   if (!res.ok) throw new Error(desktopRefusal(res));
-  const body = (await res.json()) as Partial<ReproRequestState>;
+  const body = ((await desktopJson(res)) ?? {}) as Partial<ReproRequestState>;
   return { status: body.status ?? 'expired', verdict: body.verdict ?? null };
 }

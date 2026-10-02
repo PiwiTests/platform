@@ -22,6 +22,9 @@ import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
 import { createPageEngine, installDescribeHook } from './verified-locators.js';
 import { attachPanelShadow } from './panel-root.js';
+import { pickerOverlayStrings } from './picker-strings.js';
+import { holdFocus } from './modal-panel.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;
@@ -37,7 +40,7 @@ function clearPickGlobals(): void {
 /** One element-pick step (multi-pick never needs the anchors step); null when skipped, or once the tool has ended. */
 async function pickOne(toolEpoch: number): Promise<Element | null> {
   clearPickGlobals();
-  const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
+  const overlayArg: PickerOverlayArg = { transport: 'global', failing: null, strings: pickerOverlayStrings() };
   installPickerOverlay(overlayArg);
   const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
   if (!toolIsCurrent(toolEpoch)) return null;
@@ -180,21 +183,15 @@ function showMessage(text: string, toolEpoch: number): Promise<void> {
   });
 }
 
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
+/** The panel's title, its `$base$` placeholder filled by the highlighted base locator. */
+function titleNodes(count: number, base: Node): Array<Node | string> {
+  const slot = '\u{F8FF}';
+  const [before = '', after = ''] = tn('multipick_title', count, { base: slot }).split(slot);
+  return [before, base, after].filter((part) => part !== '');
 }
 
 async function renderPatternPanel(result: PatternResult, toolEpoch: number): Promise<void> {
-  let activeMode = await getLastCopyMode().catch(() => 'bare' as const);
+  const activeMode = await getLastCopyMode().catch(() => 'bare' as const);
   if (!toolIsCurrent(toolEpoch)) return;
   document.getElementById(PANEL_HOST_ID)?.remove();
 
@@ -262,7 +259,10 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = tn('multipick_title', result.rows.length, { base: result.baseLocator ?? '' });
+  const base = document.createElement('span');
+  base.className = 'piwi-loc';
+  base.innerHTML = highlightLocator(result.baseLocator ?? '');
+  title.append(...titleNodes(result.rows.length, base));
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent = t('common_escToClose');
@@ -275,6 +275,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
   panel.appendChild(header);
 
   return new Promise<void>((resolve) => {
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -286,6 +287,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
     const finish = bindToTool(toolEpoch, () => {
       document.removeEventListener('keydown', onKeyDown, true);
       host.remove();
+      releaseFocus();
       resolve();
     });
     closeBtn.addEventListener('click', finish);
@@ -314,14 +316,14 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
         const btn = document.createElement('button');
         btn.className = 'copy';
         btn.type = 'button';
+        btn.dataset.mode = mode;
         btn.dataset.active = String(mode === activeMode);
         btn.textContent = copyModeLabel(mode);
         btn.addEventListener('click', () => {
-          void copyToClipboard(renderCopyMode({ locator: row.locator }, mode), btn);
-          activeMode = mode;
+          void copyWithFeedback(renderCopyMode({ locator: row.locator }, mode), btn);
           void setLastCopyMode(mode);
-          for (const sibling of copyRow.querySelectorAll('button.copy')) {
-            (sibling as HTMLElement).dataset.active = String(sibling === btn);
+          for (const other of panel.querySelectorAll<HTMLElement>('button.copy[data-mode]')) {
+            other.dataset.active = String(other.dataset.mode === mode);
           }
         });
         copyRow.appendChild(btn);
@@ -332,7 +334,7 @@ async function renderPatternPanel(result: PatternResult, toolEpoch: number): Pro
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
   });
 }
 
@@ -348,9 +350,10 @@ async function runMultiPick(): Promise<void> {
   const toolEpoch = startTool('multi-pick', teardownToolSurfaces);
   installEscapeToCancel();
   const removeDescribeHook = bindToTool(toolEpoch, installDescribeHook());
-  // The catalog loads while the first picks run; the tool's own text comes after them.
-  const i18nReady = initI18n();
   try {
+    // The overlay, the bar and the panel speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     const picked: Element[] = [];
     for (let i = 0; i < MIN_PICKS; i++) {
       const el = await pickOne(toolEpoch);
@@ -358,7 +361,6 @@ async function runMultiPick(): Promise<void> {
       picked.push(el);
     }
 
-    await i18nReady;
     while (picked.length < MAX_PICKS) {
       if (!toolIsCurrent(toolEpoch)) return;
       const action = await showBetweenPicksBar(picked.length, toolEpoch);
