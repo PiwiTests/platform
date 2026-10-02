@@ -1165,8 +1165,14 @@ async function runningAt(replayId: string, index: number): Promise<ReplayState |
   return latest && latest.id === replayId && latest.status === 'running' && latest.position === index ? latest : null;
 }
 
-/** In step mode: waits for Next, then answers the state if the replay is still on this step and running. */
+/**
+ * In step mode: waits for Next, then answers the state if the replay is still
+ * on this step and running. Answers null without waiting when the replay was
+ * paused, stopped or replaced while the step looked for its element: the loop
+ * waits for Continue first, and a Continue never stands for this step's Next.
+ */
 async function waitForNext(replayId: string, index: number): Promise<ReplayState | null> {
+  if (!(await runningAt(replayId, index))) return null;
   await waitForRelease();
   return runningAt(replayId, index);
 }
