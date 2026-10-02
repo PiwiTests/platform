@@ -428,7 +428,7 @@ export const HELP_TOPICS = {
   },
   'project.ci-rerun': {
     title: 'CI re-run',
-    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
+    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
     doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {

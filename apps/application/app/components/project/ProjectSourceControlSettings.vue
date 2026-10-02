@@ -20,6 +20,7 @@ const { state, dirty } = useStoredForm(() => {
         workflow: ci?.github?.workflow ?? '',
         ref: ci?.github?.ref ?? '',
         inputName: ci?.github?.inputName ?? '',
+        dispatchIdInput: ci?.github?.dispatchIdInput ?? '',
       },
       gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
       bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
@@ -147,6 +148,12 @@ async function removeToken() {
                     class="font-mono"
                   />
                 </div>
+                <UInput
+                  v-model="state.ciRerun.github.dispatchIdInput"
+                  placeholder="dispatch id input (optional), e.g. piwi_dispatch"
+                  aria-label="GitHub dispatch id input"
+                  class="font-mono w-full sm:max-w-xs"
+                />
               </div>
               <div class="space-y-2">
                 <p class="text-xs text-muted">GitLab — pipeline</p>

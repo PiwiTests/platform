@@ -1,5 +1,7 @@
 import {
   ScmProvider,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
   truncatePatch,
   MAX_SCM_FILES,
   MAX_SCM_FILES_TOTAL,
@@ -534,15 +536,20 @@ export class GitLabProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+  override async dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     const target = settings.gitlab;
     if (!target) throw new Error('No GitLab pipeline configured for CI re-run');
+    const ref = request.ref || target.ref;
 
     const res = await fetch(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/pipeline`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ref: target.ref,
+        ref,
         variables: [{ key: target.variableName, value: playwrightArgs }],
       }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -550,6 +557,6 @@ export class GitLabProvider extends ScmProvider {
     if (!res.ok) throw await gitlabError(res, 'trigger pipeline');
     const pipeline = (await res.json()) as { id?: number; web_url?: string };
     const url = pipeline.web_url ?? `https://${this.hostname}/${this.repoPath}/-/pipelines/${pipeline.id ?? ''}`;
-    return { url };
+    return { url, ref, ...(pipeline.id != null ? { pipelineId: String(pipeline.id) } : {}) };
   }
 }
