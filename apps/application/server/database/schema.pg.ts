@@ -322,6 +322,36 @@ export const failureClusterAliases = pgTable(
   }),
 );
 
+// Per-test routing out of a cluster (see schema.sqlite.ts).
+export const failureClusterTestRoutes = pgTable(
+  'failure_cluster_test_routes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    clusterId: integer('cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectFingerprintTestIdx: uniqueIndex('idx_failure_cluster_test_routes_project_fingerprint_test').on(
+      table.projectId,
+      table.fingerprint,
+      table.testCaseId,
+    ),
+    clusterIdx: index('idx_failure_cluster_test_routes_cluster').on(table.clusterId),
+    testCaseIdx: index('idx_failure_cluster_test_routes_test_case').on(table.testCaseId),
+  }),
+);
+
 // Proposed cluster merges awaiting human review (see schema.sqlite.ts).
 export const clusterMergeSuggestions = pgTable(
   'cluster_merge_suggestions',

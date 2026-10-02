@@ -9,6 +9,8 @@ import {
   testRunsCases,
   failureClusters,
   failureClusterAliases,
+  failureClusterTestRoutes,
+  clusterMergeSuggestions,
   failureDiagnoses,
   failureDiagnosisVersions,
   entityLinks,
@@ -27,6 +29,222 @@ export interface PendingCluster {
   };
   sampleError: string;
   count: number;
+}
+
+/**
+ * Prefix of the fingerprint given to a cluster made by moving tests out of
+ * another. It matches no computed fingerprint, so only the per-test routes
+ * lead failures to that cluster.
+ */
+export const SPLIT_FINGERPRINT_PREFIX = 'split:';
+
+export function isSplitFingerprint(fingerprint: string): boolean {
+  return fingerprint.startsWith(SPLIT_FINGERPRINT_PREFIX);
+}
+
+/**
+ * Set `failureClusterId` on a batch's rows: a test moved out of a cluster
+ * follows its route for that fingerprint; every other row goes through
+ * {@link getOrCreateFailureClusters}. `fingerprints[i]` belongs to `rows[i]`.
+ * Routed rows are taken out of `pending` before the clusters are bumped.
+ */
+export async function assignFailureClusters(
+  db: DrizzleDB,
+  projectId: number,
+  testRunId: number,
+  pending: Map<string, PendingCluster>,
+  rows: Array<{ testCaseId: number; failureClusterId?: number | null }>,
+  fingerprints: Array<{ fingerprint: string } | null>,
+): Promise<void> {
+  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints);
+  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending);
+  rows.forEach((row, i) => {
+    const fingerprint = fingerprints[i];
+    if (fingerprint) row.failureClusterId = routed.get(i) ?? clusterIds.get(fingerprint.fingerprint) ?? null;
+  });
+}
+
+/** Row index → cluster for the rows whose test has a route for its fingerprint; bumps each routed cluster. */
+async function routeMovedTests(
+  db: DrizzleDB,
+  projectId: number,
+  testRunId: number,
+  pending: Map<string, PendingCluster>,
+  rows: Array<{ testCaseId: number }>,
+  fingerprints: Array<{ fingerprint: string } | null>,
+): Promise<Map<number, number>> {
+  const routedRows = new Map<number, number>();
+  if (pending.size === 0) return routedRows;
+  const testCaseIds = [...new Set(rows.filter((_, i) => fingerprints[i]).map((row) => row.testCaseId))];
+  const routes = await db
+    .select({
+      fingerprint: failureClusterTestRoutes.fingerprint,
+      testCaseId: failureClusterTestRoutes.testCaseId,
+      clusterId: failureClusterTestRoutes.clusterId,
+    })
+    .from(failureClusterTestRoutes)
+    .where(
+      and(
+        eq(failureClusterTestRoutes.projectId, projectId),
+        inArray(failureClusterTestRoutes.fingerprint, [...pending.keys()]),
+        inArray(failureClusterTestRoutes.testCaseId, testCaseIds),
+      ),
+    );
+  if (routes.length === 0) return routedRows;
+
+  const routeOf = new Map(routes.map((r) => [`${r.fingerprint}\u0000${r.testCaseId}`, r.clusterId]));
+  const countByCluster = new Map<number, number>();
+  rows.forEach((row, i) => {
+    const fingerprint = fingerprints[i]?.fingerprint;
+    if (!fingerprint) return;
+    const clusterId = routeOf.get(`${fingerprint}\u0000${row.testCaseId}`);
+    if (clusterId === undefined) return;
+    routedRows.set(i, clusterId);
+    countByCluster.set(clusterId, (countByCluster.get(clusterId) ?? 0) + 1);
+    const p = pending.get(fingerprint)!;
+    p.count--;
+    if (p.count === 0) pending.delete(fingerprint);
+  });
+
+  const clusters = await db
+    .select({
+      id: failureClusters.id,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
+    })
+    .from(failureClusters)
+    .where(inArray(failureClusters.id, [...countByCluster.keys()]));
+  await Promise.all(
+    clusters.map((cluster) =>
+      db
+        .update(failureClusters)
+        .set({
+          lastSeenRunId: testRunId,
+          occurrences: sql`${failureClusters.occurrences} + ${countByCluster.get(cluster.id)!}`,
+          updatedAt: new Date(),
+          ...(wakeOnRecurrence({ snoozedUntil: cluster.snoozedUntil, snoozeMode: cluster.snoozeMode }) ?? {}),
+        })
+        .where(eq(failureClusters.id, cluster.id)),
+    ),
+  );
+  return routedRows;
+}
+
+/**
+ * Move the given tests' executions out of a cluster into a new cluster, and
+ * route their later failures with any fingerprint leading to the source
+ * cluster (its own and its aliases) to the new one. The pair is recorded as a
+ * rejected merge, so reconciliation never folds it back.
+ * Returns null when the cluster does not exist, and no cluster when none of
+ * the tests has an execution in it.
+ */
+export async function splitFailureCluster(
+  db: DrizzleDB,
+  sourceId: number,
+  testCaseIds: number[],
+  triageNote?: string | null,
+): Promise<{ clusterId: number | null; testCount: number } | null> {
+  const [source] = await db
+    .select({
+      projectId: failureClusters.projectId,
+      fingerprint: failureClusters.fingerprint,
+      signature: failureClusters.signature,
+      errorType: failureClusters.errorType,
+      selector: failureClusters.selector,
+      sampleError: failureClusters.sampleError,
+    })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, sourceId));
+  if (!source) return null;
+
+  const moved = await db
+    .select({
+      id: testRunsCases.id,
+      testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
+      error: testRunsCases.error,
+    })
+    .from(testRunsCases)
+    .where(and(eq(testRunsCases.failureClusterId, sourceId), inArray(testRunsCases.testCaseId, testCaseIds)));
+  if (moved.length === 0) return { clusterId: null, testCount: 0 };
+
+  const runIds = moved.map((r) => r.testRunId);
+  const latest = moved.reduce((a, b) => (b.testRunId > a.testRunId ? b : a));
+  const movedTests = [...new Set(moved.map((r) => r.testCaseId))];
+  const aliases = await db
+    .select({ fingerprint: failureClusterAliases.fingerprint })
+    .from(failureClusterAliases)
+    .where(eq(failureClusterAliases.clusterId, sourceId));
+  const routedFingerprints = [source.fingerprint, ...aliases.map((a) => a.fingerprint)].filter(
+    (fingerprint) => !isSplitFingerprint(fingerprint),
+  );
+
+  const clusterId = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(failureClusters)
+      .values({
+        projectId: source.projectId,
+        fingerprint: `${SPLIT_FINGERPRINT_PREFIX}${globalThis.crypto.randomUUID()}`,
+        signature: source.signature,
+        errorType: source.errorType,
+        selector: source.selector,
+        sampleError: latest.error ?? source.sampleError,
+        firstSeenRunId: Math.min(...runIds),
+        lastSeenRunId: Math.max(...runIds),
+        occurrences: moved.length,
+        triageNote: triageNote || null,
+      })
+      .returning({ id: failureClusters.id });
+    const newId = created!.id;
+
+    await tx
+      .update(testRunsCases)
+      .set({ failureClusterId: newId })
+      .where(
+        inArray(
+          testRunsCases.id,
+          moved.map((r) => r.id),
+        ),
+      );
+
+    // Routes that already led these tests to the source cluster now lead to the new one.
+    await tx
+      .update(failureClusterTestRoutes)
+      .set({ clusterId: newId })
+      .where(
+        and(eq(failureClusterTestRoutes.clusterId, sourceId), inArray(failureClusterTestRoutes.testCaseId, movedTests)),
+      );
+    for (const fingerprint of routedFingerprints) {
+      await tx
+        .insert(failureClusterTestRoutes)
+        .values(
+          movedTests.map((testCaseId) => ({ projectId: source.projectId, fingerprint, testCaseId, clusterId: newId })),
+        )
+        .onConflictDoUpdate({
+          target: [
+            failureClusterTestRoutes.projectId,
+            failureClusterTestRoutes.fingerprint,
+            failureClusterTestRoutes.testCaseId,
+          ],
+          set: { clusterId: newId },
+        });
+    }
+
+    await tx
+      .insert(clusterMergeSuggestions)
+      .values({
+        projectId: source.projectId,
+        clusterAId: Math.min(sourceId, newId),
+        clusterBId: Math.max(sourceId, newId),
+        method: 'split',
+        status: 'rejected',
+      })
+      .onConflictDoNothing();
+    return newId;
+  });
+
+  await recomputeClusterOccurrences(db, sourceId);
+  return { clusterId, testCount: movedTests.length };
 }
 
 /**
@@ -271,6 +489,11 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
         .set({ clusterId: survivorId })
         .where(eq(failureClusterAliases.clusterId, victimId));
     }
+    // Tests routed to the victim follow it into the survivor.
+    await tx
+      .update(failureClusterTestRoutes)
+      .set({ clusterId: survivorId })
+      .where(eq(failureClusterTestRoutes.clusterId, victimId));
 
     if (survivor && victim) {
       await tx

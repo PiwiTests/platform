@@ -106,6 +106,14 @@ the cluster for a day, a week or until it recurs.
 
 A chart counts the cluster's failures per day, week or month, marking when its **fix landed**.
 
+### Move tests to a new cluster
+
+When some of a cluster's tests fail with the same error for a different reason, select them in **Affected tests**
+and choose **Move to a new cluster** (reporter or administrator). Their failures move to a new cluster at once, with
+the triage note you type, and the cluster they left gains a line naming the move. Later failures of those tests with
+the same error join the new cluster, the other tests' failures stay where they were, and the two clusters are never
+merged automatically, however close they score in [semantic merging](./ai-diagnosis#semantic-merging-optional).
+
 ## Did the fix work?
 
 When a run executes every test a cluster covers and they all pass, Piwi records the fix: the run, the commit, and how

@@ -27,6 +27,10 @@ project's Failure clusters tab, for a reporter or admin to approve or dismiss, a
 past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
 whenever an embedding role is configured, independently of auto-diagnose.
 
+Each pair is judged once: the model's no is kept, so the same pair is not sent to the model again. A pair that
+someone dismissed, or that came from [moving tests to a new cluster](./failure-clusters#move-tests-to-a-new-cluster),
+is never merged automatically, however close the two clusters score.
+
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: clusters are embedded, compared by cosine similarity, and kept apart, adjudicated by a model, or merged depending on the score">
   <figcaption>The cosine score decides between keeping two clusters apart, asking a model (or a person), and merging them.</figcaption>

@@ -69,7 +69,7 @@ import {
 } from '@piwitests/core/test-meta';
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
-  getOrCreateFailureClusters,
+  assignFailureClusters,
   type PendingCluster,
 } from '#shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '#shared/types';
@@ -770,11 +770,7 @@ export async function persistRunCases(
     row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
   });
 
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
-  runCasesRows.forEach((row, i) => {
-    const fingerprint = rowFingerprints[i];
-    if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
-  });
+  await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints);
 
   // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
   // this idempotent across batch retries and same-test-different-browser rows.
