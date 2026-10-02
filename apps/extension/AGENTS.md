@@ -609,6 +609,8 @@ scheme, a transparent background) and the helpers in `src/devtools/ui.ts` (butto
   (`piwi-clear-tab-viewport`).
 - **Tests**: `devtools-sidebar.spec.ts`, `devtools-panel.spec.ts` and `devtools-network.spec.ts` open the pages as tabs with `chrome.devtools` stubbed (`devtools-stub.ts`:
   `eval` runs in a fixture page's own world, where the spec adds the content script; `$0` is that page's global).
+  `devtools-replay.spec.ts` opens the Piwi panel the same way beside a replay of the real extension on a local site
+  (`trusted-site.ts`), and checks that Pause and Continue from the panel never play a step waiting for Next.
   `devtools-real.spec.ts` launches Chromium with `--auto-open-devtools-for-tabs` and drives the real DevTools page
   through the browser's debugging port: it checks the `devtools_page` loads and that `$0` reaches the ranking script.
 

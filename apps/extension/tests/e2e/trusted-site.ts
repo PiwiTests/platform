@@ -133,7 +133,10 @@ export interface StoredReplay {
   handOver?: { step: number; reason: string } | null;
 }
 
-/** Starts a replay on `site` as the popup does, then loads `path` in a tab, where the registered script runs it. */
+/**
+ * Starts a replay on `site` as the popup does, then loads `path` in `page` (by
+ * default a new tab), where the registered script runs it.
+ */
 export async function startReplay(
   control: Page,
   context: BrowserContext,
@@ -141,6 +144,7 @@ export async function startReplay(
   doc: PiwiSteps,
   path: string,
   stepMode = false,
+  page?: Page,
 ): Promise<Page> {
   const started = await control.evaluate(
     ({ steps, origin, stepMode }) =>
@@ -148,7 +152,7 @@ export async function startReplay(
     { steps: doc, origin: site, stepMode },
   );
   expect(started).toEqual({ ok: true });
-  const page = await context.newPage();
+  page ??= await context.newPage();
   await page.goto(`${site}${path}`);
   return page;
 }
