@@ -19,7 +19,7 @@ import {
 import { getProjectFunctionCatalog } from './test-functions';
 import { getLocatorIndex } from '../../server/utils/locator-usages';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-default-branch';
+import { mostCommonRunBranch } from '../../server/utils/scm/stored-default-branch';
 import type { TestMetadata } from '#shared/types';
 import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
@@ -576,11 +576,13 @@ type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; test
 /**
  * Whether a run moves bug reports: a run of the project's default branch that
  * ran the whole suite or ran in CI. A local run of some files only (what
- * `piwi bug --write` starts, before the spec is committed) moves nothing.
+ * `piwi bug --write` starts, before the spec is committed) moves nothing. A
+ * null `defaultBranch` means the project records no branch at all; its runs,
+ * which carry none either, count as the default branch's.
  */
 export function movesBugReports(
   run: { branch: string | null; isFullRun: number | null; metadata: unknown },
-  defaultBranch: string,
+  defaultBranch: string | null,
 ): boolean {
   const branch = run.branch ?? resolveRunBranch(run.metadata);
   if (branch !== defaultBranch) return false;
@@ -588,17 +590,19 @@ export function movesBugReports(
   return run.isFullRun !== 0 || (ci != null && typeof ci === 'object');
 }
 
-/** A project's default branch from stored data and the run's own hint, with no SCM call. */
-async function runDefaultBranch(db: DrizzleDB, projectId: number, metadata: unknown): Promise<string> {
+/**
+ * A project's default branch from stored data and the run's own hint, with no
+ * SCM call; null when neither the project, the run nor any earlier run names a
+ * branch.
+ */
+async function runDefaultBranch(db: DrizzleDB, projectId: number, metadata: unknown): Promise<string | null> {
   const [project] = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .select({ defaultBranch: projects.defaultBranch })
     .from(projects)
     .where(eq(projects.id, projectId));
   const hint = (metadata as { defaultBranch?: unknown } | null)?.defaultBranch;
-  return resolveStoredDefaultBranch(db, {
-    id: projectId,
-    defaultBranch: project?.defaultBranch || (typeof hint === 'string' ? hint : null),
-  });
+  const named = project?.defaultBranch?.trim() || (typeof hint === 'string' ? hint.trim() : '');
+  return named || (await mostCommonRunBranch(db, projectId));
 }
 
 /**

@@ -98,6 +98,16 @@ describe('which runs move a report', () => {
     expect(ci.map((t) => [t.id, t.to])).toEqual([[1, 'closed']]);
   });
 
+  test('a run with no branch moves the report only when the project records no branch', async () => {
+    await db.delete(schema.testRunsCases);
+    await db.delete(schema.testRuns);
+    expect((await closingRun(10, {})).map((t) => t.to)).toEqual(['closed']);
+
+    await db.update(schema.bugReports).set({ status: 'test-committed' }).where(eq(schema.bugReports.id, 1));
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(11, {})).toEqual([]);
+  });
+
   test('a full run of the default branch moves the report', async () => {
     const moved = await closingRun(10, { branch: 'main' });
     expect(moved.map((t) => [t.id, t.from, t.to])).toEqual([[1, 'test-committed', 'closed']]);
