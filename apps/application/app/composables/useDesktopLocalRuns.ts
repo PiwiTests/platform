@@ -78,6 +78,8 @@ export interface ReproRunState {
   requestId: string;
   steps: PiwiSteps;
   args: string[];
+  /** The bug report the request came from, on the instance that sent it; the run's origin reference. */
+  bugReportId?: number | null;
   /** What the spec recorded about its run; null when it recorded nothing. */
   result: SpecRunResult | null;
   verdict: SpecRunVerdict | null;
@@ -148,6 +150,8 @@ export interface LocalRun {
   browserName: string | null;
   /** Failing commit to check out (kind === 'reproduce'). */
   commit: string | null;
+  /** The failure cluster a reproduce run reproduces, recorded as the run's origin reference (kind === 'reproduce'). */
+  clusterId?: number | null;
   /** Bisect window ends (kind === 'bisect'). */
   good: string | null;
   bad: string | null;
@@ -461,6 +465,7 @@ export function useDesktopLocalRuns() {
         projectId: run.projectId,
         requestId: run.repro.requestId,
         args: run.repro.args,
+        bugReportId: run.repro.bugReportId ?? null,
       });
     }
     if (run.kind === 'flake' && run.flake) {
@@ -484,6 +489,7 @@ export function useDesktopLocalRuns() {
         browser: run.browserName,
         args,
         flakeTestCaseId: run.flakeTestCaseId,
+        clusterId: run.bisectTarget?.clusterId ?? null,
       });
     }
     return spawnCommand(run, 'desktop_reproduce_here', {
@@ -491,6 +497,7 @@ export function useDesktopLocalRuns() {
       commit: run.commit,
       browser: run.browserName,
       args,
+      clusterId: run.clusterId ?? null,
     });
   }
 
@@ -727,6 +734,7 @@ export function useDesktopLocalRuns() {
     steps: LocalRunStep[];
     browserName?: string | null;
     commit?: string | null;
+    clusterId?: number | null;
     good?: string | null;
     bad?: string | null;
     bisectTarget?: BisectTarget | null;
@@ -746,6 +754,7 @@ export function useDesktopLocalRuns() {
       phase: null,
       browserName: input.browserName ?? null,
       commit: input.commit ?? null,
+      clusterId: input.clusterId ?? null,
       good: input.good ?? null,
       bad: input.bad ?? null,
       bisect: input.kind === 'bisect' ? { step: null, stepsEstimate: null, candidates: [], firstBad: null } : null,
@@ -785,6 +794,8 @@ export function useDesktopLocalRuns() {
     cases: RetryCase[];
     commit: string;
     browserName?: string | null;
+    /** The failure cluster reproduced, recorded as the run's origin reference. */
+    clusterId?: number | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null || input.cases.length === 0) return null;
     return spawn({
@@ -795,6 +806,7 @@ export function useDesktopLocalRuns() {
       options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
       steps: [],
       commit: input.commit,
+      clusterId: input.clusterId ?? null,
       browserName: input.browserName ?? null,
     });
   }
@@ -919,6 +931,8 @@ export function useDesktopLocalRuns() {
     requestId: string;
     steps: PiwiSteps;
     args: string[];
+    /** The bug report the request came from, recorded as the run's origin reference. */
+    bugReportId?: number | null;
   }): Promise<LocalRun | null> {
     if (!tauriCore()) return null;
     await $fetch(`/api/desktop/repro-requests/${input.requestId}`, {
@@ -933,15 +947,29 @@ export function useDesktopLocalRuns() {
       cases: [],
       options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
       steps: [{ args: input.args, display }],
-      repro: { requestId: input.requestId, steps: input.steps, args: input.args, result: null, verdict: null },
+      repro: {
+        requestId: input.requestId,
+        steps: input.steps,
+        args: input.args,
+        bugReportId: input.bugReportId ?? null,
+        result: null,
+        verdict: null,
+      },
     });
   }
 
   function rerun(run: LocalRun): LocalRun | null {
     if (run.kind === 'repro' && run.repro) {
-      const { requestId, steps, args } = run.repro;
-      void startRepro({ projectId: run.projectId, projectLabel: run.projectLabel, requestId, steps, args }).catch(
-        (error) => toastApi?.add({ title: 'Could not run again', description: errorMessage(error), color: 'error' }),
+      const { requestId, steps, args, bugReportId } = run.repro;
+      void startRepro({
+        projectId: run.projectId,
+        projectLabel: run.projectLabel,
+        requestId,
+        steps,
+        args,
+        bugReportId,
+      }).catch((error) =>
+        toastApi?.add({ title: 'Could not run again', description: errorMessage(error), color: 'error' }),
       );
       return null;
     }
@@ -954,6 +982,7 @@ export function useDesktopLocalRuns() {
         cases: run.cases,
         commit: run.commit,
         browserName: run.browserName,
+        clusterId: run.clusterId,
       });
     }
     if (run.kind === 'bisect' && run.good && run.bad) {
