@@ -30,6 +30,17 @@ describe('detectControlNobodyExercises', () => {
     expect(gaps[0]!.class).toBe('blind-spot');
     expect(gaps[0]!.evidence[0]).toContain('12 pages');
   });
+
+  test('a control covered by hand only does not switch the detector on for the project', () => {
+    // One covered-by on a surface-drift gap wrote a manual reaches edge to button:Save; nothing else is observed.
+    const controls = [
+      { key: 'button:Export', pageCount: 12, reachCount: 0 },
+      { key: 'button:Save', pageCount: 3, reachCount: 1, manualReachCount: 1 },
+    ];
+    expect(detectControlNobodyExercises(controls)).toEqual([]);
+    controls.push({ key: 'button:Pay', pageCount: 2, reachCount: 1, manualReachCount: 0 });
+    expect(detectControlNobodyExercises(controls).map((g) => g.key)).toEqual(['control:button:Export']);
+  });
 });
 
 describe('detectReachableUnvisited', () => {

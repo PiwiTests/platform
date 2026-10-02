@@ -424,16 +424,19 @@ export interface ControlReach {
   pageCount: number;
   /** Distinct tests whose locators target it. */
   reachCount: number;
+  /** Of those, the tests recorded only by hand (a covered-by), not observed. */
+  manualReachCount?: number;
 }
 
 /**
  * Control nobody exercises — a control the suite has seen on a page but no
- * locator ever targets. Blind spot. Requires the project to have some control
- * reach at all: with no test→control edge anywhere, every inventoried control
- * would flag, so the detector stays silent until reach exists to compare against.
+ * locator ever targets. Blind spot. Requires the project to have some observed
+ * control reach: with no observed test→control edge anywhere, every inventoried
+ * control would flag, so the detector stays silent until reach exists to
+ * compare against. A covering test recorded by hand does not count as observed.
  */
 export function detectControlNobodyExercises(controls: ControlReach[]): DetectedGap[] {
-  if (!controls.some((c) => c.reachCount > 0)) return [];
+  if (!controls.some((c) => c.reachCount - (c.manualReachCount ?? 0) > 0)) return [];
   const gaps: DetectedGap[] = [];
   for (const c of controls) {
     if (c.reachCount > 0) continue;
@@ -1291,7 +1294,12 @@ export async function computeScenarioGaps(
   // edges and `file` nodes (every file a test executed) stay out of the node
   // detectors: they are no surface of their own to drift or to be covered once.
   const reachRows = await db
-    .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey, fromKey: graphEdges.fromKey })
+    .select({
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      fromKey: graphEdges.fromKey,
+      origin: graphEdges.origin,
+    })
     .from(graphEdges)
     .where(
       and(
@@ -1303,6 +1311,8 @@ export async function computeScenarioGaps(
     );
 
   const reachByNode = new Map<string, Set<number>>();
+  // Node → tests whose only reach edge is a manual one (a covered-by), not observed.
+  const manualReachByNode = new Map<string, Set<number>>();
   const testIds = new Set<number>();
   for (const r of reachRows) {
     const id = Number(r.fromKey);
@@ -1312,6 +1322,11 @@ export async function computeScenarioGaps(
     const set = reachByNode.get(nodeKey) ?? new Set<number>();
     set.add(id);
     reachByNode.set(nodeKey, set);
+    if (r.origin === 'manual') {
+      const manual = manualReachByNode.get(nodeKey) ?? new Set<number>();
+      manual.add(id);
+      manualReachByNode.set(nodeKey, manual);
+    }
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
@@ -1505,7 +1520,12 @@ export async function computeScenarioGaps(
     const nodeKey = `${node.kind}\x00${node.key}`;
     const reachCount = reachByNode.get(nodeKey)?.size ?? 0;
     if (node.kind === 'control') {
-      controlReach.push({ key: node.key, pageCount: pagesByControl.get(node.key)?.size ?? 0, reachCount });
+      controlReach.push({
+        key: node.key,
+        pageCount: pagesByControl.get(node.key)?.size ?? 0,
+        reachCount,
+        manualReachCount: manualReachByNode.get(nodeKey)?.size ?? 0,
+      });
     } else if (node.kind === 'page') {
       pageLinkReach.push({
         key: node.key,
@@ -1834,6 +1854,7 @@ export async function upsertScenarioGaps(
   const now = new Date();
   const CHUNK = 100;
   let written = 0;
+  const reopens = sql`(${scenarioGaps.status} = 'closed' and ${scenarioGaps.coveredAt} is null)`;
 
   for (let i = 0; i < deduped.length; i += CHUNK) {
     const slice = deduped.slice(i, i + CHUNK);
@@ -1875,11 +1896,12 @@ export async function upsertScenarioGaps(
           testRunId: sql`excluded.test_run_id`,
           prNumber: sql`coalesce(excluded.pr_number, ${scenarioGaps.prNumber})`,
           updatedAt: sql`excluded.updated_at`,
-          // Reopen a closed gap that is detected again; every other status keeps
-          // its verdict. Clear the close bookkeeping only on that reopen.
-          status: sql`case when ${scenarioGaps.status} = 'closed' then 'open' else ${scenarioGaps.status} end`,
-          closedAt: sql`case when ${scenarioGaps.status} = 'closed' then null else ${scenarioGaps.closedAt} end`,
-          closedByRunId: sql`case when ${scenarioGaps.status} = 'closed' then null else ${scenarioGaps.closedByRunId} end`,
+          // Reopen a closed gap that is detected again, unless a person closed it
+          // with a covered-by; every other status keeps its verdict. Clear the
+          // close bookkeeping only on that reopen.
+          status: sql`case when ${reopens} then 'open' else ${scenarioGaps.status} end`,
+          closedAt: sql`case when ${reopens} then null else ${scenarioGaps.closedAt} end`,
+          closedByRunId: sql`case when ${reopens} then null else ${scenarioGaps.closedByRunId} end`,
         },
       });
     written += slice.length;
@@ -2185,8 +2207,8 @@ export type TriageResult = { status: GapStatus } | { error: 'gap-not-found' | 'c
 /**
  * Apply an inbox verb to a gap: accept, snooze (1-day / 1-week / until the node
  * changes), dismiss with a reason (covered-elsewhere writes a manual reaches
- * edge from the covering test), or covered-by (writes the edge without
- * dismissing). A covering test must belong to the same project. Returns the
+ * edge from the covering test), or covered-by (closes the gap and writes the
+ * edge). A covering test must belong to the same project. Returns the
  * gap's new status, or an error when the gap or the covering test is not found.
  */
 export async function triageGap(
@@ -2245,10 +2267,13 @@ export async function triageGap(
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
     }
   } else {
-    // covered-by: record the covering test without dismissing; the manual reaches
-    // edge closes the gap on the next recompute. `coveredAt` is a durable per-gap
-    // "for" verdict, so precision credits only this gap — not every detector that
-    // happens to share the subject node.
+    // covered-by: close the gap for good (a later detection does not reopen it)
+    // and record the covering test as a manual reaches edge. `coveredAt` is a
+    // durable per-gap "for" verdict, so precision credits only this gap — not
+    // every detector that happens to share the subject node.
+    set.status = 'closed';
+    set.closedAt = now;
+    set.closedByRunId = null;
     set.coveredAt = now;
     if (input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
