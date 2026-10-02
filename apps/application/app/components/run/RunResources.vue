@@ -131,7 +131,7 @@ const costliest = computed(() => data.value?.costliest ?? []);
 
     <EmptyState v-else-if="!data?.report && costliest.length === 0" icon="i-lucide-cpu" text="No resource report">
       <p class="text-sm text-muted max-w-sm text-center">
-        The reporter sends what a run cost and left open from version 0.44.
+        The reporter sends what a run cost and left open from version 0.45.
         <DocLink to="features/resource-leaks#in-the-dashboard" />
       </p>
     </EmptyState>

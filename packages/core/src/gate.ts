@@ -282,7 +282,7 @@ function leakViolations(resources: NonNullable<GateFacts['resources']>, policy: 
       {
         rule: 'no-resource-report',
         message:
-          'the run sent no resource report — the reporter is older than 0.44, or captureResources is off — so its leaks are unknown',
+          'the run sent no resource report — the reporter is older than 0.45, or captureResources is off — so its leaks are unknown',
       },
     ];
   }

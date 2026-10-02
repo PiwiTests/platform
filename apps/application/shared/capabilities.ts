@@ -256,7 +256,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     needs: [],
     detection: 'resources',
     passiveData: true,
-    since: '0.44.0',
+    since: '0.45.0',
     doc: 'features/resource-leaks',
   },
 ];
