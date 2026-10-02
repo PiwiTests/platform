@@ -1108,18 +1108,34 @@ async function resolveScreenshots(
   return images;
 }
 
-/** Recurrence pattern + flakiness analysis for the cluster. */
-async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
-  const recentRuns = await db
+/**
+ * The ids of the tests that have failed into a cluster. Passed executions carry
+ * no cluster id, so retry passes are found through these tests.
+ */
+function clusterTestCaseIds(db: DbClient, clusterId: number) {
+  return db
+    .selectDistinct({ id: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+}
+
+/**
+ * Recurrence pattern + flakiness analysis for the cluster, over the executions
+ * of its tests in the project's 30 most recent runs. A run is affected when it
+ * holds a failure in the cluster or a retry pass of one of its tests.
+ */
+export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const rows = await db
     .select({
       runId: testRunsCases.testRunId,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
     .where(
       and(
-        eq(testRunsCases.failureClusterId, cluster.id),
+        inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         inArray(
           testRunsCases.testRunId,
           db
@@ -1131,6 +1147,7 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
         ),
       ),
     );
+  const recentRuns = rows.filter((r) => r.clusterId === cluster.id || (r.status === 'passed' && (r.retries ?? 0) > 0));
 
   if (recentRuns.length === 0) return null;
 
@@ -1898,15 +1915,16 @@ const REP_SECTION_TITLES: Partial<Record<SectionId, string>> = {
   ariaSnapshot: 'ARIA Snapshot',
 };
 
-async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+export async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const retryPassRows = await db
     .select({ count: testRunsCases.id })
     .from(testRunsCases)
     .where(
       and(
-        eq(testRunsCases.failureClusterId, cluster.id),
+        inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         eq(testRunsCases.testRunId, cluster.lastSeenRunId),
         eq(testRunsCases.status, 'passed'),
+        sql`${testRunsCases.retries} > 0`,
       ),
     )
     .limit(1);
