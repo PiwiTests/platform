@@ -9,6 +9,7 @@ import {
   sanitizeAiUsage,
   sanitizeDialogs,
   capSteps,
+  DROPPED_STEPS_CATEGORY,
 } from '../../server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 
@@ -161,6 +162,19 @@ describe('capSteps', () => {
     const steps = Array.from({ length: DEFAULT_INGEST_LIMITS.steps + 5 }, (_, i) => ({ title: `s${i}`, duration: 1 }));
     const out = capSteps(steps, DEFAULT_INGEST_LIMITS) as unknown[];
     expect(out).toHaveLength(DEFAULT_INGEST_LIMITS.steps);
+  });
+
+  test('keeps the failing step past the cap and marks how many steps it dropped', () => {
+    const limits = { ...DEFAULT_INGEST_LIMITS, steps: 5 };
+    const steps = [
+      ...Array.from({ length: 8 }, (_, i) => ({ title: `click ${i}`, category: 'pw:api', duration: 1, depth: 1 })),
+      { title: 'checkout', category: 'test.step', duration: 1, depth: 0, failed: true, error: { message: 'boom' } },
+      { title: 'click pay', category: 'pw:api', duration: 1, depth: 1, failed: true, error: { message: 'boom' } },
+      { title: 'screenshot', category: 'pw:api', duration: 1, depth: 0 },
+    ];
+    const out = capSteps(steps, limits) as Array<{ title: string; category: string; depth?: number }>;
+    expect(out.map((s) => s.title)).toEqual(['click 0', 'click 1', '7 steps not stored', 'checkout', 'click pay']);
+    expect(out[2]).toMatchObject({ category: DROPPED_STEPS_CATEGORY, depth: 0 });
   });
 
   test('re-caps params keys and value length, never trusting the reporter', () => {
