@@ -337,6 +337,24 @@ test.describe('Report a bug', () => {
       .toEqual(['viewport', 'navigate', 'input', 'click']);
   });
 
+  test('Mark what’s wrong shows the expected field only for a value', async ({ context }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await pressHudButton(page, 'mark');
+    await page.hover('#total');
+    await page.click('#total');
+    const dialog = page.locator('#piwi-bug-dialog-host').getByRole('dialog', { name: 'Mark what’s wrong' });
+    await expect(dialog.getByLabel('What it should show')).toBeVisible();
+
+    await dialog.getByLabel('What’s wrong').selectOption({ label: 'It should be hidden' });
+    await expect(dialog.getByText('What it should show')).toBeHidden();
+    await expect(dialog.getByRole('textbox')).toHaveCount(1);
+
+    await dialog.getByLabel('What’s wrong').selectOption({ label: 'Its text' });
+    await expect(dialog.getByLabel('What it should show')).toBeVisible();
+  });
+
   test('in French: the HUD, the dialogs and the finished report', async ({ context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await openShadowRoots(context);

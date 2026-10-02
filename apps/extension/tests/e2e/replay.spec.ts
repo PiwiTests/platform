@@ -241,6 +241,37 @@ test.describe('replay-panel.js', () => {
     expect(await verdict(page)).toEqual({ kind: 'reproduced', step: 4, found: '"Total: 40"', sameAsReported: true });
   });
 
+  test('the dialog offers to start on this page only for a report that opens one', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'buggy');
+    await stubChrome(context, {});
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/login`);
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+    const file = dialog.getByLabel('The bug report’s .piwibug, or its steps.json');
+    const stepByStep = dialog.getByRole('checkbox', { name: 'Step by step: click Next step before each step' });
+    await expect(stepByStep).toBeVisible();
+    await expect(dialog.getByRole('checkbox')).toHaveCount(1);
+
+    const noPage: PiwiSteps = { ...REPORT, steps: REPORT.steps.slice(1) };
+    await file.setInputFiles({
+      name: 'steps.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(noPage)),
+    });
+    await expect(dialog).toContainText('4 steps');
+    await expect(dialog.getByRole('checkbox')).toHaveCount(1);
+
+    await file.setInputFiles({
+      name: 'steps.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(REPORT)),
+    });
+    await expect(dialog).toContainText('5 steps');
+    await expect(dialog.getByRole('checkbox')).toHaveCount(2);
+    await expect(stepByStep).toBeVisible();
+  });
+
   test('a Next from the Piwi panel in DevTools plays the step waiting for it', async ({ context }) => {
     await routePages(context, 'buggy');
     await stubChrome(context, running(true));

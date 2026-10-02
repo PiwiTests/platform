@@ -76,7 +76,7 @@ import {
 } from './replay-actions.js';
 import { readReportFile } from './steps-file.js';
 import type { ReplayStepView } from '../shared/step-views.js';
-import { attachPanelShadow } from './panel-root.js';
+import { attachPanelShadow, clearPanelShadow } from './panel-root.js';
 import { openDesktopRun } from './desktop-run-panel.js';
 import { shareable, shareResultRow } from './share-result.js';
 
@@ -313,7 +313,7 @@ let hud: { host: HTMLElement; root: ShadowRoot } | null = null;
 
 function hudRoot(): ShadowRoot {
   if (hud && hud.host.isConnected) {
-    hud.root.replaceChildren();
+    clearPanelShadow(hud.root);
     return hud.root;
   }
   document.getElementById(REPLAY_HUD_HOST_ID)?.remove();

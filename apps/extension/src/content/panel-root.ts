@@ -23,9 +23,48 @@ const CONTAINED_EVENTS = [
   'cut',
 ] as const;
 
+/**
+ * An element with the `hidden` attribute is hidden in every surface, whatever
+ * `display` the surface's own stylesheet gives it: an author rule such as
+ * `label.check { display: inline-flex }` outranks the browser's own
+ * `[hidden] { display: none }`.
+ */
+const BASE_CSS = '[hidden] { display: none !important; }';
+const BASE_STYLE_ATTRIBUTE = 'data-piwi-base';
+
+let baseSheet: CSSStyleSheet | null = null;
+
+/**
+ * Gives a root the base rules as an adopted sheet, which a root emptied with
+ * `replaceChildren()` keeps. Where a content script cannot adopt a sheet, a
+ * `<style>` holds them, and `clearPanelShadow` empties the root around it.
+ */
+function adoptBaseCss(root: ShadowRoot): void {
+  try {
+    if (!baseSheet) {
+      baseSheet = new CSSStyleSheet();
+      baseSheet.replaceSync(BASE_CSS);
+    }
+    root.adoptedStyleSheets = [baseSheet];
+  } catch {
+    const style = document.createElement('style');
+    style.setAttribute(BASE_STYLE_ATTRIBUTE, '');
+    style.textContent = BASE_CSS;
+    root.prepend(style);
+  }
+}
+
 /** `host.attachShadow(init)`, for every surface the extension puts on a page. */
 export function attachPanelShadow(host: HTMLElement, init: ShadowRootInit): ShadowRoot {
   const root = host.attachShadow(init);
   for (const type of CONTAINED_EVENTS) root.addEventListener(type, (event) => event.stopPropagation());
+  adoptBaseCss(root);
   return root;
+}
+
+/** Empties a root made by `attachPanelShadow`, keeping its base rules. */
+export function clearPanelShadow(root: ShadowRoot): void {
+  for (const node of [...root.childNodes]) {
+    if (!(node instanceof Element && node.hasAttribute(BASE_STYLE_ATTRIBUTE))) node.remove();
+  }
 }
