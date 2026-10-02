@@ -76,6 +76,8 @@ export interface RunUseRule {
   excludesIncidents: boolean;
   /** Read only complete runs: the whole suite, finished. */
   completeOnly: boolean;
+  /** Leave out a historical import: a report imported after newer runs were stored. */
+  excludesHistoricalImports: boolean;
 }
 
 /**
@@ -86,23 +88,78 @@ export interface RunUseRule {
  */
 export const RUN_USES: Record<RunUse, RunUseRule> = {
   /** Execution baselines: the environment, visual and page diffs, the AI's baseline comparison, the last pass. */
-  baseline: { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: false },
+  baseline: {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** Run baselines: a run compared with a whole earlier run. */
-  'run-baseline': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: true },
-  'fix-verification': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: false },
-  flakiness: { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: false },
+  'run-baseline': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: true,
+    excludesHistoricalImports: false,
+  },
+  'fix-verification': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
+  flakiness: {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** Pass rates, last statuses, recent failures and durations behind selections and their suggestions. */
-  'selection-catalog': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: false },
+  'selection-catalog': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** What the editor shows as the branch's CI failures. */
-  'branch-failures': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: true },
+  'branch-failures': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: true,
+    excludesHistoricalImports: false,
+  },
   /** Change coverage and every "not reached in the last N runs" analysis. */
-  'change-coverage': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: false, completeOnly: true },
+  'change-coverage': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: false,
+    completeOnly: true,
+    excludesHistoricalImports: false,
+  },
   /** Locator snapshots, the locator index, test metadata and green samples. */
-  'shared-state': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: false, completeOnly: false },
-  'auto-heal': { excludes: LAB_AND_INVESTIGATION, excludesIncidents: true, completeOnly: false },
-  'bug-lifecycle': { excludes: ['bug', ...LAB_AND_INVESTIGATION], excludesIncidents: false, completeOnly: false },
+  'shared-state': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: false,
+    completeOnly: false,
+    excludesHistoricalImports: true,
+  },
+  'auto-heal': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
+  'bug-lifecycle': {
+    excludes: ['bug', ...LAB_AND_INVESTIGATION],
+    excludesIncidents: false,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** Notifications, pull-request feedback, the gate and the other finalize side effects. */
-  notifications: { excludes: LAB_RUN_ORIGINS, excludesIncidents: true, completeOnly: false },
+  notifications: {
+    excludes: LAB_RUN_ORIGINS,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
 };
 
 /** Statuses of a run that has not finished yet. */
@@ -167,6 +224,12 @@ export interface EligibleRunInput {
   /** 1 (or true) when the run covered the whole suite. */
   isFullRun?: number | boolean | null;
   status?: string | null;
+  /**
+   * True for a historical import: a report imported after newer runs of the
+   * project were stored. Known only to the caller, which has looked it up;
+   * the SQL form cannot tell, so a use excluding it filters it where it is known.
+   */
+  historicalImport?: boolean;
 }
 
 /** True for a run that covered the whole suite and finished. */
@@ -181,6 +244,7 @@ export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
   if ((rule.excludes as readonly string[]).includes(runOrigin(run.metadata))) return false;
   if (rule.excludesIncidents && isIncidentRun(run.metadata)) return false;
   if (rule.completeOnly && !isCompleteRun(run)) return false;
+  if (rule.excludesHistoricalImports && run.historicalImport) return false;
   return true;
 }
 

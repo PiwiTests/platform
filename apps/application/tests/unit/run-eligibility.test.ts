@@ -99,6 +99,13 @@ describe('the run eligibility table', () => {
     expect(isEligibleRun({ metadata, isFullRun: 1, status: 'passed' }, use)).toBe(true);
   });
 
+  test('only shared state leaves out a historical import', () => {
+    for (const use of USES) {
+      const run = { metadata: { piwiOrigin: { kind: 'import' } }, historicalImport: true };
+      expect(isEligibleRun(run, use), use).toBe(use !== 'shared-state');
+    }
+  });
+
   test('local runs count wherever CI runs do', () => {
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {

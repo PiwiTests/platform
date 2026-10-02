@@ -604,7 +604,10 @@ export async function persistRunCases(
     .where(eq(testRuns.id, testRunId));
   const probeRun = isLabRun(probeCheck?.metadata);
   const sharedState = isEligibleRun({ metadata: probeCheck?.metadata }, 'shared-state');
-  const writesTestState = sharedState && !options.keepTestState;
+  const writesTestState = isEligibleRun(
+    { metadata: probeCheck?.metadata, historicalImport: options.keepTestState },
+    'shared-state',
+  );
 
   // Keep at most one green ARIA sample per test per day: a passing snapshot is
   // dropped when the test already has a recent one, so many runs a day stay bounded.
