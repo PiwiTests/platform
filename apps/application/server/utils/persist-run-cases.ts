@@ -8,6 +8,8 @@ import {
 import {
   capArray,
   capSteps,
+  countDroppedSteps,
+  countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
   capSourceFrames,
@@ -38,6 +40,7 @@ import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from './persist-options';
+import { recordIngestHealth, storedDrops, type ExecutionDrops } from './ingest-health';
 import {
   ingestRunGraph,
   ingestRequestGraph,
@@ -435,6 +438,8 @@ export async function persistRunCases(
   }> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
+  // What the caps left out of each row, recorded on the run for the rows stored.
+  const rowDrops: ExecutionDrops[] = [];
   const pendingClusters = new Map<string, PendingCluster>();
   // Locator snapshots to upsert, grouped by resolved test case id; the shared
   // helper handles row building, upsert, and stale-location purge after insert.
@@ -498,6 +503,10 @@ export async function persistRunCases(
     // A use missing from a passed execution whose steps were all kept has left
     // the test; any other execution only adds.
     const cappedSteps = capSteps(c.steps, limits);
+    rowDrops.push({
+      steps: countDroppedSteps(c.steps, limits),
+      consoleEntries: countDroppedConsoleEntries(c.consoleLogs, limits),
+    });
     const locatorPages = sanitizeLocatorPages(c.locatorPages);
     perCaseUsages.push({
       caseId,
@@ -625,7 +634,9 @@ export async function persistRunCases(
   });
 
   if (!probeRun) {
-    const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
+    const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters, {
+      wakeSnoozed: !options.keepSnoozed,
+    });
     runCasesRows.forEach((row, i) => {
       const fingerprint = rowFingerprints[i];
       if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
@@ -668,6 +679,14 @@ export async function persistRunCases(
     );
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
+  await recordIngestHealth(
+    db,
+    testRunId,
+    storedDrops(
+      rowDrops,
+      insertedCases.map((r) => r.rowIndex),
+    ),
+  );
 
   // Feed the feature graph from the same rows: route nodes from the network
   // requests (own-origin only), page nodes from page state, and a `reaches` edge

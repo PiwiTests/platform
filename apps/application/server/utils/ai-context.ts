@@ -1,4 +1,5 @@
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import type { SQL } from 'drizzle-orm';
 import {
   testRunsCases,
@@ -528,7 +529,7 @@ function testAnnotationsSection(rep: RepresentativeRow): string | null {
  * worker/shard (race hint), describe-block path, and any pre-classified flaky
  * root cause. All from data already stored — no extra collection.
  */
-function runContextSection(rep: RepresentativeRow): string | null {
+export function runContextSection(rep: RepresentativeRow): string | null {
   const lines: string[] = [];
 
   if (rep.runIsFullRun === 0) {
@@ -551,6 +552,14 @@ function runContextSection(rep: RepresentativeRow): string | null {
 
   if (rep.flakyRootCause) {
     lines.push(`- Pre-classified flaky root cause (heuristic): ${rep.flakyRootCause}`);
+  }
+
+  // What ingest left out of the run: a step or console line absent here may have been dropped, not skipped.
+  const ingestNotes = describeIngestHealth(readIngestHealth(rep.runMetadata));
+  if (ingestNotes.length > 0) {
+    lines.push(
+      `- Stored incomplete — absent steps, console lines or evidence may have been left out at ingest, not missing from the test: ${ingestNotes.join('; ')}`,
+    );
   }
 
   if (lines.length === 0) return null;

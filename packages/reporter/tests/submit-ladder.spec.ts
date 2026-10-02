@@ -211,10 +211,12 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
   });
 
   it('fallback: /upload fails → /submit succeeds', async () => {
+    let submitBody: any;
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/upload') {
         textRes(res, 500, 'boom');
       } else if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
         jsonRes(res, 200, { runId: 12, projectId: 22 });
       } else {
         textRes(res, 404, 'nope');
@@ -238,6 +240,42 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(uploadIdx, `urls: ${urls.join(', ')}`).toBeGreaterThanOrEqual(0);
     expect(submitIdx, `urls: ${urls.join(', ')}`).toBeGreaterThanOrEqual(0);
     expect(uploadIdx < submitIdx, 'upload must be tried before submit').toBeTruthy();
+    // The dashboard learns which rung delivered the run, and why.
+    expect(submitBody.metadata.ingestHealth).toEqual({ submitFallback: { path: 'submit', reason: 'upload-failed' } });
+  });
+
+  it('a failed /finish falls back to /upload and names the fallback in the run metadata', async () => {
+    let uploadBody = '';
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/1/finish') {
+        textRes(res, 500, 'boom');
+      } else if (req.url === '/api/test-runs/upload') {
+        uploadBody = req.body;
+        jsonRes(res, 200, { runId: 2, projectId: 3 });
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: true,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+    });
+    await runOneTest(reporter, 'finish-fails-test');
+
+    expect(urlsHit(server)).toContain('/api/test-runs/upload');
+    expect(uploadBody).toContain('"ingestHealth":{"submitFallback":{"path":"upload","reason":"finish-failed"}}');
   });
 
   it('all upload methods fail → recovery file is written', async () => {
@@ -302,6 +340,11 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
 
     const titles = submits.map((s) => s.testCases[0].title);
     expect(titles, `submits: ${titles.join(', ')}`).toContain('lost-run-test');
+    const lost = submits.find((s) => s.testCases[0].title === 'lost-run-test');
+    const second = submits.find((s) => s.testCases[0].title === 'second-run-test');
+    expect(lost.metadata.ingestHealth).toEqual({ submitFallback: { path: 'recovery' } });
+    // A run delivered by its usual rung names no fallback.
+    expect(second.metadata.ingestHealth).toBeUndefined();
     expect(titles, `submits: ${titles.join(', ')}`).toContain('second-run-test');
     expect(fs.existsSync(recoveryFilePath(projectName)), 'recovery file is cleared after the retry').toBe(false);
   });
@@ -359,6 +402,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // …and the full run must still reach the server via the batch /submit.
     expect(submitBody, `urls: ${urls.join(', ')}`).toBeTruthy();
     expect(submitBody.testCases.length).toBe(4);
+    expect(submitBody.metadata.ingestHealth).toEqual({ submitFallback: { path: 'submit', reason: 'results-lost' } });
   });
 
   it('a result too large for /events keeps the stream going and re-sends the full run via /submit', async () => {

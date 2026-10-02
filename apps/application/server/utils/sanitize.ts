@@ -2,6 +2,7 @@ import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-reques
 import { maskTokenLike } from '@piwitests/core/mask';
 import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
+import { reporterIngestHealth } from '#shared/ingest-health';
 
 /**
  * URL and network data sanitization helpers.
@@ -80,7 +81,8 @@ export function sanitizeGitRemoteUrl(url: string): string {
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!metadata || typeof metadata !== 'object') return null;
 
-  const meta = { ...metadata };
+  // The reporter may name its submit fallback; the ingest counts are the server's own.
+  const meta = reporterIngestHealth({ ...metadata });
 
   // Sanitize scm.remoteUrl
   const scm = meta.scm as Record<string, unknown> | null | undefined;
@@ -304,6 +306,16 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/** How many of `steps` the step cap leaves out: all but `limit - 1` once the marker step takes a slot. */
+function droppedStepCount(length: number, limit: number): number {
+  return length <= limit ? 0 : length - Math.max(0, limit - 1);
+}
+
+/** How many steps {@link capSteps} leaves out of a stored steps array. */
+export function countDroppedSteps(value: unknown, limits: IngestLimits): number {
+  return Array.isArray(value) ? droppedStepCount(value.length, limits.steps) : 0;
+}
+
 /**
  * The steps kept under the count cap, in their original order: every step that
  * failed or carries an error first (the failing step and the chain around it),
@@ -321,7 +333,7 @@ function keepSteps(steps: unknown[], limit: number): unknown[] {
   });
   for (let i = 0; i < steps.length && kept.size < room; i++) kept.add(i);
 
-  const dropped = steps.length - kept.size;
+  const dropped = droppedStepCount(steps.length, limit);
   const out: unknown[] = [];
   let marked = false;
   steps.forEach((step, i) => {
@@ -370,6 +382,11 @@ export function capSteps(value: unknown, limits: IngestLimits): unknown {
     }
     return out;
   });
+}
+
+/** How many entries {@link capConsoleLogs} leaves out of a console log. */
+export function countDroppedConsoleEntries(logs: unknown, limits: IngestLimits): number {
+  return Array.isArray(logs) ? Math.max(0, logs.length - limits.consoleEntries) : 0;
 }
 
 /**

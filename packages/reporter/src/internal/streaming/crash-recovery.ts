@@ -63,6 +63,10 @@ export class CrashRecovery {
     // Strip instanceId so /submit doesn't cancel the current run (which shares
     // the same instanceId for the same project + hostname combination).
     delete data.instanceId;
+    // The dashboard shows the run was delivered late, from this saved copy.
+    const metadata =
+      data.metadata && typeof data.metadata === 'object' ? (data.metadata as Record<string, unknown>) : {};
+    data.metadata = { ...metadata, ingestHealth: { submitFallback: { path: 'recovery' } } };
 
     try {
       await httpClient.postJSON('/api/test-runs/submit', data, auth);
