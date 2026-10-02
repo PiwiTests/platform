@@ -119,7 +119,11 @@ function buildResearchProjection(ctx: { sections: Array<{ id: string; markdown: 
   return text;
 }
 
-/** Column values that reset a diagnosis row to the 'running' state (shared by insert + update). */
+/**
+ * Column values that reset a diagnosis row to the 'running' state (shared by
+ * insert + update). A new version starts unrated, and its creation time is when
+ * it started.
+ */
 function runningDiagnosisFields(config: AiConfig) {
   return {
     status: 'running' as const,
@@ -134,6 +138,9 @@ function runningDiagnosisFields(config: AiConfig) {
     inputTokens: null,
     outputTokens: null,
     durationMs: null,
+    feedback: null,
+    feedbackNote: null,
+    createdAt: new Date(),
     updatedAt: new Date(),
   };
 }
@@ -251,7 +258,6 @@ async function claimRunningRow(db: DbClient, cluster: FailureCluster, config: Ai
       // colliding across executions that share one cluster.
       clusterId: isExecutionScope ? null : cluster.id,
       scope: isExecutionScope ? 'execution' : 'cluster',
-      createdAt: new Date(),
       ...(isExecutionScope ? { testRunsCaseId: opts.testRunsCaseId! } : {}),
       ...runningFields,
     });

@@ -109,6 +109,11 @@ Every re-diagnose keeps the previous result; a nightly sweep keeps the newest 20
 (`PIWI_RETENTION_DIAGNOSIS_VERSIONS`, `0` keeps all). **History** in the panel header lists them
 newest first, with the model, category, confidence and token cost, and shows what changed since each one.
 
+A re-diagnose sends the previous assessment to the model: its category, confidence, summary and root cause, the
+cluster's triage note, and, when you rated it unhelpful, your note and an instruction not to repeat it without new
+evidence. A rating belongs to the version it rated: the new diagnosis starts unrated, and the history keeps the old
+one's thumbs.
+
 A diagnosis is flagged **may be stale** only when the evidence changed since it ran **and** the cluster is still
 failing; the banner says whether new occurrences or new evidence caused it.
 

@@ -54,7 +54,7 @@ export interface FixedBeforeMatch {
   triageNote: string | null;
   /** Effective owner of the earlier cluster's tests (`piwi:owner` annotation). */
   owner: string | null;
-  /** One-line summary of the earlier cluster's diagnosis, when it had one. */
+  /** One-line summary of the earlier cluster's diagnosis, when it had one not rated unhelpful. */
   diagnosisTitle: string | null;
   /** Whether that diagnosis was marked helpful/unhelpful. */
   diagnosisFeedback: 'up' | 'down' | null;

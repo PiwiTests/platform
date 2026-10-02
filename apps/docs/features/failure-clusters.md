@@ -100,7 +100,8 @@ The cluster page states where a cluster stands in **one sentence with one verb**
 tracker say an open cluster is done, the line offers the **one action** that reconciles them, *Mark resolved*; a
 snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
 own. Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
-the cluster for a day, a week or until it recurs.
+the cluster for a day, a week or until it recurs. Changing the status, from the inbox, a list, bulk triage or an
+agent, keeps the triage note and the lines Piwi added to it.
 
 ### Occurrences over time
 
@@ -119,6 +120,12 @@ long the cluster was open. Three verdicts, because they are not the same claim:
 
 **Every affected test must pass**: a test that did not run counts against the fix. A filtered run can close a cluster
 if it covered all of it, so `--grep` over exactly the affected tests is enough.
+
+**The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
+proves nothing was fixed: Piwi records it as flake evidence and the state line says *passed again at the same commit,
+which is flake evidence, not a fix*. **The branch must match**: only a run on the branch the cluster last failed on, or
+on the default branch, records a fix, so a green pull-request or heal branch leaves a cluster that fails on `main`
+open.
 
 The verdict moves the status only on strong evidence: *Diagnosis verified* sets an **open** cluster **resolved**, and
 *Regressed* sets a **resolved** one back to **open**, each adding a line to the triage note. *Stopped failing* alone

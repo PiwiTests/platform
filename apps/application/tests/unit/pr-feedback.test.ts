@@ -302,6 +302,33 @@ describe('buildCommitStatus', () => {
     expect(status.description).toBe('118/120 passed, 1 new, 3 flaky');
   });
 
+  test('stays green when only quarantined tests failed, and says how many', () => {
+    const status = buildCommitStatus(
+      summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2 }),
+      'piwi/tests',
+    );
+    expect(status.state).toBe('success');
+    expect(status.description).toBe('118/120 passed, 2 quarantined');
+  });
+
+  test('is a failure when a test outside quarantine failed too', () => {
+    const status = buildCommitStatus(
+      summary({ failedTests: 3, passedTests: 117, quarantinedFailures: 2 }),
+      'piwi/tests',
+    );
+    expect(status.state).toBe('failure');
+    expect(status.description).toBe('117/120 passed, 2 quarantined');
+  });
+
+  test('the strict project setting turns quarantined failures red', () => {
+    const status = buildCommitStatus(
+      summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2, quarantineFailsStatus: true }),
+      'piwi/tests',
+    );
+    expect(status.state).toBe('failure');
+    expect(status.description).toBe('118/120 passed, 2 quarantined');
+  });
+
   test('caps the description at what GitHub accepts', () => {
     const status = buildCommitStatus(summary({ projectName: 'x'.repeat(500) }), 'piwi/tests');
     expect(status.description.length).toBeLessThanOrEqual(140);

@@ -5,7 +5,9 @@
  * "Piwi opened a PR" chips stop showing once the PR is settled.
  *
  * Best-effort per row: a project with no SCM token, an unsupported host, a
- * failed lookup or a PR the SCM still reports open leaves the row as it is.
+ * failed lookup or a PR the SCM still reports open leaves the row opened. Every
+ * row looked at has its `updatedAt` moved to the check time, so each pass takes
+ * the least recently checked rows and a long-open PR never holds the batch.
  */
 import { and, asc, eq } from 'drizzle-orm';
 import { healActions } from '../../database/schema';
@@ -24,8 +26,8 @@ export interface PrStateRefresh {
 }
 
 /**
- * Ask the SCM about the oldest-updated `opened` actions (all projects, or one)
- * and record the ones whose PR has been merged or closed.
+ * Ask the SCM about the least recently checked `opened` actions (all projects,
+ * or one) and record the ones whose PR has been merged or closed.
  */
 export async function refreshOpenHealActions(
   db: DbClient,
@@ -47,6 +49,11 @@ export async function refreshOpenHealActions(
 
   const tokens = new Map<number, string | null>();
   for (const row of rows) {
+    await db
+      .update(healActions)
+      .set({ updatedAt: new Date() })
+      .where(and(eq(healActions.id, row.id), eq(healActions.status, 'opened')));
+
     const prNumber = (row.result as HealActionResult | null)?.prNumber;
     if (!prNumber) continue;
     try {

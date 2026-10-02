@@ -201,6 +201,7 @@ export async function getFailureCluster(
       fixVerification: cluster.fixVerification ?? null,
       fixCommit: cluster.fixCommit ?? null,
       fixLandedRunId: cluster.fixLandedRunId ?? null,
+      flakeEvidenceRunId: cluster.flakeEvidenceRunId ?? null,
       lastSeenRunId: cluster.lastSeenRunId,
       lastSeenAt: lastRun?.startTime ?? null,
       updatedAt: cluster.updatedAt ?? null,
@@ -318,6 +319,10 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
   return { diagnosis: diag ?? null };
 }
 
+/**
+ * Set a cluster's triage status. The triage note is kept unless one is given:
+ * a string replaces it (empty clears it), `null` clears it.
+ */
 export async function patchClusterStatus(db: DrizzleDB, clusterId: number, status: string, triageNote?: string | null) {
   if (!status || !VALID_STATUSES.includes(status)) {
     return null;
@@ -329,10 +334,10 @@ export async function patchClusterStatus(db: DrizzleDB, clusterId: number, statu
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
 
-  const note = triageNote ?? null;
+  const note = triageNote === undefined ? {} : { triageNote: triageNote?.trim() ? triageNote : null };
   await db
     .update(failureClusters)
-    .set({ status, triageNote: note, updatedAt: new Date() })
+    .set({ status, ...note, updatedAt: new Date() })
     .where(eq(failureClusters.id, clusterId));
 
   const [updated] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
@@ -432,7 +437,8 @@ export type BulkTriage =
 /**
  * Apply one triage action to many clusters at once, sharing the validation the
  * single-cluster endpoints use. The caller has already narrowed `ids` to the
- * clusters the user may write. Returns null on an invalid status.
+ * clusters the user may write. A status change keeps each cluster's triage
+ * note. Returns null on an invalid status.
  */
 export async function bulkTriageClusters(
   db: DrizzleDB,
@@ -445,7 +451,7 @@ export async function bulkTriageClusters(
   let set: Record<string, unknown>;
   if (patch.action === 'status') {
     if (!VALID_STATUSES.includes(patch.status)) return null;
-    set = { status: patch.status, triageNote: null, updatedAt: new Date() };
+    set = { status: patch.status, updatedAt: new Date() };
   } else if (patch.action === 'assign') {
     const value = typeof patch.assignee === 'string' && patch.assignee.trim() ? patch.assignee.trim() : null;
     set = { assignee: value, updatedAt: new Date() };

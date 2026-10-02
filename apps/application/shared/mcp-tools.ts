@@ -816,7 +816,10 @@ export const MCP_TOOL_DEFS = [
       properties: {
         clusterId: { type: 'number', description: 'Cluster ID' },
         status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'New triage status' },
-        triageNote: { type: 'string', description: 'Optional note explaining the status change' },
+        triageNote: {
+          type: 'string',
+          description: 'Optional note replacing the triage note; omitted keeps the current one',
+        },
       },
       required: ['clusterId', 'status'],
     },

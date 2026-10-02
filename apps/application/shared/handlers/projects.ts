@@ -417,6 +417,8 @@ export async function updateProject(
     openApiUrl?: string | null;
     serverProbes?: unknown;
     ciRerun?: unknown;
+    /** Whether a quarantined failure turns the run's commit status red. */
+    quarantineFailsStatus?: boolean;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -437,6 +439,7 @@ export async function updateProject(
     openApiUrl,
     serverProbes,
     ciRerun,
+    quarantineFailsStatus,
     generatedSpecs,
     targets,
     tagIds: dataTagIds,
@@ -457,6 +460,7 @@ export async function updateProject(
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
         ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+        quarantineFailsStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         updatedAt: new Date(),

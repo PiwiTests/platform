@@ -19,7 +19,9 @@ Two things get posted when a run finishes:
 - **A summary comment** on the branch's open pull request: one comment per pull request, edited on each later run rather than appended, so a busy
   branch doesn't collect a comment per push.
 - **A commit status**: passed or failed against the run's commit, pull request or not, so a pull request shows the result in its checks
-  list. Required for a branch-protection rule.
+  list. Required for a branch-protection rule. A run whose only failures are [quarantined](./flaky-tests#quarantine-with-a-way-out)
+  tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
+  the commit status** under the project's **Settings → Source control** to fail it on any failure.
 
 What the comment says, in this order:
 

@@ -28,7 +28,9 @@ strongest thing the dashboard does, so the posture is conservative by design.
   page is skipped unless you confirmed the pick.
 - Before committing, Piwi re-reads each file at the branch head and only writes lines it can still match exactly. A
   line that has drifted is dropped, not guessed.
-- One PR per run, batching every qualifying edit. A duplicate run never opens a second PR.
+- One PR per run, batching every qualifying edit. A duplicate run never opens a second PR for the same edits while
+  their PR is open, however long it stays open; an attempt that failed or was skipped is retried by the next run that
+  qualifies.
 
 ## Requirements
 
