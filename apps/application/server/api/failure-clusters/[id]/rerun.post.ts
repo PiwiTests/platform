@@ -1,9 +1,5 @@
-import { eq } from 'drizzle-orm';
-import { failureClusters } from '../../../database/schema';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
-import { ciRerunAvailability, dispatchClusterRerun } from '../../../utils/ci-rerun';
-import type { ClusterRerunDispatch } from '#shared/ci-rerun';
-import type { ScmProviderName } from '#shared/scm-urls';
+import { rerunClusterInCi } from '../../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -16,46 +12,15 @@ defineRouteMeta({
   },
 });
 
+const STATUS_BY_ERROR = { 'not-found': 404, unavailable: 400, 'dispatch-failed': 502 } as const;
+
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db, user } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const [cluster] = await db
-    .select({
-      id: failureClusters.id,
-      projectId: failureClusters.projectId,
-      lastSeenRunId: failureClusters.lastSeenRunId,
-    })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, id));
-  if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  // Re-check availability here so the API is safe on its own — the button's
-  // disabled state is a convenience, not the boundary.
-  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId);
-  if (!availability.available) {
-    throw apiError({ statusCode: 400, message: availability.reason ?? 'CI re-run is not available for this cluster' });
-  }
-
-  let dispatch: { url: string; args: string; provider: ScmProviderName };
-  try {
-    dispatch = await dispatchClusterRerun(db, cluster);
-  } catch (e) {
-    throw apiError({ statusCode: 502, message: e instanceof Error ? e.message : 'CI re-run dispatch failed' });
-  }
-
-  const record: ClusterRerunDispatch = {
-    provider: dispatch.provider,
-    url: dispatch.url,
-    args: dispatch.args,
-    at: Date.now(),
-    byName: user.name || user.username || null,
-    byUserId: user.id,
-  };
-  await db
-    .update(failureClusters)
-    .set({ lastRerunDispatch: record, updatedAt: new Date() })
-    .where(eq(failureClusters.id, cluster.id));
-
-  return { ok: true, dispatch: record };
+  // Availability is re-checked on dispatch so the API is safe on its own — the
+  // button's disabled state is a convenience, not the boundary.
+  const outcome = await rerunClusterInCi(db, id, { id: user.id, name: user.name || user.username || null });
+  if (!outcome.ok) throw apiError({ statusCode: STATUS_BY_ERROR[outcome.error], message: outcome.message });
+  return { ok: true, dispatch: outcome.dispatch };
 });

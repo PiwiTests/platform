@@ -1,8 +1,7 @@
-import { z } from 'zod';
 import { Role } from '#shared/types';
 import { getDatabase } from '../../../../../database';
 import { requireProjectAccess, requireRouteId } from '../../../../../utils/project-access';
-import { triageGap } from '#shared/handlers/scenario-gaps';
+import { gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
 
 defineRouteMeta({
   openAPI: {
@@ -18,21 +17,13 @@ defineRouteMeta({
   },
 });
 
-const triageSchema = z.object({
-  verb: z.enum(['accept', 'snooze', 'dismiss', 'covered-by']),
-  snooze: z.enum(['1-day', '1-week', 'until-node-changes']).optional(),
-  reason: z.enum(['not-worth-testing', 'covered-elsewhere', 'wrong']).optional(),
-  coveringTestCaseId: z.number().int().optional().nullable(),
-  assignedTo: z.string().optional().nullable(),
-});
-
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
   const gapId = requireRouteId(event, 'gapId', 'gap ID');
   const user = await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
   const db = await getDatabase();
 
-  const validation = triageSchema.safeParse(await readBody(event));
+  const validation = gapTriageSchema.safeParse(await readBody(event));
   if (!validation.success) {
     throw apiError({ statusCode: 400, message: 'Invalid triage', data: validation.error.issues });
   }
