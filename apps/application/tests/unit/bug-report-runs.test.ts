@@ -69,6 +69,41 @@ describe('a test that runs in several browser projects', () => {
   });
 });
 
+describe('which runs move a report', () => {
+  const closingRun = async (id: number, values: Partial<typeof schema.testRuns.$inferInsert>) => {
+    await db
+      .insert(schema.testRuns)
+      .values({ id, projectId: 1, status: 'passed', startTime: new Date(id * 1000_000), ...values });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: id,
+      testCaseId: 1,
+      testMeta: { bug: '1' },
+      status: 'passed',
+      browserName: 'chromium',
+    });
+    return applyBugReportLifecycle(db as never, id);
+  };
+
+  test('a feature-branch run moves nothing', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(10, { branch: 'feature/coupon' })).toEqual([]);
+    const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 1));
+    expect(report!.status).toBe('test-committed');
+  });
+
+  test('a local run of the bug spec alone moves nothing, a CI run of some tests does', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(10, { branch: 'main', isFullRun: 0 })).toEqual([]);
+    const ci = await closingRun(11, { branch: 'main', isFullRun: 0, metadata: { ci: { provider: 'github' } } });
+    expect(ci.map((t) => [t.id, t.to])).toEqual([[1, 'closed']]);
+  });
+
+  test('a full run of the default branch moves the report', async () => {
+    const moved = await closingRun(10, { branch: 'main' });
+    expect(moved.map((t) => [t.id, t.from, t.to])).toEqual([[1, 'test-committed', 'closed']]);
+  });
+});
+
 describe('the bug.looks_fixed notification', () => {
   test('names only tests that did not already look fixed on the previous run of the branch', async () => {
     await db.insert(schema.testRunsCases).values([
