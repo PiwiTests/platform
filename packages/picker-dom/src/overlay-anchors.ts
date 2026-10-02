@@ -370,10 +370,41 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   refreshFooter();
   g.__piwiAnchorCleanup = cleanup;
   doc.addEventListener('keydown', onKey, true);
-  doc.body.appendChild(pickedOutline);
-  doc.body.appendChild(outline);
-  doc.body.appendChild(outlineLabel);
-  doc.body.appendChild(panel);
+  // A modal dialog the page opened sits in the top layer and makes the rest of
+  // the page inert: the overlay goes at its end, unless the dialog lays out
+  // \`position: fixed\` children in its own box (a transform, a filter,
+  // containment…), and back to the body when it closes.
+  const mountParent = (): any => {
+    let modal: any = null;
+    try {
+      modal = doc.querySelector('dialog:modal');
+    } catch {
+      modal = null;
+    }
+    if (!modal) return doc.body;
+    const s = g.getComputedStyle(modal);
+    const holdsFixed =
+      s.transform !== 'none' ||
+      s.perspective !== 'none' ||
+      s.filter !== 'none' ||
+      /\b(paint|layout|strict|content)\b/.test(s.contain) ||
+      /\b(transform|perspective|filter)\b/.test(s.willChange);
+    return holdsFixed ? doc.body : modal;
+  };
+  const mount = (...nodes: any[]) => {
+    const parent = mountParent();
+    for (const node of nodes) parent.appendChild(node);
+    if (parent !== doc.body) {
+      parent.addEventListener(
+        'close',
+        () => {
+          for (const node of nodes) if (node.parentNode === parent) doc.body.appendChild(node);
+        },
+        { once: true },
+      );
+    }
+  };
+  mount(pickedOutline, outline, outlineLabel, panel);
 }
 
 /**

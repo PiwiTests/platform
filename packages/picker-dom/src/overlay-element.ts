@@ -123,9 +123,41 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     'max-width:min(620px,92vw);background:#0b1120;color:#f9fafb;border:1px solid #7c3aed;' +
     `border-radius:7px;padding:4px 8px;font:12.5px/1.45 ${MONO};white-space:nowrap;` +
     'overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 18px rgba(0,0,0,.5);';
-  doc.body.appendChild(highlight);
-  doc.body.appendChild(label);
-  doc.body.appendChild(banner);
+  // A modal dialog the page opened sits in the top layer and makes the rest of
+  // the page inert: the overlay goes at its end, unless the dialog lays out
+  // \`position: fixed\` children in its own box (a transform, a filter,
+  // containment…), and back to the body when it closes.
+  const mountParent = (): any => {
+    let modal: any = null;
+    try {
+      modal = doc.querySelector('dialog:modal');
+    } catch {
+      modal = null;
+    }
+    if (!modal) return doc.body;
+    const s = g.getComputedStyle(modal);
+    const holdsFixed =
+      s.transform !== 'none' ||
+      s.perspective !== 'none' ||
+      s.filter !== 'none' ||
+      /\b(paint|layout|strict|content)\b/.test(s.contain) ||
+      /\b(transform|perspective|filter)\b/.test(s.willChange);
+    return holdsFixed ? doc.body : modal;
+  };
+  const mount = (...nodes: any[]) => {
+    const parent = mountParent();
+    for (const node of nodes) parent.appendChild(node);
+    if (parent !== doc.body) {
+      parent.addEventListener(
+        'close',
+        () => {
+          for (const node of nodes) if (node.parentNode === parent) doc.body.appendChild(node);
+        },
+        { once: true },
+      );
+    }
+  };
+  mount(highlight, label, banner);
 
   // Short descriptor of an element for the banner breadcrumb.
   const escJs = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");

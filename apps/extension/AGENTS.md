@@ -530,6 +530,14 @@ it. Keep new features on this split rather than mixing pure logic into the entry
 it's what makes the logic half plain-unit-testable (or real-bundle-testable, see below)
 instead of needing a live browser for everything.
 
+**Every surface on the page gets its shadow root from `attachPanelShadow`** (`src/content/panel-root.ts`). It keeps
+key and clipboard events inside, makes `[hidden]` win over the surface's own `display`, and keeps the surface usable
+above a modal dialog the page opened: the dialog sits in the top layer and makes the rest of the page inert, so while
+one is open the surface lives at its end, and goes back to the document's root element when it closes or leaves the
+page. A popover surface (the Tested elements overlay) and a dialog that lays out `position: fixed` children in its own
+box (a `transform`, a `filter`, containment) are left alone. `picker-dom`'s overlay and anchors step mount inside an
+open modal dialog the same way. `modal-dialog.spec.ts` covers it.
+
 ## Rules
 
 - **No network call from a content script, ever.** Picking/recording talk to no server.
