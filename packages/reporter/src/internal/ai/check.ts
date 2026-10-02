@@ -2,8 +2,9 @@
  * Read-only hygiene scan over a committed entry tree, gating CI on the health of
  * the artifacts. It reports invalid files, non-canonical bytes (a file that would
  * change on a clean re-serialize), orphaned entries (their template literal is
- * gone from the spec source), and duplicate-template nudges. It never writes —
- * `piwi ai prune` does the deleting.
+ * gone from the spec source), and duplicate-template nudges. It never writes:
+ * an orphaned entry's file is deleted by hand, and a non-canonical one is
+ * rewritten by `piwi ai resolve --update-ai`.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -87,7 +88,7 @@ export function checkAiTree(root: string, opts: { dir?: string } = {}): CheckFin
           severity: 'error',
           kind: 'non-canonical',
           file: rel(found.file),
-          message: 'file is not in canonical form — run `piwi ai prune --apply` or re-resolve to rewrite it',
+          message: 'file is not in canonical form — re-author it with `piwi ai resolve --update-ai`',
         });
       }
 
