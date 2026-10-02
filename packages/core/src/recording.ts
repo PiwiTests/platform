@@ -257,10 +257,12 @@ function isRecordedKey(key: string | null | undefined): key is string {
  *  - `change` on a checkbox/radio becomes `check`/`uncheck` from the
  *    resulting `checked` state, not a raw `click`;
  *  - `change` on a `<select>` becomes `selectOption`;
- *  - `Enter` on a text field becomes `press('Enter')`, and the browser's own
- *    synthetic click on the same element right after it is dropped rather than
- *    recorded a second time; `Escape`, the arrow keys (`RECORDED_KEYS`) and
- *    the page's shortcuts (`isRecordedKey`) become presses too;
+ *  - `Enter` becomes `press('Enter')`, and a click on the same element right
+ *    after it (the activation Enter gives a focused button or link) is dropped
+ *    rather than recorded a second time. The click the browser sends to a
+ *    form's submit button for an Enter in one of its fields never arrives
+ *    here: the recorder leaves it out. `Escape`, the arrow keys (`RECORDED_KEYS`)
+ *    and the page's shortcuts (`isRecordedKey`) become presses too;
  *  - a plain `click` becomes a `click` step, and a `dblclick` replaces the
  *    two clicks on the same element the browser sent before it;
  *  - `files` (a file field's choice, names only) becomes `setInputFiles`, and

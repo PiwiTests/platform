@@ -14,6 +14,7 @@ import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { classifyInputKind, isPasswordInput } from './record-capture.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
+import { parentElementOrShadowHost } from './engine-aria.js';
 import { HoverTracker, cssHoverSubjects, outermostFirst } from './hover-reveal.js';
 import { documentStyleRules } from './hover-rules.js';
 import {
@@ -107,14 +108,16 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
  * ⌘), and a character pressed outside a field, a page's own shortcut.
  *
  * A character typed with AltGr (which also sets Ctrl and Alt on Windows) or
- * with Option on a Mac (`©`) is typing, not a shortcut. In a password field
- * only an unmodified key of `RECORDED_KEYS` is recorded, so no key a password
- * holds is ever written down.
+ * with Option on a Mac (`©`) is typing, not a shortcut. In a password field,
+ * and when the focus is inside a closed shadow root (`hiddenFocus`), which may
+ * hold one, only an unmodified key of `RECORDED_KEYS` is recorded, so no key
+ * a password holds is ever written down.
  */
-function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
+function recordedKey(e: KeyboardEvent, focused: Element | null, hiddenFocus: boolean): string | null {
   if (MODIFIER_KEYS.has(e.key)) return null;
   if (e.getModifierState?.('AltGraph')) return null;
-  const inField = !!focused?.closest(TEXT_FIELDS);
+  const secret = hiddenFocus || !!focused?.closest('input[type="password" i]');
+  const inField = secret || !!focused?.closest(TEXT_FIELDS);
   const typedWithOption =
     IS_MAC && e.altKey && !e.metaKey && !e.ctrlKey && [...e.key].length === 1 && e.key.trim() !== '';
   // A letter or digit by its key, whatever Alt or a layout made of it.
@@ -131,7 +134,7 @@ function recordedKey(e: KeyboardEvent, focused: Element | null): string | null {
         !IS_MAC && e.metaKey && 'Meta',
         e.altKey && 'Alt',
       ].filter((m): m is string => !!m);
-  if (modifiers.length > 0 && focused?.closest('input[type="password" i]')) return null;
+  if (modifiers.length > 0 && secret) return null;
   if (modifiers.length === 0) {
     if (e.shiftKey && [...e.key].length > 1) return null;
     if (RECORDED_KEYS.has(e.key)) {
@@ -213,8 +216,12 @@ function fieldTarget(el: Element): RecordedTarget {
   return derived;
 }
 
+/** The control `el` is part of: itself or its nearest actionable ancestor, out through the hosts of the shadow roots it is in. */
 function nearestActionable(el: Element): Element {
-  return el.closest(ACTIONABLE_SELECTOR) ?? el;
+  for (let node: Element | undefined = el; node; node = parentElementOrShadowHost(node)) {
+    if (node.matches(ACTIONABLE_SELECTOR)) return node;
+  }
+  return el;
 }
 
 /** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
@@ -283,8 +290,61 @@ function clickTarget(raw: Element, at: number, pointer: boolean): Omit<Press, 'a
   return { el, target: deriveRecordedTarget(el), hovers: pointer ? hoverTargets(el) : [] };
 }
 
+/**
+ * Enter recorded in a form's field. The browser answers it with a click on the
+ * form's submit button, no pointer behind it (`detail` 0), which the press
+ * already stands for. The next key or press ends it, so the button's own
+ * activation from the keyboard stays a step. The click comes within the same
+ * few tasks as the key; the allowance is for a busy page, not for human timing.
+ */
+let enterInForm: { form: HTMLFormElement; at: number } | null = null;
+const ENTER_SUBMIT_WINDOW_MS = 500;
+
+/** Whether `el` submits `form` when clicked. */
+function submitsForm(el: Element, form: HTMLFormElement): boolean {
+  if (el instanceof HTMLButtonElement) return el.type === 'submit' && el.form === form;
+  return el instanceof HTMLInputElement && (el.type === 'submit' || el.type === 'image') && el.form === form;
+}
+
+/** Whether a click is the one the browser sends to a form's submit button for the Enter just recorded in its field. */
+function submitFromEnter(e: MouseEvent, el: Element): boolean {
+  const enter = enterInForm;
+  if (!enter || e.detail !== 0 || performance.now() - enter.at > ENTER_SUBMIT_WINDOW_MS) return false;
+  if (!submitsForm(el, enter.form)) return false;
+  enterInForm = null;
+  return true;
+}
+
 function withinOwnUi(e: Event): boolean {
   return e.composedPath().some((n) => n instanceof HTMLElement && OWN_HOST_IDS.has(n.id));
+}
+
+/**
+ * The element an event began at. To a listener on the document, `target` is
+ * the host of the shadow root the event came from; the composed path goes on
+ * inside every open shadow root, and ends at the host of a closed one.
+ */
+function deepTarget(e: Event): Element | null {
+  const first = e.composedPath()[0];
+  return first instanceof Element ? first : null;
+}
+
+/**
+ * Whether the focus is inside a closed shadow root `el` hosts, as far as the
+ * browser shows one to an extension (`chrome.dom` in Chrome and Edge,
+ * `openOrClosedShadowRoot` in Firefox). An open one is never hidden: the
+ * composed path goes inside it.
+ */
+function focusInClosedShadowRoot(el: Element): boolean {
+  if (el.shadowRoot) return false;
+  try {
+    const root =
+      chrome.dom?.openOrClosedShadowRoot?.(el as HTMLElement) ??
+      (el as Element & { openOrClosedShadowRoot?: ShadowRoot | null }).openOrClosedShadowRoot;
+    return root?.activeElement != null;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether capture is paused in this document: a bug report's pick or dialog is on screen. */
@@ -1002,12 +1062,33 @@ function attachListeners(): void {
     if (hoverTracker === tracker) hoverTracker = null;
   });
 
+  // `change` does not leave a shadow root: each open one a press or the focus
+  // goes into gets a listener of its own.
+  const watchedRoots = new WeakSet<ShadowRoot>();
+  const watchShadowRoots = (e: Event): void => {
+    for (const node of e.composedPath()) {
+      if (!(node instanceof ShadowRoot) || watchedRoots.has(node)) continue;
+      watchedRoots.add(node);
+      node.addEventListener('change', onChange, opts);
+    }
+  };
+
+  document.addEventListener(
+    'focusin',
+    (e) => {
+      if (e.isTrusted && !withinOwnUi(e)) watchShadowRoots(e);
+    },
+    opts,
+  );
+
   document.addEventListener(
     'pointerdown',
     (e) => {
+      if (e.isTrusted) enterInForm = null;
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const raw = e.composedPath()[0];
-      if (!(raw instanceof Element)) {
+      watchShadowRoots(e);
+      const raw = deepTarget(e);
+      if (!raw) {
         lastPress = null;
         return;
       }
@@ -1035,8 +1116,8 @@ function attachListeners(): void {
       // A click the page's own script sends (`el.click()` when Enter picks an
       // option) follows from an action already recorded.
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const raw = e.target;
-      if (!(raw instanceof Element)) return;
+      const raw = deepTarget(e);
+      if (!raw || submitFromEnter(e, raw)) return;
       const { el, target, hovers } = clickTarget(raw, e.timeStamp, e.detail > 0);
       const kind = classifyInputKind(el.tagName, (el as HTMLInputElement).type ?? null);
       // A checkbox or a radio is recorded by its `change`, which takes the view.
@@ -1054,7 +1135,7 @@ function attachListeners(): void {
       // Only what the person does: a component that mirrors its state into a
       // hidden input (a switch, a custom select) sends its own events there.
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const el = e.target;
+      const el = deepTarget(e);
       if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return;
       // A checkbox or a radio fires `input` too; its `change` records it as a check.
       if (el instanceof HTMLInputElement && UNFILLABLE_INPUT_TYPES.has(el.type)) return;
@@ -1077,35 +1158,34 @@ function attachListeners(): void {
     opts,
   );
 
-  document.addEventListener(
-    'change',
-    (e) => {
-      if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const el = e.target;
-      if (!(el instanceof Element)) return;
-      const typeAttr = el instanceof HTMLInputElement ? el.type : null;
-      const kind = classifyInputKind(el.tagName, typeAttr);
-      if (kind === 'checkbox' || kind === 'radio') {
-        const checked = (el as HTMLInputElement).checked;
-        captureEvent(buildEvent('change', el, { inputType: kind, checked, view: viewForAction(el) }));
-      } else if (kind === 'select') {
-        const value = (el as HTMLSelectElement).value;
-        captureEvent(buildEvent('change', el, { inputType: 'select', value, view: viewForAction(el) }));
-      } else if (el instanceof HTMLInputElement && el.type === 'file') {
-        // The names of the chosen files, one per line: never their content, which stays on this computer.
-        const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
-        captureEvent(buildEvent('files', el, { value: names.join('\n'), view: viewForAction(el) }));
-      }
-    },
-    opts,
-  );
+  function onChange(e: Event): void {
+    // A change the document hears is recorded there, one in a shadow root by that root's listener.
+    if (e.currentTarget !== document && e.composedPath().includes(document)) return;
+    if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+    const el = deepTarget(e);
+    if (!el) return;
+    const typeAttr = el instanceof HTMLInputElement ? el.type : null;
+    const kind = classifyInputKind(el.tagName, typeAttr);
+    if (kind === 'checkbox' || kind === 'radio') {
+      const checked = (el as HTMLInputElement).checked;
+      captureEvent(buildEvent('change', el, { inputType: kind, checked, view: viewForAction(el) }));
+    } else if (kind === 'select') {
+      const value = (el as HTMLSelectElement).value;
+      captureEvent(buildEvent('change', el, { inputType: 'select', value, view: viewForAction(el) }));
+    } else if (el instanceof HTMLInputElement && el.type === 'file') {
+      // The names of the chosen files, one per line: never their content, which stays on this computer.
+      const names = [...(el.files ?? [])].map((file) => file.name.replace(/[\r\n]+/g, ' '));
+      captureEvent(buildEvent('files', el, { value: names.join('\n'), view: viewForAction(el) }));
+    }
+  }
+  document.addEventListener('change', onChange, opts);
 
   document.addEventListener(
     'dblclick',
     (e) => {
       if (!e.isTrusted || capturePaused() || withinOwnUi(e)) return;
-      const raw = e.target;
-      if (!(raw instanceof Element)) return;
+      const raw = deepTarget(e);
+      if (!raw) return;
       const el = nearestActionable(raw);
       captureEvent(buildEvent('dblclick', el, { view: viewForAction(el) }));
     },
@@ -1117,7 +1197,7 @@ function attachListeners(): void {
   document.addEventListener(
     'dragstart',
     (e) => {
-      dragged = e.isTrusted && !capturePaused() && !withinOwnUi(e) && e.target instanceof Element ? e.target : null;
+      dragged = e.isTrusted && !capturePaused() && !withinOwnUi(e) ? deepTarget(e) : null;
     },
     opts,
   );
@@ -1126,8 +1206,9 @@ function attachListeners(): void {
     (e) => {
       const source = dragged;
       dragged = null;
-      if (!source || !e.isTrusted || capturePaused() || withinOwnUi(e) || !(e.target instanceof Element)) return;
-      const dropTarget = deriveRecordedTarget(nearestActionable(e.target));
+      const raw = deepTarget(e);
+      if (!source || !raw || !e.isTrusted || capturePaused() || withinOwnUi(e)) return;
+      const dropTarget = deriveRecordedTarget(nearestActionable(raw));
       captureEvent(buildEvent('drop', source, { dropTarget, view: viewForAction(source) }));
     },
     opts,
@@ -1136,15 +1217,19 @@ function attachListeners(): void {
   document.addEventListener(
     'keydown',
     (e) => {
+      if (e.isTrusted) enterInForm = null;
       if (!e.isTrusted || e.isComposing || capturePaused() || withinOwnUi(e)) return;
-      const focused = e.target instanceof Element ? e.target : null;
-      const key = recordedKey(e, focused);
+      const focused = deepTarget(e);
+      const key = recordedKey(e, focused, !!focused && focusInClosedShadowRoot(focused));
       if (!key) return;
       // Escape and a page's shortcuts go to whatever has focus, as the replay
       // sends them: their target is often the page itself, which no locator names.
       const shortcut = key.includes('+') ? !focused?.closest(TEXT_FIELDS) : [...key].length === 1;
       const onPage = !focused || focused === document.body || focused === document.documentElement;
       const el = key === 'Escape' || shortcut || onPage ? null : focused;
+      if (key === 'Enter' && focused instanceof HTMLInputElement && focused.form) {
+        enterInForm = { form: focused.form, at: performance.now() };
+      }
       captureEvent(buildEvent('keydown', el, { value: key, view: viewForAction(el) }));
     },
     opts,

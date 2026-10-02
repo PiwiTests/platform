@@ -134,7 +134,9 @@ Function catalogs refresh in the background; **Refresh** in Test functions fetch
 
 ## Limits
 
-- **One frame at a time.** The picker and the recorder see the top-level document, not iframes or shadow DOM.
+- **One frame at a time.** The picker and the recorder see the top-level document, not iframes. The picker does not
+  reach inside shadow DOM; the recorder records the fields of a page's open shadow roots, and from a closed one only
+  the keys it records in a password field (Enter, Escape, the arrows).
 - **Recording covers one origin.** On another site, recording stops capturing steps; stop and review, or start again
   there.
 - **No aria-snapshot copier** yet for `toMatchAriaSnapshot()`.

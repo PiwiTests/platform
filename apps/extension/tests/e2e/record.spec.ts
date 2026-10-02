@@ -52,6 +52,50 @@ const LINKS_PAGE = `<!doctype html><html><body>
   </main>
 </body></html>`;
 
+/** A search form whose submissions the page counts, without leaving it. */
+const SEARCH_PAGE = `<!doctype html><html><body data-submits="0">
+  <form onsubmit="event.preventDefault(); document.body.dataset.submits = Number(document.body.dataset.submits) + 1">
+    <input name="q" aria-label="Search" />
+    <button type="submit">Go</button>
+  </form>
+</body></html>`;
+
+/** Fields inside the open shadow roots of custom elements: a password, a text field and a checkbox. */
+const SHADOW_FIELDS_PAGE = `<!doctype html><html><body>
+  <x-pass></x-pass>
+  <x-profile></x-profile>
+  <script>
+    customElements.define('x-pass', class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML = '<label>Password <input type="password" /></label>';
+      }
+    });
+    customElements.define('x-profile', class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' }).innerHTML =
+          '<label>Name <input /></label><label><input type="checkbox" /> Subscribe</label>';
+      }
+    });
+  </script>
+</body></html>`;
+
+/** A password field inside a closed shadow root, which the page's own script can focus. */
+const CLOSED_SHADOW_PAGE = `<!doctype html><html><body>
+  <x-secret></x-secret>
+  <script>
+    customElements.define('x-secret', class extends HTMLElement {
+      constructor() {
+        super();
+        const root = this.attachShadow({ mode: 'closed' });
+        root.innerHTML = '<label>Password <input type="password" /></label>';
+        this.focusField = () => root.querySelector('input').focus();
+      }
+    });
+  </script>
+</body></html>`;
+
 /** A file field, a row that opens on a double click, and a card dragged onto a column. */
 const FILES_PAGE = `<!doctype html><html><body>
   <input type="file" data-testid="attachment" aria-label="Attachment" multiple />
@@ -61,19 +105,20 @@ const FILES_PAGE = `<!doctype html><html><body>
     style="height: 80px; border: 1px dashed">Done</section>
 </body></html>`;
 
+/** The pages by path; any other path is the login page. */
+const PAGES: Record<string, string> = {
+  '/dashboard': DASHBOARD_PAGE,
+  '/bare': BARE_FORM_PAGE,
+  '/links': LINKS_PAGE,
+  '/files': FILES_PAGE,
+  '/search': SEARCH_PAGE,
+  '/shadow': SHADOW_FIELDS_PAGE,
+  '/closed-shadow': CLOSED_SHADOW_PAGE,
+};
+
 async function routePages(context: BrowserContext): Promise<void> {
   await context.route(`${ORIGIN}/**`, async (route) => {
-    const url = new URL(route.request().url());
-    const body =
-      url.pathname === '/dashboard'
-        ? DASHBOARD_PAGE
-        : url.pathname === '/bare'
-          ? BARE_FORM_PAGE
-          : url.pathname === '/links'
-            ? LINKS_PAGE
-            : url.pathname === '/files'
-              ? FILES_PAGE
-              : LOGIN_PAGE;
+    const body = PAGES[new URL(route.request().url()).pathname] ?? LOGIN_PAGE;
     await route.fulfill({ contentType: 'text/html', body });
   });
 }
@@ -183,6 +228,46 @@ test.describe('record-panel.js', () => {
     expect(steps.filter((s) => s.action === 'fill').map((s) => s.value)).toEqual(['alice', 'smith']);
   });
 
+  /** A live recording on `pathname`, the recorder attached. */
+  async function recordingOn(context: BrowserContext, pathname: string): Promise<Page> {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}${pathname}`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    return page;
+  }
+
+  test('Enter in a form’s field submits once: the click it sends to the submit button is no step', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/search');
+    await page.getByLabel('Search').fill('shoes');
+    await page.getByLabel('Search').press('Enter');
+    // A click with the mouse, and Space on the focused button, each submit again.
+    const go = page.getByRole('button', { name: 'Go' });
+    await go.click();
+    await go.focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator('body')).toHaveAttribute('data-submits', '3');
+
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBeGreaterThanOrEqual(5);
+    await page.waitForTimeout(200);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.value, s.target?.accessibleName ?? null])).toEqual([
+      ['goto', `${ORIGIN}/search`, null],
+      ['fill', 'shoes', 'Search'],
+      ['press', 'Enter', 'Search'],
+      ['click', null, 'Go'],
+      ['click', null, 'Go'],
+    ]);
+  });
+
   test('a page’s shortcuts are recorded, and typing, select-all, Tab and a checkbox’s own input are not', async ({
     context,
   }) => {
@@ -284,6 +369,101 @@ test.describe('record-panel.js', () => {
     const fillStep = steps.find((s) => s.action === 'fill');
     expect(fillStep?.redacted).toBe(true);
     expect(fillStep?.value).toBeNull();
+  });
+
+  test('a password field inside an open shadow root is never captured: no key it holds, its fill redacted', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/shadow');
+    await page.getByLabel('Password').click();
+    await page.keyboard.type('hunter2');
+    await page.keyboard.press('Control+Alt+q');
+    await page.keyboard.press('Enter');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'press'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const events = await readStoredEvents(page);
+    expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual(['Enter']);
+    expect(JSON.stringify(events)).not.toContain('hunter2');
+    const steps = normalizeSteps(events);
+    expect(steps.map((s) => [s.action, s.value, s.redacted])).toEqual([
+      ['goto', `${ORIGIN}/shadow`, false],
+      ['click', null, false],
+      ['fill', null, true],
+      ['press', 'Enter', false],
+    ]);
+    // Every step names the field inside the shadow root, as the replay and the spec need.
+    for (const step of steps.slice(1)) {
+      const locator = step.target?.alternatives[0]?.locator ?? '';
+      await expect(playwrightLocator(page, locator), locator).toHaveAttribute('type', 'password');
+    }
+  });
+
+  test('a text field and a checkbox inside an open shadow root are recorded as a fill and a check', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/shadow');
+    await page.getByLabel('Name').click();
+    await page.keyboard.type('alice');
+    await page.getByLabel('Subscribe').check();
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'check'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.value, s.target?.accessibleName ?? null])).toEqual([
+      ['goto', `${ORIGIN}/shadow`, null],
+      ['click', null, 'Name'],
+      ['fill', 'alice', 'Name'],
+      ['check', null, 'Subscribe'],
+    ]);
+    for (const step of steps.slice(1)) {
+      const locator = step.target?.alternatives[0]?.locator ?? '';
+      await expect(playwrightLocator(page, locator), locator).toHaveJSProperty('localName', 'input');
+    }
+  });
+
+  test('a key pressed in a closed shadow root is recorded only as a password field’s would be', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    // `chrome.dom.openOrClosedShadowRoot`, which a content script has: the shadow root of an element, closed ones too.
+    await context.addInitScript(() => {
+      const roots = new WeakMap<Element, ShadowRoot>();
+      const attach = Element.prototype.attachShadow;
+      Element.prototype.attachShadow = function (init: ShadowRootInit) {
+        const root = attach.call(this, init);
+        roots.set(this, root);
+        return root;
+      };
+      (globalThis as any).chrome.dom = { openOrClosedShadowRoot: (el: Element) => roots.get(el) ?? null };
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/closed-shadow`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+
+    await page.evaluate(() =>
+      (document.querySelector('x-secret') as HTMLElement & { focusField(): void }).focusField(),
+    );
+    await page.keyboard.type('hunter2');
+    await page.keyboard.press('Control+Alt+q');
+    await page.keyboard.press('ControlOrMeta+K');
+    await page.keyboard.press('Enter');
+
+    await expect
+      .poll(async () => normalizeSteps(await readStoredEvents(page)).some((s) => s.action === 'press'))
+      .toBe(true);
+    await page.waitForTimeout(200);
+    const events = await readStoredEvents(page);
+    expect(events.filter((e) => e.kind === 'keydown').map((e) => e.value)).toEqual(['Enter']);
+    expect(JSON.stringify(events)).not.toContain('hunter2');
   });
 
   /** A page with a password field and a text field, the recorder attached, `platform` as `navigator.platform`. */
