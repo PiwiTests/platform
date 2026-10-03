@@ -38,6 +38,7 @@ import { recorderBrowser, type RecorderBrowser } from './context-options.js';
 import type { LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
 import { missingImports } from './imports.js';
 import { declaredNamesAt, pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
+import { canonicalPath } from './playwright.js';
 import type { ProjectOptions } from './project-options.js';
 
 /** The files of the editor service's `dist/` a recording needs beside the language server. */
@@ -371,7 +372,7 @@ export class RecordingSessions {
       };
     }
 
-    const cwd = path.dirname(target.configFile);
+    const cwd = path.dirname(canonicalPath(target.configFile));
     const browser = recorderBrowser(project.use, {
       cwd,
       headless: this.env.PIWI_RECORDER_HEADLESS === '1',

@@ -8,12 +8,25 @@ import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
+/**
+ * A path as the file system spells it: the real path, with the case of each name as stored on disk (`C:\\Users\\Me`
+ * for `c:\\users\\me`), so that Node loads each module of a project once, whatever the case the editor gave; the path
+ * as given when it does not exist.
+ */
+export function canonicalPath(file: string): string {
+  try {
+    return fs.realpathSync.native(file);
+  } catch {
+    return file;
+  }
+}
+
 /** The real paths of the `node_modules` folders in `dir` and in each folder above it. */
 function nodeModulesOf(dir: string): string[] {
   const found: string[] = [];
   for (let folder = path.resolve(dir); ; folder = path.dirname(folder)) {
     try {
-      found.push(fs.realpathSync(path.join(folder, 'node_modules')));
+      found.push(fs.realpathSync.native(path.join(folder, 'node_modules')));
     } catch {
       // none in this folder
     }
@@ -21,7 +34,8 @@ function nodeModulesOf(dir: string): string[] {
   }
 }
 
-function resolveFirst(dir: string, ids: string[]): string | null {
+function resolveFirst(from: string, ids: string[]): string | null {
+  const dir = canonicalPath(from);
   const require = createRequire(path.join(dir, 'noop.js'));
   const roots = nodeModulesOf(dir);
   const inProject = (file: string) =>
@@ -31,7 +45,7 @@ function resolveFirst(dir: string, ids: string[]): string | null {
     });
   for (const id of ids) {
     try {
-      const file = require.resolve(id);
+      const file = canonicalPath(require.resolve(id));
       if (inProject(file)) return file;
     } catch {
       // the next candidate

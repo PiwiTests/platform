@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { resolvePlaywrightCli, resolvePlaywrightLibrary } from '../src/recorder/playwright';
+import { canonicalPath, resolvePlaywrightCli, resolvePlaywrightLibrary } from '../src/recorder/playwright';
 
 let dir = '';
 
@@ -58,6 +58,15 @@ describe('the project’s Playwright', () => {
     fs.symlinkSync(path.join(store, 'node_modules'), path.join(linked, 'node_modules'), 'dir');
     expect(resolvePlaywrightLibrary(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'index.js'));
     expect(resolvePlaywrightCli(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'cli.js'));
+  });
+
+  test('the real path of a linked folder, and the path as given when it does not exist', () => {
+    const root = project('canonical', ['@playwright/test'], ['@playwright/test']);
+    const link = path.join(dir, 'canonical-link');
+    fs.symlinkSync(root, link, 'dir');
+    expect(canonicalPath(link)).toBe(root);
+    expect(resolvePlaywrightCli(link)).toBe(path.join(root, 'node_modules', '@playwright', 'test', 'cli.js'));
+    expect(canonicalPath(path.join(dir, 'nowhere'))).toBe(path.join(dir, 'nowhere'));
   });
 
   test('none without Playwright in the project, whatever a global folder holds', () => {

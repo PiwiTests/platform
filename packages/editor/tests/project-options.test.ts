@@ -136,6 +136,14 @@ describe('readProjectOptions', () => {
     expect(readProjectOptions(FIXTURE, reporter)).toBe(readProjectOptions(FIXTURE, reporter));
   });
 
+  test('reads a config reached through a linked folder from its real path, so Playwright loads once', async () => {
+    const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-link-')), 'project');
+    fs.symlinkSync(path.dirname(FIXTURE), link, 'dir');
+    const options = await readProjectOptions(path.join(link, 'playwright.config.ts'), reporter);
+    expect(options.configFile).toBe(fs.realpathSync.native(FIXTURE));
+    expect(options.projects.map((p) => p.name)).toEqual(['desktop', 'mobile']);
+  });
+
   test('reads a config again once it changes', async () => {
     const config = project('changing', "export default { projects: [{ name: 'one' }] };\n");
     expect((await readProjectOptions(config, reporter)).projects.map((p) => p.name)).toEqual(['one']);

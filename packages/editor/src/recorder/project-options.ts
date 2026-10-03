@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolvePlaywrightCli } from './playwright.js';
+import { canonicalPath, resolvePlaywrightCli } from './playwright.js';
 import { USE_LINE } from './use-reporter.js';
 
 export interface ProjectUse {
@@ -79,7 +79,8 @@ function firstLine(output: string): string {
   return /[.!?…]$/.test(short) ? short : `${short}.`;
 }
 
-function run(configFile: string, reporter: string, timeoutMs: number): Promise<ProjectOptions> {
+function run(given: string, reporter: string, timeoutMs: number): Promise<ProjectOptions> {
+  const configFile = canonicalPath(given);
   const cwd = path.dirname(configFile);
   const name = path.basename(configFile);
   const cli = resolvePlaywrightCli(cwd);
