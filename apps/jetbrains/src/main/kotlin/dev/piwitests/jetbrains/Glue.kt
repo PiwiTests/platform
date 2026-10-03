@@ -487,10 +487,11 @@ object Glue {
     val SCRIPT_EXTENSIONS = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts")
 
     /**
-     * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: inside a
-     * test's body or a class's, the steps there (`steps`); anywhere else, a new test (`test`).
+     * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: outside
+     * every test, function and class (`file`), a new test (`test`); anywhere else, the steps there (`steps`), which the
+     * editor service refuses where they cannot go.
      */
-    fun recordInto(context: String?): String = if (context == "test" || context == "class") "steps" else "test"
+    fun recordInto(context: String): String = if (context == "file") "test" else "steps"
 
     /**
      * The recorded block as the file holds it: the lines of `code`, each one that is not blank prefixed with `indent`,
@@ -518,24 +519,53 @@ object Glue {
         return BlockWrite(lineStart, lineEnd, if (lineEnd == text.length) block + "\n" else block, lineStart)
     }
 
+    /** A change of a document's text: the `oldLength` characters at `offset` replaced with `text`. */
+    data class TextChange(val offset: Int, val oldLength: Int, val text: String)
+
+    /**
+     * Where the start of line `line` of `text` (its end, past its last line) is once `changes` were made to it, in
+     * order. A change before it moves it; one that ends on it moves it to that change's end; one that inserts at it, or
+     * replaces text around it, leaves it after the last line break the change wrote, else at the change's start.
+     */
+    fun followLineStart(text: CharSequence, line: Int, changes: List<TextChange>): Int {
+        var offset = text.length
+        var current = 0
+        var start = 0
+        while (current < line.coerceAtLeast(0) && start <= text.length) {
+            val next = text.indexOf('\n', start)
+            if (next < 0) {
+                start = text.length + 1
+                break
+            }
+            start = next + 1
+            current++
+        }
+        if (start <= text.length) offset = start
+        for (change in changes) {
+            val end = change.offset + change.oldLength
+            offset = when {
+                end < offset || (end == offset && change.oldLength > 0) -> offset + change.text.length - change.oldLength
+                change.offset > offset -> offset
+                else -> change.offset + change.text.lastIndexOf('\n') + 1
+            }
+        }
+        return offset
+    }
+
     /** Import lines to insert into a document's text at `offset`. */
     data class ImportInsertion(val offset: Int, val text: String)
 
     /**
      * The import lines of `imports` a document's text lacks, and where they go: after its last top-level `import`
      * statement, else at its top, followed by an empty line. A line is left out when the file holds the same statement,
-     * or when an import statement of the file already binds every name it imports, whatever the module: a name bound
-     * twice does not compile.
+     * whatever its spacing, its quotes and its final semicolon.
      */
     fun importInsertion(text: CharSequence, imports: List<String>): ImportInsertion? {
         val statements = importStatements(text)
-        val bound = statements.flatMap { importedNames(it.text) }.toSet()
         val held = statements.map { importKey(it.text) }.toSet()
-        val lines = imports.map { it.replace("\r\n", "\n").replace('\r', '\n').trim() }
-        val missing = lines.filter { it.isNotEmpty() }.distinct().filter { line ->
-            val names = importedNames(line)
-            importKey(line) !in held && (names.isEmpty() || !bound.containsAll(names))
-        }
+        val missing = imports.map { it.replace("\r\n", "\n").replace('\r', '\n').trim() }
+            .filter { it.isNotEmpty() && importKey(it) !in held }
+            .distinctBy { importKey(it) }
         if (missing.isEmpty()) return null
         val last = statements.lastOrNull()
         if (last != null) return ImportInsertion(last.end, "\n" + missing.joinToString("\n"))
@@ -548,8 +578,6 @@ object Glue {
 
     private val IMPORT_START = Regex("^import(?=[\\s{*'\"])")
     private val IMPORT_COMPLETE = Regex("\\bfrom\\s*['\"]|^import\\s*['\"]|=\\s*require\\s*\\(|;\\s*$")
-    private val IMPORT_CLAUSE = Regex("^import\\s*(?:type\\s+)?([\\s\\S]*?)\\s*\\bfrom\\s*['\"]")
-    private val IDENTIFIER = Regex("[A-Za-z_$][\\w$]*")
 
     /** The top-level `import` statements of a text, in order: those starting a line, followed to their module. */
     private fun importStatements(text: CharSequence): List<ImportStatement> {
@@ -576,25 +604,6 @@ object Glue {
             i = j + 1
         }
         return found
-    }
-
-    /**
-     * The names an `import` statement binds in the file: its default, its namespace (`* as NS`) and each named import
-     * under its local name (`B` for `A as B`, `D` for `type D`). `import 'x'` and `require` bind none.
-     */
-    private fun importedNames(statement: String): Set<String> {
-        val text = statement.trim()
-        val clause = IMPORT_CLAUSE.find(text)?.groupValues?.get(1) ?: return emptySet()
-        val names = mutableSetOf<String>()
-        val braces = Regex("\\{([^}]*)\\}").find(clause)
-        braces?.groupValues?.get(1)?.split(',')?.forEach { part ->
-            val name = part.trim().removePrefix("type ").trim().split(Regex("\\s+as\\s+")).last().trim()
-            if (IDENTIFIER.matches(name)) names += name
-        }
-        val rest = braces?.let { clause.removeRange(it.range) } ?: clause
-        Regex("\\*\\s*as\\s+([A-Za-z_$][\\w$]*)").find(rest)?.let { names += it.groupValues[1] }
-        rest.split(',').map { it.trim() }.firstOrNull { IDENTIFIER.matches(it) }?.let { names += it }
-        return names
     }
 
     /** An `import` statement compared regardless of its spacing, its quotes and its final semicolon. */

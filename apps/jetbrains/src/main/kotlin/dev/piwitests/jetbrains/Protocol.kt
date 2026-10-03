@@ -130,7 +130,7 @@ data class McpServersResult(val servers: List<McpServerDefinition>? = null)
 /**
  * `piwi/renderSteps`: a steps document from Piwi Picker, rendered for the file at `uri`. `line` and `character` are
  * the caret (0-based), whose page expression the steps run on; with `imports` `separate`, the import lines the code
- * needs come in the result's `imports` rather than as comments in its `code`.
+ * needs and the file does not bind come in the result's `imports` rather than as comments in its `code`.
  */
 data class RenderStepsParams(
     val uri: String,
@@ -199,7 +199,8 @@ data class RecordingWarning(val step: Int = 0, val line: Int = 0, val message: S
 /**
  * `piwi/recordingChanged`: what the recorded block holds now (`code`: its lines joined with `\n`, not indented) and
  * the session's `state` (`starting`, `recording`, `paused`, `stopped` or `failed`), with the import lines the code
- * needs, its steps and warnings, and a sentence on what happened with the action it offers.
+ * needs whose names the file does not bind yet, its steps and warnings, and a sentence on what happened with the action
+ * it offers.
  */
 data class RecordingUpdate(
     val sessionId: String? = null,
@@ -219,7 +220,11 @@ data class PageCandidatesParams(val uri: String, val line: Int, val character: I
 /** A page expression the steps written at a position could run on, and why it is offered. */
 data class PageCandidate(val expression: String? = null, val reason: String? = null)
 
-/** `piwi/pageCandidates`: the candidates, best first, the default, and where the position is (`test`, `class`, `file`). */
+/**
+ * `piwi/pageCandidates`: the candidates, best first, the default, and where the position is: `test` (in the body of a
+ * test's or a hook's callback), `function` (in the body of any other function or method), `class` (in a class body,
+ * outside its methods) or `file` (anywhere else).
+ */
 data class PageCandidatesResult(
     val candidates: List<PageCandidate>? = null,
     val default: String? = null,

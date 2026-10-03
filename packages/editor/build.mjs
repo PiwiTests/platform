@@ -1,8 +1,7 @@
 // Bundle the language server into one file both editor clients ship: dist/piwi-language-server.cjs, CommonJS for
 // Node 20 and later. Beside it, the files a recording needs: the launcher the service forks, the reporter that reads
 // a config's resolved options, and the recorder's IDE bundle with its catalogs, which the browser extension's build
-// makes from its own sources (`buildIdeBundle`). `--release` stamps that bundle with the extension's version rather
-// than the build time, as the extension's release build does.
+// makes from its own sources (`buildIdeBundle`), stamped with the extension manifest's version.
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { buildIdeBundle } from '../../apps/extension/scripts/build.mjs';
@@ -29,5 +28,5 @@ for (const [entry, file] of bundles) {
 
 await buildIdeBundle({
   outDir: fileURLToPath(new URL('dist/', import.meta.url)),
-  release: process.argv.includes('--release'),
+  release: true,
 });

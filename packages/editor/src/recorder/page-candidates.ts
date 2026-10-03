@@ -8,7 +8,9 @@
 import { isPageExpression } from '@piwitests/core/codegen';
 import type { PageCandidate, PageCandidatesResult, RecordInto, RecordingPlacement } from '../protocol.js';
 
-interface Token {
+type CursorContext = PageCandidatesResult['context'];
+
+export interface Token {
   kind: 'name' | 'punct' | 'string' | 'template' | 'number' | 'regex';
   /** The name, the punctuator, or a string's content between its quotes. */
   text: string;
@@ -75,7 +77,7 @@ const NAME_START = /[A-Za-z_$#\u0080-￿]/;
 const NAME_PART = /[\w$\u0080-￿]/;
 const LINE_BREAK = /[\n\r\u2028\u2029]/;
 
-function tokenize(text: string): Token[] {
+export function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   // The open `{` of code and `${` of template literals, innermost last: a `}` closes the innermost.
   const braces: string[] = [];
@@ -801,6 +803,38 @@ class FileModel {
     );
   }
 
+  /**
+   * Whether a function is the callback of `test.describe(…)` (any of its members, or a bare `describe(…)`) or of
+   * `test.step(…)`: its body belongs to the code around the call.
+   */
+  private groups(f: FunctionInfo): boolean {
+    const call = this.owner[f.start];
+    if (!call || call.char !== '(') return false;
+    const chain: string[] = [];
+    for (let j = call.open - 1; this.isName(j); j -= 2) {
+      chain.unshift(this.tokens[j]!.text);
+      if (!this.is(j - 1, '.')) break;
+    }
+    return chain[0] === 'describe' || (chain[0] === 'test' && (chain[1] === 'describe' || chain[1] === 'step'));
+  }
+
+  /**
+   * Where an offset is: in the body of a test's or a hook's callback (`test`), of another function or method
+   * (`function`), in a class body between its members (`class`), or elsewhere (`file`). The innermost body decides;
+   * the callbacks of `test.describe(…)` and `test.step(…)` count as the code around them.
+   */
+  contextAt(offset: number): CursorContext {
+    const fn = this.innermost(
+      this.functions
+        .filter((f) => f.body && this.contains(f.body, offset) && !this.groups(f))
+        .map((f) => [f.body!, f]),
+    );
+    const klass = this.classAt(offset);
+    if (klass && (!fn?.body || this.inside(klass.body).from > this.inside(fn.body).from)) return 'class';
+    if (!fn) return 'file';
+    return this.tests.some((t) => t.callback === fn) ? 'test' : 'function';
+  }
+
   /** The innermost bracket around an offset, of any kind. */
   bracketAt(offset: number): Bracket | null {
     return this.innermost([...this.openers.values()].filter((b) => this.contains(b, offset)).map((b) => [b, b]));
@@ -920,8 +954,9 @@ function pageFixtures(model: FileModel, test: TestCall, uses: PageUse[]): Declar
 }
 
 /**
- * The page expressions the lines written at a caret could run on, best first, and where the block goes: in a test's
- * body (hooks included), in a class (a page object), or elsewhere in the file. Offered: the receivers of the page
+ * The page expressions the lines written at a caret could run on, best first, and where the block goes
+ * (`FileModel.contextAt`): in a test's body (hooks included), in another function or method, in a class body between
+ * its members, or elsewhere in the file. Offered: the receivers of the page
  * calls around it, the test's page fixtures, the variables holding a page (`newPage()`, a `popup` or `page` event,
  * `firstWindow()`, a `Page` annotation) and a class's page fields. The default is the receiver of the nearest page
  * call before it; else, in a test, its `page` fixture, the receiver of its next page call, or its first page
@@ -935,7 +970,7 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
   const test = model.testAt(at);
   const found = model.classAt(at);
   const klass = found && (!test || model.inside(found.body).from > model.inside(test.body).from) ? found : null;
-  const context: PageCandidatesResult['context'] = klass ? 'class' : test ? 'test' : 'file';
+  const context = model.contextAt(at);
   const fn = model.functionAt(at);
   const region = klass ? klass.body : test ? test.body : (fn?.body ?? null);
   const line = (token: number) => model.lineOfToken(token) + 1;
@@ -1041,6 +1076,20 @@ function testsByDistance(model: FileModel, at: number): TestCall[] {
 function nearestTest(model: FileModel, at: number): TestCall | undefined {
   const opens = (t: TestCall) => model.tokens[t.body.open]!.start;
   return model.tests.filter((t) => opens(t) < at).pop() ?? model.tests.find((t) => opens(t) >= at);
+}
+
+/**
+ * The names declared where the lines written at a caret go, before them: the parameters and declarations of the
+ * functions and blocks around the caret, out to the top of the file.
+ */
+export function declaredNamesAt(text: string, caretLine: number): Set<string> {
+  const model = new FileModel(text);
+  const at = blockPosition(model, caretLine).offset;
+  return new Set(
+    model.declarations
+      .filter((d) => model.tokens[d.token]!.start <= at && model.contains(d.scope, at))
+      .map((d) => d.name),
+  );
 }
 
 /** The module a file imports its `test` from (`import { test } from './fixtures'`); null when it imports none. */
