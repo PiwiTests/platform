@@ -93,15 +93,28 @@ class PiwiRecordingTest : BasePlatformTestCase() {
 
     private fun redo() = UndoManager.getInstance(project).redo(TextEditorProvider.getInstance().getTextEditor(myFixture.editor))
 
+    fun testAltEnterOffersARecordingAndChangesNothingItself() {
+        myFixture.configureByText("intention.spec.ts", "test('t', async ({ page }) => {\n  <caret>\n});\n")
+        val intention = RecordHereIntention()
+        assertEquals("Piwi: Record here", intention.text)
+        assertFalse(intention.startInWriteAction())
+        assertTrue(com.intellij.codeInsight.intention.IntentionManager.getInstance().availableIntentions.any { it is RecordHereIntention ||
+            (it as? com.intellij.codeInsight.intention.IntentionActionDelegate)?.delegate is RecordHereIntention })
+        myFixture.configureByText("notes.md", "# notes\n<caret>")
+        assertFalse(intention.isAvailable(project, myFixture.editor, myFixture.file))
+    }
+
     private fun typeAt(fragment: String, typed: String) {
         myFixture.editor.caretModel.moveToOffset(text().indexOf(fragment))
         myFixture.type(typed)
     }
 
     fun testRegistersTheRecordingActionsBannerAnnotatorAndColor() {
-        for (id in listOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording")) {
+        for (id in listOf("Piwi.RecordHere", "Piwi.RecordHereGenerate", "Piwi.RecordNewFile", "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
+        val generate = ActionManager.getInstance().getAction("GenerateGroup") as com.intellij.openapi.actionSystem.DefaultActionGroup
+        assertTrue("Alt+Insert offers it", generate.childActionsOrStubs.any { ActionManager.getInstance().getId(it) == "Piwi.RecordHereGenerate" })
         assertTrue(EditorNotificationProvider.EP_NAME.getExtensions(project).any { it is PiwiRecordingNotificationProvider })
         val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
         assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiRecordingAnnotator })

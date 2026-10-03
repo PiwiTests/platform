@@ -38,7 +38,8 @@ the service through the platform's LSP API with the project's Node.js interprete
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those
   hold none, in the Git repository around them. The tool window, the status bar item and the service wait for it, and
   the service's workspace folders are the folders it searched (`createInitializeParams`). **Refresh** searches again.
-- **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu) asks
+- **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu, Alt+Insert's
+  Generate menu, and Alt+Enter through `RecordHereIntention.kt`) asks
   `piwi/pageCandidates` where the caret is: outside every test, function and class a new test, anywhere else the
   steps there, which the service refuses where they cannot go (`Glue.recordInto`); without an answer, nothing starts.
   **Record a New Test File…** (also under **New**) creates the spec first. A dialog asks for the start page and the

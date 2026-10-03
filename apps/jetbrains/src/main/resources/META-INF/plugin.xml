@@ -33,6 +33,11 @@
         <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
         <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestAnnotator"/>
         <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiRecordingAnnotator"/>
+        <intentionAction>
+            <language>JavaScript</language>
+            <className>dev.piwitests.jetbrains.RecordHereIntention</className>
+            <category>Piwi</category>
+        </intentionAction>
         <editorNotificationProvider implementation="dev.piwitests.jetbrains.PiwiRecordingNotificationProvider"/>
         <colorSettingsPage implementation="dev.piwitests.jetbrains.PiwiColorSettingsPage"/>
         <additionalTextAttributes scheme="Default" file="colorSchemes/PiwiDefault.xml"/>
@@ -77,6 +82,7 @@
                     icon="AllIcons.Ide.Macro.Recording_1"
                     description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Record Here"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
                     text="Record a New Test File…" icon="AllIcons.Ide.Macro.Recording_1"
@@ -87,21 +93,29 @@
                     icon="AllIcons.Actions.Suspend"
                     description="Close the recording's browser; the recorded lines stay, one undo away">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Stop Recording"/>
             </action>
             <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause Recording"
                     icon="AllIcons.Actions.Pause"
                     description="Stop writing what is done in the browser until Resume">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Pause Recording"/>
             </action>
             <action id="Piwi.ResumeRecording" class="dev.piwitests.jetbrains.ResumeRecordingAction" text="Resume Recording"
                     icon="AllIcons.Actions.Resume"
                     description="Write what is done in the browser again, over the recorded lines">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Resume Recording"/>
             </action>
             <separator/>
             <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
                     icon="AllIcons.General.Settings"
                     description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
         </group>
+        <action id="Piwi.RecordHereGenerate" class="dev.piwitests.jetbrains.RecordHereGenerateAction" text="Piwi: Record Here…"
+                icon="AllIcons.Ide.Macro.Recording_1"
+                description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
+            <add-to-group group-id="GenerateGroup" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>

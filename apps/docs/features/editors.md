@@ -144,7 +144,7 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
   environment.
 - **[Open in IDE](./ide-integration)**: a path clicked in the dashboard of the instance the project is connected to, or
   in the desktop app, opens at its line.
-- **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, and **File → New → Record a New Test File…**;
-  the controls are in a banner above the editor.
+- **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
+  Record a New Test File…**; the controls are in a banner above the editor.
 
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

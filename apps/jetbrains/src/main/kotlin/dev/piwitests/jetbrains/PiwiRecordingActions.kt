@@ -56,13 +56,16 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
 }
 
 /** Piwi: Record Here — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
-class RecordHereAction : AnAction() {
+open class RecordHereAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    override fun update(e: AnActionEvent) {
-        val project = e.project
-        val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
-        e.appliesWhen(project != null && file != null && e.getData(CommonDataKeys.EDITOR) != null && PiwiRecordFlow.canRecordInto(project, file))
+    override fun update(e: AnActionEvent) = e.appliesWhen(canRecord(e))
+
+    /** Whether a recording can start at the event's caret. */
+    protected fun canRecord(e: AnActionEvent): Boolean {
+        val project = e.project ?: return false
+        val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return false
+        return e.getData(CommonDataKeys.EDITOR) != null && PiwiRecordFlow.canRecordInto(project, file)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -70,6 +73,13 @@ class RecordHereAction : AnAction() {
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
         PiwiRecordFlow.recordHere(project, editor, file)
+    }
+}
+
+/** Piwi: Record Here… in the editor's Generate menu (Alt+Insert), shown only where a recording can start. */
+class RecordHereGenerateAction : RecordHereAction() {
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = canRecord(e)
     }
 }
 
