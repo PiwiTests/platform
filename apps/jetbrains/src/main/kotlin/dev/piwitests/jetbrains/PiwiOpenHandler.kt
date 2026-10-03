@@ -67,11 +67,13 @@ class PiwiOpenHandler : RestService() {
     fun trusts(origin: String?): Boolean = OpenOrigins.isAllowed(origin, OpenOrigins.allowed(knownAddresses()))
 
     /**
-     * The addresses whose pages may open files: for each open project, its instance wherever it is named (the
-     * environment, the workspace `.env`, the settings, what the editor service reads), and the desktop app.
+     * The addresses whose pages may open files: the desktop app, as its discovery file and the editor service name
+     * it, and for each open project its instance wherever it is named (the environment, the workspace `.env`, the
+     * settings, what the editor service reads).
      */
     private fun knownAddresses(): List<String?> = buildList {
         add(System.getenv("PIWI_DASHBOARD_URL"))
+        add(desktopDiscoveryUrl())
         for (project in ProjectManager.getInstance().openProjects) {
             if (project.isDefault || project.isDisposed) continue
             val service = project.service<PiwiProjectService>()
@@ -80,12 +82,18 @@ class PiwiOpenHandler : RestService() {
                 add(context.serverUrl)
                 add(context.instance?.serverUrl)
             }
-            add(service.desktopUrl())
+            add(service.status?.desktopUrl)
             for (dir in service.playwrightConfigDirs()) {
                 val dotEnv = dir.resolve(".env")
                 if (Files.isRegularFile(dotEnv)) add(OpenOrigins.dashboardUrlFromDotEnv(runCatching { Files.readString(dotEnv) }.getOrNull()))
             }
         }
+    }
+
+    /** The desktop app's address in its discovery file ([Glue.desktopConfigPath]), while it runs. */
+    private fun desktopDiscoveryUrl(): String? {
+        val file = Glue.desktopConfigPath(System.getenv(), System.getProperty("user.home")) ?: return null
+        return Glue.parseDesktopDiscovery(runCatching { Files.readString(file) }.getOrNull())?.url
     }
 
     /** Names the first page refused in this IDE session in a notification; later refusals are silent. */
