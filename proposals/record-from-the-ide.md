@@ -8,8 +8,11 @@ the recorder itself can be reused unchanged: a spike ran Piwi Picker's recorder 
 produces it, inside a browser launched by Playwright, and the code was regenerated in Node 2 to 7 ms after each
 captured action.
 
-**Status.** Proposed 2026-10-03. Nothing built. The three spikes in the [appendix](#appendix-the-spikes) are the
-evidence for the feasibility claims; they are not part of the repository.
+**Status.** Proposed 2026-10-03. Delivery PRs 1 to 3 are built: the recorder's IDE bundle, the launcher and the
+recording sessions in the editor service, both clients, and Part 3, items 1 to 4, with Part 8, items 1 to 3. Where the
+build differs from this text, the [docs](../apps/docs/features/editor-recording.md) and the code are right. The three
+spikes in the [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the
+repository.
 
 **Summary.** VS Code users have a recorder: Microsoft's Playwright extension records into a new file or at the cursor,
 through Playwright's own code generator. Users of WebStorm, IntelliJ IDEA and Rider have none: JetBrains' Test
@@ -198,8 +201,9 @@ renderSpec(sessionFromEvents(events, startedAt), {
 });
 ```
 
-Codegen warnings (`brittle-locator`, `redacted-value`, `file-needed`, `no-locator`) are published as diagnostics on
-the lines `stepLines` gives, so both clients show them as they show every Piwi warning, with no new interface.
+Codegen warnings (`brittle-locator`, `redacted-value`, `file-needed`, `no-locator`) travel in each update, with the
+line `stepLines` gives within the block, and each client shows them on those lines: diagnostics in VS Code, an
+annotation in a JetBrains IDE.
 
 ### 1.4 Protocol
 
@@ -620,6 +624,8 @@ attribute or no `baseURL` gets worse code from the IDE than it expects.
 - In the extension, a new tab of the recorded origin joins the recording and its steps are written against `page`
   (Part 3, item 6); found by reading the code, not reproduced.
 - `piwi/renderSteps` writes paths whatever the project's `baseURL` (Part 3, item 4).
+- A password typed in a field whose value a page object call takes was written as `''`, with no warning; found
+  while building PR 3, and fixed there.
 
 ## Appendix: the spikes
 
