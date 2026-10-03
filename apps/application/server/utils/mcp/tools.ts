@@ -108,6 +108,7 @@ import { assertDashboardScope } from '#shared/reports/request';
 import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
+import { resolveInstanceStates } from '#shared/handlers/setup-status';
 import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
 import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/scope';
 import { applyWidgetScope } from '#shared/analytics/dashboards';
@@ -2877,6 +2878,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!isMetricId(metric) || !WIDGET_METRIC_IDS.includes(metric)) {
       throw new Error(`Unknown metric '${String(metric)}'. Use one of: ${WIDGET_METRIC_IDS.join(', ')}`);
     }
+    await assertMetricsOffered(db, [metric]);
     const trend = await runAnalyticsWidget(db, 'metric', toolScope(params, ctx), ctx.scope, {
       metric,
       display: 'line',
@@ -2889,6 +2891,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const raw: unknown[] = Array.isArray(params.metrics) ? params.metrics : [];
     const metrics = raw.filter((m): m is MetricId => isMetricId(m) && WIDGET_METRIC_IDS.includes(m));
     if (metrics.length !== raw.length) throw new Error('metrics must be metric ids from the catalog');
+    await assertMetricsOffered(db, metrics);
     try {
       return await compareMetricPeriods(
         db,
@@ -3014,6 +3017,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 };
 
 /** The analytics scope of a report or metric tool call, from the tool's scope properties. */
+/** Refuse a metric whose capability this instance declined, naming the capability. */
+async function assertMetricsOffered(db: DbClient, metrics: MetricId[]): Promise<void> {
+  const needed = metrics.map((id) => getMetric(id).capability).filter((c) => c !== undefined);
+  if (needed.length === 0) return;
+  const states = await resolveInstanceStates(db);
+  for (const id of metrics) {
+    const capability = getMetric(id).capability;
+    if (capability && states[capability] === 'declined') {
+      throw new Error(`Metric '${id}' needs the ${capability} capability, which this instance declined`);
+    }
+  }
+}
+
 function toolScope(params: Record<string, unknown>, ctx: McpContext) {
   return parseAnalyticsScope(toolScopeQuery(params, ctx));
 }

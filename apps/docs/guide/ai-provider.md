@@ -36,7 +36,7 @@ A saved key is sent only to the provider and base URL it was saved for: pointing
 
 The [Configuration reference](/reference/configuration#ai-diagnosis) lists every AI variable.
 
-When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget is spent where it buys the most. The run's clusters are ordered by their representative failing execution's top [clue](/features/evidence#clues): a cluster whose failure carries **no deterministic clue** (the one the model has to reason about from scratch) goes first, then the ones with only a weak clue, and only then a failure a strong clue already explains, with the newest cluster breaking ties. A cluster that already has a completed or a running diagnosis is left out before the ordering, so a recurring, already-diagnosed cluster never takes one of the slots.
+When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOSE_MAX` budget is spent where it buys the most. The run's clusters are ordered by their representative failing execution's top [clue](/features/evidence#clues): a cluster whose failure carries **no deterministic clue** (the one the model has to reason about from scratch) goes first, then the ones with only a weak clue, and only then a failure a strong clue already explains, with the newest cluster breaking ties. A cluster that already has a completed or a running diagnosis is left out before the ordering, so a recurring, already-diagnosed cluster never takes one of the slots. Ignored clusters are left out too. A diagnosis you rated unhelpful takes a slot again once the evidence has changed since it ran, once per rating.
 
 ### Streaming diagnosis
 
@@ -107,6 +107,23 @@ Every piece of evidence sent to the model costs tokens. Piwi caps each input so 
 The full list of `PIWI_AI_MAX_*` limit variables, their defaults and their clamping ranges lives in the [Configuration reference → AI context limits](/reference/configuration#ai-context-limits), generated from the same registry the server reads. The diagnosis context preview (**Context sent to AI**) shows what was trimmed to fit before you spend tokens.
 
 Screenshots are the one input a provider can refuse outright: many self-hosted and gateway models are text-only and reject a request that carries images. Piwi retries that call without them, so the diagnosis still runs on the text evidence. Setting `PIWI_AI_MAX_IMAGES=0` skips the rejected first attempt.
+
+## Usage and quality
+
+**AI usage** in Settings → AI counts, per provider and model over 7, 30 or 90 days, the diagnoses, the failed ones,
+the tokens and the average duration. A second table says how each model's diagnoses fared:
+
+- **Rated helpful**: thumbs up over every rating. The share appears from 10 ratings; below that the panel says the
+  sample is too small.
+- **Patches that apply**: suggested patches that [apply](/features/ai-diagnosis#validated-patches) to the source
+  they name, over every patch that could be checked.
+- **Verified by the fix**: diagnoses whose cluster was fixed by a change to the files they named.
+- **Regressed**: verified diagnoses whose failure came back.
+
+Diagnoses an agent recorded get their own row, under the model it named. Each diagnosis also stores a hash of the
+instructions it was written under (`promptSha` in its details), so diagnoses written before and after a change to
+the custom instructions or the language can be told apart. Piwi never switches models on these numbers; the
+[Analytics](/features/analytics#hand-back-outcomes) page shows the same ratings across projects.
 
 ## Related
 

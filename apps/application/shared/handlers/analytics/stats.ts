@@ -33,15 +33,17 @@ export async function getAnalyticsStats(
     if (companion) ids.push(companion);
   }
 
+  const samples = new Map<MetricId, number>();
   const [current, previous, targets] = await Promise.all([
-    computeMetricValues(db, ctx, ids, ctx.period.from.getTime(), ctx.period.to.getTime(), { cost }),
+    computeMetricValues(db, ctx, ids, ctx.period.from.getTime(), ctx.period.to.getTime(), { cost, samples }),
     ctx.comparison
       ? computeMetricValues(db, ctx, ids, ctx.comparison.from.getTime(), ctx.comparison.to.getTime(), { cost })
       : Promise.resolve(null),
     evaluateTargets(db, ctx, cost),
   ]);
 
-  const valueOf = (id: MetricId) => metricValue(id, current.get(id) ?? null, previous?.get(id) ?? null, cost);
+  const valueOf = (id: MetricId) =>
+    metricValue(id, current.get(id) ?? null, previous?.get(id) ?? null, cost, samples.get(id));
   return {
     tiles: options.metrics.map((id) => {
       const companionId = companions[id];

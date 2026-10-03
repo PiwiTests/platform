@@ -19,6 +19,7 @@ import type {
   AnalyticsNewGaps,
   AnalyticsPortfolioRow,
   AnalyticsProgress,
+  AnalyticsHandbacks,
   AnalyticsRegressionVelocity,
   AnalyticsRisks,
   AnalyticsScenarioGaps,
@@ -465,6 +466,12 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
       });
     }
     return blocks;
+  },
+
+  handbacks: (data: AnalyticsHandbacks, ctx) => {
+    const lines = ctx.s.handbacks(data, ctx.f);
+    if (lines.length === 0) return [{ kind: 'text', text: ctx.s.labels.noData }];
+    return [{ kind: 'list', items: lines.map((line) => ({ text: `${line.label}${ctx.s.colon}${line.text}` })) }];
   },
 
   risks: (data: AnalyticsRisks, ctx) => {
@@ -1060,6 +1067,17 @@ export function widgetMetrics(type: AnalyticsWidgetId, options: Record<string, u
   if (type === 'portfolio' || type === 'pass-rate-heatmap' || type === 'browser-matrix') return ['test-pass-rate'];
   if (type === 'scenario-gaps') {
     return ['open-scenario-gaps', 'gaps-closed', 'accepted-but-unwritten', 'open-resilience-findings'];
+  }
+  if (type === 'handbacks') {
+    return [
+      'heal-adoption',
+      'heal-pr-merge-rate',
+      'diagnosis-helpful-rate',
+      'diagnosis-verified-rate',
+      'gate-blocked-merges',
+      'gate-overrides',
+      'flakes-verified-fixed',
+    ];
   }
   return [];
 }

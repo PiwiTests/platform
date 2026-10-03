@@ -1320,7 +1320,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_metric_trend',
     module: 'core',
     description:
-      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt.',
+      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt, and the hand-back metrics heal-adoption, heal-pr-merge-rate, diagnosis-helpful-rate, diagnosis-verified-rate, gate-blocked-merges, gate-overrides, flakes-verified-fixed (a rate is null with a `sample` under its floor until enough items count; a metric whose capability is declined is refused).',
     inputSchema: {
       type: 'object',
       properties: {

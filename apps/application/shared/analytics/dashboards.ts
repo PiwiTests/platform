@@ -88,6 +88,7 @@ export const OVERVIEW_DASHBOARD: DashboardDefinition = {
         { key: 'flaky', type: 'flaky-leaderboard', size: 'half' },
         { key: 'wasted', type: 'wasted-time', size: 'half' },
         { key: 'time-to-fix', type: 'time-to-fix', size: 'half' },
+        { key: 'handbacks', type: 'handbacks', size: 'full' },
       ],
     },
     {
@@ -188,6 +189,7 @@ export const ENGINEERING_DASHBOARD: DashboardDefinition = {
         { key: 'clusters', type: 'cluster-landscape', size: 'full' },
         { key: 'wasted', type: 'wasted-time', size: 'full' },
         { key: 'ownership', type: 'ownership', size: 'full' },
+        { key: 'handbacks', type: 'handbacks', size: 'full' },
       ],
     },
     {

@@ -1795,6 +1795,15 @@ export interface AiUsageModelRow {
   inputTokens: number;
   outputTokens: number;
   avgDurationMs: number | null;
+  /** Completed diagnoses rated helpful, and rated at all (helpful or unhelpful). */
+  helpful: number;
+  rated: number;
+  /** Suggested patches checked against the source files, and those that apply. */
+  patchesChecked: number;
+  patchesApplying: number;
+  /** Diagnoses a fix confirmed in the window (it changed the diagnosed files), and those whose cause failed again. */
+  verified: number;
+  regressed: number;
 }
 
 /**
@@ -1802,6 +1811,8 @@ export interface AiUsageModelRow {
  */
 export interface AiUsageSummary {
   days: number;
+  /** The fewest ratings a helpful share is given over. */
+  minRatings: number;
   totals: { diagnoses: number; inputTokens: number; outputTokens: number };
   byModel: AiUsageModelRow[];
 }

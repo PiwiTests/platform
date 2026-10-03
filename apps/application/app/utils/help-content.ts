@@ -182,6 +182,11 @@ export const HELP_TOPICS = {
     title: 'Fixes and triage',
     text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
   },
+  'analytics.handbacks': {
+    title: 'Hand-back outcomes',
+    text: 'What became of what Piwi handed back in the period: locator heals now used in the code, auto-heal pull requests merged or closed, AI diagnoses rated and confirmed by the fix, merges the gate blocked or that were merged anyway, and flaky tests Flake Lab proved fixed. Counted per project and day, so branch and environment filters do not narrow it, and a rate needs ten ratings, pull requests or fixes before it is given. A kind whose capability a project declined leaves that project out.',
+    doc: 'features/analytics#hand-back-outcomes',
+  },
   'analytics.risks': {
     title: 'Risks',
     text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',

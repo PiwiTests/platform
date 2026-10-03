@@ -31,6 +31,12 @@ const GRAINS = [
     title: 'Scenario gaps',
     intro: 'Counted over the [Test Map](/features/scenario-gaps); hidden where the Test Map is declined.',
   },
+  {
+    id: 'handback',
+    title: 'Hand-back outcomes',
+    intro:
+      'Counted over what became of what Piwi handed back ([Hand-back outcomes](/features/analytics#hand-back-outcomes)), per project and day, so branch and environment filters do not narrow them. A rate is empty below 10 ratings, pull requests or fixes, and a metric is hidden where the capability it belongs to is declined.',
+  },
 ];
 
 const UNITS = {
