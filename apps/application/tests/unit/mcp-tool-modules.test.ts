@@ -40,6 +40,7 @@ describe('MCP tool modules', () => {
       create_issue: 'integrations',
       list_links: 'integrations',
       link_issue: 'integrations',
+      dismiss_quarantine_proposal: 'quarantine',
       get_repo_commits: 'scm',
       rerun_cluster_in_ci: 'scm',
       get_repo_diff: 'scm',

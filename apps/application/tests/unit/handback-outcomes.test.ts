@@ -21,6 +21,16 @@ vi.mock('../../server/utils/scm', () => ({
   resolveScmToken: async () => null,
   scmProviderForUrl: () => null,
 }));
+// The flaky analysis behind the quarantine candidates, when a test sets it.
+const flaky = vi.hoisted(() => ({ tests: null as Array<Record<string, unknown>> | null }));
+vi.mock('#shared/handlers/projects', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#shared/handlers/projects')>();
+  return {
+    ...actual,
+    getProjectFlakyTests: (async (...args: Parameters<typeof actual.getProjectFlakyTests>) =>
+      flaky.tests ?? actual.getProjectFlakyTests(...args)) as typeof actual.getProjectFlakyTests,
+  };
+});
 
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before the modules under test load.
@@ -93,6 +103,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  flaky.tests = null;
   client.close();
   rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -279,11 +290,15 @@ describe('quarantine proposals', () => {
     expect(rows[0]!.suggestionKey).toMatch(/^release:\d+$/);
   });
 
-  test('a person dismissing a proposal records rejected, once', async () => {
+  test('a person dismissing a proposal records rejected with the reason, once', async () => {
+    flaky.tests = [{ testCaseId: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', score: 60, wastedCiMinutes: 4 }];
     await insertRun();
     await addQuarantine(db as never, 1, 2);
+    for (let i = 0; i < RELEASE_AFTER_CONSECUTIVE_PASSES; i++) await insertCase(await insertRun(), 2, 'passed');
     const actor = { channel: 'ui' as const, userId: 7 };
-    expect(await dismissQuarantineProposal(db as never, 1, 1, 'quarantine', actor)).toBe(true);
+    expect(await dismissQuarantineProposal(db as never, 1, 1, 'quarantine', actor, ' The fix is in review ')).toBe(
+      true,
+    );
     expect(await dismissQuarantineProposal(db as never, 1, 1, 'quarantine', actor)).toBe(true);
     expect(await dismissQuarantineProposal(db as never, 1, 2, 'release', actor)).toBe(true);
     // Nothing to dismiss: the test is not quarantined, or already is.
@@ -291,10 +306,28 @@ describe('quarantine proposals', () => {
     expect(await dismissQuarantineProposal(db as never, 1, 2, 'quarantine', actor)).toBe(false);
 
     const rows = await listOutcomes(db as never, { kind: 'quarantine-proposal' });
-    expect(rows.map((r) => [r.subjectId, r.outcome, r.suggestionKey.split(':')[0]])).toEqual([
-      [1, 'rejected', 'quarantine'],
-      [2, 'rejected', 'release'],
+    expect(
+      rows.map((r) => [r.subjectId, r.outcome, r.suggestionKey.split(':')[0], r.channel, r.actorUserId, r.details]),
+    ).toEqual([
+      [1, 'rejected', 'quarantine', 'ui', 7, { reason: 'The fix is in review' }],
+      [2, 'rejected', 'release', 'ui', 7, null],
     ]);
+    // The candidate was dismissed at the newest run.
+    expect(rows[0]!.runId).toBe(runSeq);
+  });
+
+  test('only a standing proposal can be dismissed, and only for a test of the project', async () => {
+    flaky.tests = [];
+    await insertRun();
+    await addQuarantine(db as never, 1, 2);
+    const actor = { channel: 'mcp' as const, userId: 7 };
+    // Test 1 is no candidate; test 2 has no passing streak yet.
+    expect(await dismissQuarantineProposal(db as never, 1, 1, 'quarantine', actor)).toBe(false);
+    expect(await dismissQuarantineProposal(db as never, 1, 2, 'release', actor)).toBe(false);
+    await expect(dismissQuarantineProposal(db as never, 1, 99, 'quarantine', actor)).rejects.toThrow(
+      'Test case not found in this project',
+    );
+    expect(await listOutcomes(db as never, { kind: 'quarantine-proposal' })).toEqual([]);
   });
 });
 

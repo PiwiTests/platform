@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runEventBus } from '../../../utils/run-events';
-import { persistShardToken } from '../../../utils/shard-tokens';
+import { knownShardTokens, matchesShardToken, shardTokenDigest, withShardTokens } from '../../../utils/shard-tokens';
 import { timingSafeEqualStr } from '../../../utils/timing-safe';
 
 defineRouteMeta({
@@ -15,7 +15,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint. Supports sharded runs: already-running sharded runs accept additional setup tokens.',
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': [],
     requestBody: {
@@ -73,15 +73,25 @@ export default eventHandler(async (event) => {
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
-  if (!isSharded && testRun.status !== 'initializing' && testRun.status !== 'running') {
+  // A sharded run also takes a shard that begins after the stale-run sweep marked
+  // it interrupted: that shard's events revive it.
+  const canBegin =
+    testRun.status === 'initializing' ||
+    testRun.status === 'running' ||
+    (isSharded && testRun.status === 'interrupted');
+
+  if (!canBegin) {
     throw apiError({
       statusCode: 409,
       message: 'Test run cannot be transitioned to running state',
     });
   }
 
-  // For sharded runs, accept the setup token from the shardTokens set
-  const isValidShardSetupToken = isSharded && runEventBus.isValidShardToken(id, body.setupToken);
+  // A sharded run accepts the setup token of any of its shards, held in memory
+  // or only in the run's metadata.
+  const isValidShardSetupToken =
+    isSharded &&
+    matchesShardToken(knownShardTokens(runEventBus.getRunState(id)?.shardTokens, testRun.metadata), body.setupToken);
 
   if (!timingSafeEqualStr(testRun.streamToken ?? '', body.setupToken) && !isValidShardSetupToken) {
     throw apiError({
@@ -97,13 +107,25 @@ export default eventHandler(async (event) => {
     // First shard to begin: cancel other runs, transition to running
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
+    // A shard's stream token is one of the run's shard tokens, so two shards that
+    // begin at once both keep theirs. The set is cached before the write, so a
+    // shard token registered while the write runs joins it.
+    const shardTokens = isSharded ? swapShardToken(id, testRun.metadata, body.setupToken, streamToken) : undefined;
+    runEventBus.cacheRunState(id, {
+      streamToken,
+      projectId: testRun.projectId,
+      ...(shardTokens ? { shardTokens } : {}),
+    });
+
+    const metadata = carryIngestHealth(sanitizeMetadata(body.metadata || testRun.metadata), testRun.metadata);
+
     await db
       .update(testRuns)
       .set({
         status: 'running',
         streamToken,
         totalTests: body.totalTests || 0,
-        metadata: carryIngestHealth(sanitizeMetadata(body.metadata || testRun.metadata), testRun.metadata),
+        metadata: shardTokens ? withShardTokens(metadata, shardTokens) : metadata,
         branch: resolveRunBranch(body.metadata) ?? testRun.branch,
         playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
         reporterVersion: body.reporterVersion || testRun.reporterVersion,
@@ -114,22 +136,27 @@ export default eventHandler(async (event) => {
       .where(eq(testRuns.id, id));
 
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
-    runEventBus.cacheRunState(id, {
-      streamToken,
-      projectId: testRun.projectId,
-      ...(isSharded ? { shardTokens: new Set<string>() } : {}),
-    });
+  } else if (isSharded) {
+    // Another shard began the run: this shard streams on a token of its own and
+    // adds its slice of the planned suite to the run's total.
+    const shardTokens = swapShardToken(id, testRun.metadata, body.setupToken, streamToken);
+    const cachedState = runEventBus.getRunState(id);
+    if (cachedState) runEventBus.cacheRunState(id, { ...cachedState, shardTokens });
+
+    await db
+      .update(testRuns)
+      .set({
+        metadata: withShardTokens(testRun.metadata, shardTokens),
+        ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(testRuns.id, id));
   } else {
     // Run is already running — return the cached stream token so the caller
     // can continue streaming. This can happen when multiple worker processes
     // race to /begin on the same run (parallel self-monitoring).
     const cachedState = runEventBus.getRunState(id);
     const existingToken = cachedState?.streamToken || streamToken;
-
-    if (isSharded) {
-      runEventBus.addShardToken(id, existingToken);
-      await persistShardToken(db, id, existingToken, testRun.metadata as Record<string, unknown> | null);
-    }
 
     return {
       success: true,
@@ -146,3 +173,15 @@ export default eventHandler(async (event) => {
     streamToken,
   };
 });
+
+/**
+ * A sharded run's shard tokens, from memory and its metadata, with the setup
+ * token a shard spent on `/begin` swapped for the stream token it was handed.
+ * The other shards' setup tokens stay.
+ */
+function swapShardToken(runId: number, metadata: unknown, setupToken: string, streamToken: string): Set<string> {
+  const tokens = knownShardTokens(runEventBus.getRunState(runId)?.shardTokens, metadata);
+  tokens.delete(shardTokenDigest(setupToken));
+  tokens.add(shardTokenDigest(streamToken));
+  return tokens;
+}

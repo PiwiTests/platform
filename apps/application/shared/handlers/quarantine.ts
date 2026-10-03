@@ -21,8 +21,10 @@ import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../serv
 import type { DrizzleDB } from './db';
 import { notLabRun } from './probes';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
-import { recordOutcome } from '../../server/utils/outcomes';
+import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
+import { proposeQuarantineCandidates } from '../../server/utils/quarantine-candidates';
 import type { HandbackActor } from '../handback-outcomes';
+import { normalizeDismissReason, type QuarantineProposal } from '#shared/quarantine-proposals';
 
 /** Consecutive passing runs after which release is proposed. */
 export const RELEASE_AFTER_CONSECUTIVE_PASSES = 5;
@@ -371,20 +373,34 @@ export async function releaseQuarantine(
 }
 
 /**
- * A person dismissing a proposal: to quarantine a test (`quarantine`), or to
- * release a quarantined one (`release`). Records the proposal's `rejected`
- * outcome, once per proposal; the proposal itself is derived and stays listed.
- * Returns false when there is nothing to dismiss.
+ * A person or an agent dismissing a proposal: to quarantine a test
+ * (`quarantine`, while the test is a candidate), or to release a quarantined
+ * one (`release`, while its release is proposed). Records the proposal's
+ * `rejected` outcome with the optional reason, once per proposal; the proposal
+ * itself is derived and stays listed. Returns false when there is no such
+ * proposal to dismiss, and throws when the test is not in the project.
  */
 export async function dismissQuarantineProposal(
   db: DrizzleDB,
   projectId: number,
   testCaseId: number,
-  proposal: 'quarantine' | 'release',
+  proposal: QuarantineProposal,
   actor: HandbackActor,
+  reason?: string | null,
 ): Promise<boolean> {
+  const [testCase] = await db
+    .select({ projectId: testCases.projectId })
+    .from(testCases)
+    .where(eq(testCases.id, testCaseId));
+  if (!testCase || testCase.projectId !== projectId) throw new Error('Test case not found in this project');
+
   const [active] = await db
-    .select({ id: quarantinedTests.id })
+    .select({
+      id: quarantinedTests.id,
+      testCaseId: quarantinedTests.testCaseId,
+      quarantinedAtRunId: quarantinedTests.quarantinedAtRunId,
+      createdAt: quarantinedTests.createdAt,
+    })
     .from(quarantinedTests)
     .where(
       and(
@@ -393,8 +409,15 @@ export async function dismissQuarantineProposal(
         isNull(quarantinedTests.releasedAt),
       ),
     );
-  if (proposal === 'release' && !active) return false;
-  if (proposal === 'quarantine' && active) return false;
+  if (proposal === 'release') {
+    if (!active) return false;
+    const progress = (await releaseProposals(db, [active])).get(testCaseId);
+    if (!progress?.earned && !progress?.verifiedFix) return false;
+  } else {
+    if (active) return false;
+    const candidates = await proposeQuarantineCandidates(db, projectId, await getQuarantinedCaseIds(db, projectId));
+    if (!candidates.some((candidate) => candidate.testCaseId === testCaseId)) return false;
+  }
   // A quarantine proposal is scoped to the newest run, so one dismissed again after new runs counts again.
   const [latestRun] =
     proposal === 'quarantine'
@@ -405,6 +428,7 @@ export async function dismissQuarantineProposal(
           .orderBy(desc(testRuns.id))
           .limit(1)
       : [];
+  const note = normalizeDismissReason(reason);
   await recordOutcome(db, {
     projectId,
     kind: 'quarantine-proposal',
@@ -414,6 +438,48 @@ export async function dismissQuarantineProposal(
     outcome: 'rejected',
     actor,
     runId: latestRun?.id ?? null,
+    details: note ? { reason: note } : null,
   });
   return true;
+}
+
+/**
+ * Marks the dismissed proposals of a project's quarantine list: `releaseDismissed`
+ * on each entry whose proposed release was dismissed, and `dismissed` on each
+ * candidate dismissed since the newest run.
+ */
+export async function markDismissedProposals<C extends { testCaseId: number }>(
+  db: DrizzleDB,
+  projectId: number,
+  entries: QuarantineEntry[],
+  candidates: C[],
+): Promise<{
+  entries: Array<QuarantineEntry & { releaseDismissed: boolean }>;
+  candidates: Array<C & { dismissed: boolean }>;
+}> {
+  const dismissedCandidates = new Set<number>();
+  const dismissedReleases = new Set<number>();
+  const rows = await listOutcomes(db, { projectId, kind: 'quarantine-proposal', outcomes: ['rejected'] });
+  if (rows.length > 0) {
+    const [latestRun] = await db
+      .select({ id: testRuns.id })
+      .from(testRuns)
+      .where(eq(testRuns.projectId, projectId))
+      .orderBy(desc(testRuns.id))
+      .limit(1);
+    for (const row of rows) {
+      if (row.suggestionKey === 'quarantine') {
+        if (row.runId != null && row.runId === latestRun?.id) dismissedCandidates.add(row.subjectId);
+      } else if (row.suggestionKey.startsWith('release:')) {
+        dismissedReleases.add(Number(row.suggestionKey.slice('release:'.length)));
+      }
+    }
+  }
+  return {
+    entries: entries.map((entry) => ({ ...entry, releaseDismissed: dismissedReleases.has(entry.id) })),
+    candidates: candidates.map((candidate) => ({
+      ...candidate,
+      dismissed: dismissedCandidates.has(candidate.testCaseId),
+    })),
+  };
 }

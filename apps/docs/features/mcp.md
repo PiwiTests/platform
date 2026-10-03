@@ -28,11 +28,11 @@ MCP URL to narrow the list further; narrowing never re-enables a declined tool.
 
 **Access.** The server follows the REST API's project assignments: with authentication on, a non-admin key reads only
 its projects, and cross-project tools (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to them.
-The write tools (triaging clusters and gaps, deciding a merge suggestion, setting a bug report's status or a run's
-incident flag, re-running a cluster in CI, linking or filing an issue, setting a cluster's baseline commit, running,
-recording or rating a diagnosis, reporting a fix attempt, registering a test function) need the **reporter** or
-**administrator** role, as the same actions do in the dashboard and the REST API, and `get_instance_stats` the
-administrator role.
+The write tools (triaging clusters and gaps, deciding a merge suggestion, dismissing a quarantine proposal, setting a
+bug report's status or a run's incident flag, re-running a cluster in CI, linking or filing an issue, setting a
+cluster's baseline commit, running, recording or rating a diagnosis, reporting a fix attempt, registering a test
+function) need the **reporter** or **administrator** role, as the same actions do in the dashboard and the REST API,
+and `get_instance_stats` the administrator role.
 
 **The write log.** Every call of a write tool is logged with the API key that made it, the tool, what it acted on and
 the result; read tools never are. A cluster's **Activity** section shows the calls on it, the log is pruned after
