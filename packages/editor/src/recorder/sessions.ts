@@ -188,7 +188,7 @@ export function recorderLanguage(tag: string | null | undefined): string {
 /**
  * The page a recording opens: an absolute address as given (`localhost:3000/x` reads as `http://`), a path on the
  * project's `baseURL` (resolved as `page.goto` resolves it), the `baseURL` itself when none is given, else
- * `about:blank`. Only http, https and file addresses open.
+ * `about:blank`. Only http and https addresses open, the pages the recorder records.
  */
 export function startUrl(
   given: string | null | undefined,
@@ -204,9 +204,8 @@ export function startUrl(
     } catch {
       return { error: `${text} is not an address the browser can open.` };
     }
-    if (parsed.href === 'about:blank' || ['http:', 'https:', 'file:'].includes(parsed.protocol))
-      return { url: parsed.href };
-    return { error: `${text} is not an address the browser can open: give an http or https address.` };
+    if (parsed.href === 'about:blank' || ['http:', 'https:'].includes(parsed.protocol)) return { url: parsed.href };
+    return { error: `${text} is not a page the recorder can record: give an http or https address.` };
   }
   if (!baseURL) {
     const example = `http://localhost:3000${text.startsWith('/') ? '' : '/'}${text}`;

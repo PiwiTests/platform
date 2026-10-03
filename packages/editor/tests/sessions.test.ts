@@ -625,7 +625,11 @@ describe('startUrl', () => {
         '/login is a path, and the project has no baseURL: give the whole address, such as http://localhost:3000/login.',
     });
     expect(startUrl('javascript:alert(1)', null)).toEqual({
-      error: 'javascript:alert(1) is not an address the browser can open: give an http or https address.',
+      error: 'javascript:alert(1) is not a page the recorder can record: give an http or https address.',
+    });
+    // The recorder records http and https pages only.
+    expect(startUrl('file:///work/shop/index.html', null)).toEqual({
+      error: 'file:///work/shop/index.html is not a page the recorder can record: give an http or https address.',
     });
   });
 });

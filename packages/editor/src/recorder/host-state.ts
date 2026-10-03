@@ -16,6 +16,9 @@ export const RECORDING_KEY = 'piwiRecording';
 
 const UNAVAILABLE = 'Not available in a recording started from the editor.';
 
+/** The most events one recording passes on: a page calling the binding in a loop cannot grow it without end. */
+export const MAX_EVENTS = 5_000;
+
 /** The recording, as the recorder stores it. */
 export interface HostRecording {
   active: boolean;
@@ -51,6 +54,8 @@ export class RecorderHost {
   readonly local: Record<string, unknown>;
   /** The session area, holding the recording. */
   readonly session: Record<string, unknown>;
+  /** How many events were passed on, whatever the page wrote into the session area since. */
+  private passedOn = 0;
 
   constructor(private readonly options: RecorderHostOptions) {
     this.local = { [LANGUAGE_KEY]: options.language, [IDE_SETTINGS_KEY]: options.settings };
@@ -144,12 +149,17 @@ export class RecorderHost {
     return { ok: false, error: 'Malformed session-storage request.' };
   }
 
-  /** Appends an event that parses while the recording is on, and answers with the recording as it is then. */
+  /**
+   * Appends an event that parses while the recording is on, up to {@link MAX_EVENTS}, and answers with the recording
+   * as it is then.
+   */
   private append(value: unknown): unknown {
     const event = parseCaptureEvent(value);
     if (!event) return { ok: false, error: 'Malformed recording event.' };
     const state = this.recording();
     if (state.active !== true) return { ok: true, state };
+    if (this.passedOn >= MAX_EVENTS) return { ok: false, error: 'The recording is full: stop it to keep its steps.' };
+    this.passedOn++;
     state.events.push(event);
     this.options.onEvent(event);
     return { ok: true, state };

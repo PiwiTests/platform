@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
-import { LANGUAGE_KEY, RECORDING_KEY, RecorderHost } from '../src/recorder/host-state';
+import { LANGUAGE_KEY, MAX_EVENTS, RECORDING_KEY, RecorderHost } from '../src/recorder/host-state';
 
 const language = { code: 'fr', messages: { record_stop: { message: 'Arrêter' } } };
 const settings = { file: 'checkout.spec.ts', testIdAttribute: 'data-test' };
@@ -116,6 +116,18 @@ describe('RecorderHost', () => {
     });
     expect(message({ type: 'piwi-append-recording-event', event: { kind: 'click' } })).toMatchObject({ ok: false });
     expect(events).toEqual([]);
+  });
+
+  test('passes on at most MAX_EVENTS events, whatever the page writes into the recording', () => {
+    const { h, events, message } = host();
+    for (let i = 0; i < MAX_EVENTS; i++) message({ type: 'piwi-append-recording-event', event: click() });
+    const stored = h.session[RECORDING_KEY] as { events: unknown[] };
+    message({ type: 'piwi-session-storage', op: 'set', items: { [RECORDING_KEY]: { ...stored, events: [] } } });
+    expect(message({ type: 'piwi-append-recording-event', event: click() })).toEqual({
+      ok: false,
+      error: 'The recording is full: stop it to keep its steps.',
+    });
+    expect(events).toHaveLength(MAX_EVENTS);
   });
 
   test('appends nothing once the recorder stopped the recording', () => {
