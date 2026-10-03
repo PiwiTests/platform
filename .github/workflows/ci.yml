@@ -5,8 +5,11 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -14,11 +17,40 @@ defaults:
     working-directory: ./apps/application
 
 jobs:
+  # The release PR moves version numbers and the changelog only: it gets this
+  # check instead of the jobs below, which run again on main once it merges.
+  release-pr:
+    name: Release PR versions
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ./package-lock.json
+
+      # Fails when release-please left package.json and package-lock.json out of step.
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefer-offline --no-audit --fund=false
+
+      - name: Check every stamped version
+        working-directory: .
+        run: node scripts/check-release-versions.mjs
+
   # Builds once for every E2E cell: the storage and database backends are read
   # from the environment at request time, so a single production output covers
   # the whole matrix.
   build:
     name: Build
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -97,6 +129,7 @@ jobs:
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
     name: Lint, typecheck and unit tests
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -119,6 +152,10 @@ jobs:
       - name: Install dependencies
         working-directory: .
         run: npm ci --prefer-offline --no-audit --fund=false
+
+      - name: Check every stamped version
+        working-directory: .
+        run: node scripts/check-release-versions.mjs
 
       - name: Lint
         run: npm run app:lint
@@ -171,12 +208,18 @@ jobs:
           npm run extension:typecheck
           npm run extension:test
 
+      # The browsers follow the Playwright version; the key names the headless shell, the only build installed.
+      - name: Read the Playwright version
+        id: playwright
+        working-directory: .
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -328,12 +371,17 @@ jobs:
           # dedicated postgresql.spec.ts server (which owns playwright_test).
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
 
+      - name: Read the Playwright version
+        id: playwright
+        working-directory: .
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
 
       # Only the chromium project is enabled in playwright.config.ts. The runner
       # image already carries the shared libraries the headless shell links
@@ -420,6 +468,7 @@ jobs:
 
   demo:
     name: Test demo generation
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -438,7 +487,20 @@ jobs:
         working-directory: .
         run: npm ci --prefer-offline --no-audit --fund=false
 
-      - name: Install Playwright chromium
+      - name: Read the Playwright version
+        id: playwright
+        working-directory: .
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium --with-deps --only-shell
 
       # seed.sql is gitignored, so the build has no database to load until it is
@@ -457,6 +519,7 @@ jobs:
 
   aspnet:
     name: Build ASP.NET instrumentation
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

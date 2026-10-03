@@ -12,8 +12,17 @@ on:
       - 'packages/core/**'
       - '.github/workflows/jetbrains.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   plugin:
+    # The release PR moves version numbers only; ci.yml checks it.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -55,6 +64,7 @@ jobs:
 
   # One IDE per job: a runner's disk holds one unpacked IDE at a time.
   verify:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:

@@ -10,6 +10,9 @@ on:
   # created that didn't auto-trigger this workflow — see release-please.yml).
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -18,6 +21,7 @@ jobs:
   publish-npm:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
@@ -65,6 +69,7 @@ jobs:
   publish-npm-server:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
@@ -120,6 +125,7 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm  # GitHub-hosted native ARM; free for public repos
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -189,6 +195,7 @@ jobs:
   # (for Docker Hub) copies them across, so nothing is rebuilt or re-emulated here.
   merge:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build]
     permissions:
       contents: read

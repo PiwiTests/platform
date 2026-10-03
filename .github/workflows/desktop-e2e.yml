@@ -13,6 +13,13 @@ on:
       - 'apps/desktop/**'
       - '.github/workflows/desktop-e2e.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   # Match the runtime the app bundles (apps/application/engines / desktop-release.yml).
   PIWI_NODE_VERSION: 24.4.1
@@ -20,7 +27,8 @@ env:
 jobs:
   e2e:
     # macOS runs the real Tauri webview headed (no xvfb), matching the plugin's
-    # own e2e setup.
+    # own e2e setup. The release PR moves version numbers only; ci.yml checks it.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: macos-14
     timeout-minutes: 45
     steps:

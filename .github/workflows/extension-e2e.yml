@@ -13,8 +13,17 @@ on:
       - 'packages/picker-dom/**'
       - '.github/workflows/extension-e2e.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
+    # The release PR moves version numbers only; ci.yml checks it.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     # The suite runs on one worker (see tests/e2e/playwright.config.ts) and
     # takes about 20 minutes; 30 leaves room for a slow runner.
@@ -33,11 +42,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --fund=false
 
-      # No cache step: ci.yml's own Playwright cache (same key shape, shared
-      # repo-wide by actions/cache) holds only --only-shell, which can't load
-      # extensions — a cache hit here would skip installing the full browser
-      # this suite actually needs. Always install fresh instead, same as
-      # desktop-e2e.yml.
+      # The full Chromium, the build that loads extensions, installed on every
+      # run: this workflow runs on pull requests only, and a cache a pull request
+      # saves serves that pull request alone.
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 

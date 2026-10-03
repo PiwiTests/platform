@@ -6,6 +6,9 @@ name: live-jira
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: live-jira
   cancel-in-progress: false

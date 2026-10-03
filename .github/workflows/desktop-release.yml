@@ -12,6 +12,9 @@ on:
   # Manual escape hatch / dry-run: build the installers without releasing.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   # Match the runtime the app is built and tested against (apps/application/engines).
   PIWI_NODE_VERSION: 24.4.1
@@ -23,6 +26,7 @@ jobs:
   # added in the desktop job via stage-server.mjs.
   build-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -80,6 +84,7 @@ jobs:
             bundles: deb,rpm,appimage
             updaterConfig: src-tauri/tauri.updater.conf.json
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 

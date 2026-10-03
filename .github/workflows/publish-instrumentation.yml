@@ -7,9 +7,13 @@ on:
   # created that didn't auto-trigger this workflow — see release-please.yml).
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
