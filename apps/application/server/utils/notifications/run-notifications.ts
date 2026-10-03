@@ -25,6 +25,7 @@ import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 import type { LooksFixedTest } from '#shared/notification-events';
 import type { TestMetadata } from '#shared/types';
+import { readRunIncident } from '#shared/run-incident';
 
 /**
  * The run's `test.fail()` tests that passed in every browser project that ran
@@ -181,6 +182,48 @@ export async function emitRunInterrupted(db: DbClient, runId: number): Promise<v
   } catch (e) {
     console.error('[notifications] emitRunInterrupted failed', e);
   }
+}
+
+/**
+ * Emit the notifications of a run flagged as an environment incident:
+ * `run.finished`, and one `environment.incident` in place of the run's
+ * failure, flakiness, performance, new-cluster and looks-fixed events. The
+ * incident names no failing test and no owner.
+ */
+export async function emitIncidentNotification(db: DbClient, runId: number): Promise<void> {
+  const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+  const incident = runRow ? readRunIncident(runRow.metadata) : null;
+  if (!runRow || !incident) return;
+  const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
+  if (!project) return;
+
+  const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
+  const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
+  const base = {
+    runId,
+    projectId: runRow.projectId,
+    projectName: project.label || project.name,
+    status: runRow.status,
+    totalTests: runRow.totalTests,
+    failedTests: runRow.failedTests,
+    branch,
+    environment: runRow.environment ?? undefined,
+    isDefaultBranch: branch ? branch === defaultBranch : false,
+  };
+  await emitNotification(db, 'run.finished', {
+    ...base,
+    passedTests: runRow.passedTests,
+    flakyTests: runRow.flakyTests,
+    durationMs: runRow.duration ?? undefined,
+  });
+  await emitNotification(db, 'environment.incident', {
+    ...base,
+    rule: incident.rule,
+    reason: incident.reason,
+    host: incident.host ?? undefined,
+    otherProjects: incident.projects.length,
+    incidentKey: `${incident.host ?? 'run'}:${incident.firstRunId}`,
+  });
 }
 
 /**

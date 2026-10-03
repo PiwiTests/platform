@@ -22,6 +22,7 @@ import {
   type BranchFailure,
   type EntityLink,
   type FixPlan,
+  type FlakeLabEntry,
   type FlakyTest,
   type QuarantinedTest,
 } from './piwi-client.js';
@@ -187,6 +188,24 @@ function codeOwners(repoRoot: string): string[] {
   return [...owners].sort();
 }
 
+/**
+ * A `piwi` command line that reports to `serverUrl` when run from `root`: the
+ * command itself when it would find that instance there on its own (the
+ * environment, the `.env` beside the config, the desktop app), whose key it
+ * then reads too; else with `--server-url`.
+ */
+export function withServerUrl(
+  command: string,
+  serverUrl: string,
+  root: string,
+  env: Record<string, string | undefined>,
+  desktop: DesktopDiscovery | null = readDesktopDiscovery(env),
+): string {
+  const own = resolvePiwiConnection({ env, dotEnv: readDotEnv(root), desktop });
+  const target = serverUrl.replace(/\/+$/, '');
+  return own?.serverUrl === target ? command : `${command} --server-url ${target}`;
+}
+
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
@@ -217,6 +236,8 @@ export class PiwiContext {
   timeouts = new Map<number, TimeoutAdvice>();
   /** The project's flaky tests on the branch the indexes describe, by test case id. */
   flaky = new Map<number, FlakyTest>();
+  /** The project's Flake Lab tests on that branch, with their top suspect, by test case id. */
+  flakeLab = new Map<number, FlakeLabEntry>();
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
@@ -290,6 +311,8 @@ export class PiwiContext {
       this.codeIndex = await this.client.codeIndex(this.project.id, this.branch).catch(() => null);
       const flaky = await this.client.flakyTests(this.project.id, this.branch).catch(() => null);
       if (flaky) this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]));
+      const flakeLab = await this.client.flakeLab(this.project.id, this.branch).catch(() => null);
+      if (flakeLab) this.flakeLab = new Map(flakeLab.map((t) => [t.testCaseId, t]));
       const quarantine = await this.client.quarantine(this.project.id).catch(() => null);
       if (quarantine) {
         this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
@@ -346,6 +369,7 @@ export class PiwiContext {
     this.selections = [];
     this.timeouts = new Map();
     this.flaky = new Map();
+    this.flakeLab = new Map();
     this.failures = null;
     this.runBranch = null;
     this.checkedOutBranch = null;

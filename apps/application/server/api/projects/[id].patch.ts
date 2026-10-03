@@ -21,9 +21,19 @@ defineRouteMeta({
 
 const ciRerunSchema = z.object({
   enabled: z.boolean().optional(),
-  github: z.object({ workflow: z.string(), ref: z.string(), inputName: z.string() }).partial().optional(),
+  github: z
+    .object({ workflow: z.string(), ref: z.string(), inputName: z.string(), dispatchIdInput: z.string() })
+    .partial()
+    .optional(),
   gitlab: z.object({ ref: z.string(), variableName: z.string() }).partial().optional(),
   bitbucket: z.object({ pipeline: z.string(), variableName: z.string() }).partial().optional(),
+  flakeLab: z
+    .object({
+      github: z.object({ workflow: z.string(), inputName: z.string() }).partial().optional(),
+      gitlab: z.object({ variableName: z.string() }).partial().optional(),
+      bitbucket: z.object({ pipeline: z.string(), variableName: z.string() }).partial().optional(),
+    })
+    .optional(),
 });
 
 const updateProjectSchema = z.object({

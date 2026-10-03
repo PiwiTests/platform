@@ -70,6 +70,11 @@ export const HELP_TOPICS = {
     text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
     doc: 'features/failure-clusters#the-failure-inbox',
   },
+  'home.flake-lab': {
+    title: 'Flake Lab queue',
+    text: 'Flaky tests the Flake Lab can move forward: a reproduced flake whose fix waits for a verify, then a flaky test whose top suspect no experiment has tested. Run the command from the project root, or from the code lens in your editor.',
+    doc: 'features/flake-lab#from-the-editor-and-the-failure-pages',
+  },
   'cluster.state': {
     title: 'Cluster state',
     text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
@@ -428,7 +433,7 @@ export const HELP_TOPICS = {
   },
   'project.ci-rerun': {
     title: 'CI re-run',
-    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
+    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs piwi flake for one flaky test, from its next step.',
     doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {

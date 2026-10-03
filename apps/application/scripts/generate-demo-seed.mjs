@@ -1797,6 +1797,104 @@ const RESOURCE_OCCURRENCES = [];
   }
 }
 
+// ── Environment incident (post-processing, rng-free) ────────────────────────
+// One checkout run against staging where the staging host refused every
+// connection: almost every test fails navigating to it, so the run carries the
+// incident flag the server's classifier writes (`metadata.incident`, rule
+// `host-unreachable`) and one auto `incident` marker, and is left out of flaky
+// scores, baselines and regression signals. Its failures join no cluster.
+const INCIDENT_HOST = 'staging.checkout.example.com';
+const INCIDENT_PASSED_CASES = 1;
+const incidentRunIds = new Set();
+const INCIDENT_MARKERS = [];
+{
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const oldestId = proj1Runs[proj1Runs.length - 1].id;
+  const rowsOf = (runId) => TEST_RUNS_CASES.filter((row) => row.test_run_id === runId);
+  const target = proj1Runs
+    .slice(3)
+    .find(
+      (r) =>
+        r.id !== oldestId &&
+        r.environment === 'staging' &&
+        r.status === 'passed' &&
+        r.flaky_tests === 0 &&
+        r.kept_at === null &&
+        r.is_full_run === 1 &&
+        rowsOf(r.id).every((row) => ['passed', 'skipped'].includes(row.status) && row.retries === 0),
+    );
+  if (!target) throw new Error('No checkout run on staging can host the incident');
+
+  const rows = rowsOf(target.id)
+    .filter((row) => row.status === 'passed')
+    .sort((a, b) => a.started_at - b.started_at);
+  const failing = rows.slice(INCIDENT_PASSED_CASES);
+  for (const row of failing) {
+    const caseDef = caseById.get(row.test_case_id);
+    const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
+    const url = `https://${INCIDENT_HOST}${path}`;
+    row.status = 'failed';
+    row.duration = 120 + (row.id % 7) * 15;
+    row.error =
+      `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
+      `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
+      `    at ${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`;
+    row.attempts = JSON.stringify([{ retry: 0, status: 'failed', duration: row.duration, startedAt: row.started_at }]);
+    // The page never loaded: no steps past the navigation, no page evidence.
+    row.steps = [];
+    row.locator_pages_payload_id = null;
+    row.step_events = null;
+    row.wasted_time_ms = 0;
+    row.slowest_step = null;
+    row.slowest_step_duration = null;
+    row.web_vitals = null;
+    row.page_state = null;
+    row.ai_usage = null;
+    row.console_logs = null;
+    row.dialogs = null;
+    row.aria_snapshot = null;
+  }
+  const failingIds = new Set(failing.map((row) => row.id));
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
+
+  const executed = rows.length;
+  target.status = 'failed';
+  target.failed_tests = failing.length;
+  target.passed_tests = executed - failing.length;
+  target.label = null;
+  target.metadata.htmlReport = { projects: [{ name: 'chromium', use: { baseURL: `https://${INCIDENT_HOST}` } }] };
+  const reason =
+    `${failing.length} of ${executed} tests failed, ${failing.length} of them navigating or connecting to ` +
+    `${INCIDENT_HOST} (connection refused).`;
+  target.metadata.incident = {
+    rule: 'host-unreachable',
+    reason,
+    host: INCIDENT_HOST,
+    projects: [],
+    failedTests: failing.length,
+    executedTests: executed,
+    hostFailures: failing.length,
+    decidedBy: 'rule',
+    decidedAt: new Date((target.start_time + 600) * 1000).toISOString(),
+    firstRunId: target.id,
+  };
+  incidentRunIds.add(target.id);
+  INCIDENT_MARKERS.push({
+    project_id: 1,
+    occurred_at: target.start_time,
+    label: `Environment incident: ${INCIDENT_HOST}`,
+    description: reason,
+    category: 'incident',
+    environment: 'staging',
+    source: 'auto',
+    run_id: target.id,
+    created_at: target.start_time + 600,
+    updated_at: target.start_time + 600,
+  });
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
 // Mirror the server's computeRegressionSignals: walk each case's final
 // executions (one per run: an earlier attempt of a retried test is not one) in
@@ -1808,6 +1906,8 @@ const RESOURCE_OCCURRENCES = [];
   );
   const byCase = new Map();
   for (const trc of TEST_RUNS_CASES) {
+    // An environment incident gets no regression signals and is no one's baseline.
+    if (incidentRunIds.has(trc.test_run_id)) continue;
     if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
     if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
     byCase.get(trc.test_case_id).push(trc);
@@ -3765,6 +3865,11 @@ const REBASE_SQL = [
   `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
   '',
+  '-- ISO timestamps embedded in JSON columns',
+  `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
+    `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
+  '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
@@ -4607,6 +4712,13 @@ const lines = [
   '-- Release markers linked to a run (they keep that run forever)',
   insert('markers', RELEASE_MARKERS),
   insert('markers', EARLIER_RELEASES),
+  insert(
+    'markers',
+    INCIDENT_MARKERS.map((m, i) => ({
+      id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + i + 1,
+      ...m,
+    })),
+  ),
   '',
   '-- Test selections',
   insert('test_selections', SELECTIONS),

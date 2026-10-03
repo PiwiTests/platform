@@ -174,7 +174,7 @@ test.describe('Flake Lab', () => {
     await expect(page.locator('[data-shot="flake-experiments"]')).toContainText(
       '1 experiment · last: reproduced on cccc222',
     );
-    await expect(page.getByTestId('flake-suspect-lab').first()).toContainText(/reproduced 3\/4 · /);
+    await expect(page.getByTestId('flake-suspect-lab').first()).toContainText(/reproduced 3 of 4 · /);
     await expect(page.getByTestId('copy-flake-command')).toBeVisible();
     await expect(page.getByTestId('copy-flake-verify-command')).toBeVisible();
     await expect(experiments).toContainText(`npx @piwitests/reporter flake verify ${testCaseId}`);

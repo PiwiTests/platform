@@ -5,7 +5,7 @@ import { requireResolvedProjectAccess, requireRouteId, resolveTestRunCaseProject
 import { resolveWastedSettings } from '../../utils/wasted-settings';
 import { resolveOwners } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
-import { ciRerunAvailability } from '../../utils/ci-rerun';
+import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -26,20 +26,24 @@ export default eventHandler(async (event) => {
   // wasted_time_ms is served as-is.
   const wasted = await resolveWastedSettings(db);
 
-  // The next-step policy needs whether AI diagnosis and a CI re-run are
-  // configured — signals only the server can resolve.
+  // The next-step policy needs whether AI diagnosis, a CI re-run and a Flake Lab
+  // CI target are configured — signals only the server can resolve.
   const [row] = await db
-    .select({ testRunId: testRunsCases.testRunId })
+    .select({ testRunId: testRunsCases.testRunId, testCaseId: testRunsCases.testCaseId })
     .from(testRunsCases)
     .where(eq(testRunsCases.id, id));
-  const [aiConfig, ciRerun] = await Promise.all([
+  const [aiConfig, ciRerun, flakeLabCi] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     row ? ciRerunAvailability(db, projectId, row.testRunId).catch(() => null) : Promise.resolve(null),
+    row?.testCaseId != null
+      ? flakeLabCiAvailability(db, projectId, row.testCaseId).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const result = (await getTestRunCase(db, id, wasted.isDefault ? null : wasted.patterns, {
     aiConfigured: aiConfig != null,
     ciRerunAvailable: ciRerun?.available ?? false,
+    flakeLabCiAvailable: flakeLabCi?.available ?? false,
   })) as any;
   if (!result) {
     throw apiError({

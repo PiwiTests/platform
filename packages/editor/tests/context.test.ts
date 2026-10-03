@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { linkedDesktopProject, namedInstance, readDesktopDiscovery, resolveContextConnection } from '../src/context';
+import {
+  linkedDesktopProject,
+  namedInstance,
+  readDesktopDiscovery,
+  resolveContextConnection,
+  withServerUrl,
+} from '../src/context';
 
 const dirs: string[] = [];
 function workspace(dotEnv?: string): string {
@@ -167,5 +173,30 @@ describe('the desktop app', () => {
     expect(linkedDesktopProject(desktop, '/w/app/tests')).toBe(8);
     expect(linkedDesktopProject(desktop, '/w/other')).toBe(6);
     expect(linkedDesktopProject(desktop, '/elsewhere')).toBeNull();
+  });
+});
+
+describe('withServerUrl', () => {
+  const command = 'npx @piwitests/reporter flake 12';
+
+  test('leaves the command alone when it finds the instance itself, so it reads the key there too', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://piwi.corp\nPIWI_API_KEY=pd_dotenv\n');
+    expect(withServerUrl(command, 'https://piwi.corp/', root, env)).toBe(command);
+    expect(
+      withServerUrl(command, 'https://piwi.corp', workspace(), { ...env, PIWI_DASHBOARD_URL: 'https://piwi.corp/' }),
+    ).toBe(command);
+  });
+
+  test('names the instance the editor reads when the command would find another or none', () => {
+    const root = workspace('PIWI_DASHBOARD_URL=https://other.corp\n');
+    expect(withServerUrl(command, 'https://piwi.corp/', root, env)).toBe(`${command} --server-url https://piwi.corp`);
+    expect(withServerUrl(command, 'https://piwi.corp', workspace(), env)).toBe(
+      `${command} --server-url https://piwi.corp`,
+    );
+  });
+
+  test('the desktop app the command finds by itself needs no flag', () => {
+    const desktop = { url: 'http://127.0.0.1:3000', token: 'pd_desktop', projects: [] };
+    expect(withServerUrl(command, 'http://127.0.0.1:3000', workspace(), env, desktop)).toBe(command);
   });
 });

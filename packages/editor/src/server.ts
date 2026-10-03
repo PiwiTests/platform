@@ -50,6 +50,7 @@ import {
   breaksOfChange,
   callEndLine,
   filePages,
+  flakeLabLens,
   functionSnippet,
   functionSuggestions,
   locatorRange,
@@ -67,7 +68,13 @@ import {
   timeoutMessage,
   type LineLocator,
 } from './analysis.js';
-import { PiwiContext, desktopConfigPath, linkedDesktopProject, readDesktopDiscovery } from './context.js';
+import {
+  PiwiContext,
+  desktopConfigPath,
+  linkedDesktopProject,
+  readDesktopDiscovery,
+  withServerUrl,
+} from './context.js';
 import { PiwiClient, type BranchFailure, type FixPlan } from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import {
@@ -210,6 +217,52 @@ function testCounts(tests: Array<{ status: string | null }>): string {
 
 /** The environment of a test run the editor starts: the reporter records the run as started from an editor. */
 export const EDITOR_RUN_ENV: Readonly<Record<string, string>> = { PIWI_ORIGIN: 'editor' };
+
+/**
+ * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
+ * open its Flakiness tab, then the `piwi flake` commands it can run, each through
+ * `piwi.runCommand` in the config's folder and reporting to the instance the
+ * context reads.
+ */
+export function flakeLabLines(
+  context: PiwiContext,
+  testCaseId: number,
+  line: number,
+  env: Record<string, string | undefined>,
+): SummaryLine[] {
+  const entry = context.flakeLab.get(testCaseId);
+  const lens = entry && context.client ? flakeLabLens(testCaseId, entry) : null;
+  if (!lens || !context.client) return [];
+  const serverUrl = context.client.connection.serverUrl;
+  return [
+    {
+      line,
+      title: lens.title,
+      command: {
+        title: 'Open its Flakiness tab',
+        command: 'piwi.openInDashboard',
+        arguments: [context.client.flakinessUrl(testCaseId)],
+      },
+    },
+    ...lens.actions.map(
+      (a): SummaryLine => ({
+        line,
+        title: a.title,
+        command: {
+          title: a.title,
+          command: 'piwi.runCommand',
+          arguments: [
+            {
+              cwd: context.root,
+              command: withServerUrl(a.command, serverUrl, context.root, env),
+              env: { ...EDITOR_RUN_ENV },
+            } satisfies RunCommandArgs,
+          ],
+        },
+      }),
+    ),
+  ];
+}
 
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
@@ -1166,6 +1219,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           endLine,
           ...(failure ? { failure } : {}),
         });
+        out.push(...flakeLabLines(context, found.id, i, env));
         if (!failed || !failure) return;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         reasons.push({

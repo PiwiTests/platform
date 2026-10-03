@@ -2,6 +2,7 @@
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
 import { errorMessage } from '~/utils';
+import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
 
 useHead({ title: 'Piwi Dashboard' });
 
@@ -54,6 +55,15 @@ const { data: inboxGaps } = useFetch('/api/gaps/inbox', {
   immediate: !gapsHidden.value,
   default: () => [] as InboxGap[],
   transform: (r: { items: InboxGap[] }) => r.items,
+});
+
+// Flaky tests waiting in the Flake Lab — hidden when the instance declined it.
+const flakeLabHidden = computed(() => instCapHidden('flake-lab'));
+const { data: flakeLabInbox } = useFetch('/api/flake-lab/inbox', {
+  lazy: true,
+  immediate: !flakeLabHidden.value,
+  default: () => [] as FlakeLabInboxItem[],
+  transform: (r: { items: FlakeLabInboxItem[] }) => r.items,
 });
 
 useRunStream(() => Promise.all([refreshOverview(), refreshRecentRuns(), refreshOpenClusters()]));
@@ -391,6 +401,13 @@ function statusBorderClass(status: string): string {
             </NuxtLink>
           </div>
         </SectionCard>
+
+        <!-- Flaky tests the Flake Lab can move forward: verify a fix, reproduce under an untested suspect -->
+        <FlakeLabInboxCard
+          v-if="!flakeLabHidden && flakeLabInbox.length > 0"
+          data-shot="flake-lab-inbox"
+          :items="flakeLabInbox"
+        />
 
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
         <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">

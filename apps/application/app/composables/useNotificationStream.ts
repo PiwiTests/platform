@@ -39,6 +39,7 @@ interface NotificationEventData {
   affectedCases?: number;
   snapshotId?: number;
   tests?: { title: string }[];
+  reason?: string;
 }
 
 function renderBody(data: NotificationEventData): string {
@@ -85,6 +86,10 @@ function renderBody(data: NotificationEventData): string {
     case 'bug.looks_fixed':
       lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a test marked to fail now passes`);
       if (data.tests?.length) lines.push(data.tests.map((t) => t.title).join(', '));
+      break;
+    case 'environment.incident':
+      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: environment incident`);
+      if (data.reason) lines.push(data.reason);
       break;
     case 'report.ready':
       lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);

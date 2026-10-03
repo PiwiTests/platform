@@ -19,10 +19,20 @@
  * - `fixLanded: true`: the cluster's fix has landed.
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
  * - `resources: 'leaky'`: the run's resource report names at least one leak.
+ * - `incident: true`: the run is flagged as an environment incident.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
 export const DEMO_EXAMPLES = [
+  {
+    id: 'environment-incident-run',
+    doc: 'features/environment-incidents',
+    title: 'E2E Checkout › a run against staging while it was down',
+    shows:
+      'Ten of eleven tests failed navigating to staging, so the run is an environment incident: not counted, with one incident marker.',
+    route: '/test-runs/14',
+    expect: { run: { id: 14, project: 'e2e-checkout' }, incident: true },
+  },
   {
     id: 'ai-diagnosis-stored',
     doc: 'features/ai-diagnosis',

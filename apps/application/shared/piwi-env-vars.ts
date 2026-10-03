@@ -1056,7 +1056,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_AUTO_MARKERS: {
     description:
-      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment (default: enabled). Set to false to disable.',
+      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment, and when a run is flagged as an environment incident (default: enabled). Set to false to disable.',
     category: 'markers',
     type: 'boolean',
     default: 'true',

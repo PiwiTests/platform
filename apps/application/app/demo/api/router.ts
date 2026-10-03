@@ -189,6 +189,7 @@ import {
   getFlakyListSuspects,
   getProjectFlakeLab,
   listFlakeExperiments,
+  listFlakeLabInbox,
   recordFlakeResults,
   resolveTestCaseByLocation,
   type FlakeResultsInput,
@@ -338,6 +339,8 @@ import {
   type UrlPatternWriteResult,
 } from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
+import { setRunIncident } from '#shared/handlers/run-health';
+import { parseSetRunIncident } from '#shared/run-incident';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -917,6 +920,25 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/incident$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const input = parseSetRunIncident(body);
+      if (typeof input === 'string') throw demoHttpError(400, input);
+      const db = await getDemoDb();
+      const by = ctx?.actingUserId
+        ? ((await db.select({ name: users.name }).from(users).where(eq(users.id, ctx.actingUserId)))[0]?.name ?? null)
+        : null;
+      try {
+        return await setRunIncident(db, +m[1]!, { ...input, by });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
+        throw err;
+      }
+    },
+  },
+  {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
     handler: async (m, _b, _q, ctx) => {
@@ -1246,6 +1268,15 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to run the lab in.
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      return { ok: false, demo: true, message: 'Flake Lab in CI is not available in the demo.' };
+    },
+  },
+  {
     method: 'PATCH',
     pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
     handler: async (m, body, _q, ctx) => {
@@ -1378,6 +1409,7 @@ const routes: RouteEntry[] = [
         environment: q?.get('environment')?.trim() || null,
         branch: q?.get('branch')?.trim() || null,
         limit: int('limit'),
+        suspects: q?.get('suspects') === 'true' || q?.get('suspects') === '1',
       });
     },
   },
@@ -2095,6 +2127,13 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/gaps\/inbox$/,
     handler: async () => ({ items: await listAcceptedUnwritten(await getDemoDb(), 'all') }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/flake-lab\/inbox$/,
+    handler: async (_m, _b, _q, ctx) => ({
+      items: await listFlakeLabInbox(await getDemoDb(), !ctx || ctx.scope === 'all' ? 'all' : [...ctx.scope]),
+    }),
   },
   {
     method: 'GET',

@@ -24,6 +24,9 @@ clients stay thin and both editors give the same answers.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
   the frames and the message in `branch-failures`), above which the reason, **Screenshot** and **Trace** are ordinary
   summary lines; the hover on any line of that stack shows the message and the call chain.
+  A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`): its
+  flaky rate and top suspect, then `piwi flake` commands run through `piwi.runCommand`, with `--server-url` only when
+  the command, run from the config's folder, would find another instance (`withServerUrl`).
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.

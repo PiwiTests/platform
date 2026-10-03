@@ -223,6 +223,63 @@ describe('the reproduce plan', () => {
     expect(plan.combined).toBeNull();
   });
 
+  test('gives the next step its facts: reproduce under the top untested suspect', async () => {
+    const facts = await lab.getFlakeLabStepFacts(db as never, FLAKY, { ciAvailable: true, now: NOW });
+    const plan = await lab.getFlakeExperimentPlan(db as never, FLAKY, { now: NOW });
+    expect(facts).toEqual({
+      testCaseId: FLAKY,
+      nextStep: 'reproduce',
+      command: `npx @piwitests/reporter flake ${FLAKY}`,
+      reproducedBy: null,
+      suspect: { id: plan.suspects[0]!.id, label: plan.suspects[0]!.label, standing: 'untested' },
+      untestedSuspects: plan.suspects.length,
+      ciAvailable: true,
+    });
+  });
+
+  test('runs the untested suspects first and a suspect that did not reproduce last, explained', async () => {
+    const before = await lab.getFlakeExperimentPlan(db as never, FLAKY, { now: NOW });
+    const cart = 'slow-route:GET /api/cart';
+    expect(before.arms[0]!.suspectId).toBe(cart);
+    const [row] = await db
+      .insert(schema.flakeExperiments)
+      .values({
+        projectId: 1,
+        testCaseId: FLAKY,
+        kind: 'reproduce',
+        verdict: 'not-reproduced',
+        source: 'cli',
+        createdAt: NOW,
+        finishedAt: NOW,
+      })
+      .returning({ id: schema.flakeExperiments.id });
+    const arm = { experimentId: row!.id, conditions: [], runs: 10, matchingFailures: 0 };
+    await db.insert(schema.flakeArms).values([
+      { ...arm, armKey: 'control', position: 0, label: 'control' },
+      { ...arm, armKey: 'suspect-1', position: 1, suspectId: cart, label: 'delay', verdict: 'not-reproduced' },
+    ]);
+    try {
+      const plan = await lab.getFlakeExperimentPlan(db as never, FLAKY, { now: NOW });
+      expect(plan.arms).toHaveLength(before.arms.length);
+      expect(plan.arms.at(-1)!.suspectId).toBe(cart);
+      expect(plan.arms[0]!.suspectId).not.toBe(cart);
+      expect(plan.arms.find((a) => a.suspectId === cart)!.rank).toBe(1);
+      expect(plan.suspects[0]).toMatchObject({ id: cart, rank: 1, lab: { verdict: 'not-reproduced', runs: 10 } });
+      expect(plan.suspects[0]!.lab!.note).toMatch(/fewer than 26% of runs/);
+      expect(plan.suspects[1]!.lab).toBeNull();
+
+      const project = await lab.getProjectFlakeLab(db as never, 1, { suspects: true, now: NOW });
+      const flaky = project.tests.find((t) => t.testCaseId === FLAKY)!;
+      expect(flaky.suspect).toMatchObject({ standing: 'untested', lab: 'untested' });
+      expect(flaky.suspect!.id).not.toBe(cart);
+      expect(flaky.untestedSuspects).toBe(plan.suspects.length - 1);
+      const plain = await lab.getProjectFlakeLab(db as never, 1, { now: NOW });
+      expect(plain.tests.find((t) => t.testCaseId === FLAKY)!.suspect).toBeUndefined();
+    } finally {
+      await db.delete(schema.flakeExperiments).where(eq(schema.flakeExperiments.id, row!.id));
+    }
+  });
+
   test('refuses a verify plan before anything reproduced', async () => {
     await expect(lab.getFlakeExperimentPlan(db as never, 555_555, { now: NOW })).rejects.toMatchObject({
       statusCode: 404,
@@ -390,9 +447,29 @@ describe('recording results', () => {
     const [ranked] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW });
     expect(ranked!.suspect!.id).toBe('slow-route:GET /api/cart');
 
-    const reproduced = new Map([[FLAKY, new Set([`alongside:${NEIGHBOR}`])]]);
-    const [preferred] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, reproduced });
+    const result = (suspectId: string, verdict: 'reproduced' | 'not-reproduced') => ({
+      suspectId,
+      experimentId: 1,
+      verdict,
+      runs: 10,
+      matchingFailures: verdict === 'reproduced' ? 7 : 0,
+      controlRuns: 10,
+      controlMatchingFailures: 0,
+      pValue: null,
+      label: suspectId,
+      finishedAt: null,
+    });
+    const reproduced = new Map([
+      [FLAKY, new Map([[`alongside:${NEIGHBOR}`, result(`alongside:${NEIGHBOR}`, 'reproduced')]])],
+    ]);
+    const [preferred] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: reproduced });
     expect(preferred!.suspect!.id).toBe(`alongside:${NEIGHBOR}`);
+
+    // A higher-ranked suspect that did not reproduce gives way to the next untested one, and stays listed.
+    const cart = 'slow-route:GET /api/cart';
+    const demoted = new Map([[FLAKY, new Map([[cart, result(cart, 'not-reproduced')]])]]);
+    const [next] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: demoted });
+    expect(next!.suspect!.id).not.toBe(cart);
 
     // The list reads each test's lab results: the cart suspect reproduced earlier, so it leads.
     const [item] = await lab.getFlakyListSuspects(db as never, 1, [FLAKY]);

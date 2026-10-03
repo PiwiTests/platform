@@ -206,6 +206,58 @@ export function clusterInQueue(
   }
 }
 
+/** The environment-incident run a cluster first appeared in. */
+export interface InboxIncidentRunLike {
+  runId: number;
+  reason: string;
+  host: string | null;
+  startedAt?: string | Date | null;
+}
+
+/** One inbox row standing for every cluster an environment incident opened. */
+export interface InboxIncidentRow<T> {
+  runId: number;
+  projectId: number;
+  reason: string;
+  host: string | null;
+  startedAt: string | Date | null;
+  clusters: T[];
+}
+
+/**
+ * Take the clusters an environment-incident run opened out of the inbox list
+ * and group them into one row per run: an outage that opened a cluster per
+ * failing page reads as one thing to look at, not a page of triage. Clusters
+ * that were already open before the incident stay rows of their own.
+ */
+export function groupIncidentClusters<
+  T extends { id: number; projectId: number; incidentRun?: InboxIncidentRunLike | null },
+>(clusters: T[]): { clusters: T[]; incidents: Array<InboxIncidentRow<T>> } {
+  const rest: T[] = [];
+  const byRun = new Map<number, InboxIncidentRow<T>>();
+  for (const cluster of clusters) {
+    const run = cluster.incidentRun;
+    if (!run) {
+      rest.push(cluster);
+      continue;
+    }
+    let row = byRun.get(run.runId);
+    if (!row) {
+      row = {
+        runId: run.runId,
+        projectId: cluster.projectId,
+        reason: run.reason,
+        host: run.host,
+        startedAt: run.startedAt ?? null,
+        clusters: [],
+      };
+      byRun.set(run.runId, row);
+    }
+    row.clusters.push(cluster);
+  }
+  return { clusters: rest, incidents: [...byRun.values()] };
+}
+
 /** Count how many of `clusters` fall into each queue, for the tab badges. */
 export function countQueues(
   clusters: InboxClusterLike[],
