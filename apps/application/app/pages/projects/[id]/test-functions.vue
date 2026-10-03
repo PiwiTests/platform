@@ -411,11 +411,13 @@ function describeSteps(entry: TestFunctionInfo): string {
       <div class="p-4 space-y-4">
         <SectionCard title="Test function catalog" icon="i-lucide-function-square" :count="entries.length || null">
           <template #subtitle>
-            Page-object methods and helpers the
+            Page-object methods and helpers a recording is matched against, in the
             <DocLink to="features/extension#connecting-to-a-piwi-instance" no-icon class="text-primary hover:underline"
               >Piwi Picker extension</DocLink
             >
-            matches a recording against, to generate calls to your own code instead of raw locator lines.
+            or
+            <DocLink to="features/editor-recording" no-icon class="text-primary hover:underline">your editor</DocLink>,
+            to generate calls to your own code instead of raw locator lines.
           </template>
           <template #actions>
             <UButton label="Add function" icon="i-lucide-plus" size="sm" @click="openAdd" />
