@@ -205,6 +205,32 @@ describe('pageCandidates', () => {
     expect(expressions(text, 4)).toEqual(['page']);
   });
 
+  test('a property named like a page method is not a call to it', () => {
+    const text = file(
+      "test('t', async ({ page, request }) => {",
+      "  const report = await (await request.get('/api/report')).json();",
+      "  expect(report.title).toBe('Weekly');",
+      '  expect(report.content.length).toBe(3);',
+      "  expect(await page.title()).toBe('Reports');",
+      '',
+      '});',
+    );
+    expect(pageCandidates(text, 5).candidates).toEqual([{ expression: 'page', reason: 'used on line 5' }]);
+  });
+
+  test('a parameter typed as another Playwright object is not a page, whatever the function returns', () => {
+    const text = file(
+      'async function pageWithScript(context: BrowserContext): Promise<Page> {',
+      '  // here',
+      '}',
+    );
+    expect(pageCandidates(text, 1)).toEqual({
+      context: 'file',
+      default: 'page',
+      candidates: [{ expression: 'page', reason: "Playwright's page fixture" }],
+    });
+  });
+
   test('between tests: a file context, with the fixtures of the tests around it', () => {
     const text = file(
       "test('a', async ({ adminPage }) => {",

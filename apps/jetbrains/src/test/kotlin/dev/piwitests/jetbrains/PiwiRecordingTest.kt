@@ -8,7 +8,6 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.command.undo.UndoManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -149,10 +148,13 @@ class PiwiRecordingTest : BasePlatformTestCase() {
             text(),
         )
 
+        // An edit around the block only moves it; the caret moving between writes changes nothing either.
+        myFixture.editor.caretModel.moveToOffset(0)
         WriteCommandAction.runWriteCommandAction(project) {
             val document = myFixture.editor.document
             document.insertString(document.getLineStartOffset(3), "// checkout\n")
         }
+        myFixture.editor.caretModel.moveToOffset(text().indexOf("goto"))
         assertFalse(session.edited)
         val final = """
             import { test, expect } from '@playwright/test';
@@ -171,6 +173,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         send(update("s1", code, imports = listOf(cartPage)))
         assertEquals(final, text())
 
+        myFixture.editor.caretModel.moveToOffset(text().length)
         recordings.stop(session)
         assertEquals(listOf("stop s1"), sent)
         assertEquals("Piwi: stopping the recording…", session.view.text)
@@ -305,7 +308,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         send(update("s6", code, state = "stopped", warnings = listOf(RecordingWarning(step = 1, line = 1, message = brittle))))
         assertEquals("Recorded 2 steps into warned.spec.ts. 1 warning to check, on its line.", notes.last().content)
         assertEquals(1, recordings.warnings(document).size)
-        typeAt("nth(2)", "first().")
+        typeAt("nth(2)", "x")
         assertEquals(emptyList<Pair<Any, String>>(), recordings.warnings(document))
     }
 
@@ -322,16 +325,24 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(listOf("Install Chromium"), notes.last().actions.map { it.templateText })
     }
 
-    /** The project's only recording is the one the actions stop from anywhere; a second file is not recorded into twice. */
-    fun testTheRecordingActionsFindTheSession() {
+    /** Stop, Pause and Resume act on the recording of the file at hand, each while it applies. */
+    fun testTheRecordingActionsActOnTheFilesRecordingWhileTheyApply() {
         myFixture.configureByText("only.spec.ts", "test('t', async ({ page }) => {\n  \n});\n")
         val session = register("s9", line = 1, newLine = false, indent = "  ")
         assertSame(session, recordings.only())
-        assertSame(session, recordings.sessionFor(myFixture.file.virtualFile))
-        assertFalse(PiwiRecordFlow.canRecordInto(project, myFixture.file.virtualFile))
-        FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
-        assertEquals(listOf("stop s9"), sent)
-        send(update("s9", "", state = "stopped"))
+        val actions = ActionManager.getInstance()
+        assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
+        send(update("s9", "await page.goto('/');"))
+        assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
+        assertEquals(listOf("pause s9"), sent)
+        send(update("s9", "await page.goto('/');", state = "paused"))
+        assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
+        assertTrue(myFixture.testAction(actions.getAction("Piwi.ResumeRecording")).isEnabled)
+        assertEquals(listOf("pause s9", "resume s9"), sent)
+        assertTrue(myFixture.testAction(actions.getAction("Piwi.StopRecording")).isEnabled)
+        assertFalse(myFixture.testAction(actions.getAction("Piwi.StopRecording")).isEnabled)
+        assertEquals(listOf("pause s9", "resume s9", "stop s9"), sent)
+        send(update("s9", "await page.goto('/');", state = "stopped"))
         assertNull(recordings.only())
     }
 }

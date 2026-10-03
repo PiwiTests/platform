@@ -441,10 +441,26 @@ class GlueTest {
     fun `a name the file already imports is not imported again, whatever the path or the other names`() {
         val text = "import CartPage, { type Row as Line } from '../pages/cart.page.js';\nimport * as pages from './pages';\nimport Api = require('./api');\nimport './setup';\n"
         assertEquals(null, Glue.importInsertion(text, listOf("import { CartPage } from './pages/cart.page';")))
-        assertEquals(null, Glue.importInsertion(text, listOf("import { Line } from './row';", "import { pages } from './pages';", "import { Api } from './api';")))
+        assertEquals(null, Glue.importInsertion(text, listOf("import { Line } from './row';", "import { pages } from './pages';")))
         assertEquals(null, Glue.importInsertion(text, listOf("import './setup';")))
         val end = text.length - 1
         assertEquals(Glue.ImportInsertion(end, "\nimport { Row } from './row';\nimport './teardown';"), Glue.importInsertion(text, listOf("import { Row } from './row';", "import './teardown';")))
+    }
+
+    @Test
+    fun `an import line whose names an import statement of the file binds already is left out`() {
+        val text = "import {\n  CartPage,\n  LoginPage as Login,\n} from './pages';\nimport Checkout, * as helpers from './helpers';\n\ntest('t', async () => {});\n"
+        val skipped = listOf(
+            "import { CartPage } from './pages/cart.page';",
+            "import { Login } from './x';",
+            "import { Checkout } from './y';",
+            "import { helpers } from './z';",
+        )
+        assertEquals(null, Glue.importInsertion(text, skipped))
+        assertEquals(
+            Glue.ImportInsertion(text.indexOf("\n\ntest"), "\nimport { LoginPage } from './pages/login.page';"),
+            Glue.importInsertion(text, skipped + "import { LoginPage } from './pages/login.page';"),
+        )
     }
 
     @Test

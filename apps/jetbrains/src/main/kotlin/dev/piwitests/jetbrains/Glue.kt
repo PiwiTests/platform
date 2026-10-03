@@ -523,8 +523,9 @@ object Glue {
 
     /**
      * The import lines of `imports` a document's text lacks, and where they go: after its last top-level `import`
-     * statement, else at its top, followed by an empty line. A line is there already when the file holds the same
-     * statement, or imports every name it imports, from that module or another path: nothing is imported twice.
+     * statement, else at its top, followed by an empty line. A line is left out when the file holds the same statement,
+     * or when an import statement of the file already binds every name it imports, whatever the module: a name bound
+     * twice does not compile.
      */
     fun importInsertion(text: CharSequence, imports: List<String>): ImportInsertion? {
         val statements = importStatements(text)
@@ -548,7 +549,6 @@ object Glue {
     private val IMPORT_START = Regex("^import(?=[\\s{*'\"])")
     private val IMPORT_COMPLETE = Regex("\\bfrom\\s*['\"]|^import\\s*['\"]|=\\s*require\\s*\\(|;\\s*$")
     private val IMPORT_CLAUSE = Regex("^import\\s*(?:type\\s+)?([\\s\\S]*?)\\s*\\bfrom\\s*['\"]")
-    private val IMPORT_EQUALS = Regex("^import\\s+(?:type\\s+)?([A-Za-z_$][\\w$]*)\\s*=")
     private val IDENTIFIER = Regex("[A-Za-z_$][\\w$]*")
 
     /** The top-level `import` statements of a text, in order: those starting a line, followed to their module. */
@@ -578,10 +578,12 @@ object Glue {
         return found
     }
 
-    /** The names an `import` statement binds in the file: its default, its namespace and its named imports. */
+    /**
+     * The names an `import` statement binds in the file: its default, its namespace (`* as NS`) and each named import
+     * under its local name (`B` for `A as B`, `D` for `type D`). `import 'x'` and `require` bind none.
+     */
     private fun importedNames(statement: String): Set<String> {
         val text = statement.trim()
-        IMPORT_EQUALS.find(text)?.let { return setOf(it.groupValues[1]) }
         val clause = IMPORT_CLAUSE.find(text)?.groupValues?.get(1) ?: return emptySet()
         val names = mutableSetOf<String>()
         val braces = Regex("\\{([^}]*)\\}").find(clause)

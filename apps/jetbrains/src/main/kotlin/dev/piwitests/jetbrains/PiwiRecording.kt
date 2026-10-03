@@ -259,7 +259,7 @@ class RecordingSession internal constructor(
     val document: Document = editor.document
 
     private val group = "piwi.recording.$id"
-    private val bracket = UndoBracket(project, document)
+    private val bracket = UndoBracket(project, document, group)
     private var anchor: RangeMarker? = null
     private var block: RangeMarker? = null
     private var tint: RangeHighlighter? = null
@@ -379,6 +379,7 @@ class RecordingSession internal constructor(
             mark(warnings)
             return
         }
+        bracket.open(editor)
         WriteCommandAction.writeCommandAction(project)
             .withName(PiwiRecordings.COMMAND)
             .withGroupId(group)
@@ -387,7 +388,6 @@ class RecordingSession internal constructor(
             .run<RuntimeException> {
                 applying = true
                 try {
-                    bracket.open(editor)
                     var start: Int
                     if (current != null) {
                         start = current.startOffset
@@ -498,33 +498,45 @@ class RecordingWarningMark(val marker: RangeMarker, private val text: String, va
 }
 
 /**
- * Makes everything a recording writes one undo step: a start mark goes with its first write and a finish mark with its
- * end, and one Undo goes back to the start mark, the developer's own edits of the file in between included. While the
- * first write is undone, its start mark is off the undo stack: the next write starts again, and a finish mark only
- * follows a start mark that is still there.
+ * Makes everything a recording writes one undo step: a start mark before its first write and a finish mark at its end,
+ * and one Undo goes back to the start mark, the developer's own edits of the file in between included. The start mark
+ * is a command of its own, just before the write: the caret it records is the one the write starts from, which Undo
+ * restores before reaching it, so it never stops there to move the caret instead. While the start mark is undone, it
+ * is off the undo stack: the next write starts again, and a finish mark only follows a start mark still there.
  */
-private class UndoBracket(private val project: Project, private val document: Document) {
+private class UndoBracket(private val project: Project, private val document: Document, private val group: String) {
     private var mark: StartMarkAction? = null
     private var holder: Editor? = null
-    private var start: StartWrite? = null
+    private var start: StartMark? = null
 
-    /** In a write command: starts the bracket, in an editor of the document, unless it is open. */
+    /** Before a write: starts the bracket in an editor of the document, unless it is open. */
     fun open(preferred: Editor) {
         if (mark != null && start?.undone == false) return
         release()
         val editor = preferred.takeIf { !it.isDisposed && it.document == document }
             ?: EditorFactory.getInstance().getEditors(document, project).firstOrNull()
             ?: return
-        mark = try {
-            StartMarkAction.start(editor, project, PiwiRecordings.COMMAND)
-        } catch (_: StartMarkAction.AlreadyStartedException) {
-            return
-        }
-        holder = editor
-        start = StartWrite(document).also { UndoManager.getInstance(project).undoableActionPerformed(it) }
+        CommandProcessor.getInstance().executeCommand(
+            project,
+            {
+                mark = try {
+                    StartMarkAction.start(editor, project, PiwiRecordings.COMMAND)
+                } catch (_: StartMarkAction.AlreadyStartedException) {
+                    null
+                }
+                if (mark != null) {
+                    holder = editor
+                    start = StartMark(document).also { UndoManager.getInstance(project).undoableActionPerformed(it) }
+                }
+            },
+            PiwiRecordings.COMMAND,
+            null,
+            UndoConfirmationPolicy.DO_NOT_REQUEST_CONFIRMATION,
+            false,
+        )
     }
 
-    /** Ends the bracket in a command of its own: one Undo now removes everything since its start. */
+    /** Ends the bracket, with the last write when nothing came in between: one Undo now removes everything since its start. */
     fun close() {
         val mark = mark
         val editor = holder
@@ -536,7 +548,7 @@ private class UndoBracket(private val project: Project, private val document: Do
             project,
             { FinishMarkAction.finish(project, editor, mark) },
             PiwiRecordings.COMMAND,
-            null,
+            group,
             UndoConfirmationPolicy.DO_NOT_REQUEST_CONFIRMATION,
             false,
         )
@@ -557,8 +569,8 @@ private class UndoBracket(private val project: Project, private val document: Do
     }
 }
 
-/** A recording's first write, in its undo group: whether it is undone now, which takes the start mark off the undo stack. */
-private class StartWrite(document: Document) : BasicUndoableAction(document) {
+/** Beside a recording's start mark, in its undo group: whether that group is undone now, the start mark with it. */
+private class StartMark(document: Document) : BasicUndoableAction(document) {
     @Volatile var undone = false
 
     override fun undo() {

@@ -218,8 +218,8 @@ interface ClassInfo {
   pageFields: string[];
 }
 
-/** Members a page has and a locator does not: a receiver of one is a page. */
-const PAGE_ONLY = new Set([
+/** Methods a page has and a locator does not: the receiver of a call to one is a page. */
+const PAGE_ONLY_METHODS = new Set([
   'goto',
   'reload',
   'goBack',
@@ -232,9 +232,6 @@ const PAGE_ONLY = new Set([
   'waitForTimeout',
   'setViewportSize',
   'viewportSize',
-  'keyboard',
-  'mouse',
-  'touchscreen',
   'bringToFront',
   'pause',
   'setContent',
@@ -250,6 +247,9 @@ const PAGE_ONLY = new Set([
   'exposeBinding',
   'context',
 ]);
+
+/** Properties only a page has: `page.keyboard.press(…)`. */
+const PAGE_ONLY_PROPERTIES = new Set(['keyboard', 'mouse', 'touchscreen']);
 
 /** Methods a page shares with a locator. */
 const PAGE_OR_LOCATOR = new Set([
@@ -554,7 +554,8 @@ class FileModel {
   private typeOf(from: number, oneLine: boolean): 'page' | 'promise' | null {
     const scope = this.owner[from];
     const line = this.lineOfToken(from);
-    for (let j = from; j < this.tokens.length && j < from + 40; j++) {
+    const end = Math.min(this.tokens.length, from + 40, scope ? scope.close : Infinity);
+    for (let j = from; j < end; j++) {
       const t = this.tokens[j]!;
       if (oneLine && this.lineOfToken(j) !== line) return null;
       if (this.owner[j] === scope && t.kind === 'punct' && [';', '=', ',', ')', ']', '}', '{', '=>'].includes(t.text)) {
@@ -759,9 +760,10 @@ class FileModel {
       for (let k = 1; k < segments.length; k++) {
         const member = segments[k]!;
         const receiver = segments.slice(0, k).join('.');
-        if (PAGE_ONLY.has(member)) {
+        const called = k === segments.length - 1 && this.is(j, '(');
+        if (PAGE_ONLY_PROPERTIES.has(member) || (called && PAGE_ONLY_METHODS.has(member))) {
           this.uses.push({ expression: receiver, token: i, ambiguous: false });
-        } else if (k === segments.length - 1 && PAGE_OR_LOCATOR.has(member) && this.is(j, '(')) {
+        } else if (called && PAGE_OR_LOCATOR.has(member)) {
           this.uses.push({ expression: receiver, token: i, ambiguous: true });
         }
       }
