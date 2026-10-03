@@ -1,0 +1,337 @@
+package dev.piwitests.jetbrains
+
+import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.notification.Notification
+import com.intellij.notification.Notifications
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.command.undo.UndoManager
+import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
+import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
+import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.ui.EditorNotificationProvider
+import java.util.concurrent.CompletableFuture
+
+/**
+ * A recording's client side, driven by the updates the editor service would send: where the block is written, how it
+ * is rewritten and followed, the imports it adds, the pause on an edit inside it, and the one undo step it leaves.
+ */
+class PiwiRecordingTest : BasePlatformTestCase() {
+    private lateinit var recordings: PiwiRecordings
+    private lateinit var remote: RecordingRemote
+    private val sent = mutableListOf<String>()
+    private val notes = mutableListOf<Notification>()
+
+    override fun setUp() {
+        super.setUp()
+        recordings = project.service<PiwiRecordings>()
+        remote = recordings.remote
+        recordings.remote = RecordingRemote { id, command ->
+            sent += "$command $id"
+            CompletableFuture.completedFuture(true)
+        }
+        project.messageBus.connect(testRootDisposable).subscribe(
+            Notifications.TOPIC,
+            object : Notifications {
+                override fun notify(notification: Notification) {
+                    notes += notification
+                }
+            },
+        )
+    }
+
+    override fun tearDown() {
+        try {
+            recordings.endAll("The test ended.")
+            recordings.remote = remote
+        } catch (e: Throwable) {
+            addSuppressedException(e)
+        } finally {
+            super.tearDown()
+        }
+    }
+
+    private fun update(
+        id: String,
+        code: String,
+        state: String = "recording",
+        imports: List<String> = emptyList(),
+        warnings: List<RecordingWarning> = emptyList(),
+        into: String = "steps",
+        message: String? = null,
+        command: PiwiCommand? = null,
+    ) = RecordingUpdate(
+        sessionId = id,
+        uri = myFixture.file.virtualFile.url,
+        into = into,
+        state = state,
+        code = code,
+        imports = imports,
+        steps = code.lines().filter { it.isNotBlank() }.mapIndexed { i, line -> RecordingStep(words = line, line = i) },
+        warnings = warnings,
+        message = message,
+        command = command,
+    )
+
+    /** An update as the notification delivers it: applied on the event thread. */
+    private fun send(update: RecordingUpdate) {
+        recordings.changed(update)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+    }
+
+    private fun register(id: String, line: Int, newLine: Boolean, indent: String, into: String = "steps"): RecordingSession =
+        recordings.register(id, myFixture.editor, myFixture.file.virtualFile, into, RecordingPlacement(line, newLine, indent))
+
+    private fun text() = myFixture.editor.document.text
+
+    private fun undo() = UndoManager.getInstance(project).undo(TextEditorProvider.getInstance().getTextEditor(myFixture.editor))
+
+    private fun redo() = UndoManager.getInstance(project).redo(TextEditorProvider.getInstance().getTextEditor(myFixture.editor))
+
+    private fun typeAt(fragment: String, typed: String) {
+        myFixture.editor.caretModel.moveToOffset(text().indexOf(fragment))
+        myFixture.type(typed)
+    }
+
+    fun testRegistersTheRecordingActionsBannerAnnotatorAndColor() {
+        for (id in listOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording")) {
+            assertNotNull(id, ActionManager.getInstance().getAction(id))
+        }
+        assertTrue(EditorNotificationProvider.EP_NAME.getExtensions(project).any { it is PiwiRecordingNotificationProvider })
+        val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
+        assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiRecordingAnnotator })
+        assertTrue(PiwiColorSettingsPage().attributeDescriptors.any { it.key == PiwiRecordings.BLOCK })
+    }
+
+    /**
+     * Steps written on a new line inside a test: nothing before the first update, then the block rewritten whole on
+     * each one, its imports after the file's, an edit around it only moving it, and one undo after Stop.
+     */
+    fun testStepsGoOnANewLineAndOneUndoRemovesTheRecording() {
+        val original = """
+            import { test, expect } from '@playwright/test';
+
+            test('pays', async ({ page }) => {
+              await page.goto('/cart');
+            });
+
+        """.trimIndent()
+        myFixture.configureByText("checkout.spec.ts", original)
+        val session = register("s1", line = 4, newLine = true, indent = "  ")
+        assertEquals(original, text())
+        assertNotNull(PiwiRecordingNotificationProvider().collectNotificationData(project, myFixture.file.virtualFile))
+
+        send(update("s1", "", state = "starting"))
+        assertEquals(original.replace("});", "\n});"), text())
+        assertEquals("Piwi: opening the browser to record into this file…", session.view.text)
+
+        send(update("s1", "await page.getByRole('button', { name: 'Pay' }).click();"))
+        assertEquals(original.replace("});", "  await page.getByRole('button', { name: 'Pay' }).click();\n});"), text())
+        assertEquals("Piwi is recording what you do in the browser · 1 step", session.view.text)
+
+        val cartPage = "import { CartPage } from './pages/cart.page';"
+        send(update("s1", "const cartPage = new CartPage(page);\nawait cartPage.pay();", imports = listOf(cartPage)))
+        assertEquals(
+            """
+            import { test, expect } from '@playwright/test';
+            import { CartPage } from './pages/cart.page';
+
+            test('pays', async ({ page }) => {
+              await page.goto('/cart');
+              const cartPage = new CartPage(page);
+              await cartPage.pay();
+            });
+
+            """.trimIndent(),
+            text(),
+        )
+
+        WriteCommandAction.runWriteCommandAction(project) {
+            val document = myFixture.editor.document
+            document.insertString(document.getLineStartOffset(3), "// checkout\n")
+        }
+        assertFalse(session.edited)
+        val final = """
+            import { test, expect } from '@playwright/test';
+            import { CartPage } from './pages/cart.page';
+
+            // checkout
+            test('pays', async ({ page }) => {
+              await page.goto('/cart');
+              const cartPage = new CartPage(page);
+              await cartPage.pay();
+              await expect(page).toHaveURL(/\/done/);
+            });
+
+        """.trimIndent()
+        val code = "const cartPage = new CartPage(page);\nawait cartPage.pay();\nawait expect(page).toHaveURL(/\\/done/);"
+        send(update("s1", code, imports = listOf(cartPage)))
+        assertEquals(final, text())
+
+        recordings.stop(session)
+        assertEquals(listOf("stop s1"), sent)
+        assertEquals("Piwi: stopping the recording…", session.view.text)
+        send(update("s1", code, state = "stopped", imports = listOf(cartPage)))
+        assertNull(recordings.sessionFor(myFixture.file.virtualFile))
+        assertNull(PiwiRecordingNotificationProvider().collectNotificationData(project, myFixture.file.virtualFile))
+        assertEquals(final, text())
+        assertEquals("Recorded 3 steps into checkout.spec.ts.", notes.last().content)
+
+        undo()
+        assertEquals(original, text())
+        redo()
+        assertEquals(final, text())
+    }
+
+    /** A blank caret line takes the block, and a file without imports gets them at its top. */
+    fun testABlankLineTakesTheBlockAndImportsGoAtTheTop() {
+        val original = "test('adds', async ({ page }) => {\n  \n});\n"
+        myFixture.configureByText("cart.spec.ts", original)
+        val session = register("s2", line = 1, newLine = false, indent = "  ")
+        send(update("s2", "await page.goto('/');", imports = listOf("import { test } from '@playwright/test';")))
+        assertEquals(
+            "import { test } from '@playwright/test';\n\ntest('adds', async ({ page }) => {\n  await page.goto('/');\n});\n",
+            text(),
+        )
+        recordings.stop(session)
+        send(update("s2", "await page.goto('/');", state = "stopped", imports = listOf("import { test } from '@playwright/test';")))
+        undo()
+        assertEquals(original, text())
+    }
+
+    /**
+     * Typing in the block pauses the recording: nothing is written until Resume, which writes the block over the edit;
+     * after Keep My Edits, the last update is not written either.
+     */
+    fun testTypingInTheBlockPausesUntilResumeAndKeepMyEditsKeepsTheEdits() {
+        val original = "test('pays', async ({ page }) => {\n  \n});\n"
+        myFixture.configureByText("pause.spec.ts", original)
+        val session = register("s3", line = 1, newLine = false, indent = "  ")
+        send(update("s3", "await page.goto('/cart');"))
+        assertEquals("test('pays', async ({ page }) => {\n  await page.goto('/cart');\n});\n", text())
+
+        typeAt("goto", "x")
+        assertTrue(session.edited)
+        assertEquals(listOf("pause s3"), sent)
+        assertEquals(listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.KEEP_EDITS), session.view.actions)
+        val twoSteps = "await page.goto('/cart');\nawait page.getByRole('link').click();"
+        send(update("s3", twoSteps, state = "paused"))
+        assertEquals("test('pays', async ({ page }) => {\n  await page.xgoto('/cart');\n});\n", text())
+
+        recordings.resume(session)
+        assertFalse(session.edited)
+        assertEquals(listOf("pause s3", "resume s3"), sent)
+        send(update("s3", twoSteps))
+        assertEquals("test('pays', async ({ page }) => {\n  await page.goto('/cart');\n  await page.getByRole('link').click();\n});\n", text())
+
+        typeAt("link", "nav")
+        assertEquals(listOf("pause s3", "resume s3", "pause s3"), sent)
+        recordings.stop(session)
+        assertEquals("stop s3", sent.last())
+        send(update("s3", "$twoSteps\nawait page.close();", state = "stopped"))
+        assertEquals("test('pays', async ({ page }) => {\n  await page.goto('/cart');\n  await page.getByRole('navlink').click();\n});\n", text())
+        assertNull(recordings.sessionFor(myFixture.file.virtualFile))
+
+        undo()
+        assertEquals(original, text())
+    }
+
+    /**
+     * Undo while recording takes the block and its start mark away: Resume writes the block again where it was, and the
+     * undo step starts over, so one undo after Stop still restores the file.
+     */
+    fun testAnUndoWhileRecordingThenResumeStillLeavesOneUndoStep() {
+        val original = "test('t', async ({ page }) => {\n  await page.goto('/');\n});\n"
+        myFixture.configureByText("undo.spec.ts", original)
+        val session = register("s8", line = 2, newLine = true, indent = "  ")
+        send(update("s8", "await page.reload();"))
+        undo()
+        assertEquals(original, text())
+        assertTrue(session.edited)
+        recordings.resume(session)
+        send(update("s8", "await page.reload();\nawait page.goBack();"))
+        assertEquals("test('t', async ({ page }) => {\n  await page.goto('/');\n  await page.reload();\n  await page.goBack();\n});\n", text())
+        recordings.stop(session)
+        send(update("s8", "await page.reload();\nawait page.goBack();", state = "stopped"))
+        undo()
+        assertEquals(original, text())
+    }
+
+    /** An update that comes before `piwi/record`'s answer is written once the session is registered. */
+    fun testAnUpdateBeforeTheSessionIsRegisteredIsWrittenThen() {
+        val original = "test('a', async ({ page }) => {\n  await page.goto('/');\n});\n"
+        myFixture.configureByText("early.spec.ts", original)
+        send(update("s4", "await page.reload();"))
+        assertEquals(original, text())
+        register("s4", line = 2, newLine = true, indent = "  ")
+        assertEquals("test('a', async ({ page }) => {\n  await page.goto('/');\n  await page.reload();\n});\n", text())
+
+        // Closing the file stops its recording.
+        FileEditorManager.getInstance(project).closeFile(myFixture.file.virtualFile)
+        assertEquals(listOf("stop s4"), sent)
+        send(update("s4", "await page.reload();", state = "stopped"))
+        assertNull(recordings.sessionFor(myFixture.file.virtualFile))
+    }
+
+    /** A new file is written whole, with its imports, followed by a line break. */
+    fun testANewFileIsWrittenWholeEndingWithALineBreak() {
+        myFixture.configureByText("new.spec.ts", "")
+        register("s5", line = 0, newLine = false, indent = "", into = "file")
+        val code = "import { test } from '@playwright/test';\nimport { CartPage } from './pages/cart.page';\n\n" +
+            "test('recorded', async ({ page }) => {\n  await new CartPage(page).open();\n});"
+        send(update("s5", code, into = "file", imports = listOf("import { CartPage } from './pages/cart.page';")))
+        assertEquals("$code\n", text())
+        send(update("s5", code, state = "stopped", into = "file"))
+        undo()
+        assertEquals("", text())
+    }
+
+    /** Warnings show on their lines, as weak warnings with their message, and stay after Stop until their line changes. */
+    fun testWarningsShowOnTheirLinesAndStayAfterStopUntilTheLineChanges() {
+        myFixture.configureByText("warned.spec.ts", "test('t', async ({ page }) => {\n  \n});\n")
+        val session = register("s6", line = 1, newLine = false, indent = "  ")
+        val brittle = "This locator depends on the order of the rows."
+        val code = "await page.goto('/');\nawait page.locator('.row').nth(2).click();"
+        send(update("s6", code, warnings = listOf(RecordingWarning(step = 1, line = 1, message = brittle))))
+        val document = myFixture.editor.document
+        val shown = recordings.warnings(document).single()
+        assertEquals("await page.locator('.row').nth(2).click();" to brittle, document.getText(shown.first) to shown.second)
+        assertTrue(myFixture.doHighlighting(HighlightSeverity.WEAK_WARNING).any { it.description == "Piwi: $brittle" })
+
+        recordings.stop(session)
+        send(update("s6", code, state = "stopped", warnings = listOf(RecordingWarning(step = 1, line = 1, message = brittle))))
+        assertEquals("Recorded 2 steps into warned.spec.ts. 1 warning to check, on its line.", notes.last().content)
+        assertEquals(1, recordings.warnings(document).size)
+        typeAt("nth(2)", "first().")
+        assertEquals(emptyList<Pair<Any, String>>(), recordings.warnings(document))
+    }
+
+    /** A recording that fails before writing anything leaves the file as it was and says why, with the service's command. */
+    fun testAFailureBeforeAnyStepSaysWhyWithItsCommand() {
+        val original = "test('t', async ({ page }) => {\n  \n});\n"
+        myFixture.configureByText("failed.spec.ts", original)
+        register("s7", line = 1, newLine = false, indent = "  ")
+        val install = PiwiCommand("Install Chromium", "piwi.runCommand", listOf(mapOf("cwd" to "/w", "command" to "npx playwright install chromium")))
+        send(update("s7", "", state = "failed", message = "Chromium is not installed for this project.", command = install))
+        assertEquals(original, text())
+        assertNull(recordings.sessionFor(myFixture.file.virtualFile))
+        assertEquals("Chromium is not installed for this project.", notes.last().content)
+        assertEquals(listOf("Install Chromium"), notes.last().actions.map { it.templateText })
+    }
+
+    /** The project's only recording is the one the actions stop from anywhere; a second file is not recorded into twice. */
+    fun testTheRecordingActionsFindTheSession() {
+        myFixture.configureByText("only.spec.ts", "test('t', async ({ page }) => {\n  \n});\n")
+        val session = register("s9", line = 1, newLine = false, indent = "  ")
+        assertSame(session, recordings.only())
+        assertSame(session, recordings.sessionFor(myFixture.file.virtualFile))
+        assertFalse(PiwiRecordFlow.canRecordInto(project, myFixture.file.virtualFile))
+        FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
+        assertEquals(listOf("stop s9"), sent)
+        send(update("s9", "", state = "stopped"))
+        assertNull(recordings.only())
+    }
+}

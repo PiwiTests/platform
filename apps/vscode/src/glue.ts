@@ -1,14 +1,17 @@
 /**
  * What the extension shows, computed from the editor service's answers with
  * no VS Code API, so it is tested without an editor: the status bar item, the
- * file patterns the service reads, and the MCP configuration editors without
- * the MCP provider API are given to paste.
+ * file patterns the service reads, the MCP configuration editors without
+ * the MCP provider API are given to paste, and the recorded block a recording
+ * writes and follows through the edits around it.
  */
 import type {
   ConnectionSource,
   DesktopJobUpdate,
   DesktopResult,
   McpServerDefinition,
+  RecordingPlacement,
+  RecordingUpdate,
   RunStatusResult,
   StatusResult,
   SummaryLine,
@@ -278,4 +281,291 @@ export function desktopJobNotice(update: DesktopJobUpdate): {
     text: `Piwi: ${update.message}`,
     actions: update.share ? [update.share.label] : [],
   };
+}
+
+/** A position in a document: 0-based line and character, as the editor counts them. */
+export interface TextPosition {
+  line: number;
+  character: number;
+}
+
+/** A range of a document. */
+export interface TextSpan {
+  start: TextPosition;
+  end: TextPosition;
+}
+
+/** `range` replaced with `text`: a change the document went through, or an edit to make. */
+export interface TextChange {
+  range: TextSpan;
+  text: string;
+}
+
+const LINE_BREAK = /\r\n|\r|\n/;
+
+function comparePositions(a: TextPosition, b: TextPosition): number {
+  return a.line - b.line || a.character - b.character;
+}
+
+function point(line: number, character: number): TextSpan {
+  return { start: { line, character }, end: { line, character } };
+}
+
+/** Where `text` ends once inserted at `start`. */
+function endOfInsert(start: TextPosition, text: string): TextPosition {
+  const lines = text.split(LINE_BREAK);
+  return lines.length === 1
+    ? { line: start.line, character: start.character + text.length }
+    : { line: start.line + lines.length - 1, character: lines[lines.length - 1]!.length };
+}
+
+/** Where a position at or after the end of a change's range is once the change is made. */
+function afterChange(position: TextPosition, change: TextChange): TextPosition {
+  const end = endOfInsert(change.range.start, change.text);
+  return position.line === change.range.end.line
+    ? { line: end.line, character: end.character + position.character - change.range.end.character }
+    : { line: position.line + end.line - change.range.end.line, character: position.character };
+}
+
+/**
+ * The recorded block as the file holds it: `RecordingUpdate.code` with every non-empty line prefixed with the
+ * placement's indentation.
+ */
+export function recordedBlockText(code: string, indent: string): string {
+  return code
+    .split('\n')
+    .map((line) => (line ? indent + line : line))
+    .join('\n');
+}
+
+/**
+ * Where the recorded block is. Until its first write, `range` is the start of the line `RecordResult.placement`
+ * names, and `first` says how that write places the block: `insert` it on a new line there, or `replace` that line
+ * while it is blank. Null once written: every later write replaces the block.
+ */
+export interface RecordedBlock {
+  range: TextSpan;
+  first: 'insert' | 'replace' | null;
+}
+
+/** The block of a recording that has written nothing yet: the start of the line its placement names. */
+export function placedBlock(placement: RecordingPlacement): RecordedBlock {
+  return { range: point(placement.line, 0), first: placement.newLine ? 'insert' : 'replace' };
+}
+
+/**
+ * Follows the recorded block through one change of the document. A change `above` the block moves it and one `below`
+ * it leaves it; one `inside` it, or across one of its edges, changes its text, and the block then covers what the
+ * change wrote. Whole lines added or removed right before the block, or added right after it, stay outside it.
+ */
+export function followBlock(
+  block: TextSpan,
+  change: TextChange,
+): { block: TextSpan; where: 'above' | 'inside' | 'below' } {
+  const { start, end } = change.range;
+  const touchesStart = comparePositions(end, block.start);
+  const touchesEnd = comparePositions(start, block.end);
+  const above =
+    touchesStart < 0 ||
+    (touchesStart === 0 && block.start.character === 0 && endOfInsert(start, change.text).character === 0);
+  if (above) {
+    return { where: 'above', block: { start: afterChange(block.start, change), end: afterChange(block.end, change) } };
+  }
+  if (touchesEnd > 0 || (touchesEnd === 0 && /^(?:\r\n|\r|\n)/.test(change.text))) return { where: 'below', block };
+  return {
+    where: 'inside',
+    block: {
+      start: comparePositions(start, block.start) < 0 ? start : block.start,
+      end: comparePositions(end, block.end) >= 0 ? endOfInsert(start, change.text) : afterChange(block.end, change),
+    },
+  };
+}
+
+const IMPORT_START = /^import[\s{*'"]/;
+const IMPORT_END = /(?:\bfrom\s*|^import\s*)(['"])[^'"]*\1|\brequire\s*\(/;
+
+/** An import line with its spacing, its quotes and its final semicolon left out, to compare it with another. */
+function importKey(line: string): string {
+  return line.replace(/\s+/g, '').replace(/"/g, "'").replace(/;$/, '');
+}
+
+/**
+ * The insertion of the import lines a file lacks among `imports`: after its last top-level `import` statement, or at
+ * the top when it has none; null when it has them all. An edit that replaces lines `replaced` with `written` is taken
+ * into account: the replaced lines no longer count, and the written ones do.
+ */
+export function importInsertion(
+  lines: string[],
+  imports: string[],
+  replaced: { start: number; end: number } | null = null,
+  written = '',
+): TextChange | null {
+  const counts = (i: number) => !replaced || i < replaced.start || i > replaced.end;
+  const present = new Set([...lines.filter((_, i) => counts(i)), ...written.split(LINE_BREAK)].map(importKey));
+  const missing: string[] = [];
+  for (const line of imports) {
+    const key = importKey(line);
+    if (!key || present.has(key)) continue;
+    present.add(key);
+    missing.push(line.trim());
+  }
+  if (!missing.length) return null;
+  let last = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (!counts(i) || !IMPORT_START.test(lines[i]!)) continue;
+    let end = i;
+    while (!IMPORT_END.test(lines[end]!) && end + 1 < lines.length && counts(end + 1)) end++;
+    last = end;
+    i = end;
+  }
+  const at = last + 1;
+  if (at < lines.length || !lines.length) return { range: point(at, 0), text: `${missing.join('\n')}\n` };
+  const end = lines.length - 1;
+  return { range: point(end, lines[end]!.length), text: `\n${missing.join('\n')}` };
+}
+
+/**
+ * The edit that writes the recorded block's new text, with the import lines the file lacks in the same edit, and the
+ * block's range once it is made. The first write places the block as `first` says; every later one replaces the
+ * block, keeping it on lines of its own.
+ */
+export function writeBlock(
+  lines: string[],
+  block: RecordedBlock,
+  text: string,
+  imports: string[],
+): { changes: TextChange[]; block: TextSpan } {
+  const lastLine = Math.max(lines.length - 1, 0);
+  const line = block.range.start.line;
+  let change: TextChange;
+  let replaced: { start: number; end: number } | null = null;
+  let startLine: number;
+  if (block.first && line >= lines.length) {
+    change = { range: point(lastLine, (lines[lastLine] ?? '').length), text: `\n${text}` };
+    startLine = lines.length;
+  } else if (block.first === 'insert' || (block.first === 'replace' && lines[line]!.trim())) {
+    change = { range: point(line, 0), text: `${text}\n` };
+    startLine = line;
+  } else if (block.first === 'replace') {
+    change = { range: { start: { line, character: 0 }, end: { line, character: lines[line]!.length } }, text };
+    replaced = { start: line, end: line };
+    startLine = line;
+  } else {
+    const clamp = (p: TextPosition): TextPosition =>
+      p.line > lastLine
+        ? { line: lastLine, character: (lines[lastLine] ?? '').length }
+        : { line: p.line, character: Math.min(p.character, (lines[p.line] ?? '').length) };
+    let start = clamp(block.range.start);
+    let end = clamp(block.range.end);
+    const startText = lines[start.line] ?? '';
+    const endText = lines[end.line] ?? '';
+    if (!startText.slice(0, start.character).trim()) start = { line: start.line, character: 0 };
+    if (!endText.slice(end.character).trim()) end = { line: end.line, character: endText.length };
+    const before = start.character > 0 ? '\n' : '';
+    const after = end.character < endText.length ? '\n' : '';
+    change = { range: { start, end }, text: before + text + after };
+    replaced = { start: start.line, end: end.line };
+    startLine = start.line + (before ? 1 : 0);
+  }
+  const insertion = importInsertion(lines, imports, replaced, text);
+  const shift =
+    insertion && comparePositions(insertion.range.start, change.range.start) <= 0
+      ? insertion.text.split(LINE_BREAK).length - 1
+      : 0;
+  const first = { line: startLine + shift, character: 0 };
+  return {
+    changes: insertion ? [insertion, change] : [change],
+    block: { start: first, end: endOfInsert(first, text) },
+  };
+}
+
+/** A button of a recording's controls: the command it runs, with the session's id as its argument. */
+export interface RecordingAction {
+  title: string;
+  command: 'piwi.stopRecording' | 'piwi.pauseRecording' | 'piwi.resumeRecording';
+}
+
+/** What the controls above the recorded block and the status bar item show while a recording runs. */
+export interface RecordingView {
+  /** The first control: the state and the step count. */
+  title: string;
+  actions: RecordingAction[];
+  status: string;
+  tooltip: string;
+}
+
+/**
+ * The controls of a running recording, from the service's state, the step count, and whether it is paused because
+ * the block was edited (`edited`), which takes precedence. `file` is the name of the file it writes into.
+ */
+export function recordingView(
+  state: RecordingUpdate['state'],
+  steps: number,
+  edited: boolean,
+  file: string,
+): RecordingView {
+  const count = plural(steps, 'step');
+  const stop: RecordingAction = { title: 'Stop', command: 'piwi.stopRecording' };
+  const resume: RecordingAction = { title: 'Resume', command: 'piwi.resumeRecording' };
+  if (edited) {
+    return {
+      title: `$(debug-pause) Paused while you edit · ${count}`,
+      actions: [resume, { title: 'Keep my edits', command: 'piwi.stopRecording' }],
+      status: `$(debug-pause) Piwi: paused · ${count}`,
+      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
+    };
+  }
+  if (state === 'paused') {
+    return {
+      title: `$(debug-pause) Paused · ${count}`,
+      actions: [stop, resume],
+      status: `$(debug-pause) Piwi: paused · ${count}`,
+      tooltip: `The recording into ${file} is paused. Click to stop.`,
+    };
+  }
+  if (state === 'starting') {
+    return {
+      title: '$(loading~spin) Opening the browser',
+      actions: [stop],
+      status: '$(loading~spin) Piwi: opening the browser',
+      tooltip: `Recording into ${file}. Click to stop.`,
+    };
+  }
+  return {
+    title: `$(record) Recording · ${count}`,
+    actions: [stop, { title: 'Pause', command: 'piwi.pauseRecording' }],
+    status: `$(record) Piwi: recording · ${count}`,
+    tooltip: `Recording into ${file}. Click to stop.`,
+  };
+}
+
+/** The notification after a recording stopped: what was written, or that the block keeps the edits made in it. */
+export function recordingSummary(
+  update: Pick<RecordingUpdate, 'steps' | 'warnings' | 'message'>,
+  keptEdits: boolean,
+): string {
+  if (keptEdits) return 'Piwi: recording stopped. The recorded block keeps your edits.';
+  const warnings = update.warnings.length;
+  const counts = `${plural(update.steps.length, 'step')} written${warnings ? `, ${plural(warnings, 'warning')} to check` : ''}`;
+  const message = update.message?.trim();
+  if (!message) return `Piwi: recording stopped, ${counts}.`;
+  return `Piwi: ${/[.!?]$/.test(message) ? message : `${message}.`} ${counts}.`;
+}
+
+/** A Playwright test file's name: `.spec` or `.test`, then a JavaScript or TypeScript extension. */
+export const TEST_FILE = /\.(?:spec|test)\.[cm]?[jt]sx?$/;
+
+/** The `testDir` a Playwright config names as a string literal; null when it names none that way. */
+export function configTestDir(config: string): string | null {
+  return /\btestDir\s*:\s*(['"`])([^'"`]+)\1/.exec(config)?.[2] ?? null;
+}
+
+/**
+ * The name offered for a new test file, with the suffix of `sample`: a test file's own (`.test.js`), else `.spec.js`
+ * beside a JavaScript Playwright config, else `.spec.ts`.
+ */
+export function newTestFileName(sample: string | null): string {
+  const suffix =
+    (sample && TEST_FILE.exec(sample)?.[0]) || (sample && /\.[cm]?js$/.test(sample) ? '.spec.js' : '.spec.ts');
+  return `recorded${suffix}`;
 }

@@ -374,4 +374,132 @@ class GlueTest {
         val shop = home.resolve("work/shop")
         assertEquals(Glue.PlaywrightSearch(listOf(shop), emptyList()), Glue.findPlaywright(listOf(shop), home))
     }
+
+    @Test
+    fun `a recording writes steps inside a test or a class, and a new test anywhere else`() {
+        assertEquals("steps", Glue.recordInto("test"))
+        assertEquals("steps", Glue.recordInto("class"))
+        assertEquals("test", Glue.recordInto("file"))
+        assertEquals("test", Glue.recordInto(null))
+    }
+
+    @Test
+    fun `the recorded block indents each line with text, and leaves blank lines empty`() {
+        assertEquals(
+            "    test('t', async ({ page }) => {\n      await page.goto('/');\n\n    });",
+            Glue.recordedBlock("test('t', async ({ page }) => {\n  await page.goto('/');\n   \n});", "    "),
+        )
+        assertEquals("\tawait a();\n\tawait b();", Glue.recordedBlock("await a();\r\nawait b();", "\t"))
+        assertEquals("", Glue.recordedBlock("", "  "))
+    }
+
+    @Test
+    fun `a block goes on a new line pushing the line there down, or takes a blank line's place`() {
+        val text = "test('t', async ({ page }) => {\n  await page.goto('/');\n});\n"
+        val closing = text.indexOf("});")
+        assertEquals(Glue.BlockWrite(closing, closing, "  B\n", closing), Glue.firstBlockWrite(text, closing, newLine = true, block = "  B"))
+        val blank = "test('t', async ({ page }) => {\n    \n});\n"
+        val blankLine = blank.indexOf("    ")
+        assertEquals(
+            Glue.BlockWrite(blankLine, blankLine + 4, "  B", blankLine),
+            Glue.firstBlockWrite(blank, blankLine, newLine = false, block = "  B"),
+        )
+        // A line that is not blank, or a placement asking for a new line, is pushed down.
+        assertEquals(Glue.BlockWrite(closing, closing, "  B\n", closing), Glue.firstBlockWrite(text, closing, newLine = false, block = "  B"))
+        assertEquals(
+            Glue.BlockWrite(blankLine, blankLine, "  B\n", blankLine),
+            Glue.firstBlockWrite(blank, blankLine, newLine = true, block = "  B"),
+        )
+    }
+
+    @Test
+    fun `a block on the last line keeps the final line break, and one after a last line with text goes below it`() {
+        assertEquals(Glue.BlockWrite(4, 4, "B\n", 4), Glue.firstBlockWrite("});\n", 4, newLine = false, block = "B"))
+        assertEquals(Glue.BlockWrite(0, 0, "B\n", 0), Glue.firstBlockWrite("", 0, newLine = false, block = "B"))
+        assertEquals(Glue.BlockWrite(4, 6, "B\n", 4), Glue.firstBlockWrite("});\n  ", 4, newLine = false, block = "B"))
+        assertEquals(Glue.BlockWrite(3, 3, "\nB", 4), Glue.firstBlockWrite("});", 3, newLine = true, block = "B"))
+        // An anchor left within a line, once the line break before it was removed: the block goes after that line.
+        assertEquals(Glue.BlockWrite(8, 8, "\nB", 9), Glue.firstBlockWrite("a();b();\nc();", 4, newLine = false, block = "B"))
+    }
+
+    @Test
+    fun `the imports a block needs go after the file's last import, each once`() {
+        val text = "import { test, expect } from '@playwright/test';\nimport {\n  login,\n  logout,\n} from './helpers';\n\ntest('t', async () => {});\n"
+        val afterImports = text.indexOf("\n\ntest")
+        assertEquals(
+            Glue.ImportInsertion(afterImports, "\nimport { CartPage } from './pages/cart.page';"),
+            Glue.importInsertion(
+                text,
+                listOf("import { CartPage } from './pages/cart.page';", " import { CartPage } from './pages/cart.page'; ", "import { login } from './helpers';"),
+            ),
+        )
+        assertEquals(null, Glue.importInsertion(text, listOf("import { expect } from \"@playwright/test\"", "")))
+        assertEquals(null, Glue.importInsertion(text, emptyList()))
+    }
+
+    @Test
+    fun `a name the file already imports is not imported again, whatever the path or the other names`() {
+        val text = "import CartPage, { type Row as Line } from '../pages/cart.page.js';\nimport * as pages from './pages';\nimport Api = require('./api');\nimport './setup';\n"
+        assertEquals(null, Glue.importInsertion(text, listOf("import { CartPage } from './pages/cart.page';")))
+        assertEquals(null, Glue.importInsertion(text, listOf("import { Line } from './row';", "import { pages } from './pages';", "import { Api } from './api';")))
+        assertEquals(null, Glue.importInsertion(text, listOf("import './setup';")))
+        val end = text.length - 1
+        assertEquals(Glue.ImportInsertion(end, "\nimport { Row } from './row';\nimport './teardown';"), Glue.importInsertion(text, listOf("import { Row } from './row';", "import './teardown';")))
+    }
+
+    @Test
+    fun `without an import, the imports go at the top, followed by an empty line`() {
+        assertEquals(Glue.ImportInsertion(0, "import { a } from './a';\n\n"), Glue.importInsertion("test('t', async () => {});\n", listOf("import { a } from './a';")))
+        assertEquals(Glue.ImportInsertion(0, "import { a } from './a';\n"), Glue.importInsertion("\ntest('t', async () => {});\n", listOf("import { a } from './a';")))
+        // Neither a dynamic import nor `import.meta` is an import statement.
+        assertEquals(Glue.ImportInsertion(0, "import { a } from './a';\n\n"), Glue.importInsertion("import('./x');\nimport.meta.url;\n", listOf("import { a } from './a';")))
+    }
+
+    @Test
+    fun `the banner says what the recording does and offers what applies`() {
+        assertEquals(
+            Glue.RecordingBanner("Piwi: opening the browser to record into this file…", listOf(Glue.RecordingAction.STOP)),
+            Glue.recordingBanner("starting", 0, edited = false, stopping = false, message = null),
+        )
+        assertEquals(
+            Glue.RecordingBanner("Piwi is recording what you do in the browser · 1 step", listOf(Glue.RecordingAction.PAUSE, Glue.RecordingAction.STOP)),
+            Glue.recordingBanner("recording", 1, edited = false, stopping = false, message = " "),
+        )
+        assertEquals(
+            Glue.RecordingBanner("Piwi: recording paused · 3 steps · Paused in the browser.", listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.STOP)),
+            Glue.recordingBanner("paused", 3, edited = false, stopping = false, message = "Paused in the browser."),
+        )
+        assertEquals(
+            listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.KEEP_EDITS),
+            Glue.recordingBanner("recording", 3, edited = true, stopping = false, message = null).actions,
+        )
+        assertEquals(
+            Glue.RecordingBanner("Piwi: stopping the recording…", emptyList()),
+            Glue.recordingBanner("recording", 3, edited = true, stopping = true, message = "ignored"),
+        )
+    }
+
+    @Test
+    fun `the end of a recording says what was written where, and the warnings to check`() {
+        assertEquals("Recorded 6 steps into checkout.spec.ts.", Glue.recordingSummary(6, 0, "checkout.spec.ts", null))
+        assertEquals(
+            "The browser was closed. Recorded 1 step into a.spec.ts. 1 warning to check, on its line.",
+            Glue.recordingSummary(1, 1, "a.spec.ts", "The browser was closed."),
+        )
+        assertEquals("Recorded 2 steps into a.spec.ts. 2 warnings to check, on their lines.", Glue.recordingSummary(2, 2, "a.spec.ts", ""))
+        assertEquals("Nothing was recorded into a.spec.ts.", Glue.recordingSummary(0, 0, "a.spec.ts", null))
+    }
+
+    @Test
+    fun `a new spec's name gets the spec extension it lacks`() {
+        assertEquals("checkout.spec.ts", Glue.specFileName(" checkout "))
+        assertEquals("checkout.test.ts", Glue.specFileName("checkout.test"))
+        assertEquals("checkout.spec.js", Glue.specFileName("checkout.spec.js"))
+        assertEquals("flow.mts", Glue.specFileName("flow.mts"))
+        assertEquals("cart.page.spec.ts", Glue.specFileName("cart.page"))
+        assertEquals(null, Glue.specFileName(""))
+        assertEquals(null, Glue.specFileName("e2e/checkout"))
+        assertEquals(null, Glue.specFileName("..\\checkout"))
+        assertEquals(null, Glue.specFileName(".."))
+    }
 }

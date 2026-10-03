@@ -51,12 +51,21 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
 
 /**
  * What this machine keeps for the project, in `.idea/workspace.xml`, never in a file the
- * team shares: the desktop app chosen with Connect, its project, and whether it was offered.
+ * team shares: the desktop app chosen with Connect, its project, and whether it was offered;
+ * and a recording's choices: the Playwright project, the start page, and the last page
+ * expression typed that was not among those offered.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
 class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
-    data class State(var desktop: Boolean = false, var desktopProject: String = "", var desktopOffered: Boolean = false)
+    data class State(
+        var desktop: Boolean = false,
+        var desktopProject: String = "",
+        var desktopOffered: Boolean = false,
+        var recordProject: String = "",
+        var recordStartUrl: String = "",
+        var recordPage: String = "",
+    )
 
     private var state = State()
 

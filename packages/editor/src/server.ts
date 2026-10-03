@@ -77,6 +77,9 @@ import {
 } from './context.js';
 import { PiwiClient, type BranchFailure, type FixPlan, type FlakeLabEntry } from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { pageCandidates } from './recorder/page-candidates.js';
+import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
+import { RecordingSessions, originOf, type LauncherFactory } from './recorder/sessions.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -91,8 +94,13 @@ import {
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
+  PAGE_CANDIDATES_REQUEST,
+  RECORD_REQUEST,
+  RECORDING_COMMAND_REQUEST,
+  RECORDING_NOTIFICATION,
   REFRESH_REQUEST,
   RENDER_STEPS_REQUEST,
+  STOP_RECORDING_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
@@ -112,6 +120,11 @@ import {
   type FileSummary,
   type FileSummaryParams,
   type McpServersResult,
+  type PageCandidatesParams,
+  type PageCandidatesResult,
+  type RecordParams,
+  type RecordResult,
+  type RecordingCommandParams,
   type RenderStepsParams,
   type RenderStepsResult,
   type RunCommand,
@@ -123,6 +136,7 @@ import {
   type SelectionsResult,
   type RunTestsArgs,
   type StatusResult,
+  type StopRecordingParams,
   type SummaryLine,
   type TestFailure,
   type TestLineStatus,
@@ -132,7 +146,13 @@ import {
   type TraceParams,
   type TraceResult,
 } from './protocol.js';
-import { findPlaywrightRoots, relativeTo, resolveReportedFile, splitLocation } from './workspace.js';
+import {
+  findPlaywrightRoots,
+  playwrightConfigFile,
+  relativeTo,
+  resolveReportedFile,
+  splitLocation,
+} from './workspace.js';
 
 /** How often every context fetches its indexes again. */
 const REFRESH_MS = 5 * 60_000;
@@ -144,6 +164,8 @@ const DESKTOP_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
+/** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
+const OPTIONS_WAIT_MS = 3_000;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 const TEST_CALL =
   /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
@@ -157,12 +179,37 @@ export interface ServerOptions {
   runPollMs?: number;
   /** How often the desktop app's discovery file is checked for its start, stop and folder links. */
   desktopWatchMs?: number;
+  /**
+   * The folder holding the files the language server ships beside itself: the recorder's launcher, its IDE bundle
+   * and catalogs, and the reporter that reads a config's options. `PIWI_EDITOR_DIST`, else the folder of the running
+   * bundle.
+   */
+  distDir?: string;
+  /** Starts a recording's launcher; the bundled one by default. */
+  launchRecorder?: LauncherFactory;
+  /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
+  readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
 }
 
 /** What the last analysis of an application file found, for its quick fixes and hover. */
 interface AppAnalysis {
   context: PiwiContext;
   groups: Array<{ anchor: LocatorBreak['anchor']; breaks: LocatorBreak[] }>;
+}
+
+/** The folder of the running bundle, `dist/` in an installed client. */
+function bundleDir(): string {
+  return typeof __dirname === 'string' ? __dirname : process.cwd();
+}
+
+/** The canonical locators a context's tests use, which a rendering prefers among a step's alternatives. */
+function suiteLocators(context: PiwiContext | null): Set<string> {
+  return new Set(
+    (context?.index?.locators ?? []).flatMap((l) => {
+      const canonical = canonicalLocator(l.locator);
+      return canonical ? [canonical] : [];
+    }),
+  );
 }
 
 function uriToPath(uri: string): string | null {
@@ -565,6 +612,38 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void connection.sendNotification(DESKTOP_JOB_NOTIFICATION, update);
   });
 
+  const distDir = options.distDir ?? (env.PIWI_EDITOR_DIST || bundleDir());
+  const projectOptions =
+    options.readProjectOptions ??
+    ((configFile: string) => readProjectOptions(configFile, path.join(distDir, 'piwi-use-reporter.cjs')));
+  const recordings = new RecordingSessions({
+    distDir,
+    notify: (update) => void connection.sendNotification(RECORDING_NOTIFICATION, update),
+    readOptions: projectOptions,
+    launch: options.launchRecorder,
+    env,
+  });
+
+  /**
+   * How a flow's URLs are written for a context: as paths when a project's `baseURL` is on the origin it was recorded
+   * on, else whole; as paths when the config's options cannot be read within a few seconds.
+   */
+  const stepUrls = async (context: PiwiContext, origin: string | null): Promise<'relative' | 'absolute'> => {
+    const configFile = playwrightConfigFile(context.root);
+    if (!configFile) return 'relative';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = await Promise.race([
+      projectOptions(configFile).catch(() => null),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), OPTIONS_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!read) return 'relative';
+    const bases = read.projects.map((p) => originOf(p.use.baseURL));
+    return origin && bases.includes(origin) ? 'relative' : 'absolute';
+  };
+
   /**
    * On a failure from a team instance, while the desktop app runs: reproduce or bisect it there, and run Flake Lab
    * on its test there when the test has a flake suspect no experiment tested.
@@ -768,6 +847,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   documents.onDidOpen((e) => schedule(e.document, 0));
   documents.onDidChangeContent((e) => schedule(e.document));
   documents.onDidClose((e) => {
+    recordings.stopFile(e.document.uri);
     clearTimeout(timers.get(e.document.uri));
     timers.delete(e.document.uri);
     appAnalyses.delete(e.document.uri);
@@ -1483,21 +1563,59 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!parsed.ok) return { code: '', warnings: parsed.errors };
     const file = uriToPath(params.uri);
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.client && c.project) ?? null;
-    const suiteLocators = new Set(
-      (context?.index?.locators ?? []).flatMap((l) => {
-        const canonical = canonicalLocator(l.locator);
-        return canonical ? [canonical] : [];
-      }),
-    );
+    // The page expression in use at the caret: `this.page` in a page object, `adminPage` in a test with two users.
+    const page =
+      file && typeof params.line === 'number' ? pageCandidates(readText(file) ?? '', params.line).default : null;
+    const separate = params.imports === 'separate';
     const result = renderSpec(sessionFromSteps(parsed.steps), {
       format: 'body',
-      urls: 'relative',
+      urls: context ? await stepUrls(context, parsed.steps.origin) : 'relative',
       locators: 'stable',
       urlChecks: true,
       catalog: context ? await context.functionCatalog() : [],
-      preferLocators: suiteLocators,
+      preferLocators: suiteLocators(context),
+      ...(page ? { page } : {}),
+      ...(separate ? { bodyImports: 'none' as const } : {}),
     });
-    return { code: result.code, warnings: result.warnings.map((w) => w.message) };
+    return {
+      code: result.code,
+      warnings: result.warnings.map((w) => w.message),
+      ...(separate ? { imports: result.imports } : {}),
+    };
+  });
+
+  connection.onRequest(PAGE_CANDIDATES_REQUEST, (params: PageCandidatesParams): PageCandidatesResult => {
+    const file = uriToPath(params.uri);
+    return pageCandidates((file ? readText(file) : null) ?? '', params.line);
+  });
+
+  connection.onRequest(RECORD_REQUEST, async (params: RecordParams): Promise<RecordResult> => {
+    const file = uriToPath(params.uri);
+    const context = file ? contextFor(file) : null;
+    const configFile = context ? playwrightConfigFile(context.root) : null;
+    if (!file || !context || !configFile) {
+      return {
+        ok: false,
+        message: 'No Playwright config holds this file: open the folder of its playwright.config.ts.',
+      };
+    }
+    return recordings.start(params, {
+      file,
+      text: readText(file) ?? '',
+      configFile,
+      catalog: context.functionCatalog(),
+      preferLocators: suiteLocators(context),
+    });
+  });
+
+  connection.onRequest(STOP_RECORDING_REQUEST, async (params: StopRecordingParams) => {
+    await recordings.stop(params.sessionId);
+    return null;
+  });
+
+  connection.onRequest(RECORDING_COMMAND_REQUEST, (params: RecordingCommandParams) => {
+    recordings.command(params.sessionId, params.command);
+    return null;
   });
 
   connection.onRequest(REFRESH_REQUEST, async () => {
@@ -1536,10 +1654,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void refreshAll();
   });
 
+  connection.onShutdown(() => recordings.dispose());
+
   documents.listen(connection);
   connection.listen();
   return () => {
     stopped = true;
+    recordings.dispose();
     desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
     fs.unwatchFile(desktopFile, onDesktopFile);

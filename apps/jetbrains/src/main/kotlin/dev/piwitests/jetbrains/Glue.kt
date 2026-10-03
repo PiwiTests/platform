@@ -11,9 +11,9 @@ import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 
 /**
- * What the plugin shows, computed from the editor service's answers, and where
- * it looks for Playwright configs, with no platform API, so it is tested
- * without an IDE.
+ * What the plugin shows, computed from the editor service's answers, where it
+ * looks for Playwright configs, and where a recording's lines go, with no
+ * platform API, so it is tested without an IDE.
  */
 object Glue {
     /** The files the editor service reads: test and application code, translations, and Razor views. */
@@ -481,5 +481,175 @@ object Glue {
             warning = failed || message.startsWith("The desktop app could not"),
             actions = listOfNotNull(update.share?.label),
         )
+    }
+
+    /** The extensions of the files a recording writes into: JavaScript and TypeScript. */
+    val SCRIPT_EXTENSIONS = setOf("ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts")
+
+    /**
+     * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: inside a
+     * test's body or a class's, the steps there (`steps`); anywhere else, a new test (`test`).
+     */
+    fun recordInto(context: String?): String = if (context == "test" || context == "class") "steps" else "test"
+
+    /**
+     * The recorded block as the file holds it: the lines of `code`, each one that is not blank prefixed with `indent`,
+     * the blank ones empty.
+     */
+    fun recordedBlock(code: String, indent: String): String =
+        code.replace("\r\n", "\n").replace('\r', '\n').split('\n').joinToString("\n") { if (it.isBlank()) "" else indent + it }
+
+    /** A first write of a recorded block: the range `[start, end)` of the text it replaces, what goes there, and where the block starts after it. */
+    data class BlockWrite(val start: Int, val end: Int, val text: String, val blockStart: Int)
+
+    /**
+     * Where a recorded block is first written into a document's text, at `offset`: the start of the line the placement
+     * names, followed through the edits since. A blank line there takes the block, unless `newLine`; otherwise the block
+     * goes on a new line inserted there, pushing that line down. An offset within a line (at the end of a last line
+     * with text, or after the line break before it was removed) puts the block on a new line after that line. A block
+     * that takes the place of the text's last line is followed by a line break, so the file still ends with one.
+     */
+    fun firstBlockWrite(text: CharSequence, offset: Int, newLine: Boolean, block: String): BlockWrite {
+        val at = offset.coerceIn(0, text.length)
+        val lineStart = text.lastIndexOf('\n', at - 1) + 1
+        val lineEnd = text.indexOf('\n', at).let { if (it < 0) text.length else it }
+        if (lineStart != at) return BlockWrite(lineEnd, lineEnd, "\n" + block, lineEnd + 1)
+        if (newLine || text.subSequence(lineStart, lineEnd).isNotBlank()) return BlockWrite(at, at, block + "\n", at)
+        return BlockWrite(lineStart, lineEnd, if (lineEnd == text.length) block + "\n" else block, lineStart)
+    }
+
+    /** Import lines to insert into a document's text at `offset`. */
+    data class ImportInsertion(val offset: Int, val text: String)
+
+    /**
+     * The import lines of `imports` a document's text lacks, and where they go: after its last top-level `import`
+     * statement, else at its top, followed by an empty line. A line is there already when the file holds the same
+     * statement, or imports every name it imports, from that module or another path: nothing is imported twice.
+     */
+    fun importInsertion(text: CharSequence, imports: List<String>): ImportInsertion? {
+        val statements = importStatements(text)
+        val bound = statements.flatMap { importedNames(it.text) }.toSet()
+        val held = statements.map { importKey(it.text) }.toSet()
+        val lines = imports.map { it.replace("\r\n", "\n").replace('\r', '\n').trim() }
+        val missing = lines.filter { it.isNotEmpty() }.distinct().filter { line ->
+            val names = importedNames(line)
+            importKey(line) !in held && (names.isEmpty() || !bound.containsAll(names))
+        }
+        if (missing.isEmpty()) return null
+        val last = statements.lastOrNull()
+        if (last != null) return ImportInsertion(last.end, "\n" + missing.joinToString("\n"))
+        val firstLine = text.subSequence(0, text.indexOf('\n').let { if (it < 0) text.length else it })
+        return ImportInsertion(0, missing.joinToString("\n") + "\n" + if (firstLine.isBlank()) "" else "\n")
+    }
+
+    /** A top-level `import` statement: its text, over one line or more, and the offset its last line ends at. */
+    private data class ImportStatement(val text: String, val end: Int)
+
+    private val IMPORT_START = Regex("^import(?=[\\s{*'\"])")
+    private val IMPORT_COMPLETE = Regex("\\bfrom\\s*['\"]|^import\\s*['\"]|=\\s*require\\s*\\(|;\\s*$")
+    private val IMPORT_CLAUSE = Regex("^import\\s*(?:type\\s+)?([\\s\\S]*?)\\s*\\bfrom\\s*['\"]")
+    private val IMPORT_EQUALS = Regex("^import\\s+(?:type\\s+)?([A-Za-z_$][\\w$]*)\\s*=")
+    private val IDENTIFIER = Regex("[A-Za-z_$][\\w$]*")
+
+    /** The top-level `import` statements of a text, in order: those starting a line, followed to their module. */
+    private fun importStatements(text: CharSequence): List<ImportStatement> {
+        val lines = text.split('\n')
+        val found = mutableListOf<ImportStatement>()
+        var start = 0
+        var i = 0
+        while (i < lines.size) {
+            if (!IMPORT_START.containsMatchIn(lines[i])) {
+                start += lines[i].length + 1
+                i++
+                continue
+            }
+            var statement = lines[i]
+            var end = start + lines[i].length
+            var j = i
+            while (!IMPORT_COMPLETE.containsMatchIn(statement) && j + 1 < lines.size && j - i < 50) {
+                j++
+                statement += "\n" + lines[j]
+                end += 1 + lines[j].length
+            }
+            found += ImportStatement(statement, end)
+            start = end + 1
+            i = j + 1
+        }
+        return found
+    }
+
+    /** The names an `import` statement binds in the file: its default, its namespace and its named imports. */
+    private fun importedNames(statement: String): Set<String> {
+        val text = statement.trim()
+        IMPORT_EQUALS.find(text)?.let { return setOf(it.groupValues[1]) }
+        val clause = IMPORT_CLAUSE.find(text)?.groupValues?.get(1) ?: return emptySet()
+        val names = mutableSetOf<String>()
+        val braces = Regex("\\{([^}]*)\\}").find(clause)
+        braces?.groupValues?.get(1)?.split(',')?.forEach { part ->
+            val name = part.trim().removePrefix("type ").trim().split(Regex("\\s+as\\s+")).last().trim()
+            if (IDENTIFIER.matches(name)) names += name
+        }
+        val rest = braces?.let { clause.removeRange(it.range) } ?: clause
+        Regex("\\*\\s*as\\s+([A-Za-z_$][\\w$]*)").find(rest)?.let { names += it.groupValues[1] }
+        rest.split(',').map { it.trim() }.firstOrNull { IDENTIFIER.matches(it) }?.let { names += it }
+        return names
+    }
+
+    /** An `import` statement compared regardless of its spacing, its quotes and its final semicolon. */
+    private fun importKey(statement: String): String =
+        statement.replace(Regex("\\s+"), "").replace('"', '\'').removeSuffix(";")
+
+    /** "1 step", "3 steps". */
+    fun stepCount(steps: Int): String = if (steps == 1) "1 step" else "$steps steps"
+
+    /** What the banner over a file a recording writes into offers. */
+    enum class RecordingAction { STOP, PAUSE, RESUME, KEEP_EDITS }
+
+    /** The banner over a file a recording writes into: what the recording does, and the actions it offers. */
+    data class RecordingBanner(val text: String, val actions: List<RecordingAction>)
+
+    /**
+     * The banner of a recording in `state`, with `steps` written so far: while the browser opens, while recording, while
+     * paused. Once the developer changed the recorded lines (`edited`), it offers to resume, which writes them again, or
+     * to keep the edits, which ends the recording; once Stop is clicked (`stopping`), nothing. The service's `message`,
+     * if any, follows.
+     */
+    fun recordingBanner(state: String?, steps: Int, edited: Boolean, stopping: Boolean, message: String?): RecordingBanner {
+        val (text, actions) = when {
+            stopping -> "Piwi: stopping the recording…" to emptyList()
+            edited -> "Piwi: recording paused, since you changed the recorded lines. Resume writes them again from the browser." to
+                listOf(RecordingAction.RESUME, RecordingAction.KEEP_EDITS)
+            state == "starting" -> "Piwi: opening the browser to record into this file…" to listOf(RecordingAction.STOP)
+            state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}" to listOf(RecordingAction.RESUME, RecordingAction.STOP)
+            else -> "Piwi is recording what you do in the browser · ${stepCount(steps)}" to
+                listOf(RecordingAction.PAUSE, RecordingAction.STOP)
+        }
+        val note = message?.trim()?.ifEmpty { null }?.takeUnless { stopping }
+        return RecordingBanner(if (note == null) text else "$text · $note", actions)
+    }
+
+    /** The notification when a recording ends: why, if the service said, what was written where, and the warnings to check. */
+    fun recordingSummary(steps: Int, warnings: Int, file: String, message: String?): String {
+        val written = if (steps == 0) "Nothing was recorded into $file." else "Recorded ${stepCount(steps)} into $file."
+        val check = when (warnings) {
+            0 -> ""
+            1 -> " 1 warning to check, on its line."
+            else -> " $warnings warnings to check, on their lines."
+        }
+        return listOfNotNull(message?.trim()?.ifEmpty { null }, written + check).joinToString(" ")
+    }
+
+    /**
+     * The name of a new spec file from what was typed: as typed when it ends with a script extension, `.ts` added after
+     * `.spec` or `.test`, else `.spec.ts`. Null when it is blank or names a folder.
+     */
+    fun specFileName(input: String): String? {
+        val name = input.trim()
+        if (name.isEmpty() || '/' in name || '\\' in name || name.all { it == '.' }) return null
+        return when {
+            name.substringAfterLast('.', "").lowercase() in SCRIPT_EXTENSIONS -> name
+            name.endsWith(".spec") || name.endsWith(".test") -> "$name.ts"
+            else -> "$name.spec.ts"
+        }
     }
 }

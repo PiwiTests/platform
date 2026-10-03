@@ -11,4 +11,10 @@
       <option name="ERROR_STRIPE_COLOR" value="e06c6c"/>
     </value>
   </option>
+  <option name="PIWI_RECORDING_BLOCK">
+    <value>
+      <option name="BACKGROUND" value="e8effc"/>
+      <option name="ERROR_STRIPE_COLOR" value="7aa2e3"/>
+    </value>
+  </option>
 </list>

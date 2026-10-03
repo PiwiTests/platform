@@ -140,4 +140,9 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     fun desktopJobChanged(update: DesktopJobUpdate) {
         PiwiCommands.desktopJobChanged(project, update)
     }
+
+    @JsonNotification("piwi/recordingChanged")
+    fun recordingChanged(update: RecordingUpdate) {
+        project.service<PiwiRecordings>().changed(update)
+    }
 }
