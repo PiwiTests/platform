@@ -38,7 +38,7 @@ const bodySchema = z.object({
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  const user = await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
 
   const validation = bodySchema.safeParse(await readBody(event));
   if (!validation.success) {
@@ -46,7 +46,7 @@ export default eventHandler(async (event) => {
   }
   const db = await getDatabase();
   try {
-    return await recordFlakeResults(db, projectId, validation.data);
+    return await recordFlakeResults(db, projectId, validation.data, { actor: { channel: 'cli', userId: user.id } });
   } catch (error) {
     if (error instanceof FlakeResultsRejected) throw apiError({ statusCode: error.statusCode, message: error.message });
     throw error;
