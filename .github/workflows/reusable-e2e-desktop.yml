@@ -8,6 +8,13 @@ name: Desktop E2E
 # requests that change the desktop app, and it runs on demand.
 on:
   workflow_call:
+    inputs:
+      build-artifact:
+        description: >-
+          Artifact of the calling run holding apps/application/.output, built on Linux:
+          staging adds this OS's native modules. Empty builds the server here.
+        type: string
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -32,8 +39,16 @@ jobs:
         uses: ./.github/actions/setup-workspace
         with:
           node-version: ${{ env.PIWI_NODE_VERSION }}
+          install: ${{ inputs.build-artifact == '' }}
+
+      - name: Download the server bundle
+        if: inputs.build-artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build-artifact }}
 
       - name: Build the server bundle
+        if: inputs.build-artifact == ''
         # The Nuxt/Vite SSR build needs more heap than Node's default cap on the
         # macOS runner (it OOMs at ~2 GB otherwise; the ubuntu builds get a higher
         # default and don't need this).

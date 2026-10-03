@@ -131,8 +131,8 @@ for each target framework and runs their tests (needs the .NET 10 SDK).
 
 From the repository root: `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and
 `@piwitests/reporter` tarballs from `<dir>` into a new project, starts the server with `npx @piwitests/server` and
-reports a run through it. CI's `package-smoke` job runs it on Linux, macOS and Windows; the script header shows how to
-pack the tarballs.
+reports a run through it. CI's `package-smoke` job runs it on Linux, and on macOS and Windows too on `main` and on
+pull requests that change the packages or their dependencies; the script header shows how to pack the tarballs.
 
 From the repository root: `npm run knip` lists unused files, exports, types and dependencies, and imports of packages a
 workspace does not declare, across every JS workspace. The entry points it cannot infer (the extension bundles, the demo

@@ -61,7 +61,8 @@ with the project's Node.js interpreter.
 
 - **The oldest supported platform is 2024.1** (`pluginSinceBuild=241`): the first whose LSP API sends requests
   through the server (`sendRequestSync`) and lists servers in the Language Services widget. Compile against it;
-  `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA Ultimate and Rider too. An API newer than 2024.1 is looked
+  `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA Ultimate and Rider too (CI verifies on 2024.1 and the
+  latest WebStorm for a pull request, on every IDE on `main`). An API newer than 2024.1 is looked
   up at run time or not used. Its test framework is pinned (`platformTestFrameworkVersion`: it is published with
   IntelliJ IDEA's build numbers, just after WebStorm's), and the test sandbox disables the Swagger plugin, whose test
   service ships with its own tests only.

@@ -2,11 +2,23 @@ name: JetBrains plugin
 
 # Builds and tests apps/jetbrains on WebStorm 2024.1, the oldest supported
 # platform, and runs the Plugin Verifier on the IDEs gradle.properties lists.
-# The IDE downloads are large: ci.yml calls it on pull requests that change the
-# plugin, the editor service or the core package, and it runs on demand.
+# The IDE downloads are large: ci.yml calls it on pull requests and pushes to
+# main that change the plugin, the editor service or the core package, and it
+# runs on demand. A pull request verifies on the oldest and the newest WebStorm;
+# main and a manual run verify on every IDE.
 on:
   workflow_call:
+    inputs:
+      all-ides:
+        description: Verify on every IDE, not only the oldest and the newest WebStorm.
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      all-ides:
+        description: Verify on every IDE, not only the oldest and the newest WebStorm.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -55,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ide: ['WS:2024.1', 'WS:2026.2.3', 'IU:2026.2.3', 'RD:2026.2.2']
+        ide: ${{ fromJSON(inputs.all-ides && '["WS:2024.1","WS:2026.2.3","IU:2026.2.3","RD:2026.2.2"]' || '["WS:2024.1","WS:2026.2.3"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7

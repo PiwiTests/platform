@@ -2,7 +2,9 @@ name: CI
 
 # Every check of a pull request and of main, behind one required check: CI result. The `changes` job reads which
 # areas the change touches, and each job runs for the areas it covers; a change to the workflows or to the Node
-# version runs them all. The editor, extension and desktop suites run on pull requests only.
+# version runs them all. A pull request runs the dashboard E2E suite on two backends and the package smoke test on
+# Linux; main runs every backend and every system, and the JetBrains Plugin Verifier on every IDE. The extension,
+# VS Code and desktop suites run on pull requests only.
 on:
   pull_request:
   push:
@@ -57,6 +59,8 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
       dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
+      e2e_matrix: ${{ steps.matrices.outputs.e2e }}
+      smoke_matrix: ${{ steps.matrices.outputs.smoke }}
 
     steps:
       - name: Checkout
@@ -119,14 +123,42 @@ jobs:
             dotnet:
               - 'integrations/aspnetcore/**'
               - 'integrations/serilog/**'
+            smoke:
+              - 'packages/server/**'
+              - 'packages/reporter/**'
+              - 'scripts/package-smoke.mjs'
+              - 'apps/application/package.json'
+              - 'apps/application/nuxt.config.ts'
+              - 'package-lock.json'
+
+      # Storage and database are independent axes: a pull request runs each implementation once (local + sqlite, on
+      # the dashboard's Node 22 engines floor, and s3 + postgres), main runs every pair. Windows and macOS catch what
+      # breaks only on their paths or native binaries: a pull request runs them when it changes the packages or their
+      # dependencies, main always.
+      - name: Pick the E2E backends and the package smoke systems
+        id: matrices
+        env:
+          ON_MAIN: ${{ github.event_name == 'push' }}
+          PACKAGES_CHANGED: ${{ steps.filter.outputs.smoke == 'true' || steps.filter.outputs.ci == 'true' }}
+        run: |
+          backends='[{"storage":"local","database":"sqlite","node":"22"},{"storage":"s3","database":"postgres","node":""}]'
+          crossed='[{"storage":"local","database":"postgres","node":""},{"storage":"s3","database":"sqlite","node":""}]'
+          if [ "$ON_MAIN" = true ]; then backends=$(jq -c --argjson more "$crossed" '. + $more' <<< "$backends"); fi
+          echo "e2e=$(jq -c '[.[] as $b | range(1; 6) | $b + {shard: .}]' <<< "$backends")" >> "$GITHUB_OUTPUT"
+
+          systems='[{"os":"ubuntu-latest","node":"22"}]'
+          if [ "$ON_MAIN" = true ] || [ "$PACKAGES_CHANGED" = true ]; then
+            systems='[{"os":"ubuntu-latest","node":"22"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"24"}]'
+          fi
+          echo "smoke=$systems" >> "$GITHUB_OUTPUT"
 
   # Builds once for every E2E cell: the storage and database backends are read
   # from the environment at request time, so a single production output covers
-  # the whole matrix.
+  # the whole matrix. The desktop suite stages the same output on macOS.
   build:
     name: Build
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.app == 'true' || (needs.changes.outputs.desktop == 'true' && github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -311,29 +343,21 @@ jobs:
   e2e:
     name: E2E (storage=${{ matrix.storage }}, db=${{ matrix.database }}, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.app == 'true'
     timeout-minutes: 15
 
     strategy:
       # Run every cell to completion so one backend failing doesn't mask the others.
       fail-fast: false
+      # The backends `changes` picks, five shards each: 10 jobs on a pull request, 20 on main, where they fill the
+      # 20 concurrent job slots. The local + sqlite leg runs on Node 22, the dashboard's engines floor, against the
+      # Node 24-built output, the same combination an npm user on LTS gets; the others run the root .node-version.
       matrix:
-        storage: [local, s3]
-        database: [sqlite, postgres]
-        # Five shards across four backends fill the 20 concurrent job slots
-        # exactly; a sixth pushes four jobs into a queue that costs more than
-        # the extra parallelism buys.
-        shard: [1, 2, 3, 4, 5]
-        # The sqlite/local leg runs on Node 22 — the dashboard's engines floor —
-        # against the Node 24-built output, the same combination an npm user on
-        # LTS gets. The other legs run the root .node-version.
-        include:
-          - storage: local
-            database: sqlite
-            node: 22
+        include: ${{ fromJSON(needs.changes.outputs.e2e_matrix) }}
 
     env:
-      # Keep in step with the shard list above.
+      # Keep in step with the shards `changes` lists.
       SHARD_TOTAL: 5
 
     steps:
@@ -452,19 +476,15 @@ jobs:
   package-smoke:
     name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.app == 'true'
     timeout-minutes: 10
 
     strategy:
       fail-fast: false
+      # The systems `changes` picks.
       matrix:
-        include:
-          - os: ubuntu-latest
-            node: 22
-          - os: windows-latest
-            node: 24
-          - os: macos-latest
-            node: 24
+        include: ${{ fromJSON(needs.changes.outputs.smoke_matrix) }}
 
     steps:
       - name: Checkout
@@ -574,17 +594,22 @@ jobs:
     if: needs.changes.outputs.vscode == 'true' && github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-e2e-vscode.yml
 
+  # On main the plugin job also writes the Gradle cache the pull requests read.
   jetbrains:
     name: JetBrains plugin
     needs: changes
-    if: needs.changes.outputs.jetbrains == 'true' && github.event_name == 'pull_request'
+    if: needs.changes.outputs.jetbrains == 'true'
     uses: ./.github/workflows/reusable-jetbrains.yml
+    with:
+      all-ides: ${{ github.event_name == 'push' }}
 
   desktop:
     name: Desktop E2E
-    needs: changes
+    needs: [changes, build]
     if: needs.changes.outputs.desktop == 'true' && github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-e2e-desktop.yml
+    with:
+      build-artifact: build-output
 
   # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
   # each one passed or was skipped because the change does not touch its area.

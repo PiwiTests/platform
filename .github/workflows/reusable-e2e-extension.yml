@@ -13,11 +13,18 @@ permissions:
 
 jobs:
   e2e:
-    name: e2e
+    name: e2e (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # The suite runs on one worker (see tests/e2e/playwright.config.ts) and
-    # takes about 15 minutes; 30 leaves room for a slow runner and the retries.
-    timeout-minutes: 30
+    # Each shard runs whole files on one worker (see tests/e2e/playwright.config.ts);
+    # the longest, which holds replay.spec.ts, takes about 8 minutes.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      # Keep in step with the shard list above.
+      SHARD_TOTAL: 3
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -29,13 +36,13 @@ jobs:
 
       - name: Run extension E2E
         working-directory: apps/extension
-        run: npm run extension:test:e2e
+        run: npm run extension:test:e2e -- --shard=${{ matrix.shard }}/${{ env.SHARD_TOTAL }}
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: extension-e2e-report
+          name: extension-e2e-report-${{ matrix.shard }}
           path: apps/extension/playwright-report
           if-no-files-found: ignore
           retention-days: 7

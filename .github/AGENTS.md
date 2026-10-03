@@ -1,17 +1,18 @@
 # CI workflows: agent instructions
 
 Area guide for `.github/`: the GitHub Actions workflows, the composite action they share, and Dependabot. The plan
-these follow, with its measurements and the phases still open, is [`proposals/ci-workflows.md`](../proposals/ci-workflows.md).
+these follow, with its measurements and the phases still open, is
+[`proposals/ci-workflows.md`](../proposals/ci-workflows.md).
 
 ## Layout
 
 | File                                       | Runs on                         | Does                                                                                     |
 | ------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------- |
 | `workflows/ci.yml`                         | pull requests, pushes to `main` | every check, behind the one required check `CI result`                                   |
-| `workflows/reusable-e2e-extension.yml`     | called by `ci.yml`, on demand   | the browser extension's E2E suite                                                        |
+| `workflows/reusable-e2e-extension.yml`     | called by `ci.yml`, on demand   | the browser extension's E2E suite, in 3 shards                                           |
 | `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand   | the VS Code extension's integration suite                                                |
-| `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand   | the JetBrains plugin's tests, build and Plugin Verifier runs                             |
-| `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand   | the desktop shell's Rust tests and E2E smoke test, on macOS                              |
+| `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand   | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on main)  |
+| `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand   | the desktop shell's Rust tests and E2E smoke test, on macOS, from `ci.yml`'s build       |
 | `workflows/pr-lint.yml`                    | pull requests                   | `commitlint`, `title` (the PR title) and `actionlint`                                    |
 | `workflows/docs.yml`                       | pushes to `main`                | builds and deploys the docs and the demo                                                 |
 | `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges                                               |
@@ -21,8 +22,12 @@ these follow, with its measurements and the phases still open, is [`proposals/ci
 | `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
 
 `ci.yml`'s `changes` job reads which areas a change touches (`dorny/paths-filter`) and each job runs for the areas it
-covers; a change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all. The editor, extension and
-desktop suites run on pull requests only. The release PR runs the `Versions` job alone.
+covers; a change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all. It also picks the
+matrices: a pull request runs the dashboard E2E suite on two backends (`local + sqlite` on Node 22, `s3 + postgres`)
+and the package smoke test on Linux (on Windows and macOS too when it changes the packages or their dependencies);
+`main` runs the four backends and the three systems. The JetBrains Plugin Verifier runs on two IDEs for a pull request
+and on four on `main`, where the plugin job also writes the Gradle cache. The extension, VS Code and desktop suites run
+on pull requests only. The release PR runs the `Versions` job alone.
 
 ## Conventions
 
