@@ -76,8 +76,10 @@ Phase 5's documentation landed with phases 2 to 4. What changed while building p
   the targets, so a release whose publication failed on one target runs again for that target alone; "Re-run failed
   jobs" covers a failure the same week (the shared build stays 3 days).
 - A pull request that changes `release.yml` or a `reusable-publish-*.yml` runs `release.yml`: every target builds and
-  packs (`npm publish --dry-run`, `dotnet pack`, both image architectures, the four desktop legs, the three
-  extension packages), and nothing is pushed or published. It is not a check of `CI result`: it runs on the
+  packs (`npm pack --dry-run`, `dotnet pack`, both image architectures, the four desktop legs, the three
+  extension packages), and nothing is pushed or published. The npm jobs pack rather than run
+  `npm publish --dry-run`: logged in, npm checks the version against the registry, and the version on a branch is
+  the one already published (the first dry run failed on it). It is not a check of `CI result`: it runs on the
   release workflows' changes alone, which is rare, and takes about 20 minutes.
 - The container workflow pushes only from a tag or `main`; elsewhere it builds both architectures, reads the
   registry cache and writes none.
