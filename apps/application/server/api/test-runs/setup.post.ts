@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
 import { testRuns } from '../../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
@@ -16,7 +16,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs.',
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId.',
     'x-required-roles': ['administrator', 'reporter'],
     requestBody: {
       content: {
@@ -63,7 +63,8 @@ export default eventHandler(async (event) => {
   const isSharded = !!(shardTotal && shardTotal > 1);
 
   if (isSharded && instanceId) {
-    // Sharded setup: look for existing initializing run with same instanceId
+    // Sharded setup: join the run another shard of the same instanceId set up,
+    // whether it is still initializing or that shard already began it
     const existingRuns = await db
       .select()
       .from(testRuns)
@@ -71,7 +72,7 @@ export default eventHandler(async (event) => {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          eq(testRuns.status, 'initializing'),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
