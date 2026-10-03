@@ -942,14 +942,11 @@ export async function getFlakyListSuspects(
 ): Promise<Array<TopFlakeSuspect & { lab: FlakeLabSummary | null }>> {
   const summaries = await getFlakeLabSummaries(db, testCaseIds.slice(0, TOP_SUSPECTS_MAX_TESTS));
   const lab = new Map(summaries.map((l) => [l.testCaseId, l]));
-  // A suspect the lab reproduced leads, whatever its rank.
-  const reproduced = new Map<number, Set<string>>();
-  for (const summary of summaries) {
-    const results = await getFlakeSuspectResults(db, summary.testCaseId);
-    const ids = [...results.values()].filter((r) => r.verdict === 'reproduced').map((r) => r.suspectId);
-    if (ids.length > 0) reproduced.set(summary.testCaseId, new Set(ids));
-  }
-  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { reproduced });
+  // A suspect the lab reproduced leads, whatever its rank; one that did not reproduce comes last.
+  const results = new Map<number, Map<string, FlakeSuspectResult>>();
+  for (const summary of summaries)
+    results.set(summary.testCaseId, await getFlakeSuspectResults(db, summary.testCaseId));
+  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { results });
   return items.map((item) => ({ ...item, lab: lab.get(item.testCaseId) ?? null }));
 }
 

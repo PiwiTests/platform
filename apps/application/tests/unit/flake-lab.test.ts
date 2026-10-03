@@ -447,9 +447,29 @@ describe('recording results', () => {
     const [ranked] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW });
     expect(ranked!.suspect!.id).toBe('slow-route:GET /api/cart');
 
-    const reproduced = new Map([[FLAKY, new Set([`alongside:${NEIGHBOR}`])]]);
-    const [preferred] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, reproduced });
+    const result = (suspectId: string, verdict: 'reproduced' | 'not-reproduced') => ({
+      suspectId,
+      experimentId: 1,
+      verdict,
+      runs: 10,
+      matchingFailures: verdict === 'reproduced' ? 7 : 0,
+      controlRuns: 10,
+      controlMatchingFailures: 0,
+      pValue: null,
+      label: suspectId,
+      finishedAt: null,
+    });
+    const reproduced = new Map([
+      [FLAKY, new Map([[`alongside:${NEIGHBOR}`, result(`alongside:${NEIGHBOR}`, 'reproduced')]])],
+    ]);
+    const [preferred] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: reproduced });
     expect(preferred!.suspect!.id).toBe(`alongside:${NEIGHBOR}`);
+
+    // A higher-ranked suspect that did not reproduce gives way to the next untested one, and stays listed.
+    const cart = 'slow-route:GET /api/cart';
+    const demoted = new Map([[FLAKY, new Map([[cart, result(cart, 'not-reproduced')]])]]);
+    const [next] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: demoted });
+    expect(next!.suspect!.id).not.toBe(cart);
 
     // The list reads each test's lab results: the cart suspect reproduced earlier, so it leads.
     const [item] = await lab.getFlakyListSuspects(db as never, 1, [FLAKY]);
