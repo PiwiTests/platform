@@ -8,10 +8,10 @@ lang: en-US
 
 <Needs reporter />
 
-A suite that got slower may be doing more, or may be waiting: for a CPU it shares with too many workers, for memory
-the container is about to run out of, for a disk filling with traces. The reporter samples the run's processes and
-the machine while the tests run and prints, at the end, what the run had and what it used of it. It needs no fixtures;
-on GitHub Actions the same panel is added to the job summary, and the dashboard shows it on the run.
+A suite that got slower may be doing more, or waiting: for a CPU shared with too many workers, for memory the
+container is about to run out of, for a disk filling with traces. The reporter samples the run's processes and the
+machine while the tests run and prints, at the end, what the run had and what it used of it. It needs no fixtures; on
+GitHub Actions the panel joins the job summary, and the dashboard shows it on the run.
 
 ## The panel
 
@@ -27,11 +27,11 @@ It follows the [resource leaks](./resource-leaks) summary when the run has any.
 
 | Line | What it says |
 |---|---|
-| **Machine** | The cores and memory the run had. In a container, its memory limit and CPU quota, which are what the run really gets; on a cloud VM, the CPU time the hypervisor took (steal) when it reaches 1%. |
-| **CPU** | How busy the machine was, sampled every second (the sparkline), and the share of the time some task was ready to run but **waited for a CPU**: the measure of too many workers for the cores. Then the CPU time of the run's own processes by role, and the role that waited longest. |
-| **Memory** | The peak of the run's processes together, counted as PSS (proportional set size: memory several processes share is split between them, so the sum is honest), when it happened, against the container's limit or the machine's memory, and the largest single process. A container that hit a new peak, a process the container killed for memory, and time spent waiting for memory are named. |
-| **Disk** | The files the tests attached (traces, videos, screenshots), the most disk the run's output folders and browser profiles took at once while it ran, and the lowest free space on their disks. Profiles and artifact folders that earlier runs left in the temp folder are named from 10 MB. |
-| **Workers** | With the [capture fixtures](/guide/capture-fixtures): how busy each worker's event loop was during its tests, the worst p99 delay, and how often the worker was switched out of a CPU it still needed. A worker that drives the browser late makes actions slow and timeouts flaky. |
+| **Machine** | The cores and memory the run had. In a container, its memory limit and CPU quota, what the run really gets; on a cloud VM, the CPU time the hypervisor took (steal) when it reaches 1%. |
+| **CPU** | How busy the machine was, sampled every second (the sparkline), and the share of the time some task was ready to run but **waited for a CPU**: the measure of too many workers for the cores. Then the CPU time of the run's processes by role, and the role that waited longest. |
+| **Memory** | The peak of the run's processes together, counted as PSS (proportional set size: shared memory is split between its sharers, so the sum is honest), when it happened, against the container's limit or the machine's memory, and the largest process. A container that hit a new peak, a process it killed for memory, and time spent waiting for memory are named. |
+| **Disk** | The files the tests attached (traces, videos, screenshots), the most disk the run's output folders and browser profiles took at once, and the lowest free space on their disks. Profiles and artifact folders earlier runs left in the temp folder are named from 10 MB. |
+| **Workers** | With the [capture fixtures](/guide/capture-fixtures): how busy each worker's event loop was, the worst p99 delay, and how often the worker was switched out of a CPU it still needed. A worker that drives the browser late makes actions slow and timeouts flaky. |
 
 The roles come from each process's command line: Playwright's **workers**, the **browsers** they launch with their
 **renderers** (the processes pages run in), **GPU** process and **browser utilities**, **ffmpeg** when videos are recorded,
@@ -42,7 +42,7 @@ is none of these, `webServer` and `globalSetup` servers alike.
 
 - **Waiting for a CPU most of the time, renderers waiting longest**: more workers than the cores can serve. Lower
   `workers`, or look for pages that keep working after their test: the [resource leaks](./resource-leaks) summary
-  gives the main-thread CPU each leaked page used after its test.
+  gives the main-thread CPU each leaked page used after it.
 - **Memory near the limit**: each worker holds a browser, and each open page a renderer. Fewer workers, or close what
   the tests leave open.
 - **Most of the CPU in the GPU process or ffmpeg**: tracing screenshots and video frames are rendered in software on a
@@ -56,44 +56,45 @@ is none of these, `webServer` and `globalSetup` servers alike.
 | | Linux | macOS | Windows |
 |---|---|---|---|
 | Machine busy, the sparkline | ✅ | ✅ | ✅ |
-| CPU of the run's processes by role | ✅ every second | ✅ every 5 seconds, through `ps` | not measured |
+| CPU of the run's processes by role | ✅ every second | ✅ every 5 seconds, through `ps` | ✅ every 15 seconds, through CIM |
 | Waiting for a CPU, steal | ✅ | not measured | not measured |
-| Peak memory | ✅ PSS | RSS, which counts shared memory in each process | not measured |
+| Peak memory | ✅ PSS | RSS, shared pages counted in each process | Working set, shared pages counted in each process |
 | Container limits, peak, kills | ✅ cgroup v1 and v2 | — | — |
 | Disk, workers | ✅ | ✅ | ✅ |
 
 A line lists what could not be measured on the machine, rather than printing a zero. The workers' reads are taken at
-each test's start and end; on Linux they add the CPU, the time waiting for a CPU and the peak memory of each browser
-process during the test, kept for each test with its census.
+each test's start and end; on Linux they add the CPU, the waiting and the peak memory of each browser process during
+the test, kept with its census.
 
 ## In the dashboard
 
-The reporter sends the panel with the run, which then shows a **Resources** tab: the machine each shard ran on, with
-the CPU busy over the run and the moment memory peaked, the same lines as the panel, and the [resource
+The reporter sends the panel with the run, which shows a **Resources** tab: the machine each shard ran on, the CPU
+over the run, when memory peaked, the panel's lines, and the [resource
 leaks](./resource-leaks#in-the-dashboard) found. Below them, the **costliest tests**: the tests whose worker and
 browser processes used the most CPU.
 
 The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
 **CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
-workers. Hover a track for its values then; a line down the rows marks the tests running. Each track can be turned off
+workers. Hover a track for its values; a line down the rows marks the running tests. Each track can be turned off
 from the **Resources** menu, a choice kept per browser. A sharded run draws one set of tracks above each shard's
-workers, each shard on its own machine.
+workers, each on its own machine.
 
-The same menu draws one metric **under each worker** row, on one scale for all of them: its open pages, the CPU and
-memory of the worker and the browsers it started, read with the panel's samples, or the share of each test its browsers
-spent waiting for a CPU (Linux). The sampler tells the workers apart through the capture fixtures; for a worker it
-did not read, a run from an older reporter or on Windows, each test's own cost is drawn across its bar instead.
+The same menu draws one metric **under each worker** row, on one scale for all: its open pages, the CPU and
+memory of the worker and the browsers it started, from the panel's samples, or the share of each test its browsers
+spent waiting for a CPU (Linux). The sampler tells workers apart through the capture fixtures; for a worker it
+did not read, or a run from an older reporter, each test's own cost is drawn across its bar instead.
 
 With the capture fixtures, each execution also carries what its test cost, on its Performance tab: the CPU of the
-worker and of the browser processes it started, the largest of those processes, how busy the worker's event loop was,
-and the pages it found already open and left open. A test that found pages open paid for what an earlier one left.
+worker and of the browser processes it started, the largest of those, how busy the worker's event loop was, and the
+pages it found open and left open. A test that found pages open paid for what an earlier one left.
 
 ## Cost
 
-The sampler runs on a timer in the reporter's process, which it never keeps alive: about 2 ms of CPU every second to
-read the processes' CPU time, and on Linux about 30 ms every five seconds to read their memory and walk the output
-folders (up to 10,000 files), under 1% of one core in all. The workers' reads take about 2 ms at the end of each
-test.
+The sampler runs on a timer in the reporter's process, which it never keeps alive: about 2 ms of CPU a second to
+read the processes' CPU time, and on Linux about 30 ms every five seconds for their memory and the output
+folders (up to 10,000 files), under 1% of one core. macOS reads the tree through `ps` every five seconds, Windows
+through a PowerShell CIM query every fifteen (about half a second of CPU; a read still running delays the next). The
+workers' reads take about 2 ms at the end of each test.
 
 Turn it off, with the resource ledger, through `captureResources: false` (or `PIWI_CAPTURE_RESOURCES=false`).
 
@@ -103,7 +104,7 @@ Turn it off, with the resource ledger, through `captureResources: false` (or `PI
   600 points of CPU and of memory, 300 of each worker's, merged in time order on a longer run; memory is read every five
   seconds, so a short run's memory track has few points.
 - **Sampled.** A process that lives less than a second, or the last second of one that exits, can be missed; a run of a
-  few seconds has few samples.
+  few seconds has few samples, and on Windows the tree is read every fifteen seconds.
 - **The machine is shared.** Busy, waiting and free memory count every process on the machine, other jobs included;
   only the CPU by role and the peak memory are the run's own.
 - A browser the tests reach over the network (`connectOptions`, a grid) runs elsewhere and is not measured.
