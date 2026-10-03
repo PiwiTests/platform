@@ -44,7 +44,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
 
     override fun tearDown() {
         try {
-            recordings.endAll("The test ended.")
+            generateSequence { recordings.only() }.take(10).forEach { it.end("The test ended.", failed = true) }
             recordings.remote = remote
         } catch (e: Throwable) {
             addSuppressedException(e)
@@ -337,15 +337,20 @@ class PiwiRecordingTest : BasePlatformTestCase() {
     /** Stop, Pause and Resume act on the recording of the file at hand, each while it applies. */
     fun testTheRecordingActionsActOnTheFilesRecordingWhileTheyApply() {
         myFixture.configureByText("only.spec.ts", "test('t', async ({ page }) => {\n  \n});\n")
-        val session = register("s9", line = 1, newLine = false, indent = "  ")
+        val opening = "Opening Chromium with the options of the admin project."
+        val session = recordings.register("s9", myFixture.editor, myFixture.file.virtualFile, "steps", RecordingPlacement(1, false, "  "), opening)
         assertSame(session, recordings.only())
+        assertEquals("Piwi: opening the browser to record into this file… · $opening", session.view.text)
         val actions = ActionManager.getInstance()
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         send(update("s9", "await page.goto('/');"))
+        val statusBar = PiwiStatusBarWidget(project)
+        assertEquals("Piwi: ● recording · 1 step", statusBar.getText())
         // The service sends nothing for a pause: the banner says so at once.
         assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertEquals(listOf("pause s9"), sent)
         assertEquals("Piwi: recording paused · 1 step", session.view.text)
+        assertEquals("Piwi: recording paused · 1 step", statusBar.getText())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertTrue(myFixture.testAction(actions.getAction("Piwi.ResumeRecording")).isEnabled)
         assertEquals(listOf("pause s9", "resume s9"), sent)
@@ -356,5 +361,6 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(listOf("pause s9", "resume s9", "stop s9"), sent)
         send(update("s9", "await page.goto('/');", state = "stopped"))
         assertNull(recordings.only())
+        assertFalse(statusBar.getText().contains("recording"))
     }
 }

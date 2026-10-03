@@ -41,16 +41,13 @@ import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.lsp.api.LspServer
-import com.intellij.platform.lsp.api.LspServerManager
-import com.intellij.platform.lsp.api.LspServerManagerListener
-import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.ui.EditorNotifications
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.concurrency.AppExecutorUtil
 import java.awt.event.MouseEvent
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import javax.swing.Icon
 
@@ -85,6 +82,8 @@ class PiwiRecordings(private val project: Project) : Disposable {
 
     private var listening = false
 
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
     /** Where the sessions' commands go: the editor service. */
     var remote: RecordingRemote = RecordingRemote { sessionId, command -> send(sessionId, command) }
 
@@ -93,6 +92,19 @@ class PiwiRecordings(private val project: Project) : Disposable {
 
     /** The project's session when exactly one runs. */
     fun only(): RecordingSession? = sessions.values.singleOrNull()
+
+    /** A session of the project, the one the status bar shows; null when none runs. */
+    fun current(): RecordingSession? = sessions.values.firstOrNull()
+
+    /** Called on the event thread when a session's state changes or it ends. */
+    fun onChange(parent: Disposable, listener: () -> Unit) {
+        listeners += listener
+        Disposer.register(parent) { listeners -= listener }
+    }
+
+    internal fun viewChanged() {
+        listeners.forEach { it() }
+    }
 
     /** The warnings to show in a document, of its recording and of the ended ones, where they show now. In a read action. */
     fun warnings(document: Document): List<Pair<TextRange, String>> =
@@ -120,12 +132,19 @@ class PiwiRecordings(private val project: Project) : Disposable {
     }
 
     /**
-     * A session `piwi/record` started, writing into `editor`'s file from the line `placement` names. An update that came
-     * before it is applied now; a file closed meanwhile stops it.
+     * A session `piwi/record` started, writing into `editor`'s file from the line `placement` names; the banner shows
+     * `message` until the first update. An update that came before it is applied now; a file closed meanwhile stops it.
      */
-    fun register(sessionId: String, editor: Editor, file: VirtualFile, into: String, placement: RecordingPlacement): RecordingSession {
+    fun register(
+        sessionId: String,
+        editor: Editor,
+        file: VirtualFile,
+        into: String,
+        placement: RecordingPlacement,
+        message: String? = null,
+    ): RecordingSession {
         listen()
-        val session = RecordingSession(this, project, sessionId, editor, file, into, placement)
+        val session = RecordingSession(this, project, sessionId, editor, file, into, placement, message)
         sessions[sessionId] = session
         Disposer.register(this, session)
         session.refreshView()
@@ -162,11 +181,6 @@ class PiwiRecordings(private val project: Project) : Disposable {
         }
     }
 
-    /** Ends every session here, with `reason`: the service that held them is gone. */
-    fun endAll(reason: String) {
-        sessions.values.toList().forEach { it.end(reason, failed = true) }
-    }
-
     internal fun keep(document: Document, marks: List<RecordingWarningMark>) {
         if (marks.isNotEmpty()) kept.merge(document, marks) { before, added -> before + added }
     }
@@ -179,7 +193,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
         kept.remove(document)?.forEach { it.marker.dispose() }
     }
 
-    /** Once: a closed file stops its sessions and forgets its kept warnings; the service stopping ends every session. */
+    /** Once: a closed file stops its sessions and forgets its kept warnings. */
     private fun listen() {
         if (listening) return
         listening = true
@@ -192,20 +206,6 @@ class PiwiRecordings(private val project: Project) : Disposable {
                     FileDocumentManager.getInstance().getCachedDocument(file)?.let { forget(it) }
                 }
             },
-        )
-        LspServerManager.getInstance(project).addLspServerManagerListener(
-            object : LspServerManagerListener {
-                override fun serverStateChanged(lspServer: LspServer) {
-                    if (lspServer.descriptor !is PiwiLspServerDescriptor) return
-                    if (lspServer.state != LspServerState.ShutdownNormally && lspServer.state != LspServerState.ShutdownUnexpectedly) return
-                    ApplicationManager.getApplication().invokeLater(
-                        { endAll("The Piwi editor service stopped: the recording ended.") },
-                        project.disposed,
-                    )
-                }
-            },
-            this,
-            false,
         )
     }
 
@@ -222,6 +222,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
         val server = runCatching { project.getServiceIfCreated(PiwiProjectService::class.java)?.server() }.getOrNull()
         for (id in sessions.keys) runCatching { server?.stopRecording(StopRecordingParams(id)) }
         sessions.clear()
+        listeners.clear()
         kept.values.flatten().forEach { it.marker.dispose() }
         kept.clear()
     }
@@ -256,6 +257,7 @@ class RecordingSession internal constructor(
     val file: VirtualFile,
     private val into: String,
     private val placement: RecordingPlacement,
+    private var message: String?,
 ) : Disposable {
     val document: Document = editor.document
 
@@ -267,7 +269,6 @@ class RecordingSession internal constructor(
     private var applying = false
     private var written = false
     private var finished = false
-    private var message: String? = null
 
     /** The warnings of the latest update, on their lines. */
     @Volatile var warnings: List<RecordingWarningMark> = emptyList()
@@ -292,7 +293,7 @@ class RecordingSession internal constructor(
     @Volatile var command: PiwiCommand? = null
         private set
 
-    @Volatile var view: Glue.RecordingBanner = Glue.recordingBanner(state, 0, edited = false, stopping = false, message = null)
+    @Volatile var view: Glue.RecordingBanner = Glue.recordingBanner(state, 0, edited = false, stopping = false, message = message)
         private set
 
     init {
@@ -340,13 +341,18 @@ class RecordingSession internal constructor(
         recordings.ended(this)
         Disposer.dispose(this)
         EditorNotifications.getInstance(project).updateNotifications(file)
+        recordings.viewChanged()
         notify(reason, failed, if (open) kept.size else 0)
     }
 
     internal fun refreshView() {
         view = Glue.recordingBanner(state, steps, edited, stopping, message)
         EditorNotifications.getInstance(project).updateNotifications(file)
+        recordings.viewChanged()
     }
+
+    /** Where the block starts, or will: for the status bar to go there. */
+    fun blockStart(): Int? = (block?.takeIf { it.isValid } ?: anchor?.takeIf { it.isValid })?.startOffset
 
     /** Marks Stop as asked; false when it already was, or the session ended. */
     internal fun stopRequested(): Boolean {
@@ -461,12 +467,12 @@ class RecordingSession internal constructor(
         val chars = document.immutableCharSequence
         warnings = list.mapNotNull { warning ->
             val line = first + warning.line
-            val message = warning.message?.trim()?.ifEmpty { null }
-            if (warning.line < 0 || line > last || message == null) return@mapNotNull null
+            val note = warning.message?.trim()?.ifEmpty { null }
+            if (warning.line < 0 || line > last || note == null) return@mapNotNull null
             val start = document.getLineStartOffset(line)
             val end = document.getLineEndOffset(line)
             val from = start + (end - start - chars.subSequence(start, end).trimStart().length)
-            if (from >= end) null else RecordingWarningMark(document.createRangeMarker(from, end), chars.subSequence(from, end).toString(), message)
+            if (from >= end) null else RecordingWarningMark(document.createRangeMarker(from, end), chars.subSequence(from, end).toString(), note)
         }
     }
 
@@ -608,7 +614,7 @@ private class RecordingGutter(private val session: RecordingSession) : GutterIco
                 PiwiRecordings.actions(),
                 e.dataContext,
                 JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
-                true,
+                false,
             )
             val mouse = e.inputEvent as? MouseEvent
             if (mouse != null) popup.show(RelativePoint(mouse)) else popup.showInBestPositionFor(e.dataContext)

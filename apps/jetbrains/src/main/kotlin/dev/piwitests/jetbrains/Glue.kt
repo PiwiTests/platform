@@ -630,6 +630,14 @@ object Glue {
         return RecordingBanner(if (note == null) text else "$text · $note", actions)
     }
 
+    /** The status bar while a recording runs: its state and its step count. */
+    fun recordingStatus(state: String?, steps: Int, edited: Boolean, stopping: Boolean): String = when {
+        stopping -> "Piwi: stopping the recording"
+        state == "starting" -> "Piwi: opening the browser"
+        edited || state == "paused" -> "Piwi: recording paused · ${stepCount(steps)}"
+        else -> "Piwi: ● recording · ${stepCount(steps)}"
+    }
+
     /** The notification when a recording ends: why, if the service said, what was written where, and the warnings to check. */
     fun recordingSummary(steps: Int, warnings: Int, file: String, message: String?): String {
         val written = if (steps == 0) "Nothing was recorded into $file." else "Recorded ${stepCount(steps)} into $file."

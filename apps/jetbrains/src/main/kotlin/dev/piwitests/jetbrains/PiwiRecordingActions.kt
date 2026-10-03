@@ -43,10 +43,13 @@ private fun recordingOf(e: AnActionEvent): RecordingSession? {
     return e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { recordings.sessionFor(it) } ?: recordings.only()
 }
 
-/** Enables an action where it applies; a menu that pops up (the editor's, the gutter mark's) only shows it there. */
+/** The menus that show a recording action only where it applies: the editor's, and the recorded block's gutter mark's. */
+private val CONTEXT_MENUS = setOf(ActionPlaces.EDITOR_POPUP, ActionPlaces.EDITOR_GUTTER_POPUP)
+
+/** Enables an action where it applies; [CONTEXT_MENUS] show it only there. */
 private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isEnabled = applies
-    presentation.isVisible = applies || !ActionPlaces.isPopupPlace(place)
+    presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
 /** Piwi: Record Here — the steps of the test at the caret, else a new test there, from a browser the project's Playwright opens. */
@@ -255,8 +258,14 @@ object PiwiRecordFlow {
                     val recordings = project.service<PiwiRecordings>()
                     val target = editor.takeUnless { it.isDisposed }
                         ?: (FileEditorManager.getInstance(project).getSelectedEditor(file) as? TextEditor)?.editor
-                    if (target == null) recordings.remote.send(sessionId, "stop")
-                    else recordings.register(sessionId, target, file, params.into, placement)
+                    when {
+                        target == null -> recordings.remote.send(sessionId, "stop")
+                        recordings.sessionFor(file) != null -> {
+                            recordings.remote.send(sessionId, "stop")
+                            PiwiCommands.notify(project, "Piwi is already recording into ${file.name}.")
+                        }
+                        else -> recordings.register(sessionId, target, file, params.into, placement, result.message)
+                    }
                 }, project.disposed)
             }
         }

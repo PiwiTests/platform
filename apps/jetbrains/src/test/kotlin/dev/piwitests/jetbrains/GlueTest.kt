@@ -496,6 +496,15 @@ class GlueTest {
     }
 
     @Test
+    fun `the status bar shows a recording's state and step count`() {
+        assertEquals("Piwi: opening the browser", Glue.recordingStatus("starting", 0, edited = false, stopping = false))
+        assertEquals("Piwi: ● recording · 2 steps", Glue.recordingStatus("recording", 2, edited = false, stopping = false))
+        assertEquals("Piwi: recording paused · 1 step", Glue.recordingStatus("paused", 1, edited = false, stopping = false))
+        assertEquals("Piwi: recording paused · 2 steps", Glue.recordingStatus("recording", 2, edited = true, stopping = false))
+        assertEquals("Piwi: stopping the recording", Glue.recordingStatus("recording", 2, edited = true, stopping = true))
+    }
+
+    @Test
     fun `the end of a recording says what was written where, and the warnings to check`() {
         assertEquals("Recorded 6 steps into checkout.spec.ts.", Glue.recordingSummary(6, 0, "checkout.spec.ts", null))
         assertEquals(

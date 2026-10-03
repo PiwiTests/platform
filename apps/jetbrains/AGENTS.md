@@ -9,9 +9,12 @@ first.
 ## What it is
 
 A Gradle project in Kotlin with the IntelliJ Platform Gradle Plugin; like `apps/desktop`, not an npm workspace. The
-build copies the editor service's bundle (`packages/editor/dist/piwi-language-server.cjs`, from
-`npm run editor:build`) into the plugin's `server/` directory, and the plugin starts it through the platform's LSP API
-with the project's Node.js interpreter.
+build copies the editor service from `packages/editor/dist/` (`npm run editor:build`) into the plugin's `server/`
+directory: `piwi-language-server.cjs`, and beside it the recorder's launcher (`piwi-recorder-launcher.cjs`), the
+reporter that prints a Playwright project's options (`piwi-use-reporter.cjs`), the recorder's IDE bundle
+(`record-ide.js`) and its messages (`record-ide-messages.json`). `buildPlugin`, `runIde` and `verifyPlugin` fail
+without one of them; the tests start the language server from `dist/` and need none of the others. The plugin starts
+the service through the platform's LSP API with the project's Node.js interpreter.
 
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
   hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`; `piwi.desktopJob`,
@@ -35,9 +38,29 @@ with the project's Node.js interpreter.
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those
   hold none, in the Git repository around them. The tool window, the status bar item and the service wait for it, and
   the service's workspace folders are the folders it searched (`createInitializeParams`). **Refresh** searches again.
+- **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu) asks
+  `piwi/pageCandidates` where the caret is: in a test's body or a class, steps go there, elsewhere a new test
+  (`Glue.recordInto`); **Record a New Test File…** (also under **New**) creates the spec first. A dialog asks for the
+  start page and the page expression (the candidates, the default first, any other typed in), then `piwi/record`, and
+  a popup for the Playwright project when it answers with `projects`; the choices stay in `PiwiLocalSettings`.
+- `PiwiRecording.kt` holds the recording sessions (`PiwiRecordings`) and applies `piwi/recordingChanged` on the event
+  thread: the first update writes the recorded block where `RecordResult.placement` says (`Glue.firstBlockWrite`; a
+  block on the file's last line keeps its final line break), each later one replaces it whole (`Glue.recordedBlock`)
+  with the import lines the file lacks after its imports in the same command (`Glue.importInsertion`, which leaves
+  out a line whose names an import of the file binds already, from any module), and range markers follow it. The
+  block is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark offering Stop, Pause and Resume; its warnings are
+  weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
+  the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the
+  actions. An edit inside the block pauses the recording (`piwi/recordingCommand`) with **Resume** (the service sends
+  the block again) or **Keep My Edits** (Stop: nothing more is written). Closing the file or the project stops its
+  sessions; a service that stops ends them with a last update, and Stop ends one at once when the service does not
+  answer. One undo step: a `StartMarkAction` in a command of its own just before the first write, a `FinishMarkAction`
+  at the end, so one Undo after Stop goes back to before the recording, edits made in the file meanwhile included;
+  `PiwiRecordingTest` drives it with synthetic updates, the caret moving between writes.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
-  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
+  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). A recorded flow goes through
+  `piwi/renderSteps` with the caret, for its page expression, and its import lines apart, added like a recording's.
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
   connected to (its settings, `PIWI_DASHBOARD_URL` in the environment or in a Playwright config folder's `.env`, the
@@ -59,8 +82,8 @@ with the project's Node.js interpreter.
   before any file is opened.
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
-  choice of the desktop app and its project live in `.idea/workspace.xml` (`PiwiLocalSettings`), on this machine
-  only; choosing the app never touches the instance, its project or its key.
+  choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
+  (`PiwiLocalSettings`), on this machine only; choosing the app never touches the instance, its project or its key.
 
 ## Rules
 
