@@ -428,6 +428,7 @@ test.describe.serial('Extract cases from failure cluster', () => {
   let clusterId: number;
   let extractableTestCaseId: number;
   let remainingTestCaseId: number;
+  let newClusterId: number;
 
   test.beforeAll(async ({ request }) => {
     const response = await request.post('/api/test-runs/submit', {
@@ -492,13 +493,20 @@ test.describe.serial('Extract cases from failure cluster', () => {
     expect(res.status()).toBe(404);
   });
 
-  test('POST /extract-cases unlinks the given case and updates the triage note', async ({ request }) => {
+  test('POST /extract-cases moves the given case to a new cluster with the typed note', async ({ request }) => {
     const res = await request.post(`/api/failure-clusters/${clusterId}/extract-cases`, {
       data: { testCaseIds: [extractableTestCaseId], triageNote: 'extracted the flaky one' },
     });
     expect(res.ok()).toBeTruthy();
-    const body = await res.json();
-    expect(body).toEqual({ success: true, extractedCount: 1, remainingOccurrences: 1 });
+    const body = (await res.json()) as { clusterId: number };
+    expect(body).toEqual({
+      success: true,
+      extractedCount: 1,
+      remainingOccurrences: 1,
+      clusterId: expect.any(Number),
+    });
+    newClusterId = body.clusterId;
+    expect(newClusterId).not.toBe(clusterId);
 
     const detailRes = await request.get(`/api/failure-clusters/${clusterId}`);
     const detail = (await detailRes.json()) as {
@@ -507,12 +515,20 @@ test.describe.serial('Extract cases from failure cluster', () => {
       affectedTestCases: Array<{ testCaseId: number }>;
     };
     expect(detail.occurrences).toBe(1);
-    expect(detail.triageNote).toBe('extracted the flaky one');
+    expect(detail.triageNote).toBe(`Moved 1 test to cluster #${newClusterId}.`);
     expect(detail.affectedTestCases.map((t) => t.testCaseId)).toEqual([remainingTestCaseId]);
-    expect(detail.affectedTestCases.map((t) => t.testCaseId)).not.toContain(extractableTestCaseId);
+
+    const moved = (await (await request.get(`/api/failure-clusters/${newClusterId}`)).json()) as {
+      occurrences: number;
+      triageNote: string | null;
+      affectedTestCases: Array<{ testCaseId: number }>;
+    };
+    expect(moved.occurrences).toBe(1);
+    expect(moved.triageNote).toBe('extracted the flaky one');
+    expect(moved.affectedTestCases.map((t) => t.testCaseId)).toEqual([extractableTestCaseId]);
   });
 
-  test('extracted case no longer references the cluster on the run detail page', async ({ request }) => {
+  test('the moved case references its new cluster on the run detail page', async ({ request }) => {
     const projectsRes = await request.get('/api/projects/menu');
     const projects = ((await projectsRes.json()) as { items: Array<{ id: number; name: string }> }).items;
     const project = projects.find((p) => p.name === PROJECT.EXTRACT_CASES)!;
@@ -526,7 +542,7 @@ test.describe.serial('Extract cases from failure cluster', () => {
     };
     const extracted = run.testCases.find((c) => c.title === 'case1')!;
     const remaining = run.testCases.find((c) => c.title === 'case2')!;
-    expect(extracted.failureClusterId).toBeNull();
+    expect(extracted.failureClusterId).toBe(newClusterId);
     expect(remaining.failureClusterId).toBe(clusterId);
   });
 });

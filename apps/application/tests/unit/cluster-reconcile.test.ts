@@ -360,6 +360,49 @@ describe('reconcileNewClusters', () => {
     expect(adjudicator.calls).toHaveLength(1);
     expect(stats.merged).toBe(0);
     expect(stats.suggested).toBe(0);
-    expect(await db.select().from(schema.clusterMergeSuggestions)).toHaveLength(0);
+    const suggestions = await db.select().from(schema.clusterMergeSuggestions);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toMatchObject({ method: 'llm', status: 'declined', llmReason: 'different causes' });
+  });
+
+  test('a pair the adjudicator declined is not judged again on a later pass', async () => {
+    const run2 = await seedRun();
+    embedder.book.set('sig-a', BASE);
+    embedder.book.set('sig-b', AMBIG);
+    await seedCluster({ fingerprint: 'fp-a', signature: 'sig-a', firstSeenRunId: run1 });
+    const b = await seedCluster({ fingerprint: 'fp-b', signature: 'sig-b', firstSeenRunId: run2 });
+    adjudicator.result = { merge: false, confidence: 'high', reason: 'different causes' };
+    await reconcileNewClusters(dbc, 1, run2, { embeddingRole, reasoningRole });
+
+    // A refreshed exemplar drops the vector, so the next pass re-embeds the cluster and meets the pair again.
+    await db.update(schema.failureClusters).set({ embedding: null }).where(eq(schema.failureClusters.id, b));
+    const run3 = await seedRun();
+    adjudicator.result = { merge: true, confidence: 'high', reason: 'same cause' };
+    const stats = await reconcileNewClusters(dbc, 1, run3, { embeddingRole, reasoningRole });
+
+    expect(adjudicator.calls).toHaveLength(1);
+    expect(stats.merged).toBe(0);
+    expect(await db.select().from(schema.failureClusters)).toHaveLength(2);
+  });
+
+  test('a rejected pair is never auto-merged, however similar', async () => {
+    const run2 = await seedRun();
+    embedder.book.set('sig-old', BASE);
+    embedder.book.set('sig-new', NEAR);
+    const oldId = await seedCluster({ fingerprint: 'fp-old', signature: 'sig-old', firstSeenRunId: run1 });
+    const newId = await seedCluster({ fingerprint: 'fp-new', signature: 'sig-new', firstSeenRunId: run2 });
+    await db.insert(schema.clusterMergeSuggestions).values({
+      projectId: 1,
+      clusterAId: oldId,
+      clusterBId: newId,
+      method: 'embedding',
+      status: 'rejected',
+    });
+
+    const stats = await reconcileNewClusters(dbc, 1, run2, { embeddingRole, reasoningRole });
+
+    expect(stats.merged).toBe(0);
+    expect(adjudicator.calls).toHaveLength(0);
+    expect(await db.select().from(schema.failureClusters)).toHaveLength(2);
   });
 });

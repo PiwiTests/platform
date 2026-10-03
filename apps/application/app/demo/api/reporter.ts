@@ -31,6 +31,8 @@ import {
 import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
+import { carryIngestHealth } from '#shared/ingest-health';
+import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
 import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
 import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
 import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
@@ -41,6 +43,8 @@ import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
   capSteps,
+  countDroppedSteps,
+  countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
   capSourceFrames,
@@ -70,7 +74,7 @@ import {
 } from '@piwitests/core/test-meta';
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
-  getOrCreateFailureClusters,
+  assignFailureClusters,
   type PendingCluster,
 } from '#shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '#shared/types';
@@ -359,7 +363,10 @@ export async function apiBeginTestRun(
         streamToken,
         totalTests: body.totalTests || 0,
         branch: resolveRunBranch(body.metadata || testRun.metadata),
-        metadata: sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+        metadata: carryIngestHealth(
+          sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+          testRun.metadata,
+        ),
         playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
@@ -614,6 +621,7 @@ export async function persistRunCases(
   const rowInputIndices: number[] = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
+  const rowDrops: ExecutionDrops[] = [];
   const pendingClusters = new Map<string, PendingCluster>();
   const perCaseLocators: Array<{
     caseId: number;
@@ -689,6 +697,10 @@ export async function persistRunCases(
     rowFingerprints.push(fingerprint);
 
     const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
+    rowDrops.push({
+      steps: countDroppedSteps(c.steps, DEFAULT_INGEST_LIMITS),
+      consoleEntries: countDroppedConsoleEntries(c.consoleLogs, DEFAULT_INGEST_LIMITS),
+    });
     const locatorPages = sanitizeLocatorPages(c.locatorPages);
     rowLocatorPages.push(locatorPages ? JSON.stringify(locatorPages) : null);
     const reached = sanitizeCodeReach(c.codeReach);
@@ -773,10 +785,8 @@ export async function persistRunCases(
     row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
   });
 
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
-  runCasesRows.forEach((row, i) => {
-    const fingerprint = rowFingerprints[i];
-    if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
+  await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
+    wakeSnoozed: !options.keepSnoozed,
   });
 
   // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
@@ -808,6 +818,14 @@ export async function persistRunCases(
   await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
   await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
   if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
+  await recordIngestHealth(
+    db,
+    testRunId,
+    storedDrops(
+      rowDrops,
+      insertedCases.map((r) => r.rowIndex),
+    ),
+  );
 
   return result;
 }
@@ -1160,7 +1178,10 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      ...(body.metadata && {
+        metadata: carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        branch: resolveRunBranch(body.metadata),
+      }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),

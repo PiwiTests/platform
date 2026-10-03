@@ -68,9 +68,9 @@ those failures. A neighbor names the paths both tests write, marked approximate 
 whose clocks agree only roughly. First attempts, the UTC hour and other runs on the same environment are context,
 without a condition. Nothing is stored.
 
-The flaky list names each test's top suspect, the [Attempts](./evidence#attempts) tab links a request to its suspect,
-the clue `known-flake-suspect` marks a failure showing one, and MCP's `get_flake_profile` returns the profile.
-The [Flake Lab](./flake-lab) tests each suspect against a control run.
+The flaky list names each test's top suspect (a reproduced one first), the [Attempts](./evidence#attempts) tab links
+requests to suspects, the clue `known-flake-suspect` marks failures showing one, and MCP's `get_flake_profile`
+returns it. The [Flake Lab](./flake-lab) tests each suspect against a control run.
 
 ### Verified fixed
 

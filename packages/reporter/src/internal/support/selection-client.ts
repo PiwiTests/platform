@@ -23,6 +23,7 @@ export interface ImpactResolution extends SelectionResolution {
     changedFiles: number;
     mappedFiles: number;
     widened: boolean;
+    /** Changed files that forced the full suite: mapped to no test, or only through failure frames. */
     unmappedSourceFiles: string[];
   };
 }

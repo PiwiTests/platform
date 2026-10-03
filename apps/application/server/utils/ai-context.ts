@@ -1,4 +1,5 @@
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import type { SQL } from 'drizzle-orm';
 import {
   testRunsCases,
@@ -528,7 +529,7 @@ function testAnnotationsSection(rep: RepresentativeRow): string | null {
  * worker/shard (race hint), describe-block path, and any pre-classified flaky
  * root cause. All from data already stored — no extra collection.
  */
-function runContextSection(rep: RepresentativeRow): string | null {
+export function runContextSection(rep: RepresentativeRow): string | null {
   const lines: string[] = [];
 
   if (rep.runIsFullRun === 0) {
@@ -551,6 +552,14 @@ function runContextSection(rep: RepresentativeRow): string | null {
 
   if (rep.flakyRootCause) {
     lines.push(`- Pre-classified flaky root cause (heuristic): ${rep.flakyRootCause}`);
+  }
+
+  // What ingest left out of the run: a step or console line absent here may have been dropped, not skipped.
+  const ingestNotes = describeIngestHealth(readIngestHealth(rep.runMetadata));
+  if (ingestNotes.length > 0) {
+    lines.push(
+      `- Stored incomplete — absent steps, console lines or evidence may have been left out at ingest, not missing from the test: ${ingestNotes.join('; ')}`,
+    );
   }
 
   if (lines.length === 0) return null;
@@ -1123,18 +1132,34 @@ async function resolveScreenshots(
   return images;
 }
 
-/** Recurrence pattern + flakiness analysis for the cluster. */
-async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
-  const recentRuns = await db
+/**
+ * The ids of the tests that have failed into a cluster. Passed executions carry
+ * no cluster id, so retry passes are found through these tests.
+ */
+function clusterTestCaseIds(db: DbClient, clusterId: number) {
+  return db
+    .selectDistinct({ id: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+}
+
+/**
+ * Recurrence pattern + flakiness analysis for the cluster, over the executions
+ * of its tests in the project's 30 most recent runs. A run is affected when it
+ * holds a failure in the cluster or a retry pass of one of its tests.
+ */
+export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const rows = await db
     .select({
       runId: testRunsCases.testRunId,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
     .where(
       and(
-        eq(testRunsCases.failureClusterId, cluster.id),
+        inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         inArray(
           testRunsCases.testRunId,
           db
@@ -1146,6 +1171,7 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
         ),
       ),
     );
+  const recentRuns = rows.filter((r) => r.clusterId === cluster.id || (r.status === 'passed' && (r.retries ?? 0) > 0));
 
   if (recentRuns.length === 0) return null;
 
@@ -1942,15 +1968,16 @@ const REP_SECTION_TITLES: Partial<Record<SectionId, string>> = {
   ariaSnapshot: 'ARIA Snapshot',
 };
 
-async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+export async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const retryPassRows = await db
     .select({ count: testRunsCases.id })
     .from(testRunsCases)
     .where(
       and(
-        eq(testRunsCases.failureClusterId, cluster.id),
+        inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         eq(testRunsCases.testRunId, cluster.lastSeenRunId),
         eq(testRunsCases.status, 'passed'),
+        sql`${testRunsCases.retries} > 0`,
       ),
     )
     .limit(1);

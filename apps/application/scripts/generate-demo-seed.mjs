@@ -980,6 +980,17 @@ for (const proj of DEMO_PROJECTS) {
             },
           }
         : {}),
+      // One run that came in over the ingest caps through the batch upload,
+      // so the run page shows what ingest left out.
+      ...(proj.id === 1 && i === 3
+        ? {
+            ingestHealth: {
+              stepsDropped: 1240,
+              consoleEntriesDropped: 312,
+              submitFallback: { path: 'upload', reason: 'finish-failed' },
+            },
+          }
+        : {}),
     };
 
     TEST_RUNS.push({

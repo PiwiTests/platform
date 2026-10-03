@@ -17,10 +17,11 @@ import {
   projects,
   quarantinedTests,
   testCases,
+  testRuns,
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
-import { eligibleExecutionSql } from '../run-eligibility';
+import { eligibleExecutionSql, eligibleRunSql } from '../run-eligibility';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
 import { resolveProjectStates } from './capabilities';
 import {
@@ -111,7 +112,7 @@ export interface ProbeCandidate {
   exposure: number;
   /** True when a probe already exists for this (test, route). */
   probed: boolean;
-  /** True when the test's source or the route's handler changed since that probe. */
+  /** True when the test's source changed since that probe ({@link loadTestBodyChangedAt}). */
   changed: boolean;
 }
 
@@ -119,7 +120,7 @@ export interface ProbeCandidate {
 
 /**
  * Choose the pairs to probe this run: never-probed pairs first, then pairs whose
- * test or handler changed since their last probe, each ordered by exposure. At
+ * test changed since their last probe, each ordered by exposure. At
  * most one fault per test per run, capped at the budget. The fault rotates
  * deterministically so a project's probes spread across the fault classes.
  */
@@ -282,6 +283,108 @@ export function classifyHandled(capture: ResilienceCapture): 'graceful' | 'degra
 
 // ── Loaders + orchestration (impure) ─────────────────────────────────────────
 
+/** The step categories that come from the test's own code. */
+const BODY_STEP_CATEGORIES = new Set(['expect', 'pw:api', 'test.step']);
+
+/**
+ * What a test's source looks like from one passing execution: the distinct
+ * `file:line:col` its steps ran from. An edit to the test or a helper it calls
+ * changes it; a tag, owner or annotation change does not, nor does a loop
+ * running a different number of times. Null when the execution recorded no
+ * step location.
+ */
+export function testBodySignature(steps: unknown): string | null {
+  if (!Array.isArray(steps)) return null;
+  const locations = new Set<string>();
+  for (const step of steps) {
+    if (!step || typeof step !== 'object') continue;
+    const { category, location } = step as { category?: unknown; location?: unknown };
+    if (typeof category !== 'string' || !BODY_STEP_CATEGORIES.has(category)) continue;
+    if (typeof location === 'string' && location) locations.add(location);
+  }
+  return locations.size > 0 ? [...locations].sort().join('\n') : null;
+}
+
+/** Passing executions read per test to find when its source last changed. */
+const BODY_HISTORY_EXECUTIONS = 20;
+
+/**
+ * When each test's source last changed, epoch ms: the oldest of its latest
+ * passing executions (outside lab runs, bisect steps and reproductions) that
+ * share the newest execution's {@link testBodySignature}, when an older one
+ * differs. A test whose recent
+ * executions all agree, or that recorded no step locations, is absent.
+ */
+export async function loadTestBodyChangedAt(db: DrizzleDB, testCaseIds: number[]): Promise<Map<number, number>> {
+  const changedAt = new Map<number, number>();
+  for (let i = 0; i < testCaseIds.length; i += 200) {
+    const ranked = db.$with('ranked').as(
+      db
+        .select({
+          testCaseId: testRunsCases.testCaseId,
+          steps: testRunsCases.steps,
+          createdAt: testRunsCases.createdAt,
+          rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${testRunsCases.testCaseId} ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC)`.as(
+            'rn',
+          ),
+        })
+        .from(testRunsCases)
+        .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+        .where(
+          and(
+            inArray(testRunsCases.testCaseId, testCaseIds.slice(i, i + 200)),
+            eq(testRunsCases.status, 'passed'),
+            eligibleRunSql('shared-state'),
+          ),
+        ),
+    );
+    const rows = await db
+      .with(ranked)
+      .select({ testCaseId: ranked.testCaseId, steps: ranked.steps, createdAt: ranked.createdAt, rn: ranked.rn })
+      .from(ranked)
+      .where(sql`${ranked.rn} <= ${BODY_HISTORY_EXECUTIONS}`);
+
+    // Newest first within each test.
+    rows.sort((a, b) => Number(a.rn) - Number(b.rn));
+    const byTest = new Map<number, Array<{ steps: unknown; createdAt: unknown }>>();
+    for (const row of rows) {
+      const list = byTest.get(row.testCaseId) ?? [];
+      list.push({ steps: typeof row.steps === 'string' ? safeJson(row.steps) : row.steps, createdAt: row.createdAt });
+      byTest.set(row.testCaseId, list);
+    }
+    for (const [testCaseId, executions] of byTest) {
+      const current = testBodySignature(executions[0]!.steps);
+      if (current == null) continue;
+      let since = executions[0]!.createdAt;
+      for (const execution of executions.slice(1)) {
+        const signature = testBodySignature(execution.steps);
+        if (signature == null) continue;
+        if (signature !== current) {
+          changedAt.set(testCaseId, epochMs(since));
+          break;
+        }
+        since = execution.createdAt;
+      }
+    }
+  }
+  return changedAt;
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function epochMs(value: unknown): number {
+  if (value instanceof Date) return value.getTime();
+  const n = Number(value);
+  // SQLite stores `created_at` in seconds.
+  return Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : 0;
+}
+
 /**
  * Build a probe plan for a project: which passing tests reach which routes, how
  * exposed each route is (its reach count as a popularity proxy), whether the
@@ -318,7 +421,7 @@ export async function buildProbePlan(
   }
 
   const testIds = [...new Set(reachRows.map((r) => Number(r.fromKey)).filter((n) => Number.isFinite(n)))];
-  const testMeta = new Map<number, { title: string; filePath: string; suitePath: string[]; updatedAt: number }>();
+  const testMeta = new Map<number, { title: string; filePath: string; suitePath: string[] }>();
   for (let i = 0; i < testIds.length; i += 200) {
     const rows = await db
       .select({
@@ -326,15 +429,13 @@ export async function buildProbePlan(
         title: testCases.title,
         filePath: testCases.filePath,
         suitePath: testCases.suitePath,
-        updatedAt: testCases.updatedAt,
       })
       .from(testCases)
       .where(inArray(testCases.id, testIds.slice(i, i + 200)));
     for (const r of rows) {
-      const updated = r.updatedAt instanceof Date ? r.updatedAt.getTime() : Number(r.updatedAt) || 0;
       // `suite_path` is stored as a \x1f-delimited string; split it back to the array the plan carries.
       const suitePath = r.suitePath ? r.suitePath.split('\x1f').filter(Boolean) : [];
-      testMeta.set(r.id, { title: r.title, filePath: r.filePath, suitePath, updatedAt: updated });
+      testMeta.set(r.id, { title: r.title, filePath: r.filePath, suitePath });
     }
   }
 
@@ -356,6 +457,11 @@ export async function buildProbePlan(
     const prev = lastProbe.get(key);
     if (!prev || at > prev.at) lastProbe.set(key, { at, outcome: p.outcome });
   }
+
+  const probedTests = [...new Set([...lastProbe.keys()].map((key) => Number(key.split('\x00')[0])))].filter((id) =>
+    testMeta.has(id),
+  );
+  const bodyChangedAt = await loadTestBodyChangedAt(db, probedTests);
 
   // Tests never probed: a failing or quarantined test replays as a false
   // "noticed", so it is dropped from the plan rather than probed.
@@ -385,7 +491,7 @@ export async function buildProbePlan(
       exposure: routeReach.get(r.routeKey)?.size ?? 1,
       probed,
       // Re-probe when the test's source changed after the last probe.
-      changed: prior != null && meta.updatedAt > prior.at,
+      changed: prior != null && (bodyChangedAt.get(testCaseId) ?? 0) > prior.at,
     });
   }
 

@@ -69,6 +69,53 @@ describe('a test that runs in several browser projects', () => {
   });
 });
 
+describe('which runs move a report', () => {
+  const closingRun = async (id: number, values: Partial<typeof schema.testRuns.$inferInsert>) => {
+    await db
+      .insert(schema.testRuns)
+      .values({ id, projectId: 1, status: 'passed', startTime: new Date(id * 1000_000), ...values });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: id,
+      testCaseId: 1,
+      testMeta: { bug: '1' },
+      status: 'passed',
+      browserName: 'chromium',
+    });
+    return applyBugReportLifecycle(db as never, id);
+  };
+
+  test('a feature-branch run moves nothing', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(10, { branch: 'feature/coupon' })).toEqual([]);
+    const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 1));
+    expect(report!.status).toBe('test-committed');
+  });
+
+  test('a piwi bug --write run on the default branch moves nothing, a selection run does', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(
+      await closingRun(10, { branch: 'main', isFullRun: 0, metadata: { piwiOrigin: { kind: 'bug', ref: '1' } } }),
+    ).toEqual([]);
+    const selection = await closingRun(11, { branch: 'main', isFullRun: 0, metadata: { piwiOrigin: { kind: 'ci' } } });
+    expect(selection.map((t) => [t.id, t.to])).toEqual([[1, 'closed']]);
+  });
+
+  test('a run with no branch moves the report only when the project records no branch', async () => {
+    await db.delete(schema.testRunsCases);
+    await db.delete(schema.testRuns);
+    expect((await closingRun(10, {})).map((t) => t.to)).toEqual(['closed']);
+
+    await db.update(schema.bugReports).set({ status: 'test-committed' }).where(eq(schema.bugReports.id, 1));
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(11, {})).toEqual([]);
+  });
+
+  test('a full run of the default branch moves the report', async () => {
+    const moved = await closingRun(10, { branch: 'main' });
+    expect(moved.map((t) => [t.id, t.from, t.to])).toEqual([[1, 'test-committed', 'closed']]);
+  });
+});
+
 describe('runs that move no report', () => {
   test.each(['bug', 'bisect', 'reproduce', 'flake-lab'])('a %s run leaves the reports where they are', async (kind) => {
     await db

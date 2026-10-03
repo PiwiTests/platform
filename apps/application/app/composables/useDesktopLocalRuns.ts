@@ -122,6 +122,26 @@ export interface BisectTarget {
   repositoryUrl: string | null;
 }
 
+/**
+ * The bisect of this project and cluster that found its first bad commit, the
+ * most recent first. A bisect started without a cluster matches only a page
+ * without one.
+ */
+export function findLiveBisect(
+  runs: readonly Pick<LocalRun, 'kind' | 'projectId' | 'bisect' | 'bisectTarget'>[],
+  projectId: number,
+  clusterId: number | null,
+): BisectFirstBad | null {
+  const run = runs.find(
+    (r) =>
+      r.kind === 'bisect' &&
+      r.projectId === String(projectId) &&
+      (r.bisectTarget?.clusterId ?? null) === clusterId &&
+      r.bisect?.firstBad,
+  );
+  return run?.bisect?.firstBad ?? null;
+}
+
 /** A commit URL derived from a repository URL, for the "Open commit" action. */
 export function bisectCommitUrl(target: BisectTarget | null, sha: string): string | null {
   return commitUrl(target?.repositoryUrl, sha);

@@ -70,11 +70,13 @@ Every gap takes the same four verbs as an inbox item:
 - **Snooze** for a day, a week, or until the node changes.
 - **Dismiss** with a reason: *not worth testing*, *covered elsewhere* (which records the covering test as reaching the
   node), or *wrong*.
-- **Covered by** records a covering test without dismissing the gap.
+- **Covered by** names the test that covers it and closes the gap. A gap closed this way stays closed when its
+  detector raises it again. The covering test is recorded as reaching the node, but a test recorded by hand does not
+  count as observed reach of a control, so it never switches on *control nobody exercises* for the project.
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
 the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A
-closed gap that comes back reopens. Home lists the gaps accepted more than a week ago whose test was never written.
+closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
 The map is recomputed after every run and nightly.
 
 Every verdict is also a labeled example: accepted and covered-by count *for* a detector, dismissed as *wrong* counts

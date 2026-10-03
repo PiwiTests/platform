@@ -40,8 +40,9 @@ export interface AnalyticsScope {
   /** Restrict to runs reported on any of these SCM branches. Setting it turns the branch policy off. */
   branches?: string[];
   /**
-   * The branch policy: only runs on each project's default branch, plus runs
-   * whose branch is unknown. Ignored when `branches` is set.
+   * The branch policy: only runs on each project's default branch; a run whose
+   * branch is unknown counts only in a project that never reported a branch.
+   * Ignored when `branches` is set.
    */
   defaultBranchOnly: boolean;
   /** Only count full-suite runs (default) — partial/--grep runs skew every rate. */

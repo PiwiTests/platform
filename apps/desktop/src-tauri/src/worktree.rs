@@ -267,9 +267,10 @@ pub(crate) fn flake_bisect_args(cli: &Path, test_case_id: u64) -> Vec<String> {
     ]
 }
 
-/// The environment `piwi flake` runs with: this app's server and token, which
-/// win over a dashboard named in the user's environment or a `.env` in the
-/// worktree, and plain output for the tray.
+/// The environment a reproduction, a bisect step and `piwi flake` run with:
+/// this app's server and token, which win over a dashboard named in the user's
+/// environment or a `.env` in the worktree, so a run of an old commit reports
+/// to this app only, and plain output for the tray.
 pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> {
     vec![
         (
@@ -969,8 +970,8 @@ async fn reproduce_driver(
     run_test_phase(app, id, worktree, args, browser, &env, stop).await
 }
 
-/// The browser + test phases shared by reproduce and each bisect step; `env` is
-/// set on the test only.
+/// The browser + test phases shared by reproduce and each bisect step; the test
+/// runs with this app's server and token ([`flake_lab_env`]) and `env`.
 async fn run_test_phase(
     app: &AppHandle,
     id: u32,
@@ -993,7 +994,9 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, env).await
+    let mut env_with_app = flake_lab_env(&server_info(app));
+    env_with_app.extend_from_slice(env);
+    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
 }
 
 /// Drive a git bisect over the window `good..bad` in a throwaway worktree, step by
