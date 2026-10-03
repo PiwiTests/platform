@@ -107,6 +107,11 @@
         "command": "piwi.copyText",
         "title": "Copy text",
         "category": "Piwi"
+      },
+      {
+        "command": "piwi.desktopJob",
+        "title": "Reproduce or bisect a failure in the desktop app",
+        "category": "Piwi"
       }
     ],
     "menus": {
@@ -129,6 +134,10 @@
         },
         {
           "command": "piwi.copyText",
+          "when": "false"
+        },
+        {
+          "command": "piwi.desktopJob",
           "when": "false"
         }
       ],

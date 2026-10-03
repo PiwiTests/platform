@@ -34,18 +34,18 @@ read every minute.
 On a failure, the quick fixes are:
 
 - **Heal: use …** — when [locator healing](/features/locator-healing) has a recommendation for the failing locator,
-  the same edit an [auto-heal pull request](/features/auto-heal) would make, applied to the line in place.
+  the same edit an [auto-heal pull request](/features/auto-heal) would make, applied in place.
 - **Open the trace** — downloads the trace and opens it with `npx playwright show-trace`.
+- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** — on a team instance's failure,
+  while the [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records the first bad commit.
 - **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
   captured): VS Code previews the edit before applying it, then runs the plan's verify command in a terminal.
-- **Copy context for agent** — one block with the failure, its locator healing and the cluster's fix plan, for a coding
-  agent.
+- **Copy context for agent** — the failure, its locator healing and the cluster's fix plan, for a coding agent.
 - **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
 
 Hover the line for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
-cluster or test with their status. Without one, **File an issue** opens the cluster in the dashboard, where issues are
-created.
+cluster or test. Without one, **File an issue** opens the cluster in the dashboard.
 
 ## The status bar
 
@@ -126,12 +126,11 @@ cursor:
 2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
    that local address.
 3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
-   form you chose; a recording is rendered by the editor as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen), with the project's functions and the locators its tests already
-   use.
+   form you chose; a recording is rendered as the body of a test, like
+   [`piwi codegen --body`](/reference/cli#codegen).
 
-The editor listens on the loopback interface only, and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
-the one that paired receives.
+The editor listens on the loopback interface only, and accepts a request only with the token. With several VS Code
+windows open, the one that paired receives.
 
 ## JetBrains IDEs
 

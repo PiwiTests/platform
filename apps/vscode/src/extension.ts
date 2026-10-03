@@ -15,6 +15,15 @@ import {
   type ServerOptions,
 } from 'vscode-languageclient/node';
 import {
+  DESKTOP_JOB_NOTIFICATION,
+  DESKTOP_JOB_REQUEST,
+  SHARE_DESKTOP_JOB_REQUEST,
+  type DesktopJobParams,
+  type DesktopJobResult,
+  type DesktopJobUpdate,
+  type ShareDesktopJobResult,
+} from '@piwitests/editor/protocol';
+import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   REFRESH_REQUEST,
@@ -65,6 +74,7 @@ import {
 import {
   DOCUMENT_PATTERN,
   connectChoices,
+  desktopJobNotice,
   testDecorations,
   disconnectQuestion,
   indentBlock,
@@ -462,8 +472,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     lc.onNotification(RUN_STATUS_NOTIFICATION, (runs: RunStatusResult) => void updateStatus(runs)),
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
   );
+  context.subscriptions.push(...registerDesktopJobs(lc));
   await lc.start();
   await updateStatus();
+}
+
+/**
+ * Jobs passed to the desktop app: `piwi.desktopJob` (a quick fix on a failure from the team instance) sends one,
+ * each update of it shows as a notification, and its share button records the verdict on the instance.
+ */
+function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
+  const show = (severity: 'information' | 'warning', text: string, ...actions: string[]) =>
+    severity === 'warning'
+      ? vscode.window.showWarningMessage(text, ...actions)
+      : vscode.window.showInformationMessage(text, ...actions);
+  return [
+    vscode.commands.registerCommand('piwi.desktopJob', async (params: DesktopJobParams) => {
+      const result = await lc.sendRequest<DesktopJobResult>(DESKTOP_JOB_REQUEST, params);
+      void show(result.ok ? 'information' : 'warning', `Piwi: ${result.message}`);
+    }),
+    lc.onNotification(DESKTOP_JOB_NOTIFICATION, async (update: DesktopJobUpdate) => {
+      const notice = desktopJobNotice(update);
+      const picked = await show(notice.severity, notice.text, ...notice.actions);
+      if (!picked) return;
+      const shared = await lc.sendRequest<ShareDesktopJobResult>(SHARE_DESKTOP_JOB_REQUEST, { jobId: update.jobId });
+      const open = 'Open in the dashboard';
+      const next = await show(
+        shared.ok ? 'information' : 'warning',
+        `Piwi: ${shared.message}`,
+        ...(shared.url ? [open] : []),
+      );
+      if (next === open && shared.url) await vscode.env.openExternal(vscode.Uri.parse(shared.url));
+    }),
+  ];
 }
 
 /** Insert what Piwi Picker sent at the cursor of the active editor, or in a new editor when none is open. */

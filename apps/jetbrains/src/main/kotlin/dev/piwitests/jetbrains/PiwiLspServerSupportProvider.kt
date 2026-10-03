@@ -135,4 +135,9 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     fun statusChanged(@Suppress("UNUSED_PARAMETER") status: StatusResult) {
         project.service<PiwiProjectService>().refreshStatus()
     }
+
+    @JsonNotification("piwi/desktopJobChanged")
+    fun desktopJobChanged(update: DesktopJobUpdate) {
+        PiwiCommands.desktopJobChanged(project, update)
+    }
 }

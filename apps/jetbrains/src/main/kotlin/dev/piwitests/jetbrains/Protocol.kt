@@ -156,6 +156,32 @@ data class EditorCredentials(
     val desktopProject: String? = null,
 )
 
+/**
+ * `piwi/desktopJob`, and the arguments of the client command `piwi.desktopJob`: ask the desktop app to reproduce
+ * (`kind` `reproduce`) or bisect (`bisect`) a failure of the instance the context at `root` reads.
+ */
+data class DesktopJobParams(val root: String = "", val executionId: Int = 0, val kind: String = "reproduce")
+
+data class DesktopJobResult(val ok: Boolean = false, val message: String? = null, val jobId: String? = null)
+
+data class DesktopJobShare(val label: String? = null)
+
+/**
+ * `piwi/desktopJobChanged`: a job's `status` (`running`, `done`, `declined`, `expired`, `gone`), the sentence to
+ * show, and `share` when its verdict can be shared on the instance (`piwi/shareDesktopJob`).
+ */
+data class DesktopJobUpdate(
+    val jobId: String? = null,
+    val kind: String? = null,
+    val status: String? = null,
+    val message: String? = null,
+    val share: DesktopJobShare? = null,
+)
+
+data class ShareDesktopJobParams(val jobId: String)
+
+data class ShareDesktopJobResult(val ok: Boolean = false, val message: String? = null, val url: String? = null)
+
 /** The service's custom requests beside the language server protocol. */
 interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/fileSummary")
@@ -199,6 +225,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/refresh")
     fun refresh(): CompletableFuture<Any?>
+
+    @JsonRequest("piwi/desktopJob")
+    fun desktopJob(params: DesktopJobParams): CompletableFuture<DesktopJobResult?>
+
+    @JsonRequest("piwi/shareDesktopJob")
+    fun shareDesktopJob(params: ShareDesktopJobParams): CompletableFuture<ShareDesktopJobResult?>
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)

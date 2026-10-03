@@ -6,6 +6,7 @@
  */
 import type {
   ConnectionSource,
+  DesktopJobUpdate,
   DesktopResult,
   McpServerDefinition,
   RunStatusResult,
@@ -260,4 +261,21 @@ export function indentBlock(code: string, indent: string): string {
   );
   const stripped = lines.map((l) => (l.trim() ? l.slice(common === Number.MAX_SAFE_INTEGER ? 0 : common) : ''));
   return stripped.map((l, i) => (i === 0 || !l ? l : indent + l)).join('\n');
+}
+
+/**
+ * How a desktop job's update shows: a job that ended without a verdict (declined, expired, the app gone, or an
+ * error) as a warning, anything else as information, with the share button when the verdict can be shared.
+ */
+export function desktopJobNotice(update: DesktopJobUpdate): {
+  severity: 'information' | 'warning';
+  text: string;
+  actions: string[];
+} {
+  const failed = update.status !== 'done' && update.status !== 'running';
+  return {
+    severity: failed || update.message.startsWith('The desktop app could not') ? 'warning' : 'information',
+    text: `Piwi: ${update.message}`,
+    actions: update.share ? [update.share.label] : [],
+  };
 }

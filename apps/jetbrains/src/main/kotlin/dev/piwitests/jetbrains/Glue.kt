@@ -465,4 +465,21 @@ object Glue {
             if (i == 0 || stripped.isEmpty()) stripped else indent + stripped
         }.joinToString("\n")
     }
+
+    /** How a desktop job's update shows (`desktopJobNotice` in the VS Code extension). */
+    data class DesktopJobNotice(val text: String, val warning: Boolean, val actions: List<String>)
+
+    /**
+     * A job that ended without a verdict (declined, expired, the app gone, or an error) shows as a warning, anything
+     * else as information, with the share button when the verdict can be shared.
+     */
+    fun desktopJobNotice(update: DesktopJobUpdate): DesktopJobNotice {
+        val message = update.message.orEmpty()
+        val failed = update.status != "done" && update.status != "running"
+        return DesktopJobNotice(
+            text = message,
+            warning = failed || message.startsWith("The desktop app could not"),
+            actions = listOfNotNull(update.share?.label),
+        )
+    }
 }
