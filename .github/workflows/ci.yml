@@ -1,5 +1,8 @@
-name: ci
+name: CI
 
+# Every check of a pull request and of main, behind one required check: CI result. The `changes` job reads which
+# areas the change touches, and each job runs for the areas it covers; a change to the workflows or to the Node
+# version runs them all. The editor, extension and desktop suites run on pull requests only.
 on:
   pull_request:
   push:
@@ -12,16 +15,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: ./apps/application
-
 jobs:
-  # The release PR moves version numbers and the changelog only: it gets this
-  # check instead of the jobs below, which run again on main once it merges.
-  release-pr:
-    name: Release PR versions
-    if: startsWith(github.head_ref, 'release-please--')
+  # Every file release-please stamps carries the release version. The release PR moves version numbers and the
+  # changelog only: this is the one job it runs, with npm ci, which fails when release-please left package.json and
+  # package-lock.json out of step. The other jobs run on main once it merges.
+  versions:
+    name: Versions
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -29,28 +28,105 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      # Fails when release-please left package.json and package-lock.json out of step.
-      - name: Install dependencies
-        working-directory: .
-        run: npm ci --ignore-scripts --prefer-offline --no-audit --fund=false
+          install: ${{ startsWith(github.head_ref, 'release-please--') }}
+          ignore-scripts: 'true'
 
       - name: Check every stamped version
-        working-directory: .
         run: node scripts/check-release-versions.mjs
+
+  changes:
+    name: Changes
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      # Lists the files of the pull request.
+      pull-requests: read
+
+    outputs:
+      app: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.ci == 'true' }}
+      js: ${{ steps.filter.outputs.js == 'true' || steps.filter.outputs.ci == 'true' }}
+      extension: ${{ steps.filter.outputs.extension == 'true' || steps.filter.outputs.ci == 'true' }}
+      vscode: ${{ steps.filter.outputs.vscode == 'true' || steps.filter.outputs.ci == 'true' }}
+      jetbrains: ${{ steps.filter.outputs.jetbrains == 'true' || steps.filter.outputs.ci == 'true' }}
+      desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
+      docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
+      dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
+      # pages and the changelog for its MCP tools. `js` is every workspace the checks job lints and tests.
+      - name: Read the areas the change touches
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            ci:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+              - '.node-version'
+            app:
+              - 'apps/application/**'
+              - 'apps/docs/**'
+              - 'packages/core/**'
+              - 'packages/picker-dom/**'
+              - 'packages/reporter/**'
+              - 'packages/server/**'
+              - 'integrations/nitro/**'
+              - 'scripts/package-smoke.mjs'
+              - 'CHANGELOG.md'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+            js:
+              - 'apps/application/**'
+              - 'apps/docs/**'
+              - 'apps/extension/**'
+              - 'apps/vscode/**'
+              - 'packages/**'
+              - 'integrations/nitro/**'
+              - 'shared/**'
+              - 'scripts/**'
+              - 'CHANGELOG.md'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - 'knip.ts'
+            extension:
+              - 'apps/extension/**'
+              - 'packages/core/**'
+              - 'packages/picker-dom/**'
+            vscode:
+              - 'apps/vscode/**'
+              - 'packages/editor/**'
+              - 'packages/core/**'
+            jetbrains:
+              - 'apps/jetbrains/**'
+              - 'packages/editor/**'
+              - 'packages/core/**'
+            desktop:
+              - 'apps/desktop/**'
+            docs:
+              - 'apps/docs/**'
+            dotnet:
+              - 'integrations/aspnetcore/**'
+              - 'integrations/serilog/**'
 
   # Builds once for every E2E cell: the storage and database backends are read
   # from the environment at request time, so a single production output covers
   # the whole matrix.
   build:
     name: Build
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -58,16 +134,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        working-directory: .
-        run: npm ci --prefer-offline --no-audit --fund=false
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
 
       # Restored after the install so the postinstall `nuxt prepare` cannot
       # clobber it. `experimental.buildCache` reuses whatever still matches.
@@ -91,10 +159,11 @@ jobs:
 
       # The reporter dist is imported by playwright.config.ts.
       - name: Build reporter
-        working-directory: ./packages/reporter
+        working-directory: packages/reporter
         run: npm run reporter:build
 
       - name: Build application
+        working-directory: apps/application
         run: npm run app:build
 
       - name: Upload build output
@@ -112,7 +181,6 @@ jobs:
       # Packed from this build the way publish.yml packs a release, so the package
       # smoke job installs what a user downloads from npm.
       - name: Pack npm packages
-        working-directory: .
         run: |
           mkdir -p npm-packages
           npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination npm-packages
@@ -129,7 +197,8 @@ jobs:
   # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
   checks:
     name: Lint, typecheck and unit tests
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -142,51 +211,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        working-directory: .
-        run: npm ci --prefer-offline --no-audit --fund=false
-
-      - name: Check every stamped version
-        working-directory: .
-        run: node scripts/check-release-versions.mjs
+          playwright: shell
 
       - name: Lint
+        working-directory: apps/application
         run: npm run app:lint
 
       - name: Typecheck
+        working-directory: apps/application
         run: npm run app:typecheck
 
       - name: Lint reporter
-        working-directory: ./packages/reporter
+        working-directory: packages/reporter
         run: npm run reporter:lint
 
       - name: Typecheck reporter
-        working-directory: ./packages/reporter
+        working-directory: packages/reporter
         run: npm run reporter:typecheck
 
       - name: Lint, typecheck and test core
-        working-directory: ./packages/core
+        working-directory: packages/core
         run: |
           npm run core:lint
           npm run core:typecheck
           npm run core:test
 
       - name: Lint, typecheck and test picker-dom
-        working-directory: ./packages/picker-dom
+        working-directory: packages/picker-dom
         run: |
           npm run picker-dom:lint
           npm run picker-dom:typecheck
           npm run picker-dom:test
 
       - name: Lint, typecheck, build and test the editor service
-        working-directory: ./packages/editor
+        working-directory: packages/editor
         run: |
           npm run editor:lint
           npm run editor:typecheck
@@ -194,7 +255,7 @@ jobs:
           npm run editor:test
 
       - name: Lint, typecheck, build and unit-test the VS Code extension
-        working-directory: ./apps/vscode
+        working-directory: apps/vscode
         run: |
           npm run vscode:lint
           npm run vscode:typecheck
@@ -202,46 +263,29 @@ jobs:
           npm run vscode:test
 
       - name: Lint, typecheck and unit-test extension
-        working-directory: ./apps/extension
+        working-directory: apps/extension
         run: |
           npm run extension:lint
           npm run extension:typecheck
           npm run extension:test
 
-      # The browsers follow the Playwright version; the key names the headless shell, the only build installed.
-      - name: Read the Playwright version
-        id: playwright
-        working-directory: .
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium --with-deps --only-shell
-
       - name: Test picker-dom integration (drives a real browser)
-        working-directory: ./packages/picker-dom
+        working-directory: packages/picker-dom
         run: npm run picker-dom:test:integration
 
       # The reporter's flake-run and build-output specs load the built package.
       - name: Build reporter
-        working-directory: ./packages/reporter
+        working-directory: packages/reporter
         run: npm run reporter:build
 
       - name: Test reporter
-        working-directory: ./packages/reporter
+        working-directory: packages/reporter
         run: npm run reporter:test:coverage
 
       # Full AI-step pipeline (resolve → compile → replay) end to end against a
       # real browser, with a stub standing in for the LLM: no network, no tokens.
       - name: Test reporter AI steps (integration, drives a real browser)
-        working-directory: ./packages/reporter
+        working-directory: packages/reporter
         run: npm run reporter:test:integration:ai
 
       - name: Report reporter coverage on the PR
@@ -253,6 +297,7 @@ jobs:
           file-coverage-mode: changes
 
       - name: Test application unit tests
+        working-directory: apps/application
         run: npm run app:test:unit:coverage
 
       - name: Report application coverage on the PR
@@ -281,7 +326,7 @@ jobs:
         shard: [1, 2, 3, 4, 5]
         # The sqlite/local leg runs on Node 22 — the dashboard's engines floor —
         # against the Node 24-built output, the same combination an npm user on
-        # LTS gets. The other legs run current Node (24, the default below).
+        # LTS gets. The other legs run the root .node-version.
         include:
           - storage: local
             database: sqlite
@@ -302,7 +347,6 @@ jobs:
       # The console is off — the tests only touch the S3 API.
       - name: Start RustFS (local S3 server)
         if: matrix.storage == 's3'
-        working-directory: .
         run: |
           docker run -d \
             --name rustfs \
@@ -315,7 +359,6 @@ jobs:
 
       - name: Start PostgreSQL
         if: matrix.database == 'postgres'
-        working-directory: .
         run: |
           docker run -d \
             --name postgres \
@@ -325,16 +368,12 @@ jobs:
             -e POSTGRES_DB=playwright_test \
             postgres:16-alpine
 
-      - name: Install node
-        uses: actions/setup-node@v7
+      # Only the chromium project is enabled in playwright.config.ts.
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
-          node-version: ${{ matrix.node || 24 }}
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        working-directory: .
-        run: npm ci --prefer-offline --no-audit --fund=false
+          node-version: ${{ matrix.node || '' }}
+          playwright: shell
 
       - name: Download build output
         uses: actions/download-artifact@v8
@@ -343,7 +382,6 @@ jobs:
 
       - name: Create S3 buckets
         if: matrix.storage == 's3'
-        working-directory: .
         env:
           AWS_ACCESS_KEY_ID: PIWICIACCESSKEY
           AWS_SECRET_ACCESS_KEY: PIWICISECRETKEY
@@ -359,7 +397,6 @@ jobs:
 
       - name: Create PostgreSQL databases
         if: matrix.database == 'postgres'
-        working-directory: .
         run: |
           # Wait for the real server over TCP. During initdb the alpine image runs
           # a temporary server that listens only on the unix socket, so unix-socket
@@ -371,26 +408,8 @@ jobs:
           # dedicated postgresql.spec.ts server (which owns playwright_test).
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
 
-      - name: Read the Playwright version
-        id: playwright
-        working-directory: .
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
-
-      # Only the chromium project is enabled in playwright.config.ts. The runner
-      # image already carries the shared libraries the headless shell links
-      # against, so a cache hit needs no apt work at all.
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium --with-deps --only-shell
-
       - name: Run Playwright Tests
+        working-directory: apps/application
         env:
           # The suite runs against the production build, where the cleanup
           # endpoint its global setup/teardown calls is disabled by default.
@@ -451,10 +470,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
           node-version: ${{ matrix.node }}
+          install: 'false'
 
       - name: Download npm packages
         uses: actions/download-artifact@v8
@@ -463,12 +483,12 @@ jobs:
           path: npm-packages
 
       - name: Install the packages and report a run through them
-        working-directory: .
         run: node scripts/package-smoke.mjs npm-packages
 
   demo:
     name: Test demo generation
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -476,50 +496,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        working-directory: .
-        run: npm ci --prefer-offline --no-audit --fund=false
-
-      - name: Read the Playwright version
-        id: playwright
-        working-directory: .
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium --with-deps --only-shell
+          playwright: shell
 
       # seed.sql is gitignored, so the build has no database to load until it is
       # generated here — exactly as the docs deploy does before building.
       - name: Generate demo seed data
+        working-directory: apps/application
         run: npm run app:seed:demo
 
       - name: Run demo-generate
+        working-directory: apps/application
         run: npm run app:generate:demo
 
       # Building the demo only proves it compiles. This drives the built SPA
       # from its real sub-path with the service worker installed, which is the
       # only way base-path, worker-scope and demo-handler breakage shows up.
       - name: Check the built demo actually runs
+        working-directory: apps/application
         run: npm run app:check:demo:runtime
 
   aspnet:
     name: Build ASP.NET instrumentation
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -536,5 +538,68 @@ jobs:
       # NuGet packages are packed and published from a release tag by
       # publish-nuget.yml.
       - name: Build and test
-        working-directory: ./integrations/aspnetcore
+        working-directory: integrations/aspnetcore
         run: dotnet test PiwiTests.Instrumentation.slnx -c Release
+
+  # docs.yml builds and deploys the site from main; a pull request that changes it builds it here first.
+  docs:
+    name: Docs build
+    needs: changes
+    if: needs.changes.outputs.docs == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the docs workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          directory: apps/docs
+
+      - name: Build docs with VitePress
+        working-directory: apps/docs
+        run: npm run docs:build
+
+  extension:
+    name: Extension E2E
+    needs: changes
+    if: needs.changes.outputs.extension == 'true' && github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-e2e-extension.yml
+
+  vscode:
+    name: VS Code E2E
+    needs: changes
+    if: needs.changes.outputs.vscode == 'true' && github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-e2e-vscode.yml
+
+  jetbrains:
+    name: JetBrains plugin
+    needs: changes
+    if: needs.changes.outputs.jetbrains == 'true' && github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-jetbrains.yml
+
+  desktop:
+    name: Desktop E2E
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true' && github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-e2e-desktop.yml
+
+  # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
+  # each one passed or was skipped because the change does not touch its area.
+  ci-result:
+    name: CI result
+    if: ${{ !cancelled() }}
+    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, docs, extension, vscode, jetbrains, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Fail when a job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          exit 1

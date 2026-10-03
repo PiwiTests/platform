@@ -1,0 +1,41 @@
+name: Extension E2E
+
+# Drives the real built extension (dist/) with Chromium via --load-extension.
+# Heavier than the unit/lint checks of ci.yml's checks job (needs a build and a
+# real browser): ci.yml calls it on pull requests that change the extension or
+# the packages it bundles, and it runs on demand.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    # The suite runs on one worker (see tests/e2e/playwright.config.ts) and
+    # takes about 15 minutes; 30 leaves room for a slow runner and the retries.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: full
+
+      - name: Run extension E2E
+        working-directory: apps/extension
+        run: npm run extension:test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: extension-e2e-report
+          path: apps/extension/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,62 @@
+name: Set up the workspace
+description: >-
+  Installs Node (the root .node-version unless a version is given), restores the npm cache, installs the
+  dependencies of the root workspace or of another directory with its own lockfile, and Playwright's Chromium
+  when asked.
+
+inputs:
+  node-version:
+    description: Node version to install. Empty reads the root .node-version.
+    default: ''
+  directory:
+    description: Directory whose package-lock.json is installed, relative to the repository root.
+    default: '.'
+  install:
+    description: Whether to run npm ci. Without it, the npm cache is not restored either.
+    default: 'true'
+  ignore-scripts:
+    description: Whether npm ci skips install scripts (the workspaces' prepare steps and `nuxt prepare`).
+    default: 'false'
+  playwright:
+    description: >-
+      Chromium build to install: none, shell (the headless shell the suites run on) or full (the build that loads
+      extensions). The headless shell is cached by Playwright version; the full build is installed on every run, as
+      the workflows that use it run on pull requests only, where a cache serves its own pull request alone.
+    default: none
+
+runs:
+  using: composite
+  steps:
+    - name: Install node
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+        node-version-file: ${{ inputs.node-version == '' && '.node-version' || '' }}
+        cache: ${{ inputs.install == 'true' && 'npm' || '' }}
+        cache-dependency-path: ${{ inputs.directory }}/package-lock.json
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.directory }}
+      run: npm ci --prefer-offline --no-audit --fund=false ${{ inputs.ignore-scripts == 'true' && '--ignore-scripts' || '' }}
+
+    - name: Read the Playwright version
+      if: inputs.playwright == 'shell'
+      id: playwright
+      shell: bash
+      run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Playwright browsers
+      if: inputs.playwright == 'shell'
+      id: playwright-cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
+
+    # The runner image carries the shared libraries Chromium links against, so a cache hit needs no apt work.
+    - name: Install Playwright browsers
+      if: inputs.playwright == 'full' || (inputs.playwright == 'shell' && steps.playwright-cache.outputs.cache-hit != 'true')
+      shell: bash
+      run: npx playwright install chromium --with-deps ${{ inputs.playwright == 'shell' && '--only-shell' || '' }}

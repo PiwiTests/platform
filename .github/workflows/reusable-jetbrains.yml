@@ -1,46 +1,30 @@
-name: JetBrains Plugin
+name: JetBrains plugin
 
 # Builds and tests apps/jetbrains on WebStorm 2024.1, the oldest supported
 # platform, and runs the Plugin Verifier on the IDEs gradle.properties lists.
-# Only on editor changes and on demand: the IDE downloads are large.
+# The IDE downloads are large: ci.yml calls it on pull requests that change the
+# plugin, the editor service or the core package, and it runs on demand.
 on:
+  workflow_call:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'apps/jetbrains/**'
-      - 'packages/editor/**'
-      - 'packages/core/**'
-      - '.github/workflows/jetbrains.yml'
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   plugin:
-    # The release PR moves version numbers only; ci.yml checks it.
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    name: plugin
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --fund=false
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
 
       - name: Build the editor service
-        working-directory: ./packages/editor
+        working-directory: packages/editor
         run: npm run editor:build
 
       - name: Set up Java
@@ -53,7 +37,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Test and build
-        working-directory: ./apps/jetbrains
+        working-directory: apps/jetbrains
         run: ./gradlew test buildPlugin
 
       - name: Upload the plugin
@@ -61,10 +45,11 @@ jobs:
         with:
           name: piwi-jetbrains
           path: apps/jetbrains/build/distributions/*.zip
+          retention-days: 7
 
   # One IDE per job: a runner's disk holds one unpacked IDE at a time.
   verify:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    name: verify (${{ matrix.ide }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -75,18 +60,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --fund=false
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
 
       - name: Build the editor service
-        working-directory: ./packages/editor
+        working-directory: packages/editor
         run: npm run editor:build
 
       - name: Set up Java
@@ -99,5 +77,5 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Verify on ${{ matrix.ide }}
-        working-directory: ./apps/jetbrains
+        working-directory: apps/jetbrains
         run: ./gradlew verifyPlugin -PverifyIdes=${{ matrix.ide }}

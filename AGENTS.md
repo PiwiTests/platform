@@ -19,6 +19,7 @@ how to run and verify things, and the conventions that apply everywhere.
 | `apps/vscode/` — the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
 | `apps/jetbrains/` — the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
+| `.github/` — the CI workflows and the action they share           | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
 
 Reference material worth opening when you need the map rather than the rules:
 [`apps/application/ARCHITECTURE.md`](apps/application/ARCHITECTURE.md) (dashboard) and

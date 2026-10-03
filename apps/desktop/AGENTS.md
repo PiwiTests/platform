@@ -43,7 +43,7 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
 - Front-end code that behaves differently inside the shell uses the `useIsDesktop` / `useTauri` composables and the
   `app/components/desktop/` cards — do not sniff user agents.
 - The sidecar layout (`src-tauri/binaries/node-<triple>`, `src-tauri/resources/app-server/.output/`) is what the
-  packaging scripts and CI (`desktop-release.yml`, `desktop-e2e.yml`) expect; changing it means updating both.
+  packaging scripts and CI (`desktop-release.yml`, `reusable-e2e-desktop.yml`) expect; changing it means updating both.
 - Commit scope: `app` for a desktop feature whose code lands in the shared `apps/application/` server or UI (where
   backend work goes, behind a desktop guard — the common case), `desktop` for a change confined to this directory (the
   shell and its scripts), and `ci` for CI-only. All three are valid commitlint scopes.
@@ -60,4 +60,4 @@ cargo test --manifest-path src-tauri/Cargo.toml   # the shell's Rust unit tests
 ```
 
 `build.rs` copies the Node sidecar, the staged server and the app icons into the bundle, and fails when any of them is missing — so `cargo test` needs `fetch-node`, `stage` and
-`npx tauri icon ../application/public/logo.svg` to have run first. `desktop-e2e.yml` does all three before it runs the tests.
+`npx tauri icon ../application/public/logo.svg` to have run first. `reusable-e2e-desktop.yml` does all three before it runs the tests.

@@ -245,6 +245,8 @@ jobs:
       - name: Create and push manifest list to GHCR
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # The tags and the digests are split into one argument each.
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}@sha256:%s ' *)
@@ -265,6 +267,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # The tags and the digests are split into one argument each.
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}@sha256:%s ' *)

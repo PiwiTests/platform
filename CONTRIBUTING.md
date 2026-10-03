@@ -103,8 +103,8 @@ BREAKING CHANGE: unverified accounts can no longer sign in.
 ### Enforcement
 
 1. **Local `commit-msg` hook** (husky + commitlint) — runs on every `git commit` after `npm install`. Bypassable with `--no-verify`; treat it as convenience, not a gate.
-2. **`Lint commits` CI check** — lints every commit in a PR's range on push.
-3. **`Lint PR title` CI check** — lints the PR title itself, since that's what becomes the squash-merge commit subject. This is the check that actually gates `main`.
+2. **`commitlint` check** (the `PR lint` workflow) — lints every commit in a PR's range on push.
+3. **`title` check** (the `PR lint` workflow) — lints the PR title itself, since that's what becomes the squash-merge commit subject. This is the check that actually gates `main`.
 
 ## Releases
 
@@ -113,7 +113,7 @@ Merging a release-please PR (titled `chore(main): release X.Y.Z`) tags the relea
 1. **`Settings → Actions → General → Workflow permissions`** — check **"Allow GitHub Actions to create and approve pull requests"** (org-level setting too, if the repo checkbox is greyed out). Without this, `release-please.yml` fails with `GitHub Actions is not permitted to create or approve pull requests`.
 2. **A `RELEASE_PLEASE_TOKEN` repo secret** — a Personal Access Token (classic `repo` scope, or fine-grained with `Contents: read/write` + `Pull requests: read/write`) or a GitHub App installation token, added at `Settings → Secrets and variables → Actions`. This is required because GitHub's anti-recursion protection means a tag created with the default `GITHUB_TOKEN` does **not** trigger other `on: push: tags` workflows — `publish.yml`, `publish-instrumentation.yml`, and `publish-nuget.yml` would never run even though the tag exists. A PAT/App token isn't subject to that restriction.
 
-The release PR gets one check, `Release PR versions` in `ci.yml`: it installs the dependencies and runs `node scripts/check-release-versions.mjs`, which fails when a file release-please stamps (the root `package.json` and `package-lock.json`, and the `extra-files` of `release-please-config.json`) does not carry the release version. The other jobs skip the release PR and run on `main` once it merges. The `checks` job runs the same script on every pull request, so a stamped file whose version is edited by hand, or that loses its `x-release-please-version` marker, fails before a release.
+The release PR runs one job of `ci.yml`, `Versions`: it installs the dependencies and runs `node scripts/check-release-versions.mjs`, which fails when a file release-please stamps (the root `package.json` and `package-lock.json`, and the `extra-files` of `release-please-config.json`) does not carry the release version. The other jobs skip the release PR and run on `main` once it merges. `Versions` runs the script on every pull request, so a stamped file whose version is edited by hand, or that loses its `x-release-please-version` marker, fails before a release.
 
 If a release's tag already exists but the packages never published (e.g. because this wasn't set up yet), re-run the affected workflow manually against that tag — `publish.yml` / `publish-instrumentation.yml` / `publish-nuget.yml` all have a `workflow_dispatch` trigger for exactly this.
 

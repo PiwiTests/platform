@@ -107,8 +107,9 @@ npx tauri icon ../application/public/logo.svg   # once
 npm run e2e                                      # launches `tauri dev --features e2e-testing`
 ```
 
-CI runs this on macOS (real webview, no display server needed) on desktop
-changes — see `.github/workflows/desktop-e2e.yml`.
+CI runs this on macOS (real webview, no display server needed) on pull
+requests that change the desktop app — see `.github/workflows/reusable-e2e-desktop.yml`,
+which `ci.yml` calls.
 
 This `e2e/` suite is a **shell smoke test** (the real webview calling native
 commands). To exercise the *dashboard's* full E2E suite against a running
