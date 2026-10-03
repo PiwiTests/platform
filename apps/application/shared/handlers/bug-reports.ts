@@ -18,6 +18,8 @@ import {
 } from '../../server/database/schema';
 import { getProjectFunctionCatalog } from './test-functions';
 import { getLocatorIndex } from '../../server/utils/locator-usages';
+import { recordOutcome } from '../../server/utils/outcomes';
+import type { HandbackOutcome } from '../handback-outcomes';
 import type { TestMetadata } from '#shared/types';
 import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
@@ -650,8 +652,33 @@ export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Pro
       statusOf.set(test.bugId, to);
     }
     await db.update(bugReports).set(set).where(eq(bugReports.id, test.bugId));
+    for (const outcome of bugSpecOutcomes(from, to)) {
+      await recordOutcome(db, {
+        projectId: run.projectId,
+        kind: 'bug-spec',
+        subjectType: 'bug-report',
+        subjectId: test.bugId,
+        outcome,
+        runId,
+        details: { testCaseId: test.testCaseId, from, to },
+      });
+    }
   }
   return transitions;
+}
+
+/**
+ * The `bug-spec` hand-back outcomes of a lifecycle move: the first run carrying
+ * the test applies the spec, closing verifies it, a failure after closing
+ * regresses it.
+ */
+export function bugSpecOutcomes(from: BugReportStatus, to: BugReportStatus): HandbackOutcome[] {
+  if (from === to) return [];
+  const out: HandbackOutcome[] = [];
+  if (from === 'open') out.push('applied');
+  if (to === 'closed') out.push('verified');
+  if (from === 'closed' && to === 'test-committed') out.push('regressed');
+  return out;
 }
 
 /** Why the suite missed a report's bug, from its project's locator index. Null when there is no such report. */

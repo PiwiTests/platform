@@ -14,6 +14,7 @@ import { makeTimeBuckets } from './analytics/common';
 import { isLabRun } from './probes';
 
 import type { DrizzleDB } from './db';
+import type { HandbackActor } from '../handback-outcomes';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { recomputeClusterOccurrences } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
@@ -439,7 +440,11 @@ export async function quarantineClusterTests(
  * per-test release the project's quarantine table applies. The quarantine rows
  * stay as history. A test that is not quarantined is left as it is.
  */
-export async function releaseClusterTests(db: DrizzleDB, clusterId: number, opts: { reason?: string | null } = {}) {
+export async function releaseClusterTests(
+  db: DrizzleDB,
+  clusterId: number,
+  opts: { reason?: string | null; actor?: HandbackActor } = {},
+) {
   const [cluster] = await db
     .select({ id: failureClusters.id, projectId: failureClusters.projectId })
     .from(failureClusters)
@@ -453,7 +458,7 @@ export async function releaseClusterTests(db: DrizzleDB, clusterId: number, opts
 
   let released = 0;
   for (const row of rows) {
-    const result = await releaseQuarantine(db, cluster.projectId, row.testCaseId, opts.reason ?? null);
+    const result = await releaseQuarantine(db, cluster.projectId, row.testCaseId, opts.reason ?? null, opts.actor);
     if (result.released) released += 1;
   }
   return { success: true, projectId: cluster.projectId, tests: rows.length, released };

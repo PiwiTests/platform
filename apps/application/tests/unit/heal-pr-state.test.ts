@@ -137,6 +137,26 @@ describe('refreshOpenHealActions', () => {
     expect(await statusOf(closed.id)).toBe('closed');
   });
 
+  test('a merged PR records its heal applied and a closed one rejected, once', async () => {
+    await db.delete(schema.handbackOutcomes);
+    const merged = await seedAction();
+    const closed = await seedAction();
+    scm.prStates[merged.prNumber] = 'merged';
+    scm.prStates[closed.prNumber] = 'closed';
+
+    await refreshOpenHealActions(db as never);
+    await refreshOpenHealActions(db as never);
+
+    const rows = await db.select().from(schema.handbackOutcomes);
+    expect(rows.map((r) => [r.kind, r.subjectType, r.subjectId, r.outcome, r.channel, r.commitSha]).sort()).toEqual(
+      [
+        ['auto-heal-pr', 'heal-action', merged.id, 'applied', 'inferred', 'abc'],
+        ['auto-heal-pr', 'heal-action', closed.id, 'rejected', 'inferred', 'abc'],
+      ].sort(),
+    );
+    expect(rows.find((r) => r.subjectId === merged.id)!.details).toMatchObject({ prNumber: merged.prNumber });
+  });
+
   test('leaves open and draft PRs, and a lookup that found nothing, as opened', async () => {
     const open = await seedAction();
     const draft = await seedAction();

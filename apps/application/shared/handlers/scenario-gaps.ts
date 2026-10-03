@@ -29,6 +29,8 @@ import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
+import { recordOutcome } from '../../server/utils/outcomes';
+import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
 
@@ -2516,6 +2518,30 @@ export function subjectFromGapKey(key: string): GapSubject {
  * page nearest the subject as the path, and the catalog methods whose url pattern
  * matches. Returns null when the gap does not exist in the project.
  */
+/**
+ * Render a gap's draft for a person or an agent, and record it as the gap's
+ * `gap-draft` hand-back (`suggested`), once per distinct draft text.
+ */
+export async function issueScenarioDraft(
+  db: DrizzleDB,
+  projectId: number,
+  gapId: number,
+  actor: HandbackActor,
+): Promise<ScenarioDraft | null> {
+  const draft = await draftScenario(db, projectId, gapId);
+  if (!draft) return null;
+  await recordOutcome(db, {
+    projectId,
+    kind: 'gap-draft',
+    subjectType: 'gap',
+    subjectId: gapId,
+    suggestionKey: suggestionHash([draft.text]),
+    outcome: 'suggested',
+    actor,
+  });
+  return draft;
+}
+
 export async function draftScenario(db: DrizzleDB, projectId: number, gapId: number): Promise<ScenarioDraft | null> {
   const [gap] = await db
     .select()

@@ -694,6 +694,13 @@
       "when": 1790977571217,
       "tag": "0098_bitter_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1791005859019,
+      "tag": "0099_zippy_stature",
+      "breakpoints": true
     }
   ]
 }
