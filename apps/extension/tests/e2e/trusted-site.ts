@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import { test as base, expect, type BrowserContext, type CDPSession, type Page, type Worker } from '@playwright/test';
 import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
@@ -219,31 +219,63 @@ async function buttonNode(page: Page, label: string): Promise<number> {
   return backendNodeId!;
 }
 
-/** Runs `fn` on the button reading `label`, in the page or one of the extension's closed shadow roots. */
-async function callOnButton(page: Page, label: string, fn: string): Promise<void> {
-  const backendNodeId = await buttonNode(page, label);
-  const cdp = await page.context().newCDPSession(page);
-  const { object } = await cdp.send('DOM.resolveNode', { backendNodeId });
-  await cdp.send('Runtime.callFunctionOn', { objectId: object.objectId!, functionDeclaration: fn });
-  await cdp.detach();
+/** The answers of the debugging protocol for a node no longer in the page. */
+const GONE = /Could not compute box model|No node with given id|Node is detached/;
+
+/**
+ * Runs `use` on the button reading `label`, in the page or one of the extension's closed shadow roots. The
+ * extension's panels are drawn again on every change, so the button found can be gone by the time `use` reaches
+ * it: `use` then answers null, or the protocol says the node is gone, and the button is found again.
+ */
+async function withButton<T>(
+  page: Page,
+  label: string,
+  use: (cdp: CDPSession, backendNodeId: number) => Promise<T | null>,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    const backendNodeId = await buttonNode(page, label);
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      const result = await use(cdp, backendNodeId);
+      if (result !== null) return result;
+    } catch (error) {
+      if (!GONE.test(String(error))) throw error;
+    } finally {
+      await cdp.detach();
+    }
+    expect(attempt, `the button reading "${label}" stays laid out on the page long enough to be used`).toBeLessThan(50);
+  }
+}
+
+/** Runs `action` (on `this`) on the button reading `label`, in the page or one of the extension's closed shadow roots. */
+async function callOnButton(page: Page, label: string, action: string): Promise<void> {
+  await withButton(page, label, async (cdp, backendNodeId) => {
+    const { object } = await cdp.send('DOM.resolveNode', { backendNodeId });
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: object.objectId!,
+      functionDeclaration: `function () { if (!this.isConnected) return false; ${action}; return true; }`,
+      returnByValue: true,
+    });
+    return result.value === true ? true : null;
+  });
 }
 
 /** Clicks the button reading `label`, in the page or one of the extension's closed shadow roots. */
 export function clickInShadow(page: Page, label: string): Promise<void> {
-  return callOnButton(page, label, 'function () { this.click(); }');
+  return callOnButton(page, label, 'this.click()');
 }
 
 /** Moves focus to the button reading `label`, as a person tabbing to it does. */
 export function focusInShadow(page: Page, label: string): Promise<void> {
-  return callOnButton(page, label, 'function () { this.focus(); }');
+  return callOnButton(page, label, 'this.focus()');
 }
 
 /** Clicks the button reading `label` with the mouse, as a person does: pressed and released at its middle. */
 export async function mouseClickInShadow(page: Page, label: string): Promise<void> {
-  const backendNodeId = await buttonNode(page, label);
-  const cdp = await page.context().newCDPSession(page);
-  const { model } = (await cdp.send('DOM.getBoxModel', { backendNodeId })) as { model: { border: number[] } };
-  await cdp.detach();
-  const [left, top, , , right, bottom] = model.border as [number, number, number, number, number, number];
+  const border = await withButton(page, label, async (cdp, backendNodeId) => {
+    const { model } = (await cdp.send('DOM.getBoxModel', { backendNodeId })) as { model: { border: number[] } };
+    return model.border;
+  });
+  const [left, top, , , right, bottom] = border as [number, number, number, number, number, number];
   await page.mouse.click((left + right) / 2, (top + bottom) / 2);
 }
