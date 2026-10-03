@@ -37,6 +37,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
+import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
@@ -77,10 +78,15 @@ import {
 } from './context.js';
 import { PiwiClient, type BranchFailure, type FixPlan, type FlakeLabEntry } from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
-import { missingImports } from './recorder/imports.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
-import { RecordingSessions, originOf, type LauncherFactory } from './recorder/sessions.js';
+import {
+  RecordingSessions,
+  blockImports,
+  originOf,
+  repositoryCodegen,
+  type LauncherFactory,
+} from './recorder/sessions.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -1568,13 +1574,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const text = (file ? readText(file) : null) ?? '';
     const atCaret = typeof params.line === 'number' ? params.line : null;
     // The page expression in use at the caret: `this.page` in a page object, `adminPage` in a test with two users.
-    const page = file && atCaret !== null ? pageCandidates(text, atCaret).default : null;
+    const candidates = file && atCaret !== null ? pageCandidates(text, atCaret) : null;
+    const page = candidates?.default ?? null;
     const separate = params.imports === 'separate';
+    const configFile = context ? playwrightConfigFile(context.root) : null;
+    const piwi = configFile
+      ? await projectOptions(configFile).then(
+          (o) => o.piwi,
+          () => null,
+        )
+      : null;
     const result = renderSpec(sessionFromSteps(parsed.steps), {
       format: 'body',
       urls: context ? await stepUrls(context, parsed.steps.origin) : 'relative',
       locators: 'stable',
       urlChecks: true,
+      ...repositoryCodegen(codegenConfigOf(piwi).options, 'steps', candidates?.context ?? 'file'),
       catalog: context ? await context.functionCatalog() : [],
       preferLocators: suiteLocators(context),
       ...(page ? { page } : {}),
@@ -1584,7 +1599,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return {
       code: result.code,
       warnings: result.warnings.map((w) => w.message),
-      ...(separate ? { imports: missingImports(text, result.imports) } : {}),
+      ...(separate ? { imports: blockImports(text, result) } : {}),
     };
   });
 

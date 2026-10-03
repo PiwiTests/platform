@@ -19,8 +19,25 @@ export const piwiOptions: PiwiDashboardOptions = {
   leakCheck: 'report',
 };
 
+/**
+ * Piwi's section of the config: how the code a recording writes looks, for everyone recording in this repository. The
+ * editor extensions read it through Playwright. Here: a `test.step` per page in a test, and a new test tagged
+ * `@recorded` and owned by the shop team. Written apart and spread into the config, so the config type-checks with
+ * reporter versions that do not declare `'@piwi'` on Playwright's config yet.
+ */
+const piwiSection = {
+  '@piwi': {
+    codegen: {
+      testSteps: 'page',
+      tags: ['@recorded'],
+      annotations: [{ type: 'piwi:owner', description: '@shop-team' }],
+    },
+  },
+};
+
 /** Base Playwright config shared by both example configs. */
 export const baseConfig = defineConfig({
+  ...piwiSection,
   testDir: './tests',
   fullyParallel: true,
   use: {

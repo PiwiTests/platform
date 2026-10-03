@@ -64,22 +64,31 @@ The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [
 3. **Record steps into a test.** Open `tests/shop-recorded.spec.ts`, put the cursor in the empty test and run **Piwi: Record here**. Give `/shop/login` as the start page; the page the steps run on is `page`. In the browser: sign in as `alice@example.com` with any password, open **Trail shoes** and **Add to cart**, do the same for **Water bottle**, open **Cart**, **Checkout**, fill in the shipping form and **Place order**. Each step appears in the editor as you go, and runs of them turn into calls once their last step is recorded:
 
    ```ts
-   await page.goto('/shop/login');
-   await loginPage.login('alice@example.com', process.env.E2E_PASSWORD ?? '');
-   await productsPage.addToCart('Trail shoes');
-   await productsPage.addToCart('Water bottle');
-   await page.getByRole('link', { name: 'Cart' }).click();
-   await expect(page).toHaveURL(/\/shop\/cart(?:[?#]|$)/);
-   await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);
-   await page.getByRole('button', { name: 'Checkout' }).click();
-   await checkoutPage.placeOrder({ name: 'Alice Martin', address: '12 Harbour Street', city: 'La Rochelle' });
+   await test.step('/shop/login', async () => {
+     await page.goto('/shop/login');
+     await loginPage.login('alice@example.com', process.env.E2E_PASSWORD ?? '');
+   });
+   await test.step('/shop', async () => {
+     await productsPage.addToCart('Trail shoes');
+     await productsPage.addToCart('Water bottle');
+     await page.getByRole('link', { name: 'Cart' }).click();
+   });
+   await test.step('/shop/cart', async () => {
+     await expect(page).toHaveURL(/\/shop\/cart(?:[?#]|$)/);
+     await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);
+     await page.getByRole('button', { name: 'Checkout' }).click();
+   });
+   await test.step('/shop/checkout', async () => {
+     await checkoutPage.placeOrder({ name: 'Alice Martin', address: '12 Harbour Street', city: 'La Rochelle' });
+   });
    ```
 
-   Between two steps of your own that lead to another page, the code waits for it; a page object's call waits for its pages itself. The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so.
-4. **Pause.** Press **Pause** in the browser's recording bar, look around the shop, then **Resume**: nothing done meanwhile is written. The editor shows the pause too.
-5. **Stop and undo.** **Stop** in the browser or the editor. One **Undo** removes the whole recording; **Redo** puts it back.
-6. **A new test.** Put the cursor below the last test of `tests/shop.spec.ts` and record again: a whole `test(…)` is written, taking the page objects as fixtures, `async ({ page, loginPage, productsPage, checkoutPage }) => …`, with no import or `new`.
-7. **Run it.** Rename `test.fixme` to `test` and run the spec: it passes (`E2E_PASSWORD` comes from `.env`).
+   Between two steps of your own that lead to another page, the code waits for it; a page object's call waits for its pages itself. The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so. The file imports only `test`, so the recording adds `import { expect } from './shop-fixtures';` at the top.
+4. **The repository's code options.** Open `playwright.shared.ts`: its `'@piwi'` section asks for a `test.step` per page, which is why the steps above are grouped, and gives a new test the `@recorded` tag and the shop team as owner. Change `testSteps` to `'none'` and record again: the steps come out one after another.
+5. **Pause.** Press **Pause** in the browser's recording bar, look around the shop, then **Resume**: nothing done meanwhile is written. The editor shows the pause too.
+6. **Stop and undo.** **Stop** in the browser or the editor. One **Undo** removes the whole recording; **Redo** puts it back.
+7. **A new test.** Put the cursor below the last test of `tests/shop.spec.ts` and record again: a whole `test(…)` is written, tagged `@recorded` and owned by `@shop-team`, taking the page objects as fixtures, `async ({ page, loginPage, productsPage, checkoutPage }) => …`, with no import or `new`.
+8. **Run it.** Rename `test.fixme` to `test` and run the spec: it passes (`E2E_PASSWORD` comes from `.env`).
 
 ## What the reporter captures here
 

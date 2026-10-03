@@ -1275,4 +1275,76 @@ describe('renderSpec — environment variable names', () => {
     expect(code).toContain(`.fill(process.env.E2E_PASSWORD ?? '');`);
     expect(code).not.toContain('Typed values come from');
   });
+
+  test('envPrefix replaces E2E_, and an invalid prefix leaves E2E_', () => {
+    const session = buildSession(
+      [
+        fill(field({ accessibleName: 'Email' })),
+        fill(field({ accessibleName: 'Password' }), { redacted: true, value: null }),
+      ],
+      0,
+    );
+    const { code, warnings } = renderSpec(session, { values: 'env', envPrefix: 'SHOP_' });
+    expect(envNames(code)).toEqual(['SHOP_EMAIL', 'SHOP_PASSWORD']);
+    expect(warnings[0]!.message).toBe('A password was typed here; the spec reads it from SHOP_PASSWORD.');
+    for (const envPrefix of ['shop_', '1_', 'A-B', '']) {
+      expect(envNames(renderSpec(session, { values: 'env', envPrefix }).code)).toEqual(['E2E_EMAIL', 'E2E_PASSWORD']);
+    }
+  });
+});
+
+describe('renderSpec — a test.step per page', () => {
+  const origin = 'https://x.test';
+  const at = (path: string) => `${origin}${path}`;
+  const session = buildSession(
+    [
+      step({ action: 'goto', target: null, value: at('/login'), pageUrl: at('/login') }),
+      step({ pageUrl: at('/login') }),
+      step({ pageUrl: at('/orders/42'), target: target({ accessibleName: 'Pay' }) }),
+      step({ pageUrl: at('/orders/42?tab=items'), target: target({ accessibleName: 'Items' }) }),
+      step({ pageUrl: 'https://pay.example/checkout', target: target({ accessibleName: 'Confirm' }) }),
+    ],
+    0,
+  );
+
+  test('each page’s lines, its wait included, go into a step titled after its path', () => {
+    const { code, stepLines } = renderSpec(session, { testSteps: 'page', urlChecks: true, urls: 'relative' });
+    expect(code).toContain(
+      [
+        `  await test.step('/login', async () => {`,
+        `    await page.goto('/login');`,
+        `    await page.getByRole('button', { name: 'Log in' }).click();`,
+        `  });`,
+        `  await test.step('/orders/42', async () => {`,
+        `    await expect(page).toHaveURL(/\\/orders\\/[^/?#]+(?:[?#]|$)/);`,
+        `    await expect(page.getByRole('button', { name: 'Pay' })).toHaveCount(1);`,
+        `    await page.getByRole('button', { name: 'Pay' }).click();`,
+        `    await page.getByRole('button', { name: 'Items' }).click();`,
+        `  });`,
+        `  await test.step('pay.example/checkout', async () => {`,
+      ].join('\n'),
+    );
+    const lines = code.split('\n');
+    expect(stepLines.map((n) => lines[n - 1]!.trim())).toEqual([
+      `await page.goto('/login');`,
+      `await page.getByRole('button', { name: 'Log in' }).click();`,
+      `await page.getByRole('button', { name: 'Pay' }).click();`,
+      `await page.getByRole('button', { name: 'Items' }).click();`,
+      `await page.getByRole('button', { name: 'Confirm' }).click();`,
+    ]);
+    expect(() => ts.transpileModule(code, { reportDiagnostics: true })).not.toThrow();
+  });
+
+  test('the start page opened before the steps is in the first step, and none is written by default', () => {
+    const noGoto = buildSession([step({ pageUrl: at('/login') })], 0);
+    const { code, stepLines } = renderSpec(noGoto, { testSteps: 'page', urls: 'relative', format: 'body' });
+    expect(code.split('\n').slice(0, 4)).toEqual([
+      `  await test.step('/login', async () => {`,
+      `    await page.goto('/login');`,
+      `    await page.getByRole('button', { name: 'Log in' }).click();`,
+      `  });`,
+    ]);
+    expect(stepLines).toEqual([3]);
+    expect(renderSpec(session).code).not.toContain('test.step');
+  });
 });

@@ -1,11 +1,13 @@
 /**
  * A Playwright reporter that prints the configuration Playwright resolved, for the editor service: one line,
- * `PIWI_USE <json>`, with the config file, its root directory and each project's name, test directory and `use`
- * options, without the functions and other values JSON cannot hold. The service runs it as
+ * `PIWI_USE <json>`, with the config file, its root directory, Piwi's section of the config (`'@piwi'`, which
+ * Playwright hands to reporters as written) and each project's name, test directory and `use` options, without the
+ * functions and other values JSON cannot hold. The service runs it as
  * `playwright test --list` with a filter no spec file matches, so no spec is loaded and nothing runs. Bundled on
  * its own as `dist/piwi-use-reporter.cjs`; it imports nothing at run time.
  */
 import type { FullConfig, Reporter } from '@playwright/test/reporter';
+import { PIWI_CONFIG_KEY } from '@piwitests/core/piwi-config';
 
 /** What the reporter's line starts with. */
 export const USE_LINE = 'PIWI_USE ';
@@ -38,6 +40,7 @@ export default class UseReporter implements Reporter {
     const resolved = {
       configFile: config.configFile ?? null,
       rootDir: config.rootDir,
+      piwi: plain((config as unknown as Record<string, unknown>)[PIWI_CONFIG_KEY]) ?? null,
       projects: config.projects.map((project) => ({
         name: project.name,
         testDir: project.testDir,

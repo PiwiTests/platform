@@ -46,8 +46,13 @@ export interface CodegenOptions {
   preferLocators?: ReadonlySet<string>;
   /** After a step that leads to another page, wait for that page's URL before the next step. */
   urlChecks?: boolean;
-  /** `env` reads every typed value from an environment variable named after its field (`E2E_EMAIL`) instead of writing it into the spec. */
+  /** `env` reads every typed value from an environment variable named after its field (`E2E_EMAIL`, see `envPrefix`) instead of writing it into the spec. */
   values?: 'literal' | 'env';
+  /**
+   * What the environment variables typed values are read from start with: `E2E_` by default. Upper-case letters,
+   * digits and underscores, starting with a letter; any other value is ignored.
+   */
+  envPrefix?: string;
   /** Mark the test as expected to fail (`test.fail()`), with an optional reason written beside it. */
   expectFail?: boolean | { reason: string };
   /** Test tags; a missing `@` is added. */
@@ -82,6 +87,11 @@ export interface CodegenOptions {
    * instantiated.
    */
   fixtures?: ReadonlySet<string>;
+  /**
+   * `page` wraps the lines of each page the steps go through in `await test.step('<path>', async () => { … })`, so a
+   * report reads like the scenario; `none` (default) writes them one after another. The code needs `test` in scope.
+   */
+  testSteps?: 'none' | 'page';
 }
 
 type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
@@ -276,17 +286,27 @@ interface RenderContext {
   envNames: string[];
 }
 
-/** The most characters a field's name gives an environment variable, after its `E2E_` prefix. */
+/** The most characters a field's name gives an environment variable, after its prefix. */
 const ENV_NAME_MAX = 40;
+
+/** The prefix `envPrefix` names when it is a valid one, else `E2E_`. */
+function envPrefixOf(options: Pick<CodegenOptions, 'envPrefix'>): string {
+  const prefix = options.envPrefix;
+  return typeof prefix === 'string' && ENV_PREFIX.test(prefix) ? prefix : 'E2E_';
+}
+
+/** What an environment variable prefix may hold. */
+const ENV_PREFIX = /^[A-Z][A-Z0-9_]*$/;
 
 /**
  * The name of the environment variable a step's typed value is read from,
- * before it is made unique: `E2E_` and its field's accessible name, else its
- * test id, else its text, in upper case with diacritics removed and every run
- * of other characters than letters and digits as one `_`; `E2E_VALUE` when
- * none of them leaves a letter or a digit.
+ * before it is made unique: the prefix (`E2E_` by default) and its field's
+ * accessible name, else its test id, else its text, in upper case with
+ * diacritics removed and every run of other characters than letters and
+ * digits as one `_`; the prefix and `VALUE` when none of them leaves a letter
+ * or a digit.
  */
-function envNameOf(target: RecordedTarget | null): string {
+function envNameOf(target: RecordedTarget | null, prefix: string): string {
   for (const source of [target?.accessibleName, target?.testId, target?.text]) {
     const name = (source ?? '')
       .normalize('NFKD')
@@ -296,9 +316,9 @@ function envNameOf(target: RecordedTarget | null): string {
       .replace(/^_+|_+$/g, '')
       .slice(0, ENV_NAME_MAX)
       .replace(/_+$/, '');
-    if (name) return `E2E_${name}`;
+    if (name) return `${prefix}${name}`;
   }
-  return 'E2E_VALUE';
+  return `${prefix}VALUE`;
 }
 
 /** `name` when no earlier step reads it, else the first of `name_2`, `name_3`… that none does. */
@@ -315,7 +335,7 @@ function uniqueEnvName(name: string, taken: readonly string[]): string {
  * was typed in a password field.
  */
 function envVarFor(step: RecordedStep, index: number, ctx: RenderContext): string {
-  const envVar = uniqueEnvName(envNameOf(step.target), ctx.envNames);
+  const envVar = uniqueEnvName(envNameOf(step.target, envPrefixOf(ctx.options)), ctx.envNames);
   ctx.envNames.push(envVar);
   if (step.redacted) {
     ctx.warnings.push({
@@ -703,6 +723,41 @@ function viewportLine(viewport: StepViewport, page: string): string {
   return `  await ${page}.setViewportSize({ width: ${Math.round(viewport.width)}, height: ${Math.round(viewport.height)} });`;
 }
 
+/** The title of the `test.step` for a page: its path, with its host when it is not on the recorded origin. */
+function pageStepTitle(url: string, origin: string | null): string {
+  if (url.startsWith('/')) return url.split(/[?#]/)[0] || '/';
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === origin ? parsed.pathname : `${parsed.host}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * `lines` with the lines from each start up to the next one wrapped in a `test.step` titled after its page, one
+ * level deeper, and where each line went: `at(i)` is the new index of `lines[i]`.
+ */
+function wrapInPageSteps(
+  lines: string[],
+  starts: Array<{ line: number; url: string }>,
+  origin: string | null,
+): { lines: string[]; at: (index: number) => number } {
+  if (starts.length === 0) return { lines, at: (index) => index };
+  const out: string[] = lines.slice(0, starts[0]!.line);
+  starts.forEach((start, n) => {
+    const end = starts[n + 1]?.line ?? lines.length;
+    out.push(`  await test.step(${quote(pageStepTitle(start.url, origin))}, async () => {`);
+    out.push(...lines.slice(start.line, end).map((line) => `  ${line}`));
+    out.push('  });');
+  });
+  const at = (index: number): number => {
+    const opened = starts.filter((start) => start.line <= index).length;
+    return opened === 0 ? index : index + 2 * opened - 1;
+  };
+  return { lines: out, at };
+}
+
 export function renderSpec(session: RecordedSession, options: CodegenOptions = {}): CodegenResult {
   const page = pageExpression(options);
   const { steps } = session;
@@ -723,6 +778,15 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   const usedEntries: TestFunctionEntry[] = [];
   /** The index in `bodyLines` each step starts at. */
   const stepStarts: number[] = [];
+  /** With `testSteps: 'page'`, where in `bodyLines` each page's lines start, and its URL. */
+  const pageStarts: Array<{ line: number; url: string }> = [];
+  /** Starts a page's `test.step` at the next line when the step at `index` is on another page than the last one. */
+  const enterPageOf = (index: number): void => {
+    const url = steps[index]?.pageUrl;
+    if (options.testSteps !== 'page' || url == null) return;
+    const last = pageStarts[pageStarts.length - 1];
+    if (!last || !samePage(last.url, url)) pageStarts.push({ line: bodyLines.length, url });
+  };
 
   /**
    * After the step at `last`, wait for the next step's page when the next step
@@ -739,6 +803,8 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     const current = steps[last];
     if (!next || !current || next.action === 'goto' || samePage(current.pageUrl, next.pageUrl)) return;
     const pattern = pageUrlPattern(next.pageUrl);
+    // The wait for the next page is that page's first line.
+    enterPageOf(last + 1);
     if (pattern) bodyLines.push(`  await expect(${page}).toHaveURL(${pattern});`);
     const acts = next.action !== 'assert' && next.action !== 'assertVisible';
     const chosen = acts && next.target ? chooseLocator(next.target, options) : null;
@@ -763,6 +829,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   while (pos < steps.length) {
     const step = steps[pos]!;
 
+    enterPageOf(pos);
     const viewport = pos > 0 ? viewportAt.get(pos) : undefined;
     if (viewport) bodyLines.push(viewportLine(viewport, page));
     stepStarts[pos] = bodyLines.length;
@@ -797,6 +864,12 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   ];
   bodyLines.unshift(...opening);
   const bodyOffset = opening.length;
+  // The opening lines go into the first page's step.
+  const wrapped = wrapInPageSteps(
+    bodyLines,
+    pageStarts.map((start, n) => ({ line: n === 0 ? 0 : start.line + bodyOffset, url: start.url })),
+    ctx.origin,
+  );
 
   /** The page-object receivers the test takes as fixtures, in first-use order. */
   const fixtureReceivers =
@@ -817,15 +890,15 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     options.values === 'env' && ctx.envNames.length > 0
       ? [`  // Typed values come from ${[...new Set(ctx.envNames)].join(', ')}.`]
       : [];
-  const testBody = [...(failLine ? [failLine] : []), ...envLines, ...instantiationLines, ...bodyLines];
-  const bodyStart = testBody.length - bodyLines.length + bodyOffset;
+  const testBody = [...(failLine ? [failLine] : []), ...envLines, ...instantiationLines, ...wrapped.lines];
+  const bodyStart = testBody.length - wrapped.lines.length;
   /** The rendering of `lines`, whose test body starts after its first `header` lines. */
   const result = (lines: string[], header: number): CodegenResult => ({
     code: lines.join('\n'),
     imports: importLines,
     matchedSpans,
     warnings: ctx.warnings,
-    stepLines: steps.map((_, i) => header + bodyStart + (stepStarts[i] ?? 0) + 1),
+    stepLines: steps.map((_, i) => header + bodyStart + wrapped.at(bodyOffset + (stepStarts[i] ?? 0)) + 1),
   });
   /** The imports as the comments the `body` and `test` formats start with, at `indent`. */
   const needsLines = (indent: string): string[] =>

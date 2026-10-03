@@ -23,6 +23,7 @@ import {
   type CodegenResult,
 } from '@piwitests/core/codegen';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
+import { codegenConfigOf, type CodegenConfigOptions } from '@piwitests/core/piwi-config';
 import { sessionFromEvents, type RawCaptureEvent, type RecordedStep } from '@piwitests/core/recording';
 import type {
   PageCandidatesResult,
@@ -303,6 +304,34 @@ function blockCode(code: string, into: RecordInto): string {
   return (into === 'steps' ? lines.map((line) => (line.startsWith('  ') ? line.slice(2) : line)) : lines).join('\n');
 }
 
+/**
+ * The import lines a block needs that the file lacks: its catalog calls' imports, and `expect` when the block checks
+ * something and the file does not import it, from the module the file takes `test` from (`@playwright/test` when it
+ * takes it from none).
+ */
+export function blockImports(text: string, result: Pick<CodegenResult, 'code' | 'imports'>): string[] {
+  const needsExpect = /(?<![\w$.])expect\(/.test(result.code);
+  const expectLine = `import { expect } from '${testImportOf(text) ?? '@playwright/test'}';`;
+  return missingImports(text, needsExpect ? [expectLine, ...result.imports] : result.imports);
+}
+
+/**
+ * The options of the config's Piwi section that apply where the code goes: `test.step` needs `test` in scope, so not
+ * in a page object or a helper, and tags and annotations are a new test's.
+ */
+export function repositoryCodegen(
+  options: CodegenConfigOptions,
+  into: RecordInto,
+  context: PageCandidatesResult['context'],
+): CodegenConfigOptions {
+  const { testSteps, tags, annotations, ...always } = options;
+  return {
+    ...always,
+    ...(testSteps && (into !== 'steps' || context === 'test') ? { testSteps } : {}),
+    ...(into !== 'steps' ? { ...(tags ? { tags } : {}), ...(annotations ? { annotations } : {}) } : {}),
+  };
+}
+
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
@@ -395,6 +424,7 @@ export class RecordingSessions {
     if ('error' in start) return { ok: false, message: start.error };
 
     const title = params.title?.trim();
+    const fromConfig = codegenConfigOf(options.piwi);
     const siblings = into === 'file' ? siblingTestSetup(target.file) : null;
     const codegen: CodegenOptions = {
       format: into === 'steps' ? 'body' : into,
@@ -405,6 +435,7 @@ export class RecordingSessions {
       ...(into !== 'file' ? { bodyImports: 'none' as const, declaredNames: declaredNamesAt(target.text, line) } : {}),
       locators: 'stable',
       urlChecks: true,
+      ...repositoryCodegen(fromConfig.options, into, at.context),
       page,
       catalog,
       preferLocators: target.preferLocators,
@@ -426,10 +457,11 @@ export class RecordingSessions {
       baseOrigin: originOf(baseURL),
       cwd,
       browser,
-      notes:
-        start.url === 'about:blank'
-          ? [...browser.notes, 'The browser opened on a blank page: go to the page to record there.']
-          : browser.notes,
+      notes: [
+        ...browser.notes,
+        ...(start.url === 'about:blank' ? ['The browser opened on a blank page: go to the page to record there.'] : []),
+        ...fromConfig.problems.map((problem) => `${config}: ${problem}`),
+      ],
       latest: null,
       sentAt: -Infinity,
       wait: 0,
@@ -668,7 +700,7 @@ export class RecordingSessions {
       session.latest = {
         ...base,
         code: blockCode(result.code, session.into),
-        imports: session.into === 'file' ? [] : missingImports(this.currentText(session), result.imports),
+        imports: session.into === 'file' ? [] : blockImports(this.currentText(session), result),
         steps: recorded.steps.map((step, i) => stepOf(step, i, result, preferLocators)),
         warnings: result.warnings.map((w) => ({
           step: w.step,

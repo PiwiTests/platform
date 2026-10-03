@@ -56,6 +56,7 @@ describe('parseUseLine', () => {
     expect(parseUseLine(`Listing tests:\r\n${LINE}\r\nTotal: 0 tests in 0 files\r\n`)).toEqual({
       configFile: '/work/playwright.config.ts',
       rootDir: '/work/tests',
+      piwi: null,
       projects: [{ name: 'chromium', testDir: '/work/tests', use: { baseURL: 'http://localhost:3000' } }],
     });
   });
@@ -142,6 +143,18 @@ describe('readProjectOptions', () => {
     const options = await readProjectOptions(path.join(link, 'playwright.config.ts'), reporter);
     expect(options.configFile).toBe(fs.realpathSync.native(FIXTURE));
     expect(options.projects.map((p) => p.name)).toEqual(['desktop', 'mobile']);
+  });
+
+  test('reads Piwi’s section of the config as written, which Playwright hands to reporters', async () => {
+    const config = project(
+      'piwi-section',
+      "export default { '@piwi': { codegen: { testSteps: 'page', tags: ['@recorded'], skip: () => 0 } } };\n",
+    );
+    expect((await readProjectOptions(config, reporter)).piwi).toEqual({
+      codegen: { testSteps: 'page', tags: ['@recorded'] },
+    });
+    const without = project('no-piwi-section', 'export default {};\n');
+    expect((await readProjectOptions(without, reporter)).piwi).toBeNull();
   });
 
   test('reads a config again once it changes', async () => {

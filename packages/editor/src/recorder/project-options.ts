@@ -19,6 +19,8 @@ export interface ProjectUse {
 export interface ProjectOptions {
   configFile: string;
   rootDir: string;
+  /** Piwi's section of the config (`'@piwi'`) as written, unchecked; null when there is none. */
+  piwi?: unknown;
   projects: ProjectUse[];
 }
 
@@ -65,7 +67,12 @@ export function parseUseLine(output: string): ProjectOptions | null {
       : [],
   );
   if (!projects.length) return null;
-  return { configFile: typeof value.configFile === 'string' ? value.configFile : '', rootDir: value.rootDir, projects };
+  return {
+    configFile: typeof value.configFile === 'string' ? value.configFile : '',
+    rootDir: value.rootDir,
+    piwi: value.piwi ?? null,
+    projects,
+  };
 }
 
 /** The first line of Playwright's output (run without colors), shortened, as the end of a sentence. */

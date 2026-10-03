@@ -9,6 +9,7 @@ import type { LaunchRequest, LauncherToService, ServiceToLauncher } from '../src
 import type { ProjectOptions, ProjectUse } from '../src/recorder/project-options';
 import {
   RecordingSessions,
+  blockImports,
   UPDATE_INTERVAL_MS,
   recorderLanguage,
   startUrl,
@@ -75,6 +76,8 @@ function setup(
   options: {
     projects?: ProjectUse[];
     failRead?: Error;
+    /** Piwi's section of the config. */
+    piwi?: unknown;
     env?: Record<string, string | undefined>;
     distDir?: string;
     readText?: (uri: string) => string | null;
@@ -98,7 +101,7 @@ function setup(
     readOptions: async (configFile): Promise<ProjectOptions> => {
       read.push(configFile);
       if (options.failRead) throw options.failRead;
-      return { configFile, rootDir: path.join(ROOT, 'tests'), projects };
+      return { configFile, rootDir: path.join(ROOT, 'tests'), piwi: options.piwi ?? null, projects };
     },
     launch: (cwd, events) => {
       const launcher = new FakeLauncher(cwd, events);
@@ -560,6 +563,74 @@ describe('a recording session', () => {
     expect(last().code).toContain('const signInPage = new SignInPage(page);');
   });
 
+  test('the config’s Piwi section sets the waits, the values, their prefix, the test steps and a new test’s tags', async () => {
+    const piwi = {
+      codegen: {
+        pageWaits: false,
+        values: 'env',
+        envPrefix: 'SHOP_',
+        testSteps: 'page',
+        tags: ['@recorded'],
+        annotations: [{ type: 'piwi:owner', description: '@shop-team' }],
+      },
+    };
+    const record = async (params: Partial<RecordParams>) => {
+      const { start, launchers, last } = setup({ piwi });
+      await start(params);
+      const launcher = launchers[0]!;
+      launcher.emit({ type: 'started' });
+      launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+      launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
+      launcher.emit({
+        type: 'event',
+        event: click(target('button', 'Orders', "getByRole('button', { name: 'Orders' })"), `${BASE}/account`),
+      });
+      return last().code;
+    };
+    expect(await record({ into: 'steps' })).toBe(
+      [
+        '// Typed values come from SHOP_EMAIL.',
+        "await test.step('/login', async () => {",
+        "  await page.goto('/login');",
+        "  await page.getByRole('textbox', { name: 'Email' }).fill(process.env.SHOP_EMAIL ?? '');",
+        '});',
+        "await test.step('/account', async () => {",
+        "  await page.getByRole('button', { name: 'Orders' }).click();",
+        '});',
+      ].join('\n'),
+    );
+    const test = await record({ into: 'test', line: 5, title: 'opens orders' });
+    expect(test.split('\n').slice(0, 5)).toEqual([
+      "test('opens orders', {",
+      "  tag: ['@recorded'],",
+      '  annotation: [',
+      "    { type: 'piwi:owner', description: '@shop-team' },",
+      '  ],',
+    ]);
+    expect(test).toContain("  await test.step('/login', async () => {");
+  });
+
+  test('in a page object, the steps are not wrapped in test.step, and what the section holds wrongly is said', async () => {
+    const text = [
+      "import type { Page } from '@playwright/test';",
+      'export class LoginPage {',
+      '  constructor(private readonly page: Page) {}',
+      '  async signIn() {',
+      '',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const { start, launchers, updates, last } = setup({ piwi: { codegen: { testSteps: 'page', values: 'secret' } } });
+    await start({ line: 4 }, { text });
+    launchers[0]!.emit({ type: 'started' });
+    launchers[0]!.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    expect(last().code).toBe("await this.page.goto('/login');");
+    expect(updates[0]!.message).toBe(
+      "playwright.config.ts: @piwi.codegen.values must be 'literal' or 'env'; it is ignored.",
+    );
+  });
+
   test('says on its first block that a sign-in state is missing, and when the start page did not load', async () => {
     const { start, launchers, updates } = setup({
       projects: [
@@ -875,5 +946,26 @@ describe('recorderLanguage', () => {
     });
     await start({ language: 'ja' });
     expect(launchers[1]!.request.language.code).toBe('en');
+  });
+});
+
+describe('blockImports', () => {
+  const check = 'await expect(page).toHaveURL(/\\/cart(?:[?#]|$)/);';
+  test('expect from the module the file takes test from, when the block checks something and the file lacks it', () => {
+    const fixtures = "import { test } from './shop-fixtures';\n";
+    expect(blockImports(fixtures, { code: check, imports: [] })).toEqual(["import { expect } from './shop-fixtures';"]);
+    expect(blockImports("import type { Page } from '@playwright/test';\n", { code: check, imports: [] })).toEqual([
+      "import { expect } from '@playwright/test';",
+    ]);
+  });
+
+  test('nothing for expect when the file imports it or the block checks nothing; catalog imports as before', () => {
+    const both = "import { test, expect } from './shop-fixtures';\n";
+    expect(blockImports(both, { code: check, imports: [] })).toEqual([]);
+    const call = "import { CartPage } from './pages/cart';";
+    expect(blockImports("import { test } from './f';\n", { code: 'await cart.open();', imports: [call] })).toEqual([
+      call,
+    ]);
+    expect(blockImports('', { code: 'await page.expectation(1); await my.expect(2);', imports: [] })).toEqual([]);
   });
 });
