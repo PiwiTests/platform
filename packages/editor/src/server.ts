@@ -77,7 +77,8 @@ import {
 } from './context.js';
 import { PiwiClient, type BranchFailure, type FixPlan, type FlakeLabEntry } from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
-import { pageCandidates } from './recorder/page-candidates.js';
+import { missingImports } from './recorder/imports.js';
+import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { RecordingSessions, originOf, type LauncherFactory } from './recorder/sessions.js';
 import {
@@ -622,6 +623,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     readOptions: projectOptions,
     launch: options.launchRecorder,
     env,
+    readText: (uri) => documents.get(uri)?.getText() ?? null,
   });
 
   /**
@@ -1563,9 +1565,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!parsed.ok) return { code: '', warnings: parsed.errors };
     const file = uriToPath(params.uri);
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.client && c.project) ?? null;
+    const text = (file ? readText(file) : null) ?? '';
+    const atCaret = typeof params.line === 'number' ? params.line : null;
     // The page expression in use at the caret: `this.page` in a page object, `adminPage` in a test with two users.
-    const page =
-      file && typeof params.line === 'number' ? pageCandidates(readText(file) ?? '', params.line).default : null;
+    const page = file && atCaret !== null ? pageCandidates(text, atCaret).default : null;
     const separate = params.imports === 'separate';
     const result = renderSpec(sessionFromSteps(parsed.steps), {
       format: 'body',
@@ -1575,12 +1578,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       catalog: context ? await context.functionCatalog() : [],
       preferLocators: suiteLocators(context),
       ...(page ? { page } : {}),
+      ...(file && atCaret !== null ? { declaredNames: declaredNamesAt(text, atCaret) } : {}),
       ...(separate ? { bodyImports: 'none' as const } : {}),
     });
     return {
       code: result.code,
       warnings: result.warnings.map((w) => w.message),
-      ...(separate ? { imports: result.imports } : {}),
+      ...(separate ? { imports: missingImports(text, result.imports) } : {}),
     };
   });
 

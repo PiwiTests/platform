@@ -76,6 +76,7 @@ function setup(
     failRead?: Error;
     env?: Record<string, string | undefined>;
     distDir?: string;
+    readText?: (uri: string) => string | null;
   } = {},
 ) {
   const updates: RecordingUpdate[] = [];
@@ -98,6 +99,7 @@ function setup(
       return { send: (m) => launcher.sent.push(m), kill: () => (launcher.killed = true) };
     },
     env: options.env ?? {},
+    readText: options.readText,
   });
   const start = (params: Partial<RecordParams> = {}, target: Partial<RecordTarget> = {}) =>
     sessions.start(
@@ -139,6 +141,22 @@ const navigate = (url: string) => event('navigate', { value: url, pageUrl: url }
 const fill = (t: RecordedTarget, value: string, password = false) =>
   event('input', { target: t, value: password ? null : value, isPasswordField: password });
 const click = (t: RecordedTarget, pageUrl = `${BASE}/login`) => event('click', { target: t, pageUrl });
+
+const SIGN_IN_ENTRY: TestFunctionEntry = {
+  id: 1,
+  name: 'signIn',
+  kind: 'page-object-method',
+  module: './pages/sign-in.page',
+  receiver: 'signInPage',
+  importName: 'SignInPage',
+  params: [{ name: 'email', type: 'string' }],
+  urlPattern: null,
+  steps: [
+    { action: 'fill', target: { role: 'textbox', name: 'Email' } },
+    { action: 'click', target: { role: 'button', name: 'Sign in' } },
+  ],
+  paramSources: [{ param: 'email', stepIndex: 0, from: 'value' }],
+};
 
 describe('starting a recording', () => {
   test('starts the launcher in the config’s folder with the project’s options, and says where the block goes', async () => {
@@ -234,11 +252,64 @@ describe('starting a recording', () => {
       message:
         'page; fetch(x) is not an expression the steps can run on: use page, this.page or a name such as adminPage.',
     });
-    expect(await start({ page: 'this.page', into: 'test' })).toEqual({
+    expect(await start({ page: 'this.page', into: 'test', line: 5 })).toEqual({
       ok: false,
       message: 'A new test cannot run on this.page: record steps inside a method, or choose a fixture.',
     });
     expect(launchers).toHaveLength(0);
+  });
+
+  test('a caret that does not fit what is recorded is refused in one sentence', async () => {
+    const pageObject = [
+      "import type { Page } from '@playwright/test';",
+      'export class SignInPage {',
+      '  constructor(readonly page: Page) {}',
+      '',
+      '  async open() {',
+      '',
+      '  }',
+      '}',
+      'async function login(page) {',
+      '',
+      '}',
+    ].join('\n');
+    const spec = [
+      "import { test } from '@playwright/test';",
+      "test.describe('checkout', () => {",
+      "  test('pays', async ({ page }) => {",
+      '',
+      '  });',
+      '',
+      '});',
+    ].join('\n');
+    const { start, launchers } = setup();
+    const steps = 'Put the cursor inside a test, a method or a function to record steps there.';
+    expect(await start({ line: 3 }, { text: pageObject })).toEqual({ ok: false, message: steps });
+    expect(await start({ line: 3, into: 'test' }, { text: pageObject })).toEqual({
+      ok: false,
+      message:
+        'A test cannot go inside a class: put the cursor inside a method to record its steps, or outside the class for a new test.',
+    });
+    expect(await start({ line: 5, into: 'test' }, { text: pageObject })).toEqual({
+      ok: false,
+      message:
+        'A new test cannot go inside another function: record steps there instead, or put the cursor outside the function for a new test.',
+    });
+    expect(await start({ line: 3, into: 'test' }, { text: spec })).toEqual({
+      ok: false,
+      message:
+        'A new test cannot go inside another test: record steps there instead, or put the cursor outside the test for a new test.',
+    });
+    expect(await start({ line: 5 }, { text: spec })).toEqual({ ok: false, message: steps });
+    expect(launchers).toHaveLength(0);
+
+    // A method, a function, a test, and between tests for a new test; a new file wherever the caret is.
+    expect(await start({ line: 5 }, { text: pageObject })).toMatchObject({ ok: true });
+    expect(await start({ line: 9 }, { text: pageObject })).toMatchObject({ ok: true });
+    expect(await start({ line: 3 }, { text: spec })).toMatchObject({ ok: true });
+    expect(await start({ line: 5, into: 'test' }, { text: spec })).toMatchObject({ ok: true });
+    expect(await start({ line: 3, into: 'file' }, { text: spec })).toMatchObject({ ok: true });
+    expect(launchers).toHaveLength(5);
   });
 
   test('without the recorder’s files there is nothing to start', async () => {
@@ -391,25 +462,8 @@ describe('a recording session', () => {
   });
 
   test('a run of steps the catalog knows becomes a call, with its import as data', async () => {
-    const catalog: TestFunctionEntry[] = [
-      {
-        id: 1,
-        name: 'signIn',
-        kind: 'page-object-method',
-        module: './pages/sign-in.page',
-        receiver: 'signInPage',
-        importName: 'SignInPage',
-        params: [{ name: 'email', type: 'string' }],
-        urlPattern: null,
-        steps: [
-          { action: 'fill', target: { role: 'textbox', name: 'Email' } },
-          { action: 'click', target: { role: 'button', name: 'Sign in' } },
-        ],
-        paramSources: [{ param: 'email', stepIndex: 0, from: 'value' }],
-      },
-    ];
     const { start, launchers, last } = setup();
-    await start({}, { catalog: Promise.resolve(catalog) });
+    await start({}, { catalog: Promise.resolve([SIGN_IN_ENTRY]) });
     const launcher = launchers[0]!;
     launcher.emit({ type: 'started' });
     launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
@@ -428,6 +482,45 @@ describe('a recording session', () => {
       [2, 'signIn'],
       [2, 'signIn'],
     ]);
+  });
+
+  test('a page object the test declares already is not instantiated again, and its import is not repeated', async () => {
+    const text = [
+      "import { test } from '@playwright/test';",
+      "import { SignInPage } from './pages/sign-in.page';",
+      '',
+      "test('signs in', async ({ page }) => {",
+      '  const signInPage = new SignInPage(page);',
+      '',
+      '});',
+      '',
+    ].join('\n');
+    const { start, launchers, last } = setup();
+    await start({ line: 5 }, { text, catalog: [SIGN_IN_ENTRY] });
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    expect(last().code).toBe(["await page.goto('/login');", "await signInPage.signIn('dev@example.com');"].join('\n'));
+    expect(last().imports).toEqual([]);
+  });
+
+  test('the imports leave out what the file imports now, as the editor holds it', async () => {
+    let current: string | null = null;
+    const { start, launchers, last } = setup({ readText: (uri) => (uri === URI ? current : null) });
+    await start({}, { catalog: [SIGN_IN_ENTRY] });
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    // Without a current text, the text the recording started from.
+    expect(last().imports).toEqual(["import { SignInPage } from './pages/sign-in.page';"]);
+    current = ['import { SignInPage } from "./pages/sign-in.page"', SPEC].join('\n');
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    expect(last().imports).toEqual([]);
+    expect(last().code).toContain('const signInPage = new SignInPage(page);');
   });
 
   test('says on its first block that a sign-in state is missing, and when the start page did not load', async () => {

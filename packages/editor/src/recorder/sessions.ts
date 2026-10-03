@@ -1,8 +1,8 @@
 /**
  * Recording sessions: one per `piwi/record`, each a browser the launcher opened with the project's own Playwright and
  * the `use` options of one of its projects, and the recorded block it writes into a file. Every event the launcher
- * reports re-renders all the steps with `renderSpec`, and the block, its imports, its steps and its warnings go to
- * the client as a `piwi/recordingChanged` notification, in order. While paused nothing is sent; resuming sends the
+ * reports re-renders all the steps with `renderSpec`, and the block, the imports the file lacks, its steps and its
+ * warnings go to the client as a `piwi/recordingChanged` notification, in order. While paused nothing is sent; resuming sends the
  * latest block again. A session ends with a last notification, `stopped` or `failed`, and its browser closes.
  */
 import { fork } from 'node:child_process';
@@ -550,11 +550,7 @@ export class RecordingSessions {
 
   /** The text of the session's file now, else as it was when the recording started. */
   private currentText(session: Session): string {
-    try {
-      return this.options.readText?.(session.uri) ?? session.text;
-    } catch {
-      return session.text;
-    }
+    return this.options.readText?.(session.uri) ?? session.text;
   }
 
   private send(update: RecordingUpdate): void {

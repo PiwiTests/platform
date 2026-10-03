@@ -2,8 +2,9 @@
  * The launcher's half of the recorder's binding: the storage areas the IDE bundle's `chrome` surface reads and
  * writes, and the answers to the recorder's messages. Session storage is absent from that surface, so the recorder
  * reads and writes the recording through messages (`piwi-session-storage`) and appends each event in one message
- * (`piwi-append-recording-event`), which this host answers from the areas it holds. Pure: the launcher passes it
- * each call of the binding.
+ * (`piwi-append-recording-event`), which this host answers from the areas it holds. Only the main frame of the page
+ * the recording opened records: a call from any other frame or page is answered as outside a recording
+ * (`handleOutside`). Pure: the launcher passes it each call of the binding.
  */
 import { IDE_SETTINGS_KEY, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
 import { parseCaptureEvent, type RawCaptureEvent } from '@piwitests/core/recording';
@@ -15,6 +16,8 @@ export const LANGUAGE_KEY = 'piwiLanguage';
 export const RECORDING_KEY = 'piwiRecording';
 
 const UNAVAILABLE = 'Not available in a recording started from the editor.';
+
+const OUTSIDE = 'Only the page the recording opened is recorded.';
 
 /** The most events one recording passes on: a page calling the binding in a loop cannot grow it without end. */
 export const MAX_EVENTS = 5_000;
@@ -86,6 +89,36 @@ export class RecorderHost {
           return this.message(request.message);
         default:
           return null;
+      }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * The answer to a call from a frame or a page outside the recording, as outside a recording: `chrome.storage.local`
+   * reads but no writes, an empty session area that takes no writes (no recording, so the recorder stays inert), no
+   * event appended and no Stop passed on. Never throws.
+   */
+  handleOutside(request: unknown): unknown {
+    try {
+      if (!isRecord(request)) return null;
+      if (request.kind === 'local-get') return this.localGet(request.keys);
+      if (request.kind !== 'message') return null;
+      const message = request.message;
+      if (!isRecord(message)) return { ok: false, error: UNAVAILABLE };
+      switch (message.type) {
+        case 'piwi-ping':
+          return { ok: true };
+        case 'piwi-session-storage':
+          return message.op === 'get' ? { ok: true, items: {} } : { ok: true };
+        case 'piwi-append-recording-event':
+        case 'piwi-recording-stopped':
+          return { ok: false, error: OUTSIDE };
+        case 'piwi-tab-zoom':
+          return { zoom: 1 };
+        default:
+          return { ok: false, error: UNAVAILABLE };
       }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };

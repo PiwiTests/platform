@@ -1346,6 +1346,30 @@ describe('recording from the editor', () => {
     expect(comments.imports).toBeUndefined();
   });
 
+  test('renders steps without the imports the open file has, nor a page object the test declares already', async () => {
+    const text = [
+      "import { test } from '@playwright/test';",
+      'import {',
+      '  CheckoutPage,',
+      '} from "tests/pages/checkout.page.ts"',
+      "test('pays', async ({ page }) => {",
+      '  const checkoutPage = new CheckoutPage(page);',
+      '',
+      '});',
+    ].join('\n');
+    await openHere('tests/declared.spec.ts', text);
+    const rendered = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/declared.spec.ts'),
+      steps: toStepsDocument(buildSession([goto('https://shop.test/checkout'), pay('https://shop.test/checkout')], 1)),
+      line: 6,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(rendered.imports).toEqual([]);
+    expect(rendered.code).not.toContain('new CheckoutPage');
+    expect(rendered.code).toContain("  await checkoutPage.pay('');");
+  });
+
   test('writes paths only when the flow was recorded on the baseURL’s origin', async () => {
     const elsewhere = (await recorder.sendRequest('piwi/renderSteps', {
       uri: uri('tests/checkout.spec.ts'),

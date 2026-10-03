@@ -13,6 +13,7 @@ import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { IDE_CHROME_GLOBAL } from '@piwitests/core/ide-recorder';
 import type { RecordingUpdate } from '../src/protocol';
 import { BUNDLE_FILE, LAUNCHER_FILE, MESSAGES_FILE, RecordingSessions } from '../src/recorder/sessions';
 
@@ -42,7 +43,12 @@ const PAGES: Record<string, string> = {
   </body></html>`,
   '/account': `<!doctype html><html lang="en"><head><title>Account</title></head><body>
     <h1>Your account</h1>
+    <a href="/help" target="_blank">Help</a>
     <button data-test="add-to-cart" data-testid="library-button">Add to cart</button>
+  </body></html>`,
+  '/help': `<!doctype html><html lang="en"><head><title>Help</title></head><body>
+    <h1>Help</h1>
+    <button>Contact us</button>
   </body></html>`,
 };
 
@@ -104,7 +110,7 @@ afterAll(async () => {
 });
 
 describe('the launcher', () => {
-  test('records a sign-in across two pages into a test’s body, then stops and closes the browser', async (ctx) => {
+  test('records a sign-in across two pages into a test’s body, not what a new tab does, then stops and closes the browser', async (ctx) => {
     if (ready) return ctx.skip(ready);
     const debugPort = await freePort();
     const updates: RecordingUpdate[] = [];
@@ -154,8 +160,24 @@ describe('the launcher', () => {
       await page.getByRole('button', { name: 'Sign in' }).click();
       await page.waitForURL('**/account');
       await page.locator(RECORDER).waitFor({ state: 'attached' });
+
+      // A tab the page opens loads the recorder too, which records nothing there.
+      await page.getByRole('link', { name: 'Help' }).click();
+      const tab: Page = await waitFor(() =>
+        attached!
+          .contexts()
+          .flatMap((c) => c.pages())
+          .find((p) => p.url().endsWith('/help')),
+      );
+      await tab.waitForFunction((name) => name in globalThis, IDE_CHROME_GLOBAL);
+      await new Promise((r) => setTimeout(r, 500));
+      await tab.getByRole('button', { name: 'Contact us' }).click();
+      await new Promise((r) => setTimeout(r, 500));
+      expect(await tab.locator(RECORDER).count()).toBe(0);
+
       await page.locator('[data-test="add-to-cart"]').click();
-      await waitFor(() => (last()!.steps.length === 5 ? true : undefined));
+      await waitFor(() => (last()!.steps.length >= 6 ? true : undefined));
+      await new Promise((r) => setTimeout(r, 500));
 
       expect(last()!.code).toBe(
         [
@@ -164,12 +186,13 @@ describe('the launcher', () => {
           "await page.getByRole('textbox', { name: 'Password' }).fill(process.env.E2E_PASSWORD ?? '');",
           "await page.getByRole('button', { name: 'Sign in' }).click();",
           'await expect(page).toHaveURL(/\\/account(?:[?#]|$)/);',
-          "await expect(page.getByTestId('add-to-cart')).toHaveCount(1);",
+          "await expect(page.getByRole('link', { name: 'Help' })).toHaveCount(1);",
+          "await page.getByRole('link', { name: 'Help' }).click();",
           "await page.getByTestId('add-to-cart').click();",
         ].join('\n'),
       );
-      expect(last()!.steps.map((s) => s.line)).toEqual([0, 1, 2, 3, 6]);
-      expect(last()!.steps[4]!.locators[last()!.steps[4]!.chosen!]).toBe("getByTestId('add-to-cart')");
+      expect(last()!.steps.map((s) => s.line)).toEqual([0, 1, 2, 3, 6, 7]);
+      expect(last()!.steps[5]!.locators[last()!.steps[5]!.chosen!]).toBe("getByTestId('add-to-cart')");
       expect(last()!.warnings).toEqual([
         { step: 2, line: 2, message: 'A password was typed here; the spec reads it from E2E_PASSWORD.' },
       ]);

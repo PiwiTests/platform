@@ -350,7 +350,10 @@ export const FAILURES_REQUEST = 'piwi/failures';
 export interface RenderStepsParams {
   uri: string;
   steps: unknown;
-  /** 0-based caret position: the steps run on the page expression in use there (`piwi/pageCandidates`'s default). */
+  /**
+   * 0-based caret position: the steps run on the page expression in use there (`piwi/pageCandidates`'s default), and
+   * a page object already declared there before the caret is not instantiated again.
+   */
   line?: number | null;
   character?: number | null;
   /**
@@ -363,22 +366,27 @@ export interface RenderStepsParams {
 export interface RenderStepsResult {
   code: string;
   warnings: string[];
-  /** With `imports: 'separate'`: the import lines the code needs. */
+  /**
+   * With `imports: 'separate'`: the import lines the code needs whose names the file's import statements do not bind
+   * yet, as of the file's text the service holds. The client adds those it does not hold already.
+   */
   imports?: string[];
 }
 
 export const RENDER_STEPS_REQUEST = 'piwi/renderSteps';
 
 /**
- * Where a recording writes: `steps`, lines of the test the caret is in; `test`, a new `test(…)` at the caret;
- * `file`, a whole new spec.
+ * Where a recording writes: `steps`, lines of the test, method or function the caret is in; `test`, a new `test(…)`
+ * at the caret; `file`, a whole new spec.
  */
 export type RecordInto = 'steps' | 'test' | 'file';
 
 /**
  * `piwi/record`: open a browser through the Playwright of the file's config, with the `use` options of one of its
  * projects, and write the steps recorded there into the file, at the caret, until `piwi/stopRecording`. What is
- * written comes in `piwi/recordingChanged` notifications.
+ * written comes in `piwi/recordingChanged` notifications. A caret that does not fit `into` is refused with `ok: false`
+ * and a sentence: `steps` needs the `test` or `function` context of `piwi/pageCandidates`, `test` needs `file`;
+ * `file` is not checked.
  */
 export interface RecordParams {
   uri: string;
@@ -480,7 +488,11 @@ export interface RecordingUpdate {
   into: RecordInto;
   state: 'starting' | 'recording' | 'paused' | 'stopped' | 'failed';
   code: string;
-  /** Import lines the code needs (a catalog call's page object or helper); the client adds the missing ones. */
+  /**
+   * Import lines the code needs (a catalog call's page object or helper) whose names the file's import statements do
+   * not bind yet, as of the file's text when the block was rendered; the client adds those it does not hold already.
+   * Empty for `into: 'file'`, whose `code` holds its imports.
+   */
   imports: string[];
   steps: RecordingStep[];
   warnings: RecordingWarning[];
@@ -509,8 +521,13 @@ export interface PageCandidatesResult {
   /** Best first; the default is always among them. */
   candidates: PageCandidate[];
   default: string;
-  /** Where the position is: inside a test's body, inside a class (a page object), or elsewhere in the file. */
-  context: 'test' | 'class' | 'file';
+  /**
+   * Where the position is: `test`, in the body of a test's or a hook's callback; `function`, in the body of another
+   * function or method (a page object's method, a helper), even inside a class; `class`, in a class body between its
+   * members; `file`, anywhere else (the top level, a `test.describe` callback between its tests). `file` takes a new
+   * test (`into: 'test'`); `test` and `function` take steps (`into: 'steps'`); `class` takes neither.
+   */
+  context: 'test' | 'function' | 'class' | 'file';
 }
 
 export const PAGE_CANDIDATES_REQUEST = 'piwi/pageCandidates';

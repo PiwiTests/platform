@@ -152,6 +152,35 @@ describe('RecorderHost', () => {
     expect(stopped()).toBe(1);
   });
 
+  test('a call from outside the recording reads the local area and an empty session area, and changes nothing', () => {
+    const { h, events, stopped } = host();
+    const outside = (m: unknown) => h.handleOutside({ kind: 'message', message: m });
+    const local = { ...h.local };
+    const session = structuredClone(h.session);
+    expect(h.handleOutside({ kind: 'local-get', keys: 'piwiIdeSettings' })).toEqual({ piwiIdeSettings: settings });
+    expect(h.handleOutside({ kind: 'local-set', items: { theme: 'dark' } })).toBeNull();
+    expect(h.handleOutside({ kind: 'local-remove', keys: [LANGUAGE_KEY] })).toBeNull();
+    expect(outside({ type: 'piwi-session-storage', op: 'get', key: RECORDING_KEY })).toEqual({ ok: true, items: {} });
+    expect(
+      outside({ type: 'piwi-session-storage', op: 'set', items: { [RECORDING_KEY]: { active: true, events: [] } } }),
+    ).toEqual({ ok: true });
+    expect(outside({ type: 'piwi-session-storage', op: 'remove', key: RECORDING_KEY })).toEqual({ ok: true });
+    const refused = { ok: false, error: 'Only the page the recording opened is recorded.' };
+    expect(outside({ type: 'piwi-append-recording-event', event: click() })).toEqual(refused);
+    expect(outside({ type: 'piwi-recording-stopped' })).toEqual(refused);
+    expect(outside({ type: 'piwi-ping' })).toEqual({ ok: true });
+    expect(outside({ type: 'piwi-tab-zoom' })).toEqual({ zoom: 1 });
+    expect(outside({ type: 'piwi-open-options' })).toEqual({
+      ok: false,
+      error: 'Not available in a recording started from the editor.',
+    });
+    expect(h.handleOutside(undefined)).toBeNull();
+    expect(h.local).toEqual(local);
+    expect(h.session).toEqual(session);
+    expect(events).toEqual([]);
+    expect(stopped()).toBe(0);
+  });
+
   test('a call that is not a request gets null', () => {
     const { h } = host();
     expect(h.handle(undefined)).toBeNull();

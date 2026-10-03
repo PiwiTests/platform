@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { pageCandidates, recordingPlacement, testImportOf } from '../src/recorder/page-candidates';
+import { declaredNamesAt, pageCandidates, recordingPlacement, testImportOf } from '../src/recorder/page-candidates';
 
 const file = (...lines: string[]) => lines.join('\n');
 /** The 0-based line holding `marker` (a comment such as `// here`), for a caret placed on it. */
@@ -111,7 +111,7 @@ describe('pageCandidates', () => {
     ]);
   });
 
-  test('in a page object: this.page, as a class context', () => {
+  test('in a page object’s method: this.page, as a function context', () => {
     const text = file(
       "import type { Locator, Page } from '@playwright/test';",
       '',
@@ -129,7 +129,7 @@ describe('pageCandidates', () => {
     );
     const result = pageCandidates(text, lineOf(text, '// here'));
     expect(result).toEqual({
-      context: 'class',
+      context: 'function',
       default: 'this.page',
       candidates: [{ expression: 'this.page', reason: 'field of SignInPage' }],
     });
@@ -151,7 +151,7 @@ describe('pageCandidates', () => {
       '}',
     );
     const result = pageCandidates(text, lineOf(text, '// here'));
-    expect(result.context).toBe('class');
+    expect(result.context).toBe('function');
     expect(result.candidates).toEqual([
       { expression: 'this.adminPage', reason: 'used on line 9' },
       { expression: 'this.page', reason: 'field of CheckoutPage' },
@@ -259,7 +259,7 @@ describe('pageCandidates', () => {
   test('a parameter typed as another Playwright object is not a page, whatever the function returns', () => {
     const text = file('async function pageWithScript(context: BrowserContext): Promise<Page> {', '  // here', '}');
     expect(pageCandidates(text, 1)).toEqual({
-      context: 'file',
+      context: 'function',
       default: 'page',
       candidates: [{ expression: 'page', reason: "Playwright's page fixture" }],
     });
@@ -340,10 +340,70 @@ describe('pageCandidates', () => {
       '}',
     );
     expect(pageCandidates(text, 2)).toEqual({
-      context: 'file',
+      context: 'function',
       default: 'target',
       candidates: [{ expression: 'target', reason: 'declared on line 2' }],
     });
+  });
+
+  test('between the methods of a page object: a class context, with the class’s page fields', () => {
+    const text = file(
+      "import type { Page } from '@playwright/test';",
+      'export class SignInPage {',
+      '  constructor(readonly page: Page) {}',
+      '',
+      '  async open() {',
+      "    await this.page.goto('/login');",
+      '  }',
+      '',
+      '  async signIn() {',
+      '    // in a method',
+      '  }',
+      '}',
+    );
+    expect(pageCandidates(text, 3)).toEqual({
+      context: 'class',
+      default: 'this.page',
+      candidates: [{ expression: 'this.page', reason: 'field of SignInPage' }],
+    });
+    expect(pageCandidates(text, 7).context).toBe('class');
+    expect(pageCandidates(text, lineOf(text, '// in a method'))).toMatchObject({
+      context: 'function',
+      default: 'this.page',
+    });
+    // On a method's opening line the block goes on a new line inside its body.
+    expect(pageCandidates(text, lineOf(text, 'async signIn')).context).toBe('function');
+  });
+
+  test('in a function: its body, whatever kind of function; a describe or step callback is the code around it', () => {
+    const text = file(
+      "import { test } from '@playwright/test';",
+      'async function login(page) {',
+      '  // in login',
+      '}',
+      'const helpers = {',
+      '  async logout(page: Page) {',
+      '    // in logout',
+      '  },',
+      '};',
+      "test.describe.serial('checkout', () => {",
+      '  // in describe',
+      "  test('pays', async ({ page }) => {",
+      "    await test.step('fills the card', async () => {",
+      '      // in step',
+      '    });',
+      '    [1, 2].forEach(async (n) => {',
+      '      // in callback',
+      '    });',
+      '  });',
+      '});',
+    );
+    const at = (marker: string) => pageCandidates(text, lineOf(text, marker));
+    expect(at('// in login')).toMatchObject({ context: 'function', default: 'page' });
+    expect(at('// in logout')).toMatchObject({ context: 'function', default: 'page' });
+    expect(at('// in describe').context).toBe('file');
+    expect(at('// in step')).toMatchObject({ context: 'test', default: 'page' });
+    expect(at('// in callback').context).toBe('function');
   });
 
   test('with CRLF line endings', () => {
@@ -381,6 +441,26 @@ describe('pageCandidates', () => {
       '});',
     );
     expect(expressions(text, 4)).toEqual(['page']);
+  });
+});
+
+describe('declaredNamesAt', () => {
+  test('the parameters and declarations around the caret, before it, out to the top of the file', () => {
+    const text = file(
+      "import { SignInPage } from './pages/sign-in.page';",
+      'const base = 1;',
+      "test('signs in', async ({ page, cartPage: cart }) => {",
+      '  const signInPage = new SignInPage(page);',
+      '  if (base) {',
+      '    const hidden = 2;',
+      '  }',
+      '',
+      '  const later = 3;',
+      '});',
+      'function other(user) {}',
+    );
+    expect([...declaredNamesAt(text, 7)].sort()).toEqual(['base', 'cart', 'page', 'signInPage']);
+    expect([...declaredNamesAt(text, 0)]).toEqual([]);
   });
 });
 

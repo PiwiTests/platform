@@ -71,6 +71,11 @@ export interface CodegenOptions {
    * its first segment, so it cannot start with `this` there.
    */
   page?: string;
+  /**
+   * The names already declared where the code goes. A page object whose receiver is one of them is not instantiated
+   * again: its calls use that variable.
+   */
+  declaredNames?: ReadonlySet<string>;
 }
 
 type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
@@ -638,8 +643,13 @@ function renderImports(usedEntries: TestFunctionEntry[]): string[] {
   return lines;
 }
 
-function renderInstantiations(usedEntries: TestFunctionEntry[], page: string): string[] {
-  const seen = new Set<string>();
+/** One instantiation line per page-object receiver used, in first-use order, except the receivers in `declared`. */
+function renderInstantiations(
+  usedEntries: TestFunctionEntry[],
+  page: string,
+  declared: ReadonlySet<string> | undefined,
+): string[] {
+  const seen = new Set<string>(declared);
   const lines: string[] = [];
   for (const entry of usedEntries) {
     if (entry.kind !== 'page-object-method' || !entry.receiver || !entry.importName) continue;
@@ -770,7 +780,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   const bodyOffset = opening.length;
 
   const importLines = renderImports(usedEntries);
-  const instantiationLines = renderInstantiations(usedEntries, page);
+  const instantiationLines = renderInstantiations(usedEntries, page, options.declaredNames);
   const failLine = expectFailLine(options);
   const envLines =
     options.values === 'env' && ctx.envNames.length > 0

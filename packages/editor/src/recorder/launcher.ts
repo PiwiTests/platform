@@ -2,7 +2,8 @@
  * The launcher: the child process the editor service forks for each recording session, in the folder of the
  * Playwright config. It opens a browser with the project's own Playwright (resolved from that folder at run time,
  * never bundled), loads the recorder's IDE bundle into every page with an init script, answers the recorder over the
- * binding it exposes (`host-state.ts`), and tells the service over the IPC channel what happens: the browser open,
+ * binding it exposes (`host-state.ts`: the main frame of the first page it opens records, every other frame and page
+ * is answered as outside a recording), and tells the service over the IPC channel what happens: the browser open,
  * each event captured, Stop pressed in the browser, the browser closed, or why it could not record. It closes the
  * browser and exits when the service asks it to stop or goes away. Bundled on its own as
  * `dist/piwi-recorder-launcher.cjs`.
@@ -90,6 +91,8 @@ async function start(request: LaunchRequest): Promise<void> {
     if (!stopping) void send({ type: 'closed' }).then(() => shutdown(0));
   });
   let page: Page;
+  /** The page whose main frame records; null until `newPage()` returns it. */
+  let recording: Page | null = null;
   try {
     const context = await browser.newContext(request.contextOptions as Parameters<Browser['newContext']>[0]);
     const host = new RecorderHost({
@@ -99,10 +102,15 @@ async function start(request: LaunchRequest): Promise<void> {
       onEvent: (event) => void send({ type: 'event', event }),
       onStopped: () => void send({ type: 'stopped-in-browser' }),
     });
-    await context.exposeBinding(IDE_RECORDER_BINDING, (_source, payload: unknown) => host.handle(payload));
+    await context.exposeBinding(IDE_RECORDER_BINDING, (source, payload: unknown) =>
+      recording && source.page === recording && source.frame === recording.mainFrame()
+        ? host.handle(payload)
+        : host.handleOutside(payload),
+    );
     await context.addInitScript({ path: request.bundle });
     context.on('page', (opened) => watch(context, opened));
     page = await context.newPage();
+    recording = page;
   } catch (error) {
     return fail('launch-failed', `The browser did not open: ${errorLine(error)}.`);
   }
