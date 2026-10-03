@@ -406,6 +406,47 @@ describe('pageCandidates', () => {
     expect(at('// in callback').context).toBe('function');
   });
 
+  test('a test called through another name: a fixture test, a renamed import, a name from a fixtures module', () => {
+    const extended = file(
+      "import { test as base } from '@playwright/test';",
+      'const adminTest = base.extend<{ adminPage: Page }>({});',
+      "adminTest('opens settings', async ({ adminPage }) => {",
+      '  ',
+      '});',
+      'adminTest.beforeEach(async ({ adminPage }) => {',
+      '  ',
+      '});',
+    );
+    expect(pageCandidates(extended, 3)).toMatchObject({ context: 'test', default: 'adminPage' });
+    expect(pageCandidates(extended, 6)).toMatchObject({ context: 'test', default: 'adminPage' });
+    const renamed = file(
+      "import { test as setup } from '@playwright/test';",
+      "setup('authenticate', async ({ page }) => {",
+      '  ',
+      '});',
+    );
+    expect(pageCandidates(renamed, 2)).toMatchObject({ context: 'test', default: 'page' });
+    const imported = file(
+      "import { shopTest } from './fixtures';",
+      "shopTest.describe('cart', () => {",
+      "  shopTest('adds', async ({ shopPage, page }) => {",
+      '    ',
+      '  });',
+      '  ',
+      '});',
+    );
+    expect(pageCandidates(imported, 3).context).toBe('test');
+    expect(pageCandidates(imported, 5).context).toBe('file');
+    // A call with a title and a callback that takes no fixtures is not a test.
+    const helper = file(
+      'function withRetries(name: string, fn: () => Promise<void>) {}',
+      "withRetries('x', async () => {",
+      '  ',
+      '});',
+    );
+    expect(pageCandidates(helper, 2).context).toBe('function');
+  });
+
   test('with CRLF line endings', () => {
     const text = SPEC.replace(/\n/g, '\r\n');
     expect(pageCandidates(text, 4)).toMatchObject({ context: 'test', default: 'page' });

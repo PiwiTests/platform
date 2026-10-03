@@ -336,6 +336,8 @@ class FileModel {
   readonly closers = new Map<number, Bracket>();
   readonly functions: FunctionInfo[] = [];
   readonly tests: TestCall[] = [];
+  /** The names that call a test (`test`, and the ones `testNames` finds). */
+  private testNames = new Set(['test']);
   readonly classes: ClassInfo[] = [];
   readonly declarations: Declaration[] = [];
   readonly uses: PageUse[] = [];
@@ -480,9 +482,43 @@ class FileModel {
     });
   }
 
-  private findTests(): void {
+  /**
+   * The names a file calls its tests with: `test`; a name `test` is imported or exported as (`import { test as
+   * setup }`); a name assigned from one of them extended (`const adminTest = test.extend(…)`, `base.extend<…>(…)`);
+   * and a name called as a test is, with a title first and a callback whose first parameter is a set of fixtures
+   * (`adminTest('opens settings', async ({ adminPage }) => {`), such as a test imported from a fixtures module.
+   */
+  private findTestNames(): void {
+    const names = this.testNames;
     this.tokens.forEach((t, i) => {
-      if (t.kind !== 'name' || t.text !== 'test' || this.is(i - 1, '.') || this.is(i - 1, '?.')) return;
+      if (t.text === 'test' && t.kind === 'name' && this.is(i + 1, 'as') && this.isName(i + 2))
+        names.add(this.tokens[i + 2]!.text);
+    });
+    for (let grew = true; grew;) {
+      grew = false;
+      this.tokens.forEach((t, i) => {
+        if (t.kind !== 'name' || names.has(t.text) || !this.is(i + 1, '=') || !this.isName(i + 2)) return;
+        if (!names.has(this.tokens[i + 2]!.text) || !this.is(i + 3, '.') || !this.is(i + 4, 'extend')) return;
+        names.add(t.text);
+        grew = true;
+      });
+    }
+    this.tokens.forEach((t, i) => {
+      if (t.kind !== 'name' || names.has(t.text) || this.is(i - 1, '.') || this.is(i - 1, '?.')) return;
+      if (this.is(i - 1, 'function') || !this.is(i + 1, '(')) return;
+      const title = this.tokens[i + 2];
+      if (!title || (title.kind !== 'string' && title.kind !== 'template') || !this.is(i + 3, ',')) return;
+      const call = this.openers.get(i + 1);
+      const callback = this.functions.filter((f) => f.body && this.owner[f.start] === call).pop();
+      const params = callback?.params;
+      if (params && typeof params === 'object' && this.is(params.open + 1, '{')) names.add(t.text);
+    });
+  }
+
+  private findTests(): void {
+    this.findTestNames();
+    this.tokens.forEach((t, i) => {
+      if (t.kind !== 'name' || !this.testNames.has(t.text) || this.is(i - 1, '.') || this.is(i - 1, '?.')) return;
       let j = i + 1;
       while (this.is(j, '.') && this.isName(j + 1)) {
         if (!TEST_MEMBERS.has(this.tokens[j + 1]!.text)) return;
@@ -815,7 +851,9 @@ class FileModel {
       chain.unshift(this.tokens[j]!.text);
       if (!this.is(j - 1, '.')) break;
     }
-    return chain[0] === 'describe' || (chain[0] === 'test' && (chain[1] === 'describe' || chain[1] === 'step'));
+    return (
+      chain[0] === 'describe' || (this.testNames.has(chain[0]!) && (chain[1] === 'describe' || chain[1] === 'step'))
+    );
   }
 
   /**
