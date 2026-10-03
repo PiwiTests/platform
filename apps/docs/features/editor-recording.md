@@ -35,7 +35,8 @@ The editor offers your last answers again. A new test file goes next to the test
   to your own page object or helper once its last step is recorded, and the import that call needs is added at the top
   of the file.
 - **The controls**: the step count, **Stop** and **Pause** (**Resume** while paused), above the block in VS Code and in
-  a banner above the editor in a JetBrains IDE. The status bar shows the recording too.
+  a banner above the editor in a JetBrains IDE. The status bar shows the recording too. Pause stops the writing, not
+  the recording: what you do in the browser meanwhile is written on **Resume**, so the code always replays.
 - **Typing in the block** pauses the recording. **Resume** writes the block again from the recorded steps, over your
   edits; **Keep my edits** stops the recording and keeps the code as you changed it.
 - **Warnings** (a brittle locator, a password read from the environment, a file to upload) are on their lines. They stay
