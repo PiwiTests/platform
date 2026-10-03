@@ -2293,6 +2293,18 @@
       }
     }
   },
+  "record_pause": {
+    "message": "Pause",
+    "description": "Recorder bar in a browser the editor (VS Code, a JetBrains IDE) opened for a recording: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
+  },
+  "record_resume": {
+    "message": "Resume",
+    "description": "Recorder bar in a browser the editor opened for a recording: button that resumes a paused recording. Short."
+  },
+  "record_pausedNote": {
+    "message": "Paused: what you do here is not recorded until you resume.",
+    "description": "Recorder bar in a browser the editor opened for a recording, while it is paused: one line under the title."
+  },
   "record_lastLocator": {
     "message": "Last locator",
     "description": "Recorder HUD: small uppercase heading above the locator of the element the last step acted on."

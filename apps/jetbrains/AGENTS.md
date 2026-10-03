@@ -56,7 +56,8 @@ the service through the platform's LSP API with the project's Node.js interprete
   weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
   the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the
   actions, and the status bar item shows them too, a click going to the block (`Glue.recordingStatus`). The service
-  sends nothing for a pause: the client shows it at once. An edit inside the block pauses the recording
+  says `paused` in an update for a pause from here or from the browser's bar; the client shows one from here at once.
+  An edit inside the block pauses the recording
   (`piwi/recordingCommand`) with **Resume** (the service sends the block again) or **Keep My Edits** (Stop: nothing
   more is written). Closing the file or the project stops its sessions; a service that stops ends them with a last
   update, and Stop ends one at once when the service does not answer. One undo step: a `StartMarkAction` in a command

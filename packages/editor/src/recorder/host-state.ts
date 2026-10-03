@@ -6,7 +6,7 @@
  * the recording opened records: a call from any other frame or page is answered as outside a recording
  * (`handleOutside`). Pure: the launcher passes it each call of the binding.
  */
-import { IDE_SETTINGS_KEY, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
+import { IDE_PAUSED_MESSAGE, IDE_SETTINGS_KEY, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
 import { parseCaptureEvent, type RawCaptureEvent } from '@piwitests/core/recording';
 
 /** `chrome.storage.local`'s key for the recorder's language and its catalog. */
@@ -29,6 +29,8 @@ export interface HostRecording {
   startedAt: number | null;
   grantedOriginPattern: string | null;
   mode: 'actions';
+  /** Paused from the recorder's bar or the editor: no event is appended until it resumes. */
+  paused: boolean;
 }
 
 export interface RecorderHostOptions {
@@ -41,6 +43,8 @@ export interface RecorderHostOptions {
   onEvent(event: RawCaptureEvent): void;
   /** The person pressed Stop in the browser. */
   onStopped(): void;
+  /** The person pressed Pause or Resume in the browser. */
+  onPaused(paused: boolean): void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,6 +72,7 @@ export class RecorderHost {
       startedAt: options.startedAt,
       grantedOriginPattern: null,
       mode: 'actions',
+      paused: false,
     };
     this.session = { [RECORDING_KEY]: recording };
   }
@@ -114,6 +119,7 @@ export class RecorderHost {
           return message.op === 'get' ? { ok: true, items: {} } : { ok: true };
         case 'piwi-append-recording-event':
         case 'piwi-recording-stopped':
+        case IDE_PAUSED_MESSAGE:
           return { ok: false, error: OUTSIDE };
         case 'piwi-tab-zoom':
           return { zoom: 1 };
@@ -129,7 +135,13 @@ export class RecorderHost {
   recording(): HostRecording {
     const stored = this.session[RECORDING_KEY];
     if (isRecord(stored) && Array.isArray(stored.events)) return stored as unknown as HostRecording;
-    return { active: false, events: [], startedAt: null, grantedOriginPattern: null, mode: 'actions' };
+    return { active: false, events: [], startedAt: null, grantedOriginPattern: null, mode: 'actions', paused: false };
+  }
+
+  /** Pauses or resumes the recording, as the editor asks: the recorder reads it on every page it records. */
+  setPaused(paused: boolean): void {
+    const state = this.recording();
+    if (state.active) state.paused = paused;
   }
 
   /** `chrome.storage.local.get`: every item for null, the items present for a key or keys, defaults for an object. */
@@ -159,6 +171,11 @@ export class RecorderHost {
       case 'piwi-recording-stopped':
         this.options.onStopped();
         return { ok: true };
+      case IDE_PAUSED_MESSAGE:
+        if (typeof message.paused !== 'boolean') return { ok: false, error: 'Malformed pause request.' };
+        this.setPaused(message.paused);
+        this.options.onPaused(message.paused);
+        return { ok: true };
       case 'piwi-tab-zoom':
         return { zoom: 1 };
       default:
@@ -183,14 +200,14 @@ export class RecorderHost {
   }
 
   /**
-   * Appends an event that parses while the recording is on, up to {@link MAX_EVENTS}, and answers with the recording
-   * as it is then.
+   * Appends an event that parses while the recording is on and not paused, up to {@link MAX_EVENTS}, and answers with
+   * the recording as it is then.
    */
   private append(value: unknown): unknown {
     const event = parseCaptureEvent(value);
     if (!event) return { ok: false, error: 'Malformed recording event.' };
     const state = this.recording();
-    if (state.active !== true) return { ok: true, state };
+    if (state.active !== true || state.paused === true) return { ok: true, state };
     if (this.passedOn >= MAX_EVENTS) return { ok: false, error: 'The recording is full: stop it to keep its steps.' };
     this.passedOn++;
     state.events.push(event);

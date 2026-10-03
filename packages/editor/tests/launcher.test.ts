@@ -13,7 +13,7 @@ import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { IDE_CHROME_GLOBAL } from '@piwitests/core/ide-recorder';
+import { IDE_CHROME_GLOBAL, IDE_RECORDER_BINDING } from '@piwitests/core/ide-recorder';
 import type { RecordingUpdate } from '../src/protocol';
 import { BUNDLE_FILE, LAUNCHER_FILE, MESSAGES_FILE, RecordingSessions } from '../src/recorder/sessions';
 
@@ -175,6 +175,29 @@ describe('the launcher', () => {
       await new Promise((r) => setTimeout(r, 500));
       expect(await tab.locator(RECORDER).count()).toBe(0);
 
+      // Paused from the editor, then from the recorder's bar: what is done meanwhile is not recorded.
+      sessions.command(result.sessionId!, 'pause');
+      expect(last()).toMatchObject({ state: 'paused' });
+      await page.locator('[data-test="add-to-cart"]').click();
+      await new Promise((r) => setTimeout(r, 500));
+      sessions.command(result.sessionId!, 'resume');
+      expect(last()).toMatchObject({ state: 'recording' });
+      const pauseInBrowser = (paused: boolean) =>
+        page.evaluate(
+          ([binding, value]) =>
+            (globalThis as unknown as Record<string, (r: unknown) => Promise<unknown>>)[binding]!({
+              kind: 'message',
+              message: { type: 'piwi-recording-paused', paused: value },
+            }),
+          [IDE_RECORDER_BINDING, paused] as const,
+        );
+      await pauseInBrowser(true);
+      await waitFor(() => (last()!.state === 'paused' ? true : undefined));
+      await page.locator('[data-test="add-to-cart"]').click();
+      await new Promise((r) => setTimeout(r, 500));
+      await pauseInBrowser(false);
+      await waitFor(() => (last()!.state === 'recording' ? true : undefined));
+
       await page.locator('[data-test="add-to-cart"]').click();
       await waitFor(() => (last()!.steps.length >= 6 ? true : undefined));
       await new Promise((r) => setTimeout(r, 500));
@@ -196,7 +219,13 @@ describe('the launcher', () => {
       expect(last()!.warnings).toEqual([
         { step: 2, line: 2, message: 'A password was typed here; the spec reads it from E2E_PASSWORD.' },
       ]);
-      expect(updates.every((u) => u.state === 'recording')).toBe(true);
+      expect(updates.map((u) => u.state).filter((state, i, all) => state !== all[i - 1])).toEqual([
+        'recording',
+        'paused',
+        'recording',
+        'paused',
+        'recording',
+      ]);
 
       await sessions.stop(result.sessionId!);
       expect(last()).toMatchObject({ state: 'stopped', code: updates[updates.length - 2]!.code });

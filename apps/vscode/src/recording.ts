@@ -258,7 +258,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     }
   };
 
-  /** Pause: the service sends no update for it, so the recording shows as paused here once the service took it. */
+  /** Pause: the recording shows as paused here once the service took it, before its update says so. */
   const pause = async (id?: unknown) => {
     const s = target(id);
     if (!s) return nothingRecorded();

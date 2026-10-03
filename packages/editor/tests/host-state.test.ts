@@ -7,6 +7,7 @@ const settings = { file: 'checkout.spec.ts', testIdAttribute: 'data-test' };
 
 function host() {
   const events: RawCaptureEvent[] = [];
+  const pauses: boolean[] = [];
   let stopped = 0;
   const h = new RecorderHost({
     language,
@@ -14,9 +15,10 @@ function host() {
     startedAt: 1_000,
     onEvent: (event) => events.push(event),
     onStopped: () => stopped++,
+    onPaused: (paused) => pauses.push(paused),
   });
   const message = (m: unknown) => h.handle({ kind: 'message', message: m });
-  return { h, events, stopped: () => stopped, message };
+  return { h, events, pauses, stopped: () => stopped, message };
 }
 
 const click = (overrides: Record<string, unknown> = {}) => ({
@@ -43,7 +45,14 @@ describe('RecorderHost', () => {
     const { h } = host();
     expect(h.local).toEqual({ [LANGUAGE_KEY]: language, piwiIdeSettings: settings });
     expect(h.session).toEqual({
-      [RECORDING_KEY]: { active: true, events: [], startedAt: 1_000, grantedOriginPattern: null, mode: 'actions' },
+      [RECORDING_KEY]: {
+        active: true,
+        events: [],
+        startedAt: 1_000,
+        grantedOriginPattern: null,
+        mode: 'actions',
+        paused: false,
+      },
     });
   });
 
@@ -130,6 +139,30 @@ describe('RecorderHost', () => {
     expect(events).toHaveLength(MAX_EVENTS);
   });
 
+  test('Pause in the browser is kept for every page and passed on, and nothing is appended until Resume', () => {
+    const { h, events, pauses, message } = host();
+    expect(message({ type: 'piwi-recording-paused', paused: true })).toEqual({ ok: true });
+    expect(pauses).toEqual([true]);
+    expect(h.recording().paused).toBe(true);
+    expect(message({ type: 'piwi-append-recording-event', event: click() })).toMatchObject({ ok: true });
+    expect(events).toEqual([]);
+    expect(message({ type: 'piwi-recording-paused', paused: 'yes' })).toMatchObject({ ok: false });
+    message({ type: 'piwi-recording-paused', paused: false });
+    message({ type: 'piwi-append-recording-event', event: click() });
+    expect(pauses).toEqual([true, false]);
+    expect(events).toHaveLength(1);
+  });
+
+  test('a pause from the editor is kept for the recorder and not passed back', () => {
+    const { h, pauses, message } = host();
+    h.setPaused(true);
+    const answer = message({ type: 'piwi-session-storage', op: 'get', key: RECORDING_KEY }) as {
+      items: Record<string, { paused: boolean }>;
+    };
+    expect(answer.items[RECORDING_KEY]!.paused).toBe(true);
+    expect(pauses).toEqual([]);
+  });
+
   test('appends nothing once the recorder stopped the recording', () => {
     const { h, events, message } = host();
     const stored = h.session[RECORDING_KEY] as { events: unknown[] };
@@ -153,7 +186,7 @@ describe('RecorderHost', () => {
   });
 
   test('a call from outside the recording reads the local area and an empty session area, and changes nothing', () => {
-    const { h, events, stopped } = host();
+    const { h, events, pauses, stopped } = host();
     const outside = (m: unknown) => h.handleOutside({ kind: 'message', message: m });
     const local = { ...h.local };
     const session = structuredClone(h.session);
@@ -168,6 +201,7 @@ describe('RecorderHost', () => {
     const refused = { ok: false, error: 'Only the page the recording opened is recorded.' };
     expect(outside({ type: 'piwi-append-recording-event', event: click() })).toEqual(refused);
     expect(outside({ type: 'piwi-recording-stopped' })).toEqual(refused);
+    expect(outside({ type: 'piwi-recording-paused', paused: true })).toEqual(refused);
     expect(outside({ type: 'piwi-ping' })).toEqual({ ok: true });
     expect(outside({ type: 'piwi-tab-zoom' })).toEqual({ zoom: 1 });
     expect(outside({ type: 'piwi-open-options' })).toEqual({
@@ -179,6 +213,7 @@ describe('RecorderHost', () => {
     expect(h.session).toEqual(session);
     expect(events).toEqual([]);
     expect(stopped()).toBe(0);
+    expect(pauses).toEqual([]);
   });
 
   test('a call that is not a request gets null', () => {

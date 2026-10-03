@@ -55,7 +55,9 @@ clients stay thin and both editors give the same answers.
   popup or a cross-origin iframe, is answered as outside a recording), and reports over its IPC channel (`ipc.ts`).
   The events render all the steps with `renderSpec` and the whole block goes in `piwi/recordingChanged`, in order: at
   once, or, within the update interval of the latest update (`UPDATE_INTERVAL_MS`, longer after a slow rendering),
-  together once it is over; pause stops the updates, resume sends the latest again; Stop in the editor or in the
+  together once it is over; a pause, from the editor or the recorder's bar (`piwi-recording-paused`, both ways through
+  the launcher), records nothing until resume and says `paused` in an update, resume sends the latest again; Stop in
+  the editor or in the
   browser, closing the browser or closing the file ends the session with a last update, sent at once, and closes the
   browser. `page-candidates.ts` reads the file's text alone (a scanner in the style of `callEndLine`, no TypeScript):
   the page expressions at a caret (`piwi/pageCandidates`, also the default of `piwi/renderSteps` given a `line`), the

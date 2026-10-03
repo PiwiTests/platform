@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   IDE_CHROME_GLOBAL,
+  IDE_DISPATCH_GLOBAL,
   IDE_RECORDER_BINDING,
   IDE_SETTINGS_KEY,
   type IdeRecorderRequest,
@@ -197,6 +198,25 @@ describe('installIdeHost', () => {
     // Loaded again in the same page, the bundle keeps the host it has.
     expect(installIdeHost(scope)).toBe(true);
     expect(scope[IDE_CHROME_GLOBAL]).toBe(chrome);
+  });
+
+  it('hands the recorder’s listeners each message the launcher dispatches', () => {
+    const { binding } = launcher();
+    const scope: Record<string, unknown> = { [IDE_RECORDER_BINDING]: binding };
+    installIdeHost(scope);
+    const chrome = scope[IDE_CHROME_GLOBAL] as ReturnType<typeof createIdeChrome>;
+    const heard: unknown[] = [];
+    const failing = () => {
+      throw new Error('a listener that fails');
+    };
+    chrome.runtime.onMessage.addListener(failing);
+    chrome.runtime.onMessage.addListener((message) => void heard.push(message));
+    const dispatch = scope[IDE_DISPATCH_GLOBAL] as (message: unknown) => void;
+    dispatch({ type: 'piwi-recording-paused', paused: true });
+    expect(heard).toEqual([{ type: 'piwi-recording-paused', paused: true }]);
+    expect(() => {
+      scope[IDE_DISPATCH_GLOBAL] = () => {};
+    }).toThrow(TypeError);
   });
 
   it('keeps calling the binding it found, whatever the page does with the global later', async () => {

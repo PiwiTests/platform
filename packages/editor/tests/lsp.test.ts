@@ -1433,14 +1433,15 @@ describe('recording from the editor', () => {
 
     await recorder.sendRequest('piwi/recordingCommand', { sessionId: result.sessionId, command: 'pause' });
     await recorder.sendRequest('piwi/recordingCommand', { sessionId: result.sessionId, command: 'resume' });
-    await waitFor(() => (updates.length >= count + 3 ? true : undefined));
-    expect(updates[count + 2]).toMatchObject({ state: 'recording', code: "await page.goto('/checkout');" });
+    await waitFor(() => (updates.length >= count + 4 ? true : undefined));
+    expect(updates[count + 2]).toMatchObject({ state: 'paused', code: "await page.goto('/checkout');" });
+    expect(updates[count + 3]).toMatchObject({ state: 'recording', code: "await page.goto('/checkout');" });
 
     const stopping = recorder.sendRequest('piwi/stopRecording', { sessionId: result.sessionId });
     await waitFor(() =>
       updates.some((u) => u.sessionId === result.sessionId && u.state === 'stopped') ? true : undefined,
     );
-    expect(launcher.sent.map((m) => m.type)).toEqual(['start', 'stop']);
+    expect(launcher.sent.map((m) => m.type)).toEqual(['start', 'pause', 'pause', 'stop']);
     launcher.events.exit(0, null);
     expect(await stopping).toBeNull();
   });

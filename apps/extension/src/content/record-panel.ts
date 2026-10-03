@@ -11,7 +11,7 @@ import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch }
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { describeStepInWords } from '@piwitests/core/bug-report';
-import type { IdeRecorderSettings } from '@piwitests/core/ide-recorder';
+import { IDE_PAUSED_MESSAGE, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { interfacePhrases } from '../shared/core-words.js';
@@ -85,6 +85,12 @@ let testIdAttribute: string | null = null;
 
 /** In the IDE bundle, what the launcher hands the recorder: the file the steps are written into, which the HUD names. */
 let ideSettings: IdeRecorderSettings | null = null;
+
+/**
+ * In the IDE bundle, whether the recording is paused, from the HUD's Pause or the editor's: nothing is captured until
+ * it resumes. Read from the recording as each page starts, then kept up to date by the messages of both.
+ */
+let idePaused = false;
 
 /** {@link ACTIONABLE_SELECTOR} with the elements carrying the project's test id attribute. */
 function actionableSelector(): string {
@@ -382,9 +388,21 @@ function focusInClosedShadowRoot(el: Element): boolean {
   }
 }
 
-/** Whether capture is paused in this document: a bug report's pick or dialog is on screen. */
+/** Whether capture is paused in this document: a bug report's pick or dialog is on screen, or the recording is paused. */
 function capturePaused(): boolean {
-  return recorderGlobals().__piwiRecordPaused === true;
+  return recorderGlobals().__piwiRecordPaused === true || idePaused;
+}
+
+/** Pauses or resumes the recording from the HUD: the launcher keeps it for every page, and tells the editor. */
+async function setIdePaused(paused: boolean): Promise<void> {
+  idePaused = paused;
+  scheduleHudRefresh();
+  try {
+    await chrome.runtime.sendMessage({ type: IDE_PAUSED_MESSAGE, paused });
+  } catch {
+    captureError = t('common_workerNoAnswer');
+    scheduleHudRefresh();
+  }
 }
 
 /**
@@ -457,6 +475,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    .dot.paused { background: #9ca3af; animation: none; }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
       border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
@@ -502,8 +521,26 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   stopBtn.className = 'stop';
   stopBtn.textContent = t('common_stop');
   stopBtn.addEventListener('click', () => void handleStop());
-  topRow.append(dot, title, stopBtn);
+  if (IDE_BUILD) {
+    dot.classList.toggle('paused', idePaused);
+    const pauseBtn = document.createElement('button');
+    pauseBtn.type = 'button';
+    pauseBtn.className = 'pause';
+    pauseBtn.textContent = idePaused ? t('record_resume') : t('record_pause');
+    pauseBtn.setAttribute('aria-pressed', String(idePaused));
+    pauseBtn.addEventListener('click', () => void setIdePaused(!idePaused));
+    topRow.append(dot, title, pauseBtn, stopBtn);
+  } else {
+    topRow.append(dot, title, stopBtn);
+  }
   bar.appendChild(topRow);
+
+  if (IDE_BUILD && idePaused) {
+    const note = document.createElement('div');
+    note.className = 'empty';
+    note.textContent = t('record_pausedNote');
+    bar.appendChild(note);
+  }
 
   if (captureError) {
     const warn = document.createElement('div');
@@ -1331,6 +1368,11 @@ function installStopListener(): void {
   g.__piwiRecordStopListener = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
+    if (IDE_BUILD && message?.type === IDE_PAUSED_MESSAGE && typeof message.paused === 'boolean') {
+      // The editor's Pause or Resume.
+      idePaused = message.paused;
+      scheduleHudRefresh();
+    }
     if (message?.type === 'piwi-bug-debugger-lost') {
       // The debugging session ended: the page's own script, registered all along, relays from then on; what it
       // noted before, the session collected.
@@ -1538,6 +1580,7 @@ async function initRecordPanel(restored: boolean): Promise<void> {
     initI18n(),
     loadRecorderSettings(),
   ]);
+  if (IDE_BUILD) idePaused = state.paused === true;
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down

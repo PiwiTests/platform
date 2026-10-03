@@ -1905,6 +1905,15 @@
       }
     }
   },
+  "record_pause": {
+    "message": "Pausar"
+  },
+  "record_resume": {
+    "message": "Continuar"
+  },
+  "record_pausedNote": {
+    "message": "Pausado: o que você faz aqui não é gravado até continuar."
+  },
   "record_lastLocator": {
     "message": "Último locator"
   },

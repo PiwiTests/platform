@@ -4,6 +4,7 @@ import path from 'node:path';
 import { test, expect, type BrowserContext, type Frame, type Page } from '@playwright/test';
 import {
   IDE_CHROME_GLOBAL,
+  IDE_DISPATCH_GLOBAL,
   IDE_RECORDER_BINDING,
   IDE_SETTINGS_KEY,
   type IdeRecorderRequest,
@@ -59,10 +60,12 @@ function pick(area: Area, keys: LocalKeys): Area {
 interface RecordingState {
   active: boolean;
   events: RawCaptureEvent[];
+  paused?: boolean;
 }
 
 interface Message {
   type?: string;
+  paused?: boolean;
   op?: string;
   key?: string;
   items?: Area;
@@ -102,6 +105,9 @@ function createLauncher(settings: IdeRecorderSettings) {
         return { ok: true, state: recording() };
       }
       case 'piwi-recording-stopped':
+        return { ok: true };
+      case 'piwi-recording-paused':
+        recording().paused = message.paused === true;
         return { ok: true };
       case 'piwi-tab-zoom':
         return { zoom: 1 };
@@ -237,6 +243,45 @@ test('records real input across two pages through the launcher’s binding, in t
   const chrome = await pageChrome(page);
   expect(chrome.same).toBe(true);
   expect(chrome.keys).toEqual(chrome.keysAtStart);
+});
+
+test('Pause in the bar stops the recording until Resume, and the editor’s Pause shows there, on every page', async ({
+  context,
+}) => {
+  const launcher = await launch(context, { file: 'checkout.spec.ts', testIdAttribute: null });
+  const page = await context.newPage();
+  await page.goto(`${ORIGIN}/`);
+  await expect(hud(page).getByText('Recording into checkout.spec.ts: 1 step')).toBeVisible();
+
+  // Paused in the bar: the launcher hears it, and what is done meanwhile is not recorded.
+  await hud(page).getByRole('button', { name: 'Pause' }).click();
+  await expect.poll(() => launcher.recording().paused).toBe(true);
+  expect(launcher.heard.messages).toContainEqual({ type: 'piwi-recording-paused', paused: true });
+  await expect(hud(page).getByText('Paused: what you do here is not recorded until you resume.')).toBeVisible();
+  await page.getByRole('textbox', { name: 'Search' }).fill('red shoes');
+  await page.getByRole('button', { name: 'Add to cart' }).click();
+  await page.waitForTimeout(300);
+  expect(normalizeSteps(launcher.recording().events)).toHaveLength(1);
+
+  // Still paused on the next page, as the recording says.
+  await page.getByRole('link', { name: 'Checkout' }).click();
+  await page.waitForURL(`${ORIGIN}/checkout`);
+  await expect(hud(page).getByRole('button', { name: 'Resume' })).toBeVisible();
+  await hud(page).getByRole('button', { name: 'Resume' }).click();
+  await expect.poll(() => launcher.recording().paused).toBe(false);
+  await page.getByRole('button', { name: 'Pay later' }).click();
+  await expect.poll(() => normalizeSteps(launcher.recording().events).length).toBe(2);
+
+  // The editor's Pause, handed to the page through the host, shows in the bar and stops capture there too.
+  launcher.recording().paused = true;
+  await page.evaluate((name) => {
+    const dispatch = (globalThis as unknown as Record<string, (m: unknown) => void>)[name]!;
+    dispatch({ type: 'piwi-recording-paused', paused: true });
+  }, IDE_DISPATCH_GLOBAL);
+  await expect(hud(page).getByRole('button', { name: 'Resume' })).toBeVisible();
+  await page.getByRole('button', { name: 'Place order' }).click();
+  await page.waitForTimeout(300);
+  expect(normalizeSteps(launcher.recording().events)).toHaveLength(2);
 });
 
 test('loaded into a page without the launcher’s binding, the bundle does nothing', async ({ context }) => {

@@ -566,22 +566,42 @@ describe('a recording session', () => {
     expect(last()).toMatchObject({ code: "await page.goto('https://shop.test/');", message: null });
   });
 
-  test('pausing stops the updates; resuming sends the latest block again', async () => {
+  test('Pause in the editor: the browser hears it, the update says paused, and nothing is recorded until Resume', async () => {
     const { start, sessions, launchers, updates, last } = setup();
     const { sessionId } = await start();
     const launcher = launchers[0]!;
     launcher.emit({ type: 'started' });
     launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
     sessions.command(sessionId!, 'pause');
+    expect(launcher.sent[launcher.sent.length - 1]).toEqual({ type: 'pause', paused: true });
+    expect(updates).toHaveLength(3);
+    expect(last()).toMatchObject({ state: 'paused', code: "await page.goto('/login');" });
     launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
     launcher.emit({ type: 'event', event: click(SIGN_IN) });
-    expect(updates).toHaveLength(2);
-    sessions.command(sessionId!, 'resume');
     expect(updates).toHaveLength(3);
-    expect(last().state).toBe('recording');
-    expect(last().steps).toHaveLength(3);
-    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    sessions.command(sessionId!, 'resume');
+    expect(launcher.sent[launcher.sent.length - 1]).toEqual({ type: 'pause', paused: false });
     expect(updates).toHaveLength(4);
+    expect(last().state).toBe('recording');
+    expect(last().steps).toHaveLength(1);
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    expect(updates).toHaveLength(5);
+    expect(last().steps).toHaveLength(2);
+  });
+
+  test('Pause and Resume in the browser reach the editor as updates, and are not sent back', async () => {
+    const { start, launchers, updates, last } = setup();
+    await start();
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'paused', paused: true });
+    expect(last()).toMatchObject({ state: 'paused' });
+    launcher.emit({ type: 'paused', paused: true });
+    expect(updates).toHaveLength(3);
+    launcher.emit({ type: 'paused', paused: false });
+    expect(last()).toMatchObject({ state: 'recording', code: "await page.goto('/login');" });
+    expect(launcher.sent.map((m) => m.type)).toEqual(['start']);
   });
 
   test('Stop: a last update says stopped, the launcher closes the browser, and later events are ignored', async () => {
@@ -737,23 +757,26 @@ describe('the spacing of updates', () => {
     expect(updates).toHaveLength(3);
     expect(last().steps).toHaveLength(3);
 
-    // Paused, nothing is due; resuming renders at once.
+    // Pausing sends the paused update at once, with the event due, and nothing else is due; resuming renders at once.
     launcher.emit({ type: 'event', event: click(SIGN_IN) });
     sessions.command(sessionId!, 'pause');
-    vi.advanceTimersByTime(UPDATE_INTERVAL_MS * 2);
-    expect(updates).toHaveLength(3);
-    sessions.command(sessionId!, 'resume');
     expect(updates).toHaveLength(4);
+    expect(last()).toMatchObject({ state: 'paused' });
+    expect(last().steps).toHaveLength(4);
+    vi.advanceTimersByTime(UPDATE_INTERVAL_MS * 2);
+    expect(updates).toHaveLength(4);
+    sessions.command(sessionId!, 'resume');
+    expect(updates).toHaveLength(5);
     expect(last().steps).toHaveLength(4);
 
     // The last update holds every event, without waiting.
     launcher.emit({ type: 'event', event: click(SIGN_IN) });
     void sessions.stop(sessionId!);
-    expect(updates).toHaveLength(5);
+    expect(updates).toHaveLength(6);
     expect(last()).toMatchObject({ state: 'stopped' });
     expect(last().steps).toHaveLength(5);
     vi.advanceTimersByTime(UPDATE_INTERVAL_MS * 2);
-    expect(updates).toHaveLength(5);
+    expect(updates).toHaveLength(6);
     launcher.exit(0);
   });
 

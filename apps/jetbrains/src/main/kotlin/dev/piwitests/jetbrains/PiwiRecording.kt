@@ -156,7 +156,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
         return session
     }
 
-    /** Pause: what is done in the browser is not written until Resume. The service sends no update for it. */
+    /** Pause: nothing done in the browser is recorded until Resume; shown at once, before the service's update says so. */
     fun pause(session: RecordingSession) {
         session.paused()
         remote.send(session.id, "pause")
@@ -278,7 +278,7 @@ class RecordingSession internal constructor(
     @Volatile var warnings: List<RecordingWarningMark> = emptyList()
         private set
 
-    /** `starting`, `recording`, `paused`, `stopped` or `failed`, as the service last said; `paused` from Pause here, which it does not echo. */
+    /** `starting`, `recording`, `paused`, `stopped` or `failed`, as the service last said, or `paused` from Pause here until it says so. */
     @Volatile var state: String = "starting"
         private set
 

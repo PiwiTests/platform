@@ -11,7 +11,12 @@
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import type { Browser, BrowserContext, BrowserType, Page } from '@playwright/test';
-import { IDE_RECORDER_BINDING } from '@piwitests/core/ide-recorder';
+import {
+  IDE_DISPATCH_GLOBAL,
+  IDE_PAUSED_MESSAGE,
+  IDE_RECORDER_BINDING,
+  type IdeRecorderPaused,
+} from '@piwitests/core/ide-recorder';
 import { RecorderHost } from './host-state.js';
 import type { LaunchFailure, LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
 import { resolvePlaywrightLibrary } from './playwright.js';
@@ -27,6 +32,8 @@ interface Playwright {
 const CLOSE_TIMEOUT_MS = 5_000;
 
 let browser: Browser | null = null;
+/** The recording's host and the page it records, once the browser is open. */
+let opened: { host: RecorderHost; page: Page } | null = null;
 let started = false;
 let stopping = false;
 
@@ -101,6 +108,7 @@ async function start(request: LaunchRequest): Promise<void> {
       startedAt: request.startedAt,
       onEvent: (event) => void send({ type: 'event', event }),
       onStopped: () => void send({ type: 'stopped-in-browser' }),
+      onPaused: (paused) => void send({ type: 'paused', paused }),
     });
     await context.exposeBinding(IDE_RECORDER_BINDING, (source, payload: unknown) =>
       recording && source.page === recording && source.frame === recording.mainFrame()
@@ -111,6 +119,7 @@ async function start(request: LaunchRequest): Promise<void> {
     context.on('page', (opened) => watch(context, opened));
     page = await context.newPage();
     recording = page;
+    opened = { host, page };
   } catch (error) {
     return fail('launch-failed', `The browser did not open: ${errorLine(error)}.`);
   }
@@ -132,6 +141,20 @@ process.on('message', (message: ServiceToLauncher) => {
   if (message?.type === 'start' && !started) {
     started = true;
     start(message.request).catch((error) => fail('launch-failed', `The recording failed: ${errorLine(error)}.`));
+  } else if (message?.type === 'pause' && opened) {
+    // The recording keeps the state for the pages to come; the page on screen hears it at once.
+    const { host, page } = opened;
+    host.setPaused(message.paused);
+    const notice: IdeRecorderPaused = { type: IDE_PAUSED_MESSAGE, paused: message.paused };
+    page
+      .evaluate(
+        ([name, value]) => {
+          const dispatch = (globalThis as unknown as Record<string, unknown>)[name];
+          if (typeof dispatch === 'function') dispatch(value);
+        },
+        [IDE_DISPATCH_GLOBAL, notice] as const,
+      )
+      .catch(() => undefined);
   } else if (message?.type === 'stop') {
     void shutdown(0);
   }

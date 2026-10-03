@@ -1,4 +1,9 @@
-import { IDE_CHROME_GLOBAL, IDE_RECORDER_BINDING, type IdeRecorderRequest } from '@piwitests/core/ide-recorder';
+import {
+  IDE_CHROME_GLOBAL,
+  IDE_DISPATCH_GLOBAL,
+  IDE_RECORDER_BINDING,
+  type IdeRecorderRequest,
+} from '@piwitests/core/ide-recorder';
 import { BUILD_ID } from '../shared/build-id.js';
 
 /**
@@ -29,11 +34,12 @@ export interface IdeChrome {
   };
   runtime: {
     sendMessage(message: unknown): Promise<unknown>;
-    /** Keeps its listeners; nothing sends them a message. */
+    /** Keeps its listeners, which `dispatch` hands each message the launcher sends (`__piwiIdeDispatch`). */
     onMessage: {
       addListener(listener: MessageListener): void;
       removeListener(listener: MessageListener): void;
       hasListener(listener: MessageListener): boolean;
+      dispatch(message: unknown): void;
     };
     getManifest(): { version: string };
     getURL(path: string): string;
@@ -74,6 +80,15 @@ export function createIdeChrome(binding: RecorderBinding): IdeChrome {
         addListener: (listener) => void listeners.add(listener),
         removeListener: (listener) => void listeners.delete(listener),
         hasListener: (listener) => listeners.has(listener),
+        dispatch: (message) => {
+          for (const listener of listeners) {
+            try {
+              listener(message, {}, () => {});
+            } catch {
+              // A listener's failure does not keep the others from the message.
+            }
+          }
+        },
       },
       getManifest: () => ({ version: BUILD_ID }),
       getURL: (path) => new URL(path, NO_EXTENSION_ORIGIN).href,
@@ -87,16 +102,21 @@ export function createIdeChrome(binding: RecorderBinding): IdeChrome {
 
 /**
  * Installs the host as `__piwiIdeChrome` on `scope`, read-only, over the
- * launcher's binding found there. Without the binding (the bundle loaded
- * anywhere but a page of the launcher's browser) it installs nothing, and the
- * recorder stays inert. Answers whether the host is installed.
+ * launcher's binding found there, and `__piwiIdeDispatch`, through which the
+ * launcher hands the recorder its messages. Without the binding (the bundle
+ * loaded anywhere but a page of the launcher's browser) it installs nothing,
+ * and the recorder stays inert. Answers whether the host is installed.
  */
 export function installIdeHost(scope: object = globalThis): boolean {
   const slots = scope as Record<string, unknown>;
   if (slots[IDE_CHROME_GLOBAL]) return true;
   const binding = slots[IDE_RECORDER_BINDING];
   if (typeof binding !== 'function') return false;
-  Object.defineProperty(scope, IDE_CHROME_GLOBAL, { value: createIdeChrome(binding as RecorderBinding) });
+  const chrome = createIdeChrome(binding as RecorderBinding);
+  Object.defineProperty(scope, IDE_CHROME_GLOBAL, { value: chrome });
+  Object.defineProperty(scope, IDE_DISPATCH_GLOBAL, {
+    value: (message: unknown) => chrome.runtime.onMessage.dispatch(message),
+  });
   return true;
 }
 

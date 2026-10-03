@@ -25,7 +25,11 @@ export interface LaunchRequest {
   startedAt: number;
 }
 
-export type ServiceToLauncher = { type: 'start'; request: LaunchRequest } | { type: 'stop' };
+export type ServiceToLauncher =
+  | { type: 'start'; request: LaunchRequest }
+  /** The editor paused or resumed the recording. */
+  | { type: 'pause'; paused: boolean }
+  | { type: 'stop' };
 
 /** Why the launcher could not record. */
 export type LaunchFailure = 'playwright-missing' | 'browser-missing' | 'launch-failed' | 'crashed';
@@ -39,6 +43,8 @@ export type LauncherToService =
   | { type: 'notice'; message: string }
   /** The person pressed Stop in the browser. */
   | { type: 'stopped-in-browser' }
+  /** The person pressed Pause or Resume in the browser. */
+  | { type: 'paused'; paused: boolean }
   /** The person closed the browser. */
   | { type: 'closed' }
   | { type: 'failed'; reason: LaunchFailure; message: string };

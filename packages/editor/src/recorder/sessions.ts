@@ -457,14 +457,25 @@ export class RecordingSessions {
     };
   }
 
-  /** Pauses or resumes a session; resuming sends its latest update again. */
+  /** Pauses or resumes a session from the editor; the recorder's bar in the browser shows it too. */
   command(sessionId: string, command: 'pause' | 'resume'): void {
     const session = this.sessions.get(sessionId);
     if (!session || isFinal(session.state) || session.state === 'starting') return;
-    if (command === 'pause') {
+    if (command !== 'pause' && command !== 'resume') return;
+    session.launcher?.send({ type: 'pause', paused: command === 'pause' });
+    this.paused(session, command === 'pause');
+  }
+
+  /**
+   * A session paused, from the editor or the browser: nothing done in the browser is recorded, nothing is written,
+   * and the update says `paused`; resumed, it says `recording` with the latest block again.
+   */
+  private paused(session: Session, paused: boolean): void {
+    if (paused && session.state === 'recording') {
       session.state = 'paused';
       this.cancelUpdate(session);
-    } else if (command === 'resume') {
+      this.sendUpdate(session);
+    } else if (!paused && session.state === 'paused') {
       session.state = 'recording';
       this.sendUpdate(session);
     }
@@ -513,6 +524,8 @@ export class RecordingSessions {
         break;
       }
       case 'event': {
+        // Nothing done in the browser while the recording is paused is recorded.
+        if (session.state === 'paused') break;
         session.events.push(message.event);
         if (session.state === 'recording') this.scheduleUpdate(session);
         break;
@@ -523,6 +536,9 @@ export class RecordingSessions {
       }
       case 'stopped-in-browser':
         this.finish(session, 'stopped', 'Stopped in the browser.');
+        break;
+      case 'paused':
+        this.paused(session, message.paused);
         break;
       case 'closed':
         this.finish(session, 'stopped', 'The browser was closed: the recording stopped.');
