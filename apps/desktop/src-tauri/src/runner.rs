@@ -590,8 +590,13 @@ pub async fn desktop_run_local_tests(
     project_id: String,
     args: Vec<String>,
     cwd: Option<String>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
+    let origin = crate::worktree::origin_env(
+        "desktop",
+        crate::worktree::origin_reference(None, origin_ref)?.as_deref(),
+    );
 
     let folder = match cwd {
         Some(dir) => crate::worktree::validate_worktree_cwd(&app, &dir)?,
@@ -622,7 +627,7 @@ pub async fn desktop_run_local_tests(
         // Plain text for the in-app output pane.
         .env("NO_COLOR", "1")
         .env("FORCE_COLOR", "0")
-        .env("PIWI_ORIGIN", "desktop");
+        .envs(origin);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
