@@ -367,6 +367,21 @@ beforeAll(async () => {
                 lab: 'reproduced 7 of 10',
               },
             },
+            {
+              testCaseId: 3,
+              state: 'untested',
+              nextCommand: 'npx @piwitests/reporter flake 3',
+              flaky: false,
+              reproducedBy: null,
+              flakeRate: null,
+              suspect: {
+                id: 'slow-route:GET /api/rows',
+                label: 'slow GET /api/rows',
+                standing: 'untested',
+                lab: 'untested',
+              },
+              untestedSuspects: 2,
+            },
           ],
         }),
       );
@@ -1086,6 +1101,81 @@ describe('the desktop app chosen with Connect', () => {
       fs.rmSync(desktopFile, { force: true });
       stopChosen();
       chosenClient.dispose();
+    }
+  });
+});
+
+describe('jobs for the desktop app running beside a team instance', () => {
+  test('offer Flake Lab on a flaky test and on a failure whose test has an untested suspect', async () => {
+    const desktopFile = path.join(dir, '.desktop-beside.json');
+    // The app runs, but the environment names the team instance, which the context reads.
+    fs.writeFileSync(desktopFile, JSON.stringify({ url: 'http://127.0.0.1:9', token: 'pd_desktop', projects: [] }));
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopBeside = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+    });
+    const beside = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const published = new Map<string, Array<{ code?: string; range: unknown; source?: string }>>();
+    beside.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: never[] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    beside.listen();
+    const openHere = (file: string, text: string) =>
+      beside.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: uri(file), languageId: 'typescript', version: 1, text },
+      });
+    try {
+      await beside.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await beside.sendNotification('initialized', {});
+      await openHere('tests/checkout.spec.ts', fs.readFileSync(path.join(dir, 'tests/checkout.spec.ts'), 'utf8'));
+      await openHere('tests/pages/checkout.page.ts', PAGE_OBJECT);
+
+      const lines = await waitFor(async () => {
+        const summary = (await beside.sendRequest('piwi/fileSummary', {
+          uri: uri('tests/checkout.spec.ts'),
+        })) as FileSummary;
+        return summary.lines.some((l) => l.command?.command === 'piwi.desktopJob') ? summary.lines : undefined;
+      });
+      expect(lines.map((l) => l.title).slice(-4)).toEqual([
+        'flaky 18% · top suspect: slow GET /api/cart (reproduced 7 of 10)',
+        'Reproduce this flake',
+        'Reproduce this flake in the desktop app',
+        'Verify the flake fix',
+      ]);
+      expect(lines.find((l) => l.command?.command === 'piwi.desktopJob')!.command).toEqual({
+        title: 'Reproduce this flake in the desktop app',
+        command: 'piwi.desktopJob',
+        arguments: [{ root: dir, testCaseId: 1, kind: 'flake-lab' }],
+      });
+
+      const failure = await waitFor(() =>
+        published.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.code === 'ci-failure'),
+      );
+      const actions = (await beside.sendRequest('textDocument/codeAction', {
+        textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+        range: failure.range,
+        context: { diagnostics: [failure] },
+      })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
+      const jobs = actions.filter((a) => a.command?.command === 'piwi.desktopJob');
+      expect(jobs.map((a) => [a.title, a.command!.arguments[0]])).toEqual([
+        ['Reproduce in the desktop app', { root: dir, executionId: 900, kind: 'reproduce' }],
+        ['Find the breaking commit in the desktop app', { root: dir, executionId: 900, kind: 'bisect' }],
+        [
+          'Run Flake Lab on its untested suspects in the desktop app',
+          { root: dir, executionId: 900, testCaseId: 3, kind: 'flake-lab' },
+        ],
+      ]);
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopBeside();
+      beside.dispose();
     }
   });
 });

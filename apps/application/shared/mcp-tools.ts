@@ -952,6 +952,27 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'dismiss_quarantine_proposal',
+    module: 'workflow',
+    capability: 'quarantine',
+    description:
+      'Dismiss what Piwi proposed for a test, as the dashboard’s Dismiss does: the proposal to quarantine it, or the proposed release of it from quarantine. `quarantine` applies to a quarantine candidate (one of the costliest flaky tests, by the CI minutes their flakiness wastes, which the flaky list marks proposed); `release` to a quarantined test whose passing streak or verified fix earned its way out (list_open_clusters with queue quarantine-ready finds their clusters). Records the proposal as rejected, with your optional reason; nothing else changes, so the test stays out of, or in, quarantine. Dismissing the same proposal again records nothing more; a dismissed quarantine proposal counts again once a newer run arrives. Fails when the test has no such proposal. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        testCaseId: { type: 'number', description: 'The test (testCaseId)' },
+        proposal: {
+          type: 'string',
+          enum: ['quarantine', 'release'],
+          description: 'Which proposal: quarantining the test, or releasing it from quarantine',
+        },
+        reason: { type: 'string', description: 'Why you dismiss it (up to 500 characters)' },
+      },
+      required: ['projectId', 'testCaseId', 'proposal'],
+    },
+  },
+  {
     name: 'set_bug_report_status',
     module: 'workflow',
     capability: 'bug-reports',

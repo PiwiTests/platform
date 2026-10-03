@@ -158,9 +158,15 @@ data class EditorCredentials(
 
 /**
  * `piwi/desktopJob`, and the arguments of the client command `piwi.desktopJob`: ask the desktop app to reproduce
- * (`kind` `reproduce`) or bisect (`bisect`) a failure of the instance the context at `root` reads.
+ * (`kind` `reproduce`) or bisect (`bisect`) the failure `executionId` of the instance the context at `root` reads, or
+ * to run Flake Lab (`flake-lab`) on the test `testCaseId`.
  */
-data class DesktopJobParams(val root: String = "", val executionId: Int = 0, val kind: String = "reproduce")
+data class DesktopJobParams(
+    val root: String = "",
+    val executionId: Int? = null,
+    val testCaseId: Int? = null,
+    val kind: String = "reproduce",
+)
 
 data class DesktopJobResult(val ok: Boolean = false, val message: String? = null, val jobId: String? = null)
 

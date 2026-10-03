@@ -149,6 +149,8 @@ import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
+import { dismissQuarantineProposal } from '#shared/handlers/quarantine';
+import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
@@ -2466,6 +2468,27 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     }
     if (!(await rejectMergeSuggestion(db, suggestionId, mcpActor(ctx)))) throw new Error('Suggestion is not pending');
     return { suggestionId, decision, ok: true };
+  },
+
+  // ── dismiss_quarantine_proposal ────────────────────────────────────────────
+  async dismiss_quarantine_proposal(db, params, ctx) {
+    assertWriteRole(ctx);
+    const projectId = numericParam(params.projectId, 'projectId');
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    const proposal = params.proposal;
+    if (!isQuarantineProposal(proposal)) throw new Error('proposal must be quarantine or release');
+    if (params.reason != null && typeof params.reason !== 'string') throw new Error('reason must be a string');
+    assertProject(ctx, projectId);
+    const reason = normalizeDismissReason(params.reason);
+    let dismissed: boolean;
+    try {
+      dismissed = await dismissQuarantineProposal(db, projectId, testCaseId, proposal, mcpActor(ctx), reason);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'Test case not found in this project') return null;
+      throw e;
+    }
+    if (!dismissed) throw new Error(`Test ${testCaseId} has no ${proposal} proposal to dismiss`);
+    return dropNulls({ projectId, testCaseId, proposal, dismissed, reason });
   },
 
   // ── set_bug_report_status ──────────────────────────────────────────────────

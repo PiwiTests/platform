@@ -517,9 +517,13 @@ re-positions each drawn one. Keep every interaction proportional to what changed
   and in the run's `metadata.shardTokens`, which project members can read. **Any new streaming endpoint MUST validate
   shard tokens alongside the primary one** — check `matchesShardToken(cachedState.shardTokens, body.streamToken)` as a
   fallback, via `validateAndReviveRun()` with the `isShardToken` callback; never compare against the set directly.
+- **A run's shard tokens are merged, never replaced** — in the cache or in `metadata`. Every shard's setup token stays
+  valid until that shard calls `/begin`, which swaps it for the shard's stream token; read the set with
+  `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.
 - Server-side merge: `/start`, `/setup` and `/submit` reuse an existing run when `shardTotal > 1` and an active run with
-  the same `instanceId` exists; `/finish` accumulates counters with SQL `+` and only sets the final status when
-  `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
+  the same `instanceId` exists, and `/begin` on a run another shard already began joins it (a stream token of its own,
+  its planned tests added to `totalTests`); `/finish` accumulates counters with SQL `+` and only sets the final status
+  when `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
 
 ### Trace storage compression
 

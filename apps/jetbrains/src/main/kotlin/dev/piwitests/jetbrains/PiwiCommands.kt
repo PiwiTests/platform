@@ -52,7 +52,10 @@ object PiwiCommands {
         }
     }
 
-    /** Pass a failure from the team instance to the desktop app, which waits for the developer to start it. */
+    /**
+     * Pass a failure or a flaky test from the team instance to the desktop app, which waits for the developer to start
+     * it.
+     */
     fun desktopJob(project: Project, params: DesktopJobParams) {
         background(project, "Piwi: passing the job to the desktop app") {
             val result = project.service<PiwiProjectService>().server()?.desktopJob(params)?.orNull()

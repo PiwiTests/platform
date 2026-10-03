@@ -277,4 +277,18 @@ describe('desktopJobNotice', () => {
       actions: [],
     });
   });
+
+  test("offers to share a Flake Lab run's results, and warns when the lab could not run", () => {
+    const lab = { kind: 'flake-lab' as const, share: { label: 'Share on piwi.example.com' } };
+    expect(desktopJobNotice(update({ ...lab, message: 'Flake Lab reproduced "t" at b0b0b0b.' }))).toEqual({
+      severity: 'information',
+      text: 'Piwi: Flake Lab reproduced "t" at b0b0b0b.',
+      actions: ['Share on piwi.example.com'],
+    });
+    expect(
+      desktopJobNotice(
+        update({ kind: 'flake-lab', message: 'The desktop app could not run Flake Lab on "t": npm ci failed' }),
+      ).severity,
+    ).toBe('warning');
+  });
 });

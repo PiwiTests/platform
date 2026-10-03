@@ -75,7 +75,7 @@ import {
   readDesktopDiscovery,
   withServerUrl,
 } from './context.js';
-import { PiwiClient, type BranchFailure, type FixPlan } from './piwi-client.js';
+import { PiwiClient, type BranchFailure, type FixPlan, type FlakeLabEntry } from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
@@ -222,13 +222,15 @@ export const EDITOR_RUN_ENV: Readonly<Record<string, string>> = { PIWI_ORIGIN: '
  * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
  * open its Flakiness tab, then the `piwi flake` commands it can run, each through
  * `piwi.runCommand` in the config's folder and reporting to the instance the
- * context reads.
+ * context reads. With `desktop`, while the desktop app runs beside a team
+ * instance, the reproduction is also offered as a job for the app.
  */
 export function flakeLabLines(
   context: PiwiContext,
   testCaseId: number,
   line: number,
   env: Record<string, string | undefined>,
+  desktop = false,
 ): SummaryLine[] {
   const entry = context.flakeLab.get(testCaseId);
   const lens = entry && context.client ? flakeLabLens(testCaseId, entry) : null;
@@ -244,8 +246,8 @@ export function flakeLabLines(
         arguments: [context.client.flakinessUrl(testCaseId)],
       },
     },
-    ...lens.actions.map(
-      (a): SummaryLine => ({
+    ...lens.actions.flatMap((a): SummaryLine[] => [
+      {
         line,
         title: a.title,
         command: {
@@ -259,9 +261,29 @@ export function flakeLabLines(
             } satisfies RunCommandArgs,
           ],
         },
-      }),
-    ),
+      },
+      ...(desktop && a.kind === 'reproduce' ? [flakeLabJobLine(context, testCaseId, line)] : []),
+    ]),
   ];
+}
+
+/** The line that passes a flaky test's Flake Lab run to the desktop app. */
+function flakeLabJobLine(context: PiwiContext, testCaseId: number, line: number): SummaryLine {
+  const title = 'Reproduce this flake in the desktop app';
+  return {
+    line,
+    title,
+    command: {
+      title,
+      command: 'piwi.desktopJob',
+      arguments: [{ root: context.root, testCaseId, kind: 'flake-lab' } satisfies DesktopJobParams],
+    },
+  };
+}
+
+/** Whether a test's Flake Lab entry names a suspect no experiment tested yet. */
+export function hasUntestedSuspect(entry: FlakeLabEntry | undefined): boolean {
+  return !!entry && ((entry.untestedSuspects ?? 0) > 0 || entry.suspect?.standing === 'untested');
 }
 
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
@@ -543,7 +565,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void connection.sendNotification(DESKTOP_JOB_NOTIFICATION, update);
   });
 
-  /** On a failure from a team instance, while the desktop app runs: reproduce or bisect it there. */
+  /**
+   * On a failure from a team instance, while the desktop app runs: reproduce or bisect it there, and run Flake Lab
+   * on its test there when the test has a flake suspect no experiment tested.
+   */
   const desktopJobActions = (context: PiwiContext, failure: BranchFailure, diagnostic: Diagnostic): CodeAction[] => {
     if (!desktopJobs.available(context)) return [];
     const job = (title: string, kind: DesktopJobKind): CodeAction => ({
@@ -553,12 +578,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       command: {
         title,
         command: 'piwi.desktopJob',
-        arguments: [{ root: context.root, executionId: failure.executionId, kind } satisfies DesktopJobParams],
+        arguments: [
+          {
+            root: context.root,
+            executionId: failure.executionId,
+            ...(kind === 'flake-lab' ? { testCaseId: failure.testCaseId } : {}),
+            kind,
+          } satisfies DesktopJobParams,
+        ],
       },
     });
     return [
       job('Reproduce in the desktop app', 'reproduce'),
       job('Find the breaking commit in the desktop app', 'bisect'),
+      ...(hasUntestedSuspect(context.flakeLab.get(failure.testCaseId))
+        ? [job('Run Flake Lab on its untested suspects in the desktop app', 'flake-lab')]
+        : []),
     ];
   };
 
@@ -1219,7 +1254,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           endLine,
           ...(failure ? { failure } : {}),
         });
-        out.push(...flakeLabLines(context, found.id, i, env));
+        out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
         if (!failed || !failure) return;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         reasons.push({
@@ -1471,7 +1506,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
-    const found = failureOf({ root: params.root, executionId: params.executionId });
+    const found = params.executionId ? failureOf({ root: params.root, executionId: params.executionId }) : null;
+    if (params.kind === 'flake-lab') {
+      const context = contextOfRoot(params.root);
+      const testCaseId = params.testCaseId || found?.failure.testCaseId;
+      if (!context?.client || !testCaseId) return { ok: false, message: 'This test is no longer known here.' };
+      if (context.source === 'desktop') {
+        return {
+          ok: false,
+          message: "This test is the desktop app's own: run Reproduce this flake on its Flakiness tab.",
+        };
+      }
+      return desktopJobs.startFlakeLab(
+        { client: context.client },
+        { testCaseId, title: found?.failure.title, clusterId: found?.failure.clusterId },
+      );
+    }
     if (!found?.context.client) return { ok: false, message: 'This failure is no longer in the latest run.' };
     return desktopJobs.start({ client: found.context.client }, found.failure, params.kind);
   });

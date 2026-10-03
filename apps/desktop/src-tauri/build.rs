@@ -36,6 +36,7 @@ fn main() {
             "desktop_reproduce_here",
             "desktop_bisect_here",
             "desktop_flake_lab_here",
+            "desktop_flake_lab_job",
             "desktop_check_local_specs",
             "desktop_check_local_env",
             "desktop_take_pending_open_files",

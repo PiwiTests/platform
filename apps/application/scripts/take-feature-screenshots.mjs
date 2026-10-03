@@ -963,6 +963,111 @@ async function prepareNeverGreenRuns({ base, request }) {
   neverGreenRuns = { interrupted, firstFailed, latest };
 }
 
+/** The project a costly flaky test makes a quarantine candidate in, once per server. */
+let quarantineProposalsProjectId = null;
+async function prepareQuarantineProposals({ base, request }) {
+  if (quarantineProposalsProjectId) return;
+  const projects = await (await request.get(`${base}/api/projects`)).json();
+  const existing = (projects.items ?? projects).find((p) => p.name === 'quarantine-proposals');
+  if (existing) {
+    quarantineProposalsProjectId = existing.id;
+    return;
+  }
+  // Six runs: the card payment times out then passes on retry in each one (a costly flake, so a candidate);
+  // the coupon test flakes on half of them in 50 ms (cheap, so not proposed).
+  for (let i = 0; i < 6; i++) {
+    const testCases = [
+      {
+        title: 'pays with a saved card',
+        status: 'failed',
+        duration: 95_000,
+        retries: 0,
+        location: 'tests/checkout.spec.ts:12:3',
+        error: 'TimeoutError: locator.click: Timeout 90000ms exceeded.',
+      },
+      {
+        title: 'pays with a saved card',
+        status: 'passed',
+        duration: 4200,
+        retries: 1,
+        location: 'tests/checkout.spec.ts:12:3',
+      },
+      {
+        title: 'applies a coupon',
+        status: 'passed',
+        duration: 900,
+        retries: 0,
+        location: 'tests/checkout.spec.ts:30:3',
+      },
+    ];
+    if (i % 2 === 0) {
+      testCases.push({
+        title: 'applies a coupon',
+        status: 'failed',
+        duration: 50,
+        retries: 1,
+        location: 'tests/checkout.spec.ts:30:3',
+        error: 'Error: expect(locator).toHaveText() failed',
+      });
+    }
+    const res = await request.post(`${base}/api/test-runs/submit`, {
+      data: {
+        projectName: 'quarantine-proposals',
+        status: 'passed',
+        startTime: new Date(Date.now() - (6 - i) * 3_600_000).toISOString(),
+        duration: 120_000,
+        totalTests: 2,
+        passedTests: 2,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases,
+      },
+    });
+    quarantineProposalsProjectId = (await res.json()).projectId;
+  }
+}
+
+/**
+ * The Dismiss action on both quarantine proposals: a candidate in the flaky
+ * list with its reason popover open, then project 3's proposed release in the
+ * quarantine view. Opens the popover without submitting, so the scene repeats.
+ */
+function quarantineDismissScene(width, suffix) {
+  return {
+    name: `quarantine-dismiss${suffix}`,
+    description: `Dismiss on a quarantine candidate (flaky list) and on a proposed release (quarantine view), at ${width} px`,
+    tags: ['desktop'],
+    route: '/',
+    viewport: { width, height: 1000 },
+    prepare: prepareQuarantineProposals,
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/projects/${quarantineProposalsProjectId}?tab=flaky-tests`);
+      await page.locator('[data-testid="flaky-quarantine-proposed"]').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('candidate', { of: '[data-shot="flaky-table"]', pad: 12 });
+      await page.locator('[data-shot="flaky-table"] [data-testid="quarantine-dismiss"]').first().click();
+      const reason = page.getByPlaceholder('e.g. the fix is in review');
+      await reason.waitFor();
+      await reason.fill('Card sandbox times out, payments team on it');
+      await settle();
+      await shoot('popover');
+      await page.keyboard.press('Escape');
+      await goto('/projects/3?tab=quarantine');
+      await page
+        .locator('[data-shot="quarantine-table"] [data-testid="quarantine-dismiss"]')
+        .first()
+        .waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('release', { of: '[data-shot="quarantine-table"]', pad: 12 });
+    },
+    outputs: [
+      `quarantine-dismiss${suffix}-candidate.png`,
+      `quarantine-dismiss${suffix}-popover.png`,
+      `quarantine-dismiss${suffix}-release.png`,
+    ],
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -3122,6 +3227,8 @@ const SCENES = [
     of: '[data-shot="flake-lab-inbox"]',
     pad: 8,
   },
+  quarantineDismissScene(1280, ''),
+  quarantineDismissScene(390, '-mobile'),
   {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',

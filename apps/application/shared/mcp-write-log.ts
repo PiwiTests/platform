@@ -16,6 +16,7 @@ export const MCP_WRITE_TOOLS = [
   'triage_cluster',
   'triage_gap',
   'decide_merge_suggestion',
+  'dismiss_quarantine_proposal',
   'set_bug_report_status',
   'set_run_incident',
   'rerun_cluster_in_ci',
@@ -82,6 +83,7 @@ export function mcpCallSubjects(tool: string, args: Record<string, unknown>): Mc
   if (tool === 'set_run_incident') return pick('run', args.runId);
   if (tool === 'submit_diagnosis_feedback') return pick('diagnosis', args.diagnosisId);
   if (tool === 'decide_merge_suggestion') return pick('suggestion', args.suggestionId);
+  if (tool === 'dismiss_quarantine_proposal') return pick('test-case', args.testCaseId);
   return [];
 }
 
@@ -100,6 +102,7 @@ const ACTIONS: Record<McpWriteTool, string> = {
   triage_cluster: 'triaged the cluster',
   triage_gap: 'triaged a gap',
   decide_merge_suggestion: 'decided a merge suggestion',
+  dismiss_quarantine_proposal: 'dismissed a quarantine proposal',
   set_bug_report_status: 'changed a bug report',
   set_run_incident: 'changed the incident flag',
   rerun_cluster_in_ci: 're-ran the tests in CI',

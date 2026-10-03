@@ -1,5 +1,6 @@
 package dev.piwitests.jetbrains
 
+import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -332,6 +333,39 @@ class GlueTest {
         val backend = repo.resolve("backend")
         Files.writeString(backend.resolve("playwright.config.ts"), "")
         assertEquals(Glue.PlaywrightSearch(listOf(backend), listOf(backend)), Glue.findPlaywright(listOf(backend), null))
+    }
+
+    @Test
+    fun `a Flake Lab job's results are offered for sharing, and a lab that could not run warns`() {
+        val shared = Glue.desktopJobNotice(
+            DesktopJobUpdate(
+                jobId = "f00d",
+                kind = "flake-lab",
+                status = "done",
+                message = "Flake Lab reproduced \"t\" at b0b0b0b.",
+                share = DesktopJobShare("Share on piwi.example.com"),
+            ),
+        )
+        assertEquals(
+            Glue.DesktopJobNotice("Flake Lab reproduced \"t\" at b0b0b0b.", false, listOf("Share on piwi.example.com")),
+            shared,
+        )
+        val failed = Glue.desktopJobNotice(
+            DesktopJobUpdate(
+                kind = "flake-lab",
+                status = "done",
+                message = "The desktop app could not run Flake Lab on \"t\": npm ci failed",
+            ),
+        )
+        assertEquals(true, failed.warning)
+        assertEquals(emptyList<String>(), failed.actions)
+    }
+
+    @Test
+    fun `a Flake Lab job's arguments keep the test through the command`() {
+        val params = Gson().fromJson("""{"root":"/shop","testCaseId":9,"kind":"flake-lab"}""", DesktopJobParams::class.java)
+        assertEquals(DesktopJobParams(root = "/shop", testCaseId = 9, kind = "flake-lab"), params)
+        assertEquals(null, params.executionId)
     }
 
     @Test
