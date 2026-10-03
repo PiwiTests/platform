@@ -9,6 +9,7 @@ import {
   FETCH_TIMEOUT_MS,
 } from './ScmProvider';
 import type {
+  ScmCommit,
   ScmCommitDetail,
   ScmCommitAuthor,
   ScmChanges,
@@ -32,6 +33,9 @@ async function bitbucketError(res: Response, action: string): Promise<Error> {
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
+const rangeCommitsCache = new TtlCache<ScmCommit[]>(10 * 60 * 1000);
+/** Commits listed for one range: one page of the commits endpoint. */
+const MAX_RANGE_COMMITS = 100;
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
 // Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
@@ -134,7 +138,41 @@ export class BitbucketProvider extends ScmProvider {
 
   async fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null> {
     if (!isValidGitRef(fromSha) || !isValidGitRef(toSha)) return null;
-    return this.diffRange(fromSha, toSha);
+    const [changes, commits] = await Promise.all([this.diffRange(fromSha, toSha), this.rangeCommits(fromSha, toSha)]);
+    return changes ? { ...changes, commits } : null;
+  }
+
+  /**
+   * The commits reachable from `toSha` and not from `fromSha`, oldest first as
+   * the other hosts list them, with their full messages. Empty when the
+   * commits endpoint fails: the files still answer.
+   */
+  private async rangeCommits(fromSha: string, toSha: string): Promise<ScmCommit[]> {
+    const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:commits:${fromSha}:${toSha}`;
+    const hit = rangeCommitsCache.get(key);
+    if (hit !== undefined) return hit;
+    try {
+      const url = new URL(`${this.base}/commits`);
+      url.searchParams.set('include', toSha);
+      url.searchParams.set('exclude', fromSha);
+      url.searchParams.set('pagelen', String(MAX_RANGE_COMMITS));
+      const res = await fetch(url.toString(), {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { values?: Array<{ hash: string; message?: string }> };
+      const result = (data.values ?? [])
+        .map((c) => {
+          const message = c.message ?? '';
+          return { sha: c.hash.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
+        })
+        .reverse();
+      rangeCommitsCache.set(key, result);
+      return result;
+    } catch {
+      return [];
+    }
   }
 
   /**

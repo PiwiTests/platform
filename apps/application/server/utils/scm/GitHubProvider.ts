@@ -140,6 +140,7 @@ export class GitHubProvider extends ScmProvider {
         commits = (data.commits ?? []).map((c) => ({
           sha: c.sha.slice(0, 7),
           message: c.commit.message.split('\n')[0] ?? '',
+          fullMessage: c.commit.message,
         }));
       }
       const pageFiles = data.files ?? [];

@@ -1,8 +1,8 @@
 {
-  "id": "85be5471-3c64-4ba9-be77-4e59fcdc8cb0",
-  "prevId": "29b6e657-2661-4ecf-8dd4-401945febe45",
   "version": "6",
   "dialect": "sqlite",
+  "id": "0b129d44-fe22-4586-873e-92d369180d9d",
+  "prevId": "85be5471-3c64-4ba9-be77-4e59fcdc8cb0",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -73,11 +73,11 @@
         "account_tokens_user_id_users_id_fk": {
           "name": "account_tokens_user_id_users_id_fk",
           "tableFrom": "account_tokens",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -314,11 +314,11 @@
         "analytics_daily_rollups_project_id_projects_id_fk": {
           "name": "analytics_daily_rollups_project_id_projects_id_fk",
           "tableFrom": "analytics_daily_rollups",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -421,20 +421,20 @@
         "analytics_dashboards_owner_id_users_id_fk": {
           "name": "analytics_dashboards_owner_id_users_id_fk",
           "tableFrom": "analytics_dashboards",
-          "columnsFrom": ["owner_id"],
           "tableTo": "users",
+          "columnsFrom": ["owner_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "analytics_dashboards_updated_by_users_id_fk": {
           "name": "analytics_dashboards_updated_by_users_id_fk",
           "tableFrom": "analytics_dashboards",
-          "columnsFrom": ["updated_by"],
           "tableTo": "users",
+          "columnsFrom": ["updated_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -517,11 +517,11 @@
         "api_keys_user_id_users_id_fk": {
           "name": "api_keys_user_id_users_id_fk",
           "tableFrom": "api_keys",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -728,47 +728,47 @@
         "bug_reports_project_id_projects_id_fk": {
           "name": "bug_reports_project_id_projects_id_fk",
           "tableFrom": "bug_reports",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "bug_reports_created_by_users_id_fk": {
           "name": "bug_reports_created_by_users_id_fk",
           "tableFrom": "bug_reports",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "bug_reports_test_case_id_test_cases_id_fk": {
           "name": "bug_reports_test_case_id_test_cases_id_fk",
           "tableFrom": "bug_reports",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "bug_reports_status_run_id_test_runs_id_fk": {
           "name": "bug_reports_status_run_id_test_runs_id_fk",
           "tableFrom": "bug_reports",
-          "columnsFrom": ["status_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["status_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "bug_reports_closed_by_run_id_test_runs_id_fk": {
           "name": "bug_reports_closed_by_run_id_test_runs_id_fk",
           "tableFrom": "bug_reports",
-          "columnsFrom": ["closed_by_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["closed_by_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -870,29 +870,29 @@
         "bug_reproductions_bug_report_id_bug_reports_id_fk": {
           "name": "bug_reproductions_bug_report_id_bug_reports_id_fk",
           "tableFrom": "bug_reproductions",
-          "columnsFrom": ["bug_report_id"],
           "tableTo": "bug_reports",
+          "columnsFrom": ["bug_report_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "bug_reproductions_run_id_test_runs_id_fk": {
           "name": "bug_reproductions_run_id_test_runs_id_fk",
           "tableFrom": "bug_reproductions",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "bug_reproductions_created_by_users_id_fk": {
           "name": "bug_reproductions_created_by_users_id_fk",
           "tableFrom": "bug_reproductions",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -956,11 +956,11 @@
         "case_payloads_project_id_projects_id_fk": {
           "name": "case_payloads_project_id_projects_id_fk",
           "tableFrom": "case_payloads",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1070,29 +1070,29 @@
         "cluster_merge_suggestions_project_id_projects_id_fk": {
           "name": "cluster_merge_suggestions_project_id_projects_id_fk",
           "tableFrom": "cluster_merge_suggestions",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "cluster_merge_suggestions_cluster_a_id_failure_clusters_id_fk": {
           "name": "cluster_merge_suggestions_cluster_a_id_failure_clusters_id_fk",
           "tableFrom": "cluster_merge_suggestions",
-          "columnsFrom": ["cluster_a_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_a_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "cluster_merge_suggestions_cluster_b_id_failure_clusters_id_fk": {
           "name": "cluster_merge_suggestions_cluster_b_id_failure_clusters_id_fk",
           "tableFrom": "cluster_merge_suggestions",
-          "columnsFrom": ["cluster_b_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_b_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1182,29 +1182,29 @@
         "code_reach_project_id_projects_id_fk": {
           "name": "code_reach_project_id_projects_id_fk",
           "tableFrom": "code_reach",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "code_reach_test_case_id_test_cases_id_fk": {
           "name": "code_reach_test_case_id_test_cases_id_fk",
           "tableFrom": "code_reach",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "code_reach_last_seen_run_id_test_runs_id_fk": {
           "name": "code_reach_last_seen_run_id_test_runs_id_fk",
           "tableFrom": "code_reach",
-          "columnsFrom": ["last_seen_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["last_seen_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1398,65 +1398,65 @@
         "entity_links_test_run_id_test_runs_id_fk": {
           "name": "entity_links_test_run_id_test_runs_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["test_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["test_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "entity_links_test_runs_case_id_test_runs_cases_id_fk": {
           "name": "entity_links_test_runs_case_id_test_runs_cases_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["test_runs_case_id"],
           "tableTo": "test_runs_cases",
+          "columnsFrom": ["test_runs_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "entity_links_test_case_id_test_cases_id_fk": {
           "name": "entity_links_test_case_id_test_cases_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "entity_links_failure_cluster_id_failure_clusters_id_fk": {
           "name": "entity_links_failure_cluster_id_failure_clusters_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["failure_cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["failure_cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "entity_links_bug_report_id_bug_reports_id_fk": {
           "name": "entity_links_bug_report_id_bug_reports_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["bug_report_id"],
           "tableTo": "bug_reports",
+          "columnsFrom": ["bug_report_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "entity_links_connection_id_integration_connections_id_fk": {
           "name": "entity_links_connection_id_integration_connections_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["connection_id"],
           "tableTo": "integration_connections",
+          "columnsFrom": ["connection_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "entity_links_created_by_users_id_fk": {
           "name": "entity_links_created_by_users_id_fk",
           "tableFrom": "entity_links",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1584,20 +1584,20 @@
         "extension_device_codes_user_id_users_id_fk": {
           "name": "extension_device_codes_user_id_users_id_fk",
           "tableFrom": "extension_device_codes",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "extension_device_codes_api_key_id_api_keys_id_fk": {
           "name": "extension_device_codes_api_key_id_api_keys_id_fk",
           "tableFrom": "extension_device_codes",
-          "columnsFrom": ["api_key_id"],
           "tableTo": "api_keys",
+          "columnsFrom": ["api_key_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1659,20 +1659,20 @@
         "failure_cluster_aliases_project_id_projects_id_fk": {
           "name": "failure_cluster_aliases_project_id_projects_id_fk",
           "tableFrom": "failure_cluster_aliases",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "failure_cluster_aliases_cluster_id_failure_clusters_id_fk": {
           "name": "failure_cluster_aliases_cluster_id_failure_clusters_id_fk",
           "tableFrom": "failure_cluster_aliases",
-          "columnsFrom": ["cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1746,29 +1746,29 @@
         "failure_cluster_test_routes_project_id_projects_id_fk": {
           "name": "failure_cluster_test_routes_project_id_projects_id_fk",
           "tableFrom": "failure_cluster_test_routes",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "failure_cluster_test_routes_test_case_id_test_cases_id_fk": {
           "name": "failure_cluster_test_routes_test_case_id_test_cases_id_fk",
           "tableFrom": "failure_cluster_test_routes",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "failure_cluster_test_routes_cluster_id_failure_clusters_id_fk": {
           "name": "failure_cluster_test_routes_cluster_id_failure_clusters_id_fk",
           "tableFrom": "failure_cluster_test_routes",
-          "columnsFrom": ["cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2012,11 +2012,11 @@
         "failure_clusters_project_id_projects_id_fk": {
           "name": "failure_clusters_project_id_projects_id_fk",
           "tableFrom": "failure_clusters",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2192,20 +2192,20 @@
         "failure_diagnoses_cluster_id_failure_clusters_id_fk": {
           "name": "failure_diagnoses_cluster_id_failure_clusters_id_fk",
           "tableFrom": "failure_diagnoses",
-          "columnsFrom": ["cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "failure_diagnoses_test_runs_case_id_test_runs_cases_id_fk": {
           "name": "failure_diagnoses_test_runs_case_id_test_runs_cases_id_fk",
           "tableFrom": "failure_diagnoses",
-          "columnsFrom": ["test_runs_case_id"],
           "tableTo": "test_runs_cases",
+          "columnsFrom": ["test_runs_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2386,29 +2386,29 @@
         "failure_diagnosis_versions_diagnosis_id_failure_diagnoses_id_fk": {
           "name": "failure_diagnosis_versions_diagnosis_id_failure_diagnoses_id_fk",
           "tableFrom": "failure_diagnosis_versions",
-          "columnsFrom": ["diagnosis_id"],
           "tableTo": "failure_diagnoses",
+          "columnsFrom": ["diagnosis_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "failure_diagnosis_versions_cluster_id_failure_clusters_id_fk": {
           "name": "failure_diagnosis_versions_cluster_id_failure_clusters_id_fk",
           "tableFrom": "failure_diagnosis_versions",
-          "columnsFrom": ["cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "failure_diagnosis_versions_test_runs_case_id_test_runs_cases_id_fk": {
           "name": "failure_diagnosis_versions_test_runs_case_id_test_runs_cases_id_fk",
           "tableFrom": "failure_diagnosis_versions",
-          "columnsFrom": ["test_runs_case_id"],
           "tableTo": "test_runs_cases",
+          "columnsFrom": ["test_runs_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2517,29 +2517,29 @@
         "files_test_run_id_test_runs_id_fk": {
           "name": "files_test_run_id_test_runs_id_fk",
           "tableFrom": "files",
-          "columnsFrom": ["test_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["test_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "files_test_runs_case_id_test_runs_cases_id_fk": {
           "name": "files_test_runs_case_id_test_runs_cases_id_fk",
           "tableFrom": "files",
-          "columnsFrom": ["test_runs_case_id"],
           "tableTo": "test_runs_cases",
+          "columnsFrom": ["test_runs_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "files_blob_id_trace_blobs_id_fk": {
           "name": "files_blob_id_trace_blobs_id_fk",
           "tableFrom": "files",
-          "columnsFrom": ["blob_id"],
           "tableTo": "trace_blobs",
+          "columnsFrom": ["blob_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2665,11 +2665,11 @@
         "flake_arms_experiment_id_flake_experiments_id_fk": {
           "name": "flake_arms_experiment_id_flake_experiments_id_fk",
           "tableFrom": "flake_arms",
-          "columnsFrom": ["experiment_id"],
           "tableTo": "flake_experiments",
+          "columnsFrom": ["experiment_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2795,20 +2795,20 @@
         "flake_experiments_project_id_projects_id_fk": {
           "name": "flake_experiments_project_id_projects_id_fk",
           "tableFrom": "flake_experiments",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "flake_experiments_test_case_id_test_cases_id_fk": {
           "name": "flake_experiments_test_case_id_test_cases_id_fk",
           "tableFrom": "flake_experiments",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2972,29 +2972,29 @@
         "gate_evaluations_project_id_projects_id_fk": {
           "name": "gate_evaluations_project_id_projects_id_fk",
           "tableFrom": "gate_evaluations",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "gate_evaluations_run_id_test_runs_id_fk": {
           "name": "gate_evaluations_run_id_test_runs_id_fk",
           "tableFrom": "gate_evaluations",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "gate_evaluations_escaped_run_id_test_runs_id_fk": {
           "name": "gate_evaluations_escaped_run_id_test_runs_id_fk",
           "tableFrom": "gate_evaluations",
-          "columnsFrom": ["escaped_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["escaped_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3115,14 +3115,14 @@
         "idx_graph_edges_canonical": {
           "name": "idx_graph_edges_canonical",
           "columns": ["project_id", "from_kind", "from_key", "kind", "to_kind", "to_key"],
-          "where": "\"graph_edges\".\"branch\" is null",
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"graph_edges\".\"branch\" is null"
         },
         "idx_graph_edges_branch": {
           "name": "idx_graph_edges_branch",
           "columns": ["project_id", "from_kind", "from_key", "kind", "to_kind", "to_key", "branch"],
-          "where": "\"graph_edges\".\"branch\" is not null",
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"graph_edges\".\"branch\" is not null"
         },
         "idx_graph_edges_from": {
           "name": "idx_graph_edges_from",
@@ -3144,11 +3144,11 @@
         "graph_edges_project_id_projects_id_fk": {
           "name": "graph_edges_project_id_projects_id_fk",
           "tableFrom": "graph_edges",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3255,14 +3255,14 @@
         "idx_graph_nodes_canonical": {
           "name": "idx_graph_nodes_canonical",
           "columns": ["project_id", "kind", "key"],
-          "where": "\"graph_nodes\".\"branch\" is null",
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"graph_nodes\".\"branch\" is null"
         },
         "idx_graph_nodes_branch": {
           "name": "idx_graph_nodes_branch",
           "columns": ["project_id", "kind", "key", "branch"],
-          "where": "\"graph_nodes\".\"branch\" is not null",
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"graph_nodes\".\"branch\" is not null"
         },
         "idx_graph_nodes_project_kind": {
           "name": "idx_graph_nodes_project_kind",
@@ -3284,11 +3284,11 @@
         "graph_nodes_project_id_projects_id_fk": {
           "name": "graph_nodes_project_id_projects_id_fk",
           "tableFrom": "graph_nodes",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3367,11 +3367,11 @@
         "handback_outcome_rollups_project_id_projects_id_fk": {
           "name": "handback_outcome_rollups_project_id_projects_id_fk",
           "tableFrom": "handback_outcome_rollups",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3524,38 +3524,38 @@
         "handback_outcomes_project_id_projects_id_fk": {
           "name": "handback_outcomes_project_id_projects_id_fk",
           "tableFrom": "handback_outcomes",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "handback_outcomes_actor_user_id_users_id_fk": {
           "name": "handback_outcomes_actor_user_id_users_id_fk",
           "tableFrom": "handback_outcomes",
-          "columnsFrom": ["actor_user_id"],
           "tableTo": "users",
+          "columnsFrom": ["actor_user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "handback_outcomes_actor_api_key_id_api_keys_id_fk": {
           "name": "handback_outcomes_actor_api_key_id_api_keys_id_fk",
           "tableFrom": "handback_outcomes",
-          "columnsFrom": ["actor_api_key_id"],
           "tableTo": "api_keys",
+          "columnsFrom": ["actor_api_key_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "handback_outcomes_run_id_test_runs_id_fk": {
           "name": "handback_outcomes_run_id_test_runs_id_fk",
           "tableFrom": "handback_outcomes",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3686,20 +3686,20 @@
         "heal_actions_project_id_projects_id_fk": {
           "name": "heal_actions_project_id_projects_id_fk",
           "tableFrom": "heal_actions",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "heal_actions_run_id_test_runs_id_fk": {
           "name": "heal_actions_run_id_test_runs_id_fk",
           "tableFrom": "heal_actions",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3855,29 +3855,29 @@
         "integration_actions_connection_id_integration_connections_id_fk": {
           "name": "integration_actions_connection_id_integration_connections_id_fk",
           "tableFrom": "integration_actions",
-          "columnsFrom": ["connection_id"],
           "tableTo": "integration_connections",
+          "columnsFrom": ["connection_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "integration_actions_project_id_projects_id_fk": {
           "name": "integration_actions_project_id_projects_id_fk",
           "tableFrom": "integration_actions",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "integration_actions_requested_by_users_id_fk": {
           "name": "integration_actions_requested_by_users_id_fk",
           "tableFrom": "integration_actions",
-          "columnsFrom": ["requested_by"],
           "tableTo": "users",
+          "columnsFrom": ["requested_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4100,20 +4100,20 @@
         "locator_snapshots_test_case_id_test_cases_id_fk": {
           "name": "locator_snapshots_test_case_id_test_cases_id_fk",
           "tableFrom": "locator_snapshots",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "locator_snapshots_last_seen_run_id_test_runs_id_fk": {
           "name": "locator_snapshots_last_seen_run_id_test_runs_id_fk",
           "tableFrom": "locator_snapshots",
-          "columnsFrom": ["last_seen_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["last_seen_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4261,38 +4261,38 @@
         "locator_usages_project_id_projects_id_fk": {
           "name": "locator_usages_project_id_projects_id_fk",
           "tableFrom": "locator_usages",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "locator_usages_test_case_id_test_cases_id_fk": {
           "name": "locator_usages_test_case_id_test_cases_id_fk",
           "tableFrom": "locator_usages",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "locator_usages_first_seen_run_id_test_runs_id_fk": {
           "name": "locator_usages_first_seen_run_id_test_runs_id_fk",
           "tableFrom": "locator_usages",
-          "columnsFrom": ["first_seen_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["first_seen_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "locator_usages_last_seen_run_id_test_runs_id_fk": {
           "name": "locator_usages_last_seen_run_id_test_runs_id_fk",
           "tableFrom": "locator_usages",
-          "columnsFrom": ["last_seen_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["last_seen_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4403,20 +4403,154 @@
         "markers_project_id_projects_id_fk": {
           "name": "markers_project_id_projects_id_fk",
           "tableFrom": "markers",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "markers_run_id_test_runs_id_fk": {
           "name": "markers_run_id_test_runs_id_fk",
           "tableFrom": "markers",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "mcp_tool_calls": {
+      "name": "mcp_tool_calls",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "api_key_id": {
+          "name": "api_key_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tool": {
+          "name": "tool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subject_type": {
+          "name": "subject_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_mcp_tool_calls_subject": {
+          "name": "idx_mcp_tool_calls_subject",
+          "columns": ["subject_type", "subject_id"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_project": {
+          "name": "idx_mcp_tool_calls_project",
+          "columns": ["project_id", "created_at"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_created": {
+          "name": "idx_mcp_tool_calls_created",
+          "columns": ["created_at"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_api_key": {
+          "name": "idx_mcp_tool_calls_api_key",
+          "columns": ["api_key_id"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_user": {
+          "name": "idx_mcp_tool_calls_user",
+          "columns": ["user_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "mcp_tool_calls_project_id_projects_id_fk": {
+          "name": "mcp_tool_calls_project_id_projects_id_fk",
+          "tableFrom": "mcp_tool_calls",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mcp_tool_calls_api_key_id_api_keys_id_fk": {
+          "name": "mcp_tool_calls_api_key_id_api_keys_id_fk",
+          "tableFrom": "mcp_tool_calls",
+          "tableTo": "api_keys",
+          "columnsFrom": ["api_key_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "mcp_tool_calls_user_id_users_id_fk": {
+          "name": "mcp_tool_calls_user_id_users_id_fk",
+          "tableFrom": "mcp_tool_calls",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4546,20 +4680,20 @@
         "network_requests_test_runs_case_id_test_runs_cases_id_fk": {
           "name": "network_requests_test_runs_case_id_test_runs_cases_id_fk",
           "tableFrom": "network_requests",
-          "columnsFrom": ["test_runs_case_id"],
           "tableTo": "test_runs_cases",
+          "columnsFrom": ["test_runs_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "network_requests_test_run_id_test_runs_id_fk": {
           "name": "network_requests_test_run_id_test_runs_id_fk",
           "tableFrom": "network_requests",
-          "columnsFrom": ["test_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["test_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4638,11 +4772,11 @@
         "notification_channels_user_id_users_id_fk": {
           "name": "notification_channels_user_id_users_id_fk",
           "tableFrom": "notification_channels",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4765,20 +4899,20 @@
         "notification_deliveries_subscription_id_subscriptions_id_fk": {
           "name": "notification_deliveries_subscription_id_subscriptions_id_fk",
           "tableFrom": "notification_deliveries",
-          "columnsFrom": ["subscription_id"],
           "tableTo": "subscriptions",
+          "columnsFrom": ["subscription_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "notification_deliveries_channel_id_notification_channels_id_fk": {
           "name": "notification_deliveries_channel_id_notification_channels_id_fk",
           "tableFrom": "notification_deliveries",
-          "columnsFrom": ["channel_id"],
           "tableTo": "notification_channels",
+          "columnsFrom": ["channel_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4875,20 +5009,20 @@
         "pr_feedback_posts_project_id_projects_id_fk": {
           "name": "pr_feedback_posts_project_id_projects_id_fk",
           "tableFrom": "pr_feedback_posts",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "pr_feedback_posts_run_id_test_runs_id_fk": {
           "name": "pr_feedback_posts_run_id_test_runs_id_fk",
           "tableFrom": "pr_feedback_posts",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5019,29 +5153,29 @@
         "probes_project_id_projects_id_fk": {
           "name": "probes_project_id_projects_id_fk",
           "tableFrom": "probes",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "probes_test_case_id_test_cases_id_fk": {
           "name": "probes_test_case_id_test_cases_id_fk",
           "tableFrom": "probes",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "probes_node_id_graph_nodes_id_fk": {
           "name": "probes_node_id_graph_nodes_id_fk",
           "tableFrom": "probes",
-          "columnsFrom": ["node_id"],
           "tableTo": "graph_nodes",
+          "columnsFrom": ["node_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5113,29 +5247,29 @@
         "project_assignments_user_id_users_id_fk": {
           "name": "project_assignments_user_id_users_id_fk",
           "tableFrom": "project_assignments",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_assignments_project_id_projects_id_fk": {
           "name": "project_assignments_project_id_projects_id_fk",
           "tableFrom": "project_assignments",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_assignments_created_by_users_id_fk": {
           "name": "project_assignments_created_by_users_id_fk",
           "tableFrom": "project_assignments",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5286,20 +5420,20 @@
         "project_integrations_project_id_projects_id_fk": {
           "name": "project_integrations_project_id_projects_id_fk",
           "tableFrom": "project_integrations",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_integrations_connection_id_integration_connections_id_fk": {
           "name": "project_integrations_connection_id_integration_connections_id_fk",
           "tableFrom": "project_integrations",
-          "columnsFrom": ["connection_id"],
           "tableTo": "integration_connections",
+          "columnsFrom": ["connection_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5340,20 +5474,20 @@
         "project_tags_project_id_projects_id_fk": {
           "name": "project_tags_project_id_projects_id_fk",
           "tableFrom": "project_tags",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_tags_tag_id_tags_id_fk": {
           "name": "project_tags_tag_id_tags_id_fk",
           "tableFrom": "project_tags",
-          "columnsFrom": ["tag_id"],
           "tableTo": "tags",
+          "columnsFrom": ["tag_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -5451,11 +5585,11 @@
         "project_url_patterns_project_id_projects_id_fk": {
           "name": "project_url_patterns_project_id_projects_id_fk",
           "tableFrom": "project_url_patterns",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5714,37 +5848,37 @@
         "idx_quarantined_tests_active": {
           "name": "idx_quarantined_tests_active",
           "columns": ["test_case_id"],
-          "where": "released_at IS NULL",
-          "isUnique": true
+          "isUnique": true,
+          "where": "released_at IS NULL"
         }
       },
       "foreignKeys": {
         "quarantined_tests_project_id_projects_id_fk": {
           "name": "quarantined_tests_project_id_projects_id_fk",
           "tableFrom": "quarantined_tests",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "quarantined_tests_test_case_id_test_cases_id_fk": {
           "name": "quarantined_tests_test_case_id_test_cases_id_fk",
           "tableFrom": "quarantined_tests",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "quarantined_tests_created_by_users_id_fk": {
           "name": "quarantined_tests_created_by_users_id_fk",
           "tableFrom": "quarantined_tests",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5920,20 +6054,20 @@
         "report_schedules_user_id_users_id_fk": {
           "name": "report_schedules_user_id_users_id_fk",
           "tableFrom": "report_schedules",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "report_schedules_dashboard_id_analytics_dashboards_id_fk": {
           "name": "report_schedules_dashboard_id_analytics_dashboards_id_fk",
           "tableFrom": "report_schedules",
-          "columnsFrom": ["dashboard_id"],
           "tableTo": "analytics_dashboards",
+          "columnsFrom": ["dashboard_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6064,20 +6198,20 @@
         "report_snapshots_schedule_id_report_schedules_id_fk": {
           "name": "report_snapshots_schedule_id_report_schedules_id_fk",
           "tableFrom": "report_snapshots",
-          "columnsFrom": ["schedule_id"],
           "tableTo": "report_schedules",
+          "columnsFrom": ["schedule_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "report_snapshots_created_by_users_id_fk": {
           "name": "report_snapshots_created_by_users_id_fk",
           "tableFrom": "report_snapshots",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6247,11 +6381,11 @@
         "resource_findings_project_id_projects_id_fk": {
           "name": "resource_findings_project_id_projects_id_fk",
           "tableFrom": "resource_findings",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6343,20 +6477,20 @@
         "resource_occurrences_finding_id_resource_findings_id_fk": {
           "name": "resource_occurrences_finding_id_resource_findings_id_fk",
           "tableFrom": "resource_occurrences",
-          "columnsFrom": ["finding_id"],
           "tableTo": "resource_findings",
+          "columnsFrom": ["finding_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "resource_occurrences_run_id_test_runs_id_fk": {
           "name": "resource_occurrences_run_id_test_runs_id_fk",
           "tableFrom": "resource_occurrences",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6460,20 +6594,20 @@
         "run_locator_breaks_run_id_test_runs_id_fk": {
           "name": "run_locator_breaks_run_id_test_runs_id_fk",
           "tableFrom": "run_locator_breaks",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "run_locator_breaks_project_id_projects_id_fk": {
           "name": "run_locator_breaks_project_id_projects_id_fk",
           "tableFrom": "run_locator_breaks",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6735,47 +6869,47 @@
         "scenario_gaps_project_id_projects_id_fk": {
           "name": "scenario_gaps_project_id_projects_id_fk",
           "tableFrom": "scenario_gaps",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "scenario_gaps_feature_node_id_graph_nodes_id_fk": {
           "name": "scenario_gaps_feature_node_id_graph_nodes_id_fk",
           "tableFrom": "scenario_gaps",
-          "columnsFrom": ["feature_node_id"],
           "tableTo": "graph_nodes",
+          "columnsFrom": ["feature_node_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "scenario_gaps_test_case_id_test_cases_id_fk": {
           "name": "scenario_gaps_test_case_id_test_cases_id_fk",
           "tableFrom": "scenario_gaps",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "scenario_gaps_failure_cluster_id_failure_clusters_id_fk": {
           "name": "scenario_gaps_failure_cluster_id_failure_clusters_id_fk",
           "tableFrom": "scenario_gaps",
-          "columnsFrom": ["failure_cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["failure_cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         },
         "scenario_gaps_triaged_by_users_id_fk": {
           "name": "scenario_gaps_triaged_by_users_id_fk",
           "tableFrom": "scenario_gaps",
-          "columnsFrom": ["triaged_by"],
           "tableTo": "users",
+          "columnsFrom": ["triaged_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6897,20 +7031,20 @@
         "share_links_project_id_projects_id_fk": {
           "name": "share_links_project_id_projects_id_fk",
           "tableFrom": "share_links",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "share_links_created_by_users_id_fk": {
           "name": "share_links_created_by_users_id_fk",
           "tableFrom": "share_links",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7028,29 +7162,29 @@
         "subscriptions_user_id_users_id_fk": {
           "name": "subscriptions_user_id_users_id_fk",
           "tableFrom": "subscriptions",
-          "columnsFrom": ["user_id"],
           "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "subscriptions_channel_id_notification_channels_id_fk": {
           "name": "subscriptions_channel_id_notification_channels_id_fk",
           "tableFrom": "subscriptions",
-          "columnsFrom": ["channel_id"],
           "tableTo": "notification_channels",
+          "columnsFrom": ["channel_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "subscriptions_project_id_projects_id_fk": {
           "name": "subscriptions_project_id_projects_id_fk",
           "tableFrom": "subscriptions",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7257,20 +7391,20 @@
         "test_cases_project_id_projects_id_fk": {
           "name": "test_cases_project_id_projects_id_fk",
           "tableFrom": "test_cases",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "test_cases_suite_id_test_suites_id_fk": {
           "name": "test_cases_suite_id_test_suites_id_fk",
           "tableFrom": "test_cases",
-          "columnsFrom": ["suite_id"],
           "tableTo": "test_suites",
+          "columnsFrom": ["suite_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7412,11 +7546,11 @@
         "test_functions_project_id_projects_id_fk": {
           "name": "test_functions_project_id_projects_id_fk",
           "tableFrom": "test_functions",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7474,11 +7608,11 @@
         "test_run_resource_reports_run_id_test_runs_id_fk": {
           "name": "test_run_resource_reports_run_id_test_runs_id_fk",
           "tableFrom": "test_run_resource_reports",
-          "columnsFrom": ["run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7781,20 +7915,20 @@
         "test_runs_project_id_projects_id_fk": {
           "name": "test_runs_project_id_projects_id_fk",
           "tableFrom": "test_runs",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "test_runs_kept_by_users_id_fk": {
           "name": "test_runs_kept_by_users_id_fk",
           "tableFrom": "test_runs",
-          "columnsFrom": ["kept_by"],
           "tableTo": "users",
+          "columnsFrom": ["kept_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8180,136 +8314,136 @@
         "idx_trc_aria_payload": {
           "name": "idx_trc_aria_payload",
           "columns": ["aria_snapshot_payload_id"],
-          "where": "aria_snapshot_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "aria_snapshot_payload_id IS NOT NULL"
         },
         "idx_trc_aria_json_payload": {
           "name": "idx_trc_aria_json_payload",
           "columns": ["aria_snapshot_json_payload_id"],
-          "where": "aria_snapshot_json_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "aria_snapshot_json_payload_id IS NOT NULL"
         },
         "idx_trc_source_payload": {
           "name": "idx_trc_source_payload",
           "columns": ["test_source_payload_id"],
-          "where": "test_source_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "test_source_payload_id IS NOT NULL"
         },
         "idx_trc_frames_payload": {
           "name": "idx_trc_frames_payload",
           "columns": ["test_source_frames_payload_id"],
-          "where": "test_source_frames_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "test_source_frames_payload_id IS NOT NULL"
         },
         "idx_trc_page_inventory_payload": {
           "name": "idx_trc_page_inventory_payload",
           "columns": ["page_inventory_payload_id"],
-          "where": "page_inventory_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "page_inventory_payload_id IS NOT NULL"
         },
         "idx_trc_locator_pages_payload": {
           "name": "idx_trc_locator_pages_payload",
           "columns": ["locator_pages_payload_id"],
-          "where": "locator_pages_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "locator_pages_payload_id IS NOT NULL"
         },
         "idx_trc_code_reach_payload": {
           "name": "idx_trc_code_reach_payload",
           "columns": ["code_reach_payload_id"],
-          "where": "code_reach_payload_id IS NOT NULL",
-          "isUnique": false
+          "isUnique": false,
+          "where": "code_reach_payload_id IS NOT NULL"
         }
       },
       "foreignKeys": {
         "test_runs_cases_test_run_id_test_runs_id_fk": {
           "name": "test_runs_cases_test_run_id_test_runs_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["test_run_id"],
           "tableTo": "test_runs",
+          "columnsFrom": ["test_run_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "test_runs_cases_test_case_id_test_cases_id_fk": {
           "name": "test_runs_cases_test_case_id_test_cases_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["test_case_id"],
           "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "test_runs_cases_failure_cluster_id_failure_clusters_id_fk": {
           "name": "test_runs_cases_failure_cluster_id_failure_clusters_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["failure_cluster_id"],
           "tableTo": "failure_clusters",
+          "columnsFrom": ["failure_cluster_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_aria_snapshot_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_aria_snapshot_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["aria_snapshot_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["aria_snapshot_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_aria_snapshot_json_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_aria_snapshot_json_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["aria_snapshot_json_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["aria_snapshot_json_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_test_source_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_test_source_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["test_source_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["test_source_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_test_source_frames_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_test_source_frames_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["test_source_frames_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["test_source_frames_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_page_inventory_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_page_inventory_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["page_inventory_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["page_inventory_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_locator_pages_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_locator_pages_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["locator_pages_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["locator_pages_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         },
         "test_runs_cases_code_reach_payload_id_case_payloads_id_fk": {
           "name": "test_runs_cases_code_reach_payload_id_case_payloads_id_fk",
           "tableFrom": "test_runs_cases",
-          "columnsFrom": ["code_reach_payload_id"],
           "tableTo": "case_payloads",
+          "columnsFrom": ["code_reach_payload_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8412,20 +8546,20 @@
         "test_selections_project_id_projects_id_fk": {
           "name": "test_selections_project_id_projects_id_fk",
           "tableFrom": "test_selections",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "test_selections_created_by_users_id_fk": {
           "name": "test_selections_created_by_users_id_fk",
           "tableFrom": "test_selections",
-          "columnsFrom": ["created_by"],
           "tableTo": "users",
+          "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8504,11 +8638,11 @@
         "test_suites_project_id_projects_id_fk": {
           "name": "test_suites_project_id_projects_id_fk",
           "tableFrom": "test_suites",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8556,20 +8690,20 @@
         "trace_blob_resources_blob_id_trace_blobs_id_fk": {
           "name": "trace_blob_resources_blob_id_trace_blobs_id_fk",
           "tableFrom": "trace_blob_resources",
-          "columnsFrom": ["blob_id"],
           "tableTo": "trace_blobs",
+          "columnsFrom": ["blob_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "trace_blob_resources_resource_id_trace_resources_id_fk": {
           "name": "trace_blob_resources_resource_id_trace_resources_id_fk",
           "tableFrom": "trace_blob_resources",
-          "columnsFrom": ["resource_id"],
           "tableTo": "trace_resources",
+          "columnsFrom": ["resource_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8641,11 +8775,11 @@
         "trace_blobs_project_id_projects_id_fk": {
           "name": "trace_blobs_project_id_projects_id_fk",
           "tableFrom": "trace_blobs",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8709,11 +8843,11 @@
         "trace_resources_project_id_projects_id_fk": {
           "name": "trace_resources_project_id_projects_id_fk",
           "tableFrom": "trace_resources",
-          "columnsFrom": ["project_id"],
           "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8843,9 +8977,9 @@
   "views": {},
   "enums": {},
   "_meta": {
-    "columns": {},
     "schemas": {},
-    "tables": {}
+    "tables": {},
+    "columns": {}
   },
   "internal": {
     "indexes": {}

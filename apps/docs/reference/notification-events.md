@@ -83,6 +83,7 @@ Every event that comes from a run carries that run's `branch` and `environment` 
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the
   verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).
+  A fix landed by an [auto-heal PR](/features/auto-heal#after-the-pr-opens) carries `healPr` (`{ number, url, actionId }`).
 - **`diagnosis.completed`**: the cluster, and the diagnosis's `summary`, `rootCause`, `category` and `confidence`.
 
 A `cluster.*` event also carries `knownIssue` (`{ key, url }`) when the cluster is linked to a tracker issue.

@@ -19,6 +19,8 @@ export interface RankedLocator {
    * surfaced distinctly and preferred as the recommended fix.
    */
   pickedByUser?: boolean;
+  /** When the pick was saved from the dashboard's snapshot picker, ISO 8601. */
+  pickedAt?: string;
 }
 
 /**
