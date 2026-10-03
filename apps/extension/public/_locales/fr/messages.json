@@ -1914,6 +1914,60 @@
   "record_pausedNote": {
     "message": "En pause : ce que vous faites ici n’est pas enregistré tant que vous ne reprenez pas."
   },
+  "record_checkElement": {
+    "message": "Vérifier un élément"
+  },
+  "record_checkAddress": {
+    "message": "Vérifier l’adresse"
+  },
+  "record_checkOn": {
+    "message": "Élément : $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "record_checkWhat": {
+    "message": "Ce qu’il faut vérifier"
+  },
+  "record_checkText": {
+    "message": "Son texte"
+  },
+  "record_checkValue": {
+    "message": "Sa valeur"
+  },
+  "record_checkName": {
+    "message": "Son nom, tel que les lecteurs d’écran l’annoncent"
+  },
+  "record_checkVisible": {
+    "message": "Il est visible"
+  },
+  "record_checkHidden": {
+    "message": "Il est masqué"
+  },
+  "record_checkEnabled": {
+    "message": "Il est utilisable, pas grisé"
+  },
+  "record_checkDisabled": {
+    "message": "Il est grisé, pas utilisable"
+  },
+  "record_checkExpected": {
+    "message": "Valeur attendue"
+  },
+  "record_checkAddressLabel": {
+    "message": "L’adresse où la page doit être"
+  },
+  "record_checkAddressEmpty": {
+    "message": "Saisissez l’adresse où la page doit être."
+  },
+  "record_checkAdd": {
+    "message": "Ajouter la vérification"
+  },
+  "record_checkNoLocator": {
+    "message": "Aucun locator ne trouve cet élément seul : choisissez-en un autre."
+  },
   "record_lastLocator": {
     "message": "Dernier locator"
   },

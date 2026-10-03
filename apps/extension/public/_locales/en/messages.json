@@ -2305,6 +2305,76 @@
     "message": "Paused: what you do here is not recorded until you resume.",
     "description": "Recorder bar in a browser the editor opened for a recording, while it is paused: one line under the title."
   },
+  "record_checkElement": {
+    "message": "Check an element",
+    "description": "Recorder bar: button that lets the person pick an element and add a check (an assertion) of what it shows now, such as its text. Also the title of the dialog it opens. Short: the bar is narrow."
+  },
+  "record_checkAddress": {
+    "message": "Check the address",
+    "description": "Recorder bar: button that adds a check (an assertion) of the page's address. Also the title of the dialog it opens. Short."
+  },
+  "record_checkOn": {
+    "message": "Element: $locator$",
+    "description": "“Check an element” dialog: under the title, the locator of the chosen element. $locator$ is Playwright code, never translated.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "record_checkWhat": {
+    "message": "What to check",
+    "description": "“Check an element” dialog: label of the list of what can be checked about the element."
+  },
+  "record_checkText": {
+    "message": "Its text",
+    "description": "“Check an element” dialog: a choice in “What to check”: the text the element shows."
+  },
+  "record_checkValue": {
+    "message": "Its value",
+    "description": "“Check an element” dialog: a choice in “What to check”: the value of a field."
+  },
+  "record_checkName": {
+    "message": "Its name, as screen readers announce it",
+    "description": "“Check an element” dialog: a choice in “What to check”: the element’s accessible name."
+  },
+  "record_checkVisible": {
+    "message": "It is visible",
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that is visible. “It” is the element (masculine in French)."
+  },
+  "record_checkHidden": {
+    "message": "It is hidden",
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that is hidden."
+  },
+  "record_checkEnabled": {
+    "message": "It is usable, not grayed out",
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that can be used (enabled). Same words as the bug report’s states."
+  },
+  "record_checkDisabled": {
+    "message": "It is grayed out, not usable",
+    "description": "“Check an element” dialog: a choice in “What to check”, for an element that cannot be used (disabled). Same words as the bug report’s states."
+  },
+  "record_checkExpected": {
+    "message": "Expected",
+    "description": "“Check an element” dialog: label of the field holding the value the check expects, filled with what the page shows now."
+  },
+  "record_checkAddressLabel": {
+    "message": "The address the page should be on",
+    "description": "“Check the address” dialog: label of the field holding the address the page should be on, filled with the current one."
+  },
+  "record_checkAddressEmpty": {
+    "message": "Type the address the page should be on.",
+    "description": "“Check the address” dialog: shown when the address field is empty."
+  },
+  "record_checkAdd": {
+    "message": "Add the check",
+    "description": "The main button of the “Check an element” and “Check the address” dialogs."
+  },
+  "record_checkNoLocator": {
+    "message": "No locator finds this element alone: pick another one.",
+    "description": "“Check an element” dialog: shown when no locator finds the picked element alone, so the check could not run."
+  },
   "record_lastLocator": {
     "message": "Last locator",
     "description": "Recorder HUD: small uppercase heading above the locator of the element the last step acted on."

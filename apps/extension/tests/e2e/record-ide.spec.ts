@@ -284,6 +284,73 @@ test('Pause in the bar stops the recording until Resume, and the editor’s Paus
   expect(normalizeSteps(launcher.recording().events)).toHaveLength(2);
 });
 
+test('Check an element and Check the address add checks of what the page shows, and the pick records nothing', async ({
+  context,
+}) => {
+  const launcher = await launch(context, { file: 'checkout.spec.ts', testIdAttribute: 'data-test' });
+  const page = await context.newPage();
+  await page.goto(`${ORIGIN}/`);
+  await expect(hud(page).getByText('Recording into checkout.spec.ts: 1 step')).toBeVisible();
+  const dialog = page.locator('#piwi-bug-dialog-host');
+
+  // A button's short text is offered first, filled with what it shows.
+  await hud(page).getByRole('button', { name: 'Check an element' }).click();
+  await page.hover('[data-test="add-to-cart"]');
+  await page.click('[data-test="add-to-cart"]');
+  await expect(dialog.getByRole('dialog', { name: 'Check an element' })).toBeVisible();
+  await expect(dialog.getByText("Element: getByTestId('add-to-cart')")).toBeVisible();
+  const what = dialog.getByRole('combobox', { name: 'What to check' });
+  await expect(what.locator('option')).toHaveText([
+    'Its text',
+    'Its name, as screen readers announce it',
+    'It is visible',
+    'It is usable, not grayed out',
+  ]);
+  await expect(dialog.getByRole('textbox', { name: 'Expected' })).toHaveValue('Add to cart');
+  await dialog.getByRole('button', { name: 'Add the check' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // A state takes no value.
+  await hud(page).getByRole('button', { name: 'Check an element' }).click();
+  await page.hover('input[aria-label="Search"]');
+  await page.click('input[aria-label="Search"]');
+  await expect(dialog.getByRole('combobox', { name: 'What to check' })).toHaveValue('0');
+  await expect(dialog.getByRole('textbox', { name: 'Expected' })).toBeHidden();
+  await dialog.getByRole('button', { name: 'Add the check' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // The address starts from the page's own, and an empty one is refused.
+  await hud(page).getByRole('button', { name: 'Check the address' }).click();
+  const address = dialog.getByRole('textbox', { name: 'The address the page should be on' });
+  await expect(address).toHaveValue('/');
+  await address.fill('');
+  await dialog.getByRole('button', { name: 'Add the check' }).click();
+  await expect(dialog.getByText('Type the address the page should be on.')).toBeVisible();
+  await address.fill('/?ref=home');
+  await page.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+
+  await expect.poll(() => normalizeSteps(launcher.recording().events).length).toBe(4);
+  const [, text, visible, url] = normalizeSteps(launcher.recording().events);
+  expect(text).toMatchObject({
+    action: 'assert',
+    target: { testId: 'add-to-cart' },
+    assertion: { matcher: 'toHaveText', expected: 'Add to cart', actual: null, negated: false, note: null },
+  });
+  expect(visible).toMatchObject({ action: 'assert', assertion: { matcher: 'toBeVisible', expected: null } });
+  expect(visible!.target?.accessibleName).toBe('Search');
+  expect(url).toMatchObject({
+    action: 'assert',
+    target: null,
+    assertion: { matcher: 'toHaveURL', expected: '/?ref=home' },
+  });
+
+  // Paused, nothing is recorded: no check either.
+  await hud(page).getByRole('button', { name: 'Pause' }).click();
+  await expect(hud(page).getByRole('button', { name: 'Check an element' })).toBeDisabled();
+  await expect(hud(page).getByRole('button', { name: 'Check the address' })).toBeDisabled();
+});
+
 test('loaded into a page without the launcher’s binding, the bundle does nothing', async ({ context }) => {
   await servePages(context);
   await openShadowRoots(context);

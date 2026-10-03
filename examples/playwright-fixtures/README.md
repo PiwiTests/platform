@@ -61,7 +61,7 @@ The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [
 
 1. **The fixtures.** Open `tests/shop-fixtures.ts`, then `tests/shop.spec.ts`: each test asks for the page objects it needs, `async ({ page, loginPage, shopper }) => …`.
 2. **The catalog.** In the dashboard, **Project → Test functions** lists `login`, `addToCart` and `placeOrder`, each with the steps it performs. **Add function** shows how one is registered by hand, from pasted source with AI, or by a coding agent.
-3. **Record steps into a test.** Open `tests/shop-recorded.spec.ts`, put the cursor in the empty test and run **Piwi: Record here**. Give `/shop/login` as the start page; the page the steps run on is `page`. In the browser: sign in as `alice@example.com` with any password, open **Trail shoes** and **Add to cart**, do the same for **Water bottle**, open **Cart**, **Checkout**, fill in the shipping form and **Place order**. Each step appears in the editor as you go, and runs of them turn into calls once their last step is recorded:
+3. **Record steps into a test.** Open `tests/shop-recorded.spec.ts`, put the cursor in the empty test and run **Piwi: Record here**. Give `/shop/login` as the start page; the page the steps run on is `page`. In the browser: sign in as `alice@example.com` with any password, open **Trail shoes** and **Add to cart**, do the same for **Water bottle**. Press **Check an element** in the recording bar and pick the **Cart (2)** link: its text is offered first, as the page shows it; **Add the check**. Open **Cart**, **Checkout**, fill in the shipping form and **Place order**. On the confirmation, check the summary line the same way, then press **Check the address** and keep `/shop/done`. Each step appears in the editor as you go, and runs of them turn into calls once their last step is recorded:
 
    ```ts
    await test.step('/shop/login', async () => {
@@ -71,6 +71,7 @@ The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [
    await test.step('/shop', async () => {
      await productsPage.addToCart('Trail shoes');
      await productsPage.addToCart('Water bottle');
+     await expect(page.getByRole('link', { name: 'Cart' })).toHaveText('Cart (2)');
      await page.getByRole('link', { name: 'Cart' }).click();
    });
    await test.step('/shop/cart', async () => {
@@ -81,9 +82,13 @@ The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [
    await test.step('/shop/checkout', async () => {
      await checkoutPage.placeOrder({ name: 'Alice Martin', address: '12 Harbour Street', city: 'La Rochelle' });
    });
+   await test.step('/shop/done', async () => {
+     await expect(page.locator('#summary')).toHaveText('2 item(s) on their way to La Rochelle, France.');
+     await expect(page).toHaveURL('/shop/done');
+   });
    ```
 
-   Between two steps of your own that lead to another page, the code waits for it; a page object's call waits for its pages itself. The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so. The file imports only `test`, so the recording adds `import { expect } from './shop-fixtures';` at the top.
+   Between two steps of your own that lead to another page, the code waits for it; a page object's call waits for its pages itself. The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so. The checks are written where you added them; the file imports only `test`, so the recording adds `import { expect } from './shop-fixtures';` at the top. While the pick and its dialog are open, nothing you click is recorded.
 4. **The repository's code options.** Open `playwright.shared.ts`: its `'@piwi'` section asks for a `test.step` per page, which is why the steps above are grouped, and gives a new test the `@recorded` tag and the shop team as owner. Change `testSteps` to `'none'` and record again: the steps come out one after another.
 5. **Pause.** Press **Pause** in the browser's recording bar, look around the shop, then **Resume**: nothing done meanwhile is written. The editor shows the pause too.
 6. **Stop and undo.** **Stop** in the browser or the editor. One **Undo** removes the whole recording; **Redo** puts it back.

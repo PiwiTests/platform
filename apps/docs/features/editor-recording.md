@@ -35,9 +35,12 @@ writes a whole spec into it.
   to your own page object or helper once its last step is recorded, and the import that call needs is added at the top
   of the file.
 - **The controls**: the step count, **Stop** and **Pause** (**Resume** while paused), above the block in VS Code and in
-  a banner above the editor in a JetBrains IDE, and **Pause** and **Stop** in the browser's recording bar. The status
+  a banner above the editor in a JetBrains IDE, and **Pause**, **Stop** and the checks in the browser's recording bar. The status
   bar shows the recording too. While paused, from the editor or the browser, what you do in the browser is not
   recorded: use it to reach a page or set up data without writing those steps; **Resume** continues from there.
+- **Checks**: **Check an element** in the browser's recording bar lets you pick an element and check its text, its
+  value, its accessible name or its state, starting from what it shows now; **Check the address** checks the page's
+  address. Each is written as an `await expect(…)` where you added it.
 - **Typing in the block** pauses the recording. **Resume** writes the block again from the recorded steps, over your
   edits; **Keep my edits** stops the recording and keeps the code as you changed it.
 - **Warnings** (a brittle locator, a password read from the environment, a file to upload) are on their lines. They stay

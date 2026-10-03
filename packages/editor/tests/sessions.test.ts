@@ -563,6 +563,46 @@ describe('a recording session', () => {
     expect(last().code).toContain('const signInPage = new SignInPage(page);');
   });
 
+  test('checks added in the browser are expect lines where they were added, and the file is asked for expect', async () => {
+    const text = SPEC.replace("import { test, expect } from '@playwright/test';", "import { test } from './fixtures';");
+    const { start, launchers, last } = setup();
+    await start({}, { text });
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    const total = target('status', 'Total', "getByRole('status', { name: 'Total' })");
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    launcher.emit({
+      type: 'event',
+      event: event('assert', {
+        target: null,
+        assertion: { matcher: 'toHaveURL', expected: '/account', actual: null, negated: false, note: null },
+      }),
+    });
+    launcher.emit({
+      type: 'event',
+      event: event('assert', {
+        target: total,
+        assertion: { matcher: 'toHaveText', expected: 'Total: 42', actual: null, negated: false, note: null },
+      }),
+    });
+    expect(last().code).toBe(
+      [
+        "await page.goto('/login');",
+        "await page.getByRole('button', { name: 'Sign in' }).click();",
+        "await expect(page).toHaveURL('/account');",
+        "await expect(page.getByRole('status', { name: 'Total' })).toHaveText('Total: 42');",
+      ].join('\n'),
+    );
+    expect(last().steps.map((s) => [s.line, s.words])).toEqual([
+      [0, `Go to \`${BASE}/login\``],
+      [1, 'Click button "Sign in"'],
+      [2, expect.stringContaining('/account')],
+      [3, expect.stringContaining('Total: 42')],
+    ]);
+    expect(last().imports).toEqual(["import { expect } from './fixtures';"]);
+  });
+
   test('the config’s Piwi section sets the waits, the values, their prefix, the test steps and a new test’s tags', async () => {
     const piwi = {
       codegen: {

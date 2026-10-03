@@ -83,9 +83,8 @@ Pick an element to copy one block for a coding agent: the page URL, a summary of
 
 **Record actions** asks for access to the site you are on, then captures clicks, double clicks, fills, checks,
 choices, drags, the names of chosen files (never their content) and the keys that submit, close or move through a
-list, across pages. A click on what a hover shows (row actions, a
-hover menu) is recorded after that hover. **Stop** opens the
-review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
+list, across pages, and a click on what a hover shows after that hover. **Check an element** and **Check the
+address** add an `expect(…)` of what the page shows now. **Stop** opens the review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
 [steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
 [**Send to editor**](./editor-recording#send-from-piwi-picker), or **Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose `autocomplete` names it: the spec reads them from `process.env`.
 

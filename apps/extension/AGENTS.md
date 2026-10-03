@@ -397,6 +397,15 @@ is its grid) goes into `locator-engine.spec.ts`'s ranking tests (`__piwiRankTop`
 goes into `locator-cases.ts` with a fixture element in `tests/e2e/pages/`; an expression the
 engine deliberately refuses goes into the pinned refusal list, never into a skipped case.
 
+## Checks in a test recording
+
+A test recording's bar (`renderHud`, in Piwi Picker and in the IDE bundle) has **Check an element** and **Check the
+address** (`check-panel.ts`). They reuse the bug report's pick and dialog (`pickElement`, `openRecordDialog` in
+`bug-panel.ts`), pause capture the same way, and record an `assert` event of what the page shows now, with `actual`
+null: the spec writes it as `await expect(…)`. The dialog names the element by the recorded target's first locator, so
+the project's test id attribute applies. Both buttons are disabled while an IDE recording is paused, when the editor
+service drops what the page sends.
+
 ## Report a bug
 
 A bug recording is a recording with `mode: 'bug'` (`recording-storage.ts`): the same capture,

@@ -66,6 +66,7 @@ import { attachPanelShadow } from './panel-root.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
 import { IDE_BUILD, getIdeSettings, ideHostInstalled } from '../shared/ide-build.js';
+import { runCheckAddressFlow, runCheckElementFlow } from './check-panel.js';
 import { webOrigin } from '../shared/web-origin.js';
 
 /**
@@ -481,6 +482,8 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
       border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
     button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
     button.stop { background: #dc2626; border-color: #dc2626; color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    .checks { display: flex; gap: 6px; flex-wrap: wrap; }
     .section-title { color: #9ca3af; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; display: block; }
     .match { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
@@ -541,6 +544,22 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     note.textContent = t('record_pausedNote');
     bar.appendChild(note);
   }
+
+  // Checks of what the page shows now; none while paused, when nothing is recorded.
+  const checks = document.createElement('div');
+  checks.className = 'checks';
+  for (const [label, run] of [
+    ['record_checkElement', runCheckElementFlow],
+    ['record_checkAddress', runCheckAddressFlow],
+  ] as const) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = t(label);
+    button.disabled = IDE_BUILD && idePaused;
+    button.addEventListener('click', () => void run(bugHooks));
+    checks.appendChild(button);
+  }
+  bar.appendChild(checks);
 
   if (captureError) {
     const warn = document.createElement('div');
@@ -888,7 +907,7 @@ function buildEvent(
   };
 }
 
-/** What the bug panel needs from the recorder to add an assertion to the recording. */
+/** What the bug panel and a test recording's checks need from the recorder to add an assertion to the recording. */
 const bugHooks: BugRecorderHooks = {
   targetFor: deriveRecordedTarget,
   async addAssert(target: RecordedTarget | null, assertion: StepAssertion): Promise<number | null> {

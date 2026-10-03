@@ -223,7 +223,7 @@ export function cancelBugPick(): void {
  * started meanwhile leaves it be, any other tool, Escape or
  * {@link cancelBugPick} ends it. Answers the element picked, or null.
  */
-async function pickElement(): Promise<Element | null> {
+export async function pickElement(): Promise<Element | null> {
   const g = panelGlobals();
   const epoch = startTool('pick', teardownToolSurfaces);
   installEscapeToCancel();
@@ -379,11 +379,13 @@ interface DialogParts {
  * the form and answers the element to focus and a submit function: its value
  * closes the dialog, and null keeps it open (after `say` explained why). A
  * dialog removed from the page (capture stopped, the page replaced its
- * content) answers null, as Cancel does.
+ * content) answers null, as Cancel does. Its main button reads `submitLabel`.
+ * Shared by the bug report's dialogs and a test recording's checks.
  */
-function openBugDialog<T>(
+export function openRecordDialog<T>(
   title: string,
   build: (parts: DialogParts) => { focus: HTMLElement; submit: () => T | null | Promise<T | null> },
+  submitLabel: string = t('bug_addToReport'),
 ): Promise<T | null> {
   document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
@@ -427,7 +429,7 @@ function openBugDialog<T>(
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
   addBtn.className = 'action primary';
-  addBtn.textContent = t('bug_addToReport');
+  addBtn.textContent = submitLabel;
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'action';
@@ -475,7 +477,7 @@ function openBugDialog<T>(
   });
 }
 
-function input(value = '', placeholder = ''): HTMLInputElement {
+export function input(value = '', placeholder = ''): HTMLInputElement {
   const el = document.createElement('input');
   el.type = 'text';
   el.value = value;
@@ -542,7 +544,7 @@ function expectedChoices(element: Element): { locator: string | null; choices: E
 /** The expected-value dialog for a picked element. */
 function expectedDialog(element: Element): Promise<StepAssertion | null> {
   const { locator, choices } = expectedChoices(element);
-  return openBugDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
+  return openRecordDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
     if (locator) {
       const sub = document.createElement('div');
       sub.className = 'sub';
@@ -640,7 +642,7 @@ function roleLocator(role: string, name: string): string {
 }
 
 function missingDialog(): Promise<{ target: RecordedTarget; note: string | null } | null> {
-  return openBugDialog(t('bug_missing'), ({ field, say }) => {
+  return openRecordDialog(t('bug_missing'), ({ field, say }) => {
     const role = document.createElement('select');
     for (const kind of MISSING_KINDS) {
       const option = document.createElement('option');
@@ -691,7 +693,7 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
 
 function wrongPageDialog(): Promise<StepAssertion | null> {
   const here = `${location.pathname}${location.search}`;
-  return openBugDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
+  return openRecordDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
     const sub = document.createElement('div');
     sub.className = 'sub';
     sub.textContent = t('bug_youAreOn', { path: here });
@@ -717,7 +719,8 @@ function wrongPageDialog(): Promise<StepAssertion | null> {
 // ---------------------------------------------------------------------------
 // Flows started from the HUD
 
-async function exclusive(run: () => Promise<void>): Promise<void> {
+/** Runs one flow of the recorder's at a time: a flow started while another is on screen does nothing. */
+export async function exclusive(run: () => Promise<void>): Promise<void> {
   const g = panelGlobals();
   if (g.__piwiBugFlow) return;
   g.__piwiBugFlow = true;
