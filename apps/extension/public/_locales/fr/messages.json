@@ -1879,6 +1879,32 @@
       }
     }
   },
+  "record_hudTitleInto_one": {
+    "message": "Enregistrement dans $file$ : $count$ étape",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      },
+      "file": {
+        "content": "$2",
+        "example": "checkout.spec.ts"
+      }
+    }
+  },
+  "record_hudTitleInto_other": {
+    "message": "Enregistrement dans $file$ : $count$ étapes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      },
+      "file": {
+        "content": "$2",
+        "example": "checkout.spec.ts"
+      }
+    }
+  },
   "record_lastLocator": {
     "message": "Dernier locator"
   },
@@ -5450,7 +5476,7 @@
     "placeholders": {
       "variable": {
         "content": "$1",
-        "example": "PIWI_TEST_VALUE_3"
+        "example": "E2E_PASSWORD"
       }
     }
   },

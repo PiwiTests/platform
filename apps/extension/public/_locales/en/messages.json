@@ -2265,6 +2265,34 @@
       }
     }
   },
+  "record_hudTitleInto_one": {
+    "message": "Recording into $file$: $count$ step",
+    "description": "Recorder HUD in a browser the editor (VS Code, a JetBrains IDE) opened for a recording, top line next to a red dot and the Stop button: the file the steps are written into, and how many steps are recorded so far. $file$ is the file name. Short: the HUD is narrow.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      },
+      "file": {
+        "content": "$2",
+        "example": "checkout.spec.ts"
+      }
+    }
+  },
+  "record_hudTitleInto_other": {
+    "message": "Recording into $file$: $count$ steps",
+    "description": "Recorder HUD in a browser the editor (VS Code, a JetBrains IDE) opened for a recording, top line next to a red dot and the Stop button: the file the steps are written into, and how many steps are recorded so far. $file$ is the file name. Short: the HUD is narrow.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      },
+      "file": {
+        "content": "$2",
+        "example": "checkout.spec.ts"
+      }
+    }
+  },
   "record_lastLocator": {
     "message": "Last locator",
     "description": "Recorder HUD: small uppercase heading above the locator of the element the last step acted on."
@@ -6459,7 +6487,7 @@
     "placeholders": {
       "variable": {
         "content": "$1",
-        "example": "PIWI_TEST_VALUE_3"
+        "example": "E2E_PASSWORD"
       }
     }
   },

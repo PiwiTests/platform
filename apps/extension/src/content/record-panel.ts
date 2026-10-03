@@ -11,6 +11,7 @@ import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch }
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { describeStepInWords } from '@piwitests/core/bug-report';
+import type { IdeRecorderSettings } from '@piwitests/core/ide-recorder';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { interfacePhrases } from '../shared/core-words.js';
@@ -64,10 +65,31 @@ import { getActiveProjectOverride, resolveActiveProject } from '../shared/active
 import { attachPanelShadow } from './panel-root.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
+import { IDE_BUILD, getIdeSettings, ideHostInstalled } from '../shared/ide-build.js';
+import { webOrigin } from '../shared/web-origin.js';
 
-/** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping, though not the identical algorithm. */
+/**
+ * The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent
+ * as the picker overlay's own snapping, though not the identical algorithm — but for the elements carrying a test id,
+ * which {@link actionableSelector} adds.
+ */
 const ACTIONABLE_SELECTOR =
-  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable]:not([contenteditable="false" i]), [data-testid]';
+  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable]:not([contenteditable="false" i])';
+
+/**
+ * The attribute `getByTestId` reads in the project being recorded (Playwright's `testIdAttribute`): in the IDE bundle,
+ * the launcher's, read as the recorder starts on a page (`loadRecorderSettings`); null for Playwright's default,
+ * `data-testid`, which the extension always uses.
+ */
+let testIdAttribute: string | null = null;
+
+/** In the IDE bundle, what the launcher hands the recorder: the file the steps are written into, which the HUD names. */
+let ideSettings: IdeRecorderSettings | null = null;
+
+/** {@link ACTIONABLE_SELECTOR} with the elements carrying the project's test id attribute. */
+function actionableSelector(): string {
+  return `${ACTIONABLE_SELECTOR}, [${CSS.escape(testIdAttribute ?? 'data-testid')}]`;
+}
 
 /** Where an arrow key moves through choices rather than a caret or the page, and so is worth replaying. */
 const ARROW_KEY_WIDGETS =
@@ -191,18 +213,19 @@ function elementKeyFor(el: Element): string {
  * 5" rather than `textContent`'s "Regressions5", and no ranking on the probe's
  * estimated counts), keeping the top few locators that find it alone on the
  * page (`verifiedLocators`) and the role/testId/text a catalog pattern match
- * needs. Tested by driving the real built bundle, since `generateAlternatives`
+ * needs, the test id read from the project's attribute (`testIdAttribute`).
+ * Tested by driving the real built bundle, since `generateAlternatives`
  * can't be reconstructed from its source (see `extension/AGENTS.md`).
  */
 function deriveRecordedTarget(el: Element): RecordedTarget {
-  const { attrs, accessibleName, role, ranked } = rankElement(el);
+  const { attrs, accessibleName, role, ranked } = rankElement(el, { testIdAttribute });
   return {
     tagName: attrs.tagName,
     role,
     accessibleName,
-    testId: attrs.attributes['data-testid'] ?? null,
+    testId: attrs.attributes[testIdAttribute ?? 'data-testid'] ?? null,
     text: el.textContent ? normalizeText(el.textContent).slice(0, 200) : null,
-    alternatives: verifiedLocators(el, ranked),
+    alternatives: verifiedLocators(el, ranked, { testIdAttribute }),
     elementKey: elementKeyFor(el),
   };
 }
@@ -229,15 +252,16 @@ function fieldTarget(el: Element): RecordedTarget {
 
 /** The control `el` is part of: itself or its nearest actionable ancestor, out through the hosts of the shadow roots it is in. */
 function nearestActionable(el: Element): Element {
+  const selector = actionableSelector();
   for (let node: Element | undefined = el; node; node = parentElementOrShadowHost(node)) {
-    if (node.matches(ACTIONABLE_SELECTOR)) return node;
+    if (node.matches(selector)) return node;
   }
   return el;
 }
 
 /** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
 function pointedAt(entered: Element, within: Element): Element {
-  const control = entered.closest(ACTIONABLE_SELECTOR);
+  const control = entered.closest(actionableSelector());
   return control && within.contains(control) ? control : entered;
 }
 
@@ -401,6 +425,12 @@ function removeRecordingFrame(): void {
   document.getElementById(FRAME_HOST_ID)?.remove();
 }
 
+/** The HUD's top line: how many steps are recorded, and in the IDE bundle the file they are written into. */
+function hudTitle(steps: number): string {
+  const file = IDE_BUILD ? ideSettings?.file : null;
+  return file ? tn('record_hudTitleInto', steps, { file }) : tn('record_hudTitle', steps);
+}
+
 function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(PANEL_HOST_ID)?.remove();
@@ -466,7 +496,7 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   dot.className = 'dot';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = tn('record_hudTitle', steps.length);
+  title.textContent = hudTitle(steps.length);
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'stop';
@@ -767,7 +797,8 @@ async function handleStop(): Promise<void> {
   const state = await stopRecording();
   stopCapture();
   await tellWorkerStopped();
-  await renderReviewPanel(state);
+  // The IDE bundle opens no review: the steps are in the editor.
+  if (!IDE_BUILD) await renderReviewPanel(state);
 }
 
 /**
@@ -918,6 +949,18 @@ async function refreshCatalogForThisPage(): Promise<void> {
   const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
   const activeProject = resolveActiveProject(connection, override, location.href);
   await requestCatalogRefresh(activeProject?.projectId ?? null);
+}
+
+/**
+ * In the IDE bundle, reads the launcher's settings, which this page's capture
+ * and HUD follow: the file the steps are written into and the project's test id
+ * attribute. Never rejects: without them, Playwright's default attribute
+ * applies.
+ */
+async function loadRecorderSettings(): Promise<void> {
+  if (!IDE_BUILD) return;
+  ideSettings = await getIdeSettings().catch(() => null);
+  testIdAttribute = ideSettings?.testIdAttribute ?? null;
 }
 
 interface RecorderGlobals {
@@ -1488,16 +1531,22 @@ function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
 /** `restored`: the page came back from the back/forward cache, and attaches as a page the recording reaches. */
 async function initRecordPanel(restored: boolean): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
-  // override loads alongside, so the HUD paints no later for it.
-  const [state] = await Promise.all([ensureSessionAccess().then(getRecordingState), initI18n()]);
+  // override and the recorder's settings load alongside, so the HUD paints no
+  // later for them.
+  const [state] = await Promise.all([
+    ensureSessionAccess().then(getRecordingState),
+    initI18n(),
+    loadRecorderSettings(),
+  ]);
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
     // first — a border that outlives the capture it signals is worse than no
     // border at all — then show whatever is left to review, unless the page
-    // only came back from the cache: the review is the stopping tab's.
+    // only came back from the cache: the review is the stopping tab's. The
+    // IDE bundle has no review: the steps are in the editor.
     stopCapture();
-    if (state.events.length > 0 && !restored) await renderReviewPanel(state);
+    if (state.events.length > 0 && !restored && !IDE_BUILD) await renderReviewPanel(state);
     return;
   }
 
@@ -1525,9 +1574,21 @@ async function initRecordPanel(restored: boolean): Promise<void> {
   }
   // Once per page, not per step — `refreshHud` runs on every captured
   // interaction and must stay local-only. TTL-guarded, so a recording that
-  // crosses many pages still only re-fetches occasionally.
-  void refreshCatalogForThisPage().then(() => void refreshHud());
+  // crosses many pages still only re-fetches occasionally. Never in the IDE
+  // bundle, which has no catalog.
+  if (!IDE_BUILD) void refreshCatalogForThisPage().then(() => void refreshHud());
   await refreshHud();
 }
 
-void runRecordPanel();
+/**
+ * Whether this document records. The extension injects the recorder only
+ * where it records. The IDE bundle, which the launcher loads into every
+ * document, records the top-level document of an http or https page its host
+ * is installed in, and nothing in a frame, on another page (a new tab's
+ * `about:blank`, the browser's error page) or without the host.
+ */
+function recordsHere(): boolean {
+  return !IDE_BUILD || (window.top === window && webOrigin(location.href) !== null && ideHostInstalled());
+}
+
+if (recordsHere()) void runRecordPanel();

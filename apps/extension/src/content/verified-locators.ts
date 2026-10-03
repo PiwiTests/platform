@@ -182,6 +182,12 @@ export interface RankOptions {
   model?: DomModel;
   /** A probe of the caller's own, whose counts are taken as they are. */
   probe?: ProbeArg;
+  /**
+   * The attribute `getByTestId` reads in the project (Playwright's
+   * `testIdAttribute`), which the probe reads the test ids from and the
+   * candidates are built with; `data-testid` when unset.
+   */
+  testIdAttribute?: string | null;
 }
 
 /**
@@ -192,9 +198,11 @@ export interface RankOptions {
  * own score rather than ranked down on a guess.
  */
 export function rankElement(el: Element, options: RankOptions = {}): RankedElement {
+  const { testIdAttribute = null } = options;
   const engine = options.probe ? undefined : (options.engine ?? (options.model && pageEngines.get(options.model)));
   const model = engine?.model ?? options.model ?? new DomModel();
-  const attrs = probeElementAttrs(el, options.probe ?? (engine ? ANCHORS_PROBE : PROBE_ARG));
+  const probe = options.probe ?? (engine ? ANCHORS_PROBE : PROBE_ARG);
+  const attrs = probeElementAttrs(el, testIdAttribute ? { ...probe, testIdAttribute } : probe);
   const accessibleName = accessibleNameOf(el, attrs, model);
   // As Playwright's own generator: no role candidate for a presentational element.
   const modelRole = model.role(el);
@@ -202,7 +210,10 @@ export function rankElement(el: Element, options: RankOptions = {}): RankedEleme
   const structure = engine
     ? engineStructure(el, attrs, role, headingLevel({ ...attrs, accessibleName }, role), engine)
     : probedStructure(attrs, role);
-  const ranked = generateAlternatives({ ...attrs, ...structure, selectorCounts: undefined, accessibleName }, { role });
+  const ranked = generateAlternatives(
+    { ...attrs, ...structure, selectorCounts: undefined, accessibleName },
+    { role, testIdAttribute },
+  );
   return { attrs, accessibleName, role, ranked };
 }
 
@@ -439,9 +450,25 @@ export interface VerifiedLocator {
   score: number;
 }
 
-/** The locators a recording keeps for an element: at most `limit`, each finding it alone. */
-export function verifiedLocators(el: Element, ranked: readonly RankedLocator[], limit = 5): VerifiedLocator[] {
-  return checkLocators(el, ranked, { limit }).map(({ locator, method, score }) => ({ locator, method, score }));
+export interface VerifyOptions {
+  /** How many locators to keep at most. */
+  limit?: number;
+  /** The attribute `getByTestId` reads in the project (Playwright's `testIdAttribute`); `data-testid` when unset. */
+  testIdAttribute?: string | null;
+}
+
+/**
+ * The locators a recording keeps for an element: at most `limit`, each
+ * finding it alone on an engine over its page that reads the test ids from
+ * `testIdAttribute`.
+ */
+export function verifiedLocators(
+  el: Element,
+  ranked: readonly RankedLocator[],
+  { limit = 5, testIdAttribute = null }: VerifyOptions = {},
+): VerifiedLocator[] {
+  const engine = createPageEngine(el.ownerDocument, testIdAttribute ? [testIdAttribute] : undefined);
+  return checkLocators(el, ranked, { limit, engine }).map(({ locator, method, score }) => ({ locator, method, score }));
 }
 
 /**
