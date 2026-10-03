@@ -214,7 +214,7 @@ describe('renderSpec — with a catalog', () => {
     expect(matchedSpans).toEqual([{ startStep: 0, endStep: 2, functionName: 'login' }]);
   });
 
-  test('a page object whose receiver is already declared is not instantiated again', () => {
+  test('a page object whose receiver is already declared is neither imported nor instantiated again', () => {
     const session = buildSession(loginSteps(), 0);
     const body = renderSpec(session, {
       catalog: [loginEntry],
@@ -224,7 +224,7 @@ describe('renderSpec — with a catalog', () => {
     });
     expect(body.code).not.toContain('new LoginPage');
     expect(body.code).toContain(`  await loginPage.login('alice', 'secret');`);
-    expect(body.imports).toEqual([`import { LoginPage } from './pages/LoginPage';`]);
+    expect(body.imports).toEqual([]);
     expect(body.code.split('\n')[body.stepLines[0]! - 1]).toBe(`  await loginPage.login('alice', 'secret');`);
     const other = renderSpec(session, {
       catalog: [loginEntry],
@@ -232,6 +232,29 @@ describe('renderSpec — with a catalog', () => {
       declaredNames: new Set(['signInPage']),
     });
     expect(other.code).toContain('  const loginPage = new LoginPage(page);');
+  });
+
+  test('a new test takes a page object the file’s tests take as a fixture, after the page', () => {
+    const session = buildSession(loginSteps(), 0);
+    const result = renderSpec(session, {
+      catalog: [loginEntry],
+      format: 'test',
+      title: 'signs in',
+      fixtures: new Set(['page', 'loginPage', 'cart']),
+    });
+    expect(result.code).toBe(
+      [
+        "test('signs in', async ({ page, loginPage }) => {",
+        "  await page.goto('https://x.test/login');",
+        "  await loginPage.login('alice', 'secret');",
+        '});',
+        '',
+      ].join('\n'),
+    );
+    expect(result.imports).toEqual([]);
+    // In a test's body, the fixtures cannot be added to its parameters: the page object is instantiated there.
+    const body = renderSpec(session, { catalog: [loginEntry], format: 'body', fixtures: new Set(['loginPage']) });
+    expect(body.code).toContain('  const loginPage = new LoginPage(page);');
   });
 
   test('a call never stands for steps the viewport changes between, and one before its first step stays', () => {

@@ -515,6 +515,34 @@ describe('a recording session', () => {
     expect(last().imports).toEqual([]);
   });
 
+  test('a new test takes the page objects the file’s tests take as fixtures', async () => {
+    const text = [
+      "import { test } from './fixtures';",
+      '',
+      "test('opens the cart', async ({ page, signInPage, cart }) => {",
+      "  await page.goto('/');",
+      '});',
+      '',
+      '',
+    ].join('\n');
+    const { start, launchers, last } = setup();
+    await start({ into: 'test', line: 6 }, { text, catalog: [SIGN_IN_ENTRY] });
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    expect(last().code).toBe(
+      [
+        "test('recorded flow', async ({ page, signInPage }) => {",
+        "  await page.goto('/login');",
+        "  await signInPage.signIn('dev@example.com');",
+        '});',
+      ].join('\n'),
+    );
+    expect(last().imports).toEqual([]);
+  });
+
   test('the imports leave out what the file imports now, as the editor holds it', async () => {
     let current: string | null = null;
     const { start, launchers, last } = setup({ readText: (uri) => (uri === URI ? current : null) });

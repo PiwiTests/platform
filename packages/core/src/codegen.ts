@@ -72,10 +72,16 @@ export interface CodegenOptions {
    */
   page?: string;
   /**
-   * The names already declared where the code goes. A page object whose receiver is one of them is not instantiated
-   * again: its calls use that variable.
+   * The names already declared where the code goes. A page object whose receiver is one of them is neither imported
+   * nor instantiated: its calls use that variable.
    */
   declaredNames?: ReadonlySet<string>;
+  /**
+   * In the `file` and `test` formats, the fixtures the test can take (those the file's other tests take). A page
+   * object whose receiver is one of them is taken as a fixture, after the page's, instead of being imported and
+   * instantiated.
+   */
+  fixtures?: ReadonlySet<string>;
 }
 
 type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
@@ -625,11 +631,13 @@ function renderFunctionCall(match: RankedFunctionMatch, page: string, envArgs: R
 }
 
 /** One `import` + (for page-object methods) one instantiation line per receiver actually used, deduped, in first-use order. */
-function renderImports(usedEntries: TestFunctionEntry[]): string[] {
+/** One import per function or page-object class used, in first-use order, except the page objects at hand (`given`). */
+function renderImports(usedEntries: TestFunctionEntry[], given: ReadonlySet<string>): string[] {
   const lines: string[] = [];
   const seenModules = new Set<string>();
   for (const entry of usedEntries) {
     if (entry.kind === 'page-object-method' && entry.receiver && entry.importName) {
+      if (given.has(entry.receiver)) continue;
       const moduleKey = `${entry.module}#${entry.importName}`;
       if (!seenModules.has(moduleKey)) {
         seenModules.add(moduleKey);
@@ -779,8 +787,20 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   bodyLines.unshift(...opening);
   const bodyOffset = opening.length;
 
-  const importLines = renderImports(usedEntries);
-  const instantiationLines = renderInstantiations(usedEntries, page, options.declaredNames);
+  /** The page-object receivers the test takes as fixtures, in first-use order. */
+  const fixtureReceivers =
+    options.format === 'body'
+      ? []
+      : [
+          ...new Set(
+            usedEntries.flatMap((e) =>
+              e.kind === 'page-object-method' && e.receiver && options.fixtures?.has(e.receiver) ? [e.receiver] : [],
+            ),
+          ),
+        ];
+  const given = new Set([...(options.declaredNames ?? []), ...fixtureReceivers]);
+  const importLines = renderImports(usedEntries, given);
+  const instantiationLines = renderInstantiations(usedEntries, page, given);
   const failLine = expectFailLine(options);
   const envLines =
     options.values === 'env' && ctx.envNames.length > 0
@@ -806,7 +826,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   }
 
   const details = renderDetails(options);
-  const fixture = page.split('.')[0];
+  const fixture = [...new Set([page.split('.')[0]!, ...fixtureReceivers])].join(', ');
   const testOpening =
     details.length > 0
       ? [`test(${quote(title)}, {`, ...details, `}, async ({ ${fixture} }) => {`]

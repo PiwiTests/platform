@@ -1128,6 +1128,15 @@ export function declaredNamesAt(text: string, caretLine: number): Set<string> {
   );
 }
 
+/**
+ * The fixtures the tests of a file take, by fixture name (`loginPage` for `({ loginPage })`, `user` for
+ * `({ user: admin })`): the ones a new test in that file can take too.
+ */
+export function fileFixtures(text: string): Set<string> {
+  const model = new FileModel(text);
+  return new Set(model.declarations.flatMap((d) => (d.fixture === undefined ? [] : [d.fixture])));
+}
+
 /** The module a file imports its `test` from (`import { test } from './fixtures'`); null when it imports none. */
 export function testImportOf(text: string): string | null {
   const model = new FileModel(text);

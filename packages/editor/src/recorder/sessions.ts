@@ -37,7 +37,7 @@ import type {
 import { recorderBrowser, type RecorderBrowser } from './context-options.js';
 import type { LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
 import { missingImports } from './imports.js';
-import { declaredNamesAt, pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
+import { declaredNamesAt, fileFixtures, pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
 import { canonicalPath } from './playwright.js';
 import type { ProjectOptions } from './project-options.js';
 
@@ -249,26 +249,38 @@ export function startUrl(
 }
 
 /** The module most spec files beside `file` import `test` from; null when none does. */
-function siblingTestImport(file: string): string | null {
+/** The texts of the spec files beside `file`, the first ones by name. */
+function siblingSpecs(file: string): string[] {
   const dir = path.dirname(file);
   let names: string[];
   try {
     names = fs.readdirSync(dir).filter((n) => /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(n) && path.join(dir, n) !== file);
   } catch {
-    return null;
+    return [];
   }
+  return names
+    .sort()
+    .slice(0, MAX_SIBLINGS)
+    .flatMap((name) => {
+      try {
+        return [fs.readFileSync(path.join(dir, name), 'utf-8')];
+      } catch {
+        return [];
+      }
+    });
+}
+
+/**
+ * What a new spec beside `file` starts from, as the specs there do: the module most of them import `test` from (null
+ * when none does), and the fixtures the tests of those that import it take.
+ */
+function siblingTestSetup(file: string): { testImport: string | null; fixtures: Set<string> } {
+  const specs = siblingSpecs(file).map((text) => ({ text, module: testImportOf(text) }));
   const counts = new Map<string, number>();
-  for (const name of names.sort().slice(0, MAX_SIBLINGS)) {
-    let text: string;
-    try {
-      text = fs.readFileSync(path.join(dir, name), 'utf-8');
-    } catch {
-      continue;
-    }
-    const module = testImportOf(text);
-    if (module) counts.set(module, (counts.get(module) ?? 0) + 1);
-  }
-  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  for (const { module } of specs) if (module) counts.set(module, (counts.get(module) ?? 0) + 1);
+  const testImport = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const fixtures = new Set(specs.filter((s) => s.module === testImport).flatMap((s) => [...fileFixtures(s.text)]));
+  return { testImport, fixtures };
 }
 
 /** Why a recording into `into` cannot start where the caret is (`context`); null when it can. */
@@ -383,11 +395,13 @@ export class RecordingSessions {
     if ('error' in start) return { ok: false, message: start.error };
 
     const title = params.title?.trim();
+    const siblings = into === 'file' ? siblingTestSetup(target.file) : null;
     const codegen: CodegenOptions = {
       format: into === 'steps' ? 'body' : into,
-      ...(into === 'file'
-        ? { testImport: testImportOf(target.text) ?? siblingTestImport(target.file) ?? undefined }
+      ...(siblings
+        ? { testImport: testImportOf(target.text) ?? siblings.testImport ?? undefined, fixtures: siblings.fixtures }
         : {}),
+      ...(into === 'test' ? { fixtures: fileFixtures(target.text) } : {}),
       ...(into !== 'file' ? { bodyImports: 'none' as const, declaredNames: declaredNamesAt(target.text, line) } : {}),
       locators: 'stable',
       urlChecks: true,
