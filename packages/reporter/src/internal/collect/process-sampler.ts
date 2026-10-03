@@ -148,7 +148,8 @@ function defaultPs(): Promise<string> {
 /**
  * CIM's `Win32_Process` on Windows, the query's own process and its children
  * excluded, so reading the tree never counts as the run: working set, CPU time
- * and the parent to build the tree.
+ * and the parent to build the tree. A cold machine's first query can take
+ * several seconds, so the timeout leaves room for it.
  */
 function defaultWindowsQuery(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -160,7 +161,7 @@ function defaultWindowsQuery(): Promise<string> {
         '-Command',
         '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.ParentProcessId -ne $PID } | Select-Object ProcessId,ParentProcessId,WorkingSetSize,UserModeTime,KernelModeTime,Name,CommandLine | ConvertTo-Json -Compress',
       ],
-      { timeout: 4000, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+      { timeout: 10_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
       (error, stdout) => (error ? reject(error) : resolve(stdout)),
     );
   });
