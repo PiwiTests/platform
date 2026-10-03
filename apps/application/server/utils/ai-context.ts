@@ -21,7 +21,7 @@ import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
-import { notLabRun } from '#shared/handlers/probes';
+import { eligibleRunSql } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
@@ -611,8 +611,8 @@ function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[]
  * duration vs baseline, web-vitals deltas, console-error delta, how far the
  * run got (steps executed), and whether the test has passed since the
  * cluster's last seen run on that run's branch (already-green reconciliation).
- * Lab runs replay the test under injected conditions and never count as a
- * pass. All from data already stored — no extra collection.
+ * Only runs eligible as a baseline count as a pass: a lab arm, a bisect step or
+ * a reproduction does not. All from data already stored — no extra collection.
  */
 export async function baselineComparisonSection(
   db: DbClient,
@@ -634,11 +634,7 @@ export async function baselineComparisonSection(
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(
-      and(
-        eq(testRunsCases.testCaseId, rep.testCaseId),
-        eq(testRunsCases.status, 'passed'),
-        notLabRun(testRuns.metadata),
-      ),
+      and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed'), eligibleRunSql('baseline')),
     )
     .orderBy(desc(testRuns.startTime))
     .limit(20);

@@ -1,5 +1,7 @@
 import {
   ScmProvider,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
   truncatePatch,
   MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
@@ -469,13 +471,17 @@ export class BitbucketProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+  override async dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     const target = settings.bitbucket;
     if (!target) throw new Error('No Bitbucket pipeline configured for CI re-run');
 
-    // A custom pipeline still runs against a branch; the config names only the
-    // pipeline, so use the repository's default branch as the ref.
-    const branch = (await this.getDefaultBranch()) || 'main';
+    // A custom pipeline runs against a branch: the requested one, else the
+    // repository's default branch, since the config names only the pipeline.
+    const branch = request.ref || (await this.getDefaultBranch()) || 'main';
     const res = await fetch(`${this.base}/pipelines/`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
@@ -496,6 +502,10 @@ export class BitbucketProvider extends ScmProvider {
       pipeline.build_number != null
         ? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pipelines/results/${pipeline.build_number}`
         : (pipeline.links?.self?.href ?? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pipelines`);
-    return { url };
+    return {
+      url,
+      ref: branch,
+      ...(pipeline.build_number != null ? { buildNumber: String(pipeline.build_number) } : {}),
+    };
   }
 }

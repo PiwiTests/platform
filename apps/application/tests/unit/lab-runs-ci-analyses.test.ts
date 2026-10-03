@@ -69,6 +69,19 @@ function flakeArmMetadata(arm: number) {
   return { [FLAKE_LAB_RUN_METADATA_KEY]: { experimentId: 'exp-1', armId: `arm-${arm}` }, scm: { branch: 'main' } };
 }
 
+/** The metadata of each kind of run that replays tests away from the branch's current state. */
+const REPLAYS = {
+  'Flake Lab arms': flakeArmMetadata,
+  'desktop bisect steps': (step: number) => ({
+    piwiOrigin: { kind: 'bisect', ref: '214' },
+    scm: { branch: 'main', commit: `bisect-${step}` },
+  }),
+  'desktop reproductions': (attempt: number) => ({
+    piwiOrigin: { kind: 'reproduce', ref: '214' },
+    scm: { branch: 'main', commit: `repro-${attempt}` },
+  }),
+};
+
 async function addRun(
   db: Db,
   run: { id: number; startTime: Date; status: string; metadata?: Record<string, unknown> },
@@ -142,7 +155,7 @@ async function attachScreenshot(
   await db.insert(schema.files).values({ testRunId: runId, testRunsCaseId: executionId, type: 'screenshot', path });
 }
 
-describe('twelve Flake Lab arms after a CI run', () => {
+describe.each(Object.entries(REPLAYS))('twelve %s after a CI run', (_kind, replayMetadata) => {
   let db: Db;
   let failingPayId: number;
   const LAB_ARMS = 12;
@@ -187,7 +200,7 @@ describe('twelve Flake Lab arms after a CI run', () => {
         id: runId,
         startTime: new Date(Date.parse('2026-09-03T10:00:00Z') + arm * 60_000),
         status: 'failed',
-        metadata: flakeArmMetadata(arm),
+        metadata: replayMetadata(arm),
       });
       const rows = await persistRunCases(db as never, PROJECT_ID, runId, [
         pays('passed', {
@@ -300,6 +313,26 @@ describe("the AI's baseline comparison", () => {
     const result = await baselineComparisonSection(db as never, { testCaseId: 1, duration: 10 } as never, 5);
     expect(result.alreadyGreen).toBe(true);
     expect(result.section).toContain('run #8');
+  });
+});
+
+describe('change coverage and partial runs', () => {
+  test('counts complete runs only: a filtered run that skipped a file says nothing about it', async () => {
+    const db = await freshDb();
+    await addRun(db, { id: 1, startTime: new Date('2026-09-01T10:00:00Z'), status: 'passed' });
+    await persistRunCases(db as never, PROJECT_ID, 1, [pays('passed'), browses('passed')] as never);
+    for (let i = 0; i < HISTORY_WINDOW_RUNS; i++) {
+      const id = 10 + i;
+      await addRun(db, { id, startTime: new Date(Date.parse('2026-09-02T10:00:00Z') + i * 60_000), status: 'passed' });
+      await db.update(schema.testRuns).set({ isFullRun: 0 }).where(eq(schema.testRuns.id, id));
+      await persistRunCases(db as never, PROJECT_ID, id, [pays('passed')] as never);
+    }
+
+    const coverage = await computeChangeCoverage(db as never, PROJECT_ID, {
+      changedFiles: [{ filePath: 'tests/browse.spec.ts', additions: 3, deletions: 1 }],
+    });
+    expect(coverage.files[0]).toMatchObject({ filePath: 'tests/browse.spec.ts', reachedCountHistory: 1 });
+    expect(coverage.uncoveredFiles).toBe(0);
   });
 });
 
@@ -418,5 +451,34 @@ describe('green ARIA samples next to lab runs', () => {
     ] as never);
     const [stored] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.id, row!.id));
     expect(stored!.ariaSnapshotPayloadId).not.toBeNull();
+  });
+});
+
+describe("the editor's CI failures next to local runs", () => {
+  test('a newer complete local run stands in only while the branch has no CI run', async () => {
+    const db = await freshDb();
+    await addRun(db, { id: 1, startTime: new Date('2026-09-01T10:00:00Z'), status: 'passed' });
+    await persistRunCases(db as never, PROJECT_ID, 1, [pays('passed'), browses('passed')] as never);
+    await addRun(db, {
+      id: 2,
+      startTime: new Date('2026-09-02T10:00:00Z'),
+      status: 'failed',
+      metadata: { piwiOrigin: { kind: 'local' }, scm: { branch: 'main' } },
+    });
+    await persistRunCases(db as never, PROJECT_ID, 2, [
+      pays('failed', { error: PAY_ERROR }),
+      browses('passed'),
+    ] as never);
+
+    // Run 1 has no origin and no CI record: it reads as a local run, the newest of which stands in.
+    expect((await getBranchFailures(db as never, PROJECT_ID, 'main')).run?.id).toBe(2);
+
+    await db
+      .update(schema.testRuns)
+      .set({ metadata: { piwiOrigin: { kind: 'ci' }, scm: { branch: 'main' } } })
+      .where(eq(schema.testRuns.id, 1));
+    const result = await getBranchFailures(db as never, PROJECT_ID, 'main');
+    expect(result.run?.id).toBe(1);
+    expect(result.failures).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import type { BrowserConfig } from '#shared/types';
+import type { RunOrigin } from '@piwitests/core/wire';
 import type { ServerLogEntry, ServerSpanEntry } from '~~/types/api';
 
 /**
@@ -77,7 +78,9 @@ export interface RunMetadata {
    * provider → this hint → `'main'`).
    */
   defaultBranch?: string | null;
-  ci?: { provider?: string | null } | null;
+  ci?: { provider?: string | null; pipelineId?: string | null; buildNumber?: string | null } | null;
+  /** What launched the run (`PIWI_ORIGIN`); read through `runOrigin` in `#shared/run-eligibility`. */
+  piwiOrigin?: RunOrigin | null;
   htmlReport?: {
     projects?: Array<{ use?: { browserName?: string | null; baseURL?: string | null } | null }>;
   } | null;

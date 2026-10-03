@@ -15,7 +15,7 @@ import { parsePlaywrightError } from '#shared/error-parse';
 import { resolveCasePayloadContents } from './case-payloads';
 import { resolveRunBranch } from './run-branch';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { notLabRun } from '#shared/handlers/probes';
+import { eligibleRunSql } from '#shared/run-eligibility';
 
 /** Passing executions inspected when choosing the baseline. */
 const BASELINE_CANDIDATES = 20;
@@ -115,7 +115,7 @@ export async function getPageDiff(db: DrizzleDB, testRunsCaseId: number): Promis
     eq(testRunsCases.testCaseId, failing.testCaseId),
     eq(testRunsCases.status, 'passed'),
     or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
-    notLabRun(testRuns.metadata),
+    eligibleRunSql('baseline'),
   ];
   if (failing.browserName) baselineConds.push(eq(testRunsCases.browserName, failing.browserName));
 

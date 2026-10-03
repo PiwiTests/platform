@@ -349,3 +349,77 @@ export interface WireResourceReport {
   /** CPU, memory and open pages over time; absent from reporters before it. */
   timeline?: WireResourceTimeline | null;
 }
+
+/**
+ * What launched a run. The launcher sets `PIWI_ORIGIN` (and `PIWI_ORIGIN_REF`)
+ * on the Playwright process; the reporter stamps the run's metadata with it
+ * under {@link RUN_ORIGIN_METADATA_KEY}, and the dashboard decides from it
+ * which analyses the run may feed.
+ *
+ * - `ci`: a CI pipeline, the default when a CI provider is detected;
+ * - `ci-rerun`: a CI pipeline the dashboard dispatched to re-run a cluster;
+ * - `local`: a developer's machine, the default otherwise;
+ * - `desktop`, `editor`: a run started from the desktop app or an editor;
+ * - `preflight`, `bug`: `piwi preflight --run` and `piwi bug --write`;
+ * - `flake-lab`, `probe`: runs replaying tests under injected conditions;
+ * - `bisect`, `reproduce`: steps of a bisect and reproductions of a failure
+ *   at an older commit;
+ * - `import`: a report imported into the dashboard, stamped by the server.
+ */
+export const RUN_ORIGIN_KINDS = [
+  'ci',
+  'ci-rerun',
+  'local',
+  'desktop',
+  'editor',
+  'preflight',
+  'bug',
+  'flake-lab',
+  'probe',
+  'bisect',
+  'reproduce',
+  'import',
+] as const;
+
+export type RunOriginKind = (typeof RUN_ORIGIN_KINDS)[number];
+
+/** A run's origin: its kind, and what it was launched for (a dispatch, a cluster, a bug report). */
+export interface RunOrigin {
+  kind: RunOriginKind;
+  ref?: string;
+}
+
+/** The run-metadata key holding the {@link RunOrigin}. */
+export const RUN_ORIGIN_METADATA_KEY = 'piwiOrigin';
+
+/** The longest `ref` kept. */
+export const RUN_ORIGIN_REF_MAX_LENGTH = 200;
+
+const RUN_ORIGIN_REF = /^[A-Za-z0-9._:/#@-]+$/;
+
+/** True for one of the {@link RUN_ORIGIN_KINDS}. */
+export function isRunOriginKind(value: unknown): value is RunOriginKind {
+  return typeof value === 'string' && (RUN_ORIGIN_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * A `ref` as stored: trimmed, at most {@link RUN_ORIGIN_REF_MAX_LENGTH}
+ * characters of letters, digits and `._:/#@-`. Anything else is dropped.
+ */
+export function parseRunOriginRef(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const ref = String(value).trim();
+  return ref && ref.length <= RUN_ORIGIN_REF_MAX_LENGTH && RUN_ORIGIN_REF.test(ref) ? ref : undefined;
+}
+
+/**
+ * A {@link RunOrigin} read from untrusted input, rebuilt as `{ kind, ref? }`,
+ * or null when its kind is not one of the {@link RUN_ORIGIN_KINDS}.
+ */
+export function parseRunOrigin(value: unknown): RunOrigin | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { kind, ref } = value as { kind?: unknown; ref?: unknown };
+  if (!isRunOriginKind(kind)) return null;
+  const parsedRef = parseRunOriginRef(ref);
+  return parsedRef === undefined ? { kind } : { kind, ref: parsedRef };
+}

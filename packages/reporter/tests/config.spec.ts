@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import { resolveOptions } from '../src/internal/config/env.js';
+import { originEnv, resolveOptions } from '../src/internal/config/env.js';
 
 const PIWI_KEYS = [
   'PIWI_DASHBOARD_URL',
@@ -182,5 +182,12 @@ describe('resolveOptions', () => {
     process.env.PIWI_OUTPUT_FILE = 'piwi-run.json';
     expect(resolveOptions({}).outputFile).toBe('piwi-run.json');
     expect(resolveOptions({ outputFile: 'explicit.json' }).outputFile).toBe('explicit.json');
+  });
+});
+
+describe('originEnv', () => {
+  it('names the launcher, and what it ran for when there is one', () => {
+    expect(originEnv('preflight')).toEqual({ PIWI_ORIGIN: 'preflight' });
+    expect(originEnv('bug', 37)).toEqual({ PIWI_ORIGIN: 'bug', PIWI_ORIGIN_REF: '37' });
   });
 });

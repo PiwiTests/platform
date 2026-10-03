@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { originEnv } from '../internal/config/env.js';
 
 const EXIT_OK = 0;
 const EXIT_RUN_FAILED = 1;
@@ -177,14 +178,17 @@ function resolvePlaywrightCli(cwd: string): string | null {
   return null;
 }
 
-function runPlaywright(file: string, cwd: string): Promise<number> {
+/** Run the written spec, stamped as a `bug` run of report `id`. */
+function runPlaywright(file: string, cwd: string, id: number, env: NodeJS.ProcessEnv): Promise<number> {
   const cli = resolvePlaywrightCli(cwd);
   const filter = fileFilter(file);
+  const childEnv = { ...env, ...originEnv('bug', id) };
   const child = cli
-    ? spawn(process.execPath, [cli, 'test', filter], { stdio: 'inherit', cwd })
+    ? spawn(process.execPath, [cli, 'test', filter], { stdio: 'inherit', cwd, env: childEnv })
     : spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['playwright', 'test', filter], {
         stdio: 'inherit',
         cwd,
+        env: childEnv,
       });
   return new Promise((resolve) => {
     child.on('error', (err) => {
@@ -246,7 +250,7 @@ export async function runBug(
   console.error(`piwi bug: wrote ${shown}`);
   if (!args.run) return EXIT_OK;
 
-  const code = await runPlaywright(file, cwd);
+  const code = await runPlaywright(file, cwd, args.id, env);
   if (code === EXIT_ERROR && !resolvePlaywrightCli(cwd)) return EXIT_ERROR;
   if (code === 0) {
     console.error(

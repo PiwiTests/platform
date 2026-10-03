@@ -93,6 +93,7 @@ async function run() {
       requestId: request.id,
       steps: request.steps,
       args: args.value,
+      bugReportId: request.bugReportId,
     });
     remove(request.id);
   } catch (error) {

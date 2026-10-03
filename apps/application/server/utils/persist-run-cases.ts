@@ -52,7 +52,8 @@ import {
   projectRouteOrigins,
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
-import { isLabRun, notLabExecution } from '#shared/handlers/probes';
+import { isLabRun } from '#shared/handlers/probes';
+import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
 import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
@@ -316,7 +317,7 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
  * Drop redundant green ARIA samples before they reach storage. A passing
  * execution's snapshot is kept only when the test has no other green snapshot
  * from the last {@link GREEN_SAMPLE_MAX_AGE_MS} — both against snapshots already
- * stored by runs other than lab runs and against duplicates within this same
+ * stored by runs eligible for shared state and against duplicates within this same
  * batch. Failing snapshots are never touched. Mutates `payloads[i].aria` in place; the rows keep their other
  * evidence, they just stop carrying a duplicate green page.
  */
@@ -356,7 +357,7 @@ async function dedupeGreenSamples(
         inArray(testRunsCases.testCaseId, caseIds),
         eq(testRunsCases.status, 'passed'),
         or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
-        notLabExecution(testRunsCases.testRunId),
+        eligibleExecutionSql('shared-state', testRunsCases.testRunId),
       ),
     )
     .groupBy(testRunsCases.testCaseId);
@@ -604,13 +605,18 @@ export async function persistRunCases(
   if (runCasesRows.length === 0) return [];
 
   // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
-  // run, so it forms no clusters (exactly as imports are silent) and leaves the tests' stored state alone.
+  // run, so it forms no clusters (exactly as imports are silent). The tests' stored state (locator
+  // snapshots, the locator index, code reach, tags and locks) is written only by runs eligible for it.
   const [probeCheck] = await db
     .select({ metadata: testRuns.metadata })
     .from(testRuns)
     .where(eq(testRuns.id, testRunId));
   const probeRun = isLabRun(probeCheck?.metadata);
-  const writesTestState = !probeRun && !options.keepTestState;
+  const sharedState = isEligibleRun({ metadata: probeCheck?.metadata }, 'shared-state');
+  const writesTestState = isEligibleRun(
+    { metadata: probeCheck?.metadata, historicalImport: options.keepTestState },
+    'shared-state',
+  );
 
   // Keep at most one green ARIA sample per test per day: a passing snapshot is
   // dropped when the test already has a recent one, so many runs a day stay bounded.
@@ -667,10 +673,9 @@ export async function persistRunCases(
   }
 
   if (writesTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
-  // A lab run replays tests with injected faults or conditions; it stays silent here too.
   // The index is derived data: a failure to update it degrades to a warning and
   // never fails the ingest.
-  if (!probeRun) {
+  if (sharedState) {
     await upsertLocatorUsages(db, projectId, perCaseUsages).catch((err) =>
       console.warn('[locator-usages] failed to index the locators of this batch', err),
     );

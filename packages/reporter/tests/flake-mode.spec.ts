@@ -269,6 +269,7 @@ describe('run stamp and results file', () => {
     expect(flakeRunMetadata({ experimentId: 'exp-7', armId: 'arm-2' }, { scm: { branch: 'main' } })).toEqual({
       scm: { branch: 'main' },
       piwiFlakeLab: { experimentId: 'exp-7', armId: 'arm-2' },
+      piwiOrigin: { kind: 'flake-lab', ref: 'exp-7' },
     });
   });
 
