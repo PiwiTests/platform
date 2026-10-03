@@ -29,7 +29,9 @@ const { recordOutcome, listOutcomes, readOutcomeCounts, pruneOutcomesOlderThan }
   await import('../../server/utils/outcomes');
 const { inferRunOutcomes, locatorHealKey } = await import('../../server/utils/outcome-inference');
 const { getLocatorHealing } = await import('../../server/utils/locator-healing');
-const { approveMergeSuggestion, rejectMergeSuggestion } = await import('#shared/handlers/cluster-merge-suggestions');
+const { approveMergeSuggestion, recordMergeSuggestion, rejectMergeSuggestion } =
+  await import('#shared/handlers/cluster-merge-suggestions');
+const { splitFailureCluster } = await import('#shared/handlers/failure-cluster-ops');
 const { addQuarantine, releaseQuarantine, dismissQuarantineProposal, RELEASE_AFTER_CONSECUTIVE_PASSES } =
   await import('#shared/handlers/quarantine');
 const { issueScenarioDraft } = await import('#shared/handlers/scenario-gaps');
@@ -230,11 +232,21 @@ describe('merge suggestions', () => {
   });
 
   test('a model "no" and a hand split are not a person rejecting a suggestion', async () => {
-    // The reconciler stores the adjudicator's "no" as declined, and a split as a rejected pair, directly.
-    await db.insert(schema.clusterMergeSuggestions).values([
-      { projectId: 1, clusterAId: 5, clusterBId: 6, method: 'llm', status: 'declined' },
-      { projectId: 1, clusterAId: 3, clusterBId: 5, method: 'split', status: 'rejected' },
-    ]);
+    const run = (await db.select({ id: schema.testRuns.id }).from(schema.testRuns))[0]!.id;
+    await insertCase(run, 1, 'failed', { failureClusterId: 3, error: 'Error 3' });
+    await insertCase(run, 2, 'failed', { failureClusterId: 3, error: 'Error 3' });
+    // The adjudicator's "no" is stored as declined; moving tests to a new cluster stores a rejected pair.
+    await recordMergeSuggestion(db as never, {
+      projectId: 1,
+      clusterAId: 5,
+      clusterBId: 6,
+      method: 'llm',
+      status: 'declined',
+    });
+    const split = await splitFailureCluster(db as never, 3, [2], 'moved by hand');
+    expect(split?.clusterId).not.toBeNull();
+    const pairs = await db.select().from(schema.clusterMergeSuggestions);
+    expect(pairs.map((p) => p.status).sort()).toEqual(['declined', 'rejected']);
     expect(await outcomesOf('merge-suggestion')).toEqual([]);
   });
 });

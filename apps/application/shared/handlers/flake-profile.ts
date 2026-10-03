@@ -117,7 +117,10 @@ export interface FlakeCounts {
 }
 
 export interface FlakeSuspect {
-  /** Stable within a profile: the kind and the factor value (`slow-route:GET /api/cart`). */
+  /**
+   * Stable across profiles: the kind and the factor (`slow-route:GET /api/cart`), never a
+   * threshold, so a lab result stays attached when the threshold moves. The load suspect is `load`.
+   */
   id: string;
   kind: FlakeSuspectKind;
   /** A short name (`GET /api/cart slower (≥1.6 s)`). */
@@ -400,7 +403,7 @@ export function buildFlakeProfile(input: FlakeProfileInput): FlakeProfile {
     const counts = countWith(split, has);
     add(
       {
-        id: `load:${loadThreshold}`,
+        id: 'load',
         kind: 'load',
         label: `${loadThreshold} or more other tests running at once`,
         sentence: `${loadThreshold} or more other tests were running at once in ${countsText(counts)}.`,
@@ -898,20 +901,22 @@ export interface TopFlakeSuspect {
   testCaseId: number;
   failures: number;
   passes: number;
-  /** The first-ranked suspect, or null when the history names none. */
+  /** The first-ranked suspect a lab run reproduced, else the first-ranked one; null when the history names none. */
   suspect: FlakeSuspect | null;
 }
 
 /**
- * The top suspect of each listed test of a project, for the flaky list. Ids of
- * tests outside the project are dropped; at most {@link TOP_SUSPECTS_MAX_TESTS}
- * are read, a few at a time, each in the summary view.
+ * The top suspect of each listed test of a project, for the flaky list: the
+ * highest-ranked of the suspect ids `reproduced` lists for the test, else its
+ * first-ranked suspect. Ids of tests outside the project are dropped; at most
+ * {@link TOP_SUSPECTS_MAX_TESTS} are read, a few at a time, each in the
+ * summary view.
  */
 export async function getTopFlakeSuspects(
   db: DrizzleDB,
   projectId: number,
   testCaseIds: number[],
-  opts: { now?: Date } = {},
+  opts: { now?: Date; reproduced?: Map<number, Set<string>> } = {},
 ): Promise<TopFlakeSuspect[]> {
   const wanted = [...new Set(testCaseIds)].slice(0, TOP_SUSPECTS_MAX_TESTS);
   if (wanted.length === 0) return [];
@@ -930,7 +935,9 @@ export async function getTopFlakeSuspects(
     );
     for (const p of profiles) {
       if (!p) continue;
-      out.push({ testCaseId: p.testCaseId, failures: p.failures, passes: p.passes, suspect: p.suspects[0] ?? null });
+      const reproduced = opts.reproduced?.get(p.testCaseId);
+      const suspect = p.suspects.find((sus) => reproduced?.has(sus.id)) ?? p.suspects[0] ?? null;
+      out.push({ testCaseId: p.testCaseId, failures: p.failures, passes: p.passes, suspect });
     }
   }
   return out;

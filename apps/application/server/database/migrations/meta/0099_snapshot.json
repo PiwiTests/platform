@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d1fda0b5-0128-4938-9b13-7b9d7fdca354",
+  "id": "96147313-202b-45e6-af31-5b749d8b3490",
   "prevId": "181ef9eb-ec2c-44e9-b20b-a149914d9780",
   "tables": {
     "account_tokens": {
@@ -1679,6 +1679,102 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "failure_cluster_test_routes": {
+      "name": "failure_cluster_test_routes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "test_case_id": {
+          "name": "test_case_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cluster_id": {
+          "name": "cluster_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_failure_cluster_test_routes_project_fingerprint_test": {
+          "name": "idx_failure_cluster_test_routes_project_fingerprint_test",
+          "columns": ["project_id", "fingerprint", "test_case_id"],
+          "isUnique": true
+        },
+        "idx_failure_cluster_test_routes_cluster": {
+          "name": "idx_failure_cluster_test_routes_cluster",
+          "columns": ["cluster_id"],
+          "isUnique": false
+        },
+        "idx_failure_cluster_test_routes_test_case": {
+          "name": "idx_failure_cluster_test_routes_test_case",
+          "columns": ["test_case_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "failure_cluster_test_routes_project_id_projects_id_fk": {
+          "name": "failure_cluster_test_routes_project_id_projects_id_fk",
+          "tableFrom": "failure_cluster_test_routes",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "failure_cluster_test_routes_test_case_id_test_cases_id_fk": {
+          "name": "failure_cluster_test_routes_test_case_id_test_cases_id_fk",
+          "tableFrom": "failure_cluster_test_routes",
+          "tableTo": "test_cases",
+          "columnsFrom": ["test_case_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "failure_cluster_test_routes_cluster_id_failure_clusters_id_fk": {
+          "name": "failure_cluster_test_routes_cluster_id_failure_clusters_id_fk",
+          "tableFrom": "failure_cluster_test_routes",
+          "tableTo": "failure_clusters",
+          "columnsFrom": ["cluster_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "failure_clusters": {
       "name": "failure_clusters",
       "columns": {
@@ -3006,273 +3102,6 @@
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "handback_outcome_rollups": {
-      "name": "handback_outcome_rollups",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "day": {
-          "name": "day",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "computed_at": {
-          "name": "computed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_handback_outcome_rollups_cell": {
-          "name": "idx_handback_outcome_rollups_cell",
-          "columns": ["project_id", "day", "kind", "outcome", "channel"],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "handback_outcome_rollups_project_id_projects_id_fk": {
-          "name": "handback_outcome_rollups_project_id_projects_id_fk",
-          "tableFrom": "handback_outcome_rollups",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "handback_outcomes": {
-      "name": "handback_outcomes",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "subject_type": {
-          "name": "subject_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "suggestion_key": {
-          "name": "suggestion_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "actor_api_key_id": {
-          "name": "actor_api_key_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "commit_sha": {
-          "name": "commit_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "details": {
-          "name": "details",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "dedupe_key": {
-          "name": "dedupe_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_handback_outcomes_dedupe": {
-          "name": "idx_handback_outcomes_dedupe",
-          "columns": ["project_id", "dedupe_key"],
-          "isUnique": true
-        },
-        "idx_handback_outcomes_project_kind": {
-          "name": "idx_handback_outcomes_project_kind",
-          "columns": ["project_id", "kind", "created_at"],
-          "isUnique": false
-        },
-        "idx_handback_outcomes_subject": {
-          "name": "idx_handback_outcomes_subject",
-          "columns": ["subject_type", "subject_id"],
-          "isUnique": false
-        },
-        "idx_handback_outcomes_run": {
-          "name": "idx_handback_outcomes_run",
-          "columns": ["run_id"],
-          "isUnique": false
-        },
-        "idx_handback_outcomes_actor_user": {
-          "name": "idx_handback_outcomes_actor_user",
-          "columns": ["actor_user_id"],
-          "isUnique": false
-        },
-        "idx_handback_outcomes_actor_api_key": {
-          "name": "idx_handback_outcomes_actor_api_key",
-          "columns": ["actor_api_key_id"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "handback_outcomes_project_id_projects_id_fk": {
-          "name": "handback_outcomes_project_id_projects_id_fk",
-          "tableFrom": "handback_outcomes",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "handback_outcomes_actor_user_id_users_id_fk": {
-          "name": "handback_outcomes_actor_user_id_users_id_fk",
-          "tableFrom": "handback_outcomes",
-          "tableTo": "users",
-          "columnsFrom": ["actor_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "handback_outcomes_actor_api_key_id_api_keys_id_fk": {
-          "name": "handback_outcomes_actor_api_key_id_api_keys_id_fk",
-          "tableFrom": "handback_outcomes",
-          "tableTo": "api_keys",
-          "columnsFrom": ["actor_api_key_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "handback_outcomes_run_id_test_runs_id_fk": {
-          "name": "handback_outcomes_run_id_test_runs_id_fk",
-          "tableFrom": "handback_outcomes",
-          "tableTo": "test_runs",
-          "columnsFrom": ["run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

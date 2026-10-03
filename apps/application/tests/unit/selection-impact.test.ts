@@ -19,16 +19,17 @@ async function seedCase(title: string, filePath: string): Promise<number> {
   return id;
 }
 
-/** One execution recording the in-project source frames the test ran through. */
+/** One execution: failed with the given source frames, or passed with none when `frames` is empty. */
 async function seedExec(testCaseId: number, frames: string[], line = 1): Promise<void> {
   const runId = ++runSeq;
-  await db.insert(schema.testRuns).values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(++clock) });
+  const status = frames.length > 0 ? 'failed' : 'passed';
+  await db.insert(schema.testRuns).values({ id: runId, projectId: 1, status, startTime: new Date(++clock) });
   await db.insert(schema.testRunsCases).values({
     testRunId: runId,
     testCaseId,
-    status: 'passed',
+    status,
     line,
-    testSourceFrames: frames.map((file) => ({ file, line, snippet: '' })),
+    testSourceFrames: frames.length > 0 ? frames.map((file) => ({ file, line, snippet: '' })) : null,
     createdAt: new Date(++clock),
   });
 }
@@ -54,13 +55,29 @@ describe('resolveImpact', () => {
     expect(r.impact.mappedFiles).toBe(1);
   });
 
-  test('maps a changed support file to tests that ran through it (reach)', async () => {
-    const checkout = await seedCase('pays', 'tests/checkout.spec.ts');
-    await seedExec(checkout, ['tests/checkout.spec.ts', 'pages/CartPage.ts']);
+  test("widens when a changed helper maps only through one test's failure frames", async () => {
+    // Two passing tests use the helper; only the one that failed inside it recorded frames.
+    const failedInHelper = await seedCase('pays', 'tests/checkout.spec.ts');
+    await seedExec(failedInHelper, ['pages/CartPage.ts', 'tests/checkout.spec.ts']);
+    const passingUser = await seedCase('empties the cart', 'tests/cart.spec.ts');
+    await seedExec(passingUser, []);
     const other = await seedCase('logs in', 'tests/login.spec.ts');
-    await seedExec(other, ['tests/login.spec.ts', 'pages/LoginPage.ts']);
+    await seedExec(other, []);
 
     const r = await resolveImpact(db, 1, ['pages/CartPage.ts']);
+    expect(r.impact.widened).toBe(true);
+    expect(r.impact.mappedFiles).toBe(1);
+    expect(r.impact.unmappedSourceFiles).toEqual(['pages/CartPage.ts']);
+    expect(r.tests.map((t) => t.testCaseId).sort()).toEqual([failedInHelper, passingUser, other]);
+    expect(r.warnings.find((w) => w.code === 'impact-widened')?.message).toContain('failure frames');
+  });
+
+  test('a changed test file stays narrow when its own failure frames also name it', async () => {
+    const checkout = await seedCase('pays', 'tests/checkout.spec.ts');
+    await seedExec(checkout, ['tests/checkout.spec.ts']);
+    await seedCase('logs in', 'tests/login.spec.ts');
+
+    const r = await resolveImpact(db, 1, ['tests/checkout.spec.ts']);
     expect(r.impact.widened).toBe(false);
     expect(r.tests.map((t) => t.testCaseId)).toEqual([checkout]);
   });
@@ -79,11 +96,23 @@ describe('resolveImpact', () => {
     expect(r.warnings.some((w) => w.code === 'impact-widened')).toBe(true);
   });
 
+  test('widens when a changed stylesheet, markup or config file maps to no test', async () => {
+    const a = await seedCase('a', 'tests/a.spec.ts');
+    const b = await seedCase('b', 'tests/b.spec.ts');
+
+    for (const file of ['src/styles/app.css', 'public/index.html', 'config/flags.json', 'deploy/app.yaml']) {
+      const r = await resolveImpact(db, 1, [file]);
+      expect(r.impact.widened).toBe(true);
+      expect(r.impact.unmappedSourceFiles).toEqual([file]);
+      expect(r.tests.map((t) => t.testCaseId).sort()).toEqual([a, b]);
+    }
+  });
+
   test('a docs-only change impacts nothing and does not widen', async () => {
     const a = await seedCase('a', 'tests/a.spec.ts');
     await seedExec(a, ['tests/a.spec.ts']);
 
-    const r = await resolveImpact(db, 1, ['README.md', 'docs/guide.md']);
+    const r = await resolveImpact(db, 1, ['README.md', 'docs/guide.md', 'docs/notes.txt']);
     expect(r.impact.widened).toBe(false);
     expect(r.tests).toHaveLength(0);
   });

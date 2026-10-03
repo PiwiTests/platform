@@ -127,6 +127,15 @@ export function flakeLabNextCommand(testCaseId: number, state: FlakeLabTestState
   return step ? flakeCommand(testCaseId, step) : null;
 }
 
+/**
+ * The suspect id an arm tested, as the profile names it today. An arm recorded
+ * against a load suspect with its threshold in the id (`load:3`) tested the
+ * load suspect (`load`).
+ */
+export function canonicalSuspectId(suspectId: string): string {
+  return suspectId.startsWith('load:') ? 'load' : suspectId;
+}
+
 /** The latest result of each suspect in a list of experiments (newest first). Pure. */
 export function latestSuspectResults(experiments: FlakeExperimentRecord[]): Map<string, FlakeSuspectResult> {
   const out = new Map<string, FlakeSuspectResult>();
@@ -134,9 +143,11 @@ export function latestSuspectResults(experiments: FlakeExperimentRecord[]): Map<
     if (e.kind !== 'reproduce') continue;
     const control = e.arms.find((a) => a.key === 'control');
     for (const a of e.arms) {
-      if (!a.suspectId || !a.verdict || out.has(a.suspectId)) continue;
-      out.set(a.suspectId, {
-        suspectId: a.suspectId,
+      if (!a.suspectId || !a.verdict) continue;
+      const suspectId = canonicalSuspectId(a.suspectId);
+      if (out.has(suspectId)) continue;
+      out.set(suspectId, {
+        suspectId,
         experimentId: e.id,
         verdict: a.verdict as FlakeReproduceVerdict,
         runs: a.runs,

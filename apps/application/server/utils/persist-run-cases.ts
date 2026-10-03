@@ -37,7 +37,7 @@ import { matchInsertedRunCases } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
-import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
+import { assignFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from './persist-options';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from './ingest-health';
@@ -640,12 +640,8 @@ export async function persistRunCases(
   });
 
   if (!probeRun) {
-    const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters, {
+    await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
       wakeSnoozed: !options.keepSnoozed,
-    });
-    runCasesRows.forEach((row, i) => {
-      const fingerprint = rowFingerprints[i];
-      if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
     });
   }
 

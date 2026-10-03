@@ -30,6 +30,7 @@ import {
   FLAKE_PROFILE_WINDOW_DAYS,
   getFlakeProfile,
   getTopFlakeSuspects,
+  TOP_SUSPECTS_MAX_TESTS,
   type FlakeCondition as ProfileCondition,
   type TopFlakeSuspect,
   type FlakeProfile,
@@ -920,15 +921,16 @@ export async function getFlakyListSuspects(
   projectId: number,
   testCaseIds: number[],
 ): Promise<Array<TopFlakeSuspect & { lab: FlakeLabSummary | null }>> {
-  const items = await getTopFlakeSuspects(db, projectId, testCaseIds);
-  const lab = new Map(
-    (
-      await getFlakeLabSummaries(
-        db,
-        items.map((i) => i.testCaseId),
-      )
-    ).map((l) => [l.testCaseId, l]),
-  );
+  const summaries = await getFlakeLabSummaries(db, testCaseIds.slice(0, TOP_SUSPECTS_MAX_TESTS));
+  const lab = new Map(summaries.map((l) => [l.testCaseId, l]));
+  // A suspect the lab reproduced leads, whatever its rank.
+  const reproduced = new Map<number, Set<string>>();
+  for (const summary of summaries) {
+    const results = await getFlakeSuspectResults(db, summary.testCaseId);
+    const ids = [...results.values()].filter((r) => r.verdict === 'reproduced').map((r) => r.suspectId);
+    if (ids.length > 0) reproduced.set(summary.testCaseId, new Set(ids));
+  }
+  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { reproduced });
   return items.map((item) => ({ ...item, lab: lab.get(item.testCaseId) ?? null }));
 }
 

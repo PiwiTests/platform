@@ -130,6 +130,7 @@ async function loadRunPayload(db: DbClient, runId: number) {
       testCaseId: testRunsCases.testCaseId,
       executionId: testRunsCases.id,
       owner: testCases.owner,
+      clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -141,11 +142,12 @@ async function loadRunPayload(db: DbClient, runId: number) {
   // not miss a run just because that team's failure ranked seventh.
   const topFailures = buildTopFailures(failedRows.slice(0, TOP_FAILURES_LIMIT));
   const resolvedOwners = await resolveOwners(db, runRow.projectId, failedRows).catch(() => new Map());
-  const owners = [
-    ...new Set(
-      failedRows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner)),
-    ),
+  const ownersOf = (rows: typeof failedRows) => [
+    ...new Set(rows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner))),
   ];
+  const owners = ownersOf(failedRows);
+  /** The owners of the tests that failed into one cluster in this run. */
+  const clusterOwners = (clusterId: number) => ownersOf(failedRows.filter((row) => row.clusterId === clusterId));
 
   const runPayload = {
     runId,
@@ -164,7 +166,7 @@ async function loadRunPayload(db: DbClient, runId: number) {
     topFailures,
     owners,
   };
-  return { runRow, project, runPayload, branch, environment, isDefaultBranch };
+  return { runRow, project, runPayload, branch, environment, isDefaultBranch, clusterOwners };
 }
 
 /**
@@ -191,7 +193,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
   try {
     const loaded = await loadRunPayload(db, runId);
     if (!loaded) return;
-    const { runRow, project, runPayload, branch, environment, isDefaultBranch } = loaded;
+    const { runRow, project, runPayload, branch, environment, isDefaultBranch, clusterOwners } = loaded;
 
     await emitNotification(db, 'run.finished', runPayload);
 
@@ -279,6 +281,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+        owners: clusterOwners(cluster.id),
       });
     }
 

@@ -107,9 +107,10 @@ empty list matches every run. The filters apply to every event that comes from a
 The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
-- **Filters**: `branches` and `environments` as above; for run events, status or **owner** (only when the run broke a
-  test that team owns; see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold` (a 0–1 rate) and
-  `perfRegressionPct`.
+- **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
+  `run.*` events, `flakiness.spike`, `perf.regression` and `cluster.new` and delivers them only when a failing test
+  behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
+  (a 0–1 rate) and `perfRegressionPct`.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
   **one combined message** per email, Slack or Teams channel.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.

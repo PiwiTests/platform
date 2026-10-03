@@ -129,7 +129,9 @@ Parameter values are **masked out of everything sent to the model**, with one ex
 
 `piwi ai check` is offline and fits a CI lint step: it exits `1` on an entry whose prompt was deleted or renamed, or a
 file that isn't in canonical form, and reports two prompts that collide as a warning that does not fail it.
-`piwi ai prune` is not available yet (it exits `2`). Every subcommand and flag is in the [CLI reference](/reference/cli#ai).
+`piwi ai prune` is not available yet (it exits `2`): delete an orphaned entry's file by hand, and re-author a
+non-canonical one with `piwi ai resolve --update-ai`. Every subcommand and flag is in the
+[CLI reference](/reference/cli#ai).
 
 ## Configuration
 

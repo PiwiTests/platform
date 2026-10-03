@@ -20,6 +20,8 @@ import { getProjectFunctionCatalog } from './test-functions';
 import { getLocatorIndex } from '../../server/utils/locator-usages';
 import { recordOutcome } from '../../server/utils/outcomes';
 import type { HandbackOutcome } from '../handback-outcomes';
+import { resolveRunBranch } from '../../server/utils/run-branch';
+import { mostCommonRunBranch } from '../../server/utils/scm/stored-default-branch';
 import type { TestMetadata } from '#shared/types';
 import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
@@ -34,7 +36,8 @@ import { isEligibleRun } from '../run-eligibility';
  * report → `looks-fixed` when that test, marked `test.fail()`, passes →
  * `closed` when it passes as an ordinary test. A later failure of a closed
  * report's test reopens it as `test-committed`. `dismissed` is set by hand and
- * never moves on its own.
+ * never moves on its own. Only runs {@link movesBugReports} accepts move a
+ * report.
  */
 
 export const BUG_REPORT_STATUSES = ['open', 'test-committed', 'looks-fixed', 'closed', 'dismissed'] as const;
@@ -574,8 +577,39 @@ export function renderStepsWith(steps: PiwiSteps, options: Parameters<typeof ren
 type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; testCaseId: number; projectId: number };
 
 /**
+ * Whether a run moves bug reports: a run the `bug-lifecycle` use of the
+ * eligibility rule accepts (never `piwi bug --write`, a lab run, a bisect step
+ * or a reproduction) on the project's default branch. A null `defaultBranch`
+ * means the project records no branch at all; its runs, which carry none
+ * either, count as the default branch's.
+ */
+export function movesBugReports(
+  run: { branch: string | null; metadata: unknown },
+  defaultBranch: string | null,
+): boolean {
+  if (!isEligibleRun(run, 'bug-lifecycle')) return false;
+  return (run.branch ?? resolveRunBranch(run.metadata)) === defaultBranch;
+}
+
+/**
+ * A project's default branch from stored data and the run's own hint, with no
+ * SCM call; null when neither the project, the run nor any earlier run names a
+ * branch.
+ */
+async function runDefaultBranch(db: DrizzleDB, projectId: number, metadata: unknown): Promise<string | null> {
+  const [project] = await db
+    .select({ defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const hint = (metadata as { defaultBranch?: unknown } | null)?.defaultBranch;
+  const named = project?.defaultBranch?.trim() || (typeof hint === 'string' ? hint.trim() : '');
+  return named || (await mostCommonRunBranch(db, projectId));
+}
+
+/**
  * Moves the reports a run's tests name (`piwi:bug <id>`, same project) along
- * their lifecycle, and links each report to its test. Returns what changed.
+ * their lifecycle, and links each report to its test, when the run moves bug
+ * reports at all ({@link movesBugReports}). Returns what changed.
  * The last attempt of each test in each browser project decides
  * (`bugOutcome`): an expected failure that passed where every other project
  * passed too → looks fixed; an ordinary pass everywhere → closed; a test no
@@ -586,10 +620,11 @@ type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; test
  */
 export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Promise<Transition[]> {
   const [run] = await db
-    .select({ projectId: testRuns.projectId, metadata: testRuns.metadata })
+    .select({ projectId: testRuns.projectId, branch: testRuns.branch, metadata: testRuns.metadata })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
-  if (!run || !isEligibleRun(run, 'bug-lifecycle')) return [];
+  if (!run) return [];
+  if (!movesBugReports(run, await runDefaultBranch(db, run.projectId, run.metadata))) return [];
   const rows = await db
     .select({
       id: testRunsCases.id,

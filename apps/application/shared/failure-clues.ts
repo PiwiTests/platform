@@ -888,7 +888,9 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   // ── known-flake-suspect (weak; strong once reproduced) ────────────────────
   // This failure shows a factor the test's history ranks as a flake suspect,
   // and a flake-lab experiment may have reproduced it.
-  const suspect = (input.flakeSuspects ?? []).find((sus) => sus.executionIds.includes(input.execution.id));
+  // A suspect a lab run reproduced outranks a higher-ranked one nobody tested.
+  const shown = (input.flakeSuspects ?? []).filter((sus) => sus.executionIds.includes(input.execution.id));
+  const suspect = shown.find((sus) => sus.reproduced) ?? shown[0];
   if (suspect) add(knownFlakeSuspectClue(suspect, input.networkRequests));
 
   // The fact that a fix landed before and did not hold is not a clue about the
