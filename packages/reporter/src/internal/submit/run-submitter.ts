@@ -55,6 +55,17 @@ export interface CollectedRun {
   resourceReport?: WireResourceReport | null;
 }
 
+/** Why the reporter left the rung it would normally deliver a run through. */
+type SubmitFallbackReason = 'results-lost' | 'finish-failed' | 'upload-failed';
+
+/**
+ * Name the fallback rung in the run's `metadata.ingestHealth`, where the
+ * dashboard shows how the run was delivered.
+ */
+function markSubmitFallback(run: CollectedRun, path: 'upload' | 'submit', reason: SubmitFallbackReason): void {
+  run.metadata.ingestHealth = { submitFallback: { path, reason } };
+}
+
 /**
  * Owns the three-tier submit/fallback ladder:
  *
@@ -159,22 +170,31 @@ export class RunSubmitter {
     if (!sm) await this.recovery.tryUpload(this.httpClient, auth);
 
     let outcome: SubmitOutcome = { done: false, output: null };
+    // Why the run is not delivered by the rung it would normally take, once a rung failed.
+    let fallbackReason: SubmitFallbackReason | null = null;
 
     // When test-result events never reached the server through the live stream,
     // the server is missing that detail; finalizing with `/finish` would lock it
     // in. Fall through to the batch upload, which re-sends the full run from the
     // reporter's own in-memory collection, so the missing detail is recovered.
-    if (sm?.enabled && sm?.runId != null && !sm.lostResults) {
-      outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
+    if (sm?.enabled && sm?.runId != null) {
+      if (sm.lostResults) fallbackReason = 'results-lost';
+      else {
+        outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
+        if (!outcome.done) fallbackReason = 'finish-failed';
+      }
     }
 
     // Once the time budget closed the client, the multipart upload is skipped:
     // the JSON rung below fails at once and saves the recovery copy.
     if (!outcome.done && !this.httpClient.closed && (this.hasReports(run) || run.options.uploadTraces)) {
+      if (fallbackReason) markSubmitFallback(run, 'upload', fallbackReason);
       outcome = await this.tryUploadWithFiles(run, overallStatus, duration, auth);
+      if (!outcome.done) fallbackReason = 'upload-failed';
     }
 
     if (!outcome.done) {
+      if (fallbackReason) markSubmitFallback(run, 'submit', fallbackReason);
       outcome = await this.tryUploadJSON(run, overallStatus, duration, auth);
     }
 

@@ -4,6 +4,7 @@ import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
+import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
@@ -274,7 +275,10 @@ export default eventHandler(async (event) => {
       ...(p90TestDuration !== null && { p90TestDuration }),
       // The reported status waits in the metadata, where it survives a restart,
       // until the report upload or the stale-run sweep settles the run.
-      metadata: withPendingStatus(body.metadata ? sanitizeMetadata(body.metadata) : testRun.metadata, status),
+      metadata: withPendingStatus(
+        body.metadata ? carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata) : testRun.metadata,
+        status,
+      ),
       ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
@@ -316,7 +320,10 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      ...(body.metadata && {
+        metadata: carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        branch: resolveRunBranch(body.metadata),
+      }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),

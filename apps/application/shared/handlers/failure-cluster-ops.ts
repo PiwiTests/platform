@@ -47,6 +47,7 @@ export function isSplitFingerprint(fingerprint: string): boolean {
  * follows its route for that fingerprint; every other row goes through
  * {@link getOrCreateFailureClusters}. `fingerprints[i]` belongs to `rows[i]`.
  * Routed rows are taken out of `pending` before the clusters are bumped.
+ * `wakeSnoozed` applies to routed clusters as to the others.
  */
 export async function assignFailureClusters(
   db: DrizzleDB,
@@ -55,9 +56,10 @@ export async function assignFailureClusters(
   pending: Map<string, PendingCluster>,
   rows: Array<{ testCaseId: number; failureClusterId?: number | null }>,
   fingerprints: Array<{ fingerprint: string } | null>,
+  options: { wakeSnoozed?: boolean } = {},
 ): Promise<void> {
-  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints);
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending);
+  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints, options);
+  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending, options);
   rows.forEach((row, i) => {
     const fingerprint = fingerprints[i];
     if (fingerprint) row.failureClusterId = routed.get(i) ?? clusterIds.get(fingerprint.fingerprint) ?? null;
@@ -72,6 +74,7 @@ async function routeMovedTests(
   pending: Map<string, PendingCluster>,
   rows: Array<{ testCaseId: number }>,
   fingerprints: Array<{ fingerprint: string } | null>,
+  options: { wakeSnoozed?: boolean },
 ): Promise<Map<number, number>> {
   const routedRows = new Map<number, number>();
   if (pending.size === 0) return routedRows;
@@ -122,7 +125,9 @@ async function routeMovedTests(
           lastSeenRunId: testRunId,
           occurrences: sql`${failureClusters.occurrences} + ${countByCluster.get(cluster.id)!}`,
           updatedAt: new Date(),
-          ...(wakeOnRecurrence({ snoozedUntil: cluster.snoozedUntil, snoozeMode: cluster.snoozeMode }) ?? {}),
+          ...(options.wakeSnoozed !== false
+            ? (wakeOnRecurrence({ snoozedUntil: cluster.snoozedUntil, snoozeMode: cluster.snoozeMode }) ?? {})
+            : {}),
         })
         .where(eq(failureClusters.id, cluster.id)),
     ),
@@ -252,14 +257,17 @@ export async function splitFailureCluster(
  * return fingerprint → cluster id. Existing clusters get their lastSeenRunId
  * and occurrences bumped; new ones start at this run. Insert races with
  * concurrent streaming batches are resolved via the unique
- * (projectId, fingerprint) index + onConflictDoNothing.
+ * (projectId, fingerprint) index + onConflictDoNothing. With `wakeSnoozed`
+ * false, a recurrence leaves an "until it recurs" snooze in place.
  */
 export async function getOrCreateFailureClusters(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
   pending: Map<string, PendingCluster>,
+  options: { wakeSnoozed?: boolean } = {},
 ): Promise<Map<string, number>> {
+  const wakeSnoozed = options.wakeSnoozed !== false;
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
 
@@ -282,7 +290,7 @@ export async function getOrCreateFailureClusters(
         updatedAt: new Date(),
         // A fresh occurrence wakes an "until it recurs" snooze — the cluster
         // returns to the inbox (its "snoozed, back" marker is the surviving mode).
-        ...(snooze ? (wakeOnRecurrence(snooze) ?? {}) : {}),
+        ...(snooze && wakeSnoozed ? (wakeOnRecurrence(snooze) ?? {}) : {}),
         ...(preferExemplar(currentSampleError ?? '', p.sampleError)
           ? {
               sampleError: p.sampleError,

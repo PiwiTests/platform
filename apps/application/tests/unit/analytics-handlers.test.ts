@@ -607,8 +607,8 @@ describe('branch policy and test filters', () => {
       (r) => r.projectId === projectId,
     )!;
 
-  test('the default branch policy counts the default branch and unknown-branch runs', async () => {
-    expect((await portfolioOf({}, 1)).runCount).toBe(2);
+  test('the default branch policy counts the default branch, and unknown-branch runs only where no branch is known', async () => {
+    expect((await portfolioOf({}, 1)).runCount).toBe(1);
     expect((await portfolioOf({}, 1)).passRate).toBe(100);
     expect((await portfolioOf({}, 2)).runCount).toBe(1);
   });

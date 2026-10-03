@@ -51,8 +51,9 @@ weekly or monthly. Buckets start at UTC midnight, so a heatmap cell is one UTC d
 
 ### Branch policy
 
-By default only runs on each project's **default branch** count, plus runs whose branch is unknown, so
-a broken feature branch no longer moves the trends. The default branch is the project's setting, else
+By default only runs on each project's **default branch** count, so a broken feature branch does not
+move the trends. A run whose branch is unknown (a trace import, a run outside git) counts only in a
+project that never reported a branch. The default branch is the project's setting, else
 the one its latest run reported, else `main`. *All branches* counts every run; branches picked in the
 filter bar override both.
 

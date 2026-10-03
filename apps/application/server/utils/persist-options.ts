@@ -13,6 +13,8 @@ export interface PersistRunCasesOptions {
    * as they are: the batch comes from a run older than the project's newest.
    */
   keepTestState?: boolean;
+  /** Leave snoozed failure clusters asleep when the batch's failures recur in them. */
+  keepSnoozed?: boolean;
 }
 
 /** The creation time of an execution persisted with `datedFrom`: its attempt's start, else the given time. */
