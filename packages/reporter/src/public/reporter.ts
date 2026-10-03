@@ -727,6 +727,11 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
     if (this.listMode || !this.enabled) return;
+    // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
+    if (this.startTime === null) {
+      this.logger.debug('The run stopped before any test began — nothing to report.');
+      return;
+    }
 
     // Tests Playwright never reported were cut off by a run-level condition —
     // the global timeout, the failure budget, or an interruption.

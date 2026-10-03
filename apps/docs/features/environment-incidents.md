@@ -81,6 +81,15 @@ change broke something" (`1`):
 The gate's JSON result carries `verdict: "inconclusive"`, `passed: false` and the incident under `facts.incident`, so
 a client that reads only `passed` still blocks the merge.
 
+## Stopping a run before it starts
+
+With the reporter option [`checkBaseUrl`](/reference/reporter-options#checkbaseurl), the reporter checks that each
+`baseURL` of the run's projects answers before any worker starts. When one does not (a refused connection, a name
+that does not resolve, no answer in 10 seconds, or a `502`, `503` or `504`, on each of three tries), the run stops
+with a message naming it and Playwright's failure exit code. No test runs, so the outage costs no CI time, and no run
+reaches the dashboard. The option is off by default, and the check runs before the config's own `globalSetup`, so
+leave it off when that setup is what starts the app.
+
 ## Marking and clearing by hand
 
 The rules can miss an outage or flag a real regression. Anyone who can edit the run can decide instead:
@@ -113,5 +122,6 @@ or administrator key and is kept in the [write log](./mcp).
 - [Flaky tests & quarantine](./flaky-tests): the scores an incident leaves alone
 - [Notification events & webhooks](/reference/notification-events): `environment.incident` and its payload
 - [Piwi CLI](/reference/cli#gate): the gate's exit codes
+- [Reporter options](/reference/reporter-options#app-under-test): `checkBaseUrl`
 - [Timeline markers](./timeline-markers): the `incident` category
 - [Concepts](/guide/concepts#environment-incident): the term
