@@ -825,9 +825,7 @@ class FileModel {
    */
   contextAt(offset: number): CursorContext {
     const fn = this.innermost(
-      this.functions
-        .filter((f) => f.body && this.contains(f.body, offset) && !this.groups(f))
-        .map((f) => [f.body!, f]),
+      this.functions.filter((f) => f.body && this.contains(f.body, offset) && !this.groups(f)).map((f) => [f.body!, f]),
     );
     const klass = this.classAt(offset);
     if (klass && (!fn?.body || this.inside(klass.body).from > this.inside(fn.body).from)) return 'class';

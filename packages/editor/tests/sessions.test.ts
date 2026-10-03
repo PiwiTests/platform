@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { RawCaptureEvent, RecordedTarget } from '@piwitests/core/recording';
 import type { RecordParams, RecordingUpdate } from '../src/protocol';
@@ -9,6 +9,7 @@ import type { LaunchRequest, LauncherToService, ServiceToLauncher } from '../src
 import type { ProjectOptions, ProjectUse } from '../src/recorder/project-options';
 import {
   RecordingSessions,
+  UPDATE_INTERVAL_MS,
   recorderLanguage,
   startUrl,
   type LauncherEvents,
@@ -77,6 +78,9 @@ function setup(
     env?: Record<string, string | undefined>;
     distDir?: string;
     readText?: (uri: string) => string | null;
+    updateIntervalMs?: number;
+    /** Runs as each update is sent. */
+    onUpdate?: () => void;
   } = {},
 ) {
   const updates: RecordingUpdate[] = [];
@@ -87,7 +91,10 @@ function setup(
   ];
   const sessions = new RecordingSessions({
     distDir: options.distDir ?? dist,
-    notify: (update) => updates.push(update),
+    notify: (update) => {
+      updates.push(update);
+      options.onUpdate?.();
+    },
     readOptions: async (configFile): Promise<ProjectOptions> => {
       read.push(configFile);
       if (options.failRead) throw options.failRead;
@@ -100,6 +107,8 @@ function setup(
     },
     env: options.env ?? {},
     readText: options.readText,
+    // Every event renders at once, unless a test looks at how updates are spaced.
+    updateIntervalMs: options.updateIntervalMs ?? 0,
   });
   const start = (params: Partial<RecordParams> = {}, target: Partial<RecordTarget> = {}) =>
     sessions.start(
@@ -699,6 +708,70 @@ describe('a recording session', () => {
       ['start', 'stop'],
       ['start', 'stop'],
     ]);
+  });
+});
+
+describe('the spacing of updates', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('events within the update interval render together once it is over; Stop renders at once', async () => {
+    vi.useFakeTimers();
+    const { start, sessions, launchers, updates, last } = setup({ updateIntervalMs: UPDATE_INTERVAL_MS });
+    const { sessionId } = await start();
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    launcher.emit({ type: 'event', event: fill(EMAIL, 'dev@example.com') });
+    expect(updates).toHaveLength(1);
+    vi.advanceTimersByTime(UPDATE_INTERVAL_MS - 1);
+    expect(updates).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(updates).toHaveLength(2);
+    expect(last().steps).toHaveLength(2);
+
+    // After a quiet interval, an event renders at once.
+    vi.advanceTimersByTime(UPDATE_INTERVAL_MS);
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    expect(updates).toHaveLength(3);
+    expect(last().steps).toHaveLength(3);
+
+    // Paused, nothing is due; resuming renders at once.
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    sessions.command(sessionId!, 'pause');
+    vi.advanceTimersByTime(UPDATE_INTERVAL_MS * 2);
+    expect(updates).toHaveLength(3);
+    sessions.command(sessionId!, 'resume');
+    expect(updates).toHaveLength(4);
+    expect(last().steps).toHaveLength(4);
+
+    // The last update holds every event, without waiting.
+    launcher.emit({ type: 'event', event: click(SIGN_IN) });
+    void sessions.stop(sessionId!);
+    expect(updates).toHaveLength(5);
+    expect(last()).toMatchObject({ state: 'stopped' });
+    expect(last().steps).toHaveLength(5);
+    vi.advanceTimersByTime(UPDATE_INTERVAL_MS * 2);
+    expect(updates).toHaveLength(5);
+    launcher.exit(0);
+  });
+
+  test('after a slow rendering the next waits three times as long', async () => {
+    vi.useFakeTimers();
+    const { start, launchers, updates } = setup({
+      updateIntervalMs: UPDATE_INTERVAL_MS,
+      // Each update takes 50 ms to render and send.
+      onUpdate: () => vi.setSystemTime(Date.now() + 50),
+    });
+    await start();
+    const launcher = launchers[0]!;
+    launcher.emit({ type: 'started' });
+    launcher.emit({ type: 'event', event: navigate(`${BASE}/login`) });
+    vi.advanceTimersByTime(149);
+    expect(updates).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(updates).toHaveLength(2);
   });
 });
 

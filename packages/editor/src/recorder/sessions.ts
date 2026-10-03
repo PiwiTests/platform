@@ -1,9 +1,12 @@
 /**
  * Recording sessions: one per `piwi/record`, each a browser the launcher opened with the project's own Playwright and
- * the `use` options of one of its projects, and the recorded block it writes into a file. Every event the launcher
- * reports re-renders all the steps with `renderSpec`, and the block, the imports the file lacks, its steps and its
- * warnings go to the client as a `piwi/recordingChanged` notification, in order. While paused nothing is sent; resuming sends the
- * latest block again. A session ends with a last notification, `stopped` or `failed`, and its browser closes.
+ * the `use` options of one of its projects, and the recorded block it writes into a file. The events the launcher
+ * reports are rendered, all the steps each time, with `renderSpec`, and the block, the imports the file lacks, its
+ * steps and its warnings go to the client as a `piwi/recordingChanged` notification, in order. An event renders at
+ * once when the update interval since the latest update is over (`UPDATE_INTERVAL_MS`, longer after a slow
+ * rendering); otherwise the events received meanwhile render together when it is. While paused nothing is sent;
+ * resuming sends the latest block again. A session ends with a last notification, `stopped` or `failed`, sent at
+ * once, and its browser closes.
  */
 import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -44,6 +47,12 @@ export const MESSAGES_FILE = 'record-ide-messages.json';
 
 /** How long a launcher may take to close its browser and exit before it is killed. */
 const EXIT_TIMEOUT_MS = 8_000;
+
+/** The shortest time between two renderings of a session, in ms. */
+export const UPDATE_INTERVAL_MS = 100;
+
+/** The time between two renderings is at least this many times the last one's duration. */
+const RENDERING_SHARE = 3;
 
 /** The spec files of a folder read to find the module a new spec imports `test` from. */
 const MAX_SIBLINGS = 50;
@@ -132,6 +141,11 @@ export interface RecordingSessionsOptions {
    * imports leave out what the file imports already; without it, the text the recording started from is read.
    */
   readText?(uri: string): string | null;
+  /**
+   * The shortest time between two renderings, in ms ({@link UPDATE_INTERVAL_MS} by default); the time after a
+   * rendering is also at least {@link RENDERING_SHARE} times its duration. 0 renders on every event.
+   */
+  updateIntervalMs?: number;
 }
 
 type Final = 'stopped' | 'failed';
@@ -154,6 +168,12 @@ interface Session {
   notes: string[];
   /** The latest update rendered, kept when a later rendering fails. */
   latest: RecordingUpdate | null;
+  /** When the latest update was sent, in ms. */
+  sentAt: number;
+  /** How long after `sentAt` the next rendering may run, in ms. */
+  wait: number;
+  /** The rendering due once the wait is over. */
+  timer: ReturnType<typeof setTimeout> | null;
   launcher: LauncherHandle | null;
   /** Resolves once the launcher has exited. */
   exited: Promise<void>;
@@ -278,11 +298,13 @@ export class RecordingSessions {
   private readonly sessions = new Map<string, Session>();
   private readonly launch: LauncherFactory;
   private readonly env: Record<string, string | undefined>;
+  private readonly updateInterval: number;
   private catalogs: Record<string, Record<string, unknown>> | null = null;
 
   constructor(private readonly options: RecordingSessionsOptions) {
     this.launch = options.launch ?? forkLauncher(path.join(options.distDir, LAUNCHER_FILE));
     this.env = options.env ?? process.env;
+    this.updateInterval = options.updateIntervalMs ?? UPDATE_INTERVAL_MS;
   }
 
   /**
@@ -394,6 +416,9 @@ export class RecordingSessions {
           ? [...browser.notes, 'The browser opened on a blank page: go to the page to record there.']
           : browser.notes,
       latest: null,
+      sentAt: -Infinity,
+      wait: 0,
+      timer: null,
       launcher: null,
       exited,
       exit,
@@ -437,9 +462,10 @@ export class RecordingSessions {
     if (!session || isFinal(session.state) || session.state === 'starting') return;
     if (command === 'pause') {
       session.state = 'paused';
+      this.cancelUpdate(session);
     } else if (command === 'resume') {
       session.state = 'recording';
-      this.send(this.update(session));
+      this.sendUpdate(session);
     }
   }
 
@@ -482,16 +508,16 @@ export class RecordingSessions {
     switch (message.type) {
       case 'started': {
         session.state = 'recording';
-        this.send(this.update(session, { message: session.notes.join(' ') || null }));
+        this.sendUpdate(session, { message: session.notes.join(' ') || null });
         break;
       }
       case 'event': {
         session.events.push(message.event);
-        if (session.state === 'recording') this.send(this.update(session));
+        if (session.state === 'recording') this.scheduleUpdate(session);
         break;
       }
       case 'notice': {
-        if (session.state === 'recording') this.send(this.update(session, { message: message.message }));
+        if (session.state === 'recording') this.sendUpdate(session, { message: message.message });
         break;
       }
       case 'stopped-in-browser':
@@ -539,13 +565,39 @@ export class RecordingSessions {
   private finish(session: Session, state: Final, message: string | null, command: PiwiCommand | null = null): void {
     if (isFinal(session.state)) return;
     session.state = state;
-    this.send(this.update(session, { message, command }));
+    this.sendUpdate(session, { message, command });
     const launcher = session.launcher;
     if (!launcher) return session.exit();
     launcher.send({ type: 'stop' });
     const timer = setTimeout(() => launcher.kill(), EXIT_TIMEOUT_MS);
     timer.unref?.();
     void session.exited.then(() => clearTimeout(timer));
+  }
+
+  /** Renders the session's events at once, unless the wait after the latest update is not over: then once it is. */
+  private scheduleUpdate(session: Session): void {
+    if (session.timer) return;
+    const due = this.updateInterval === 0 ? 0 : session.sentAt + session.wait - Date.now();
+    if (due <= 0) return this.sendUpdate(session);
+    session.timer = setTimeout(() => {
+      session.timer = null;
+      if (session.state === 'recording') this.sendUpdate(session);
+    }, due);
+    session.timer.unref?.();
+  }
+
+  private cancelUpdate(session: Session): void {
+    if (session.timer) clearTimeout(session.timer);
+    session.timer = null;
+  }
+
+  /** Renders the session's events and sends the update now, in place of any rendering due later. */
+  private sendUpdate(session: Session, extra: { message?: string | null; command?: PiwiCommand | null } = {}): void {
+    this.cancelUpdate(session);
+    const start = Date.now();
+    this.send(this.update(session, extra));
+    session.sentAt = Date.now();
+    session.wait = Math.max(this.updateInterval, RENDERING_SHARE * (session.sentAt - start));
   }
 
   /** The text of the session's file now, else as it was when the recording started. */

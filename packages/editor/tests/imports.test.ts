@@ -55,7 +55,7 @@ describe('importedNames', () => {
       "const lazy = await import('./lazy');",
       'const here = import.meta.url;',
       "const fs = require('node:fs');",
-      "const text = \"import { Fake } from 'x';\";",
+      'const text = "import { Fake } from \'x\';";',
       '// import { Commented } from "y";',
       "declare module 'z' {",
       "  import { Inner } from 'inner';",
@@ -70,7 +70,7 @@ describe('missingImports', () => {
     const text = file(
       'import {',
       '  CartPage,',
-      "} from \"./pages/cart.page\"",
+      '} from "./pages/cart.page"',
       "import { SignInPage as Login } from './pages/sign-in.page';",
       "test('t', async ({ page }) => {});",
     );

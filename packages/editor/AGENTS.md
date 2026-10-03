@@ -51,13 +51,18 @@ clients stay thin and both editors give the same answers.
   `PIWI_RECORDER_HEADLESS=1`, an explicit allowlist of context options, a missing `storageState` file left out and
   said so), exposes the binding before loading `record-ide.js` into every page, answers the recorder over it
   (`host-state.ts`: the storage areas and messages of the IDE bundle's `chrome`, every event through core's
-  `parseCaptureEvent`), and reports over its IPC channel (`ipc.ts`). Each event re-renders all the steps with
-  `renderSpec` and sends the whole block in `piwi/recordingChanged`, in order; pause stops the updates, resume sends the
-  latest again; Stop in the editor or in the browser, closing the browser or closing the file ends the session with a
-  last update and closes the browser. `page-candidates.ts` reads the file's text alone (a scanner in the style of
-  `callEndLine`, no TypeScript): the page expressions at a caret (`piwi/pageCandidates`, also the default of
-  `piwi/renderSteps` given a `line`), where the block goes and how it is indented, and the module the file's `test`
-  comes from.
+  `parseCaptureEvent`; only the main frame of the page it opened first records, every other frame and page, such as a
+  popup or a cross-origin iframe, is answered as outside a recording), and reports over its IPC channel (`ipc.ts`).
+  The events render all the steps with `renderSpec` and the whole block goes in `piwi/recordingChanged`, in order: at
+  once, or, within the update interval of the latest update (`UPDATE_INTERVAL_MS`, longer after a slow rendering),
+  together once it is over; pause stops the updates, resume sends the latest again; Stop in the editor or in the
+  browser, closing the browser or closing the file ends the session with a last update, sent at once, and closes the
+  browser. `page-candidates.ts` reads the file's text alone (a scanner in the style of `callEndLine`, no TypeScript):
+  the page expressions at a caret (`piwi/pageCandidates`, also the default of `piwi/renderSteps` given a `line`), the
+  context there (`test`, `function`, `class` or `file`, which `piwi/record` checks against `into`), the names declared
+  before it (a page object already declared is not instantiated again), where the block goes and how it is indented,
+  and the module the file's `test` comes from. `imports.ts` reads the names a file's import statements bind, with the
+  same scanner: the imports of an update and of `piwi/renderSteps` hold only the lines the file's text lacks.
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
