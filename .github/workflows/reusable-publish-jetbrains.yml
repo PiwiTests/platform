@@ -1,21 +1,23 @@
-name: Publish JetBrains Plugin
+name: Publish JetBrains plugin
 
 # Builds apps/jetbrains on each release tag, signs it when the signing secrets
 # are configured (JETBRAINS_CERTIFICATE_CHAIN, JETBRAINS_PRIVATE_KEY and
 # JETBRAINS_PRIVATE_KEY_PASSWORD), and keeps the plugin archive as a workflow
 # artifact, to publish or install by hand. A tag build then publishes it to the
 # JetBrains Marketplace (JETBRAINS_PUBLISH_TOKEN); skipped without the token.
+# release.yml calls it: from a release tag it publishes; from anywhere else it
+# only builds the artifact.
 on:
-  push:
-    tags:
-      - 'v*'
-  # Run against a tag, it publishes as a tag push does; against a branch, it
-  # only builds the artifact.
-  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   publish:
+    name: JetBrains plugin
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -28,15 +30,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: ./package-lock.json
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --fund=false
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
 
       - name: Build the editor service
         working-directory: ./packages/editor

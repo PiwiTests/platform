@@ -1,50 +1,32 @@
-name: Desktop Release
+name: Publish desktop installers
 
 # Builds the Tauri desktop app (Windows .msi + .exe + macOS .dmg + Linux .deb/.rpm/.AppImage)
 # and attaches the installers to the GitHub Release release-please created for the
-# tag, so they publish alongside the Docker image and npm packages (see publish.yml).
-# The Windows .exe is the NSIS installer in per-user mode (no admin prompt); the
-# .msi installs per machine and needs elevation.
+# tag, so they publish alongside the container image and the npm packages
+# (release.yml calls it). The Windows .exe is the NSIS installer in per-user mode
+# (no admin prompt); the .msi installs per machine and needs elevation. Off a tag
+# it builds the installers and keeps them as the run's artifacts.
 on:
-  push:
-    tags:
-      - 'v*'
-  # Manual escape hatch / dry-run: build the installers without releasing.
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      server-artifact:
+        description: >-
+          Artifact of the calling run holding apps/application/.output, built on Linux
+          with the node-server preset. The output is pure JS; stage-server.mjs adds
+          each OS's native modules.
+        type: string
+        required: true
+
+permissions:
+  contents: read
 
 env:
   # Match the runtime the app is built and tested against (apps/application/engines).
   PIWI_NODE_VERSION: 24.4.1
 
 jobs:
-  # Build the Nitro server bundle once on Linux (the proven path — the Windows
-  # Nuxt build carries a legacyExternals workaround and isn't exercised in CI).
-  # The .output is pure JS, so it's OS-agnostic; the per-OS native modules are
-  # added in the desktop job via stage-server.mjs.
-  build-server:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - run: npm ci
-      - name: Build server bundle (node-server preset)
-        run: npm run app:build --workspace=apps/application
-        env:
-          NITRO_PRESET: node-server
-          PIWI_BUILD_SHA: ${{ github.sha }}
-      - uses: actions/upload-artifact@v7
-        with:
-          name: app-output
-          path: apps/application/.output
-          # .output is dot-prefixed; upload-artifact@v4 skips hidden paths by default.
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
-
   desktop:
-    needs: [build-server]
+    name: desktop (${{ matrix.target }}, ${{ matrix.bundles }})
     permissions:
       contents: write # upload installers to the release
     strategy:
@@ -80,12 +62,15 @@ jobs:
             bundles: deb,rpm,appimage
             updaterConfig: src-tauri/tauri.updater.conf.json
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
-          node-version: '24'
+          install: 'false'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -127,7 +112,7 @@ jobs:
       - name: Download server bundle
         uses: actions/download-artifact@v8
         with:
-          name: app-output
+          name: ${{ inputs.server-artifact }}
           path: apps/application/.output
 
       - name: Fetch Node sidecar

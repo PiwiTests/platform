@@ -2,7 +2,7 @@
 
 Rules for working inside `apps/jetbrains/` (the Piwi plugin for WebStorm, IntelliJ IDEA Ultimate, Rider and the other
 JetBrains IDEs with the LSP API, published as `dev.piwitests.piwi` on the
-[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) by `publish-jetbrains.yml` on each release
+[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) by `reusable-publish-jetbrains.yml` on each release
 tag). Read [`../../AGENTS.md`](../../AGENTS.md) and [`../../packages/editor/AGENTS.md`](../../packages/editor/AGENTS.md)
 first.
 
@@ -62,7 +62,8 @@ with the project's Node.js interpreter.
 
 - **The oldest supported platform is 2024.1** (`pluginSinceBuild=241`): the first whose LSP API sends requests
   through the server (`sendRequestSync`) and lists servers in the Language Services widget. Compile against it;
-  `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA Ultimate and Rider too. An API newer than 2024.1 is looked
+  `verifyPlugin` checks the latest WebStorm, IntelliJ IDEA Ultimate and Rider too (CI verifies on 2024.1 and the
+  latest WebStorm for a pull request, on every IDE on `main`). An API newer than 2024.1 is looked
   up at run time or not used. Its test framework is pinned (`platformTestFrameworkVersion`: it is published with
   IntelliJ IDEA's build numbers, just after WebStorm's), and the test sandbox disables the Swagger plugin, whose test
   service ships with its own tests only.
@@ -95,7 +96,7 @@ npm run editor:build -w packages/editor   # from the repository root: the bundle
 (the wrapper starts on JDK 11 or later), and the build compiles with a JDK 21 toolchain (`jvmToolchain(21)`). When the
 machine has no JDK 21, the foojay resolver in `settings.gradle.kts` downloads one into `~/.gradle/jdks`. Moving to
 another JDK changes both: `./gradlew updateDaemonJvm --jvm-version=<n>` regenerates the file, and `jvmToolchain` follows
-in `build.gradle.kts`. CI (`jetbrains.yml`) installs JDK 21, so it downloads nothing.
+in `build.gradle.kts`. CI (`reusable-jetbrains.yml`) installs JDK 21, so it downloads nothing.
 
 The platform test `testTheBundledServiceAnswersThroughTheDescriptor` starts the bundled service with the descriptor's
 command line against a stub instance, and reads its answers with the Kotlin protocol classes.

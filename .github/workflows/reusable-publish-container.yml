@@ -1,116 +1,28 @@
-name: Publish Container Image
+name: Publish container image
 
+# The multi-arch server image. On a release tag it pushes the version, minor,
+# major and `latest` tags to GHCR and Docker Hub (release.yml calls it); on main
+# it pushes `edge` to GHCR (edge.yml); anywhere else it builds both
+# architectures and pushes nothing.
 on:
-  push:
-    tags:
-      - 'v*'
-    branches:
-      - main
-  # Manual escape hatch: run against an existing tag (e.g. one release-please
-  # created that didn't auto-trigger this workflow — see release-please.yml).
-  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PUSH: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
 
 jobs:
-  publish-npm:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build reporter
-        working-directory: packages/reporter
-        run: npm run reporter:build
-
-      - name: Publish to npm
-        run: npm publish --access public --provenance
-        working-directory: packages/reporter
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Summary
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "## NPM Package Published :package:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package**: \`@piwitests/reporter\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Install" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "npm install @piwitests/reporter" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-  # Publish @piwitests/server: the dashboard server as an npm package (npx @piwitests/server).
-  # Kept as its own job so the heavy Nuxt build doesn't gate the reporter publish above.
-  # The bundled Nitro node-server output is built here and copied in by the package's
-  # `prepack` step (scripts/copy-output.mjs) at publish time.
-  publish-npm-server:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application (node-server preset)
-        run: npm run app:build --workspace=apps/application
-        env:
-          NITRO_PRESET: node-server
-
-      - name: Publish to npm
-        run: npm publish --workspace @piwitests/server --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Summary
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "## NPM Package Published :package:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package**: \`@piwitests/server\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Run" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "npx @piwitests/server" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
   # Build each architecture on its own NATIVE runner and push it by digest.
   # Building linux/arm64 on a native arm runner (instead of QEMU emulation on an
   # amd64 runner) is the main speed-up: the heavy npm ci + nuxt build no longer
   # runs under emulation. The two arches run in parallel; the `merge` job below
   # stitches the pushed digests into a single multi-arch manifest list.
   build:
+    name: build (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
@@ -120,6 +32,7 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm  # GitHub-hosted native ARM; free for public repos
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -148,6 +61,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Log in to GitHub Container Registry
+        if: env.PUSH == 'true'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -166,17 +80,20 @@ jobs:
           # Registry cache is NOT branch-scoped (unlike type=gha), so release (v*)
           # builds reuse the layers cached by main/edge builds. Per-arch ref keeps
           # the two matrix legs from clobbering each other.
+          # A build that pushes nothing reads the cache and writes none.
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:buildcache-${{ env.PLATFORM_PAIR }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }},push-by-digest=true,name-canonical=true,push=true
+          cache-to: ${{ env.PUSH == 'true' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRY, env.IMAGE_NAME_LC, env.PLATFORM_PAIR) || '' }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}
 
       - name: Export digest
+        if: env.PUSH == 'true'
         run: |
           mkdir -p "${{ runner.temp }}/digests"
           digest="${{ steps.build.outputs.digest }}"
           touch "${{ runner.temp }}/digests/${digest#sha256:}"
 
       - name: Upload digest
+        if: env.PUSH == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: digests-${{ env.PLATFORM_PAIR }}
@@ -188,7 +105,10 @@ jobs:
   # manifest list per registry. imagetools reads the arch manifests from GHCR and
   # (for Docker Hub) copies them across, so nothing is rebuilt or re-emulated here.
   merge:
+    name: merge
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [build]
     permissions:
       contents: read
@@ -238,6 +158,8 @@ jobs:
       - name: Create and push manifest list to GHCR
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # The tags and the digests are split into one argument each.
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}@sha256:%s ' *)
@@ -258,6 +180,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # The tags and the digests are split into one argument each.
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}@sha256:%s ' *)

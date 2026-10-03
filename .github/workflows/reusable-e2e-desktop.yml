@@ -4,47 +4,62 @@ name: Desktop E2E
 # driving its webview with Playwright via tauri-plugin-playwright (the app is
 # built with the `e2e-testing` feature, which embeds the control plugin). The
 # smoke test boots the whole app — server sidecar + native window — so this is
-# heavier and slower than the unit/integration CI; it runs only on desktop
-# changes and on demand.
+# heavier and slower than the unit/integration CI: ci.yml calls it on pull
+# requests that change the desktop app, and it runs on demand.
 on:
+  workflow_call:
+    inputs:
+      build-artifact:
+        description: >-
+          Artifact of the calling run holding apps/application/.output, built on Linux:
+          staging adds this OS's native modules. Empty builds the server here.
+        type: string
+        default: ''
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'apps/desktop/**'
-      - '.github/workflows/desktop-e2e.yml'
+
+permissions:
+  contents: read
 
 env:
-  # Match the runtime the app bundles (apps/application/engines / desktop-release.yml).
+  # Match the runtime the app bundles (apps/application/engines / reusable-publish-desktop.yml).
   PIWI_NODE_VERSION: 24.4.1
 
 jobs:
   e2e:
+    name: e2e
     # macOS runs the real Tauri webview headed (no xvfb), matching the plugin's
     # own e2e setup.
     runs-on: macos-14
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
           node-version: ${{ env.PIWI_NODE_VERSION }}
-          cache: npm
+          install: ${{ inputs.build-artifact == '' }}
 
-      - name: Install workspace deps
-        run: npm ci
+      - name: Download the server bundle
+        if: inputs.build-artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build-artifact }}
 
       - name: Build the server bundle
+        if: inputs.build-artifact == ''
         # The Nuxt/Vite SSR build needs more heap than Node's default cap on the
         # macOS runner (it OOMs at ~2 GB otherwise; the ubuntu builds get a higher
         # default and don't need this).
-        run: npm run app:build --workspace=apps/application
+        working-directory: apps/application
+        run: npm run app:build
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Install desktop deps
         working-directory: apps/desktop
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --fund=false
 
       - name: Stage the Node sidecar + bundled server
         working-directory: apps/desktop
@@ -52,9 +67,11 @@ jobs:
           node scripts/fetch-node.mjs --node "$PIWI_NODE_VERSION"
           npm run stage
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: swatinem/rust-cache@v2
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
 
@@ -91,3 +108,4 @@ jobs:
           name: desktop-e2e-report
           path: apps/desktop/playwright-report
           if-no-files-found: ignore
+          retention-days: 7
