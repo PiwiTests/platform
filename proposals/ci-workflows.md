@@ -46,8 +46,27 @@ requests, `pr-lint.yml`, and `.github/AGENTS.md` with the conventions. What chan
 - The release workflows (`publish*.yml`, `desktop-release.yml`) keep their own Node setup until phase 4 rewrites them.
 - Dependabot also updates the actions of `.github/actions/*`.
 - Branch protection is still to switch: the required checks become `CI result`, `commitlint`, `title` and
-  `actionlint`. Check names that moved: the four suites report as `Extension E2E / e2e`, `VS Code E2E / e2e`,
-  `JetBrains plugin / plugin`, `JetBrains plugin / verify (…)` and `Desktop E2E / e2e`.
+  `actionlint`. Check names that moved: the four suites report as `Extension E2E / e2e (shard …)`,
+  `VS Code E2E / e2e`, `JetBrains plugin / plugin`, `JetBrains plugin / verify (…)` and `Desktop E2E / e2e`.
+
+**Phase 3 built 2026-10-03**, on decisions D2 (option A), D4 (two IDEs on pull requests, four on `main`) and D5
+(Windows and macOS when the packages change, and on `main`): the `changes` job picks the E2E backends and the package
+smoke systems, the extension suite runs in three shards, the desktop suite stages `ci.yml`'s build, and the JetBrains
+Plugin Verifier runs on two IDEs for a pull request. What changed while building phase 3:
+
+- The matrices are computed in the `changes` job (`jq`) and read with `fromJSON` as `include` lists: five shards per
+  backend, 10 E2E jobs on a pull request and 20 on `main`.
+- The package smoke systems widen on `package-lock.json`, `apps/application/package.json` and
+  `apps/application/nuxt.config.ts` too: a new dependency or a bundling change is what breaks the packages on Windows
+  or macOS.
+- Playwright splits the extension suite by test count, file by file: 146, 150 and 142 tests. The shard holding
+  `replay.spec.ts` takes about 7.8 minutes of tests against 13.4 for the whole suite; splitting that file would bring
+  it near 5. Each shard installs and builds on its own, about 2 more runner minutes per shard.
+- The build job also runs on a pull request that changes only the desktop app, for the desktop suite to stage it; the
+  desktop suite skips the root `npm ci` and the macOS build. Run on demand, it still builds on macOS.
+- On `main` the JetBrains job verifies on four IDEs, and its plugin job writes the Gradle cache the pull requests
+  read.
+- `checks` stays one job until a measurement shows it is the longest path.
 
 ## What we measured
 
@@ -201,22 +220,21 @@ Each phase is one pull request, measured before and after with the same API quer
 - [ ] Branch protection switched to `CI result`, `commitlint`, `title` and `actionlint`, or pull requests wait for
       check names that no longer exist.
 
-### Phase 3: test matrices (one pull request per item; D2 and D4 decide the split)
+### Phase 3: test matrices (built, except the `checks` split)
 
-- [ ] E2E on two backends for pull requests, `local + sqlite` (Node 22, the `engines` floor) and `s3 + postgres`, five
-      shards each: 20 → 10 jobs. All four backends where D2 says, from a matrix `changes` computes (`fromJSON`).
-- [ ] Extension E2E in three shards by file (`fullyParallel: false` stays): about 16 → 7 minutes of wall-clock
-      time. (`retries: 1` on CI is built, with phase 1.) `replay.spec.ts` (5.1 minutes) bounds the longest shard;
-      split it if needed.
-- [ ] Desktop E2E reuses the `build-output` artifact of `ci.yml`'s `build` job: 2.3 macOS minutes less per run, and no
+- [x] E2E on two backends for pull requests, `local + sqlite` (Node 22, the `engines` floor) and `s3 + postgres`, five
+      shards each: 20 → 10 jobs. All four backends on `main`, from a matrix `changes` computes (`fromJSON`).
+- [x] Extension E2E in three shards by file (`fullyParallel: false` stays), and `retries: 1` on CI.
+      `replay.spec.ts` (5.1 minutes) bounds the longest shard; split it if the suite becomes the longest path.
+- [x] Desktop E2E stages the `build-output` artifact of `ci.yml`'s `build` job: no macOS build, no root `npm ci`, no
       `--max-old-space-size` workaround.
-- [ ] JetBrains: `verify` on the oldest and newest IDE (`WS:2024.1`, `WS:2026.2.3`) for pull requests, all four where
-      D4 says. The `plugin` job also runs on `main` when `changes.editors` is true, which writes the Gradle cache. The
-      `verify` IDEs stay out of the cache: four distributions would take a large share of the 10 GB and evict the rest.
+- [x] JetBrains: `verify` on the oldest and newest IDE (`WS:2024.1`, `WS:2026.2.3`) for pull requests, all four on
+      `main`, where the `plugin` job writes the Gradle cache. The `verify` IDEs stay out of the cache: four
+      distributions would take a large share of the 10 GB and evict the rest.
 - [ ] `checks` in two parallel jobs (lint, typecheck and package tests; application and reporter unit tests with
       coverage): 7.3 → about 4.5 minutes. Only if `checks` becomes the longest path once the items above have landed.
-- [ ] Package smoke: Linux on pull requests; Windows and macOS on `main`, or on pull requests that change
-      `packages/{server,reporter}/**` or `scripts/package-smoke.mjs` (D5).
+- [x] Package smoke: Linux on pull requests; Windows and macOS on `main`, and on pull requests that change the
+      packages, `scripts/package-smoke.mjs` or the dependencies.
 
 ### Phase 4: releases and the `edge` image (dry-run with `workflow_dispatch` on a branch before the next tag)
 
@@ -249,8 +267,9 @@ The "after" column is computed from the measured job durations, to be confirmed 
 ## Decisions
 
 - **D1. One required check, `CI result`** (recommended). Branch protection changes the day phase 2 merges.
+  Decided: built in phase 2.
   Alternative: keep today's checks and gate with job-level `if` only.
-- **D2. Where the four-backend matrix runs.**
+- **D2. Where the four-backend matrix runs.** Decided: A.
   - A (recommended): pull requests on two backends, pushes to `main` on four. A regression only a crossed pair shows
     is seen right after the merge.
   - B: pull requests and `main` on two, all four nightly. Cheaper; seen up to a day later.
@@ -258,9 +277,10 @@ The "after" column is computed from the measured job durations, to be confirmed 
     `main` only seeds the caches. The most thorough; it changes how pull requests are merged.
 - **D3. The `edge` image**: on every push to `main` (about 7 runner minutes a merge) or nightly.
 - **D4. JetBrains `verify`**: two IDEs on pull requests and four on `main` or nightly, or four on pull requests that
-  change `apps/jetbrains/**` and two when only `packages/editor` or `packages/core` changes.
+  change `apps/jetbrains/**` and two when only `packages/editor` or `packages/core` changes. Decided: two on pull
+  requests, four on `main`.
 - **D5. Package smoke on Windows and macOS**: on every application pull request (today), or when the server or
-  reporter package changes, and on `main`.
+  reporter package changes, and on `main`. Decided: when the packages or their dependencies change, and on `main`.
 
 ## Before phase 4
 
