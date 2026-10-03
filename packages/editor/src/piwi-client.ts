@@ -97,6 +97,22 @@ export interface FlakyTest {
   rootCause: string | null;
 }
 
+/** A test of the project's Flake Lab (`GET /api/projects/:id/flake-lab?suspects=true`). */
+export interface FlakeLabEntry {
+  testCaseId: number;
+  /** `untested`, `not-reproduced`, `amplified`, `reproduced`, `still-fails`, `inconclusive`, `verified` or `flaked-again`. */
+  state: string;
+  /** The `piwi flake` command it needs next; null once its fix holds. */
+  nextCommand: string | null;
+  flaky: boolean;
+  /** The condition that last reproduced it. */
+  reproducedBy: string | null;
+  /** Share of the runs read in which it failed at least once; absent from an older instance. */
+  flakeRate?: number | null;
+  /** The suspect it is shown with; absent from an older instance or past the instance's limit. */
+  suspect?: { id: string; label: string; standing: string; lab: string } | null;
+}
+
 /** A ticket or page linked to a failure cluster or a test (`GET /api/links`). */
 export interface EntityLink {
   url: string;
@@ -239,6 +255,14 @@ export class PiwiClient {
     return body.items ?? [];
   }
 
+  /** The project's Flake Lab tests, each with its top suspect. */
+  async flakeLab(projectId: number, branch: string | null): Promise<FlakeLabEntry[]> {
+    const query = new URLSearchParams({ suspects: 'true', limit: '1' });
+    if (branch) query.set('branch', branch);
+    const body = await this.get<{ tests?: FlakeLabEntry[] }>(`/api/projects/${projectId}/flake-lab?${query}`);
+    return body.tests ?? [];
+  }
+
   async links(entityType: 'failure_cluster' | 'test_case', entityId: number): Promise<EntityLink[]> {
     const body = await this.get<{ items?: EntityLink[] }>(`/api/links?entityType=${entityType}&entityId=${entityId}`);
     return body.items ?? [];
@@ -328,5 +352,10 @@ export class PiwiClient {
   /** A test case's page in the dashboard. */
   testUrl(testCaseId: number): string {
     return `${this.connection.serverUrl}/test-cases/${testCaseId}`;
+  }
+
+  /** A test case's Flakiness tab. */
+  flakinessUrl(testCaseId: number): string {
+    return `${this.testUrl(testCaseId)}?tab=flakiness`;
   }
 }

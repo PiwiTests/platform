@@ -27,7 +27,7 @@ import {
   tryParseLocatorChain,
 } from '@piwitests/core/locator-chain';
 import type { RankedLocator } from '@piwitests/core/locator-healing-types';
-import type { CallSiteAlternatives, CodeIndex } from './piwi-client.js';
+import type { CallSiteAlternatives, CodeIndex, FlakeLabEntry } from './piwi-client.js';
 
 /** A locator the index knows at one line of a file. */
 export interface LineLocator {
@@ -587,4 +587,40 @@ export function callEndLine(lines: string[], line: number, column: number, maxLi
     }
   }
   return null;
+}
+
+/** The Flake Lab states whose next step verifies a fix. */
+const FLAKE_VERIFY_STATES = new Set(['reproduced', 'still-fails', 'inconclusive']);
+
+/** The Flake Lab lens of a flaky test: what it says, and the commands it offers. */
+export interface FlakeLabLens {
+  /** `flaky 18% · top suspect: GET /api/cart slower (reproduced 7 of 10)`. */
+  title: string;
+  /** Reproduce it, then verify its fix once a condition reproduced it; each a `piwi flake` command. */
+  actions: Array<{ kind: 'reproduce' | 'verify'; title: string; command: string }>;
+}
+
+/**
+ * The lens above a flaky test: its flaky rate and the suspect it is shown with,
+ * then "Reproduce this flake", and "Verify the flake fix" once the lab
+ * reproduced it. The verify command is the instance's next command; null when
+ * the test is off the flaky ranking with nothing to verify, or its fix holds.
+ */
+export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLabLens | null {
+  const verify = FLAKE_VERIFY_STATES.has(entry.state) && entry.nextCommand?.includes(' verify ');
+  if (!entry.nextCommand || (!entry.flaky && !verify)) return null;
+  const rate = entry.flakeRate != null ? `flaky ${Math.max(1, Math.round(entry.flakeRate * 100))}%` : 'flaky';
+  const suspect = entry.suspect
+    ? `top suspect: ${entry.suspect.label} (${entry.suspect.lab})`
+    : entry.reproducedBy
+      ? `reproduced by ${entry.reproducedBy}`
+      : null;
+  const reproduce = verify ? `npx @piwitests/reporter flake ${testCaseId}` : entry.nextCommand;
+  return {
+    title: [rate, suspect].filter(Boolean).join(' · '),
+    actions: [
+      { kind: 'reproduce', title: 'Reproduce this flake', command: reproduce },
+      ...(verify ? [{ kind: 'verify' as const, title: 'Verify the flake fix', command: entry.nextCommand }] : []),
+    ],
+  };
 }

@@ -349,6 +349,28 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u.startsWith('/api/projects/7/flake-lab?')) {
+      return res.end(
+        JSON.stringify({
+          tests: [
+            {
+              testCaseId: 1,
+              state: 'reproduced',
+              nextCommand: 'npx @piwitests/reporter flake verify 1',
+              flaky: true,
+              reproducedBy: 'delay GET /api/cart 1.8 s',
+              flakeRate: 0.18,
+              suspect: {
+                id: 'slow-route:GET /api/cart',
+                label: 'slow GET /api/cart',
+                standing: 'reproduced',
+                lab: 'reproduced 7 of 10',
+              },
+            },
+          ],
+        }),
+      );
+    }
     if (u.startsWith('/api/projects/7/flaky-tests')) {
       return res.end(
         JSON.stringify({ items: [{ testCaseId: 1, score: 42, wastedCiMinutes: 12.4, rootCause: 'timing' }] }),
@@ -804,6 +826,33 @@ describe('the Piwi language server', () => {
         // The document as the earlier tests left it: the test's body spans two more lines.
         status: 'passed',
         endLine: 4,
+      },
+      {
+        line: 2,
+        title: 'flaky 18% · top suspect: slow GET /api/cart (reproduced 7 of 10)',
+        command: {
+          title: 'Open its Flakiness tab',
+          command: 'piwi.openInDashboard',
+          arguments: [`${url}/test-cases/1?tab=flakiness`],
+        },
+      },
+      {
+        line: 2,
+        title: 'Reproduce this flake',
+        command: {
+          title: 'Reproduce this flake',
+          command: 'piwi.runCommand',
+          arguments: [{ cwd: dir, command: 'npx @piwitests/reporter flake 1', env: { PIWI_ORIGIN: 'editor' } }],
+        },
+      },
+      {
+        line: 2,
+        title: 'Verify the flake fix',
+        command: {
+          title: 'Verify the flake fix',
+          command: 'piwi.runCommand',
+          arguments: [{ cwd: dir, command: 'npx @piwitests/reporter flake verify 1', env: { PIWI_ORIGIN: 'editor' } }],
+        },
       },
     ]);
 
