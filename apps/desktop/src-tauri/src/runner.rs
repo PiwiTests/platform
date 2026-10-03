@@ -621,7 +621,8 @@ pub async fn desktop_run_local_tests(
         .current_dir(folder)
         // Plain text for the in-app output pane.
         .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0");
+        .env("FORCE_COLOR", "0")
+        .env("PIWI_ORIGIN", "desktop");
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 

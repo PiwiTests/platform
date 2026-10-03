@@ -91,11 +91,13 @@ describe('which runs move a report', () => {
     expect(report!.status).toBe('test-committed');
   });
 
-  test('a local run of the bug spec alone moves nothing, a CI run of some tests does', async () => {
+  test('a piwi bug --write run on the default branch moves nothing, a selection run does', async () => {
     await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
-    expect(await closingRun(10, { branch: 'main', isFullRun: 0 })).toEqual([]);
-    const ci = await closingRun(11, { branch: 'main', isFullRun: 0, metadata: { ci: { provider: 'github' } } });
-    expect(ci.map((t) => [t.id, t.to])).toEqual([[1, 'closed']]);
+    expect(
+      await closingRun(10, { branch: 'main', isFullRun: 0, metadata: { piwiOrigin: { kind: 'bug', ref: '1' } } }),
+    ).toEqual([]);
+    const selection = await closingRun(11, { branch: 'main', isFullRun: 0, metadata: { piwiOrigin: { kind: 'ci' } } });
+    expect(selection.map((t) => [t.id, t.to])).toEqual([[1, 'closed']]);
   });
 
   test('a run with no branch moves the report only when the project records no branch', async () => {
@@ -111,6 +113,22 @@ describe('which runs move a report', () => {
   test('a full run of the default branch moves the report', async () => {
     const moved = await closingRun(10, { branch: 'main' });
     expect(moved.map((t) => [t.id, t.from, t.to])).toEqual([[1, 'test-committed', 'closed']]);
+  });
+});
+
+describe('runs that move no report', () => {
+  test.each(['bug', 'bisect', 'reproduce', 'flake-lab'])('a %s run leaves the reports where they are', async (kind) => {
+    await db
+      .update(schema.testRuns)
+      .set({ metadata: { piwiOrigin: { kind } } })
+      .where(eq(schema.testRuns.id, 2));
+    await db
+      .insert(schema.testRunsCases)
+      .values([{ testRunId: 2, testCaseId: 2, testMeta: { bug: '2' }, ...fixedIn('chromium') }]);
+
+    expect(await applyBugReportLifecycle(db as never, 2)).toEqual([]);
+    const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 2));
+    expect(report!.status).toBe('test-committed');
   });
 });
 

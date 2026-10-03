@@ -113,6 +113,8 @@ export interface RunCommand {
   command: string;
   /** The arguments after `playwright test`. */
   args: string[];
+  /** Environment variables to set on the command's process. */
+  env?: Record<string, string>;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -121,6 +123,8 @@ export const RUN_ARGS_REQUEST = 'piwi/runArgs';
 export interface RunCommandArgs {
   cwd: string;
   command: string;
+  /** Environment variables to set on the command's process. */
+  env?: Record<string, string>;
 }
 
 export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';

@@ -45,8 +45,37 @@ When `collectCiInfo` is enabled (default), the reporter auto-detects:
 | CircleCI        | Build number, build URL, job name, workflow               |
 | Travis CI       | Build number, build URL, job number                       |
 | Azure Pipelines | Build number, build ID, build URL, job name               |
+| Bitbucket Pipelines | Build number, build URL, pipeline UUID, step UUID, repository |
 
-These six platforms get rich per-provider fields. The **run label** that ties [sharded](/guide/ci#sharding) runs together comes from the provider's build id: `GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `TRAVIS_BUILD_ID`, `BUILD_BUILDID`, `BUILD_ID`, `BUILDKITE_BUILD_ID`, `TEAMCITY_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `SEMAPHORE_WORKFLOW_ID`, `APPVEYOR_BUILD_ID` or `DRONE_BUILD_NUMBER`; set `runLabel` when your CI is not among them.
+These seven platforms get rich per-provider fields. The **run label** that ties [sharded](/guide/ci#sharding) runs together comes from the provider's build id: `GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `TRAVIS_BUILD_ID`, `BUILD_BUILDID`, `BUILD_ID`, `BUILDKITE_BUILD_ID`, `TEAMCITY_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `SEMAPHORE_WORKFLOW_ID`, `APPVEYOR_BUILD_ID` or `DRONE_BUILD_NUMBER`; set `runLabel` when your CI is not among them.
+
+### Run origin
+
+Whatever the collectors, every run records what launched it as `piwiOrigin`, so analyses that compare runs can leave
+out the ones that say nothing about the branch's current state. The reporter records `ci` when it detects a CI provider
+and `local` otherwise. A launcher names itself through two environment variables on the Playwright process:
+
+| Variable | Value |
+|---|---|
+| `PIWI_ORIGIN` | `ci`, `ci-rerun`, `local`, `desktop`, `editor`, `preflight`, `bug`, `flake-lab`, `probe`, `bisect` or `reproduce` |
+| `PIWI_ORIGIN_REF` | Optional: what the run was launched for, such as a dispatch, a cluster or a bug report id (letters, digits and `._:/#@-`, up to 200 characters) |
+
+Piwi's own launchers set them: the desktop app (`desktop`, and `reproduce` or `bisect` with the cluster id), the
+editors (`editor`), `piwi preflight --run` (`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab
+and probes. A [re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as
+`ci-rerun` once Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
+
+What each origin feeds:
+
+- **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
+- **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They notify like any run, but
+  stay out of baselines, fix verification, flaky scores, selections, change coverage, the stored locators and test
+  metadata, auto-heal and the bug-report lifecycle.
+- **`piwi bug` runs** do not move the bug report they were written for.
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, except in an editor's CI failures:
+  those come from the newest complete CI run on the branch, and a local run stands in only while the branch has none.
+- **Partial runs** (a `--grep`, a file filter, a selection) never count for change coverage, which asks whether a
+  file was reached in the recent runs.
 
 ### Playwright configuration
 

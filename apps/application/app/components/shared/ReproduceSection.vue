@@ -96,6 +96,7 @@ function reproduceHere() {
     cases: ctx.cases,
     commit: commit.value,
     browserName: ctx.browserName,
+    clusterId: ctx.clusterId,
   });
 }
 

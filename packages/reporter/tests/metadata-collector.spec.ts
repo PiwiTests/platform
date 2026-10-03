@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FullConfig } from '@playwright/test/reporter';
 import {
   MetadataCollector,
+  detectCi,
+  resolveRunOrigin,
   resolveScmBaseBranch,
   resolveScmBranch,
   resolveScmPrNumber,
@@ -42,7 +44,13 @@ const CI_ENV_KEYS = [
   'SYSTEM_TEAMFOUNDATIONSERVERURI',
   'SYSTEM_TEAMPROJECT',
   'AGENT_JOBNAME',
+  'BITBUCKET_BUILD_NUMBER',
+  'BITBUCKET_PIPELINE_UUID',
+  'BITBUCKET_STEP_UUID',
+  'BITBUCKET_REPO_FULL_NAME',
   'CI',
+  'PIWI_ORIGIN',
+  'PIWI_ORIGIN_REF',
 ];
 
 const SAVED_CI_ENV: Record<string, string | undefined> = {};
@@ -224,6 +232,18 @@ describe('MetadataCollector.collect — CI provider detection', () => {
     expect(collectCi()?.provider).toBe('Azure Pipelines');
   });
 
+  it('detects Bitbucket Pipelines with its build number and a link to the build', () => {
+    process.env.CI = 'true';
+    process.env.BITBUCKET_BUILD_NUMBER = '87';
+    process.env.BITBUCKET_REPO_FULL_NAME = 'acme/widgets';
+    process.env.BITBUCKET_PIPELINE_UUID = '{1234}';
+    const ci = collectCi();
+    expect(ci?.provider).toBe('Bitbucket Pipelines');
+    expect(ci?.buildNumber).toBe('87');
+    expect(ci?.pipelineId).toBe('{1234}');
+    expect(ci?.buildUrl).toBe('https://bitbucket.org/acme/widgets/pipelines/results/87');
+  });
+
   it('falls back to "Unknown CI" when only the generic CI var is set', () => {
     process.env.CI = 'true';
     const ci = collectCi();
@@ -243,6 +263,48 @@ describe('MetadataCollector.collect — CI provider detection', () => {
     const mc = new MetadataCollector();
     const metadata = mc.collect(fakeConfig(), undefined as any, { collectCiInfo: false });
     expect(metadata.ci).toBeUndefined();
+  });
+});
+
+describe('the run origin', () => {
+  it('is local outside CI, with nothing set', () => {
+    expect(resolveRunOrigin({})).toEqual({ kind: 'local' });
+    expect(detectCi({ CI: 'false' })).toBe(false);
+  });
+
+  it('is ci when a CI provider is detected', () => {
+    expect(resolveRunOrigin({ GITHUB_ACTIONS: 'true' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ BITBUCKET_BUILD_NUMBER: '3' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ CI: 'true' })).toEqual({ kind: 'ci' });
+  });
+
+  it('is what PIWI_ORIGIN names, with its ref, in CI or not', () => {
+    expect(resolveRunOrigin({ PIWI_ORIGIN: 'bisect', PIWI_ORIGIN_REF: '214' })).toEqual({ kind: 'bisect', ref: '214' });
+    expect(resolveRunOrigin({ GITLAB_CI: 'true', PIWI_ORIGIN: 'ci-rerun', PIWI_ORIGIN_REF: 'a1b2' })).toEqual({
+      kind: 'ci-rerun',
+      ref: 'a1b2',
+    });
+  });
+
+  it('ignores an unknown PIWI_ORIGIN with a warning, and a ref it cannot store', () => {
+    const warnings: string[] = [];
+    expect(resolveRunOrigin({ CI: 'true', PIWI_ORIGIN: 'nightly' }, (m) => warnings.push(m))).toEqual({ kind: 'ci' });
+    expect(warnings[0]).toContain('nightly');
+    expect(resolveRunOrigin({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: 'a b' })).toEqual({ kind: 'editor' });
+  });
+
+  it('is stamped on every run, whatever the collectors', () => {
+    const saved = { origin: process.env.PIWI_ORIGIN, ref: process.env.PIWI_ORIGIN_REF };
+    process.env.PIWI_ORIGIN = 'desktop';
+    delete process.env.PIWI_ORIGIN_REF;
+    try {
+      const metadata = new MetadataCollector().collect(fakeConfig(), undefined as any, { collectCiInfo: false });
+      expect(metadata.piwiOrigin).toEqual({ kind: 'desktop' });
+    } finally {
+      if (saved.origin === undefined) delete process.env.PIWI_ORIGIN;
+      else process.env.PIWI_ORIGIN = saved.origin;
+      if (saved.ref !== undefined) process.env.PIWI_ORIGIN_REF = saved.ref;
+    }
   });
 });
 

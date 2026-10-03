@@ -46,7 +46,7 @@ const REMOTE = 'https://github.com/acme/shop.git';
 async function insertRun(
   status: 'passed' | 'failed',
   commit: string,
-  opts: { isFullRun?: boolean; branch?: string } = {},
+  opts: { isFullRun?: boolean; branch?: string; origin?: string } = {},
 ) {
   const id = ++runSeq;
   const branch = opts.branch ?? 'main';
@@ -58,7 +58,10 @@ async function insertRun(
     isFullRun: opts.isFullRun === false ? 0 : 1,
     environment: 'staging',
     branch,
-    metadata: { scm: { commit, remoteUrl: REMOTE, branch } },
+    metadata: {
+      scm: { commit, remoteUrl: REMOTE, branch },
+      ...(opts.origin ? { piwiOrigin: { kind: opts.origin } } : {}),
+    },
   });
   return id;
 }
@@ -376,5 +379,22 @@ describe('verifyClusterFixes — which quiet runs count', () => {
     const sameBranch = await insertRun('passed', 'dd00003', { branch: 'feature/cart' });
     await insertCase(sameBranch, 'passed', null);
     expect((await verifyClusterFixes(db, sameBranch)).map((f) => f.clusterId)).toEqual([clusterId]);
+  });
+
+  test.each(['bisect', 'reproduce'])('a %s run at a new commit records no fix and no regression', async (origin) => {
+    const failing = await insertRun('failed', `ee0000${origin.length}`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+
+    const step = await insertRun('passed', `ee1111${origin.length}`, { origin });
+    await insertCase(step, 'passed', null);
+    expect(await verifyClusterFixes(db, step)).toEqual([]);
+    const row = await cluster(clusterId);
+    expect(row.fixLandedRunId).toBeNull();
+    expect(row.flakeEvidenceRunId).toBeNull();
+
+    const local = await insertRun('passed', `ee2222${origin.length}`, { origin: 'local' });
+    await insertCase(local, 'passed', null);
+    expect((await verifyClusterFixes(db, local)).map((f) => f.clusterId)).toEqual([clusterId]);
   });
 });

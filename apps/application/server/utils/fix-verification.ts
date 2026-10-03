@@ -41,6 +41,7 @@ import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, stripAbPrefix } from '#shared/patch';
 import type { FixAuthor, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
+import { isEligibleRun } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
@@ -187,7 +188,9 @@ async function emitClusterOutcome(db: DbClient, event: NotificationEvent, payloa
  */
 export async function verifyClusterFixes(db: DbClient, runId: number): Promise<VerifiedFix[]> {
   const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
-  if (!run) return [];
+  // A lab arm, a bisect step or a reproduction ran at a commit chosen to
+  // investigate a failure: its passes prove no fix and its failures no regression.
+  if (!run || !isEligibleRun(run, 'fix-verification')) return [];
 
   // A partial run can still verify a cluster — but only by the same rule a full
   // run is held to below: every test the cluster covers ran in this run and

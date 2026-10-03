@@ -19,6 +19,8 @@ vi.mock('../../server/utils/scm/pr-feedback', () => ({ postRunPrFeedbackInBackgr
 vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackground }));
 vi.mock('#shared/handlers/markers', () => ({ syncAutoMarkersForRun }));
 vi.mock('#shared/handlers/flaky-classify', () => ({ classifyRunFlakyTests }));
+const matchCiRerunRun = vi.fn(() => Promise.resolve(null));
+vi.mock('../../server/utils/ci-rerun', () => ({ matchCiRerunRun }));
 const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 
@@ -47,6 +49,13 @@ describe('runFinalizeSideEffects', () => {
     runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { scm: {} } });
     await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
     for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['bisect', 'reproduce'])('a %s run notifies but classifies no flaky root cause', async (kind) => {
+    runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { piwiOrigin: { kind } } });
+    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
+    expect(emitRunNotifications).toHaveBeenCalledTimes(1);
+    expect(classifyRunFlakyTests).not.toHaveBeenCalled();
   });
 
   test('the flaky root causes of the run are classified from its id and project', async () => {

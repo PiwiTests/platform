@@ -28,6 +28,7 @@ import {
   type FlakeLabRunStamp,
   type FlakeResultLine,
 } from '@piwitests/core/flake-plan';
+import { parseRunOriginRef, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import { requestRouteKey } from '@piwitests/core/page-key';
 import { PIWI_FLAKE_ENV, PIWI_PROBE_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
@@ -80,9 +81,17 @@ export function resetFlakePlanCache(): void {
   planCache = null;
 }
 
-/** The run-metadata stamp of a flake-lab run, merged into the run's metadata. */
+/**
+ * The run-metadata stamp of a flake-lab run, merged into the run's metadata,
+ * with its origin: `flake-lab`, referring to the experiment.
+ */
 export function flakeRunMetadata(stamp: FlakeLabRunStamp, base: Record<string, unknown> = {}): Record<string, unknown> {
-  return { ...base, [FLAKE_LAB_RUN_METADATA_KEY]: { experimentId: stamp.experimentId, armId: stamp.armId } };
+  const ref = parseRunOriginRef(stamp.experimentId);
+  return {
+    ...base,
+    [FLAKE_LAB_RUN_METADATA_KEY]: { experimentId: stamp.experimentId, armId: stamp.armId },
+    [RUN_ORIGIN_METADATA_KEY]: ref === undefined ? { kind: 'flake-lab' } : { kind: 'flake-lab', ref },
+  };
 }
 
 /** A running test as flake mode sees it. */

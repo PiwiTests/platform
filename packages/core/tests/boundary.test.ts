@@ -22,8 +22,9 @@ function srcFiles(dir: string): string[] {
   });
 }
 
-// Captures the specifier of `import ... from 'x'`, `export ... from 'x'`, and bare `import 'x'`.
-const IMPORT_RE = /\bfrom\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]/g;
+// Captures the specifier of `import ... from 'x'`, `export ... from 'x'`, and bare `import 'x'` at the start of a line
+// (so a string literal such as `'import'` is not read as one).
+const IMPORT_RE = /\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm;
 
 describe('@piwitests/core boundary', () => {
   test('declares no dependencies or devDependencies', () => {

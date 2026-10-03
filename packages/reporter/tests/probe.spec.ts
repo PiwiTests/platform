@@ -79,8 +79,12 @@ describe('computeFault (fault application)', () => {
 
 describe('probe run stamp', () => {
   it('merges the piwiProbe flag into the run metadata', () => {
-    expect(probeRunMetadata()).toEqual({ piwiProbe: true });
-    expect(probeRunMetadata({ scm: { branch: 'main' } })).toEqual({ scm: { branch: 'main' }, piwiProbe: true });
+    expect(probeRunMetadata()).toEqual({ piwiProbe: true, piwiOrigin: { kind: 'probe' } });
+    expect(probeRunMetadata({ scm: { branch: 'main' }, piwiOrigin: { kind: 'local' } })).toEqual({
+      scm: { branch: 'main' },
+      piwiProbe: true,
+      piwiOrigin: { kind: 'probe' },
+    });
   });
 
   it('derives the outcome from the test status', () => {

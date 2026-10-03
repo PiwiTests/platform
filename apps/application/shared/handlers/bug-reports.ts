@@ -23,6 +23,7 @@ import { mostCommonRunBranch } from '../../server/utils/scm/stored-default-branc
 import type { TestMetadata } from '#shared/types';
 import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
+import { isEligibleRun } from '../run-eligibility';
 
 /**
  * Bug reports: what Piwi Picker sends with **Send to Piwi…**, kept with its
@@ -574,20 +575,18 @@ export function renderStepsWith(steps: PiwiSteps, options: Parameters<typeof ren
 type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; testCaseId: number; projectId: number };
 
 /**
- * Whether a run moves bug reports: a run of the project's default branch that
- * ran the whole suite or ran in CI. A local run of some files only (what
- * `piwi bug --write` starts, before the spec is committed) moves nothing. A
- * null `defaultBranch` means the project records no branch at all; its runs,
- * which carry none either, count as the default branch's.
+ * Whether a run moves bug reports: a run the `bug-lifecycle` use of the
+ * eligibility rule accepts (never `piwi bug --write`, a lab run, a bisect step
+ * or a reproduction) on the project's default branch. A null `defaultBranch`
+ * means the project records no branch at all; its runs, which carry none
+ * either, count as the default branch's.
  */
 export function movesBugReports(
-  run: { branch: string | null; isFullRun: number | null; metadata: unknown },
+  run: { branch: string | null; metadata: unknown },
   defaultBranch: string | null,
 ): boolean {
-  const branch = run.branch ?? resolveRunBranch(run.metadata);
-  if (branch !== defaultBranch) return false;
-  const ci = (run.metadata as { ci?: unknown } | null)?.ci;
-  return run.isFullRun !== 0 || (ci != null && typeof ci === 'object');
+  if (!isEligibleRun(run, 'bug-lifecycle')) return false;
+  return (run.branch ?? resolveRunBranch(run.metadata)) === defaultBranch;
 }
 
 /**
@@ -613,16 +612,13 @@ async function runDefaultBranch(db: DrizzleDB, projectId: number, metadata: unkn
  * (`bugOutcome`): an expected failure that passed where every other project
  * passed too → looks fixed; an ordinary pass everywhere → closed; a test no
  * project ran keeps its report; anything else keeps an open report
- * committed, and reopens a closed one.
+ * committed, and reopens a closed one. Only a run the `bug-lifecycle` use
+ * reads moves a report: never `piwi bug`'s own run, a lab run, a bisect step
+ * or a reproduction.
  */
 export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Promise<Transition[]> {
   const [run] = await db
-    .select({
-      projectId: testRuns.projectId,
-      branch: testRuns.branch,
-      isFullRun: testRuns.isFullRun,
-      metadata: testRuns.metadata,
-    })
+    .select({ projectId: testRuns.projectId, branch: testRuns.branch, metadata: testRuns.metadata })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
   if (!run) return [];

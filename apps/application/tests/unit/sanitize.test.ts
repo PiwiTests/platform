@@ -96,6 +96,13 @@ describe('sanitizeMetadata', () => {
     expect(sanitizeMetadata({ ci: { provider: 'github' } })).toEqual({ ci: { provider: 'github' } });
   });
 
+  test("rebuilds the run's origin as { kind, ref } and drops one naming no known kind", () => {
+    const kept = sanitizeMetadata({ piwiOrigin: { ref: ' 214 ', kind: 'bisect', extra: true } });
+    expect(kept).toEqual({ piwiOrigin: { kind: 'bisect', ref: '214' } });
+    expect(JSON.stringify(kept)).toBe('{"piwiOrigin":{"kind":"bisect","ref":"214"}}');
+    expect(sanitizeMetadata({ piwiOrigin: { kind: 'nightly' }, scm: {} })).toEqual({ scm: {} });
+  });
+
   test('returns null for empty input', () => {
     expect(sanitizeMetadata(null)).toBeNull();
   });
