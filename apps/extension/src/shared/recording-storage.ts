@@ -31,6 +31,8 @@ export interface RecordingState {
   mode?: RecordingMode;
   /** A bug recording's token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. */
   bugToken?: string | null;
+  /** A recording started from an editor, paused: nothing done in the browser is captured until it resumes. */
+  paused?: boolean;
 }
 
 const EMPTY: RecordingState = { active: false, events: [], startedAt: null, grantedOriginPattern: null };

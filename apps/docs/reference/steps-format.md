@@ -61,7 +61,7 @@ URLs on `origin` are stored as paths (`/cart?from=mail`), so a spec rendered fro
 | `action` | string | `goto`, `click`, `dblclick`, `hover`, `fill`, `check`, `uncheck`, `selectOption`, `press`, `setInputFiles`, `dragTo` or `assert`. |
 | `target` | object or null | The element the step acted on; null for `goto`, a key press on the page, or an `assert` on the URL. |
 | `value` | string or null | The URL for `goto`, the typed text for `fill`, the option for `selectOption`, the key for `press`, the chosen files' names for `setInputFiles`, one per line. |
-| `redacted` | boolean | The value was typed in a password field and was not kept; the spec reads it from `PIWI_TEST_VALUE_<n>`. |
+| `redacted` | boolean | The value was typed in a password field and was not kept; the spec reads it from an environment variable named after the field, such as `E2E_PASSWORD`. |
 | `pageUrl` | string | The page the step happened on. |
 | `timestamp` | number | When it happened. |
 | `assertion` | object | On `assert` steps only; see below. |

@@ -11,6 +11,7 @@ import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch }
 import { renderSpec } from '@piwitests/core/codegen';
 import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
 import { describeStepInWords } from '@piwitests/core/bug-report';
+import { IDE_PAUSED_MESSAGE, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { interfacePhrases } from '../shared/core-words.js';
@@ -64,10 +65,38 @@ import { getActiveProjectOverride, resolveActiveProject } from '../shared/active
 import { attachPanelShadow } from './panel-root.js';
 import { getEditorPairing } from '../shared/editor-pairing.js';
 import { sendToEditor, showSendResult } from '../shared/editor-send.js';
+import { IDE_BUILD, getIdeSettings, ideHostInstalled } from '../shared/ide-build.js';
+import { runCheckAddressFlow, runCheckElementFlow } from './check-panel.js';
+import { webOrigin } from '../shared/web-origin.js';
 
-/** The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent as the picker overlay's own snapping, though not the identical algorithm. */
+/**
+ * The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent
+ * as the picker overlay's own snapping, though not the identical algorithm — but for the elements carrying a test id,
+ * which {@link actionableSelector} adds.
+ */
 const ACTIONABLE_SELECTOR =
-  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable]:not([contenteditable="false" i]), [data-testid]';
+  'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="combobox"], [role="treeitem"], [contenteditable]:not([contenteditable="false" i])';
+
+/**
+ * The attribute `getByTestId` reads in the project being recorded (Playwright's `testIdAttribute`): in the IDE bundle,
+ * the launcher's, read as the recorder starts on a page (`loadRecorderSettings`); null for Playwright's default,
+ * `data-testid`, which the extension always uses.
+ */
+let testIdAttribute: string | null = null;
+
+/** In the IDE bundle, what the launcher hands the recorder: the file the steps are written into, which the HUD names. */
+let ideSettings: IdeRecorderSettings | null = null;
+
+/**
+ * In the IDE bundle, whether the recording is paused, from the HUD's Pause or the editor's: nothing is captured until
+ * it resumes. Read from the recording as each page starts, then kept up to date by the messages of both.
+ */
+let idePaused = false;
+
+/** {@link ACTIONABLE_SELECTOR} with the elements carrying the project's test id attribute. */
+function actionableSelector(): string {
+  return `${ACTIONABLE_SELECTOR}, [${CSS.escape(testIdAttribute ?? 'data-testid')}]`;
+}
 
 /** Where an arrow key moves through choices rather than a caret or the page, and so is worth replaying. */
 const ARROW_KEY_WIDGETS =
@@ -191,18 +220,19 @@ function elementKeyFor(el: Element): string {
  * 5" rather than `textContent`'s "Regressions5", and no ranking on the probe's
  * estimated counts), keeping the top few locators that find it alone on the
  * page (`verifiedLocators`) and the role/testId/text a catalog pattern match
- * needs. Tested by driving the real built bundle, since `generateAlternatives`
+ * needs, the test id read from the project's attribute (`testIdAttribute`).
+ * Tested by driving the real built bundle, since `generateAlternatives`
  * can't be reconstructed from its source (see `extension/AGENTS.md`).
  */
 function deriveRecordedTarget(el: Element): RecordedTarget {
-  const { attrs, accessibleName, role, ranked } = rankElement(el);
+  const { attrs, accessibleName, role, ranked } = rankElement(el, { testIdAttribute });
   return {
     tagName: attrs.tagName,
     role,
     accessibleName,
-    testId: attrs.attributes['data-testid'] ?? null,
+    testId: attrs.attributes[testIdAttribute ?? 'data-testid'] ?? null,
     text: el.textContent ? normalizeText(el.textContent).slice(0, 200) : null,
-    alternatives: verifiedLocators(el, ranked),
+    alternatives: verifiedLocators(el, ranked, { testIdAttribute }),
     elementKey: elementKeyFor(el),
   };
 }
@@ -229,15 +259,16 @@ function fieldTarget(el: Element): RecordedTarget {
 
 /** The control `el` is part of: itself or its nearest actionable ancestor, out through the hosts of the shadow roots it is in. */
 function nearestActionable(el: Element): Element {
+  const selector = actionableSelector();
   for (let node: Element | undefined = el; node; node = parentElementOrShadowHost(node)) {
-    if (node.matches(ACTIONABLE_SELECTOR)) return node;
+    if (node.matches(selector)) return node;
   }
   return el;
 }
 
 /** What a person points at when the pointer enters `entered`: the control around it, if inside `within`. */
 function pointedAt(entered: Element, within: Element): Element {
-  const control = entered.closest(ACTIONABLE_SELECTOR);
+  const control = entered.closest(actionableSelector());
   return control && within.contains(control) ? control : entered;
 }
 
@@ -358,9 +389,21 @@ function focusInClosedShadowRoot(el: Element): boolean {
   }
 }
 
-/** Whether capture is paused in this document: a bug report's pick or dialog is on screen. */
+/** Whether capture is paused in this document: a bug report's pick or dialog is on screen, or the recording is paused. */
 function capturePaused(): boolean {
-  return recorderGlobals().__piwiRecordPaused === true;
+  return recorderGlobals().__piwiRecordPaused === true || idePaused;
+}
+
+/** Pauses or resumes the recording from the HUD: the launcher keeps it for every page, and tells the editor. */
+async function setIdePaused(paused: boolean): Promise<void> {
+  idePaused = paused;
+  scheduleHudRefresh();
+  try {
+    await chrome.runtime.sendMessage({ type: IDE_PAUSED_MESSAGE, paused });
+  } catch {
+    captureError = t('common_workerNoAnswer');
+    scheduleHudRefresh();
+  }
 }
 
 /**
@@ -401,6 +444,12 @@ function removeRecordingFrame(): void {
   document.getElementById(FRAME_HOST_ID)?.remove();
 }
 
+/** The HUD's top line: how many steps are recorded, and in the IDE bundle the file they are written into. */
+function hudTitle(steps: number): string {
+  const file = IDE_BUILD ? ideSettings?.file : null;
+  return file ? tn('record_hudTitleInto', steps, { file }) : tn('record_hudTitle', steps);
+}
+
 function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   document.getElementById(HUD_HOST_ID)?.remove();
   document.getElementById(PANEL_HOST_ID)?.remove();
@@ -427,11 +476,14 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
     .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+    .dot.paused { background: #9ca3af; animation: none; }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
     button { border-radius: 6px; padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
       border: 1px solid rgba(128,128,128,.3); background: rgba(128,128,128,.12); color: inherit; }
     button:hover, button:focus-visible { background: rgba(128,128,128,.25); }
     button.stop { background: #dc2626; border-color: #dc2626; color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    .checks { display: flex; gap: 6px; flex-wrap: wrap; }
     .section-title { color: #9ca3af; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; display: block; }
     .match { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
@@ -466,14 +518,48 @@ function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
   dot.className = 'dot';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = tn('record_hudTitle', steps.length);
+  title.textContent = hudTitle(steps.length);
   const stopBtn = document.createElement('button');
   stopBtn.type = 'button';
   stopBtn.className = 'stop';
   stopBtn.textContent = t('common_stop');
   stopBtn.addEventListener('click', () => void handleStop());
-  topRow.append(dot, title, stopBtn);
+  if (IDE_BUILD) {
+    dot.classList.toggle('paused', idePaused);
+    const pauseBtn = document.createElement('button');
+    pauseBtn.type = 'button';
+    pauseBtn.className = 'pause';
+    pauseBtn.textContent = idePaused ? t('record_resume') : t('record_pause');
+    pauseBtn.setAttribute('aria-pressed', String(idePaused));
+    pauseBtn.addEventListener('click', () => void setIdePaused(!idePaused));
+    topRow.append(dot, title, pauseBtn, stopBtn);
+  } else {
+    topRow.append(dot, title, stopBtn);
+  }
   bar.appendChild(topRow);
+
+  if (IDE_BUILD && idePaused) {
+    const note = document.createElement('div');
+    note.className = 'empty';
+    note.textContent = t('record_pausedNote');
+    bar.appendChild(note);
+  }
+
+  // Checks of what the page shows now; none while paused, when nothing is recorded.
+  const checks = document.createElement('div');
+  checks.className = 'checks';
+  for (const [label, run] of [
+    ['record_checkElement', runCheckElementFlow],
+    ['record_checkAddress', runCheckAddressFlow],
+  ] as const) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = t(label);
+    button.disabled = IDE_BUILD && idePaused;
+    button.addEventListener('click', () => void run(bugHooks));
+    checks.appendChild(button);
+  }
+  bar.appendChild(checks);
 
   if (captureError) {
     const warn = document.createElement('div');
@@ -767,7 +853,8 @@ async function handleStop(): Promise<void> {
   const state = await stopRecording();
   stopCapture();
   await tellWorkerStopped();
-  await renderReviewPanel(state);
+  // The IDE bundle opens no review: the steps are in the editor.
+  if (!IDE_BUILD) await renderReviewPanel(state);
 }
 
 /**
@@ -820,7 +907,7 @@ function buildEvent(
   };
 }
 
-/** What the bug panel needs from the recorder to add an assertion to the recording. */
+/** What the bug panel and a test recording's checks need from the recorder to add an assertion to the recording. */
 const bugHooks: BugRecorderHooks = {
   targetFor: deriveRecordedTarget,
   async addAssert(target: RecordedTarget | null, assertion: StepAssertion): Promise<number | null> {
@@ -918,6 +1005,18 @@ async function refreshCatalogForThisPage(): Promise<void> {
   const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
   const activeProject = resolveActiveProject(connection, override, location.href);
   await requestCatalogRefresh(activeProject?.projectId ?? null);
+}
+
+/**
+ * In the IDE bundle, reads the launcher's settings, which this page's capture
+ * and HUD follow: the file the steps are written into and the project's test id
+ * attribute. Never rejects: without them, Playwright's default attribute
+ * applies.
+ */
+async function loadRecorderSettings(): Promise<void> {
+  if (!IDE_BUILD) return;
+  ideSettings = await getIdeSettings().catch(() => null);
+  testIdAttribute = ideSettings?.testIdAttribute ?? null;
 }
 
 interface RecorderGlobals {
@@ -1288,6 +1387,11 @@ function installStopListener(): void {
   g.__piwiRecordStopListener = true;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === 'piwi-recording-stopped') stopCapture();
+    if (IDE_BUILD && message?.type === IDE_PAUSED_MESSAGE && typeof message.paused === 'boolean') {
+      // The editor's Pause or Resume.
+      idePaused = message.paused;
+      scheduleHudRefresh();
+    }
     if (message?.type === 'piwi-bug-debugger-lost') {
       // The debugging session ended: the page's own script, registered all along, relays from then on; what it
       // noted before, the session collected.
@@ -1488,16 +1592,23 @@ function watchViewport(kept: ViewportSize, signal: AbortSignal): void {
 /** `restored`: the page came back from the back/forward cache, and attaches as a page the recording reaches. */
 async function initRecordPanel(restored: boolean): Promise<void> {
   // Before any session-storage read — see `session-access.ts`. The catalog
-  // override loads alongside, so the HUD paints no later for it.
-  const [state] = await Promise.all([ensureSessionAccess().then(getRecordingState), initI18n()]);
+  // override and the recorder's settings load alongside, so the HUD paints no
+  // later for them.
+  const [state] = await Promise.all([
+    ensureSessionAccess().then(getRecordingState),
+    initI18n(),
+    loadRecorderSettings(),
+  ]);
+  if (IDE_BUILD) idePaused = state.paused === true;
 
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
     // first — a border that outlives the capture it signals is worse than no
     // border at all — then show whatever is left to review, unless the page
-    // only came back from the cache: the review is the stopping tab's.
+    // only came back from the cache: the review is the stopping tab's. The
+    // IDE bundle has no review: the steps are in the editor.
     stopCapture();
-    if (state.events.length > 0 && !restored) await renderReviewPanel(state);
+    if (state.events.length > 0 && !restored && !IDE_BUILD) await renderReviewPanel(state);
     return;
   }
 
@@ -1525,9 +1636,21 @@ async function initRecordPanel(restored: boolean): Promise<void> {
   }
   // Once per page, not per step — `refreshHud` runs on every captured
   // interaction and must stay local-only. TTL-guarded, so a recording that
-  // crosses many pages still only re-fetches occasionally.
-  void refreshCatalogForThisPage().then(() => void refreshHud());
+  // crosses many pages still only re-fetches occasionally. Never in the IDE
+  // bundle, which has no catalog.
+  if (!IDE_BUILD) void refreshCatalogForThisPage().then(() => void refreshHud());
   await refreshHud();
 }
 
-void runRecordPanel();
+/**
+ * Whether this document records. The extension injects the recorder only
+ * where it records. The IDE bundle, which the launcher loads into every
+ * document, records the top-level document of an http or https page its host
+ * is installed in, and nothing in a frame, on another page (a new tab's
+ * `about:blank`, the browser's error page) or without the host.
+ */
+function recordsHere(): boolean {
+  return !IDE_BUILD || (window.top === window && webOrigin(location.href) !== null && ideHostInstalled());
+}
+
+if (recordsHere()) void runRecordPanel();

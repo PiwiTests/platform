@@ -14,8 +14,18 @@ plugins {
 group = "dev.piwitests"
 version = providers.gradleProperty("pluginVersion").get()
 
-// The editor service every client ships, built by `npm run editor:build`.
-val languageServer = layout.projectDirectory.file("../../packages/editor/dist/piwi-language-server.cjs")
+// The editor service every client ships, built by `npm run editor:build`: the language server, and beside it the
+// launcher that opens a recording's browser, the reporter that prints a Playwright project's options, and the
+// recorder's IDE bundle with its messages.
+val editorDist = layout.projectDirectory.dir("../../packages/editor/dist")
+val languageServer = editorDist.file("piwi-language-server.cjs")
+val serverFiles = listOf(
+    "piwi-language-server.cjs",
+    "piwi-recorder-launcher.cjs",
+    "piwi-use-reporter.cjs",
+    "record-ide.js",
+    "record-ide-messages.json",
+).map { editorDist.file(it) }
 
 repositories {
     mavenCentral()
@@ -88,8 +98,20 @@ tasks {
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
         compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
     }
+    // The plugin's `server/` holds the editor service's files; a build (buildPlugin, runIde, verifyPlugin) fails
+    // without one of them. The tests start the language server from the editor's `dist/` and need none of the others.
     prepareSandbox {
-        from(languageServer) {
+        val files = serverFiles.map { it.asFile }
+        doFirst {
+            val missing = files.filterNot { it.isFile }
+            if (missing.isNotEmpty()) {
+                throw GradleException(
+                    "The editor service is not built: ${missing.joinToString { it.name }} missing from " +
+                        "${missing.first().parentFile}. Run `npm run editor:build -w packages/editor` from the repository root.",
+                )
+            }
+        }
+        from(serverFiles) {
             into(pluginName.map { "$it/server" })
         }
     }

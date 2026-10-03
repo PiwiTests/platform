@@ -303,6 +303,17 @@ export function rankFunctionMatches(
  * drop the interleaved action from the exported spec. Requiring a contiguous
  * run means a substituted call always stands for exactly the steps it replaced.
  */
+/**
+ * Whether a recorded step's element is the one a pattern step names: its test id, or a name its accessible name or
+ * text holds. A pattern step that names neither takes any element of its role.
+ */
+function sameElement(pattern: FunctionPatternTarget, recorded: RecordedStep['target']): boolean {
+  if (pattern.testId || !pattern.name) return true;
+  const haystack = `${recorded?.accessibleName ?? ''} ${recorded?.text ?? ''}`.toLowerCase().trim();
+  const needle = pattern.name.toLowerCase();
+  return haystack.length > 0 && (haystack.includes(needle) || needle.includes(haystack));
+}
+
 function contiguousAlignment(
   steps: RecordedStep[],
   startIndex: number,
@@ -312,8 +323,10 @@ function contiguousAlignment(
   const pairs: Array<[number, number]> = [];
   let total = 0;
   for (let j = 0; j < pattern.length; j++) {
-    const score = stepPairScore(pattern[j]!, steps[startIndex + j]!);
-    if (score <= 0) return null;
+    const recorded = steps[startIndex + j]!;
+    const score = stepPairScore(pattern[j]!, recorded);
+    // A call stands only for the elements its steps name: a button of another name is another step.
+    if (score <= 0 || !sameElement(pattern[j]!.target, recorded.target)) return null;
     total += score;
     pairs.push([j, j]);
   }

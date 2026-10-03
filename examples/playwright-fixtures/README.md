@@ -18,7 +18,7 @@ npm test
 
 Results appear at `http://localhost:3000` under the `playwright-fixtures-example` project. Point elsewhere with `PIWI_DASHBOARD_URL` / `PIWI_PROJECT_NAME`.
 
-> **One test fails on purpose.** `failing-locator.spec.ts` clicks a renamed `data-testid` to demonstrate what the fixtures capture on failure — the ARIA snapshot, a fresh locator suggestion (Playwright annotation), and the dashboard's *Alternative locators* panel.
+> **One test fails and one leaks on purpose.** `failing-locator.spec.ts` clicks a renamed `data-testid` to demonstrate what the fixtures capture on failure — the ARIA snapshot, a fresh locator suggestion (Playwright annotation), and the dashboard's *Alternative locators* panel.
 
 ## What each spec demonstrates
 
@@ -38,6 +38,82 @@ Results appear at `http://localhost:3000` under the `playwright-fixtures-example
 | `before-all.spec.ts` | `beforeAll` activity is intentionally **not** captured |
 | `custom-fixtures.spec.ts` | Dashboard capture composed with your own fixtures (`fixtures-composed.ts`) |
 | `tags-and-ownership.spec.ts` | Test tags (both declaration styles) and `piwi:` owner / priority / feature / link annotations |
+| `resource-leak.spec.ts` | **Intentional leak** → a context opened and never closed, listed with its line in the run's summary and on the *Resources* tab |
+| `shop.spec.ts` | A small shop (`/shop`) driven through page objects the fixtures provide (`shop-fixtures.ts`): sign in, add to cart, place an order |
+| `shop-recorded.spec.ts` | An empty test to [record into from your editor](#record-a-test-from-your-editor) |
+
+## Record a test from your editor
+
+The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [recording from the editor](https://piwitests.dev/features/editor-recording): **Piwi: Record here** in VS Code, or **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert in a JetBrains IDE. The steps you take in the browser it opens are written at the cursor, and the ones your page objects already perform become calls to them, taken from the fixtures.
+
+- **Page objects** (`tests/pages/`): `LoginPage.login(email, password)`, `ProductsPage.addToCart(product)`, `CheckoutPage.placeOrder({ name, address, city })`.
+- **Fixtures** (`tests/shop-fixtures.ts`): the three page objects, `shopper` (the test data, an option a spec can override with `test.use`) and `signedIn` (signs the shopper in by cookie, so a test starts on the products).
+- **Test functions catalog**: `scripts/shop-functions.json` describes each page-object method as the [catalog](https://piwitests.dev/features/test-functions) stores it: its parameters, the steps it performs and where each parameter comes from. `npm run demo:functions` registers them on the instance.
+
+### Set it up
+
+1. Start a Piwi dashboard, copy `.env.example` to `.env` and set its address (and an API key when the instance has sign-in).
+2. `npm install`, `npx playwright install chromium`, then `npm test` once: the run creates the project on the instance.
+3. `npm run demo:functions`: the three page-object methods appear under **Project → Test functions**.
+4. Open this folder in your editor with the Piwi extension; it connects through `.env`. Start the app with `npm start`: a recording does not start the `webServer`.
+
+### Demo script
+
+1. **The fixtures.** Open `tests/shop-fixtures.ts`, then `tests/shop.spec.ts`: each test asks for the page objects it needs, `async ({ page, loginPage, shopper }) => …`.
+2. **The catalog.** In the dashboard, **Project → Test functions** lists `login`, `addToCart` and `placeOrder`, each with the steps it performs. **Add function** shows how one is registered by hand, from pasted source with AI, or by a coding agent.
+3. **Record steps into a test.** Open `tests/shop-recorded.spec.ts`, put the cursor in the empty test and run **Piwi: Record here**. Give `/shop/login` as the start page; the page the steps run on is `page`. In the browser: sign in as `alice@example.com` with any password, open **Trail shoes** and **Add to cart**, do the same for **Water bottle**. Press **Check an element** in the recording bar and pick the **Cart (2)** link: its text is offered first, as the page shows it; **Add the check**. Open **Cart**, **Checkout**, fill in the shipping form and **Place order**. On the confirmation, check the summary line the same way, then press **Check the address** and keep `/shop/done`. Each step appears in the editor as you go, and runs of them turn into calls once their last step is recorded:
+
+   ```ts
+   await test.step('/shop/login', async () => {
+     await page.goto('/shop/login');
+     await loginPage.login('alice@example.com', process.env.E2E_PASSWORD ?? '');
+   });
+   await test.step('/shop', async () => {
+     await productsPage.addToCart('Trail shoes');
+     await productsPage.addToCart('Water bottle');
+     await expect(page.getByRole('link', { name: 'Cart' })).toHaveText('Cart (2)');
+     await page.getByRole('link', { name: 'Cart' }).click();
+   });
+   await test.step('/shop/cart', async () => {
+     await expect(page).toHaveURL(/\/shop\/cart(?:[?#]|$)/);
+     await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);
+     await page.getByRole('button', { name: 'Checkout' }).click();
+   });
+   await test.step('/shop/checkout', async () => {
+     await checkoutPage.placeOrder({ name: 'Alice Martin', address: '12 Harbour Street', city: 'La Rochelle' });
+   });
+   await test.step('/shop/done', async () => {
+     await expect(page.locator('#summary')).toHaveText('2 item(s) on their way to La Rochelle, France.');
+     await expect(page).toHaveURL('/shop/done');
+   });
+   ```
+
+   Between two steps of your own that lead to another page, the code waits for it; a page object's call waits for its pages itself. The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so. The checks are written where you added them; the file imports only `test`, so the recording adds `import { expect } from './shop-fixtures';` at the top. While the pick and its dialog are open, nothing you click is recorded.
+4. **The repository's code options.** Open `playwright.shared.ts`: its `'@piwi'` section asks for a `test.step` per page, which is why the steps above are grouped, and gives a new test the `@recorded` tag and the shop team as owner. Change `testSteps` to `'none'` and record again: the steps come out one after another.
+5. **Pause.** Press **Pause** in the browser's recording bar, look around the shop, then **Resume**: nothing done meanwhile is written. The editor shows the pause too.
+6. **Stop and undo.** **Stop** in the browser or the editor. One **Undo** removes the whole recording; **Redo** puts it back.
+7. **A new test.** Put the cursor below the last test of `tests/shop.spec.ts` and record again: a whole `test(…)` is written, tagged `@recorded` and owned by `@shop-team`, taking the page objects as fixtures, `async ({ page, loginPage, productsPage, checkoutPage }) => …`, with no import or `new`.
+8. **Run it.** Rename `test.fixme` to `test` and run the spec: it passes (`E2E_PASSWORD` comes from `.env`).
+
+## What the reporter captures here
+
+`playwright.shared.ts` keeps every default on and adds what is off by default:
+
+- **Resources** (on by default): the run's CPU by process, the time spent waiting for a CPU, peak memory and disk,
+  each worker's event loop (with the fixtures), and the browsers, contexts and pages left open. The run's summary and
+  its *Resources* tab show them; `leakCheck: 'fail'` would fail the test that leaks.
+- **Page inventory** (`capturePageInventory: true`): the controls and links each page shows on passing runs, so the
+  dashboard names the ones no test uses (the shop's **Orders** link, for one).
+- **Declared surface**: `piwi.manifest.json` lists the app's pages, and the Nitro instrumentation serves its routes,
+  so a page no test reaches is named (`/shop/orders`).
+- **Failure evidence**: `wrapConfig` defaults the trace to `retain-on-failure` with DOM and accessibility snapshots
+  and keeps a screenshot; the config adds a video (`video: 'retain-on-failure'`).
+- **Server traces and backend logs** through `@piwitests/instrumentation-nitro`, and the ARIA snapshot of passing
+  tests, both on by default.
+- **Ownership and features**: the shop's tests carry tags and `piwi:owner` / `piwi:feature` annotations.
+
+Code reach (`captureCodeReach`) stays off: the app's scripts are inline in its pages, so there is no source file to
+map them to.
 
 ## The two setup options
 

@@ -487,6 +487,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editors',
       },
       {
+        title: 'Record tests from the editor',
+        summary:
+          "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
+        needs: [],
+        where: 'Piwi: Record here; Tools → Piwi → Record Here in a JetBrains IDE',
+        doc: 'features/editor-recording',
+      },
+      {
         title: 'Editor connection',
         summary:
           'Connect the editor extensions to your instance: the connection the reporter uses, or a browser sign-in that creates a key for the editor, saved for that instance only.',

@@ -1879,6 +1879,95 @@
       }
     }
   },
+  "record_hudTitleInto_one": {
+    "message": "Aufzeichnung in $file$: $count$ Schritt",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      },
+      "file": {
+        "content": "$2",
+        "example": "checkout.spec.ts"
+      }
+    }
+  },
+  "record_hudTitleInto_other": {
+    "message": "Aufzeichnung in $file$: $count$ Schritte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "4"
+      },
+      "file": {
+        "content": "$2",
+        "example": "checkout.spec.ts"
+      }
+    }
+  },
+  "record_pause": {
+    "message": "Pause"
+  },
+  "record_resume": {
+    "message": "Weiter"
+  },
+  "record_pausedNote": {
+    "message": "Pausiert: Was Sie hier tun, wird nicht aufgezeichnet, bis Sie fortfahren."
+  },
+  "record_checkElement": {
+    "message": "Element prüfen"
+  },
+  "record_checkAddress": {
+    "message": "Adresse prüfen"
+  },
+  "record_checkOn": {
+    "message": "Element: $locator$",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "record_checkWhat": {
+    "message": "Was geprüft wird"
+  },
+  "record_checkText": {
+    "message": "Sein Text"
+  },
+  "record_checkValue": {
+    "message": "Sein Wert"
+  },
+  "record_checkName": {
+    "message": "Sein Name, wie Screenreader ihn ansagen"
+  },
+  "record_checkVisible": {
+    "message": "Es ist sichtbar"
+  },
+  "record_checkHidden": {
+    "message": "Es ist ausgeblendet"
+  },
+  "record_checkEnabled": {
+    "message": "Es ist nutzbar, nicht ausgegraut"
+  },
+  "record_checkDisabled": {
+    "message": "Es ist ausgegraut, nicht nutzbar"
+  },
+  "record_checkExpected": {
+    "message": "Erwartet"
+  },
+  "record_checkAddressLabel": {
+    "message": "Die Adresse, auf der die Seite sein soll"
+  },
+  "record_checkAddressEmpty": {
+    "message": "Geben Sie die Adresse ein, auf der die Seite sein soll."
+  },
+  "record_checkAdd": {
+    "message": "Prüfung hinzufügen"
+  },
+  "record_checkNoLocator": {
+    "message": "Kein Locator findet dieses Element allein: Wählen Sie ein anderes."
+  },
   "record_lastLocator": {
     "message": "Letzter Locator"
   },
@@ -5450,7 +5539,7 @@
     "placeholders": {
       "variable": {
         "content": "$1",
-        "example": "PIWI_TEST_VALUE_3"
+        "example": "E2E_PASSWORD"
       }
     }
   },

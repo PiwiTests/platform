@@ -108,14 +108,23 @@ jobs:
               - 'apps/extension/**'
               - 'packages/core/**'
               - 'packages/picker-dom/**'
+            # Both editor clients ship the recorder's IDE bundle, which the editor service builds from the extension.
             vscode:
               - 'apps/vscode/**'
               - 'packages/editor/**'
               - 'packages/core/**'
+              - 'packages/picker-dom/**'
+              - 'apps/extension/src/**'
+              - 'apps/extension/public/_locales/**'
+              - 'apps/extension/scripts/build.mjs'
             jetbrains:
               - 'apps/jetbrains/**'
               - 'packages/editor/**'
               - 'packages/core/**'
+              - 'packages/picker-dom/**'
+              - 'apps/extension/src/**'
+              - 'apps/extension/public/_locales/**'
+              - 'apps/extension/scripts/build.mjs'
             desktop:
               - 'apps/desktop/**'
             docs:

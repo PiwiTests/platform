@@ -12,8 +12,9 @@ clients stay thin and both editors give the same answers.
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/desktopJob`,
-  `piwi/shareDesktopJob`, the `piwi/setCredentials` notification and the `piwi/runStatusChanged`, `piwi/statusChanged`
-  and `piwi/desktopJobChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, the
+  `piwi/setCredentials` notification and the `piwi/runStatusChanged`, `piwi/statusChanged`, `piwi/desktopJobChanged`
+  and `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
   files only (the JetBrains IDEs).
 - The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); while that branch
@@ -40,6 +41,45 @@ clients stay thin and both editors give the same answers.
   sharing posts the arms' counts, with the plan's conditions, to the experiment the instance recorded. It is offered on
   a flaky test's line and on a failure whose test has an untested suspect (`hasUntestedSuspect`). The job names commits,
   tests and lab conditions, never code; the app runs it only after a click in its window.
+- `src/recorder/` records a test from the editor. `piwi/record` reads the `use` options Playwright resolves for the
+  file's config (`project-options.ts`: the project's own Playwright CLI, `playwright test --list` with
+  `piwi-use-reporter.cjs` and a filter no spec matches, cached until the config changes), picks the project (a config
+  with several asks, through `projects`), the start page and the page expression, and forks the launcher in the
+  config's folder (`sessions.ts`). The launcher (`launcher.ts`) resolves the project's Playwright at run time (never
+  bundled; `playwright.ts`: in the project's own `node_modules`, the test runner's package first, as for the CLI),
+  opens the browser with the project's options (`context-options.ts`: `headless: false` unless
+  `PIWI_RECORDER_HEADLESS=1`, an explicit allowlist of context options, a missing `storageState` file left out and
+  said so), exposes the binding before loading `record-ide.js` into every page, answers the recorder over it
+  (`host-state.ts`: the storage areas and messages of the IDE bundle's `chrome`, every event through core's
+  `parseCaptureEvent`; only the main frame of the page it opened first records, every other frame and page, such as a
+  popup or a cross-origin iframe, is answered as outside a recording), and reports over its IPC channel (`ipc.ts`).
+  The events render all the steps with `renderSpec` and the whole block goes in `piwi/recordingChanged`, in order: at
+  once, or, within the update interval of the latest update (`UPDATE_INTERVAL_MS`, longer after a slow rendering),
+  together once it is over; a pause, from the editor or the recorder's bar (`piwi-recording-paused`, both ways through
+  the launcher), records nothing until resume and says `paused` in an update, resume sends the latest again; Stop in
+  the editor or in the
+  browser, closing the browser or closing the file ends the session with a last update, sent at once, and closes the
+  browser. `page-candidates.ts` reads the file's text alone (a scanner in the style of `callEndLine`, no TypeScript):
+  the page expressions at a caret (`piwi/pageCandidates`, also the default of `piwi/renderSteps` given a `line`), the
+  context there (`test`, `function`, `class` or `file`, which `piwi/record` checks against `into`), the names declared
+  before it (a page object already declared is not instantiated again), where the block goes and how it is indented,
+  and the module the file's `test` comes from. `imports.ts` reads the names a file's import statements bind, with the
+  same scanner: the imports of an update and of `piwi/renderSteps` hold only the lines the file's text lacks.
+
+`npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
+JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
+(the `distDir` option of `startServer` in tests):
+
+| File                         | What                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `piwi-language-server.cjs`   | The language server (`src/main.ts`).                                                                               |
+| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
+| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options (`src/recorder/use-reporter.ts`).                  |
+| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
+| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
+
+The last two come from `buildIdeBundle`, which `build.mjs` imports from `apps/extension/scripts/build.mjs`: the build
+needs the extension's sources, and a change to the recorder there changes what the editor clients ship.
 
 ## Rules
 
@@ -67,11 +107,15 @@ clients stay thin and both editors give the same answers.
 ## Workflow
 
 ```bash
-npm run editor:build        # the bundle the clients ship (the stdio test uses it)
+npm run editor:build        # the five files the clients ship (the stdio and launcher tests use them)
 npm run editor:typecheck
 npm run editor:lint         # :fix to fix
 npm run editor:format       # :check to verify only
 npm run editor:test         # an in-process JSON-RPC client against a fixture repository and a stub instance
 ```
+
+`tests/launcher.test.ts` runs the built launcher (`dist/`) with this repository's Playwright and Chromium, headless,
+and plays a person's input through a second client attached over the DevTools protocol: run `npm run editor:build`
+first (and `npx playwright install chromium` once). It skips, saying why, when either is missing.
 
 The scope for commits here and in the editor clients is `ide`.

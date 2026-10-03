@@ -8,7 +8,8 @@
     "start": "nitro dev --port 4173",
     "test": "playwright test",
     "test:manual-reporter": "playwright test --config=playwright.manual-reporter.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo:functions": "node scripts/register-functions.mjs"
   },
   "devDependencies": {
     "@piwitests/instrumentation-nitro": "0.45.0",

@@ -1,6 +1,6 @@
 ---
 title: Editor extensions
-description: "Piwi in VS Code and the JetBrains IDEs: the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
+description: "Piwi in VS Code and the JetBrains IDEs: tests recorded at the cursor, the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
 lang: en-US
 ---
 
@@ -116,23 +116,15 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 | Piwi: Run selection… | Run one of the project's saved [selections](/features/test-selection) |
 | Piwi: Open the latest run | Open the run the status bar shows |
 | Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
-| Piwi: Pair with Piwi Picker | Copy the address Piwi Picker sends to |
+| Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
+| Piwi: Record here, Record a new test file | Record in a browser, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
+| Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
 
-## Send from Piwi Picker
+## Record a test
 
-A locator picked with the [Piwi Picker](./extension) browser extension, or a flow it recorded, lands at the editor's
-cursor:
-
-1. In the editor, run **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE).
-   It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
-2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
-   that local address.
-3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
-   form you chose; a recording is rendered as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen).
-
-The editor listens on the loopback interface only, and accepts a request only with the token. With several VS Code
-windows open, the one that paired receives.
+**Piwi: Record here** opens a browser through your project's own Playwright and writes what you do there at the cursor,
+as you do it. A locator picked or a flow recorded with [Piwi Picker](./extension) can be sent to the cursor too. Both
+are in [Record tests from the editor](./editor-recording).
 
 ## JetBrains IDEs
 
@@ -150,6 +142,9 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
   Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
   environment.
-- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard opens at its line, with nothing to set.
+- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard of the instance the project is connected to, or
+  in the desktop app, opens at its line.
+- **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
+  Record a New Test File…**; the controls are in a banner above the editor.
 
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

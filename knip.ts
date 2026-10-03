@@ -35,6 +35,7 @@ const config: KnipConfig = {
       // The standalone bundles `scripts/build.mjs` builds, plus the HTML pages' scripts.
       entry: [
         'src/content/*.ts',
+        'src/ide/record-ide.ts',
         'src/background/index.ts',
         'src/devtools/*.ts',
         'src/login/main.ts',
@@ -54,7 +55,11 @@ const config: KnipConfig = {
     },
     'packages/core': {},
     'packages/picker-dom': {},
-    'packages/editor': {},
+    'packages/editor': {
+      // The language server, and the launcher and the reporter `build.mjs` bundles beside it.
+      entry: ['src/main.ts', 'src/recorder/launcher.ts', 'src/recorder/use-reporter.ts'],
+      ignore: ['tests/fixtures/**'],
+    },
     'packages/server': {
       // Native modules the published server installs for the bundled Nitro output.
       ignoreDependencies: ['@libsql/client', 'sharp'],

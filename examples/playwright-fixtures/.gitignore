@@ -7,3 +7,5 @@ playwright-report/
 # The example installs the published @piwitests packages — no lockfile.
 # The exact pins are auto-bumped by release-please on every release.
 package-lock.json
+# Local connection and secrets
+.env

@@ -13,7 +13,7 @@ export const page = (title: string, body: string) => `<!doctype html>
   </style>
 </head>
 <body>
-  <nav><a href="/">Home</a><a href="/form">Form</a><a href="/popup">Popup</a><a href="/slow">Slow</a><a href="/backend">Backend</a></nav>
+  <nav><a href="/">Home</a><a href="/form">Form</a><a href="/popup">Popup</a><a href="/slow">Slow</a><a href="/backend">Backend</a><a href="/shop">Shop</a></nav>
   ${body}
 </body>
 </html>`;

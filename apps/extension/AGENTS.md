@@ -91,6 +91,8 @@ and the Edge Add-ons and Firefox AMO listings that are still outstanding.
   stored settings before it attaches a listener, then sets `html[data-ready]`: an e2e spec opens the page with
   `openOptions` (`tests/e2e/fixtures.ts`), and calls `optionsReady` after a `reload()`, before it clicks anything.
 - `src/shared/` — code shared between content scripts, background, popup, and options.
+- `src/ide/` — the entry and the host of the IDE bundle, the recorder built for the editor service: see "The IDE
+  bundle" below. Nothing in the extension loads it.
 
 **A momentary tool must claim the page through `src/shared/tool-session.ts`.** `startTool(id,
 teardown)` on entry, before it mounts anything (the predecessor's teardown runs inside that
@@ -395,6 +397,15 @@ is its grid) goes into `locator-engine.spec.ts`'s ranking tests (`__piwiRankTop`
 goes into `locator-cases.ts` with a fixture element in `tests/e2e/pages/`; an expression the
 engine deliberately refuses goes into the pinned refusal list, never into a skipped case.
 
+## Checks in a test recording
+
+A test recording's bar (`renderHud`, in Piwi Picker and in the IDE bundle) has **Check an element** and **Check the
+address** (`check-panel.ts`). They reuse the bug report's pick and dialog (`pickElement`, `openRecordDialog` in
+`bug-panel.ts`), pause capture the same way, and record an `assert` event of what the page shows now, with `actual`
+null: the spec writes it as `await expect(…)`. The dialog names the element by the recorded target's first locator, so
+the project's test id attribute applies. Both buttons are disabled while an IDE recording is paused, when the editor
+service drops what the page sends.
+
 ## Report a bug
 
 A bug recording is a recording with `mode: 'bug'` (`recording-storage.ts`): the same capture,
@@ -530,6 +541,37 @@ page, a same-origin frame) repeats that document's
 the element pointed at and its ancestors, moving it with each step and removing everything when the replay ends. The
 pointer events it sends follow the element tree: leaves for the ancestors it left, enters for the ones it entered.
 `hover.spec.ts` records, replays and runs the spec of each kind of reveal on `tests/e2e/pages/hover-*.html`.
+
+## The IDE bundle (`record-ide.js`)
+
+The recorder built a second time, for the editor service (`packages/editor`): its launcher starts a browser with the
+project's own Playwright, exposes the binding `__piwiRecorder` in every page, then loads `record-ide.js` into every
+document (the names and the requests are in `@piwitests/core/ide-recorder`). `buildIdeBundle({ outDir, release })`
+(`scripts/build.mjs`) writes it beside `record-ide-messages.json`, every catalog with its messages and placeholders'
+contents alone, into the editor's `dist/`; neither is part of `dist/` or `dist-firefox/`.
+
+- **One recorder, another host.** `src/ide/record-ide.ts` imports `src/ide/host.ts`, then `record-panel.ts`. The build
+  rewrites every `chrome` reference to `globalThis.__piwiIdeChrome`, which the host installs, read-only, over the
+  binding: `storage.local` and `runtime.sendMessage` are requests to the launcher; there is no `storage.session`, so the
+  recorder keeps its recording through `piwi-session-storage` and `piwi-append-recording-event`, as in Firefox;
+  `runtime.onMessage` keeps its listeners, which nothing calls; `i18n` answers nothing, since the launcher hands the
+  editor's catalog under `piwiLanguage`; `getURL` points at a reserved domain, so `isExtensionContext()` is false; no
+  `dom`. The page's own `chrome` is never touched. Without the binding the host installs nothing and the recorder never
+  starts. A `chrome` call the recorder starts making needs its answer in the host and in the launcher.
+- **What differs is behind `IDE_BUILD`** (`src/shared/ide-build.ts`, the build constant `__PIWI_IDE__`, false in every
+  bundle of the extension, where those branches fold away), in `record-panel.ts` alone: it records the top-level
+  document of an http or https page and nothing else (the launcher's script also runs in frames and in a new tab's
+  `about:blank`); Stop opens no review (capture stops, the HUD and the border go, `piwi-recording-stopped` still goes
+  out); the HUD names the file from `piwiIdeSettings` (`record_hudTitleInto`) and has **Pause**, which pauses the
+  recording for every page (`piwi-recording-paused` to the launcher, the recording's `paused`), the editor's Pause
+  reaching the page through `__piwiIdeDispatch`; the page refreshes no catalog.
+- **The project's test id attribute.** `rankElement`, `verifiedLocators` (its engine) and the probe take
+  `testIdAttribute`: from `piwiIdeSettings` in the IDE bundle, `data-testid` in the extension. A click snaps to an
+  element carrying it, as to a control.
+- **Tests**: `ide-host.test.ts` (the request each `chrome` call makes, the recorder's storage over it, nothing installed
+  without the binding), `ide-bundle.test.ts` (no `chrome` left in the built bundle, the build's global name equal to
+  core's, the catalogs), and `record-ide.spec.ts`, which builds the bundle, answers the binding as the launcher does,
+  and records across two pages of a plain browser. The extension's own specs keep covering the recorder.
 
 ## Playwright view
 

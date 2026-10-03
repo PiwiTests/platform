@@ -169,6 +169,23 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
+  async 'the page recorded steps run on is offered from the code around the cursor'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'admin.spec.ts'));
+    await vscode.workspace.openTextDocument(spec);
+    const inTest = await waitFor(
+      () => api.pageCandidates({ uri: spec.toString(), line: 4, character: 2 }),
+      'the page candidates in a test',
+    );
+    const expressions = inTest.candidates.map((c) => c.expression);
+    assert.equal(inTest.context, 'test');
+    assert.equal(inTest.default, 'adminPage');
+    assert.ok(expressions.includes('adminPage') && expressions.includes('page'), expressions.join(' | '));
+    const inClass = await api.pageCandidates({ uri: pageObject.toString(), line: 4, character: 2 });
+    assert.equal(inClass.context, 'class');
+    assert.equal(inClass.default, 'this.page');
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
@@ -186,6 +203,11 @@ const tests = {
       'piwi.runCommand',
       'piwi.copyText',
       'piwi.runSelection',
+      'piwi.record',
+      'piwi.recordFile',
+      'piwi.stopRecording',
+      'piwi.pauseRecording',
+      'piwi.resumeRecording',
     ]) {
       assert.ok(commands.includes(id), id);
     }

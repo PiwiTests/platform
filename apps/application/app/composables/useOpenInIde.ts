@@ -491,7 +491,7 @@ export function useOpenInIde() {
     toast.add({
       title: 'Set up "Open in IDE"',
       description:
-        'Install the Piwi plugin in your JetBrains IDE (no setting needed), or add your local workspace folder (for VS Code) or a JetBrains project name, to open files from here.',
+        'Install the Piwi plugin in your JetBrains IDE and connect its project to this instance, or add your local workspace folder (for VS Code) or a JetBrains project name, to open files from here.',
       color: 'info',
       icon: 'i-lucide-folder-cog',
       actions: [configureAction],

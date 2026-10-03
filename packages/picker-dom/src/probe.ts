@@ -7,7 +7,8 @@ import type { ProbeArg, ProbedAttrs } from './types.js';
  * plus (when `arg.includeStructural`) its position among same-role elements
  * and anchor-worthy ancestors, which power name-free and ancestor-scoped
  * locator alternatives. With `arg.countMatches` false it counts nothing and
- * reports the anchors alone.
+ * reports the anchors alone. The test id is read from `arg.testIdAttribute`,
+ * `data-testid` by default.
  *
  * Must stay a fully self-contained function (no references to this module's
  * closure): both hosts re-serialize it via `Function.prototype.toString()`.
@@ -16,6 +17,7 @@ import type { ProbeArg, ProbedAttrs } from './types.js';
 export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
   const { keep, tagRoles, inputRoles, roleSources, includeStructural } = arg;
   const countMatches = arg.countMatches !== false;
+  const testIdAttr = arg.testIdAttribute || 'data-testid';
   const FIELD_TAGS = ['input', 'select', 'textarea'];
   /** `root`'s text, leaving out `skip`'s subtree — a wrapping label's text without the field it wraps. */
   const textWithout = (root: any, skip: any): string => {
@@ -47,7 +49,9 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
     }
   };
   const attrMap: Record<string, string | null> = {};
-  for (const key of keep) {
+  // The project's test id attribute is read even when the whitelist, which names Playwright's default, leaves it out.
+  const keys = arg.testIdAttribute && keep.indexOf(arg.testIdAttribute) === -1 ? [...keep, arg.testIdAttribute] : keep;
+  for (const key of keys) {
     const v = el.getAttribute(key) ?? el[key];
     attrMap[key] = typeof v === 'string' ? v.slice(0, 200) : v ? String(v).slice(0, 200) : null;
   }
@@ -68,8 +72,8 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
           return undefined;
         }
       };
-      if (attrMap['data-testid']) {
-        selectorCounts.testId = count(`[data-testid=${JSON.stringify(attrMap['data-testid'])}]`);
+      if (attrMap[testIdAttr]) {
+        selectorCounts.testId = count(`[${testIdAttr}=${JSON.stringify(attrMap[testIdAttr])}]`);
       }
       if (attrMap['id']) selectorCounts.id = count(`#${cssEsc(attrMap['id'])}`);
       if (attrMap['name']) selectorCounts.name = count(`[name=${JSON.stringify(attrMap['name'])}]`);
@@ -292,9 +296,10 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
         // first attribute in document order instead would have handed that
         // scoring an arbitrary winner.
         const TEST_DATA_ATTRS = ['data-test', 'data-test-id', 'data-qa', 'data-qa-id', 'data-cy', 'data-e2e'];
-        /** Whether a `data-*` name and value are usable as an anchor at all. `data-testid` is excluded — it has its own, higher-scoring path. */
+        const testIdName = testIdAttr.toLowerCase();
+        /** Whether a `data-*` name and value are usable as an anchor at all. The test id attribute is excluded: it has its own, higher-scoring path. */
         const usableDataAttr = (name: string, value: string): boolean => {
-          if (!name || name.slice(0, 5) !== 'data-' || name === 'data-testid') return false;
+          if (!name || name.slice(0, 5) !== 'data-' || name.toLowerCase() === testIdName) return false;
           if (NOISY_DATA_ATTR.test(name) || POSITIONAL_DATA_ATTR.test(name)) return false;
           // A valueless marker (`data-open`) identifies nothing; an over-long
           // one is almost always serialized state.
@@ -386,7 +391,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
           depth++;
           const tag = (node.tagName || '').toLowerCase();
           if (tag === 'body' || tag === 'html') break;
-          const testId = node.getAttribute('data-testid');
+          const testId = node.getAttribute(testIdAttr);
           const id = node.getAttribute('id');
           const explicitRole = node.getAttribute('role');
           const ariaLabel = node.getAttribute('aria-label');
@@ -427,7 +432,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
               ariaLabel: ariaLabel || null,
               ...(scopedRoleCount >= 0 ? { scopedRoleCount } : {}),
               ...(scopedTextCount >= 0 ? { scopedTextCount } : {}),
-              ...(testId && countMatches ? { testIdCount: count(`[data-testid=${JSON.stringify(testId)}]`) } : {}),
+              ...(testId && countMatches ? { testIdCount: count(`[${testIdAttr}=${JSON.stringify(testId)}]`) } : {}),
               ...(id && countMatches ? { idCount: count(`#${cssEsc(id)}`) } : {}),
               ...(anchorRole && nodesUsable ? { roleCount: docRoleCount(anchorRole) } : {}),
               ...(filterText ? { filterText } : {}),

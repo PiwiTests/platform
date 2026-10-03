@@ -115,7 +115,7 @@ function testOpen(filePath: string) {
           variant="soft"
           icon="i-lucide-puzzle"
           title="JetBrains: install the Piwi plugin"
-          description="With the Piwi plugin in your JetBrains IDE (Rider, WebStorm, IntelliJ IDEA, …), files open there with no setting: the IDE finds the file in its open projects, opens it at the line, and confirms it did. Auto and both JetBrains methods ask it first, on every IDE running."
+          description="With the Piwi plugin in your JetBrains IDE (Rider, WebStorm, IntelliJ IDEA, …) and its project connected to this instance, files open there with no setting: the IDE finds the file in its open projects, opens it at the line, and confirms it did. Auto and both JetBrains methods ask it first, on every IDE running."
         >
           <template #actions>
             <UButton :to="JETBRAINS_PLUGIN_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">

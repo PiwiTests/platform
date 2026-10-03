@@ -36,6 +36,7 @@ Extraction is deliberately conservative. A function that branches on its argumen
 ## Using the catalog
 
 - **While recording**, the extension live-ranks which catalog function the steps so far look like, and on **Copy as TypeScript** matched steps collapse into a call to your function; anything unmatched stays as plain locators. The matcher only ever *selects among* the functions you registered — it never invents one. See the [browser extension](./extension#what-it-does).
+- **While recording from your editor**, each run of steps a function performs is written as a call to it as soon as its last step is recorded, a page object taken from the test's fixtures when the file's tests take it there. See [Record tests from the editor](./editor-recording).
 - **Against the current page**, the popup's **Test functions** checklist scores every function in the active project's catalog: ready to use here, a partial match, or not found on this page.
 
 ## Related
