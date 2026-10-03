@@ -68,6 +68,27 @@ Plugin Verifier runs on two IDEs for a pull request. What changed while building
   read.
 - `checks` stays one job until a measurement shows it is the longest path.
 
+**Phase 4 built 2026-10-03**, on decision D3 (the `edge` image on every push to `main`): `release.yml` publishes a
+release through one reusable workflow per target, on one node-server build, and `edge.yml` pushes the `edge` image.
+Phase 5's documentation landed with phases 2 to 4. What changed while building phase 4:
+
+- `release.yml` takes no tag input: run on demand, it uses the ref it is run on, a tag to publish. Its inputs tick
+  the targets, so a release whose publication failed on one target runs again for that target alone; "Re-run failed
+  jobs" covers a failure the same week (the shared build stays 3 days).
+- A pull request that changes `release.yml` or a `reusable-publish-*.yml` runs `release.yml`: every target builds and
+  packs (`npm publish --dry-run`, `dotnet pack`, both image architectures, the four desktop legs, the three
+  extension packages), and nothing is pushed or published. It is not a check of `CI result`: it runs on the
+  release workflows' changes alone, which is rare, and takes about 20 minutes.
+- The container workflow pushes only from a tag or `main`; elsewhere it builds both architectures, reads the
+  registry cache and writes none.
+- The npm server package ships the shared build, so it now carries the build's commit (`PIWI_BUILD_SHA`), as the
+  container image and the desktop app do.
+- `edge.yml` cancels a run still building when a newer commit lands on `main`: one image per burst of merges.
+- The publications authenticate with `NPM_TOKEN` and `NUGET_API_KEY`, which no file name binds. npm provenance now
+  comes from a reusable workflow; the first release tag after the merge is its first real run, as the dry run
+  publishes without provenance.
+- `changelog-polish.yml` is `release-notes.yml`.
+
 ## What we measured
 
 | Workflow                 | Runs | Median (success) | Note                                                      |
@@ -150,10 +171,10 @@ Over the window, about **4,100 runner minutes**: about 960 (23 %) on the release
   workflows/
     ci.yml                       Pull requests and main: every check, one required check "CI result"
     pr-lint.yml                  Pull requests: title, commits, actionlint when .github/** changes
-    nightly.yml                  Scheduled: the exhaustive matrices (D2, D4) and cache seeding
     release-please.yml           Push to main
-    release.yml                  Tag v*: every publication
-    release-notes.yml            Release published (today changelog-polish.yml)
+    release.yml                  Tag v*: every publication; on demand per target; a dry run on PRs that change it
+    edge.yml                     Push to main: the edge container image
+    release-notes.yml            Release published (was changelog-polish.yml)
     docs.yml                     Push to main: docs and demo deployment
     live-jira.yml                Manual
     reusable-e2e-extension.yml   Reusable workflows (workflow_call), called by ci.yml
@@ -236,21 +257,21 @@ Each phase is one pull request, measured before and after with the same API quer
 - [x] Package smoke: Linux on pull requests; Windows and macOS on `main`, and on pull requests that change the
       packages, `scripts/package-smoke.mjs` or the dependencies.
 
-### Phase 4: releases and the `edge` image (dry-run with `workflow_dispatch` on a branch before the next tag)
+### Phase 4: releases and the `edge` image (built)
 
-- [ ] `release.yml` on `push: tags: v*` and `workflow_dispatch` (a `tag` input): one `build-server` job
-      (`NITRO_PRESET=node-server`) whose artifact feeds both the npm server package and the four desktop builds, then a
-      call to each `reusable-publish-*.yml` with `secrets: inherit`. Run on a branch, it builds without publishing, as
-      the publish workflows do.
-- [ ] `reusable-publish-npm.yml` publishes reporter, server and the Nitro instrumentation.
-- [ ] The `edge` image on every push to `main` or nightly (D3).
-- [ ] `CONTRIBUTING.md` (the workflows to re-run by hand) and the comment in `release-please.yml`.
+- [x] `release.yml` on `push: tags: v*`, `workflow_dispatch` (one input per target) and pull requests that change a
+      release workflow (a dry run): one `build-server` job (`NITRO_PRESET=node-server`) whose artifact feeds both the
+      npm server package and the four desktop builds, then a call to each `reusable-publish-*.yml` with
+      `secrets: inherit`. Off a tag, it builds and packs without publishing.
+- [x] `reusable-publish-npm.yml` publishes reporter, server and the Nitro instrumentation.
+- [x] The `edge` image on every push to `main` (`edge.yml`).
+- [x] `CONTRIBUTING.md` (the targets to re-run by hand) and the comment in `release-please.yml`.
 
-### Phase 5: documentation
+### Phase 5: documentation (built with phases 2 to 4)
 
-- [ ] `.github/AGENTS.md` with the conventions above, in the area-guide table of the root `AGENTS.md`.
-- [ ] The workflow and job names quoted in `AGENTS.md` (`package-smoke`) and in the extension, VS Code, JetBrains and
-      desktop guides.
+- [x] `.github/AGENTS.md` with the conventions above, in the area-guide table of the root `AGENTS.md`.
+- [x] The workflow and job names quoted in `AGENTS.md` (`package-smoke`), `CONTRIBUTING.md` and the extension,
+      JetBrains and desktop guides.
 
 ## What to expect
 
@@ -275,18 +296,20 @@ The "after" column is computed from the measured job durations, to be confirmed 
   - B: pull requests and `main` on two, all four nightly. Cheaper; seen up to a day later.
   - C: a merge queue (`merge_group`): the full matrix runs once on the merge result, before the merge, and `ci` on
     `main` only seeds the caches. The most thorough; it changes how pull requests are merged.
-- **D3. The `edge` image**: on every push to `main` (about 7 runner minutes a merge) or nightly.
+- **D3. The `edge` image**: on every push to `main` (about 7 runner minutes a merge) or nightly. Decided: on every
+  push to `main`, a newer one cancelling a run still building.
 - **D4. JetBrains `verify`**: two IDEs on pull requests and four on `main` or nightly, or four on pull requests that
   change `apps/jetbrains/**` and two when only `packages/editor` or `packages/core` changes. Decided: two on pull
   requests, four on `main`.
 - **D5. Package smoke on Windows and macOS**: on every application pull request (today), or when the server or
   reporter package changes, and on `main`. Decided: when the packages or their dependencies change, and on `main`.
 
-## Before phase 4
+## Still to check
 
 - **npm trusted publishing**: if npmjs.com trusts a workflow file for `@piwitests/reporter`, `@piwitests/server` or
-  `@piwitests/instrumentation-nitro`, the file name is part of that setting, and renaming the workflow breaks the
-  publish until the setting follows. The same holds for NuGet (the job asks for `id-token: write`).
+  `@piwitests/instrumentation-nitro`, the file name is part of that setting and has to follow the rename. The
+  workflows publish with `NPM_TOKEN`, so the setting matters only if token publishing is turned off. The same holds
+  for NuGet (the job asks for `id-token: write`).
 - **Cache usage** (`gh cache list --sort size_in_bytes`): whether the 10 GB limit already evicts the npm and Playwright
   caches. The Nuxt build cache (`nuxt-build-v2-…-<sha>`) is about 18 MB a run.
 - **The Nuxt build cache's worth**: one build with it and one without (103 seconds measured with it). If it saves
