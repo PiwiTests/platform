@@ -33,7 +33,6 @@ vi.stubGlobal('apiError', apiError);
 type Route = (event: RouteEvent) => Promise<Record<string, any>>;
 const setup = (await import('../../server/api/test-runs/setup.post')).default as unknown as Route;
 const begin = (await import('../../server/api/test-runs/[id]/begin.post')).default as unknown as Route;
-const start = (await import('../../server/api/test-runs/start.post')).default as unknown as Route;
 const finish = (await import('../../server/api/test-runs/[id]/finish.post')).default as unknown as Route;
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
@@ -59,27 +58,30 @@ beforeEach(async () => {
 });
 
 /**
- * Two shards report one run the way the reporter does: the first runs global
- * setup (which sends no metadata) and `/begin` with the run's metadata, the
- * second joins the running run through `/start`; then their cases, then
- * `/finish` per shard.
+ * Two shards report one run the way the reporter does: each runs global setup
+ * (which sends no metadata) and then `/begin` with the run's metadata; then
+ * their cases, then `/finish` per shard.
  */
 async function reportShardedRun(opts: {
   beginMetadata: Record<string, unknown>;
   finishMetadata: (shard: number) => Record<string, unknown> | undefined;
 }): Promise<number> {
   const shard = { instanceId: 'ci-run-42', shardTotal: 2 };
-  const set = await setup({ body: { projectName: 'sharded-branch', ...shard, shardIndex: 1 } });
-  const runId = set.runId as number;
-  const began = await begin({
-    params: { id: String(runId) },
-    body: { setupToken: set.setupToken, totalTests: 1, metadata: opts.beginMetadata, ...shard, shardIndex: 1 },
-  });
-  const joined = await start({
-    body: { projectName: 'sharded-branch', totalTests: 1, metadata: opts.beginMetadata, ...shard, shardIndex: 2 },
-  });
-  expect(joined.runId).toBe(runId);
-  const streamTokens = [began.streamToken as string, joined.streamToken as string];
+  const setups = [];
+  for (const shardIndex of [1, 2]) {
+    setups.push(await setup({ body: { projectName: 'sharded-branch', ...shard, shardIndex } }));
+  }
+  const runId = setups[0]!.runId as number;
+  expect(setups[1]!.runId).toBe(runId);
+
+  const streamTokens: string[] = [];
+  for (const [i, set] of setups.entries()) {
+    const began = await begin({
+      params: { id: String(runId) },
+      body: { setupToken: set.setupToken, totalTests: 1, metadata: opts.beginMetadata, ...shard, shardIndex: i + 1 },
+    });
+    streamTokens.push(began.streamToken as string);
+  }
 
   await persistRunCases(db as never, projectId, runId, [
     {
