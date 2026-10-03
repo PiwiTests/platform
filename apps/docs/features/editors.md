@@ -118,6 +118,31 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 | Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
 | Piwi: Pair with Piwi Picker | Copy the address Piwi Picker sends to |
 
+## Record a test
+
+**Piwi: Record here** (**Tools → Piwi → Record Here** in a JetBrains IDE, or the editor's context menu) opens a
+browser through your project's own Playwright, with the `use` options of one of its projects: `baseURL`,
+`storageState`, the viewport and device, the locale, the headers and `testIdAttribute`. What you do there is written
+at the cursor as you do it: a new test between tests, steps inside a test's body. Each step is rewritten as the next
+ones arrive, since a run of steps can become one call to your own page object or helper once its last step is
+recorded.
+
+- **The code** comes from the same converter as Piwi Picker's recordings and [`piwi codegen`](/reference/cli#codegen):
+  locators each verified to find the element alone on the page, the stable ones first and those your tests already
+  use preferred, a wait for each new page, and calls to your [test functions](./test-functions) when the editor is
+  connected to an instance or the desktop app.
+- **The page the steps run on** is offered from the code around the cursor: `page`, a fixture such as `adminPage`, or
+  `this.page` in a page object; type any other expression.
+- **Passwords** are never recorded: the code reads them from an environment variable named after the field, such as
+  `process.env.E2E_PASSWORD`.
+- **Stop** in the editor or in the browser, or closing the browser, ends the recording; one undo removes it. Typing in
+  the recorded block pauses the recording, which can then resume (and rewrite the block) or keep your edits.
+- **Piwi: Record a new test file** creates a spec and records into it.
+
+The browser is the one your tests use, installed by Playwright (`npx playwright install chromium`); the recording
+needs nothing else: no instance, no desktop app, no browser extension. It does not start your `webServer`: start the
+application first. It records the top-level page: clicks inside an iframe and steps in a popup are not recorded yet.
+
 ## Send from Piwi Picker
 
 A locator picked with the [Piwi Picker](./extension) browser extension, or a flow it recorded, lands at the editor's
