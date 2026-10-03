@@ -6,11 +6,16 @@
  * from the shared registry via `topic`, or pass `title`/`text`/`doc` inline for
  * one-offs.
  *
+ * The text is Markdown (see `renderHelpMarkdown`): a long hint reads as a lead
+ * sentence and a list, and a ```mermaid block draws a small diagram. Such a
+ * hint gets a wider popover that scrolls when it outgrows the viewport.
+ *
  * Click-mode popover (not a hover tooltip) so the content can hold a real link
  * and stay keyboard- and touch-accessible. Use `i-lucide-circle-help` here and
  * reserve `i-lucide-info` for informational/empty-state callouts.
  */
 import { HELP_TOPICS, type HelpTopic, type HelpTopicKey } from '~/utils/help-content';
+import { renderHelpMarkdown } from '~/utils/help-markdown';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { getEnvVarMeta } from '#shared/piwi-env-vars';
 
@@ -38,6 +43,15 @@ const envVars = computed(() => props.envVars ?? entry.value?.envVars);
 
 const open = ref(false);
 
+// Rendered only once opened: most hints on a page are never read.
+const segments = computed(() => (open.value ? renderHelpMarkdown(text.value) : []));
+// Prose of a sentence or two stays narrow; structured or long copy reads better wider.
+const wide = computed(() => /```|^\s*(?:[-*]|\d+\.)\s/m.test(text.value) || text.value.length > 400);
+const contentClass = computed(() => [
+  'p-3 text-sm overflow-y-auto max-h-(--reka-popover-content-available-height)',
+  wide.value ? 'max-w-md' : 'max-w-xs',
+]);
+
 // Names both the trigger and the popover it opens, so assistive tech announces
 // which hint is on screen.
 const ariaLabel = computed(() => (title.value ? `Help: ${title.value}` : 'Help'));
@@ -46,7 +60,7 @@ const contentAttrs = computed(() => ({ side: 'bottom' as const, 'aria-label': ar
 </script>
 
 <template>
-  <UPopover v-model:open="open" :content="contentAttrs" :ui="{ content: 'max-w-xs p-3 text-sm' }">
+  <UPopover v-model:open="open" :content="contentAttrs" :ui="{ content: contentClass }">
     <UButton
       :size="size ?? 'xs'"
       variant="ghost"
@@ -59,7 +73,15 @@ const contentAttrs = computed(() => ({ side: 'bottom' as const, 'aria-label': ar
 
     <template #content>
       <p v-if="title" class="font-medium mb-1">{{ title }}</p>
-      <p class="text-muted">{{ text }}</p>
+      <div
+        class="text-muted break-words [&_p+*]:mt-2 [&_ul+p]:mt-2 [&_ol+p]:mt-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li+li]:mt-1 [&_strong]:font-medium [&_strong]:text-default [&_code]:font-mono [&_code]:text-xs [&_code]:bg-elevated [&_code]:rounded [&_code]:px-0.5 [&_a]:text-primary [&_a]:underline [&_a]:decoration-dotted"
+      >
+        <template v-for="(segment, i) in segments" :key="i">
+          <HelpMermaid v-if="segment.kind === 'mermaid'" :source="segment.source" />
+          <!-- eslint-disable-next-line vue/no-v-html — registry copy; raw HTML in it is escaped -->
+          <div v-else v-html="segment.html" />
+        </template>
+      </div>
       <div v-if="envVars?.length" class="mt-2 space-y-1">
         <p class="text-muted text-xs">Environment variable{{ envVars.length > 1 ? 's' : '' }}:</p>
         <div class="flex flex-col gap-1.5">

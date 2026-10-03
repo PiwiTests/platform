@@ -5,7 +5,12 @@
  * future i18n trivial, and turns a missing/typo'd key into a compile-time error
  * at the call site (the `help` prop is typed as `HelpTopicKey`).
  *
- * Copy rules: 1–2 sentences, sentence case, American English. The `doc` field
+ * Copy rules: 1–2 sentences, sentence case, American English. The text is
+ * Markdown (rendered by `renderHelpMarkdown`): wrap identifiers, commands and
+ * patterns in `code`. When a hint can't stay short, lead with one sentence and
+ * break the rest into a `- **Label** — …` list, one line per array entry
+ * joined with `\n`; a ```mermaid block draws a small diagram where a flow
+ * reads better than prose. The `doc` field
  * is a docs page + optional `#anchor` passed through `docsUrl()`; omit it when
  * no docs section exists yet (text-only hint). The optional `recipe` links the
  * recipe that answers the question the block raises, labeled with that
@@ -18,7 +23,7 @@ import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 export interface HelpTopic {
   /** Optional bold heading shown at the top of the popover. */
   title?: string;
-  /** 1–2 sentence explanation. */
+  /** 1–2 sentence explanation, in Markdown. */
   text: string;
   /** Docs page + optional `#anchor` (passed to `docsUrl()`); omit if none. */
   doc?: string;
@@ -428,12 +433,27 @@ export const HELP_TOPICS = {
   },
   'project.url-patterns': {
     title: 'Browser extension URLs',
-    text: 'The addresses this project’s application is served at, as patterns over the whole URL: * matches within one path segment, ** across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there. The environment is a label; the branch is the one deployed at those addresses, whose tests Tested elements shows. The path prefix is the part of the path the site serves its pages under and the tests did not (/app); Piwi Picker removes it before comparing the page with the pages the tests ran on. The tests’ path prefix is the reverse, the part of the path the tests ran under and the site does not; Piwi Picker puts it in front.',
+    text: [
+      'The addresses this project’s application is served at, as patterns over the whole URL: `*` matches within one path segment, `**` across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there.',
+      '',
+      '- **Environment** is a label.',
+      '- **Branch** is the one deployed at those addresses, whose tests Tested elements shows.',
+      '- **Path prefix** is the part of the path the site serves its pages under and the tests did not (`/app`). Piwi Picker removes it before comparing the page with the pages the tests ran on.',
+      '- **Tests’ path prefix** is the reverse: the part of the path the tests ran under and the site does not. Piwi Picker puts it in front.',
+    ].join('\n'),
     doc: 'features/extension-connection#url-patterns',
   },
   'project.ci-rerun': {
     title: 'CI re-run',
-    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs piwi flake for one flaky test, from its next step.',
+    text: [
+      'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
+      '',
+      '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
+      '- **GitLab** — a pipeline, recognized by its pipeline id.',
+      '- **Bitbucket** — a custom pipeline, recognized by its build number.',
+      '',
+      'The run it starts is recorded as a CI re-run when it finishes. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs `piwi flake` for one flaky test, from its next step.',
+    ].join('\n'),
     doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {
@@ -481,13 +501,32 @@ export const HELP_TOPICS = {
   },
   'run.changes': {
     title: 'Changes',
-    text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; when no earlier full run passed, the last failed run, found the same way. The line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one earlier run: each shows its branch, environment and outcome. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
+    text: [
+      'What differs between this run and one baseline. By default that is the last passing run in the same environment, looked for on each branch in turn:',
+      '',
+      '```mermaid',
+      'flowchart LR',
+      '  A[Same branch] --> B[Branch it forked from] --> C[Any branch]',
+      '```',
+      '',
+      'The branch it forked from is the pull request’s target, else the project’s default branch. When no earlier full run passed, it is the last failed run, found the same way; the line under the selector says which rung applied.',
+      '',
+      'Pick a base branch to take the baseline from that branch only, or pick one earlier run: each shows its branch, environment and outcome. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
+    ].join('\n'),
     doc: 'features/run-changes',
     recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
   },
   'run.timeline': {
     title: 'Workers timeline',
-    text: "When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. The hatched part of a bar is hook time: setup (beforeAll, beforeEach, fixtures) at the start, teardown (afterEach, afterAll, worker cleanup) at the end, and a failed hook in dark red even with Show hooks off. Hover one for the hooks it ran and the error; click it to open the steps on that hook. A bar spans the hooks Playwright leaves out of a test's duration, such as a slow beforeAll. Each lane is one worker: Playwright replaces a worker process after a failed test, and ↻ marks where the new process took over. A dashed line is time the worker ran no test; hover it or ↻ for what it was. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show waits for the wasted waits, and Show locks to see when each named lock was held and how much of the run it serialized. Above the rows, when the reporter measured them, the machine's CPU, the memory of the run's processes and the pages open in the workers share the same axis, one set per shard: hover them for the values at that moment and the tests running then, and turn each off from the Resources menu. The same menu draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.",
+    text: [
+      'When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard.',
+      '',
+      '- **Lanes** — one per worker. Playwright replaces a worker process after a failed test; ↻ marks where the new process took over. A dashed line is time the worker ran no test: hover it or ↻ for what it was.',
+      '- **Hatched ends** — hook time: setup (`beforeAll`, `beforeEach`, fixtures) at the start, teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A bar spans the hooks Playwright leaves out of a test’s duration, such as a slow `beforeAll`. A failed hook shows in dark red even with **Show hooks** off; hover it for the hooks it ran and the error, click it to open the steps on that hook.',
+      '- **Click a test** to expand its steps into a nested waterfall on the same axis, like a span viewer.',
+      '- **Show waits** marks the wasted waits; **Show locks** shows when each named lock was held and how much of the run it serialized.',
+      '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. Hover them for the values at that moment and the tests running then. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
+    ].join('\n'),
     doc: 'features/ui-overview#test-run-detail',
   },
   'run.resource-findings': {
@@ -518,7 +557,12 @@ export const HELP_TOPICS = {
   },
   'case.evidence': {
     title: 'Evidence',
-    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the page at the failure, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at. The Screen tab shows the page as views (its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video), and Open in picker finds a locator on that DOM; the failing step on the timeline carries the same first three. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
+    text: [
+      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the page at the failure, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at.',
+      '',
+      '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
+      '- **An empty tab** says whether the evidence was never captured, captured with nothing to show, or does not apply.',
+    ].join('\n'),
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   // ── Setup & capabilities ──────────────────────────────────────────────
@@ -534,7 +578,7 @@ export const HELP_TOPICS = {
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan get_fix_plan returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',
+    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {
@@ -552,7 +596,16 @@ export const HELP_TOPICS = {
   },
   'case.timeline': {
     title: 'Failure timeline',
-    text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The type chips hide or show the steps, requests, console entries, dialogs and backend logs in the window (“Only” or Alt-click shows just one type; the failing step and the last shown type always stay), and the line beside them says what is hidden; the choice is remembered in this browser. The list below reads it chronologically — click a line to jump to that step, console entry or request. The failed step is the one that raised the test’s own error; an error the test caught and went on from (a probe in a try/catch, a retried toPass attempt) is greyed out and marked as caught. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
+    text: [
+      'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure.',
+      '',
+      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything.',
+      '- **Type chips** hide or show the steps, requests, console entries, dialogs and backend logs in the window. **Only** or Alt-click shows just one type; the failing step and the last shown type always stay. The line beside them says what is hidden, and the choice is remembered in this browser.',
+      '- **The list below** reads it chronologically — click a line to jump to that step, console entry or request.',
+      '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
+      '',
+      'When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
+    ].join('\n'),
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.resources': {
@@ -572,7 +625,12 @@ export const HELP_TOPICS = {
   },
   'case.network': {
     title: 'Network requests',
-    text: 'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. A request that got no response (a reset, a refused connection, an abort) is marked failed, with the error the browser reported. When the execution has a trace, the Full trace view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked. An empty card distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened; with a trace and no fixtures the list is recovered from the trace and marked "derived from the trace".',
+    text: [
+      'HTTP requests the page made during the test, with timing and status — useful for spotting failed or slow calls. A request that got no response (a reset, a refused connection, an abort) is marked failed, with the error the browser reported.',
+      '',
+      '- **Full trace** — when the execution has a trace, this view shows every request (all resource types) with headers, timing phases, a waterfall and capped body previews; sensitive header values are masked.',
+      '- **An empty card** distinguishes not captured (add the capture fixtures) from captured-but-nothing-happened. With a trace and no fixtures, the list is recovered from the trace and marked “derived from the trace”.',
+    ].join('\n'),
     doc: 'features/evidence#trace-powered-deep-views',
   },
   'case.attempts': {
@@ -788,7 +846,7 @@ export const HELP_TOPICS = {
   },
   'settings.wasted-time': {
     title: 'Wasted-time patterns',
-    text: 'Define which wait steps count as wasted time. A wait is wasted when any pattern matches its step title or source location. Patterns are case-insensitive and support * and ? wildcards. Changes apply to existing runs immediately.',
+    text: 'Define which wait steps count as wasted time. A wait is wasted when any pattern matches its step title or source location. Patterns are case-insensitive and support `*` and `?` wildcards. Changes apply to existing runs immediately.',
     doc: 'features/slow-tests',
     envVars: ['PIWI_WASTED_WAIT_PATTERNS'],
   },
@@ -935,14 +993,29 @@ export const HELP_TOPICS = {
   },
   'ide.open': {
     title: 'Open in IDE',
-    text: "Click a source path to open it in your local editor. With the Piwi plugin in a JetBrains IDE (Rider, WebStorm, IntelliJ IDEA), there is nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms. Otherwise set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit Test to check it works. The desktop app also opens files through your IDE's command-line launcher (code, rider, …); in the browser, Auto falls back to the JetBrains local server, then to a vscode:// or jetbrains:// launch, which cannot confirm. These preferences live in this browser only.",
+    text: [
+      'Click a source path to open it in your local editor.',
+      '',
+      '- **JetBrains IDE with the Piwi plugin** (Rider, WebStorm, IntelliJ IDEA) — nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms.',
+      '- **Otherwise** set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit **Test** to check it works.',
+      '- **Desktop app** — also opens files through your IDE’s command-line launcher (`code`, `rider`, …).',
+      '- **Browser** — **Auto** falls back to the JetBrains local server, then to a `vscode://` or `jetbrains://` launch, which cannot confirm.',
+      '',
+      'These preferences live in this browser only.',
+    ].join('\n'),
     doc: 'features/ide-integration',
   },
 
   // ── Locator healing ────────────────────────────────────────────────────
   'locator-healing': {
     title: 'Locator fix',
-    text: 'When a locator breaks after a UI change, Piwi suggests pre-captured alternatives from the last passing run — or from another test in the project that uses the same locator. Each alternative is ranked by stability score — prefer data-testid (100) over CSS classes (10–40). The recommended fix shows the exact one-line edit for the failing test, with a "Copy fix prompt" for an AI coding agent. A "Your pick" badge marks a replacement you confirmed on the failing page: "Pick from snapshot" opens the failure-time DOM and lets you click the intended element, and "Pick from trace" opens the failure trace in the trace viewer, whose Pick locator tool works on the recorded page snapshots.',
+    text: [
+      'When a locator breaks after a UI change, Piwi suggests pre-captured alternatives from the last passing run — or from another test in the project that uses the same locator.',
+      '',
+      '- **Ranking** — each alternative is ranked by stability score: prefer `data-testid` (100) over CSS classes (10–40).',
+      '- **Recommended fix** — the exact one-line edit for the failing test, with **Copy fix prompt** for an AI coding agent.',
+      '- **Your pick** marks a replacement you confirmed on the failing page. **Pick from snapshot** opens the failure-time DOM and lets you click the intended element; **Pick from trace** opens the failure trace in the trace viewer, whose Pick locator tool works on the recorded page snapshots.',
+    ].join('\n'),
     doc: 'features/locator-healing',
     recipe: { question: 'Fix a broken locator', doc: 'recipes/broken-locator' },
   },
@@ -965,7 +1038,13 @@ export const HELP_TOPICS = {
   },
   'project.locator-index': {
     title: 'Locator index',
-    text: 'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive. The branch select picks what a branch’s tests use: the tests that ran on it with what they did there, the others with what they do on the default branch. Matching is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension. A chain the locator stability rules flag says why: brittle ones break on changes unrelated to what the test checks, such as a position, a styling class or the page structure; the Stability select lists only those.',
+    text: [
+      'Every locator chain recorded in the steps of the project’s runs, with the tests that use it and the actions they perform through it. New runs update it as they arrive.',
+      '',
+      '- **Branch** picks what a branch’s tests use: the tests that ran on it with what they did there, the others with what they do on the default branch.',
+      '- **Matching** is by chain text: to see which elements of a live page these chains reach, use Tested elements in the Piwi Picker extension.',
+      '- **Stability** — a chain the locator stability rules flag says why: brittle ones break on changes unrelated to what the test checks, such as a position, a styling class or the page structure. The Stability select lists only those.',
+    ].join('\n'),
     doc: 'features/locator-usage#branches',
   },
 
