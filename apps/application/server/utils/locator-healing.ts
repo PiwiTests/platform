@@ -917,7 +917,7 @@ export async function saveLocatorPick(
       : null;
   if (!location && !sig) return { status: 'not-persisted', reason: 'no-identity' };
 
-  const pick: RankedLocator = { ...input.pickedLocator, pickedByUser: true };
+  const pick: RankedLocator = { ...input.pickedLocator, pickedByUser: true, pickedAt: new Date().toISOString() };
   const mergePick = (existing: RankedLocator[] | null): string =>
     JSON.stringify([pick, ...(existing ?? []).filter((a) => a.locator !== pick.locator)].slice(0, 10));
 

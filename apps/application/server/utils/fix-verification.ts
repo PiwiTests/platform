@@ -29,6 +29,11 @@
  * alone changes nothing — a flaky test achieves it by accident. Every recorded
  * fix emits `cluster.fixed`; every regression emits `cluster.regressed`.
  *
+ * A commit in that range carrying a `Piwi-Heal: <dedupe key>` trailer names the
+ * auto-heal pull request that landed the fix: the fix then carries it as
+ * `healPr`, whatever its verdict, when one of that PR's edits belongs to the
+ * cluster.
+ *
  * Both verdicts are also the cluster diagnosis's hand-back outcome: a
  * `diagnosis-verified` fix records `verified` on the diagnosis version that was
  * current when the fix landed, and a regression of a cluster whose diagnosis was
@@ -38,13 +43,16 @@
  * unreachable must never turn into an ingest error.
  */
 import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
-import { failureClusters, failureDiagnoses, projects, testRuns, testRunsCases } from '../database/schema';
+import { failureClusters, failureDiagnoses, healActions, projects, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider } from './scm';
+import type { ScmChanges, ScmCommit } from './scm/ScmProvider';
+import { HEAL_COMMIT_TRAILER, trailerValues } from '#shared/commit-trailers';
+import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import { normalizeGitUrl } from './scm/git-url';
 import { emitNotification } from './notifications/emit';
 import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, stripAbPrefix } from '#shared/patch';
-import type { FixAuthor, NotificationEvent, NotificationPayload } from '#shared/notification-events';
+import type { FixAuthor, HealPrRef, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
 import { isEligibleRun } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
@@ -68,6 +76,8 @@ export interface VerifiedFix {
   timeToResolutionMs: number | null;
   /** Tests that were failing and now pass. */
   testCount: number;
+  /** The auto-heal pull request whose commit landed the fix, read from its `Piwi-Heal` trailer. */
+  healPr?: HealPrRef;
 }
 
 /** What a run in which every affected test passed says about a cluster. */
@@ -200,37 +210,72 @@ async function recordDiagnosisRegressed(
 }
 
 /**
- * True when the commits between `fromSha` and `toSha` touch any of `paths`.
- * Returns false on any failure, which downgrades the verdict to
- * "stopped-failing" rather than claiming a verification we could not make.
+ * True when the changed files touch any of `paths`. False when there are no
+ * changes to read, which downgrades the verdict to "stopped-failing" rather
+ * than claiming a verification we could not make.
  */
-async function changeTouchedFiles(
+export function changesTouchFiles(changes: ScmChanges | null, paths: string[]): boolean {
+  if (paths.length === 0 || !changes?.files?.length) return false;
+  const changed = new Set(changes.files.map((file) => file.filename));
+  // Compare on suffixes too: the reporter records repo-relative paths, but a
+  // monorepo diagnosis may name a path relative to a package root.
+  return paths.some((path) => {
+    for (const candidate of changed) {
+      if (candidate === path || candidate.endsWith(`/${path}`) || path.endsWith(`/${candidate}`)) return true;
+    }
+    return false;
+  });
+}
+
+/** The commits and files between two commits, or null on any failure. */
+async function fetchRangeChanges(
   db: DbClient,
   projectId: number,
   repositoryUrl: string,
   fromSha: string,
   toSha: string,
-  paths: string[],
-): Promise<boolean> {
-  if (paths.length === 0 || fromSha === toSha) return false;
+): Promise<ScmChanges | null> {
+  if (fromSha === toSha) return null;
   try {
     const provider = await createScmProvider(repositoryUrl, db, projectId);
-    if (!provider) return false;
-    const changes = await provider.fetchChanges(fromSha, toSha);
-    if (!changes?.files?.length) return false;
-
-    const changed = new Set(changes.files.map((file) => file.filename));
-    // Compare on suffixes too: the reporter records repo-relative paths, but a
-    // monorepo diagnosis may name a path relative to a package root.
-    return paths.some((path) => {
-      for (const candidate of changed) {
-        if (candidate === path || candidate.endsWith(`/${path}`) || path.endsWith(`/${candidate}`)) return true;
-      }
-      return false;
-    });
+    if (!provider) return null;
+    return await provider.fetchChanges(fromSha, toSha);
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** The heal-action dedupe keys the commits name in their `Piwi-Heal` trailers. */
+export function healKeysFromCommits(commits: ScmCommit[]): string[] {
+  const keys = new Set<string>();
+  for (const commit of commits) {
+    for (const key of trailerValues(commit.fullMessage ?? commit.message, HEAL_COMMIT_TRAILER)) keys.add(key);
+  }
+  return [...keys];
+}
+
+/**
+ * The auto-heal pull request among `keys` whose edits cover the cluster, if
+ * one recorded a PR.
+ */
+async function findHealPr(
+  db: DbClient,
+  projectId: number,
+  clusterId: number,
+  keys: string[],
+): Promise<HealPrRef | undefined> {
+  if (keys.length === 0) return undefined;
+  const rows = await db
+    .select({ id: healActions.id, payload: healActions.payload, result: healActions.result })
+    .from(healActions)
+    .where(and(eq(healActions.projectId, projectId), inArray(healActions.dedupeKey, keys)));
+  for (const row of rows) {
+    const payload = row.payload as HealActionPayload | null;
+    const result = row.result as HealActionResult | null;
+    if (!result?.prNumber || !payload?.edits.some((edit) => edit.clusterId === clusterId)) continue;
+    return { number: result.prNumber, url: result.prUrl, actionId: row.id };
+  }
+  return undefined;
 }
 
 /**
@@ -466,6 +511,22 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     return defaultBranch;
   };
 
+  // Read once per run: the range's commits and files per starting commit, and
+  // whether the project has auto-heal PRs whose trailers are worth reading.
+  const changesByFromCommit = new Map<string, ScmChanges | null>();
+  let hasHealPrs: boolean | undefined;
+  const projectHasHealPrs = async (): Promise<boolean> => {
+    if (hasHealPrs === undefined) {
+      const [row] = await db
+        .select({ id: healActions.id })
+        .from(healActions)
+        .where(and(eq(healActions.projectId, run.projectId), inArray(healActions.status, ['opened', 'merged'])))
+        .limit(1);
+      hasHealPrs = row != null;
+    }
+    return hasHealPrs;
+  };
+
   for (const cluster of candidates) {
     const clusterCases = casesByCluster.get(cluster.id);
     if (!clusterCases || clusterCases.size === 0) continue;
@@ -498,10 +559,19 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     if (quiet === 'other-branch') continue;
 
     let verification: VerifiedFix['verification'] = 'stopped-failing';
+    let healPr: HealPrRef | undefined;
     if (repositoryUrl && fromCommit && currentCommit) {
       const files = await diagnosedFiles(db, cluster.id);
-      if (await changeTouchedFiles(db, run.projectId, repositoryUrl, fromCommit, currentCommit, files)) {
-        verification = 'diagnosis-verified';
+      if (files.length > 0 || (await projectHasHealPrs())) {
+        let changes = changesByFromCommit.get(fromCommit);
+        if (changes === undefined) {
+          changes = await fetchRangeChanges(db, run.projectId, repositoryUrl, fromCommit, currentCommit);
+          changesByFromCommit.set(fromCommit, changes);
+        }
+        if (changesTouchFiles(changes, files)) verification = 'diagnosis-verified';
+        healPr = await findHealPr(db, run.projectId, cluster.id, healKeysFromCommits(changes?.commits ?? [])).catch(
+          () => undefined,
+        );
       }
     }
 
@@ -552,6 +622,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       verification,
       timeToResolutionMs,
       testCount: clusterCases.size,
+      ...(healPr ? { healPr } : {}),
     });
 
     // The fix reaches the person whose commit landed it.
@@ -572,6 +643,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       resolved,
       fixAuthor,
       knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+      healPr,
     });
 
     // Comment on (and optionally transition) the ticket per the binding's policy.

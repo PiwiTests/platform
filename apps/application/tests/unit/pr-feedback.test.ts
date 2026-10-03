@@ -267,6 +267,24 @@ describe('buildPrComment — fixed clusters', () => {
     expect(body).toContain('matches the diagnosed change');
   });
 
+  test('names the auto-heal pull request that landed the fix', () => {
+    const body = buildPrComment(
+      summary({
+        fixedClusters: [
+          {
+            id: 9,
+            label: 'Locator',
+            testCount: 1,
+            verification: 'stopped-failing',
+            timeToResolutionMs: null,
+            healPr: { number: 12, url: 'https://github.com/acme/app/pull/12' },
+          },
+        ],
+      }),
+    );
+    expect(body).toContain('landed by auto-heal [#12](https://github.com/acme/app/pull/12)');
+  });
+
   test('says nothing when no cluster was closed', () => {
     expect(buildPrComment(summary())).not.toContain('Fixed by this change');
     expect(buildPrComment(summary({ fixedClusters: [] }))).not.toContain('Fixed by this change');

@@ -5,8 +5,11 @@
  * branch and commit — but writes to the repo, so the bar is higher: the feature
  * must be enabled, the project explicitly allowlisted, the run a full run on the
  * default branch (never a heal branch — that would feed on itself), and every
- * edit backed by high-confidence captured evidence. The chosen edit set is
- * snapshotted into a durable `heal_actions` row; the dispatcher does the writes.
+ * edit backed by high-confidence captured evidence. An edit a heal PR closed
+ * without merging already proposed is left out, unless a person picked the
+ * replacement in the snapshot picker after the PR closed. The chosen edit set
+ * is snapshotted into a durable `heal_actions` row; the dispatcher does the
+ * writes.
  */
 import { isEligibleRun, runOrigin } from '#shared/run-eligibility';
 import { and, count, eq, inArray } from 'drizzle-orm';
@@ -19,10 +22,13 @@ import { resolveRunBranch } from '../run-branch';
 import { normalizeGitUrl } from '../scm/git-url';
 import { getAutoHealSettings, resolveHealSiteUrl } from './settings';
 import { refreshOpenHealActions } from './pr-state';
+import { listOutcomes } from '../outcomes';
+import { recordHealBranchRun } from './branch-runs';
 import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
 import {
   healBranchName,
   healDedupeKey,
+  healEditKey,
   healSignature,
   isHealBranch,
   type AutoHealSettings,
@@ -97,6 +103,7 @@ export function selectHealEdits(
       score: rec.score ?? null,
       source: h.source,
       pickedByUser: rec.pickedByUser === true,
+      pickedAt: rec.pickedByUser === true ? (rec.pickedAt ?? null) : null,
       clusterId: row.clusterId,
       executionId: row.executionId,
       testTitle: row.title,
@@ -105,6 +112,53 @@ export function selectHealEdits(
   }
 
   return edits;
+}
+
+/**
+ * Leave out the edits a pull request closed without merging already proposed
+ * (`rejected` maps each edit key to when its PR was closed), unless a person
+ * picked the replacement in the snapshot picker after that. Pure.
+ */
+export function dropRejectedEdits(
+  edits: HealEditPayload[],
+  rejected: Map<string, Date>,
+): { kept: HealEditPayload[]; dropped: HealEditPayload[] } {
+  const kept: HealEditPayload[] = [];
+  const dropped: HealEditPayload[] = [];
+  for (const edit of edits) {
+    const closedAt = rejected.get(healEditKey(edit));
+    const pickedAt = edit.pickedByUser && edit.pickedAt ? Date.parse(edit.pickedAt) : NaN;
+    if (closedAt && !(pickedAt > closedAt.getTime())) dropped.push(edit);
+    else kept.push(edit);
+  }
+  return { kept, dropped };
+}
+
+/**
+ * The edits of the project's heal PRs closed without merging, each with the
+ * latest time one of those PRs closed: read from the closed actions still
+ * stored and from the `rejected` outcomes, which outlive them.
+ */
+export async function rejectedHealEdits(db: DbClient, projectId: number): Promise<Map<string, Date>> {
+  const rejected = new Map<string, Date>();
+  const note = (key: string, at: Date) => {
+    const known = rejected.get(key);
+    if (!known || known < at) rejected.set(key, at);
+  };
+  const closed = await db
+    .select({ payload: healActions.payload, updatedAt: healActions.updatedAt })
+    .from(healActions)
+    .where(and(eq(healActions.projectId, projectId), eq(healActions.status, 'closed')));
+  for (const row of closed) {
+    for (const edit of (row.payload as HealActionPayload | null)?.edits ?? []) note(healEditKey(edit), row.updatedAt);
+  }
+  const outcomes = await listOutcomes(db, { projectId, kind: 'auto-heal-pr', outcomes: ['rejected'] });
+  for (const outcome of outcomes) {
+    const keys = outcome.details?.editKeys;
+    if (!Array.isArray(keys)) continue;
+    for (const key of keys) if (typeof key === 'string') note(key, outcome.createdAt);
+  }
+  return rejected;
 }
 
 /** Build the verify command shown in the PR body — exactly the affected tests. */
@@ -222,8 +276,10 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
     ownedRows.map((r) => r.executionId),
   ).catch(() => new Map<number, LocatorHealingResult>());
 
-  const edits = selectHealEdits(ownedRows, healing, { minScore: settings.minScore });
-  if (edits.length === 0) return skip('no qualifying locator edits');
+  const qualifying = selectHealEdits(ownedRows, healing, { minScore: settings.minScore });
+  if (qualifying.length === 0) return skip('no qualifying locator edits');
+  const { kept: edits } = dropRejectedEdits(qualifying, await rejectedHealEdits(db, run.projectId));
+  if (edits.length === 0) return skip('every qualifying edit was in a heal PR closed without merging');
 
   if (!(await hasOpenPrCapacity(db, run.projectId, settings.maxOpenPrs))) {
     return skip('max open heal PRs reached for this project');
@@ -253,14 +309,18 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
   return { enqueued: true, dedupeKey, edits: edits.length };
 }
 
-/** Settled states that gave nothing to the repository: their dedupe key is free to reuse. */
-const RETRYABLE_STATUSES = ['failed', 'skipped'];
+/**
+ * Settled states whose dedupe key is free to reuse: the ones that gave nothing
+ * to the repository, and a PR closed without merging. Its edits reach the queue
+ * again only once a person picked them after the close (`dropRejectedEdits`).
+ */
+const RETRYABLE_STATUSES = ['failed', 'skipped', 'closed'];
 
 /**
  * Queue a heal action under its dedupe key. A row that already holds the key
- * and ended failed or skipped is reset to pending with the new run and payload;
- * a pending, processing, opened, merged or closed one keeps it. Returns whether
- * the action was queued.
+ * and ended failed, skipped or closed is reset to pending with the new run and
+ * payload; a pending, processing, opened or merged one keeps it. Returns
+ * whether the action was queued.
  */
 export async function queueHealAction(
   db: DbClient,
@@ -299,8 +359,12 @@ export async function queueHealAction(
   return requeued.length > 0;
 }
 
-/** Fire-and-forget wrapper for the run-finalize paths. */
+/**
+ * Fire-and-forget wrapper for the run-finalize paths: a run on a heal branch is
+ * recorded on its heal action, and a run on the default branch may enqueue one.
+ */
 export function maybeEnqueueHealActionInBackground(db: DbClient, runId: number): void {
+  recordHealBranchRun(db, runId).catch((e) => console.error('[auto-heal] recordHealBranchRun failed', e));
   maybeEnqueueHealAction(db, runId)
     .then(async (result) => {
       if (result.enqueued) {

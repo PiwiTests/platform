@@ -123,6 +123,8 @@ export interface PrSummaryInput {
     /** `diagnosis-verified` means the change touched the file the diagnosis named. */
     verification: 'stopped-failing' | 'diagnosis-verified';
     timeToResolutionMs: number | null;
+    /** The auto-heal pull request whose commit landed the fix. */
+    healPr?: { number: number; url: string };
   }>;
   /** CI minutes this run spent on waits and failed attempts, when known. */
   wastedMinutes: number | null;
@@ -527,7 +529,10 @@ export function buildPrComment(input: PrSummaryInput): string {
         const tests = `${cluster.testCount} ${cluster.testCount === 1 ? 'test' : 'tests'}`;
         const age = cluster.timeToResolutionMs != null ? `, open ${formatAge(cluster.timeToResolutionMs)}` : '';
         const verified = cluster.verification === 'diagnosis-verified' ? ' — matches the diagnosed change' : '';
-        return `- ${link} — ${tests}${age}${verified}`;
+        const healed = cluster.healPr
+          ? ` — landed by auto-heal [#${cluster.healPr.number}](${cluster.healPr.url})`
+          : '';
+        return `- ${link} — ${tests}${age}${verified}${healed}`;
       })
       .join('\n');
     sections.push(`#### 🟢 Fixed by this change (${fixedClusters.length})\n${list}`);
