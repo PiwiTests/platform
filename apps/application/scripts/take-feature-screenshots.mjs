@@ -2252,6 +2252,22 @@ const SCENES = [
     },
   },
   {
+    name: 'run-ingest-health',
+    description:
+      'Run page of a run stored incomplete: the ingest notes on the facts line, and the Ingest row in Details',
+    // Seeded run #4 came in over the step and console caps through the batch upload.
+    route: '/test-runs/4',
+    viewport: { width: 1280, height: 620 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-ingest-fact"]').waitFor();
+      await shoot('header', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: 'Details' }).click();
+      await page.locator('[data-shot="run-ingest-health"]').waitFor();
+      await settle();
+      await shoot('details');
+    },
+  },
+  {
     name: 'run-keep-modal',
     description: 'Run page menu: Keep forever… asks for an optional reason',
     route: '/test-runs/2',

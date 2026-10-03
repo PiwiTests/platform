@@ -4,6 +4,7 @@ import type { Serialize, Simplify } from 'nitropack/types';
  * These types are used by both the server API and the app frontend
  */
 
+import type { IngestHealth } from '#shared/ingest-health';
 import type {
   Role,
   FilterDetails,
@@ -66,6 +67,8 @@ export interface TestRunMetadata {
   relatedIssue?: string | null;
   tags?: string[];
   customData?: Record<string, unknown>;
+  /** What ingest left out or rebuilt for the run; absent when it was stored whole. */
+  ingestHealth?: IngestHealth;
   [key: string]: unknown;
 }
 

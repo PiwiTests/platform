@@ -54,7 +54,7 @@ const singleProjectId = computed(() => {
   return props.availableProjects.length === 1 ? props.availableProjects[0]!.id : null;
 });
 
-// Default branch plus unknown-branch runs, or every branch. Picking branches by
+// The default branch, or every branch. Picking branches by
 // hand overrides the policy, so the policy control steps aside.
 const BRANCH_POLICY_ITEMS = [
   { label: 'Default branch', value: 'default' },

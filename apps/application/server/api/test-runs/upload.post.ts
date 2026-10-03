@@ -14,6 +14,7 @@ import { rm, mkdir, readdir } from 'fs/promises';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
+import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
@@ -496,6 +497,7 @@ export default eventHandler(async (event) => {
     // Execution rows that got a trace this upload — evidence is derived from
     // them once all files are stored.
     const tracedCaseIds: number[] = [];
+    let tracesSkipped = 0;
     if (executionByIndex.size > 0 && allTraceIndices.size > 0) {
       for (const index of allTraceIndices) {
         const inserted = executionByIndex.get(index);
@@ -521,6 +523,7 @@ export default eventHandler(async (event) => {
             const blob = await findTraceBlob(project!.id, hash);
             if (!blob) {
               console.warn(`[Upload] Hash ${hash.slice(0, 8)}… referenced but blob not found, skipping`);
+              tracesSkipped++;
               continue;
             }
             storagePath = blob.path;
@@ -548,6 +551,7 @@ export default eventHandler(async (event) => {
           tracedCaseIds.push(testRunsCaseId);
         } catch (error) {
           console.error(`[Upload] Failed to store trace for case #${testRunsCaseId}: ${error}`);
+          tracesSkipped++;
         } finally {
           // Drop the (large) trace buffer once stored so peak memory holds one
           // trace at a time rather than every uploaded trace at once.
@@ -555,6 +559,8 @@ export default eventHandler(async (event) => {
         }
       }
     }
+
+    await recordIngestHealth(db, testRun.id, { tracesSkipped });
 
     // Store non-trace attachments (screenshots, videos, custom files) linked to test run cases
     if (executionByIndex.size > 0 && attachmentMeta.size > 0) {
