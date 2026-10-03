@@ -575,6 +575,34 @@ export interface CommitStatusInput {
   context: string;
 }
 
+type FailureCounts = Pick<PrSummaryInput, 'failedTests' | 'quarantinedFailures' | 'quarantineFailsStatus'>;
+
+/** The run's failures of quarantined tests, at most its failures. */
+function quarantinedFailureCount(input: FailureCounts): number {
+  return Math.min(input.failedTests, Math.max(0, input.quarantinedFailures ?? 0));
+}
+
+/**
+ * The failures that count against a run: every failure when the project's
+ * `quarantineFailsStatus` is on, else the failures of tests not quarantined.
+ */
+export function countedFailures(input: FailureCounts): number {
+  return input.failedTests - (input.quarantineFailsStatus ? 0 : quarantinedFailureCount(input));
+}
+
+/**
+ * True when `onlyOnFailure` keeps the comment off a run: no failure counts
+ * against it (`countedFailures`), it fixed no cluster and it opened no new leak.
+ */
+export function isQuietRun(settings: Pick<PrFeedbackSettings, 'onlyOnFailure'>, summary: PrSummaryInput): boolean {
+  return (
+    settings.onlyOnFailure &&
+    countedFailures(summary) === 0 &&
+    (summary.fixedClusters?.length ?? 0) === 0 &&
+    (summary.newLeaks?.leaks.length ?? 0) === 0
+  );
+}
+
 /**
  * Build the commit status for a finished run. Failures of quarantined tests
  * leave it green unless the project's `quarantineFailsStatus` says otherwise;
@@ -582,8 +610,8 @@ export interface CommitStatusInput {
  * characters GitHub accepts.
  */
 export function buildCommitStatus(input: PrSummaryInput, context: string): CommitStatusInput {
-  const quarantined = Math.min(input.failedTests, Math.max(0, input.quarantinedFailures ?? 0));
-  const failing = input.failedTests - (input.quarantineFailsStatus ? 0 : quarantined) > 0;
+  const quarantined = quarantinedFailureCount(input);
+  const failing = countedFailures(input) > 0;
   const parts = [`${input.passedTests}/${input.totalTests} passed`];
   if (input.newRegressions.length > 0) parts.push(`${input.newRegressions.length} new`);
   if (input.flakyTests > 0) parts.push(`${input.flakyTests} flaky`);
@@ -612,4 +640,24 @@ export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: strin
     targetUrl,
     context,
   };
+}
+
+/** The gate verdict and violations `buildGateStatus` reads. */
+export interface GateStatusInput {
+  verdict: 'passed' | 'failed';
+  violations: Array<{ message: string }>;
+}
+
+/**
+ * Build the `<statusContext>/gate` commit status for a gate evaluation: green
+ * when the policy passed, red with the first violation when it failed.
+ */
+export function buildGateStatus(input: GateStatusInput, targetUrl: string, context: string): CommitStatusInput {
+  if (input.verdict === 'passed') {
+    return { state: 'success', description: 'Gate policy satisfied', targetUrl, context };
+  }
+  const count = input.violations.length;
+  const first = input.violations[0]?.message ?? 'policy violated';
+  const description = count > 1 ? `${count} violations: ${first}` : first;
+  return { state: 'failure', description: description.slice(0, 140), targetUrl, context };
 }

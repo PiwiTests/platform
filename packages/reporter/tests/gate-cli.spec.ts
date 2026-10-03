@@ -250,6 +250,17 @@ describe('runGate against a responding dashboard', () => {
     }
   });
 
+  it('names itself as the evaluation source', async () => {
+    const stub = stubFetch({ ok: true, json: () => gateResult(true) });
+    try {
+      await runGate(PASSING_ARGS, EMPTY_ENV);
+      const headers = stub.calls[0]?.init?.headers as Record<string, string> | undefined;
+      expect(headers?.['X-Piwi-Client']).toBe('cli');
+    } finally {
+      stub.restore();
+    }
+  });
+
   it('still reports the verdict as an exit code in --json mode', async () => {
     const stub = stubFetch({ ok: true, json: () => gateResult(false) });
     try {
