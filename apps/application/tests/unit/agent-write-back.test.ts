@@ -292,6 +292,20 @@ describe('set_run_incident', () => {
       '`incident` must be true or false',
     );
   });
+
+  test('each call lands in the write log with the run, its project and the key', async () => {
+    const args = { runId: 1, incident: true, reason: 'staging was down' };
+    await tool('set_run_incident')(db as never, args, reporter);
+    expect(await logMcpToolCall(db as never, reporter, 'set_run_incident', args, 'ok')).toBe(1);
+    expect(await tool('set_run_incident')(db as never, { runId: 99, incident: false }, reporter)).toBeNull();
+    await logMcpToolCall(db as never, reporter, 'set_run_incident', { runId: 99, incident: false }, 'not-found');
+
+    const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
+    expect(rows.map((r) => [r.tool, r.subjectType, r.subjectId, r.projectId, r.apiKeyId, r.userId, r.result])).toEqual([
+      ['set_run_incident', 'run', 1, 1, 7, 2, 'ok'],
+      ['set_run_incident', 'run', 99, null, 7, 2, 'not-found'],
+    ]);
+  });
 });
 
 describe('fix attempts in fix verification', () => {
