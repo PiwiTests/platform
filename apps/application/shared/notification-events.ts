@@ -6,6 +6,7 @@ export const NOTIFICATION_EVENTS = [
   'run.finished',
   'run.failed',
   'run.failed.default_branch',
+  'run.interrupted',
   'cluster.new',
   'cluster.fixed',
   'cluster.regressed',
@@ -335,6 +336,7 @@ export const RUN_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notific
   'run.finished',
   'run.failed',
   'run.failed.default_branch',
+  'run.interrupted',
   'flakiness.spike',
   'perf.regression',
   'cluster.new',
@@ -507,6 +509,10 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
     case 'run.failed.default_branch': {
       const p = payload as RunFinishedPayload;
       return `Test run ${p.status} — ${p.projectName}${p.branch ? ` (${p.branch})` : ''}`;
+    }
+    case 'run.interrupted': {
+      const p = payload as RunFinishedPayload;
+      return `Test run interrupted — ${p.projectName}${p.branch ? ` (${p.branch})` : ''}`;
     }
     case 'cluster.new': {
       const p = payload as ClusterNewPayload;

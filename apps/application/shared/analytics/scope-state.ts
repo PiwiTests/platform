@@ -38,7 +38,7 @@ export interface AnalyticsScopeState {
   environments: string[];
   /** Selected branches; empty = the branch policy applies. */
   branches: string[];
-  /** The branch policy: false = each project's default branch plus unknown, true = every branch. */
+  /** The branch policy: false = each project's default branch, true = every branch. */
   allBranches: boolean;
   fullRunsOnly: boolean;
   /** Selection key; empty = none. */

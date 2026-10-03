@@ -181,9 +181,29 @@ export function judgeImportFiles(
 }
 
 /**
+ * Whether an imported run is historical: the project already holds a run that
+ * started after it. A historical import writes no shared state (the tests'
+ * tags, owner, priority, locks and locator snapshots) and wakes no snoozed
+ * cluster.
+ */
+export async function isHistoricalImport(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number,
+  startTime: Date,
+): Promise<boolean> {
+  const [newer] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, projectId), ne(testRuns.id, runId), gt(testRuns.startTime, startTime)))
+    .limit(1);
+  return newer !== undefined;
+}
+
+/**
  * How an imported run's executions are persisted: dated from their attempts,
- * and, when the project already holds a newer run, leaving the tests' current
- * tags, owner, priority, locks and locator snapshots as they are.
+ * and, for a historical import ({@link isHistoricalImport}), leaving the tests'
+ * current state and snoozed clusters as they are.
  */
 export async function importPersistOptions(
   db: DrizzleDB,
@@ -191,12 +211,8 @@ export async function importPersistOptions(
   runId: number,
   startTime: Date,
 ): Promise<PersistRunCasesOptions> {
-  const [newer] = await db
-    .select({ id: testRuns.id })
-    .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), ne(testRuns.id, runId), gt(testRuns.startTime, startTime)))
-    .limit(1);
-  return { datedFrom: startTime, keepTestState: newer !== undefined };
+  const historical = await isHistoricalImport(db, projectId, runId, startTime);
+  return { datedFrom: startTime, keepTestState: historical, keepSnoozed: historical };
 }
 
 /** Return an already-imported archive's summary, or null when it is new. */

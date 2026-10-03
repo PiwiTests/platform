@@ -4,18 +4,22 @@
  * `test_runs` (`NULL` is the unknown branch).
  */
 
-import { and, eq, inArray, isNull, or, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 
 export type BranchPolicy =
   /** Every branch. */
   | { kind: 'any' }
   /** Exactly these branches, chosen by hand. */
   | { kind: 'list'; branches: string[] }
-  /** Each project's default branch, plus runs whose branch is unknown. */
-  | { kind: 'default'; groups: Array<{ branch: string; projectIds: number[] }> };
+  /**
+   * Each project's default branch. Runs whose branch is unknown count only in
+   * `unknownProjectIds`: the projects that never recorded a branch, where every
+   * run is on the default branch as far as anyone can tell.
+   */
+  | { kind: 'default'; groups: Array<{ branch: string; projectIds: number[] }>; unknownProjectIds: number[] };
 
 /** Group projects by their default branch, so the SQL has one clause per branch name. */
-export function defaultBranchPolicy(defaults: Map<number, string>): BranchPolicy {
+export function defaultBranchPolicy(defaults: Map<number, string>, unknownProjectIds: number[] = []): BranchPolicy {
   const byBranch = new Map<string, number[]>();
   for (const [projectId, branch] of defaults) {
     const list = byBranch.get(branch) ?? [];
@@ -25,6 +29,7 @@ export function defaultBranchPolicy(defaults: Map<number, string>): BranchPolicy
   return {
     kind: 'default',
     groups: [...byBranch].map(([branch, projectIds]) => ({ branch, projectIds })),
+    unknownProjectIds,
   };
 }
 
@@ -43,5 +48,10 @@ export function branchPolicyCondition(
   const perDefault = policy.groups.map((g) =>
     and(eq(columns.branch as any, g.branch), inArray(columns.projectId as any, g.projectIds))!,
   );
-  return or(unknownBranch, ...perDefault)!;
+  const unknownCounts = policy.unknownProjectIds.length
+    ? [and(unknownBranch, inArray(columns.projectId as any, policy.unknownProjectIds))!]
+    : [];
+  const clauses = [...unknownCounts, ...perDefault];
+  // No project to count: a condition no row meets.
+  return clauses.length > 0 ? or(...clauses)! : sql`1 = 0`;
 }

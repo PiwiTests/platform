@@ -4,6 +4,7 @@ import { testRuns } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
+import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { runEventBus } from '../../../utils/run-events';
 import { persistShardToken } from '../../../utils/shard-tokens';
@@ -102,7 +103,7 @@ export default eventHandler(async (event) => {
         status: 'running',
         streamToken,
         totalTests: body.totalTests || 0,
-        metadata: sanitizeMetadata(body.metadata || testRun.metadata),
+        metadata: carryIngestHealth(sanitizeMetadata(body.metadata || testRun.metadata), testRun.metadata),
         branch: resolveRunBranch(body.metadata) ?? testRun.branch,
         playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
         reporterVersion: body.reporterVersion || testRun.reporterVersion,
