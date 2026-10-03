@@ -33,6 +33,7 @@ import {
   followBlock,
   newTestFileName,
   placedBlock,
+  recordInto,
   recordedBlockText,
   recordingSummary,
   recordingView,
@@ -538,7 +539,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     await context.workspaceState.update(LAST_PAGE, page);
     const params: RecordParams = {
       ...position,
-      into: into ?? (candidates.context === 'test' ? 'steps' : 'test'),
+      into: into ?? recordInto(candidates.context),
       project: context.workspaceState.get<string>(LAST_PROJECT) || null,
       startUrl: startUrl.trim() || null,
       page,

@@ -569,6 +569,14 @@ export function recordingView(
   };
 }
 
+/**
+ * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: inside a
+ * test's body or a class's, the steps there (`steps`); anywhere else, a new test (`test`).
+ */
+export function recordInto(context: string): 'steps' | 'test' {
+  return context === 'test' || context === 'class' ? 'steps' : 'test';
+}
+
 /** The notification after a recording stopped: what was written, or that the block keeps the edits made in it. */
 export function recordingSummary(
   update: Pick<RecordingUpdate, 'steps' | 'warnings' | 'message'>,

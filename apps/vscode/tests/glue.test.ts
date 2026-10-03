@@ -8,6 +8,7 @@ import {
   followBlock,
   importInsertion,
   importedNames,
+  recordInto,
   mcpConfiguration,
   newTestFileName,
   placedBlock,
@@ -464,6 +465,14 @@ describe('the imports a recorded block needs', () => {
       range: span(0, 0, 0, 0),
       text: "import { a } from './a';\n",
     });
+  });
+});
+
+describe('where a recording writes', () => {
+  test('inside a test or a page object, the steps there; elsewhere, a new test', () => {
+    expect(recordInto('test')).toBe('steps');
+    expect(recordInto('class')).toBe('steps');
+    expect(recordInto('file')).toBe('test');
   });
 });
 
