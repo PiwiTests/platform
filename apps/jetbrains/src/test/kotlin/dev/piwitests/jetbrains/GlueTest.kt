@@ -376,11 +376,33 @@ class GlueTest {
     }
 
     @Test
-    fun `a recording writes steps inside a test or a class, and a new test anywhere else`() {
-        assertEquals("steps", Glue.recordInto("test"))
-        assertEquals("steps", Glue.recordInto("class"))
+    fun `a recording writes a new test outside every test, function and class, and steps anywhere else`() {
         assertEquals("test", Glue.recordInto("file"))
-        assertEquals("test", Glue.recordInto(null))
+        assertEquals("steps", Glue.recordInto("test"))
+        assertEquals("steps", Glue.recordInto("function"))
+        assertEquals("steps", Glue.recordInto("class"))
+    }
+
+    @Test
+    fun `the start of a line is followed through the changes made after the text was read`() {
+        val text = "test('t', async ({ page }) => {\n  await page.goto('/');\n});\n"
+        val closing = text.indexOf("});")
+        assertEquals(closing, Glue.followLineStart(text, 2, emptyList()))
+        assertEquals(text.length, Glue.followLineStart(text, 3, emptyList()))
+        assertEquals(text.length, Glue.followLineStart(text, 9, emptyList()))
+        assertEquals(0, Glue.followLineStart(text, -1, emptyList()))
+        // Lines inserted above it, or right at it, move it down; text typed after it leaves it.
+        val above = Glue.TextChange(0, 0, "// one\n// two\n")
+        assertEquals(closing + 14, Glue.followLineStart(text, 2, listOf(above)))
+        assertEquals(closing + 3, Glue.followLineStart(text, 2, listOf(Glue.TextChange(closing, 0, "a;\n"))))
+        assertEquals(closing, Glue.followLineStart(text, 2, listOf(Glue.TextChange(closing, 0, "x"), Glue.TextChange(closing + 5, 0, "y"))))
+        // A line removed above it moves it up; a change that ends on it puts it after what that change wrote.
+        val second = text.indexOf("  await")
+        assertEquals(second, Glue.followLineStart(text, 2, listOf(Glue.TextChange(second, closing - second, ""))))
+        assertEquals(second + 4, Glue.followLineStart(text, 2, listOf(Glue.TextChange(second, closing - second, "a;\n\n"))))
+        // A change across it leaves it after the last line break that change wrote, else at its start.
+        assertEquals(second + 2, Glue.followLineStart(text, 2, listOf(Glue.TextChange(second, closing - second + 1, "a\nb"))))
+        assertEquals(second, Glue.followLineStart(text, 2, listOf(Glue.TextChange(second, closing - second + 1, "x"))))
     }
 
     @Test
@@ -430,36 +452,21 @@ class GlueTest {
             Glue.ImportInsertion(afterImports, "\nimport { CartPage } from './pages/cart.page';"),
             Glue.importInsertion(
                 text,
-                listOf("import { CartPage } from './pages/cart.page';", " import { CartPage } from './pages/cart.page'; ", "import { login } from './helpers';"),
+                listOf("import { CartPage } from './pages/cart.page';", " import { CartPage } from \"./pages/cart.page\" ", "import { login, logout, } from './helpers'"),
             ),
         )
-        assertEquals(null, Glue.importInsertion(text, listOf("import { expect } from \"@playwright/test\"", "")))
+        assertEquals(null, Glue.importInsertion(text, listOf("import { test,expect } from \"@playwright/test\"", "")))
         assertEquals(null, Glue.importInsertion(text, emptyList()))
     }
 
     @Test
-    fun `a name the file already imports is not imported again, whatever the path or the other names`() {
-        val text = "import CartPage, { type Row as Line } from '../pages/cart.page.js';\nimport * as pages from './pages';\nimport Api = require('./api');\nimport './setup';\n"
-        assertEquals(null, Glue.importInsertion(text, listOf("import { CartPage } from './pages/cart.page';")))
-        assertEquals(null, Glue.importInsertion(text, listOf("import { Line } from './row';", "import { pages } from './pages';")))
-        assertEquals(null, Glue.importInsertion(text, listOf("import './setup';")))
+    fun `an import line the file does not hold as it is written is added, whatever names the file binds`() {
+        val text = "import CartPage from '../pages/cart.page.js';\nimport './setup';\n"
         val end = text.length - 1
-        assertEquals(Glue.ImportInsertion(end, "\nimport { Row } from './row';\nimport './teardown';"), Glue.importInsertion(text, listOf("import { Row } from './row';", "import './teardown';")))
-    }
-
-    @Test
-    fun `an import line whose names an import statement of the file binds already is left out`() {
-        val text = "import {\n  CartPage,\n  LoginPage as Login,\n} from './pages';\nimport Checkout, * as helpers from './helpers';\n\ntest('t', async () => {});\n"
-        val skipped = listOf(
-            "import { CartPage } from './pages/cart.page';",
-            "import { Login } from './x';",
-            "import { Checkout } from './y';",
-            "import { helpers } from './z';",
-        )
-        assertEquals(null, Glue.importInsertion(text, skipped))
+        assertEquals(null, Glue.importInsertion(text, listOf("import './setup'")))
         assertEquals(
-            Glue.ImportInsertion(text.indexOf("\n\ntest"), "\nimport { LoginPage } from './pages/login.page';"),
-            Glue.importInsertion(text, skipped + "import { LoginPage } from './pages/login.page';"),
+            Glue.ImportInsertion(end, "\nimport { CartPage } from './pages/cart.page';\nimport './teardown';"),
+            Glue.importInsertion(text, listOf("import { CartPage } from './pages/cart.page';", "import './teardown';")),
         )
     }
 

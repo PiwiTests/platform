@@ -24,6 +24,7 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.InputValidator
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.ColoredListCellRenderer
@@ -34,6 +35,8 @@ import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
+import java.util.concurrent.ExecutionException
 import javax.swing.JComponent
 import javax.swing.JList
 
@@ -52,7 +55,7 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
-/** Piwi: Record Here — the steps of the test at the caret, else a new test there, from a browser the project's Playwright opens. */
+/** Piwi: Record Here — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 class RecordHereAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -134,10 +137,11 @@ class ResumeRecordingAction : AnAction() {
 }
 
 /**
- * Starts recordings. Record Here asks `piwi/pageCandidates` where the caret is: in a test's body or a class, the steps
- * go there; elsewhere, a new test. Record a New Test File creates the spec first. Both ask for the start page and the
- * page the steps run on, then send `piwi/record`, asking for the Playwright project when it answers with several.
- * The choices are remembered on this machine (`PiwiLocalSettings`).
+ * Starts recordings. Record Here asks `piwi/pageCandidates` where the caret is: outside every test, function and class,
+ * a new test; anywhere else, the steps there. Record a New Test File creates the spec first. Without an answer, the
+ * recording does not start. Both ask for the start page and the page the steps run on, then send `piwi/record`, asking
+ * for the Playwright project when it answers with several. The choices are remembered on this machine
+ * (`PiwiLocalSettings`).
  */
 object PiwiRecordFlow {
     private const val NOT_RUNNING = "The Piwi editor service is not running in this project yet."
@@ -200,12 +204,18 @@ object PiwiRecordFlow {
                 PiwiCommands.notify(project, NOT_RUNNING, NotificationType.WARNING)
                 return@background
             }
-            val found = server.pageCandidates(PageCandidatesParams(uri, line, character)).awaitCancellably(PiwiProjectService.TIMEOUT_SECONDS * 1000)
+            val request = server.pageCandidates(PageCandidatesParams(uri, line, character))
+            val found = request.awaitCancellably(PiwiProjectService.TIMEOUT_SECONDS * 1000)
+            val context = found?.context
+            if (context == null) {
+                PiwiCommands.notify(project, startFailure(request), NotificationType.ERROR)
+                return@background
+            }
             ApplicationManager.getApplication().invokeLater({
                 if (editor.isDisposed) return@invokeLater
-                val into = fixedInto ?: Glue.recordInto(found?.context)
+                val into = fixedInto ?: Glue.recordInto(context)
                 val local = project.service<PiwiProjectService>().local()
-                val dialog = RecordDialog(project, into, found?.context, file.name, local.recordStartUrl, found, local.recordPage)
+                val dialog = RecordDialog(project, into, context, file.name, local.recordStartUrl, found, local.recordPage)
                 if (!dialog.showAndGet()) return@invokeLater
                 local.recordStartUrl = dialog.startUrl().orEmpty()
                 dialog.typedPage()?.let { local.recordPage = it }
@@ -224,50 +234,98 @@ object PiwiRecordFlow {
         }
     }
 
-    /** Sends `piwi/record`; a session it starts after the wait was given up is stopped. */
+    /**
+     * Why a recording did not start when `piwi/pageCandidates` gave no answer that says where the caret is: the request
+     * failed, the service did not answer in time, or its answer said nothing.
+     */
+    internal fun startFailure(request: CompletableFuture<*>): String {
+        val reason = when {
+            request.isCompletedExceptionally -> {
+                val error = request.handle { _, e -> e }.getNow(null)
+                val cause = if (error is CompletionException || error is ExecutionException) error.cause ?: error else error
+                cause?.message?.trim()?.ifEmpty { null }?.removeSuffix(".") ?: "the request to the Piwi editor service failed"
+            }
+            !request.isDone -> "the Piwi editor service did not answer"
+            else -> "the Piwi editor service did not say where the cursor is"
+        }
+        return "Piwi could not start the recording: $reason."
+    }
+
+    /**
+     * Sends `piwi/record`, following the document's changes from now until its answer is applied, so the block goes on
+     * the line the placement names in the text the service read; a session it starts after the wait was given up is
+     * stopped. On the event thread.
+     */
     private fun record(project: Project, editor: Editor, file: VirtualFile, params: RecordParams) {
+        val since = DocumentChanges(editor.document, project.service<PiwiRecordings>())
         background(project, "Piwi: starting the recording") {
-            val server = project.service<PiwiProjectService>().server()
-            if (server == null) {
-                PiwiCommands.notify(project, NOT_RUNNING, NotificationType.WARNING)
-                return@background
-            }
-            val answer = server.record(params)
-            val result = try {
-                answer.awaitCancellably(RECORD_TIMEOUT_MILLIS)
-            } finally {
-                if (!answer.isDone) stopWhenStarted(project, answer)
-            }
-            val sessionId = result?.sessionId
-            val placement = result?.placement
-            val projects = result?.projects.orEmpty()
-            when {
-                result == null -> PiwiCommands.notify(project, "The Piwi editor service did not start the recording.", NotificationType.WARNING)
-                !result.ok && projects.isNotEmpty() -> ApplicationManager.getApplication().invokeLater({
-                    askProject(project, projects) { chosen ->
-                        project.service<PiwiProjectService>().local().recordProject = chosen
-                        record(project, editor, file, params.copy(project = chosen))
-                    }
-                }, project.disposed)
-                !result.ok -> PiwiCommands.notify(project, result.message?.ifBlank { null } ?: "The recording did not start.", NotificationType.WARNING)
-                sessionId == null || placement == null -> {
-                    sessionId?.let { project.service<PiwiRecordings>().remote.send(it, "stop") }
-                    PiwiCommands.notify(project, "The Piwi editor service did not say where to write the recording.", NotificationType.WARNING)
+            var registering = false
+            try {
+                val server = project.service<PiwiProjectService>().server()
+                if (server == null) {
+                    PiwiCommands.notify(project, NOT_RUNNING, NotificationType.WARNING)
+                    return@background
                 }
-                else -> ApplicationManager.getApplication().invokeLater({
-                    val recordings = project.service<PiwiRecordings>()
-                    val target = editor.takeUnless { it.isDisposed }
-                        ?: (FileEditorManager.getInstance(project).getSelectedEditor(file) as? TextEditor)?.editor
-                    when {
-                        target == null -> recordings.remote.send(sessionId, "stop")
-                        recordings.sessionFor(file) != null -> {
-                            recordings.remote.send(sessionId, "stop")
-                            PiwiCommands.notify(project, "Piwi is already recording into ${file.name}.")
+                val answer = server.record(params)
+                val result = try {
+                    answer.awaitCancellably(RECORD_TIMEOUT_MILLIS)
+                } finally {
+                    if (!answer.isDone) stopWhenStarted(project, answer)
+                }
+                val sessionId = result?.sessionId
+                val placement = result?.placement
+                val projects = result?.projects.orEmpty()
+                when {
+                    result == null -> PiwiCommands.notify(project, "The Piwi editor service did not start the recording.", NotificationType.WARNING)
+                    !result.ok && projects.isNotEmpty() -> ApplicationManager.getApplication().invokeLater({
+                        askProject(project, projects) { chosen ->
+                            project.service<PiwiProjectService>().local().recordProject = chosen
+                            record(project, editor, file, params.copy(project = chosen))
                         }
-                        else -> recordings.register(sessionId, target, file, params.into, placement, result.message)
+                    }, project.disposed)
+                    !result.ok -> PiwiCommands.notify(project, result.message?.ifBlank { null } ?: "The recording did not start.", NotificationType.WARNING)
+                    sessionId == null || placement == null -> {
+                        sessionId?.let { project.service<PiwiRecordings>().remote.send(it, "stop") }
+                        PiwiCommands.notify(project, "The Piwi editor service did not say where to write the recording.", NotificationType.WARNING)
                     }
-                }, project.disposed)
+                    else -> {
+                        registering = true
+                        ApplicationManager.getApplication().invokeLater({
+                            try {
+                                register(project, editor, file, params.into, sessionId, placement, result.message, since)
+                            } finally {
+                                Disposer.dispose(since)
+                            }
+                        }, project.disposed)
+                    }
+                }
+            } finally {
+                if (!registering) Disposer.dispose(since)
             }
+        }
+    }
+
+    /** Registers the session `piwi/record` started, unless the file has no editor left or is recorded into already. */
+    private fun register(
+        project: Project,
+        editor: Editor,
+        file: VirtualFile,
+        into: String,
+        sessionId: String,
+        placement: RecordingPlacement,
+        message: String?,
+        since: DocumentChanges,
+    ) {
+        val recordings = project.service<PiwiRecordings>()
+        val target = editor.takeUnless { it.isDisposed }
+            ?: (FileEditorManager.getInstance(project).getSelectedEditor(file) as? TextEditor)?.editor
+        when {
+            target == null -> recordings.remote.send(sessionId, "stop")
+            recordings.sessionFor(file) != null -> {
+                recordings.remote.send(sessionId, "stop")
+                PiwiCommands.notify(project, "Piwi is already recording into ${file.name}.")
+            }
+            else -> recordings.register(sessionId, target, file, into, placement, message, since)
         }
     }
 
@@ -307,7 +365,7 @@ object PiwiRecordFlow {
 private class RecordDialog(
     project: Project,
     into: String,
-    context: String?,
+    context: String,
     fileName: String,
     startUrl: String,
     found: PageCandidatesResult?,
@@ -315,8 +373,9 @@ private class RecordDialog(
 ) : DialogWrapper(project) {
     private val where = when {
         into == "file" -> "What you do in the browser is written into $fileName, as a new test."
-        into == "steps" && context == "class" -> "What you do in the browser is written at the cursor, in this class."
-        into == "steps" -> "What you do in the browser is written at the cursor, as steps of this test."
+        into == "steps" && context == "test" -> "What you do in the browser is written at the cursor, as steps of this test."
+        into == "steps" && context == "function" -> "What you do in the browser is written at the cursor, as steps of this function."
+        into == "steps" -> "What you do in the browser is written at the cursor."
         else -> "What you do in the browser is written at the cursor, as a new test."
     }
     private val reasons: Map<String, String>

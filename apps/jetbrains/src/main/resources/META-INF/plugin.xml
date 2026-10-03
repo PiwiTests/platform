@@ -75,7 +75,7 @@
             <separator/>
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
                     icon="AllIcons.Ide.Macro.Recording_1"
-                    description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test it is in, else a new test">
+                    description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             </action>
             <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"

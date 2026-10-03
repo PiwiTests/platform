@@ -39,15 +39,18 @@ the service through the platform's LSP API with the project's Node.js interprete
   hold none, in the Git repository around them. The tool window, the status bar item and the service wait for it, and
   the service's workspace folders are the folders it searched (`createInitializeParams`). **Refresh** searches again.
 - **Recording** (`PiwiRecordingActions.kt`): **Record Here** (**Tools → Piwi**, the editor's menu) asks
-  `piwi/pageCandidates` where the caret is: in a test's body or a class, steps go there, elsewhere a new test
-  (`Glue.recordInto`); **Record a New Test File…** (also under **New**) creates the spec first. A dialog asks for the
-  start page and the page expression (the candidates, the default first, any other typed in), then `piwi/record`, and
-  a popup for the Playwright project when it answers with `projects`; the choices stay in `PiwiLocalSettings`.
+  `piwi/pageCandidates` where the caret is: outside every test, function and class a new test, anywhere else the
+  steps there, which the service refuses where they cannot go (`Glue.recordInto`); without an answer, nothing starts.
+  **Record a New Test File…** (also under **New**) creates the spec first. A dialog asks for the start page and the
+  page expression (the candidates, the default first, any other typed in), then `piwi/record`, and a popup for the
+  Playwright project when it answers with `projects`; the choices stay in `PiwiLocalSettings`.
 - `PiwiRecording.kt` holds the recording sessions (`PiwiRecordings`) and applies `piwi/recordingChanged` on the event
-  thread: the first update writes the recorded block where `RecordResult.placement` says (`Glue.firstBlockWrite`; a
-  block on the file's last line keeps its final line break), each later one replaces it whole (`Glue.recordedBlock`)
-  with the import lines the file lacks after its imports in the same command (`Glue.importInsertion`, which leaves
-  out a line whose names an import of the file binds already, from any module), and range markers follow it. The
+  thread: the first update writes the recorded block where `RecordResult.placement` says, on the line it names in the
+  text the service read, followed through the changes made since `piwi/record` was sent (`DocumentChanges`,
+  `Glue.followLineStart`, `Glue.firstBlockWrite`; a block on the file's last line keeps its final line break). Each
+  later one replaces it whole (`Glue.recordedBlock`) with the import lines the file lacks after its imports in the same
+  command (`Glue.importInsertion`: the service sends only the lines whose names the file does not bind, and a line the
+  file holds as written is left out), and range markers follow it; Enter at the end of its last line is below it. The
   block is tinted with `PIWI_RECORDING_BLOCK`, with a gutter mark offering Stop, Pause and Resume; its warnings are
   weak warnings on their lines (`PiwiRecordingAnnotator`), kept after Stop until their line changes; the banner over
   the file (`PiwiRecordingNotificationProvider`, `PiwiRecordingViews.kt`) shows the state, the step count and the

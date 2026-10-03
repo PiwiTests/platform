@@ -132,7 +132,8 @@ class PiwiRecordings(private val project: Project) : Disposable {
     }
 
     /**
-     * A session `piwi/record` started, writing into `editor`'s file from the line `placement` names; the banner shows
+     * A session `piwi/record` started, writing into `editor`'s file from the line `placement` names: in the text the
+     * service read, followed through the changes `since` holds, else in the document as it is. The banner shows
      * `message` until the first update. An update that came before it is applied now; a file closed meanwhile stops it.
      */
     fun register(
@@ -142,9 +143,11 @@ class PiwiRecordings(private val project: Project) : Disposable {
         into: String,
         placement: RecordingPlacement,
         message: String? = null,
+        since: DocumentChanges? = null,
     ): RecordingSession {
         listen()
-        val session = RecordingSession(this, project, sessionId, editor, file, into, placement, message)
+        val start = since?.lineStart(placement.line)
+        val session = RecordingSession(this, project, sessionId, editor, file, into, placement, message, start)
         sessions[sessionId] = session
         Disposer.register(this, session)
         session.refreshView()
@@ -258,6 +261,7 @@ class RecordingSession internal constructor(
     private val into: String,
     private val placement: RecordingPlacement,
     private var message: String?,
+    start: Int?,
 ) : Disposable {
     val document: Document = editor.document
 
@@ -296,13 +300,17 @@ class RecordingSession internal constructor(
     @Volatile var view: Glue.RecordingBanner = Glue.recordingBanner(state, 0, edited = false, stopping = false, message = message)
         private set
 
+    /** The block's range before an insertion below it, which its markers then leave out. */
+    private var below: TextRange? = null
+
     init {
-        val line = placement.line.coerceAtLeast(0)
-        val offset = if (line < document.lineCount) document.getLineStartOffset(line) else document.textLength
+        val offset = start?.coerceIn(0, document.textLength) ?: Glue.followLineStart(document.immutableCharSequence, placement.line, emptyList())
         anchor = document.createRangeMarker(offset, offset)
         document.addDocumentListener(
             object : DocumentListener {
                 override fun beforeDocumentChange(event: DocumentEvent) = edit(event)
+
+                override fun documentChanged(event: DocumentEvent) = keepAbove()
             },
             this,
         )
@@ -374,14 +382,38 @@ class RecordingSession internal constructor(
         refreshView()
     }
 
-    /** An edit of the block by anyone but this session pauses the recording; edits around it only move it. */
+    /**
+     * An edit of the block by anyone but this session pauses the recording; edits around it only move it. An insertion
+     * at the block's end that starts with a line break (Enter at the end of its last line) is below it: it does not
+     * pause the recording, and the block does not grow over it.
+     */
     private fun edit(event: DocumentEvent) {
-        if (applying || finished || edited) return
+        if (applying || finished) return
         val block = block?.takeIf { it.isValid } ?: return
-        if (event.offset > block.endOffset || event.offset + event.oldLength < block.startOffset) return
+        if (event.offset == block.endOffset && event.oldLength == 0 && event.newFragment.startsWith("\n")) {
+            below = block.textRange
+            return
+        }
+        if (edited || event.offset > block.endOffset || event.offset + event.oldLength < block.startOffset) return
         edited = true
         if (!stopping) recordings.remote.send(id, "pause")
         refreshView()
+    }
+
+    /** After an insertion below the block: the block and its tint end where they did before it. */
+    private fun keepAbove() {
+        val range = below ?: return
+        below = null
+        if (finished) return
+        block?.dispose()
+        block = blockMarker(range.startOffset, range.endOffset)
+        tint()
+    }
+
+    /** A range marker over the block, which grows with the text typed at either of its ends. */
+    private fun blockMarker(start: Int, end: Int): RangeMarker = document.createRangeMarker(start, end).apply {
+        isGreedyToLeft = true
+        isGreedyToRight = true
     }
 
     /**
@@ -422,10 +454,7 @@ class RecordingSession internal constructor(
                     }
                     block?.dispose()
                     anchor?.dispose()
-                    block = document.createRangeMarker(start, start + text.length).apply {
-                        isGreedyToLeft = true
-                        isGreedyToRight = true
-                    }
+                    block = blockMarker(start, start + text.length)
                     anchor = document.createRangeMarker(start, start)
                 } finally {
                     applying = false
@@ -500,6 +529,32 @@ class RecordingSession internal constructor(
         tint = null
         warnings = emptyList()
     }
+}
+
+/**
+ * The changes of a document from the moment `piwi/record` is sent: the line its placement names is a line of the text
+ * the service read, found in the document as it is when the answer arrives. On the event thread.
+ */
+class DocumentChanges(document: Document, parent: Disposable) : Disposable {
+    private val sent: CharSequence = document.immutableCharSequence
+    private val changes = mutableListOf<Glue.TextChange>()
+
+    init {
+        Disposer.register(parent, this)
+        document.addDocumentListener(
+            object : DocumentListener {
+                override fun documentChanged(event: DocumentEvent) {
+                    changes += Glue.TextChange(event.offset, event.oldLength, event.newFragment.toString())
+                }
+            },
+            this,
+        )
+    }
+
+    /** Where the start of `line` of the text sent is in the document now. */
+    fun lineStart(line: Int): Int = Glue.followLineStart(sent, line, changes)
+
+    override fun dispose() = Unit
 }
 
 /** A recorded step's warning on the text of its line: shown while that text is unchanged. */

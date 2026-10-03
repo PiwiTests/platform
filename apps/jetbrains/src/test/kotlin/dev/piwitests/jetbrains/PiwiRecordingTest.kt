@@ -7,12 +7,15 @@ import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.command.undo.UndoManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.impl.DocumentMarkupModel
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
+import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.ui.EditorNotificationProvider
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CompletionException
 
 /**
  * A recording's client side, driven by the updates the editor service would send: where the block is written, how it
@@ -261,6 +264,69 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         send(update("s8", "await page.reload();\nawait page.goBack();", state = "stopped"))
         undo()
         assertEquals(original, text())
+    }
+
+    /**
+     * Lines inserted above the caret while `piwi/record` is pending: the block goes on the line the placement names in
+     * the text the service read, followed through those changes, and through those made before the first update.
+     */
+    fun testTheBlockGoesWhereThePlacementSaysThroughTheEditsMadeWhileTheRequestWasPending() {
+        val original = "test('pays', async ({ page }) => {\n  await page.goto('/cart');\n});\n"
+        myFixture.configureByText("pending.spec.ts", original)
+        val document = myFixture.editor.document
+        val since = DocumentChanges(document, testRootDisposable)
+        WriteCommandAction.runWriteCommandAction(project) {
+            document.insertString(0, "// one\n// two\n")
+            document.insertString(document.getLineStartOffset(4), "  // closing\n")
+        }
+        recordings.register("s11", myFixture.editor, myFixture.file.virtualFile, "steps", RecordingPlacement(2, true, "  "), since = since)
+        Disposer.dispose(since)
+        WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "// three\n") }
+        send(update("s11", "await page.reload();"))
+        assertEquals(
+            "// three\n// one\n// two\ntest('pays', async ({ page }) => {\n  await page.goto('/cart');\n  // closing\n  await page.reload();\n});\n",
+            text(),
+        )
+    }
+
+    /**
+     * Enter at the end of the block's last line is below the block: the recording goes on, the block and its tint do
+     * not take the new line, and the next update leaves what is typed there.
+     */
+    fun testEnterAtTheEndOfTheBlockIsBelowIt() {
+        myFixture.configureByText("below.spec.ts", "test('pays', async ({ page }) => {\n  \n});\n")
+        val session = register("s12", line = 1, newLine = false, indent = "  ")
+        send(update("s12", "await page.goto('/cart');"))
+        myFixture.editor.caretModel.moveToOffset(text().indexOf("('/cart');") + "('/cart');".length)
+        myFixture.type("\n")
+        myFixture.type("// mine")
+        assertFalse(session.edited)
+        assertEquals(emptyList<String>(), sent)
+        val tint = DocumentMarkupModel.forDocument(myFixture.editor.document, project, true).allHighlighters
+            .single { it.textAttributesKey == PiwiRecordings.BLOCK }
+        assertEquals("  await page.goto('/cart');", myFixture.editor.document.getText(tint.textRange))
+
+        send(update("s12", "await page.goto('/cart');\nawait page.reload();"))
+        assertEquals(
+            listOf("test('pays', async ({ page }) => {", "await page.goto('/cart');", "await page.reload();", "// mine", "});", ""),
+            text().lines().map { it.trim() },
+        )
+        assertFalse(session.edited)
+    }
+
+    /** Without an answer from `piwi/pageCandidates` saying where the caret is, the recording does not start, and says why. */
+    fun testARecordingDoesNotStartWithoutKnowingWhereTheCaretIs() {
+        assertEquals(
+            "Piwi could not start the recording: Document not found.",
+            PiwiRecordFlow.startFailure(CompletableFuture.failedFuture<PageCandidatesResult>(IllegalStateException("Document not found."))),
+        )
+        val wrapped = CompletableFuture<PageCandidatesResult>().apply { completeExceptionally(CompletionException(IllegalStateException("boom"))) }
+        assertEquals("Piwi could not start the recording: boom.", PiwiRecordFlow.startFailure(wrapped))
+        assertEquals("Piwi could not start the recording: the Piwi editor service did not answer.", PiwiRecordFlow.startFailure(CompletableFuture<PageCandidatesResult>()))
+        assertEquals(
+            "Piwi could not start the recording: the Piwi editor service did not say where the cursor is.",
+            PiwiRecordFlow.startFailure(CompletableFuture.completedFuture<PageCandidatesResult?>(null)),
+        )
     }
 
     /** An update that comes before `piwi/record`'s answer is written once the session is registered. */
