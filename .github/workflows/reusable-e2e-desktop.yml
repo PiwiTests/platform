@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 env:
-  # Match the runtime the app bundles (apps/application/engines / desktop-release.yml).
+  # Match the runtime the app bundles (apps/application/engines / reusable-publish-desktop.yml).
   PIWI_NODE_VERSION: 24.4.1
 
 jobs:

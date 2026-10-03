@@ -17,6 +17,9 @@ inputs:
   ignore-scripts:
     description: Whether npm ci skips install scripts (the workspaces' prepare steps and `nuxt prepare`).
     default: 'false'
+  registry-url:
+    description: npm registry whose token NODE_AUTH_TOKEN carries, for a job that publishes.
+    default: ''
   playwright:
     description: >-
       Chromium build to install: none, shell (the headless shell the suites run on) or full (the build that loads
@@ -34,6 +37,7 @@ runs:
         node-version-file: ${{ inputs.node-version == '' && '.node-version' || '' }}
         cache: ${{ inputs.install == 'true' && 'npm' || '' }}
         cache-dependency-path: ${{ inputs.directory }}/package-lock.json
+        registry-url: ${{ inputs.registry-url }}
 
     - name: Install dependencies
       if: inputs.install == 'true'

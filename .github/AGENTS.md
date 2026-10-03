@@ -16,8 +16,16 @@ these follow, with its measurements and the phases still open, is
 | `workflows/pr-lint.yml`                    | pull requests                   | `commitlint`, `title` (the PR title) and `actionlint`                                    |
 | `workflows/docs.yml`                       | pushes to `main`                | builds and deploys the docs and the demo                                                 |
 | `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges                                               |
-| `workflows/publish*.yml`, `desktop-release.yml` | release tags              | npm, container, NuGet, desktop, VS Code, JetBrains and browser-extension publications    |
-| `workflows/changelog-polish.yml`           | releases                        | tidies the release notes                                                                 |
+| `workflows/release.yml`                    | release tags, on demand, PRs    | every publication, through the `reusable-publish-*.yml` below; a PR run publishes none   |
+| `workflows/reusable-publish-npm.yml`       | called by `release.yml`         | `@piwitests/reporter`, `@piwitests/server` (from the shared build), `instrumentation-nitro` |
+| `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml` | the multi-arch image: version tags on a tag, `edge` on main, a build only elsewhere  |
+| `workflows/reusable-publish-nuget.yml`     | called by `release.yml`         | the instrumentation NuGet packages                                                       |
+| `workflows/reusable-publish-desktop.yml`   | called by `release.yml`         | the desktop installers, from the shared build, attached to the GitHub release            |
+| `workflows/reusable-publish-vscode.yml`    | called by `release.yml`         | the VS Code extension (Marketplace, Open VSX)                                            |
+| `workflows/reusable-publish-jetbrains.yml` | called by `release.yml`         | the JetBrains plugin (JetBrains Marketplace)                                             |
+| `workflows/reusable-publish-extension.yml` | called by `release.yml`         | the browser extension (Chrome, Edge, Firefox)                                            |
+| `workflows/edge.yml`                       | pushes to `main`                | the `edge` container image                                                               |
+| `workflows/release-notes.yml`              | releases, on demand             | tidies the release notes                                                                 |
 | `workflows/live-jira.yml`                  | on demand                       | the live Jira E2E                                                                        |
 | `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
 
@@ -39,12 +47,14 @@ on pull requests only. The release PR runs the `Versions` job alone.
   event for this reason.
 - **Node through `setup-workspace`.** The version comes from the root `.node-version`; a job names another only to test
   a floor (`engines`, Node 22) or a bundled runtime (the desktop's `24.4.1`). `npm ci` runs with
-  `--prefer-offline --no-audit --fund=false`. The release workflows (`publish*.yml`, `desktop-release.yml`) still set
-  Node up themselves, until phase 4 of the proposal moves them to `release.yml`.
+  `--prefer-offline --no-audit --fund=false`.
 - **Playwright's headless shell is cached by Playwright version** (`playwright: shell`). The full Chromium build
   (`playwright: full`) is installed on every run: its workflows run on pull requests only, where a cache serves its own
   pull request alone.
-- **Least privilege.** `permissions: contents: read` on every workflow; anything more on the job that needs it.
+- **Least privilege.** `permissions: contents: read` on every workflow; anything more on the job that needs it. A job
+  that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
+- **Publishing only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or
+  `main` for the `edge` image; anywhere else the workflow builds and packs, so a pull request can run it.
 - **Bounded.** `timeout-minutes` on every job, about three times its usual duration.
 - **Readable.** A `name` on every step, and a `name:` on every workflow that says what it does.
 - **Superseded runs cancelled.** Every pull-request workflow has
@@ -60,6 +70,6 @@ on pull requests only. The release PR runs the `Versions` job alone.
   `docker run --rm -v "$PWD:/repo" -w /repo -e SHELLCHECK_OPTS=--severity=warning rhysd/actionlint:1.7.12 -color`.
   It runs shellcheck on the `run` scripts, at the warning level.
 - A change under `.github/workflows/` or `.github/actions/` runs every suite on its pull request, which exercises it.
-  The release workflows run only on a tag: run them with `workflow_dispatch` on a branch, where they build without
-  publishing.
+  A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request: every target
+  builds and packs, and nothing is published.
 - Dependabot updates the actions of the workflows and of `.github/actions/*`.

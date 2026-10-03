@@ -1,0 +1,131 @@
+name: Publish npm packages
+
+# @piwitests/reporter, @piwitests/server and @piwitests/instrumentation-nitro, one job each, so one failing holds back
+# none of the others. release.yml calls it. On a release tag it publishes with provenance; anywhere else it builds the
+# packages and runs `npm publish --dry-run`.
+on:
+  workflow_call:
+    inputs:
+      server-artifact:
+        description: Artifact of the calling run holding apps/application/.output, built with the node-server preset.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  reporter:
+    name: '@piwitests/reporter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          registry-url: https://registry.npmjs.org
+
+      - name: Build reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Publish to npm
+        working-directory: packages/reporter
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public ${{ env.TAG_BUILD == 'true' && '--provenance' || '--dry-run' }}
+
+      - name: Summary
+        if: env.TAG_BUILD == 'true'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## NPM Package Published :package:
+
+          - **Package**: \`@piwitests/reporter\`
+          - **Version**: \`${GITHUB_REF_NAME#v}\`
+
+          ### Install
+          \`\`\`bash
+          npm install @piwitests/reporter
+          \`\`\`
+          EOF
+
+  # The dashboard server as an npm package (npx @piwitests/server). The package's `prepack` step
+  # (scripts/copy-output.mjs) copies in the node-server output the calling run built.
+  server:
+    name: '@piwitests/server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          ignore-scripts: 'true'
+          registry-url: https://registry.npmjs.org
+
+      - name: Download the server bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.server-artifact }}
+          path: apps/application/.output
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace @piwitests/server --access public ${{ env.TAG_BUILD == 'true' && '--provenance' || '--dry-run' }}
+
+      - name: Summary
+        if: env.TAG_BUILD == 'true'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## NPM Package Published :package:
+
+          - **Package**: \`@piwitests/server\`
+          - **Version**: \`${GITHUB_REF_NAME#v}\`
+
+          ### Run
+          \`\`\`bash
+          npx @piwitests/server
+          \`\`\`
+          EOF
+
+  instrumentation:
+    name: '@piwitests/instrumentation-nitro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          registry-url: https://registry.npmjs.org
+
+      - name: Build the instrumentation
+        working-directory: integrations/nitro
+        run: npm run build
+
+      - name: Publish to npm
+        working-directory: integrations/nitro
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public ${{ env.TAG_BUILD == 'true' && '--provenance' || '--dry-run' }}

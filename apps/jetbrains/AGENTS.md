@@ -2,7 +2,7 @@
 
 Rules for working inside `apps/jetbrains/` (the Piwi plugin for WebStorm, IntelliJ IDEA Ultimate, Rider and the other
 JetBrains IDEs with the LSP API, published as `dev.piwitests.piwi` on the
-[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) by `publish-jetbrains.yml` on each release
+[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/34674-piwi) by `reusable-publish-jetbrains.yml` on each release
 tag). Read [`../../AGENTS.md`](../../AGENTS.md) and [`../../packages/editor/AGENTS.md`](../../packages/editor/AGENTS.md)
 first.
 

@@ -80,7 +80,7 @@ npm run build               # produces the installer for this OS under src-tauri
 > The Node sidecar (`src-tauri/binaries/`), the staged server
 > (`src-tauri/resources/app-server/`), generated icons, and `src-tauri/target/` are all
 > git-ignored build artifacts — CI regenerates them (see
-> `.github/workflows/desktop-release.yml`).
+> `.github/workflows/reusable-publish-desktop.yml`).
 
 ## End-to-end tests
 
@@ -136,7 +136,7 @@ it. To enable:
 3. Add `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as
    repository secrets.
 
-With the secret present, `desktop-release.yml` applies each leg's overlay:
+With the secret present, `reusable-publish-desktop.yml` applies each leg's overlay:
 bundles gain signed update artifacts, and the app (whose compiled config now
 contains the updater entry) exposes Check for updates in Settings → About.
 Windows ships **two update channels** so each installer updates itself in its own

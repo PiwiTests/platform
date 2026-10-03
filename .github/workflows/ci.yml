@@ -210,8 +210,8 @@ jobs:
           retention-days: 1
           compression-level: 1
 
-      # Packed from this build the way publish.yml packs a release, so the package
-      # smoke job installs what a user downloads from npm.
+      # Packed from this build the way reusable-publish-npm.yml packs a release, so
+      # the package smoke job installs what a user downloads from npm.
       - name: Pack npm packages
         run: |
           mkdir -p npm-packages
@@ -556,7 +556,7 @@ jobs:
 
       # Builds every package for every target framework and runs the tests. The
       # NuGet packages are packed and published from a release tag by
-      # publish-nuget.yml.
+      # reusable-publish-nuget.yml.
       - name: Build and test
         working-directory: integrations/aspnetcore
         run: dotnet test PiwiTests.Instrumentation.slnx -c Release

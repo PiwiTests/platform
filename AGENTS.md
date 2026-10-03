@@ -194,7 +194,7 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 ### Release notes
 
 release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
-cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/changelog-polish.yml`) keeps
+cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/release-notes.yml`) keeps
 every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
 polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
 narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill

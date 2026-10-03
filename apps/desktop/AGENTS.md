@@ -13,7 +13,7 @@ it through a one-time token bootstrap (`/__piwi/session`). Targets are Windows (
 Linux (`.deb` / `.rpm` / `.AppImage`), all three feature-equivalent and built from the same shell. The two Windows
 installers ship side by side: the `.msi` installs per machine (admin); the NSIS `.exe` installs per user
 (`installMode: currentUser`, no admin) and updates from its own manifest (`latest-nsis.json`, not the `.msi`'s
-`latest.json`), so a per-user install never updates into the per-machine one (see `desktop-release.yml` and the two
+`latest.json`), so a per-user install never updates into the per-machine one (see `reusable-publish-desktop.yml` and the two
 `tauri.updater*.conf.json` overlays).
 
 ## Rules
@@ -43,7 +43,8 @@ installers ship side by side: the `.msi` installs per machine (admin); the NSIS 
 - Front-end code that behaves differently inside the shell uses the `useIsDesktop` / `useTauri` composables and the
   `app/components/desktop/` cards — do not sniff user agents.
 - The sidecar layout (`src-tauri/binaries/node-<triple>`, `src-tauri/resources/app-server/.output/`) is what the
-  packaging scripts and CI (`desktop-release.yml`, `reusable-e2e-desktop.yml`) expect; changing it means updating both.
+  packaging scripts and CI (`reusable-publish-desktop.yml`, `reusable-e2e-desktop.yml`) expect; changing it means updating
+  both.
 - Commit scope: `app` for a desktop feature whose code lands in the shared `apps/application/` server or UI (where
   backend work goes, behind a desktop guard — the common case), `desktop` for a change confined to this directory (the
   shell and its scripts), and `ci` for CI-only. All three are valid commitlint scopes.
