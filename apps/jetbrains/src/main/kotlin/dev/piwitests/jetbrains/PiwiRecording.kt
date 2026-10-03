@@ -134,8 +134,9 @@ class PiwiRecordings(private val project: Project) : Disposable {
         return session
     }
 
-    /** Pause: what is done in the browser is not written until Resume. */
+    /** Pause: what is done in the browser is not written until Resume. The service sends no update for it. */
     fun pause(session: RecordingSession) {
+        session.paused()
         remote.send(session.id, "pause")
     }
 
@@ -306,7 +307,11 @@ class RecordingSession internal constructor(
         )
     }
 
-    /** Writes the update's block, unless the developer changed it, and ends the session on `stopped` or `failed`. */
+    /**
+     * Writes the update's block, unless the developer changed it, and ends the session on `stopped` or `failed`. The
+     * first block is written by the first update of a recording under way, or by a last one with steps: a recording
+     * that ended before its first step writes nothing.
+     */
     fun apply(update: RecordingUpdate) {
         if (finished) return
         update.state?.let { state = it }
@@ -314,9 +319,8 @@ class RecordingSession internal constructor(
         message = update.message
         command = update.command
         val ending = state == "stopped" || state == "failed"
-        val code = update.code.orEmpty()
-        if (!edited && (written || (state != "failed" && (code.isNotEmpty() || !ending)))) {
-            write(code, update.imports.orEmpty(), update.warnings.orEmpty())
+        if (!edited && (written || !ending || (state == "stopped" && steps > 0))) {
+            write(update.code.orEmpty(), update.imports.orEmpty(), update.warnings.orEmpty())
         }
         if (ending) end(update.message, failed = state == "failed") else refreshView()
     }
@@ -352,8 +356,15 @@ class RecordingSession internal constructor(
         return true
     }
 
+    internal fun paused() {
+        if (finished || state != "recording") return
+        state = "paused"
+        refreshView()
+    }
+
     internal fun resumed() {
         edited = false
+        if (state == "paused") state = "recording"
         refreshView()
     }
 
