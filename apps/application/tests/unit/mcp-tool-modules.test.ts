@@ -34,6 +34,7 @@ describe('MCP tool modules', () => {
       get_cluster_diagnosis: 'ai',
       run_cluster_diagnosis: 'ai',
       submit_diagnosis_feedback: 'ai',
+      record_diagnosis: 'agent-diagnoses',
       get_locator_healing: 'locator-healing',
       apply_locator_fix: 'locator-healing',
       create_issue: 'integrations',

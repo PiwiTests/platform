@@ -28,6 +28,9 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 // bundles nothing — the tools then point at the published copies.
 const docsDir = resolve(__dirname, '../docs');
 const changelogDir = resolve(__dirname, '../..');
+// The workflow skills `piwi skills add` installs, served by the MCP server as
+// prompts (prompts/list, prompts/get) in the version of this build.
+const skillsDir = resolve(__dirname, '../../packages/reporter/templates/skills');
 const serverAssets = [
   ...(existsSync(resolve(docsDir, 'guide'))
     ? [
@@ -43,6 +46,7 @@ const serverAssets = [
   ...(existsSync(resolve(changelogDir, 'CHANGELOG.md'))
     ? [{ baseName: 'piwi-changelog', dir: changelogDir, pattern: 'CHANGELOG.md', ignore: ['**/node_modules/**'] }]
     : []),
+  ...(existsSync(skillsDir) ? [{ baseName: 'piwi-skills', dir: skillsDir, pattern: '*/SKILL.md' }] : []),
 ];
 
 // Read the demo seed version hash at build time so it can be injected into

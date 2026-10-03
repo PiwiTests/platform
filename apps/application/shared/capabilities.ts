@@ -36,7 +36,9 @@ export type CapabilityId =
   | 'server-probes'
   | 'bug-reports'
   | 'flake-lab'
-  | 'resources';
+  | 'resources'
+  | 'agent-diagnoses'
+  | 'agent-write-log';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -258,6 +260,26 @@ export const CAPABILITIES: CapabilityDef[] = [
     passiveData: true,
     since: '0.45.0',
     doc: 'features/resource-leaks',
+  },
+  {
+    id: 'agent-diagnoses',
+    module: 'agents',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'agent-diagnoses',
+    passiveData: true,
+    since: '0.46.0',
+    doc: 'features/ai-diagnosis',
+  },
+  {
+    id: 'agent-write-log',
+    module: 'agents',
+    levels: ['instance'],
+    needs: [],
+    detection: 'agent-write-log',
+    passiveData: true,
+    since: '0.46.0',
+    doc: 'features/mcp',
   },
 ];
 

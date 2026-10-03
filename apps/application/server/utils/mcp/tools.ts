@@ -33,6 +33,13 @@ import {
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { AGENT_DIAGNOSIS_ERRORS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { parseFixAttempt } from '#shared/fix-attempts';
+import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
+import { clusterTrailerLine } from '#shared/commit-trailers';
+import { parseSetRunIncident } from '#shared/run-incident';
+import { recordAgentDiagnosisOnCluster } from '../agent-diagnosis';
+import { decideRunIncident } from '../run-incident-decision';
 import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
 import {
   getFailureCluster,
@@ -258,11 +265,13 @@ function numericCursor(raw: unknown): number | undefined {
 export interface McpContext {
   user: User | null;
   scope: ProjectScope;
+  /** The API key the request was made with; null for a session or with authentication off. */
+  apiKeyId?: number | null;
 }
 
 /** The caller of a write tool, as the reporter of a hand-back outcome. */
 function mcpActor(ctx: McpContext): HandbackActor {
-  return { channel: 'mcp', userId: ctx.user?.id ?? null };
+  return { channel: 'mcp', userId: ctx.user?.id ?? null, apiKeyId: ctx.apiKeyId ?? null };
 }
 
 /** Throw if the caller's scope does not include this project. */
@@ -2504,6 +2513,66 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       subject: commit.subject,
       author: commit.author,
       date: commit.date,
+    });
+  },
+
+  // ── record_diagnosis ───────────────────────────────────────────────────────
+  async record_diagnosis(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
+    if (!parsed.ok) throw new Error(parsed.message);
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const result = await recordAgentDiagnosisOnCluster(db, id, parsed.value, mcpActor(ctx));
+    if (!result.ok) {
+      if (result.error === 'not-found') return null;
+      throw new Error(AGENT_DIAGNOSIS_ERRORS[result.error]);
+    }
+    return dropNulls({
+      clusterId: id,
+      diagnosisId: result.diagnosisId,
+      category: parsed.value.diagnosis.category,
+      confidence: parsed.value.diagnosis.confidence,
+      patchValidation: result.patchValidation,
+      replacedPrevious: result.replacedVersion || null,
+    });
+  },
+
+  // ── report_fix_attempt ─────────────────────────────────────────────────────
+  async report_fix_attempt(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    const { clusterId: _clusterId, channel: _channel, ...body } = params;
+    const parsed = parseFixAttempt(body);
+    if (!parsed.ok) throw new Error(parsed.message);
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const result = await reportFixAttempt(db, id, parsed.value, mcpActor(ctx));
+    if (!result.ok) {
+      if (result.error === 'not-found') return null;
+      throw new Error(FIX_ATTEMPT_ERRORS[result.error].message);
+    }
+    return dropNulls({
+      clusterId: id,
+      key: result.attempt.key,
+      outcome: result.attempt.outcome,
+      recorded: result.recorded,
+      commitTrailer: clusterTrailerLine(id),
+    });
+  },
+
+  // ── set_run_incident ───────────────────────────────────────────────────────
+  async set_run_incident(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.runId, 'runId');
+    const input = parseSetRunIncident({ incident: params.incident, reason: params.reason });
+    if (typeof input === 'string') throw new Error(input);
+    if ((await checkEntityScope(db, ctx, id, resolveRunProjectId)) === 'not-found') return null;
+    const by = ctx.user?.id ? ctx.user.name || ctx.user.username : null;
+    const state = await decideRunIncident(db, id, input, by);
+    return dropNulls({
+      runId: id,
+      incident: state.incident ? { rule: state.incident.rule, reason: state.incident.reason } : null,
+      decision: state.review?.decision ?? null,
     });
   },
 

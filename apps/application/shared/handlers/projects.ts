@@ -14,6 +14,7 @@ import {
   analyticsDailyRollups,
   handbackOutcomes,
   handbackOutcomeRollups,
+  mcpToolCalls,
 } from '../../server/database/schema';
 import {
   asc,
@@ -577,6 +578,7 @@ export async function deleteProjectData(
   await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));
   await db.delete(handbackOutcomes).where(eq(handbackOutcomes.projectId, projectId));
   await db.delete(handbackOutcomeRollups).where(eq(handbackOutcomeRollups.projectId, projectId));
+  await db.delete(mcpToolCalls).where(eq(mcpToolCalls.projectId, projectId));
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources

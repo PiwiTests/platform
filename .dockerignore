@@ -54,6 +54,8 @@ apps/docs/
 !apps/docs/operate/**/*.md
 !apps/docs/reference/**/*.md
 !apps/docs/snippets/**
+# The workflow skills, served by the MCP server as prompts.
+!packages/reporter/templates/skills/*/SKILL.md
 apps/docs/reference/analytics-widgets.md
 apps/docs/reference/configuration.md
 apps/docs/reference/features.md

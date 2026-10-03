@@ -105,6 +105,14 @@ is told to return no patch unless it can quote the lines it changes. Applying a 
 **Copy `git apply` command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
 deterministic locator edits rather than model output.
 
+## Diagnoses written by an agent
+
+A coding agent can record its own diagnosis on a cluster with the MCP tool `record_diagnosis`, in the same JSON a
+model returns here. It needs no AI provider on this instance, its patch is validated against the source the cluster
+failed at when [source control](/guide/source-control) is connected, and the panel shows it as **written by an
+agent** with the model it named. It replaces the current diagnosis, which stays in the history. Declining the
+**Agent diagnoses** capability refuses them; declining AI diagnosis does not.
+
 ## Locator healing
 
 When the failure is a broken locator, the context includes the ranked replacements and the recommended fix from

@@ -34,6 +34,11 @@
  * current when the fix landed, and a regression of a cluster whose diagnosis was
  * verified records `regressed` on that same version.
  *
+ * Fix attempts follow the same verdicts: a fix that lands records `verified`
+ * on each reported attempt it carries (by commit, `Piwi-Cluster` trailer or
+ * branch), and a regression records `regressed` on the attempts a fix verified
+ * (`server/utils/fix-attempts.ts`).
+ *
  * Every step is best-effort — the run is already stored, and SCM being
  * unreachable must never turn into an ingest error.
  */
@@ -52,6 +57,7 @@ import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { enqueueFixPolicies, enqueueRegressionPolicies, enqueueStillFailingPolicy } from './integrations/policies';
 import { listOutcomes, recordOutcome } from './outcomes';
+import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
 import type { DbClient } from '../database';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
@@ -378,6 +384,12 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       await recordDiagnosisRegressed(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>
         console.error('[outcomes] diagnosis regression failed', e),
       );
+      await regressFixAttempts(db, {
+        projectId: run.projectId,
+        clusterId: cluster.id,
+        runId,
+        commit: currentCommit,
+      }).catch((e) => console.error('[outcomes] fix attempt regression failed', e));
 
       // Comment on (and optionally reopen) the ticket per the binding's policy.
       await enqueueRegressionPolicies(db, {
@@ -544,6 +556,15 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         console.error('[outcomes] diagnosis verification failed', e),
       );
     }
+    await verifyFixAttempts(db, {
+      projectId: run.projectId,
+      clusterId: cluster.id,
+      runId,
+      commit: currentCommit,
+      branch: runBranch,
+      fromCommit,
+      repositoryUrl,
+    }).catch((e) => console.error('[outcomes] fix attempt verification failed', e));
 
     fixed.push({
       clusterId: cluster.id,

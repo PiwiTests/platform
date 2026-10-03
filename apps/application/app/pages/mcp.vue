@@ -225,6 +225,9 @@ const windsurfSnippet = computed(() =>
              files (renders nothing without the IPC bridge). -->
           <DesktopMcpClientsCard />
 
+          <!-- Desktop shell only: the workflow skills, written into a project's linked folder. -->
+          <DesktopSkillsCard />
+
           <!-- Client setup — the single place to connect any MCP client. On the
              desktop build this also carries the real URL + local access token,
              already baked into every snippet (no placeholder to swap). -->

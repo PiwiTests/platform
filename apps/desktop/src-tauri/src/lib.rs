@@ -45,7 +45,10 @@ use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
-use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
+use mcp_clients::{
+    desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal, desktop_skills_read,
+    desktop_skills_write,
+};
 use updates::{
     desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
     desktop_set_update_notification,
@@ -1340,6 +1343,8 @@ pub fn run() {
             desktop_mcp_connect,
             desktop_mcp_disconnect,
             desktop_mcp_reveal,
+            desktop_skills_read,
+            desktop_skills_write,
             desktop_check_update,
             desktop_install_update,
             desktop_restart_app,

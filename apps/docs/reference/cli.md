@@ -68,13 +68,13 @@ npx @piwitests/reporter skills list
 npx @piwitests/reporter skills add [names...] [options]
 ```
 
-The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them.
+The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them. Each installed file is stamped with the reporter's version (`piwi-version`) and a hash (`piwi-hash`); `add` reports a skill as `outdated` when an older release installed it and it was never edited, and replaces it, and as `edited` when it changed since it was installed, and keeps it.
 
 | Flag (for `add`) | Description |
 |---|---|
 | `--dir <path>` | Directory to install into (default: `.claude/skills`) |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
-| `--force` | Overwrite a skill file that already exists |
+| `--force` | Replace a skill that was edited since it was installed (an untouched skill from an older release is always updated) |
 | `--dry-run` | Report what would be written without writing |
 | `--json` | Print the results as JSON |
 

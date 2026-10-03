@@ -196,6 +196,11 @@ import {
 } from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
+import { parseFixAttempt } from '#shared/fix-attempts';
+import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
+import { getClusterActivity } from '#shared/handlers/cluster-activity';
 import { isRunOriginKind } from '@piwitests/core/wire';
 import { getVerifiedFixes } from '#shared/handlers/flake-verified';
 import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
@@ -1151,6 +1156,50 @@ const routes: RouteEntry[] = [
       const bisectedCommit = await recordClusterBisect(await getDemoDb(), +m[1]!, parsed.value);
       if (!bisectedCommit) throw demoHttpError(404, 'Failure cluster not found');
       return { ok: true, bisectedCommit };
+    },
+  },
+  // The demo bundles no skill files; the desktop app is the one that installs them.
+  {
+    method: 'GET',
+    pattern: /^\/api\/agent-skills$/,
+    handler: async () => ({ version: '', items: [] }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/agent-diagnosis$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseAgentDiagnosis(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const result = await recordAgentDiagnosis(await getDemoDb(), +m[1]!, parsed.value, {
+        actor: { channel: parsed.value.channel ?? 'ui', userId: ctx?.actingUserId ?? null },
+      });
+      if (!result.ok) throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], AGENT_DIAGNOSIS_ERRORS[result.error]);
+      return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/fix-attempts$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseFixAttempt(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const result = await reportFixAttempt(await getDemoDb(), +m[1]!, parsed.value, {
+        channel: parsed.value.channel ?? 'ui',
+        userId: ctx?.actingUserId ?? null,
+      });
+      if (!result.ok)
+        throw demoHttpError(FIX_ATTEMPT_ERRORS[result.error].status, FIX_ATTEMPT_ERRORS[result.error].message);
+      return { ok: true, recorded: result.recorded, attempt: result.attempt };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/activity$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      return { items: await getClusterActivity(await getDemoDb(), +m[1]!) };
     },
   },
   {

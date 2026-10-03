@@ -28,6 +28,22 @@ them into your test project.
 Each skill prefers a connected Piwi [MCP tool](/reference/mcp-tools) and falls back to the dashboard UI when MCP is
 not connected, so a skill works before the MCP server is set up, only more slowly.
 
+## What agents report back
+
+Each workflow skill ends by telling Piwi what the agent did, so the next diagnosis, the fix verification and the gap
+detectors learn from it:
+
+| Skill | Reports back with |
+|------|--------------|
+| `investigate-failure` | `record_diagnosis` (its own diagnosis, shown as written by an agent), `submit_diagnosis_feedback` (a rating of Piwi's) and `report_fix_attempt` (the change, its commit and the diagnosis it followed) |
+| `apply-locator-healing` | `report_fix_attempt` with the locator edit |
+| `write-the-missing-test` | `triage_gap` (accepted, covered by a test, or dismissed with a reason) |
+
+The fix's commit carries a `Piwi-Cluster: <id>` trailer, the line `get_fix_plan` suggests. When the cluster's tests
+pass on a later commit, Piwi records the attempt **verified**, tied by its commit, the trailer or its branch; a later
+failure records it **regressed**. The cluster page's **Activity** section lists every attempt and every write an agent
+made to the cluster over MCP, with the API key it used.
+
 ## Where it is
 
 The skills ship inside the reporter package. `npx @piwitests/reporter init` installs the six workflow skills as part
@@ -47,24 +63,32 @@ is a project dependency. `init` takes `--skills <list>` (or `all`, `none`), `--s
 change what setup installs. The [CLI reference](/reference/cli#skills) lists every flag.
 
 The skills are agent-agnostic Markdown: only the destination is tool-specific, so `--dir` points the install wherever
-your agent reads skills from. An existing file is left alone unless you pass `--force`, so a skill you edited stays
-yours.
+your agent reads skills from. Each installed file carries `piwi-version` and `piwi-hash` in its front matter. A later
+`skills add` replaces a skill you never touched that an older release installed, reporting it **outdated**, and keeps
+one you **edited** unless you pass `--force`.
+
+On the [desktop app](/features/desktop), the MCP server page also installs the workflow skills into a project's
+linked folder, with the same rules.
 
 Once installed, ask in plain words: "why did the last CI run fail", "fix the flaky checkout test", "write the test
 we're missing for this change". The agent picks the skill whose description matches.
 
 ## Prompts, the no-install alternative
 
-The MCP server also offers a `setup_piwi` **prompt**, which a client shows as a slash command with nothing to
-install. It knows this instance's URL, whether it requires an API key and its existing projects, which a static skill
-cannot. The prompt needs MCP; the `setup-piwi` skill works offline. See [MCP server](/features/mcp#prompts).
+The MCP server also serves every workflow skill as a **prompt**, which a client shows as a slash command with nothing
+to install: `investigate_failure`, `apply_locator_healing` and the rest, each with an optional `focus` (a run, a
+cluster, a test). The text is the skill shipped with the server's own version. A `setup_piwi` prompt knows this
+instance's URL, whether it requires an API key and its existing projects, which a static skill cannot. Prompts need
+MCP; installed skills work offline. See [MCP server](/features/mcp#prompts).
 
 ## Limits
 
 - **Instructions, not code.** A skill tells an agent which evidence to read and in which order; the agent still
   writes the fix, and you review it.
-- **Updated with the reporter.** A newer reporter ships newer skills; run `skills add --force` to replace the
-  installed copies, which overwrites any edits.
+- **Updated with the reporter.** A newer reporter ships newer skills; `skills add` updates the copies you never
+  edited, and `--force` replaces the edited ones too.
+- **Reporting back needs write access.** The write-back tools ask for a reporter or administrator key; with a
+  read-only key the agent reports what it did to you instead.
 
 ## Related
 

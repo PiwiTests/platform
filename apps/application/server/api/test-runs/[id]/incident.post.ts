@@ -1,8 +1,6 @@
-import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
-import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
-import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
+import { decideRunIncident } from '../../../utils/run-incident-decision';
 
 defineRouteMeta({
   openAPI: {
@@ -42,14 +40,7 @@ export default eventHandler(async (event) => {
 
   const by = user.id ? user.name || user.username : null;
   try {
-    const state = await setRunIncident(db, id, { ...input, by });
-    // A run flagged at finalize skipped its regression signals; a cleared one counts again.
-    if (!input.incident) {
-      computeRegressionSignals(db, id)
-        .then(() => upsertDailyRollup(db, id))
-        .catch((e) => console.error('[run-health] recomputing a cleared run failed', e));
-    }
-    return state;
+    return await decideRunIncident(db, id, input, by);
   } catch (err: any) {
     if (err?.message === 'Test run not found') throw apiError({ statusCode: 404, message: 'Test run not found' });
     throw err;

@@ -1742,6 +1742,35 @@ export const handbackOutcomeRollups = pgTable(
   }),
 );
 
+// The write log of agents: one row per call of a write tool over MCP (the API
+// key, the tool, what it acted on and whether it succeeded). Read tools are
+// never logged. Pruned with the notification outbox; an instance that declined
+// the `agent-write-log` capability writes none.
+export const mcpToolCalls = pgTable(
+  'mcp_tool_calls',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }), // null when the call named no project
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // null for a session or with auth off
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    tool: text('tool').notNull(),
+    subjectType: text('subject_type'), // 'cluster', 'gap', 'bug-report', 'run', 'test-case', 'suggestion', 'diagnosis'
+    subjectId: integer('subject_id'),
+    result: text('result').notNull(), // 'ok' | 'error'
+    error: text('error'), // the error text an agent was given, truncated
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    subjectIdx: index('idx_mcp_tool_calls_subject').on(table.subjectType, table.subjectId),
+    projectIdx: index('idx_mcp_tool_calls_project').on(table.projectId, table.createdAt),
+    createdIdx: index('idx_mcp_tool_calls_created').on(table.createdAt),
+    apiKeyIdx: index('idx_mcp_tool_calls_api_key').on(table.apiKeyId),
+    userIdx: index('idx_mcp_tool_calls_user').on(table.userId),
+  }),
+);
+
 // Saved dashboards — a named arrangement of widgets in bands with a default
 // scope (`DashboardDefinition` in `shared/analytics/dashboards.ts`). Private
 // dashboards belong to their owner; shared ones are listed for every signed-in
