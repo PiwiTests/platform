@@ -133,7 +133,7 @@ What exists elsewhere, for comparison:
    service, both FSL. The capture fixtures (reporter, MIT) only load `record-ide.js` by a path the service gives them
    (Part 5); no FSL code moves into `core`, `picker-dom` or the reporter.
 
-## Part 1 — The recording session (editor service)
+## Part 1: The recording session (editor service)
 
 ### 1.1 The launcher
 
@@ -257,7 +257,7 @@ export const RECORDING_NOTIFICATION = 'piwi/recordingChanged';
 `piwi/editRecording` (Part 4) and the requests of Parts 4 and 5 follow the same shape. A client command `piwi.record`
 lets the service offer a recording from a summary line or a quick fix (an empty test body, a scenario gap).
 
-## Part 2 — The JetBrains client
+## Part 2: The JetBrains client
 
 - **Entry points**: **Tools → Piwi → Record a Test Here**; the editor's context menu; an intention (Alt+Enter) inside
   a spec: **Record a test here** between tests, **Record steps here** inside a test body; **New → Playwright Test
@@ -278,7 +278,7 @@ lets the service offer a recording from a summary line or a quick fix (an empty 
   **Run** and **Verify ×3** (Part 4.5).
 - **Rider and IntelliJ IDEA Ultimate** get the same, through the same LSP API; nothing here is WebStorm-only.
 
-## Part 3 — Improvements to the recorder and the code generator
+## Part 3: Improvements to the recorder and the code generator
 
 Each item lands in `@piwitests/core` or the recorder, so the extension's Copy, `piwi codegen` and Send to editor get it
 too. The first four are needed by recordings from the IDE; the others are what a recording from the IDE reaches that
@@ -333,7 +333,7 @@ the extension never did.
     `piwi codegen` would render a document that uses them as wrong code, silently. A document that uses them is
     `v: 2`, which an older reader refuses; any other stays `v: 1`.
 
-## Part 4 — What makes it worth switching to
+## Part 4: What makes it worth switching to
 
 1. **Edit before it is code.** The Piwi tool window gets a **Recording** tab: each step in words, its locators (the
    recorder keeps up to five, each verified to find the element alone), the function call it is part of, its
@@ -359,7 +359,7 @@ the extension never did.
 7. **Keyboard first.** One shortcut starts a recording at the caret, the same one stops it, and the browser panel's
    buttons have keys.
 
-## Part 5 — Continue from an existing test
+## Part 5: Continue from an existing test
 
 The most common case is not a new test: a test reaches the checkout page and the next steps are missing. Recording
 from a fresh browser would mean replaying the start by hand. The capture fixtures can hand the page to the recorder at
@@ -389,7 +389,7 @@ session says so, offers `piwi init`, and falls back to a fresh browser. Actions 
 (`page.goto`, `page.keyboard`) are seen through Playwright's instrumentation listener, which the resource ledger
 already uses (`resource-ledger.ts`), behind the same feature check.
 
-## Part 6 — Other ways in
+## Part 6: Other ways in
 
 1. **Recording in your own browser, streamed to the IDE.** Some flows need the developer's own profile: a hardware
    key, a single sign-on that refuses automated browsers. Piwi Picker records there today and sends the result after
