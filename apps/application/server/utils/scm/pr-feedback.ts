@@ -324,6 +324,7 @@ export async function buildRunPrSummary(
       testCount: fix.testCount,
       verification: fix.verification,
       timeToResolutionMs: fix.timeToResolutionMs,
+      ...(fix.healPr ? { healPr: { number: fix.healPr.number, url: fix.healPr.url } } : {}),
     })),
     wastedMinutes: wastedTotalMs > 0 ? wastedTotalMs / 60000 : null,
     selection: (() => {

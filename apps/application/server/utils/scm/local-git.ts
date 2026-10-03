@@ -428,16 +428,17 @@ export class LocalGitProvider extends ScmProvider {
         '--no-show-signature',
         '--reverse',
         `-n${MAX_RANGE_COMMITS}`,
-        '--format=%H%x1f%s%x1e',
+        '--format=%H%x1f%s%x1f%B%x1e',
         `${fromSha}..${toSha}`,
         '--',
       ]),
       this.diff([`${fromSha}...${toSha}`]),
     ]);
     if (!log.ok || !diff) return this.hosted.fetchChanges(fromSha, toSha);
-    const commits = parseRecords(log.stdout).map(([sha = '', subject = '']) => ({
+    const commits = parseRecords(log.stdout).map(([sha = '', subject = '', body = '']) => ({
       sha: sha.slice(0, 7),
       message: subject,
+      fullMessage: body.trim(),
     }));
     return { commits, ...diff };
   }

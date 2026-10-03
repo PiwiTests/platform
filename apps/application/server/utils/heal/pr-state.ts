@@ -12,13 +12,14 @@
  * A merged PR records the `auto-heal-pr` hand-back as `applied`, with the tests
  * its edits heal (the next eligible run that passes them records `verified`,
  * see `server/utils/outcome-inference.ts`); a PR closed without merging records
- * `rejected`.
+ * `rejected` with the keys of its edits, which auto-heal does not propose again
+ * (`rejectedHealEdits` in `./policy.ts`).
  */
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { healActions, testRunsCases } from '../../database/schema';
 import { resolveScmToken, scmProviderForUrl } from '../scm';
 import { recordOutcome } from '../outcomes';
-import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
+import { healEditKey, type HealActionPayload, type HealActionResult } from '#shared/auto-heal';
 import type { DbClient } from '../../database';
 
 /** Opened actions checked in one pass. */
@@ -121,6 +122,9 @@ async function recordPrOutcome(
       prNumber: result?.prNumber ?? null,
       prUrl: result?.prUrl ?? null,
       testCaseIds: [...new Set(tests.map((t) => t.testCaseId))],
+      ...(state === 'closed'
+        ? { editKeys: [...new Set((payload?.edits ?? []).map((edit) => healEditKey(edit)))] }
+        : {}),
     },
   });
 }
