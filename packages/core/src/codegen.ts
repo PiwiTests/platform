@@ -298,6 +298,30 @@ function uniqueEnvName(name: string, taken: readonly string[]): string {
   return `${name}_${n}`;
 }
 
+/**
+ * The environment variable the typed value of the fill at `index` is read
+ * from, named after its field and unique in the test, with a warning when it
+ * was typed in a password field.
+ */
+function envVarFor(step: RecordedStep, index: number, ctx: RenderContext): string {
+  const envVar = uniqueEnvName(envNameOf(step.target), ctx.envNames);
+  ctx.envNames.push(envVar);
+  if (step.redacted) {
+    ctx.warnings.push({
+      step: index,
+      code: 'redacted-value',
+      detail: envVar,
+      message: `A password was typed here; the spec reads it from ${envVar}.`,
+    });
+  }
+  return envVar;
+}
+
+/** Whether the typed value of `step` is read from the environment: a fill in a password field, or every fill with `values: 'env'`. */
+function readsEnv(step: RecordedStep, ctx: RenderContext): boolean {
+  return step.action === 'fill' && (step.redacted || ctx.options.values === 'env');
+}
+
 /** A URL as the spec writes it: a path when `urls: 'relative'` and it is on the recorded origin, absolute otherwise. */
 function urlForCode(url: string, ctx: RenderContext): string {
   const isPath = url.startsWith('/');
@@ -402,19 +426,7 @@ function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): s
     case 'hover':
       return [`  await ${loc}.hover();`];
     case 'fill': {
-      if (step.redacted || ctx.options.values === 'env') {
-        const envVar = uniqueEnvName(envNameOf(step.target), ctx.envNames);
-        ctx.envNames.push(envVar);
-        if (step.redacted) {
-          ctx.warnings.push({
-            step: index,
-            code: 'redacted-value',
-            detail: envVar,
-            message: `A password was typed here; the spec reads it from ${envVar}.`,
-          });
-        }
-        return [`  await ${loc}.fill(process.env.${envVar} ?? '');`];
-      }
+      if (readsEnv(step, ctx)) return [`  await ${loc}.fill(process.env.${envVarFor(step, index, ctx)} ?? '');`];
       return [`  await ${loc}.fill(${quote(step.value ?? '')});`];
     }
     case 'check':
@@ -542,20 +554,53 @@ function pageExpression(options: CodegenOptions): string {
  * an options bag's fields are typically optional and a missing key type-checks
  * where `label: ''` would silently target nothing.
  */
-function objectArgExpr(param: TestFunctionEntry['params'][number], match: RankedFunctionMatch): string {
+function objectArgExpr(
+  param: TestFunctionEntry['params'][number],
+  match: RankedFunctionMatch,
+  envArgs: ReadonlyMap<string, string>,
+): string {
   const entries = (param.fields ?? [])
     .map((field) => {
-      const raw = match.args[`${param.name}.${field}`];
-      return raw == null ? null : `${IDENTIFIER_RE.test(field) ? field : quote(field)}: ${quote(raw)}`;
+      const key = `${param.name}.${field}`;
+      const env = envArgs.get(key);
+      const raw = match.args[key];
+      if (env == null && raw == null) return null;
+      return `${IDENTIFIER_RE.test(field) ? field : quote(field)}: ${env ?? quote(raw!)}`;
     })
     .filter((pair): pair is string => pair != null);
   return entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
 }
 
-function argExpr(entry: TestFunctionEntry, match: RankedFunctionMatch): string {
+/**
+ * The arguments of a call that read a typed value from the environment, by
+ * `args` key (`password`, or `credentials.password` for an object's field):
+ * each string value the call takes from a fill `readsEnv` sends there, read
+ * from the variable a raw fill would read.
+ */
+function envArgsOf(match: RankedFunctionMatch, steps: RecordedStep[], ctx: RenderContext): Map<string, string> {
+  const envArgs = new Map<string, string>();
+  const params = new Map(match.entry.params.map((p) => [p.name, p]));
+  const sources = match.entry.paramSources
+    .filter((source) => source.from === 'value')
+    .sort((a, b) => a.stepIndex - b.stepIndex);
+  for (const source of sources) {
+    const type = params.get(source.param)?.type;
+    if (source.path ? type !== 'object' : type !== 'string') continue;
+    const index = match.matchedIndices[source.stepIndex];
+    const step = index == null ? undefined : steps[index];
+    if (index == null || !step || !readsEnv(step, ctx)) continue;
+    const key = source.path ? `${source.param}.${source.path}` : source.param;
+    if (!envArgs.has(key)) envArgs.set(key, `process.env.${envVarFor(step, index, ctx)} ?? ''`);
+  }
+  return envArgs;
+}
+
+function argExpr(entry: TestFunctionEntry, match: RankedFunctionMatch, envArgs: ReadonlyMap<string, string>): string {
   return entry.params
     .map((p) => {
-      if (p.type === 'object') return objectArgExpr(p, match);
+      if (p.type === 'object') return objectArgExpr(p, match, envArgs);
+      const env = envArgs.get(p.name);
+      if (env != null) return env;
       const raw = match.args[p.name];
       if (raw == null) return p.type === 'number' ? '0' : p.type === 'boolean' ? 'false' : "''";
       if (p.type === 'number') return String(Number(raw) || 0);
@@ -565,9 +610,9 @@ function argExpr(entry: TestFunctionEntry, match: RankedFunctionMatch): string {
     .join(', ');
 }
 
-function renderFunctionCall(match: RankedFunctionMatch, page: string): string {
+function renderFunctionCall(match: RankedFunctionMatch, page: string, envArgs: ReadonlyMap<string, string>): string {
   const { entry } = match;
-  const args = argExpr(entry, match);
+  const args = argExpr(entry, match, envArgs);
   if (entry.kind === 'page-object-method' && entry.receiver) {
     return `  await ${entry.receiver}.${entry.name}(${args});`;
   }
@@ -700,7 +745,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     const match =
       found && ![...viewportAt.keys()].some((at) => at > pos && at <= Math.max(...found.matchedIndices)) ? found : null;
     if (match) {
-      bodyLines.push(renderFunctionCall(match, page));
+      bodyLines.push(renderFunctionCall(match, page, envArgsOf(match, steps, ctx)));
       usedEntries.push(match.entry);
       const last = Math.max(...match.matchedIndices);
       for (let i = pos + 1; i <= last; i++) stepStarts[i] = stepStarts[pos]!;

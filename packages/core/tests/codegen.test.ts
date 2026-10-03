@@ -299,6 +299,68 @@ describe('renderSpec — with a catalog', () => {
     const { code } = renderSpec(session, { catalog: [helper] });
     expect(code).toContain(`import { addItem } from './helpers/cart';`);
     expect(code).toContain(`await addItem(page, 'sku-42');`);
+    // A value read from the element, not typed, stays a literal with values from the environment too.
+    expect(renderSpec(session, { catalog: [helper], values: 'env' }).code).toContain(`await addItem(page, 'sku-42');`);
+  });
+
+  /** The login steps, the password typed in a password field. */
+  function redactedLoginSteps(): RecordedStep[] {
+    const steps = loginSteps();
+    steps[1] = { ...steps[1]!, value: null, redacted: true };
+    return steps;
+  }
+
+  test('a password the call takes is read from the environment, as a fill reads it', () => {
+    const { code, warnings } = renderSpec(buildSession(redactedLoginSteps(), 0), { catalog: [loginEntry] });
+    expect(code).toContain(`await loginPage.login('alice', process.env.E2E_PASSWORD ?? '');`);
+    expect(warnings).toEqual([
+      {
+        step: 1,
+        code: 'redacted-value',
+        detail: 'E2E_PASSWORD',
+        message: 'A password was typed here; the spec reads it from E2E_PASSWORD.',
+      },
+    ]);
+  });
+
+  test('with values from the environment, every typed value the call takes is read from it', () => {
+    const { code, warnings } = renderSpec(buildSession(loginSteps(), 0), { catalog: [loginEntry], values: 'env' });
+    expect(code).toContain(`await loginPage.login(process.env.E2E_USERNAME ?? '', process.env.E2E_PASSWORD ?? '');`);
+    expect(code).toContain('  // Typed values come from E2E_USERNAME, E2E_PASSWORD.\n');
+    expect(code).not.toContain('alice');
+    expect(code).not.toContain('secret');
+    expect(warnings).toEqual([]);
+  });
+
+  test('a field of an object the call fills from a password is read from the environment', () => {
+    const signIn: TestFunctionEntry = {
+      ...loginEntry,
+      name: 'signIn',
+      kind: 'helper',
+      receiver: null,
+      importName: null,
+      module: './helpers/auth',
+      params: [{ name: 'credentials', type: 'object', fields: ['username', 'password'] }],
+      paramSources: [
+        { param: 'credentials', path: 'username', stepIndex: 0, from: 'value' },
+        { param: 'credentials', path: 'password', stepIndex: 1, from: 'value' },
+      ],
+    };
+    const { code, warnings } = renderSpec(buildSession(redactedLoginSteps(), 0), { catalog: [signIn] });
+    expect(code).toContain(`await signIn(page, { username: 'alice', password: process.env.E2E_PASSWORD ?? '' });`);
+    expect(warnings.map((w) => [w.step, w.code, w.detail])).toEqual([[1, 'redacted-value', 'E2E_PASSWORD']]);
+  });
+
+  test('a password and a raw fill of the same field read two variables', () => {
+    const extra = step({
+      action: 'fill',
+      value: null,
+      redacted: true,
+      target: target({ role: 'textbox', accessibleName: 'Password', tagName: 'input' }),
+    });
+    const { code } = renderSpec(buildSession([...redactedLoginSteps(), extra], 0), { catalog: [loginEntry] });
+    expect(code).toContain(`await loginPage.login('alice', process.env.E2E_PASSWORD ?? '');`);
+    expect(code).toContain(`.fill(process.env.E2E_PASSWORD_2 ?? '');`);
   });
 });
 
