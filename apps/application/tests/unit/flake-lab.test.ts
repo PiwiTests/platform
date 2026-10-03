@@ -441,6 +441,12 @@ describe('verify', () => {
     const listed = await lab.listFlakeExperiments(db as never, FLAKY);
     const verified = listed.find((e) => e.id === Number(plan.experimentId))!;
     expect(verified.verifies).toMatchObject({ label: 'delay GET /api/cart 1.8 s' });
+
+    // Only the verified verdict is the flake-verify hand-back's outcome.
+    const outcomes = await db.select().from(schema.handbackOutcomes);
+    expect(outcomes.map((o) => [o.kind, o.subjectType, o.subjectId, o.suggestionKey, o.outcome, o.channel])).toEqual([
+      ['flake-verify', 'test-case', FLAKY, `experiment:${plan.experimentId}`, 'verified', 'cli'],
+    ]);
   });
 });
 

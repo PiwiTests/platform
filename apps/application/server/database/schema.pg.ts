@@ -1674,6 +1674,74 @@ export const analyticsDailyRollups = pgTable(
   }),
 );
 
+// Hand-back outcomes: one row each time something Piwi handed back (a locator
+// heal, an auto-heal pull request, a diagnosis, a merge suggestion, a
+// quarantine proposal, a Flake Lab verify, a bug spec, a gap draft) reaches an
+// outcome. Rows are written through `recordOutcome` (`server/utils/outcomes.ts`),
+// idempotent on `dedupe_key`. The value sets live in `shared/handback-outcomes.ts`.
+export const handbackOutcomes = pgTable(
+  'handback_outcomes',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(), // HandbackKind
+    subjectType: text('subject_type').notNull(), // HandbackSubjectType: what subject_id points at
+    subjectId: integer('subject_id').notNull(),
+    suggestionKey: text('suggestion_key').notNull().default(''), // a stable key of what was suggested
+    outcome: text('outcome').notNull(), // 'suggested' | 'applied' | 'verified' | 'rejected' | 'regressed'
+    channel: text('channel').notNull(), // 'inferred' | 'ui' | 'mcp' | 'editor' | 'desktop' | 'cli' | 'ci'
+    actorUserId: integer('actor_user_id').references(() => users.id, { onDelete: 'set null' }), // null when inferred
+    actorApiKeyId: integer('actor_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the run it was seen in
+    commitSha: text('commit_sha'),
+    details: jsonb('details'), // kind-specific facts (the recommended locator, the PR number, the diagnosis version)
+    dedupeKey: text('dedupe_key').notNull(), // kind, subject, suggestion key, outcome and run
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    dedupeIdx: uniqueIndex('idx_handback_outcomes_dedupe').on(table.projectId, table.dedupeKey),
+    projectKindIdx: index('idx_handback_outcomes_project_kind').on(table.projectId, table.kind, table.createdAt),
+    subjectIdx: index('idx_handback_outcomes_subject').on(table.subjectType, table.subjectId),
+    runIdx: index('idx_handback_outcomes_run').on(table.runId),
+    actorUserIdx: index('idx_handback_outcomes_actor_user').on(table.actorUserId),
+    actorApiKeyIdx: index('idx_handback_outcomes_actor_api_key').on(table.actorApiKeyId),
+  }),
+);
+
+// Daily outcome counters of the hand-back outcome rows retention pruned, per
+// project, UTC day, kind, outcome and channel. Only ever added to, in the
+// transaction that deletes the rows; reads add the rows still stored.
+export const handbackOutcomeRollups = pgTable(
+  'handback_outcome_rollups',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    day: text('day').notNull(), // 'YYYY-MM-DD', UTC
+    kind: text('kind').notNull(),
+    outcome: text('outcome').notNull(),
+    channel: text('channel').notNull(),
+    count: integer('count').notNull().default(0),
+    computedAt: timestamp('computed_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    cellIdx: uniqueIndex('idx_handback_outcome_rollups_cell').on(
+      table.projectId,
+      table.day,
+      table.kind,
+      table.outcome,
+      table.channel,
+    ),
+  }),
+);
+
 // Saved dashboards — a named arrangement of widgets in bands with a default
 // scope (`DashboardDefinition` in `shared/analytics/dashboards.ts`). Private
 // dashboards belong to their owner; shared ones are listed for every signed-in

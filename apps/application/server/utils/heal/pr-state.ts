@@ -8,10 +8,16 @@
  * failed lookup or a PR the SCM still reports open leaves the row opened. Every
  * row looked at has its `updatedAt` moved to the check time, so each pass takes
  * the least recently checked rows and a long-open PR never holds the batch.
+ *
+ * A merged PR records the `auto-heal-pr` hand-back as `applied`, with the tests
+ * its edits heal (the next eligible run that passes them records `verified`,
+ * see `server/utils/outcome-inference.ts`); a PR closed without merging records
+ * `rejected`.
  */
-import { and, asc, eq } from 'drizzle-orm';
-import { healActions } from '../../database/schema';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import { healActions, testRunsCases } from '../../database/schema';
 import { resolveScmToken, scmProviderForUrl } from '../scm';
+import { recordOutcome } from '../outcomes';
 import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import type { DbClient } from '../../database';
 
@@ -67,10 +73,16 @@ export async function refreshOpenHealActions(
       refresh.checked++;
       if (state !== 'merged' && state !== 'closed') continue;
 
-      await db
+      const settled = await db
         .update(healActions)
         .set({ status: state, updatedAt: new Date() })
-        .where(and(eq(healActions.id, row.id), eq(healActions.status, 'opened')));
+        .where(and(eq(healActions.id, row.id), eq(healActions.status, 'opened')))
+        .returning({ id: healActions.id });
+      if (settled.length > 0) {
+        await recordPrOutcome(db, row, state).catch((e) =>
+          console.error(`[auto-heal] PR outcome failed for action ${row.id}`, e),
+        );
+      }
       refresh[state]++;
     } catch (err) {
       console.error(`[auto-heal] PR state refresh failed for action ${row.id}`, err);
@@ -78,4 +90,37 @@ export async function refreshOpenHealActions(
   }
 
   return refresh;
+}
+
+/** Record a settled heal PR as its hand-back outcome. */
+async function recordPrOutcome(
+  db: DbClient,
+  row: { id: number; projectId: number; dedupeKey: string; payload: unknown; result: unknown },
+  state: 'merged' | 'closed',
+): Promise<void> {
+  const payload = row.payload as HealActionPayload;
+  const result = row.result as HealActionResult | null;
+  const executionIds = [
+    ...new Set((payload?.edits ?? []).map((edit) => edit.executionId).filter((id) => Number.isInteger(id))),
+  ];
+  const tests = executionIds.length
+    ? await db
+        .select({ testCaseId: testRunsCases.testCaseId })
+        .from(testRunsCases)
+        .where(inArray(testRunsCases.id, executionIds))
+    : [];
+  await recordOutcome(db, {
+    projectId: row.projectId,
+    kind: 'auto-heal-pr',
+    subjectType: 'heal-action',
+    subjectId: row.id,
+    suggestionKey: row.dedupeKey,
+    outcome: state === 'merged' ? 'applied' : 'rejected',
+    commit: result?.commitSha ?? null,
+    details: {
+      prNumber: result?.prNumber ?? null,
+      prUrl: result?.prUrl ?? null,
+      testCaseIds: [...new Set(tests.map((t) => t.testCaseId))],
+    },
+  });
 }

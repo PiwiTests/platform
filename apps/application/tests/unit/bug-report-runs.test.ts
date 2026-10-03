@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { applyBugReportLifecycle, isReproductionRunAllowed, listBugReports, renderBugReportSpec } =
+const { applyBugReportLifecycle, bugSpecOutcomes, isReproductionRunAllowed, listBugReports, renderBugReportSpec } =
   await import('#shared/handlers/bug-reports');
 const { loadLooksFixedTests, loadNewlyLooksFixedTests } =
   await import('../../server/utils/notifications/run-notifications');
@@ -129,6 +129,56 @@ describe('runs that move no report', () => {
     expect(await applyBugReportLifecycle(db as never, 2)).toEqual([]);
     const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 2));
     expect(report!.status).toBe('test-committed');
+    expect(await db.select().from(schema.handbackOutcomes)).toEqual([]);
+  });
+});
+
+describe('bug-spec outcomes', () => {
+  const outcomes = async () =>
+    (await db.select().from(schema.handbackOutcomes).orderBy(schema.handbackOutcomes.id)).map((o) => [
+      o.kind,
+      o.subjectId,
+      o.outcome,
+      o.runId,
+    ]);
+
+  test('the committed test applies the spec, closing verifies it, a failure after closing regresses it', async () => {
+    await db.update(schema.bugReports).set({ status: 'open' }).where(eq(schema.bugReports.id, 1));
+    await db.insert(schema.testRuns).values({
+      id: 4,
+      projectId: 1,
+      status: 'failed',
+      branch: 'main',
+      startTime: new Date(4000_000),
+      totalTests: 2,
+    });
+    const bug = { testCaseId: 1, testMeta: { bug: '1' }, browserName: 'chromium' };
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, status: 'failed', expectedStatus: 'passed', ...bug },
+      { testRunId: 2, status: 'passed', expectedStatus: 'passed', ...bug },
+      { testRunId: 4, status: 'failed', expectedStatus: 'passed', ...bug },
+    ]);
+
+    await applyBugReportLifecycle(db as never, 1);
+    await applyBugReportLifecycle(db as never, 2);
+    await applyBugReportLifecycle(db as never, 2);
+    await applyBugReportLifecycle(db as never, 4);
+
+    expect(await outcomes()).toEqual([
+      ['bug-spec', 1, 'applied', 1],
+      ['bug-spec', 1, 'verified', 2],
+      ['bug-spec', 1, 'regressed', 4],
+    ]);
+  });
+
+  test('which moves record which outcome', () => {
+    expect(bugSpecOutcomes('open', 'test-committed')).toEqual(['applied']);
+    expect(bugSpecOutcomes('open', 'closed')).toEqual(['applied', 'verified']);
+    expect(bugSpecOutcomes('test-committed', 'looks-fixed')).toEqual([]);
+    expect(bugSpecOutcomes('looks-fixed', 'closed')).toEqual(['verified']);
+    expect(bugSpecOutcomes('closed', 'test-committed')).toEqual(['regressed']);
+    expect(bugSpecOutcomes('looks-fixed', 'test-committed')).toEqual([]);
+    expect(bugSpecOutcomes('closed', 'closed')).toEqual([]);
   });
 });
 

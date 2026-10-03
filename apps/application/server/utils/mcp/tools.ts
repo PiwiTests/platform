@@ -138,7 +138,7 @@ import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
-import { listScenarioGaps, draftScenario, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
+import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
@@ -163,6 +163,7 @@ import {
   resolveBugReportProjectId,
 } from '../project-access';
 import type { ProjectScope } from '../project-access';
+import type { HandbackActor } from '#shared/handback-outcomes';
 import type { User } from '../../database/schema';
 import { Role } from '#shared/types';
 import type { DbClient } from '../../database';
@@ -255,6 +256,11 @@ function numericCursor(raw: unknown): number | undefined {
 export interface McpContext {
   user: User | null;
   scope: ProjectScope;
+}
+
+/** The caller of a write tool, as the reporter of a hand-back outcome. */
+function mcpActor(ctx: McpContext): HandbackActor {
+  return { channel: 'mcp', userId: ctx.user?.id ?? null };
 }
 
 /** Throw if the caller's scope does not include this project. */
@@ -2367,7 +2373,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           const result =
             action === 'quarantine'
               ? await quarantineClusterTests(db, id, { createdBy: ctx.user?.id || null, reason })
-              : await releaseClusterTests(db, id, { reason });
+              : await releaseClusterTests(db, id, { reason, actor: mcpActor(ctx) });
           if (!result) continue;
           updated += 1;
           tests += result.tests;
@@ -2442,11 +2448,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if ((await checkEntityScope(db, ctx, suggestionId, getSuggestionProjectId)) === 'not-found') return null;
 
     if (decision === 'approve') {
-      const merged = await approveSuggestedMerge(db, suggestionId);
+      const merged = await approveSuggestedMerge(db, suggestionId, mcpActor(ctx));
       if (!merged) throw new Error('Suggestion is not pending');
       return { suggestionId, decision, survivorId: merged.survivorId };
     }
-    if (!(await rejectMergeSuggestion(db, suggestionId))) throw new Error('Suggestion is not pending');
+    if (!(await rejectMergeSuggestion(db, suggestionId, mcpActor(ctx)))) throw new Error('Suggestion is not pending');
     return { suggestionId, decision, ok: true };
   },
 
@@ -2650,7 +2656,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const projectId = numericParam(params.projectId, 'projectId');
     assertProject(ctx, projectId);
     const gapId = numericParam(params.gapId, 'gapId');
-    const draft = await draftScenario(db, projectId, gapId);
+    const draft = await issueScenarioDraft(db, projectId, gapId, mcpActor(ctx));
     if (!draft) return { error: `No gap #${gapId} in project ${projectId}` };
     return {
       title: draft.gapTitle,

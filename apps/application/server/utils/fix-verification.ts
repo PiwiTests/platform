@@ -29,6 +29,11 @@
  * alone changes nothing — a flaky test achieves it by accident. Every recorded
  * fix emits `cluster.fixed`; every regression emits `cluster.regressed`.
  *
+ * Both verdicts are also the cluster diagnosis's hand-back outcome: a
+ * `diagnosis-verified` fix records `verified` on the diagnosis version that was
+ * current when the fix landed, and a regression of a cluster whose diagnosis was
+ * verified records `regressed` on that same version.
+ *
  * Every step is best-effort — the run is already stored, and SCM being
  * unreachable must never turn into an ingest error.
  */
@@ -46,6 +51,7 @@ import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { enqueueFixPolicies, enqueueRegressionPolicies, enqueueStillFailingPolicy } from './integrations/policies';
+import { listOutcomes, recordOutcome } from './outcomes';
 import type { DbClient } from '../database';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
@@ -114,6 +120,83 @@ async function diagnosedFiles(db: DbClient, clusterId: number): Promise<string[]
     }
   }
   return [...files];
+}
+
+/**
+ * The suggestion key of one diagnosis version: the diagnosis row and the time
+ * the version started (every re-diagnose resets it).
+ */
+export function diagnosisVersionKey(diagnosisId: number, versionCreatedAt: Date | string | number): string {
+  const at = versionCreatedAt instanceof Date ? versionCreatedAt : new Date(versionCreatedAt);
+  return `${diagnosisId}@${at.getTime()}`;
+}
+
+/** Record the cluster diagnosis current now as `verified` by the fix that landed in `runId`. */
+async function recordDiagnosisVerified(
+  db: DbClient,
+  projectId: number,
+  clusterId: number,
+  runId: number,
+  commit: string | null,
+): Promise<void> {
+  const [diagnosis] = await db
+    .select({
+      id: failureDiagnoses.id,
+      createdAt: failureDiagnoses.createdAt,
+      provider: failureDiagnoses.provider,
+      model: failureDiagnoses.model,
+    })
+    .from(failureDiagnoses)
+    .where(
+      and(
+        eq(failureDiagnoses.clusterId, clusterId),
+        eq(failureDiagnoses.scope, 'cluster'),
+        eq(failureDiagnoses.status, 'completed'),
+      ),
+    )
+    .limit(1);
+  if (!diagnosis) return;
+  await recordOutcome(db, {
+    projectId,
+    kind: 'diagnosis',
+    subjectType: 'cluster',
+    subjectId: clusterId,
+    suggestionKey: diagnosisVersionKey(diagnosis.id, diagnosis.createdAt),
+    outcome: 'verified',
+    runId,
+    commit,
+    details: { diagnosisId: diagnosis.id, provider: diagnosis.provider, model: diagnosis.model },
+  });
+}
+
+/** Record a regression against the diagnosis version the cluster's last fix verified, if one did. */
+async function recordDiagnosisRegressed(
+  db: DbClient,
+  projectId: number,
+  clusterId: number,
+  runId: number,
+  commit: string | null,
+): Promise<void> {
+  const verified = await listOutcomes(db, {
+    projectId,
+    kind: 'diagnosis',
+    subjectType: 'cluster',
+    subjectIds: [clusterId],
+    outcomes: ['verified'],
+  });
+  const last = verified.at(-1);
+  if (!last) return;
+  await recordOutcome(db, {
+    projectId,
+    kind: 'diagnosis',
+    subjectType: 'cluster',
+    subjectId: clusterId,
+    suggestionKey: last.suggestionKey,
+    outcome: 'regressed',
+    runId,
+    commit,
+    details: last.details,
+  });
 }
 
 /**
@@ -292,6 +375,10 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
       });
 
+      await recordDiagnosisRegressed(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>
+        console.error('[outcomes] diagnosis regression failed', e),
+      );
+
       // Comment on (and optionally reopen) the ticket per the binding's policy.
       await enqueueRegressionPolicies(db, {
         clusterId: cluster.id,
@@ -451,6 +538,12 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
           : {}),
       })
       .where(eq(failureClusters.id, cluster.id));
+
+    if (verification === 'diagnosis-verified') {
+      await recordDiagnosisVerified(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>
+        console.error('[outcomes] diagnosis verification failed', e),
+      );
+    }
 
     fixed.push({
       clusterId: cluster.id,

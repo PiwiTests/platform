@@ -14,9 +14,9 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'suggestion ID');
-  const { db } = await requireResolvedProjectAccess(event, id, getSuggestionProjectId, 'Suggestion');
+  const { db, user } = await requireResolvedProjectAccess(event, id, getSuggestionProjectId, 'Suggestion');
 
-  const ok = await rejectMergeSuggestion(db, id);
+  const ok = await rejectMergeSuggestion(db, id, { channel: 'ui', userId: user.id });
   if (!ok) throw apiError({ statusCode: 409, message: 'Suggestion is not pending' });
   return { success: true };
 });

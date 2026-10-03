@@ -11,6 +11,7 @@ import {
   failureDiagnoses,
   failureDiagnosisVersions,
   files,
+  handbackOutcomes,
   healActions,
   integrationActions,
   locatorSnapshots,
@@ -198,6 +199,11 @@ export async function deleteRunsByIds(
       .update(locatorSnapshots)
       .set({ lastSeenRunId: null })
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
+  }
+
+  // Hand-back outcomes follow their own age cutoff (`pruneOutcomesOlderThan`); only the run pointer is cleared.
+  for (const batch of batches(presentRunIds)) {
+    await db.update(handbackOutcomes).set({ runId: null }).where(inArray(handbackOutcomes.runId, batch));
   }
 
   // A project's day in as few slices as possible, so each day is recomputed about once.
