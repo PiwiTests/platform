@@ -126,6 +126,12 @@ export interface ScmEntityRef {
   updatedAt: string | null;
 }
 
+/** The comment Piwi posted on a pull request. */
+export interface ScmPostedComment {
+  /** The host's id of the comment, or null when it returned none. */
+  id: string | null;
+}
+
 /** A commit status (GitHub "status", GitLab "commit status", Bitbucket "build status"). */
 export interface ScmCommitStatus {
   state: 'success' | 'failure' | 'error' | 'pending';
@@ -253,6 +259,15 @@ export abstract class ScmProvider {
    */
   async upsertPullRequestComment(_prNumber: number, _marker: string, _body: string): Promise<boolean> {
     return false;
+  }
+
+  /**
+   * {@link upsertPullRequestComment} that also returns the host's id of the
+   * comment, for the run's PR feedback record. Null when nothing was posted;
+   * `id` is null when the host did not say.
+   */
+  async postPullRequestComment(prNumber: number, marker: string, body: string): Promise<ScmPostedComment | null> {
+    return (await this.upsertPullRequestComment(prNumber, marker, body)) ? { id: null } : null;
   }
 
   /** Attach a status to a commit. Returns true when it was accepted. */

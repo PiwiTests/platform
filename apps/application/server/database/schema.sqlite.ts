@@ -22,6 +22,7 @@ export const projects = sqliteTable(
     targets: text('targets', { mode: 'json' }), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
     quarantineFailsStatus: integer('quarantine_fails_status', { mode: 'boolean' }).notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
+    gateStatus: integer('gate_status', { mode: 'boolean' }).notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -1761,6 +1762,77 @@ export const mcpToolCalls = sqliteTable(
     createdIdx: index('idx_mcp_tool_calls_created').on(table.createdAt),
     apiKeyIdx: index('idx_mcp_tool_calls_api_key').on(table.apiKeyId),
     userIdx: index('idx_mcp_tool_calls_user').on(table.userId),
+  }),
+);
+
+// One row per gate evaluation (`POST /api/test-runs/:id/gate`): the policy, the
+// verdict and its violations, and the pull request it judged. The PR state
+// sweep (`server/utils/gate-overrides.ts`) fills in what happened to the pull
+// request after a failed gate, and the default-branch run where a cluster the
+// gate caught came back.
+export const gateEvaluations = sqliteTable(
+  'gate_evaluations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    commitSha: text('commit_sha'),
+    prNumber: integer('pr_number'), // null when the run names no pull request
+    policy: text('policy', { mode: 'json' }).notNull(), // GatePolicy, plus maxUncoveredChanges when asked
+    policyHash: text('policy_hash').notNull(),
+    passed: integer('passed', { mode: 'boolean' }).notNull(),
+    verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
+    violations: text('violations', { mode: 'json' }).notNull(), // GateViolation[]
+    clusterIds: text('cluster_ids', { mode: 'json' }), // number[]: the clusters of the run's new regressions, read for an escape
+    source: text('source').notNull(), // 'cli' | 'api'
+    evaluatedAt: integer('evaluated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    prState: text('pr_state'), // 'open' | 'merged' | 'closed'; null until the sweep reads it
+    prSettledAt: integer('pr_settled_at', { mode: 'timestamp_ms' }), // when the host last updated the merged or closed pull request
+    overridden: integer('overridden', { mode: 'boolean' }).notNull().default(false), // merged while its last gate evaluation failed
+    escapedRunId: integer('escaped_run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the default-branch run where a caught cluster failed again
+    checkedAt: integer('checked_at', { mode: 'timestamp_ms' }), // the sweep's last look; null = never looked at
+  },
+  (table) => ({
+    runIdx: index('idx_gate_evaluations_run').on(table.runId),
+    projectPrIdx: index('idx_gate_evaluations_project_pr').on(table.projectId, table.prNumber),
+    sweepIdx: index('idx_gate_evaluations_sweep').on(table.verdict, table.prState, table.checkedAt),
+    escapedRunIdx: index('idx_gate_evaluations_escaped_run').on(table.escapedRunId),
+  }),
+);
+
+// The pull-request feedback posted for a run: the host, the pull request and
+// its comment, and the commit status contexts the host accepted.
+export const prFeedbackPosts = sqliteTable(
+  'pr_feedback_posts',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(), // ScmProviderName
+    repositoryUrl: text('repository_url').notNull(),
+    prNumber: integer('pr_number'), // null when only commit statuses were posted
+    commentId: text('comment_id'), // the host's id of Piwi's comment; null when none was posted or the host returned none
+    statuses: text('statuses', { mode: 'json' }).notNull(), // string[]: the commit status contexts the host accepted
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    runIdx: uniqueIndex('idx_pr_feedback_posts_run').on(table.runId),
+    projectIdx: index('idx_pr_feedback_posts_project').on(table.projectId, table.prNumber),
   }),
 );
 

@@ -423,6 +423,8 @@ export async function updateProject(
     ciRerun?: unknown;
     /** Whether a quarantined failure turns the run's commit status red. */
     quarantineFailsStatus?: boolean;
+    /** Whether each gate evaluation also posts the `<statusContext>/gate` commit status. */
+    gateStatus?: boolean;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -444,6 +446,7 @@ export async function updateProject(
     serverProbes,
     ciRerun,
     quarantineFailsStatus,
+    gateStatus,
     generatedSpecs,
     targets,
     tagIds: dataTagIds,
@@ -465,6 +468,7 @@ export async function updateProject(
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
         ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
         quarantineFailsStatus,
+        gateStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         updatedAt: new Date(),

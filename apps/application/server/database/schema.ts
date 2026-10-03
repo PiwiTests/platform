@@ -69,6 +69,8 @@ export const {
   handbackOutcomes,
   handbackOutcomeRollups,
   mcpToolCalls,
+  gateEvaluations,
+  prFeedbackPosts,
   analyticsDashboards,
   reportSchedules,
   reportSnapshots,

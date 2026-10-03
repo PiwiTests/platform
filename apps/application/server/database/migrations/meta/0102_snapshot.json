@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "29b6e657-2661-4ecf-8dd4-401945febe45",
-  "prevId": "afccfd9a-dd16-405f-8f87-13a18cb095c2",
+  "id": "2b40510f-4b77-432d-88b3-26327d7c96d4",
+  "prevId": "29b6e657-2661-4ecf-8dd4-401945febe45",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -4414,6 +4414,140 @@
           "tableFrom": "markers",
           "tableTo": "test_runs",
           "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "mcp_tool_calls": {
+      "name": "mcp_tool_calls",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "api_key_id": {
+          "name": "api_key_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tool": {
+          "name": "tool",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subject_type": {
+          "name": "subject_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result": {
+          "name": "result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_mcp_tool_calls_subject": {
+          "name": "idx_mcp_tool_calls_subject",
+          "columns": ["subject_type", "subject_id"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_project": {
+          "name": "idx_mcp_tool_calls_project",
+          "columns": ["project_id", "created_at"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_created": {
+          "name": "idx_mcp_tool_calls_created",
+          "columns": ["created_at"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_api_key": {
+          "name": "idx_mcp_tool_calls_api_key",
+          "columns": ["api_key_id"],
+          "isUnique": false
+        },
+        "idx_mcp_tool_calls_user": {
+          "name": "idx_mcp_tool_calls_user",
+          "columns": ["user_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "mcp_tool_calls_project_id_projects_id_fk": {
+          "name": "mcp_tool_calls_project_id_projects_id_fk",
+          "tableFrom": "mcp_tool_calls",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "mcp_tool_calls_api_key_id_api_keys_id_fk": {
+          "name": "mcp_tool_calls_api_key_id_api_keys_id_fk",
+          "tableFrom": "mcp_tool_calls",
+          "tableTo": "api_keys",
+          "columnsFrom": ["api_key_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "mcp_tool_calls_user_id_users_id_fk": {
+          "name": "mcp_tool_calls_user_id_users_id_fk",
+          "tableFrom": "mcp_tool_calls",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"

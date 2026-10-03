@@ -190,13 +190,13 @@ e2e:
 
 ## Pull-request feedback
 
-Piwi can post a summary comment (new failures apart from pre-existing ones) and a commit status on the pull request,
-and re-run a failure cluster's tests in CI: see [Pull-request feedback & re-run](/features/pr-feedback).
+Piwi can post a summary comment and a commit status on the pull request, and re-run a failure cluster's tests in CI:
+see [Pull-request feedback & re-run](/features/pr-feedback).
 
 ## Blocking a merge
 
-`npx playwright test` exits non-zero when anything failed. Questions such as *did this change break something that
-was working* need the run history, so the dashboard evaluates them.
+`npx playwright test` exits non-zero when anything failed. *Did this change break something that was working* needs
+the run history, so the dashboard evaluates it.
 
 ```yaml
 - run: npx playwright test
@@ -211,8 +211,7 @@ was working* need the run history, so the dashboard evaluates them.
     PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
 ```
 
-The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-run.json`) and prints every
-violation.
+The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-run.json`) and prints each violation.
 
 | Rule | Fails the build when |
 |---|---|
@@ -222,14 +221,14 @@ violation.
 | `--max-new-flaky <n>` | More than `n` tests newly started passing only on retry |
 | `--max-quarantined <n>` | More than `n` tests are [quarantined](/features/flaky-tests#quarantine-with-a-way-out) — a ceiling on quarantine debt |
 | `--fail-on-new-cluster` | This run introduced a failure cluster never seen before |
-| `--fail-on-flaky` | This run contains any flaky test (passed only after a retry) — stricter than `--max-new-flaky`, which only counts tests *newly* flaky |
+| `--fail-on-flaky` | Any test passed only after a retry — stricter than `--max-new-flaky`, which counts tests *newly* flaky |
 | `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
 
 At least one rule is required. Exit codes are part of the contract:
 **0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline never passes,
 **3** [inconclusive](/features/environment-incidents).
 
-Three behaviors worth knowing:
+Four behaviors worth knowing:
 
 - **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
   `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
@@ -237,6 +236,7 @@ Three behaviors worth knowing:
 - **A test that failed and then passed on retry satisfies `--require-tag`.** Flakiness is what `--max-new-flaky` is
   for.
 - **A required tag that matches no test in the run is a violation**, so a misspelled tag cannot pass silently.
+- **Every evaluation is stored**: [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict) are counted.
 
 `npx @piwitests/reporter gate --help` lists every option; `--json` prints the raw result for a pipeline to parse.
 

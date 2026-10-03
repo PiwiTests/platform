@@ -37,6 +37,7 @@ import {
   testRunResourceReports,
   failureDiagnoses,
   mcpToolCalls,
+  prFeedbackPosts,
 } from '../../server/database/schema';
 import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
@@ -254,12 +255,25 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             )
             .limit(1),
     ),
-    // Pull-request feedback and auto-heal read active from their stored settings
-    // (the `enabled` flag the full getters resolve, read here directly so this
-    // handler stays free of the SCM providers those getters pull in); issue
-    // integrations from a single connection row. None has a project dimension, so
-    // these stay instance-wide even when a project is scoped.
-    getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+    // Pull-request feedback is active while its setting is enabled (the flag
+    // the full getter resolves, read here directly so this handler stays free
+    // of the SCM providers it pulls in) and once something was posted for a run
+    // (of the project, when one is scoped). Auto-heal reads active from its
+    // setting and issue integrations from a single connection row; neither has
+    // a project dimension, so they stay instance-wide.
+    Promise.all([
+      getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: prFeedbackPosts.id })
+              .from(prFeedbackPosts)
+              .where(eq(prFeedbackPosts.projectId, pid))
+              .limit(1)
+          : db.select({ id: prFeedbackPosts.id }).from(prFeedbackPosts).limit(1),
+      ),
+    ]).then(([enabled, posted]) => enabled && posted),
     getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY).then((s) => s?.enabled === true),
     exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
     // The Test Map is active once the graph has any node for the project (a
