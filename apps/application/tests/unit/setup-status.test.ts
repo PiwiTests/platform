@@ -234,9 +234,20 @@ describe('first-run version and the New marker', () => {
 });
 
 describe('settings-backed capabilities', () => {
-  test('pull-request feedback is active once its setting is enabled', async () => {
+  test('pull-request feedback is active once enabled and something was posted for a run', async () => {
     expect((await activeIds(db)).has('pr-feedback')).toBe(false);
     await setAppSetting(db, 'pr_feedback', { enabled: true });
+    expect((await activeIds(db)).has('pr-feedback')).toBe(false);
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
+    await db.insert(schema.prFeedbackPosts).values({
+      projectId: 1,
+      runId: 1,
+      provider: 'github',
+      repositoryUrl: 'https://github.com/acme/checkout',
+      prNumber: 4,
+      statuses: ['piwi/tests'],
+    });
     expect((await activeIds(db)).has('pr-feedback')).toBe(true);
   });
 

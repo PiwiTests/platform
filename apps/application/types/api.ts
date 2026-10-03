@@ -389,6 +389,8 @@ export interface ProjectWithTestRuns {
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
   /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
   quarantineFailsStatus?: boolean;
+  /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
+  gateStatus?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -414,6 +416,8 @@ export interface ProjectDetails {
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
   /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
   quarantineFailsStatus?: boolean;
+  /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
+  gateStatus?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */

@@ -21,7 +21,8 @@ Two things get posted when a run finishes:
 - **A commit status**: passed or failed against the run's commit, pull request or not, so a pull request shows the result in its checks
   list. Required for a branch-protection rule. A run whose only failures are [quarantined](./flaky-tests#quarantine-with-a-way-out)
   tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
-  the commit status** under the project's **Settings → Source control** to fail it on any failure.
+  the commit status** under the project's **Settings → Source control** to fail it on any failure. **Only comment on
+  failures** follows the same rule: such a run gets no comment.
 
 What the comment says, in this order:
 
@@ -46,6 +47,20 @@ translation the diff removes or renames, matched against the base branch's locat
 already listed with its failure, a passing one was updated), so it names what the run did not exercise: tests outside
 the selection, on another shard set, or in a nightly suite. Each comes with its call site and, for a rename, the
 rewritten locator.
+
+## The gate verdict
+
+Each [merge gate](/guide/ci#blocking-a-merge) evaluation is stored with its policy, its verdict, its violations and
+the pull request it judged.
+
+- **A commit status of its own.** Turn on **Gate status** under the project's **Settings → Source control** and each
+  verdict is also posted as your status context plus `/gate` (`piwi/tests/gate`), so a branch rule can require the
+  gate rather than the run. It needs **Set a commit status** on. An
+  [environment incident](./environment-incidents) posts nothing.
+- **Overrides and escapes.** Every ten minutes Piwi asks the host what became of the pull requests a gate failed on.
+  One merged while its last evaluation still failed counts as an override; one fixed first, or closed, does not. When
+  a cluster that evaluation caught as a new regression fails again on an eligible default-branch run within 30 days
+  of the merge, the override also counts as an escape past the gate.
 
 ## Turn it on
 
