@@ -13,7 +13,7 @@ import { getStorage } from '../storage';
 import { selectCaseScreenshots, type ScreenshotFileRow } from './case-screenshots';
 import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baseline-order';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { notLabRun } from '#shared/handlers/probes';
+import { eligibleRunSql } from '#shared/run-eligibility';
 
 /** Passing executions inspected when choosing the baseline. */
 const BASELINE_CANDIDATES = 20;
@@ -162,7 +162,7 @@ export async function getOrComputeVisualDiff(db: DrizzleDB, testRunsCaseId: numb
   const conds = [
     eq(testRunsCases.testCaseId, failing.testCaseId),
     eq(testRunsCases.status, 'passed'),
-    notLabRun(testRuns.metadata),
+    eligibleRunSql('baseline'),
   ];
   if (failing.browserName) conds.push(eq(testRunsCases.browserName, failing.browserName));
   const passingRows = await db

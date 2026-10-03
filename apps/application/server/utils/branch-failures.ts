@@ -2,7 +2,7 @@
  * The latest complete run on a branch and its failed executions at their
  * failing lines: what an editor shows in its Problems panel and status bar.
  */
-import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { extractStackFrames, stripAnsi, withoutStackFrames } from '@piwitests/core/error-parse';
 import { files, testCases, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -10,7 +10,7 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { isScreenshotFileRow } from '#shared/file-classify';
 import { extractErrorLocation } from './locator-healing';
 import { lastAttempts } from '#shared/status-classify';
-import { notLabRun } from '#shared/handlers/probes';
+import { CI_RUN_ORIGINS, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
 
 /** Failed executions listed per run. */
 export const MAX_BRANCH_FAILURES = 200;
@@ -22,8 +22,6 @@ const MESSAGE_MAX_CHARS = 1000;
 const MAX_FRAMES = 10;
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
-/** A run in one of these states has not finished reporting. */
-const IN_PROGRESS_STATUSES = ['initializing', 'running', 'finalizing'];
 
 export interface BranchRun {
   id: number;
@@ -95,38 +93,42 @@ function iso(value: Date | number | string | null | undefined): string {
 /**
  * The newest complete run of a project on `branch` (any branch when null) and
  * the tests whose last attempt in it failed, one execution per test and browser
- * project. A complete run ran the whole suite and finished: a lab run, a
- * filtered or selection run and a run still in progress are passed over.
+ * project. A complete run ran the whole suite and finished: a filtered or
+ * selection run and a run still in progress are passed over, as is every run
+ * the `branch-failures` use leaves out. A CI run is preferred: a local run
+ * stands in only while the branch has no CI run.
  */
 export async function getBranchFailures(
   db: DrizzleDB,
   projectId: number,
   branch: string | null,
 ): Promise<BranchFailures> {
-  const [run] = await db
-    .select({
-      id: testRuns.id,
-      status: testRuns.status,
-      branch: testRuns.branch,
-      startTime: testRuns.startTime,
-      totalTests: testRuns.totalTests,
-      passedTests: testRuns.passedTests,
-      failedTests: testRuns.failedTests,
-      flakyTests: testRuns.flakyTests,
-      skippedTests: testRuns.skippedTests,
-    })
-    .from(testRuns)
-    .where(
-      and(
-        eq(testRuns.projectId, projectId),
-        branch ? eq(testRuns.branch, branch) : undefined,
-        eq(testRuns.isFullRun, 1),
-        notInArray(testRuns.status, IN_PROGRESS_STATUSES),
-        notLabRun(testRuns.metadata),
-      ),
-    )
-    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-    .limit(1);
+  const newest = (ciOnly: boolean) =>
+    db
+      .select({
+        id: testRuns.id,
+        status: testRuns.status,
+        branch: testRuns.branch,
+        startTime: testRuns.startTime,
+        totalTests: testRuns.totalTests,
+        passedTests: testRuns.passedTests,
+        failedTests: testRuns.failedTests,
+        flakyTests: testRuns.flakyTests,
+        skippedTests: testRuns.skippedTests,
+      })
+      .from(testRuns)
+      .where(
+        and(
+          eq(testRuns.projectId, projectId),
+          branch ? eq(testRuns.branch, branch) : undefined,
+          eligibleRunSql('branch-failures'),
+          ciOnly ? runOriginIn(testRuns.metadata, CI_RUN_ORIGINS) : undefined,
+        ),
+      )
+      .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+      .limit(1);
+  const ciRuns = await newest(true);
+  const [run] = ciRuns.length ? ciRuns : await newest(false);
   if (!run) return { run: null, failures: [] };
 
   // Every attempt of each test that failed at least once, so a pass on a retry drops the test.

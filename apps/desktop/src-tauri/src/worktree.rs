@@ -282,6 +282,20 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
     ]
 }
 
+/// The environment a reproduction or a bisect step runs its test with: the
+/// reporter records the run's origin (`reproduce`, `bisect`) and, when the
+/// webview names one, the failure cluster it reproduces as its reference.
+pub(crate) fn origin_env(
+    kind: &'static str,
+    cluster_id: Option<u64>,
+) -> Vec<(&'static str, String)> {
+    let mut env = vec![("PIWI_ORIGIN", kind.to_string())];
+    if let Some(id) = cluster_id {
+        env.push(("PIWI_ORIGIN_REF", id.to_string()));
+    }
+    env
+}
+
 /// The `git bisect` subcommand for a flake-aware step's exit code: 0 good, 1
 /// bad, 125 skip. Anything else means the step could not ask the dashboard,
 /// which stops the bisect rather than guessing.
@@ -848,6 +862,7 @@ pub async fn desktop_reproduce_here(
     commit: String,
     args: Vec<String>,
     browser: Option<String>,
+    cluster_id: Option<u64>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&commit) {
@@ -884,6 +899,7 @@ pub async fn desktop_reproduce_here(
             &worktree,
             &args,
             browser.as_deref(),
+            cluster_id,
             &stop,
         )
         .await;
@@ -892,6 +908,7 @@ pub async fn desktop_reproduce_here(
     Ok(id)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn reproduce_driver(
     app: &AppHandle,
     id: u32,
@@ -900,6 +917,7 @@ async fn reproduce_driver(
     worktree: &Path,
     args: &[String],
     browser: Option<&str>,
+    cluster_id: Option<u64>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "checkout"));
@@ -920,16 +938,19 @@ async fn reproduce_driver(
     if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
         return None;
     }
-    run_test_phase(app, id, worktree, args, browser, stop).await
+    let env = origin_env("reproduce", cluster_id);
+    run_test_phase(app, id, worktree, args, browser, &env, stop).await
 }
 
-/// The browser + test phases shared by reproduce and each bisect step.
+/// The browser + test phases shared by reproduce and each bisect step; `env` is
+/// set on the test only.
 async fn run_test_phase(
     app: &AppHandle,
     id: u32,
     worktree: &Path,
     args: &[String],
     browser: Option<&str>,
+    env: &[(&'static str, String)],
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = resolve_playwright_cli(worktree)?;
@@ -945,7 +966,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &[]).await
+    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, env).await
 }
 
 /// Drive a git bisect over the window `good..bad` in a throwaway worktree, step by
@@ -960,6 +981,7 @@ pub async fn desktop_bisect_here(
     args: Vec<String>,
     browser: Option<String>,
     flake_test_case_id: Option<u64>,
+    cluster_id: Option<u64>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&good) || !valid_sha(&bad) {
@@ -1019,6 +1041,7 @@ pub async fn desktop_bisect_here(
             &args,
             browser.as_deref(),
             flake.as_ref(),
+            cluster_id,
             &stop,
         )
         .await;
@@ -1039,6 +1062,7 @@ async fn bisect_driver(
     args: &[String],
     browser: Option<&str>,
     flake: Option<&(u64, ServerInfo)>,
+    cluster_id: Option<u64>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
@@ -1126,7 +1150,8 @@ async fn bisect_driver(
                 }
             }
         } else {
-            let code = run_test_phase(app, id, worktree, args, browser, stop).await;
+            let env = origin_env("bisect", cluster_id);
+            let code = run_test_phase(app, id, worktree, args, browser, &env, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1648,6 +1673,21 @@ mod tests {
         assert_eq!(get("NO_COLOR"), Some("1"));
         // Nothing else: the webview cannot add a variable.
         assert_eq!(env.len(), 4);
+    }
+
+    #[test]
+    fn a_reproduction_or_bisect_test_names_its_origin_and_cluster() {
+        assert_eq!(
+            origin_env("reproduce", Some(42)),
+            [
+                ("PIWI_ORIGIN", "reproduce".to_string()),
+                ("PIWI_ORIGIN_REF", "42".to_string())
+            ]
+        );
+        assert_eq!(
+            origin_env("bisect", None),
+            [("PIWI_ORIGIN", "bisect".to_string())]
+        );
     }
 
     #[test]

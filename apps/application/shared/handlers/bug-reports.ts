@@ -21,6 +21,7 @@ import { getLocatorIndex } from '../../server/utils/locator-usages';
 import type { TestMetadata } from '#shared/types';
 import { computeMissedBy, describeMissedBy, type MissedBy } from '#shared/bug-report-missed-by';
 import type { DrizzleDB } from './db';
+import { isEligibleRun } from '../run-eligibility';
 
 /**
  * Bug reports: what Piwi Picker sends with **Send to Piwi…**, kept with its
@@ -577,11 +578,16 @@ type Transition = { id: number; from: BugReportStatus; to: BugReportStatus; test
  * (`bugOutcome`): an expected failure that passed where every other project
  * passed too → looks fixed; an ordinary pass everywhere → closed; a test no
  * project ran keeps its report; anything else keeps an open report
- * committed, and reopens a closed one.
+ * committed, and reopens a closed one. Only a run the `bug-lifecycle` use
+ * reads moves a report: never `piwi bug`'s own run, a lab run, a bisect step
+ * or a reproduction.
  */
 export async function applyBugReportLifecycle(db: DrizzleDB, runId: number): Promise<Transition[]> {
-  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
-  if (!run) return [];
+  const [run] = await db
+    .select({ projectId: testRuns.projectId, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run || !isEligibleRun(run, 'bug-lifecycle')) return [];
   const rows = await db
     .select({
       id: testRunsCases.id,

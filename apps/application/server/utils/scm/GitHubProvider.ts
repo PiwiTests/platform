@@ -1,5 +1,7 @@
 import {
   ScmProvider,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
   truncatePatch,
   MAX_SCM_FILES,
   MAX_SCM_FILES_TOTAL,
@@ -546,16 +548,23 @@ export class GitHubProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+  override async dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     const target = settings.github;
     if (!target) throw new Error('No GitHub workflow configured for CI re-run');
+    const ref = request.ref || target.ref;
+    const inputs: Record<string, string> = { [target.inputName]: playwrightArgs };
+    if (target.dispatchIdInput && request.dispatchId) inputs[target.dispatchIdInput] = request.dispatchId;
 
     const res = await fetch(
       `https://api.github.com/repos/${this.repoPath}/actions/workflows/${encodeURIComponent(target.workflow)}/dispatches`,
       {
         method: 'POST',
         headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref: target.ref, inputs: { [target.inputName]: playwrightArgs } }),
+        body: JSON.stringify({ ref, inputs }),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       },
     );
@@ -564,7 +573,7 @@ export class GitHubProvider extends ScmProvider {
     // workflow_dispatch answers 204 with no run id, so link to the workflow's
     // runs page filtered to the branch instead of a specific run.
     const runs = new URL(`https://github.com/${this.repoPath}/actions/workflows/${target.workflow}`);
-    runs.searchParams.set('query', `branch:${target.ref}`);
-    return { url: runs.toString() };
+    runs.searchParams.set('query', `branch:${ref}`);
+    return { url: runs.toString(), ref };
   }
 }

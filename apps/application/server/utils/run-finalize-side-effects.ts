@@ -8,22 +8,25 @@ import { postRunPrFeedbackInBackground } from './scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { classifyRunFlakyTests } from '#shared/handlers/flaky-classify';
-import { isLabRun } from '#shared/handlers/probes';
+import { isEligibleRun } from '#shared/run-eligibility';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
+import { matchCiRerunRun } from './ci-rerun';
 
 /**
  * The finalize side effects for a finished run: the daily rollup of its cell,
- * regression signals, auto markers, flaky root causes, the history of its
+ * regression signals, the CI re-run dispatch it answers, auto markers, flaky root causes, the history of its
  * resource findings, AI diagnosis, notifications, pull-request feedback and
  * auto-heal.
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
- * this one helper so the lab stamps are honored everywhere: a probe run or a
+ * this one helper so the run eligibility rule is honored everywhere: none of
+ * these fire for a run the `notifications` use leaves out (a probe run or a
  * flake-lab run replays a test with an injected fault or condition, so it never
- * counts as a real run — none of these fire for it, exactly as imports are
- * silent.
+ * counts as a real run), exactly as imports are silent; flaky root causes skip
+ * runs the `flakiness` use leaves out, and fix verification and auto-heal apply
+ * their own uses.
  *
  * The returned promise settles once the run's rollup cell is recomputed, so a
  * caller that awaits it answers only when the analytics already count the run;
@@ -37,7 +40,7 @@ export function runFinalizeSideEffects(
   id: number,
   run: { projectId: number; metadata?: unknown },
 ): Promise<void> {
-  if (isLabRun(run.metadata)) return Promise.resolve();
+  if (!isEligibleRun(run, 'notifications')) return Promise.resolve();
   const recompute = () =>
     upsertDailyRollup(db, id).then(() =>
       runEventBus.publishGlobal({ type: 'rollup-updated', runId: id, projectId: run.projectId }),
@@ -48,10 +51,13 @@ export function runFinalizeSideEffects(
     .then(() => rollup)
     .then(recompute)
     .catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
+  matchCiRerunRun(db, id).catch((e) => console.error('[ci-rerun] matchCiRerunRun failed', e));
   syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-  classifyRunFlakyTests(db, run.projectId, id).catch((e) =>
-    console.error('[flaky-classify] classifyRunFlakyTests failed', e),
-  );
+  if (isEligibleRun(run, 'flakiness')) {
+    classifyRunFlakyTests(db, run.projectId, id).catch((e) =>
+      console.error('[flaky-classify] classifyRunFlakyTests failed', e),
+    );
+  }
   recordRunResourceFindings(db, id).catch((e) =>
     console.error('[resource-findings] recordRunResourceFindings failed', e),
   );

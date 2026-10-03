@@ -1,7 +1,15 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
-import { ScmProvider, truncatePatch, MAX_SCM_FILES_TOTAL, MAX_FILE_BYTES, FETCH_TIMEOUT_MS } from './ScmProvider';
+import {
+  ScmProvider,
+  truncatePatch,
+  MAX_SCM_FILES_TOTAL,
+  MAX_FILE_BYTES,
+  FETCH_TIMEOUT_MS,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
+} from './ScmProvider';
 import type {
   ChangedFile,
   ScmChanges,
@@ -531,7 +539,11 @@ export class LocalGitProvider extends ScmProvider {
     return this.hosted.createPullRequest(input);
   }
 
-  override dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
-    return this.hosted.dispatchRerun(settings, playwrightArgs);
+  override dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
+    return this.hosted.dispatchRerun(settings, playwrightArgs, request);
   }
 }

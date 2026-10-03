@@ -163,7 +163,12 @@ test.describe('Desktop repro request', () => {
     expect(runs).toEqual([
       {
         cmd: 'desktop_run_repro',
-        args: { projectId: String(projectId), requestId: REQUEST_ID, args: ['--headed', '--trace=on'] },
+        args: {
+          projectId: String(projectId),
+          requestId: REQUEST_ID,
+          args: ['--headed', '--trace=on'],
+          bugReportId: 37,
+        },
       },
     ]);
     await expect.poll(() => patches.length).toBe(2);

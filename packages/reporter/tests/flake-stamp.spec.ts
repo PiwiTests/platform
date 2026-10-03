@@ -70,6 +70,7 @@ describe('PiwiDashboardReporter flake-lab stamp', () => {
       }),
     );
     expect(body.metadata?.piwiFlakeLab).toEqual({ experimentId: 'exp-9', armId: 'control' });
+    expect(body.metadata?.piwiOrigin).toEqual({ kind: 'flake-lab', ref: 'exp-9' });
     expect(body.metadata?.piwiProbe).toBeUndefined();
   });
 

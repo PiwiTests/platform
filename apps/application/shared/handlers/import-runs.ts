@@ -14,6 +14,7 @@
  * is told a run appeared. Everything else is shared.
  */
 
+import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import { and, eq, gt, ne } from 'drizzle-orm';
 import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
@@ -281,6 +282,7 @@ export async function importBlobReportRun(
       importHash,
       metadata: {
         ...(parsed.scm ? { scm: parsed.scm } : {}),
+        [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
         import: {
           source,
           importedAt: new Date().toISOString(),
@@ -458,6 +460,7 @@ export async function importTraceRun(
             playwrightVersion: parsed.playwrightVersion,
             importHash: runKey,
             metadata: {
+              [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
               import: { source, importedAt: new Date().toISOString(), kind: 'trace' },
             } as never,
           })

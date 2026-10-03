@@ -6,17 +6,22 @@
  * cluster's most recent run. This module ties those together so the availability
  * check (for the button's enabled/disabled state) and the dispatch route agree.
  */
-import { desc, eq } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
-import { buildRetryArgs } from '#shared/retry-command';
+import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
 import {
   resolveCiRerunSettings,
   hasRerunTarget,
+  matchRerunDispatch,
+  RERUN_MATCH_WINDOW_MS,
   type CiRerunSettings,
   type ClusterRerunDispatch,
 } from '#shared/ci-rerun';
+import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runOrigin, runOriginRef } from '#shared/run-eligibility';
+import { resolveRunBranch } from './run-branch';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
@@ -92,28 +97,64 @@ export async function ciRerunAvailability(
   return { available: true, reason: null, provider, enabled: true, hasToken: true };
 }
 
-/** The Playwright arguments to re-run exactly a cluster's affected tests (file-line). */
-export async function clusterRerunArgs(db: DbClient, clusterId: number): Promise<string> {
+/** Affected tests a re-run names at most. */
+const MAX_RERUN_TESTS = 100;
+
+/**
+ * The tests a cluster's re-run runs: each affected test at the line and in the
+ * Playwright project of its latest failure in the cluster.
+ */
+export async function clusterRerunCases(db: DbClient, clusterId: number): Promise<RetryCase[]> {
   const rows = await db
-    .select({ title: testCases.title, filePath: testCases.filePath })
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      line: testRunsCases.line,
+      projectName: testRunsCases.browserName,
+      title: testCases.title,
+      filePath: testCases.filePath,
+    })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.failureClusterId, clusterId))
-    .groupBy(testCases.id, testCases.title, testCases.filePath)
-    .orderBy(desc(testCases.id))
-    .limit(100);
-  return buildRetryArgs(rows.map((r) => ({ filePath: r.filePath, title: r.title, line: null, projectName: null })));
+    .orderBy(desc(testRunsCases.id))
+    .limit(MAX_RERUN_TESTS * 10);
+  const latest = new Map<number, RetryCase>();
+  for (const r of rows) {
+    if (r.testCaseId == null || latest.has(r.testCaseId)) continue;
+    latest.set(r.testCaseId, { filePath: r.filePath, title: r.title, line: r.line, projectName: r.projectName });
+    if (latest.size >= MAX_RERUN_TESTS) break;
+  }
+  return [...latest.values()];
 }
 
+/** The Playwright arguments to re-run exactly a cluster's affected tests (file:line). */
+export async function clusterRerunArgs(db: DbClient, clusterId: number): Promise<string> {
+  return buildRetryArgs(await clusterRerunCases(db, clusterId));
+}
+
+/** The branch a cluster's re-run runs on: the branch of the cluster's latest run, when it has one. */
+export async function clusterRerunRef(db: DbClient, lastSeenRunId: number): Promise<string | null> {
+  const [run] = await db
+    .select({ branch: testRuns.branch, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, lastSeenRunId));
+  return run ? (run.branch ?? resolveRunBranch(run.metadata) ?? null) : null;
+}
+
+/** A dispatch as `dispatchClusterRerun` sent it. */
+export type DispatchedRerun = Omit<ClusterRerunDispatch, 'at' | 'byName' | 'byUserId'>;
+
 /**
- * Dispatch a CI re-run of a cluster's affected tests. Assumes availability was
- * already checked (the route does). Returns the provider's runs/pipeline URL and
- * the args sent. Throws with the provider's message on a dispatch failure.
+ * Dispatch a CI re-run of a cluster's affected tests on the branch of its
+ * latest run (the target's configured ref when that run has none). Assumes
+ * availability was already checked (the route does). Returns what was sent and
+ * what the provider answered. Throws with the provider's message on a dispatch
+ * failure.
  */
 export async function dispatchClusterRerun(
   db: DbClient,
   cluster: { id: number; projectId: number; lastSeenRunId: number },
-): Promise<{ url: string; args: string; provider: ScmProviderName }> {
+): Promise<DispatchedRerun> {
   const settings = await getCiRerunSettings(db, cluster.projectId);
   const repositoryUrl = await clusterRepositoryUrl(db, cluster.lastSeenRunId);
   const provider = detectScmProvider(repositoryUrl);
@@ -122,9 +163,22 @@ export async function dispatchClusterRerun(
   const scm = await createScmProvider(repositoryUrl, db, cluster.projectId);
   if (!scm) throw new Error('Could not build an SCM client for this repository');
 
-  const args = await clusterRerunArgs(db, cluster.id);
-  const { url } = await scm.dispatchRerun(settings, args);
-  return { url, args, provider };
+  const cases = await clusterRerunCases(db, cluster.id);
+  const args = buildRetryArgs(cases);
+  const files = [...new Set(cases.map((c) => toPosixPath(c.filePath)))].sort();
+  const id = randomBytes(8).toString('hex');
+  const ref = await clusterRerunRef(db, cluster.lastSeenRunId);
+  const sent = await scm.dispatchRerun(settings, args, { ref, dispatchId: id });
+  return {
+    id,
+    provider,
+    url: sent.url,
+    args,
+    ref: sent.ref ?? ref,
+    files,
+    ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
+    ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
+  };
 }
 
 /** Who asked for a re-run, as the dispatch record names them. */
@@ -166,7 +220,7 @@ export async function rerunClusterInCi(
     };
   }
 
-  let dispatched: { url: string; args: string; provider: ScmProviderName };
+  let dispatched: DispatchedRerun;
   try {
     dispatched = await dispatchClusterRerun(db, cluster);
   } catch (e) {
@@ -178,9 +232,7 @@ export async function rerunClusterInCi(
   }
 
   const dispatch: ClusterRerunDispatch = {
-    provider: dispatched.provider,
-    url: dispatched.url,
-    args: dispatched.args,
+    ...dispatched,
     at: Date.now(),
     byName: actor.name,
     byUserId: actor.id,
@@ -190,4 +242,68 @@ export async function rerunClusterInCi(
     .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
     .where(eq(failureClusters.id, cluster.id));
   return { ok: true, dispatch };
+}
+
+/**
+ * Recognize a finished CI run as the re-run a cluster dispatched (see
+ * `matchRerunDispatch`): stamp its origin `ci-rerun` with the dispatch id, and
+ * record the run on the dispatch. Returns the cluster whose dispatch it
+ * answered, or null.
+ */
+export async function matchCiRerunRun(db: DbClient, runId: number): Promise<number | null> {
+  const [run] = await db
+    .select({
+      projectId: testRuns.projectId,
+      metadata: testRuns.metadata,
+      branch: testRuns.branch,
+      startTime: testRuns.startTime,
+    })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run || !(CI_RUN_ORIGINS as readonly string[]).includes(runOrigin(run.metadata))) return null;
+
+  const startedAt = run.startTime instanceof Date ? run.startTime.getTime() : Number(run.startTime);
+  const clusters = await db
+    .select({ id: failureClusters.id, dispatch: failureClusters.lastRerunDispatch })
+    .from(failureClusters)
+    .where(and(eq(failureClusters.projectId, run.projectId), isNotNull(failureClusters.lastRerunDispatch)));
+  const dispatches = clusters
+    .map((c) => ({ ...(c.dispatch as ClusterRerunDispatch), clusterId: c.id }))
+    .filter((d) => d.id && startedAt >= d.at - 60_000 && startedAt - d.at <= RERUN_MATCH_WINDOW_MS);
+  if (dispatches.length === 0) return null;
+
+  const executed = await db
+    .selectDistinct({ filePath: testCases.filePath })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.testRunId, runId));
+  const meta = (run.metadata as RunMetadata | null) ?? null;
+  const match = matchRerunDispatch(
+    {
+      originRef: runOriginRef(run.metadata),
+      pipelineId: meta?.ci?.pipelineId ?? null,
+      buildNumber: meta?.ci?.buildNumber ?? null,
+      branch: run.branch ?? resolveRunBranch(run.metadata) ?? null,
+      startedAt,
+      files: executed.map((r) => toPosixPath(r.filePath)),
+    },
+    dispatches,
+  );
+  if (!match) return null;
+
+  const { clusterId, ...dispatch } = match;
+  await db
+    .update(testRuns)
+    .set({
+      metadata: {
+        ...((run.metadata as Record<string, unknown> | null) ?? {}),
+        [RUN_ORIGIN_METADATA_KEY]: { kind: 'ci-rerun', ref: dispatch.id },
+      },
+    })
+    .where(eq(testRuns.id, runId));
+  await db
+    .update(failureClusters)
+    .set({ lastRerunDispatch: { ...dispatch, runId } })
+    .where(eq(failureClusters.id, clusterId));
+  return clusterId;
 }

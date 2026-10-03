@@ -1,4 +1,5 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
+import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import { maskTokenLike } from '@piwitests/core/mask';
 import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
@@ -75,7 +76,9 @@ export function sanitizeGitRemoteUrl(url: string): string {
 
 /**
  * Sanitize run-level metadata by stripping credentials from SCM remote URLs,
- * so the read endpoints never return a token embedded in the remote URL.
+ * so the read endpoints never return a token embedded in the remote URL. The
+ * run's origin is kept only when it names a known kind, rebuilt as
+ * `{ kind, ref? }`.
  */
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!metadata || typeof metadata !== 'object') return null;
@@ -86,6 +89,12 @@ export function sanitizeMetadata(metadata: Record<string, unknown> | null | unde
   const scm = meta.scm as Record<string, unknown> | null | undefined;
   if (scm && typeof scm.remoteUrl === 'string') {
     meta.scm = { ...scm, remoteUrl: sanitizeGitRemoteUrl(scm.remoteUrl) };
+  }
+
+  if (RUN_ORIGIN_METADATA_KEY in meta) {
+    const origin = parseRunOrigin(meta[RUN_ORIGIN_METADATA_KEY]);
+    if (origin) meta[RUN_ORIGIN_METADATA_KEY] = origin;
+    else delete meta[RUN_ORIGIN_METADATA_KEY];
   }
 
   return meta;

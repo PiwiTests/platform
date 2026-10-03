@@ -59,16 +59,17 @@ e2e:
 ## Other systems
 
 Jenkins, CircleCI, Azure DevOps, Travis, Buildkite, TeamCity, Bitbucket, Semaphore, AppVeyor and Drone
-are recognized too; set the same two variables. An unrecognized CI only means less auto-filled metadata.
+are recognized too; set the same two variables. An unrecognized CI means less auto-filled metadata.
 
 ## What gets detected
 
-Without any configuration, the reporter records:
+Unconfigured, the reporter records:
 
 - **Source control**: commit SHA, message, author, branch, pull-request number, the pull request's target branch,
   and the repository URL. On a pull-request build the target branch is recorded as the run's **base branch**, which
   [baselines](/guide/concepts#baseline-last-green-run) fall back to when the branch has no history of its own.
 - **CI**: provider, workflow or job name, build number, and a link back to the CI build.
+- **Origin**: [what launched it](/reference/test-metadata#run-origin).
 - **Environment**: the Playwright version, and each test's browser and viewport.
 - **Shard index**: from Playwright's own `--shard` config.
 

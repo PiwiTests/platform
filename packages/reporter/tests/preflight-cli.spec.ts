@@ -234,7 +234,10 @@ describe('piwi preflight', () => {
       'tests/checkout.spec.ts',
       'tests/coupon.spec.ts',
     ]);
-    expect(spawn).toHaveBeenCalledWith('npx', ['tests/checkout.spec.ts:3', '--headed'], ENV);
+    expect(spawn).toHaveBeenCalledWith('npx', ['tests/checkout.spec.ts:3', '--headed'], {
+      ...ENV,
+      PIWI_ORIGIN: 'preflight',
+    });
     spawn.mockResolvedValueOnce(1);
     expect(await run('--run')).toBe(1);
   });

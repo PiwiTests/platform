@@ -575,7 +575,9 @@ describe('the Piwi language server', () => {
     expect(apply.command).toEqual({
       title: 'Run the verification',
       command: 'piwi.runCommand',
-      arguments: [{ cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3' }],
+      arguments: [
+        { cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3', env: { PIWI_ORIGIN: 'editor' } },
+      ],
     });
     const context = (actions[3]!.command!.arguments[0] as string).split('\n');
     expect(context.slice(0, 3)).toEqual([
@@ -776,6 +778,7 @@ describe('the Piwi language server', () => {
         cwd: dir,
         command: 'npx playwright test tests/checkout.spec.ts:3',
         args: [],
+        env: { PIWI_ORIGIN: 'editor' },
       },
     );
   });
@@ -892,6 +895,7 @@ describe('the Piwi language server', () => {
       cwd: dir,
       args: ['tests/checkout.spec.ts:3'],
       command: 'npx playwright test tests/checkout.spec.ts:3',
+      env: { PIWI_ORIGIN: 'editor' },
     });
   });
 });

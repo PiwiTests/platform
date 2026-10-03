@@ -197,6 +197,9 @@ function testCounts(tests: Array<{ status: string | null }>): string {
   return [failing ? `${failing} failing` : null, flaky ? `${flaky} flaky` : null].filter(Boolean).join(' · ');
 }
 
+/** The environment of a test run the editor starts: the reporter records the run as started from an editor. */
+export const EDITOR_RUN_ENV: Readonly<Record<string, string>> = { PIWI_ORIGIN: 'editor' };
+
 /** Start serving on a connection. Returns a function that stops the refresh timer. */
 export function startServer(connection: Connection, options: ServerOptions = {}): () => void {
   const env = options.env ?? process.env;
@@ -798,7 +801,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: {
               title: 'Run the verification',
               command: 'piwi.runCommand',
-              arguments: [{ cwd: owner.root, command: fixPlan.verify.command } satisfies RunCommandArgs],
+              arguments: [
+                {
+                  cwd: owner.root,
+                  command: fixPlan.verify.command,
+                  env: { ...EDITOR_RUN_ENV },
+                } satisfies RunCommandArgs,
+              ],
             },
           });
         }
@@ -1226,7 +1235,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     if (!context?.client || !context.project || !params.testIds.length) return null;
     const { args, command } = await context.client.runArgs(context.project.id, params.testIds);
-    return { cwd: context.root, args, command: command || `npx playwright test ${args.join(' ')}` };
+    return {
+      cwd: context.root,
+      args,
+      command: command || `npx playwright test ${args.join(' ')}`,
+      env: { ...EDITOR_RUN_ENV },
+    };
   });
 
   connection.onRequest(STATUS_REQUEST, (): StatusResult => currentStatus());
@@ -1266,7 +1280,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
     const selection = context?.selections.find((s) => s.key === params.key);
     if (!context || !selection?.command) return null;
-    return { cwd: context.root, command: selection.command, args: [] };
+    return { cwd: context.root, command: selection.command, args: [], env: { ...EDITOR_RUN_ENV } };
   });
 
   connection.onRequest(
