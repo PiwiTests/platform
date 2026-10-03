@@ -87,7 +87,7 @@ list, across pages. A click on what a hover shows (row actions, a
 hover menu) is recorded after that hover. **Stop** opens the
 review: **Copy as TypeScript** for a runnable spec that waits for each page it opens, **Download steps** for a
 [steps file](/reference/steps-format) to share or render with [`piwi codegen`](/reference/cli#codegen),
-[**Send to editor**](./editors#send-from-piwi-picker), or **Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose `autocomplete` names it: the spec reads them from `process.env`.
+[**Send to editor**](./editor-recording#send-from-piwi-picker), or **Discard**. Passwords are never captured, nor a card number, its security code or a one-time code in a field whose `autocomplete` names it: the spec reads them from `process.env`.
 
 ## Matching functions
 
