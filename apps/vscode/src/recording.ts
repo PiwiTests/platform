@@ -200,10 +200,14 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     diagnostics.delete(s.document.uri);
   };
 
+  /** Sends a pause or a resume; false when the service did not take it. */
   const send = (s: Session, command: RecordingCommandParams['command']) =>
     lc.sendRequest(RECORDING_COMMAND_REQUEST, { sessionId: s.id, command } satisfies RecordingCommandParams).then(
-      () => undefined,
-      (e: Error) => void vscode.window.showWarningMessage(`Piwi: could not ${command} the recording: ${e.message}`),
+      () => true,
+      (e: Error) => {
+        void vscode.window.showWarningMessage(`Piwi: could not ${command} the recording: ${e.message}`);
+        return false;
+      },
     );
 
   /** Shows a message of the service, with the command it offers as a button that runs it. */
@@ -254,10 +258,15 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     }
   };
 
+  /** Pause: the service sends no update for it, so the recording shows as paused here once the service took it. */
   const pause = async (id?: unknown) => {
     const s = target(id);
     if (!s) return nothingRecorded();
-    if (!s.edited && s.state !== 'paused') await send(s, 'pause');
+    if (s.edited || s.state !== 'recording') return;
+    if ((await send(s, 'pause')) && !s.finished && s.state === 'recording') {
+      s.state = 'paused';
+      refresh();
+    }
   };
 
   /** Resume: the service sends its latest update again, which rewrites the block, edits included. */
@@ -405,7 +414,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
 
   const begin = (document: vscode.TextDocument, id: string, placement: RecordingPlacement, since: TextChange[][]) => {
     const uri = document.uri.toString();
-    for (const s of sessions.values()) if (s.uri === uri) forget(s);
+    close(uri);
     const s: Session = {
       id,
       document,
@@ -502,11 +511,32 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     }
   };
 
+  /** The files a recording is being started in: its questions are open, or `piwi/record` is pending. */
+  const opening = new Set<string>();
+
   /**
-   * Starts a recording into `document` at `at`: into the steps of the test there, or a new test, unless `into` says.
-   * The start page and the page expression are asked first, the Playwright project only when the service lists them.
+   * Starts a recording into `document` at `at`, unless one is being started in that file already: into the steps of
+   * the test there, or a new test, unless `into` says.
    */
   const start = async (document: vscode.TextDocument, at: vscode.Position, into: RecordInto | null, title: string) => {
+    const uri = document.uri.toString();
+    if (opening.has(uri)) {
+      void vscode.window.showInformationMessage('Piwi: a recording is being started in this file already.');
+      return;
+    }
+    opening.add(uri);
+    try {
+      await open(document, at, into, title);
+    } finally {
+      opening.delete(uri);
+    }
+  };
+
+  /**
+   * The start of a recording: the start page and the page expression are asked first, the Playwright project only
+   * when the service lists them.
+   */
+  const open = async (document: vscode.TextDocument, at: vscode.Position, into: RecordInto | null, title: string) => {
     const uri = document.uri.toString();
     const already = runningIn(uri);
     if (already) {

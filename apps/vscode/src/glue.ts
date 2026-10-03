@@ -389,34 +389,11 @@ function importKey(line: string): string {
   return line.replace(/\s+/g, '').replace(/"/g, "'").replace(/;$/, '');
 }
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
-
 /**
- * The names an `import … from` statement binds in the file: its default, its namespace and each named import under
- * its local name (`B` for `{ A as B }`); none for any other statement.
- */
-export function importedNames(statement: string): string[] {
-  const clause = /^\s*import\s+(?:type\s+)?([\s\S]*?)\s*\bfrom\s*['"]/.exec(statement)?.[1];
-  if (!clause) return [];
-  const braces = /\{([\s\S]*)\}/.exec(clause)?.[1] ?? '';
-  const named = braces.split(',').map((part) => {
-    const words = part.trim().split(/\s+/);
-    const as = words.lastIndexOf('as');
-    return as === -1 ? words[words.length - 1]! : (words[as + 1] ?? '');
-  });
-  const outside = clause
-    .replace(/\{[\s\S]*\}/, '')
-    .split(',')
-    .map((part) => /^\s*(?:\*\s*as\s+)?([\w$]+)\s*$/.exec(part)?.[1] ?? '');
-  return [...outside, ...named].filter((name) => IDENTIFIER.test(name));
-}
-
-/**
- * The insertion of the import lines a file lacks among `imports`: after its last top-level `import` statement, or at
- * the top when it has none; null when it has them all. A line the file has, or whose names an import of the file
- * binds already (`import { A, B } from './pages'` for `import { A } from './pages/a'`), is not added, since a second
- * binding of a name does not compile. An edit that replaces lines `replaced` with `written` is taken into account: the
- * replaced lines no longer count, and the written ones do.
+ * The insertion of the import lines a file lacks among `imports`, which the editor service sends only when their
+ * names are not bound in the file: after its last top-level `import` statement, or at the top when it has none; null
+ * when it holds them all already, written in any spacing or quote style. An edit that replaces lines `replaced` with
+ * `written` is taken into account: the replaced lines no longer count, and the written ones do.
  */
 export function importInsertion(
   lines: string[],
@@ -435,15 +412,11 @@ export function importInsertion(
     statements.push({ start: i, end });
     i = end;
   }
-  const bound = new Set(statements.flatMap(({ start, end }) => importedNames(lines.slice(start, end + 1).join('\n'))));
   const missing: string[] = [];
   for (const line of imports) {
     const key = importKey(line);
     if (!key || present.has(key)) continue;
-    const names = importedNames(line);
-    if (names.length > 0 && names.every((name) => bound.has(name))) continue;
     present.add(key);
-    for (const name of names) bound.add(name);
     missing.push(line.trim());
   }
   if (!missing.length) return null;
@@ -570,11 +543,12 @@ export function recordingView(
 }
 
 /**
- * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: inside a
- * test's body or a class's, the steps there (`steps`); anywhere else, a new test (`test`).
+ * Where a recording started at a position writes, from where `piwi/pageCandidates` says the position is: outside every
+ * test, function and class, a new test (`test`); anywhere else, the steps there (`steps`), which the editor service
+ * refuses where they cannot go.
  */
 export function recordInto(context: string): 'steps' | 'test' {
-  return context === 'test' || context === 'class' ? 'steps' : 'test';
+  return context === 'file' ? 'test' : 'steps';
 }
 
 /** The notification after a recording stopped: what was written, or that the block keeps the edits made in it. */

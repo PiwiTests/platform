@@ -7,7 +7,6 @@ import {
   disconnectQuestion,
   followBlock,
   importInsertion,
-  importedNames,
   recordInto,
   mcpConfiguration,
   newTestFileName,
@@ -424,40 +423,6 @@ describe('the imports a recorded block needs', () => {
     );
   });
 
-  test('are left out when an import of the file binds their names already, from any module', () => {
-    const lines = [
-      "import { test, expect } from '@playwright/test';",
-      'import {',
-      '  CartPage,',
-      '  LoginPage as Login,',
-      "} from './pages';",
-      "import Checkout, * as helpers from './helpers';",
-      "test('pays', async () => {});",
-    ];
-    expect(
-      importInsertion(lines, [
-        "import { CartPage } from './pages/cart.page';",
-        "import { Login } from './pages/login.page';",
-        "import { Checkout } from './checkout';",
-        "import { helpers } from './more-helpers';",
-      ]),
-    ).toBeNull();
-    // `LoginPage` is bound under another name only, so its import is still added.
-    expect(importInsertion(lines, ["import { LoginPage } from './pages/login.page';"])).toEqual({
-      range: span(6, 0, 6, 0),
-      text: "import { LoginPage } from './pages/login.page';\n",
-    });
-  });
-
-  test('read the names each kind of import binds', () => {
-    expect(importedNames("import { A, B as C, type D } from './x';")).toEqual(['A', 'C', 'D']);
-    expect(importedNames("import type { E } from './x';")).toEqual(['E']);
-    expect(importedNames("import F, { G } from './x';")).toEqual(['F', 'G']);
-    expect(importedNames("import * as H from './x';")).toEqual(['H']);
-    expect(importedNames("import './styles.css';")).toEqual([]);
-    expect(importedNames("const { I } = require('./x');")).toEqual([]);
-  });
-
   test('count what an edit writes, and not the lines it replaces', () => {
     const imports = ["import { a } from './a';"];
     expect(importInsertion(['x', 'y'], imports, { start: 0, end: 0 }, "import { a } from './a';")).toBeNull();
@@ -469,8 +434,9 @@ describe('the imports a recorded block needs', () => {
 });
 
 describe('where a recording writes', () => {
-  test('inside a test or a page object, the steps there; elsewhere, a new test', () => {
+  test('outside every test, function and class, a new test; anywhere else, the steps there', () => {
     expect(recordInto('test')).toBe('steps');
+    expect(recordInto('function')).toBe('steps');
     expect(recordInto('class')).toBe('steps');
     expect(recordInto('file')).toBe('test');
   });
