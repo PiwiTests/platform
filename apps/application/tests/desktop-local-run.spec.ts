@@ -329,12 +329,32 @@ test.describe('Desktop local run', () => {
     await page.getByRole('button', { name: 'Run locally' }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
-    // The local process reports through the project's own Piwi reporter; here
-    // that check-in is a real submit to the same server, which announces it on
-    // the SSE stream the app correlates from.
+    // The local process reports through the project's own Piwi reporter, with the
+    // origin reference the app gave it; here that check-in is a real submit to the
+    // same server, which announces it on the SSE stream the app correlates from.
+    // A run another process reports at the same time is never taken for it.
+    const [spawned] = await runInvocations(page);
+    const originRef = spawned!.args!.originRef as string;
+    expect(originRef).toMatch(/^desktop:[a-z0-9]+$/);
+    const other = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.DESKTOP_LOCAL_RUN,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        metadata: { piwiOrigin: { kind: 'local' } },
+        testCases: [],
+      },
+    });
+    expect(other.ok()).toBeTruthy();
     const res = await retryPost(request, '/api/test-runs/submit', {
       data: {
         projectName: PROJECT.DESKTOP_LOCAL_RUN,
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 2000,
@@ -357,8 +377,11 @@ test.describe('Desktop local run', () => {
       },
     });
     expect(res.ok()).toBeTruthy();
+    const { runId: testRunId } = await res.json();
 
-    await expect(tray(page).getByRole('link', { name: /Live in Piwi — Run #\d+/ })).toBeVisible({ timeout: 15000 });
+    await expect(tray(page).getByRole('link', { name: `Live in Piwi — Run #${testRunId}` })).toBeVisible({
+      timeout: 15000,
+    });
 
     await page.evaluate(() => window.__piwiFakeTauri.finish(0));
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();

@@ -42,6 +42,8 @@
     "./code-reach": "./src/code-reach.ts",
     "./line-diff": "./src/line-diff.ts",
     "./editor-send": "./src/editor-send.ts",
+    "./bisect": "./src/bisect.ts",
+    "./desktop-job": "./src/desktop-job.ts",
     "./file-routes": "./src/file-routes.ts",
     "./error-signature": "./src/error-signature.ts",
     "./flake-plan": "./src/flake-plan.ts",

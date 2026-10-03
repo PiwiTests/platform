@@ -979,6 +979,23 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'set_cluster_bisect',
+    module: 'core',
+    description:
+      'Record the first bad commit a `git bisect` found for a failure cluster, as the desktop app does when its bisect ends: the commit then shows in the fix plan (get_fix_plan) next to the regression window. Pass the SHA (7 to 40 hex characters) and, when known, its subject, author and ISO date. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        sha: { type: 'string', description: 'The first bad commit (7 to 40 hex characters)' },
+        subject: { type: 'string', description: "The commit's subject line" },
+        author: { type: 'string', description: "The commit's author" },
+        date: { type: 'string', description: 'ISO date the commit was authored' },
+      },
+      required: ['clusterId', 'sha'],
+    },
+  },
+  {
     name: 'link_issue',
     module: 'workflow',
     capability: 'integrations',

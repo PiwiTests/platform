@@ -7,6 +7,7 @@ import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.KillableColoredProcessHandler
 import com.intellij.ide.BrowserUtil
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
@@ -25,7 +26,7 @@ import java.nio.file.Path
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`, `piwi.desktopJob`).
  */
 object PiwiCommands {
     private val gson = Gson()
@@ -47,6 +48,47 @@ object PiwiCommands {
                 CopyPasteManager.getInstance().setContents(StringSelection(it))
                 notify(project, "Copied. Paste it to your agent.")
             }
+            "piwi.desktopJob" -> arg<DesktopJobParams>(arguments.firstOrNull())?.let { desktopJob(project, it) }
+        }
+    }
+
+    /** Pass a failure from the team instance to the desktop app, which waits for the developer to start it. */
+    fun desktopJob(project: Project, params: DesktopJobParams) {
+        background(project, "Piwi: passing the job to the desktop app") {
+            val result = project.service<PiwiProjectService>().server()?.desktopJob(params)?.orNull()
+            notify(
+                project,
+                result?.message ?: "The editor service is not running.",
+                if (result?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING,
+            )
+        }
+    }
+
+    /** Show a job's update, with the button that shares its verdict on the instance when it has one. */
+    fun desktopJobChanged(project: Project, update: DesktopJobUpdate) {
+        val notice = Glue.desktopJobNotice(update)
+        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(notice.text, if (notice.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+        val jobId = update.jobId
+        if (jobId != null) {
+            for (label in notice.actions) {
+                notification.addAction(NotificationAction.createSimpleExpiring(label) { shareDesktopJob(project, jobId) })
+            }
+        }
+        notification.notify(project)
+    }
+
+    private fun shareDesktopJob(project: Project, jobId: String) {
+        background(project, "Piwi: sharing the verdict") {
+            val result = project.service<PiwiProjectService>().server()?.shareDesktopJob(ShareDesktopJobParams(jobId))?.orNull()
+            val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(
+                result?.message ?: "The editor service is not running.",
+                if (result?.ok == true) NotificationType.INFORMATION else NotificationType.WARNING,
+            )
+            result?.url?.let { url ->
+                notification.addAction(NotificationAction.createSimpleExpiring("Open in the dashboard") { BrowserUtil.browse(url) })
+            }
+            notification.notify(project)
         }
     }
 

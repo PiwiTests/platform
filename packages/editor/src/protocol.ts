@@ -356,3 +356,56 @@ export interface RenderStepsResult {
 }
 
 export const RENDER_STEPS_REQUEST = 'piwi/renderSteps';
+
+/** What the desktop app is asked to do with a failure from the team instance. */
+export type DesktopJobKind = 'reproduce' | 'bisect';
+
+/**
+ * `piwi/desktopJob`, and the arguments of the client command `piwi.desktopJob` that sends it: ask the desktop app
+ * running on this machine to reproduce a failure of the instance the context reads (`root`), at its commit, or to
+ * bisect it. The app shows the job in its window and runs nothing until the developer starts it there.
+ */
+export interface DesktopJobParams {
+  root: string;
+  executionId: number;
+  kind: DesktopJobKind;
+}
+
+export interface DesktopJobResult {
+  ok: boolean;
+  /** One sentence for the client to show: where to confirm the job, or why it was not sent. */
+  message: string;
+  jobId?: string;
+}
+
+export const DESKTOP_JOB_REQUEST = 'piwi/desktopJob';
+
+/**
+ * `piwi/desktopJobChanged`, sent while the service follows a job: the developer started it in the desktop app
+ * (`running`), it ended (`done`, with the verdict in `message`), or it was `declined`, `expired`, or the app quit
+ * (`gone`). `share` names the instance the verdict can be shared on (`piwi/shareDesktopJob`); null when there is
+ * nothing to share.
+ */
+export interface DesktopJobUpdate {
+  jobId: string;
+  kind: DesktopJobKind;
+  status: 'running' | 'done' | 'declined' | 'expired' | 'gone';
+  message: string;
+  share: { label: string } | null;
+}
+
+export const DESKTOP_JOB_NOTIFICATION = 'piwi/desktopJobChanged';
+
+/** `piwi/shareDesktopJob`: record a job's verdict on the instance the failure came from, with the editor's key. */
+export interface ShareDesktopJobParams {
+  jobId: string;
+}
+
+export interface ShareDesktopJobResult {
+  ok: boolean;
+  message: string;
+  /** The failure cluster's page, once shared. */
+  url?: string;
+}
+
+export const SHARE_DESKTOP_JOB_REQUEST = 'piwi/shareDesktopJob';

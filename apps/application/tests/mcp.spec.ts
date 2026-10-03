@@ -116,6 +116,7 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('set_bug_report_status');
     expect(names).toContain('rerun_cluster_in_ci');
     expect(names).toContain('link_issue');
+    expect(names).toContain('set_cluster_bisect');
     expect(names).toContain('list_open_clusters');
     expect(names).toContain('get_fix_plan');
     expect(names).toContain('create_test_function');

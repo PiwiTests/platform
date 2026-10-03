@@ -28,6 +28,8 @@ import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
+import { desktopJobVerdict, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
+import type { ReproRequestView } from '#shared/desktop-repro';
 
 export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -190,6 +192,13 @@ export interface LocalRun {
   exitCode: number | null;
   startedAt: number;
   finishedAt: number | null;
+  /** The editor's job this run answers (kind === 'reproduce' or 'bisect'). */
+  jobRequestId: string | null;
+  /**
+   * The origin reference the reporter records for this run (`PIWI_ORIGIN_REF`):
+   * the cluster or bug report it was launched for, else one made for it alone.
+   */
+  originRef: string | null;
   /** Shell id of the step currently spawned, for stopping it. */
   shellId: number | null;
   stopRequested: boolean;
@@ -199,7 +208,7 @@ export interface LocalRun {
   progressDone: number;
   /** The Piwi run this local process produced, once the reporter checked in. */
   piwiRunId: number | null;
-  /** Latest Piwi run id for the project at spawn — anything newer is ours. */
+  /** Latest Piwi run id for the project at spawn: the run linked is newer, with this run's origin and reference. */
   piwiRunBaseline: number | null;
 }
 
@@ -454,6 +463,7 @@ export function useDesktopLocalRuns() {
       run.status = 'error';
     } finally {
       if (run.kind === 'repro') await finishRepro(run);
+      if (run.jobRequestId) await finishJob(run);
       run.finishedAt = Date.now();
       notifyFinished(run);
       trimFinished();
@@ -467,7 +477,11 @@ export function useDesktopLocalRuns() {
       if (run.stopRequested) break;
       run.stepIndex = index;
       if (run.steps.length > 1) pushLine(run, `$ ${step.display}`, false);
-      const code = await spawnCommand(run, 'desktop_run_local_tests', { projectId: run.projectId, args: step.args });
+      const code = await spawnCommand(run, 'desktop_run_local_tests', {
+        projectId: run.projectId,
+        args: step.args,
+        originRef: run.originRef,
+      });
       if (run.stopRequested) break;
       if (code !== 0) worst = code ?? 1;
     }
@@ -486,6 +500,7 @@ export function useDesktopLocalRuns() {
         requestId: run.repro.requestId,
         args: run.repro.args,
         bugReportId: run.repro.bugReportId ?? null,
+        originRef: run.originRef,
       });
     }
     if (run.kind === 'flake' && run.flake) {
@@ -510,6 +525,7 @@ export function useDesktopLocalRuns() {
         args,
         flakeTestCaseId: run.flakeTestCaseId,
         clusterId: run.bisectTarget?.clusterId ?? null,
+        originRef: run.originRef,
       });
     }
     return spawnCommand(run, 'desktop_reproduce_here', {
@@ -518,6 +534,7 @@ export function useDesktopLocalRuns() {
       browser: run.browserName,
       args,
       clusterId: run.clusterId ?? null,
+      originRef: run.originRef,
     });
   }
 
@@ -548,6 +565,18 @@ export function useDesktopLocalRuns() {
       });
     } catch {
       // The request expired meanwhile; the tray still shows the verdict.
+    }
+  }
+
+  /** Record a job run's verdict on the request, where the editor that sent it reads it. */
+  async function finishJob(run: LocalRun) {
+    try {
+      await $fetch(`/api/desktop/repro-requests/${run.jobRequestId}`, {
+        method: 'PATCH',
+        body: { status: 'done', jobVerdict: desktopJobVerdict(run), runId: run.piwiRunId ?? undefined },
+      });
+    } catch {
+      // The request expired meanwhile; the tray still shows the result.
     }
   }
 
@@ -761,7 +790,18 @@ export function useDesktopLocalRuns() {
     repro?: ReproRunState | null;
     flake?: FlakeLabRunState | null;
     flakeTestCaseId?: number | null;
+    jobRequestId?: string | null;
   }): LocalRun {
+    // What the shell stamps as the reference: the cluster or bug report a run was launched for wins.
+    const named = input.clusterId ?? input.bisectTarget?.clusterId ?? input.repro?.bugReportId ?? null;
+    const originRef =
+      named != null
+        ? String(named)
+        : input.jobRequestId
+          ? `job:${input.jobRequestId}`
+          : input.repro
+            ? `repro:${input.repro.requestId}`
+            : newLocalRunRef(input.kind === 'tests' ? 'desktop' : input.kind);
     const run: LocalRun = {
       key: nextKey++,
       kind: input.kind,
@@ -782,6 +822,8 @@ export function useDesktopLocalRuns() {
       repro: input.repro ?? null,
       flake: input.flake ?? null,
       flakeTestCaseId: input.flakeTestCaseId ?? null,
+      jobRequestId: input.jobRequestId ?? null,
+      originRef,
       status: 'running',
       lines: [],
       exitCode: null,
@@ -816,10 +858,13 @@ export function useDesktopLocalRuns() {
     browserName?: string | null;
     /** The failure cluster reproduced, recorded as the run's origin reference. */
     clusterId?: number | null;
+    /** The editor's job this run answers. */
+    jobRequestId?: string | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null || input.cases.length === 0) return null;
     return spawn({
       kind: 'reproduce',
+      jobRequestId: input.jobRequestId ?? null,
       projectId: input.projectId,
       projectLabel: input.projectLabel,
       cases: input.cases,
@@ -847,10 +892,13 @@ export function useDesktopLocalRuns() {
     target?: BisectTarget | null;
     /** Run this test's reproducing Flake Lab arm at each step instead of the plain test. */
     flakeTestCaseId?: number | null;
+    /** The editor's job this run answers. */
+    jobRequestId?: string | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null || input.cases.length === 0) return null;
     return spawn({
       kind: 'bisect',
+      jobRequestId: input.jobRequestId ?? null,
       flakeTestCaseId: input.flakeTestCaseId ?? null,
       projectId: input.projectId,
       projectLabel: input.projectLabel,
@@ -908,9 +956,9 @@ export function useDesktopLocalRuns() {
   }
 
   /**
-   * Record the project's newest Piwi run id before our process can report:
-   * any run the server announces later with a higher id is the one this local
-   * process produced (the reporter finds the app via `~/.piwi/desktop.json`).
+   * Record the project's newest Piwi run id before our process can report: the
+   * run this local process produced is newer (the reporter finds the app via
+   * `~/.piwi/desktop.json`).
    */
   async function captureBaseline(run: LocalRun) {
     try {
@@ -922,8 +970,10 @@ export function useDesktopLocalRuns() {
   }
 
   /**
-   * Match local processes to the Piwi runs they produced. Driven by the shared
-   * SSE stream (the tray subscribes), so the link appears as soon as the
+   * Match local processes to the Piwi runs they produced: the newest run the
+   * reporter recorded with this run's origin and reference, newer than the
+   * baseline, so runs going at once never take each other's. Driven by the
+   * shared SSE stream (the tray subscribes), so the link appears as soon as the
    * reporter checks in.
    */
   async function correlatePiwiRuns() {
@@ -931,8 +981,12 @@ export function useDesktopLocalRuns() {
     for (const run of runs.value) {
       if (run.piwiRunId != null || run.piwiRunBaseline == null) continue;
       if (run.status !== 'running' && (run.finishedAt ?? 0) < cutoff) continue;
+      const origin = localRunOriginKind(run.kind);
+      if (!origin || !run.originRef) continue;
       try {
-        const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`);
+        const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`, {
+          query: { origin, ref: run.originRef },
+        });
         if (latest && latest.id > run.piwiRunBaseline) run.piwiRunId = latest.id;
       } catch {
         // Server briefly unavailable — the next stream event retries.
@@ -976,6 +1030,36 @@ export function useDesktopLocalRuns() {
         verdict: null,
       },
     });
+  }
+
+  /**
+   * Run an editor's job the developer confirmed: reproduce the failing tests at
+   * the job's commit, or bisect between its good and failing commits, in the
+   * linked folder. The request is marked running here and done, with its
+   * verdict, when the run ends. The result is the editor's to share: it never
+   * reaches a cluster here, whose ids belong to the instance the job came from.
+   */
+  async function startJob(input: {
+    projectId: string | number;
+    projectLabel?: string | null;
+    request: ReproRequestView;
+  }): Promise<LocalRun | null> {
+    const job = input.request.job;
+    if (!tauriCore() || !job) return null;
+    await $fetch(`/api/desktop/repro-requests/${input.request.id}`, {
+      method: 'PATCH',
+      body: { status: 'running', projectId: Number(input.projectId) },
+    });
+    const common = {
+      projectId: input.projectId,
+      projectLabel: input.projectLabel,
+      cases: job.tests,
+      browserName: job.browser,
+      jobRequestId: input.request.id,
+    };
+    return input.request.kind === 'bisect' && job.good
+      ? startBisect({ ...common, good: job.good, bad: job.commit })
+      : startReproduce({ ...common, commit: job.commit });
   }
 
   function rerun(run: LocalRun): LocalRun | null {
@@ -1076,6 +1160,7 @@ export function useDesktopLocalRuns() {
     startBisect,
     startFlakeLab,
     startRepro,
+    startJob,
     rerun,
     stopRun,
     clearFinished,

@@ -23,6 +23,8 @@ import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
+import { parseRunOriginRef, type RunOriginKind } from '@piwitests/core/wire';
+import { runOrigin, runOriginIs, runOriginRef } from '#shared/run-eligibility';
 import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
@@ -37,8 +39,29 @@ import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
 type ProjectScope = 'all' | Set<number>;
 
-/** The most recent test run for a project (id + status only), or null if none. */
-export async function getProjectLatestRun(db: DrizzleDB, projectId: number) {
+/**
+ * The most recent test run for a project (id + status only), or null if none.
+ * With `origin`, the most recent one its launcher stamped with that kind and
+ * ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a local
+ * process of its own produced.
+ */
+export async function getProjectLatestRun(
+  db: DrizzleDB,
+  projectId: number,
+  origin: { kind: RunOriginKind; ref: string } | null = null,
+) {
+  if (origin) {
+    const ref = parseRunOriginRef(origin.ref);
+    if (!ref) return null;
+    const rows = await db
+      .select({ id: testRuns.id, status: testRuns.status, metadata: testRuns.metadata })
+      .from(testRuns)
+      .where(and(eq(testRuns.projectId, projectId), runOriginIs(testRuns.metadata, origin.kind, ref)))
+      .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+      .limit(20);
+    const found = rows.find((r) => runOrigin(r.metadata) === origin.kind && runOriginRef(r.metadata) === ref);
+    return found ? { id: found.id, status: found.status } : null;
+  }
   const rows = await db
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)

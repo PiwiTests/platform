@@ -36,7 +36,6 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
   'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
   'GET /api/desktop/live-runs', // desktop build only; reports the shell's watched runs, empty everywhere else
-  'POST /api/failure-clusters/:id/bisect', // desktop build only; the shell records a bisect result, 404 everywhere else
   'GET /api/desktop/events', // desktop build only; the desktop window's run progress and page requests, read only inside the shell
   'POST /api/desktop/repro-requests', // desktop build only; Piwi Picker asks the app to run a report, 404 everywhere else
   'GET /api/desktop/repro-requests/:id', // desktop build only; a repro request and its verdict, 404 everywhere else

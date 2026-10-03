@@ -11,8 +11,9 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, the `piwi/setCredentials` notification and the
-  `piwi/runStatusChanged` and `piwi/statusChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/desktopJob`,
+  `piwi/shareDesktopJob`, the `piwi/setCredentials` notification and the `piwi/runStatusChanged`, `piwi/statusChanged`
+  and `piwi/desktopJobChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
   files only (the JetBrains IDEs).
 - The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); while that branch
@@ -31,6 +32,9 @@ clients stay thin and both editors give the same answers.
   too; never re-implement a core function.
 - `src/context.ts` is one Playwright config of the workspace: its connection, project, branch and cached indexes.
 - `src/piwi-client.ts` is the only file that talks to an instance.
+- `src/desktop-jobs.ts` passes a failure of the team instance to the desktop app as a job (`@piwitests/core/desktop-job`,
+  with the token of the app's discovery file), polls its verdict and shares a bisect's first bad commit on the instance
+  with the editor's key. The job names commits and tests, never code; the app runs it only after a click in its window.
 
 ## Rules
 

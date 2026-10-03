@@ -10,14 +10,13 @@ lang: en-US
 
 The desktop app runs the **entire dashboard on your machine**, with no Docker, no `npx` and no server to set up. It
 bundles the same server as the Docker image in a native window, keeps your data in a local folder, and adds what only
-a local app can do: run your tests from the window, reproduce a failure in a clean checkout, bisect to the commit that
-broke it, and wire your AI assistants in one click.
+a local app can do.
 
 ## What it does
 
 - **Receives your local runs** with no URL or token in your Playwright config.
 - **Links a project to its checkout**, so a run page can re-run the failed tests here.
-- **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, leaving your working tree alone.
+- **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, also for your editor.
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config for them.
 
@@ -42,8 +41,7 @@ on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data lo
 folder** show it. Back up the parent folder while the app is closed; its `secret.key` decrypts stored AI keys and SCM
 tokens.
 
-The window navigates like a browser, with back and forward buttons at the top of the sidebar. Closing the window quits the app unless you turn on **Run in background** in the
-tray menu; **Start on login** launches it hidden into the tray. While the window is in the background, your
+Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches it hidden into the tray. While the window is in the background, your
 [notifications](/features/notifications) arrive as OS notifications, with an unread count on the dock icon or in the
 tray tooltip.
 
@@ -79,8 +77,7 @@ Playwright and the app's bundled Node. The first time, it asks you to link the p
 - **The arrow next to the button** holds the options: headless, headed, the Playwright inspector or UI mode; tests
   by `file:line`, title or file; a forced trace; `--repeat-each` up to 100 times (1,000 in **Run with
   options…**, which shows the command). The last choice becomes the project's one-click default.
-- **Runs keep going while you browse.** Output streams into the **Local runs** tray, a sidebar pill keeps it one
-  click away, and stopping is always explicit.
+- **Runs keep going while you browse.** Output streams into the **Local runs** tray; stopping is always explicit.
 - **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run locally**
   on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   sent from Piwi Picker.
@@ -104,6 +101,13 @@ linked folder, **without touching your checkout**:
 It needs `git` and your package manager on this machine, and bisects one repository. The application under test has
 to build from the same checkout: a Playwright `webServer` starts it at each commit, or set a **start command** and a
 readiness URL under **Reproduce and bisect**.
+
+### Jobs from your editor
+
+On a failure of a team instance, the [editor extensions](/features/editors#ci-failures-in-the-problems-panel) offer
+**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. The window shows the commits and
+tests, and runs nothing until you start it. The editor gets the verdict and can share a first bad commit on the team
+instance with its own key, which the app never holds.
 
 ### Reproducing a flake
 
@@ -131,16 +135,14 @@ time) and `apply_locator_fix` (a recommended locator fix applied to the file, pr
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click by writing a `piwi-desktop` entry, with the address and token, into the client's own config file.
-It keeps a backup, touches only that entry, shows the snippet instead for a config that is not plain JSON, and
-rewrites the entry at each launch if the port changed. Claude Desktop, which takes only local
+It keeps a backup, touches only that entry, and rewrites it at each launch if the port changed. Claude Desktop, which takes only local
 commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app has to be
 running for it. Restart the client after connecting.
 
 ## Updates
 
-**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart. It also
-checks at startup, which that card can turn off. The `.exe`
-updates silently, without admin rights; the `.msi` asks for them. Downloads are verified against the project's signing
+**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart, and checks at
+startup unless turned off. The `.exe` updates silently, without admin rights; the `.msi` asks for them. Downloads are verified against the project's signing
 key; a dev build without it says so.
 
 ## Limits

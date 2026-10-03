@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import type { DesktopResult, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
+import type { DesktopJobUpdate, DesktopResult, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
 import {
   connectChoices,
+  desktopJobNotice,
   disconnectQuestion,
   mcpConfiguration,
   sourceLabel,
@@ -245,5 +246,35 @@ describe('the tests of a file', () => {
       /^Run #41 of Acme on main \(feature\/cart has no run yet\)/,
     );
     expect(statusBarView(connected, run({})).tooltip).not.toMatch(/no run yet/);
+  });
+});
+
+describe('desktopJobNotice', () => {
+  const update = (patch: Partial<DesktopJobUpdate>): DesktopJobUpdate => ({
+    jobId: 'f00d',
+    kind: 'bisect',
+    status: 'done',
+    message: 'The bisect names c1c1c1c as the first bad commit.',
+    share: null,
+    ...patch,
+  });
+
+  test('offers the share button on a verdict that can be shared', () => {
+    expect(desktopJobNotice(update({ share: { label: 'Share on piwi.example.com' } }))).toEqual({
+      severity: 'information',
+      text: 'Piwi: The bisect names c1c1c1c as the first bad commit.',
+      actions: ['Share on piwi.example.com'],
+    });
+  });
+
+  test('warns when the job ended without a verdict', () => {
+    expect(desktopJobNotice(update({ status: 'declined', message: 'Declined.' })).severity).toBe('warning');
+    expect(desktopJobNotice(update({ message: 'The desktop app could not bisect "t": npm ci failed' })).severity).toBe(
+      'warning',
+    );
+    expect(desktopJobNotice(update({ status: 'running', message: 'Bisecting.' }))).toMatchObject({
+      severity: 'information',
+      actions: [],
+    });
   });
 });

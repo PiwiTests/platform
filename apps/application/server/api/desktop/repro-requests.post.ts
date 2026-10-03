@@ -1,8 +1,10 @@
 // Desktop-only: Piwi Picker asks this app to run a bug report's steps with
-// Playwright. The body is JSON (a web page cannot send one to another origin
-// without a preflight this server never answers) and holds steps, never code:
-// the spec is rendered here, and only after the developer confirms the request
-// in the window. Responds 404 on the normal server build.
+// Playwright, or an editor asks it to reproduce or bisect a failure from the
+// instance it reads. The body is JSON (a web page cannot send one to another
+// origin without a preflight this server never answers) and holds steps, or
+// commits and test locations, never code or flags: the run is built here, and
+// only after the developer confirms the request in the window. Responds 404 on
+// the normal server build.
 import { requireAuth } from '../../utils/auth';
 import { apiError } from '../../utils/api-error';
 import { createReproRequest, reproListenerCount } from '../../utils/desktop-repro';
@@ -11,9 +13,9 @@ import { parseReproRequest } from '#shared/desktop-repro';
 defineRouteMeta({
   openAPI: {
     tags: ['System'],
-    summary: 'Ask the desktop app to run a bug report with Playwright (desktop app)',
+    summary: 'Ask the desktop app to run a bug report or a failure with Playwright (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. Keeps a repro request (a steps document and the run options: headed, trace, Playwright project, repeat) for ten minutes and shows it in the app window, where the developer picks the linked project and starts or declines it. The body must be `application/json` (415 otherwise) and its steps must pass `parseSteps` (400 with the errors otherwise). Answers `{ id, status, expiresAt, windowOpen }`; poll `GET /api/desktop/repro-requests/:id` for the verdict.',
+      "Desktop build only — 404 on the server build. Keeps a repro request for ten minutes and shows it in the app window, where the developer picks the linked project and starts or declines it. Piwi Picker's request is a steps document and the run options (headed, trace, Playwright project, repeat); its steps must pass `parseSteps`. An editor's job has `kind` `reproduce` (run the failing tests at `commit` in a throwaway worktree) or `bisect` (find the first bad commit between `good` and `commit`), the failing `tests`, the `browser`, and the `instanceUrl` and `clusterId` the failure came from. The body must be `application/json` (415 otherwise); 400 with the errors when it is invalid. Answers `{ id, status, expiresAt, windowOpen }`; poll `GET /api/desktop/repro-requests/:id` for the verdict.",
     'x-required-roles': ['administrator', 'reporter', 'user'],
     requestBody: {
       content: {
@@ -21,6 +23,12 @@ defineRouteMeta({
           schema: {
             type: 'object',
             properties: {
+              kind: {
+                type: 'string',
+                enum: ['steps', 'reproduce', 'bisect'],
+                description:
+                  '`steps` (the default) runs a steps document; `reproduce` and `bisect` are an editor’s jobs.',
+              },
               steps: { type: 'object', description: 'A steps document (`v: 1`), as Download steps writes it.' },
               options: {
                 type: 'object',
@@ -34,8 +42,25 @@ defineRouteMeta({
               title: { type: 'string' },
               bugReportId: { type: 'integer', description: 'The report on the instance it came from.' },
               instanceUrl: { type: 'string' },
+              commit: { type: 'string', description: 'A job’s failing commit (7 to 40 hex characters).' },
+              good: { type: 'string', description: 'A bisect’s last green commit.' },
+              tests: {
+                type: 'array',
+                description: 'A job’s failing tests, relative to the Playwright config (1 to 50).',
+                items: {
+                  type: 'object',
+                  properties: {
+                    filePath: { type: 'string' },
+                    title: { type: 'string' },
+                    line: { type: 'integer' },
+                    projectName: { type: 'string' },
+                  },
+                  required: ['filePath'],
+                },
+              },
+              browser: { type: 'string' },
+              clusterId: { type: 'integer', description: 'A job’s failure cluster on the instance it came from.' },
             },
-            required: ['steps'],
           },
         },
       },

@@ -5,12 +5,12 @@ import { PROJECT } from '#shared/test-project-names';
 import { couponBugReport } from './utils/bug-report-sample';
 
 /**
- * A repro request from Piwi Picker, as the desktop window shows it: driven
- * against the regular web build with a faked Tauri bridge and the desktop
- * endpoints routed (they answer 404 outside the desktop build). Covers the
- * confirmation, the run through `desktop_run_repro`, and the verdict recorded
- * on the request; the spec's writing and the run itself are the shell's
- * (`src-tauri/src/repro.rs`).
+ * A repro request from Piwi Picker or an editor, as the desktop window shows
+ * it: driven against the regular web build with a faked Tauri bridge and the
+ * desktop endpoints routed (they answer 404 outside the desktop build). Covers
+ * the confirmation, the run through `desktop_run_repro` or `desktop_bisect_here`,
+ * and the verdict recorded on the request; the spec's writing and the runs
+ * themselves are the shell's (`src-tauri/src/repro.rs`, `worktree.rs`).
  */
 
 interface FakeInvocation {
@@ -59,6 +59,22 @@ async function installFakeBridge(page: Page, linkedProjectId: number) {
                 }, 50);
                 return id;
               }
+              case 'desktop_bisect_here': {
+                const id = ++state.lastRunId;
+                setTimeout(() => {
+                  emit({ id, kind: 'phase', phase: 'bisect', line: null, code: null });
+                  emit({
+                    id,
+                    kind: 'bisect',
+                    bisect: {
+                      event: 'result',
+                      firstBad: { sha: 'c1c1c1c1c1c1', subject: 'Drop the coupon cache', author: 'Ada', date: null },
+                    },
+                  });
+                  emit({ id, kind: 'exit', line: null, code: 0 });
+                }, 50);
+                return id;
+              }
               case 'desktop_bring_to_front':
               case 'desktop_notify':
               case 'desktop_set_activity':
@@ -82,13 +98,15 @@ async function installFakeBridge(page: Page, linkedProjectId: number) {
 }
 
 /** The desktop event stream, answering the request once, then nothing, as the server resends only waiting ones. */
-async function routeDesktop(page: Page, patches: unknown[]) {
+async function routeDesktop(page: Page, patches: unknown[], overrides: Record<string, unknown> = {}) {
   const steps = couponBugReport().steps;
   const request = {
     id: REQUEST_ID,
+    kind: 'steps',
     title: steps.title,
     steps,
     options: { headed: true, trace: true, project: null, repeatEach: 1 },
+    job: null,
     bugReportId: 37,
     instanceUrl: 'https://piwi.example.com',
     status: 'waiting',
@@ -96,7 +114,9 @@ async function routeDesktop(page: Page, patches: unknown[]) {
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
     projectId: null,
     verdict: null,
+    jobVerdict: null,
     runId: null,
+    ...overrides,
   };
   let sent = false;
   await page.route('**/api/desktop/events', (route) => {
@@ -168,6 +188,7 @@ test.describe('Desktop repro request', () => {
           requestId: REQUEST_ID,
           args: ['--headed', '--trace=on'],
           bugReportId: 37,
+          originRef: '37',
         },
       },
     ]);
@@ -193,5 +214,66 @@ test.describe('Desktop repro request', () => {
     expect(
       await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_run_repro')),
     ).toBe(false);
+  });
+
+  test("an editor's bisect waits for the click, runs in a worktree and records the first bad commit", async ({
+    page,
+  }) => {
+    const patches: unknown[] = [];
+    await installFakeBridge(page, projectId);
+    await routeDesktop(page, patches, {
+      kind: 'bisect',
+      title: 'applies the coupon',
+      steps: null,
+      bugReportId: null,
+      job: {
+        commit: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+        good: 'a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',
+        tests: [{ filePath: 'tests/cart.spec.ts', title: 'applies the coupon', line: 12, projectName: 'chromium' }],
+        browser: 'chromium',
+        clusterId: 214,
+      },
+    });
+    await page.goto('/setup');
+    await waitForHydration(page);
+
+    const dialog = page.getByRole('dialog', { name: 'Find the commit that broke a test' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('from piwi.example.com')).toBeVisible();
+    await expect(dialog.getByText('tests/cart.spec.ts:12 (chromium)')).toBeVisible();
+    expect(
+      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_bisect_here')),
+    ).toBe(false);
+
+    await dialog.getByRole('button', { name: 'Bisect', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const runs = await page.evaluate(() =>
+      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_bisect_here'),
+    );
+    // The cluster belongs to the instance the job came from: it is not this app's, so only the job names the run.
+    expect(runs).toEqual([
+      {
+        cmd: 'desktop_bisect_here',
+        args: {
+          projectId: String(projectId),
+          good: 'a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',
+          bad: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+          browser: 'chromium',
+          args: ['tests/cart.spec.ts:12', '--project=chromium'],
+          flakeTestCaseId: null,
+          clusterId: null,
+          originRef: `job:${REQUEST_ID}`,
+        },
+      },
+    ]);
+    await expect.poll(() => patches.length).toBe(2);
+    expect(patches[0]).toEqual({ status: 'running', projectId });
+    expect(patches[1]).toMatchObject({
+      status: 'done',
+      jobVerdict: {
+        kind: 'first-bad',
+        commit: { sha: 'c1c1c1c1c1c1', subject: 'Drop the coupon cache', author: 'Ada', date: null },
+      },
+    });
   });
 });

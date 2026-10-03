@@ -76,6 +76,17 @@ import {
   withServerUrl,
 } from './context.js';
 import { PiwiClient, type BranchFailure, type FixPlan } from './piwi-client.js';
+import { DesktopJobs } from './desktop-jobs.js';
+import {
+  DESKTOP_JOB_NOTIFICATION,
+  DESKTOP_JOB_REQUEST,
+  SHARE_DESKTOP_JOB_REQUEST,
+  type DesktopJobKind,
+  type DesktopJobParams,
+  type DesktopJobResult,
+  type ShareDesktopJobParams,
+  type ShareDesktopJobResult,
+} from './protocol.js';
 import {
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
@@ -528,6 +539,29 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   const isOpen = (document: TextDocument) => documents.get(document.uri) === document;
 
+  const desktopJobs = new DesktopJobs(env, (update) => {
+    void connection.sendNotification(DESKTOP_JOB_NOTIFICATION, update);
+  });
+
+  /** On a failure from a team instance, while the desktop app runs: reproduce or bisect it there. */
+  const desktopJobActions = (context: PiwiContext, failure: BranchFailure, diagnostic: Diagnostic): CodeAction[] => {
+    if (!desktopJobs.available(context)) return [];
+    const job = (title: string, kind: DesktopJobKind): CodeAction => ({
+      title,
+      kind: CodeActionKind.QuickFix,
+      diagnostics: [diagnostic],
+      command: {
+        title,
+        command: 'piwi.desktopJob',
+        arguments: [{ root: context.root, executionId: failure.executionId, kind } satisfies DesktopJobParams],
+      },
+    });
+    return [
+      job('Reproduce in the desktop app', 'reproduce'),
+      job('Find the breaking commit in the desktop app', 'bisect'),
+    ];
+  };
+
   async function validate(document: TextDocument): Promise<void> {
     const file = uriToPath(document.uri);
     const context = file ? contextFor(file) : null;
@@ -843,6 +877,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
+        actions.push(...desktopJobActions(owner, failure, diagnostic));
         const fixPlan = failure.clusterId ? await owner.fixPlan(failure.clusterId) : null;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
         if (fixPlan && planEdit) {
@@ -1435,6 +1470,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return null;
   });
 
+  connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
+    const found = failureOf({ root: params.root, executionId: params.executionId });
+    if (!found?.context.client) return { ok: false, message: 'This failure is no longer in the latest run.' };
+    return desktopJobs.start({ client: found.context.client }, found.failure, params.kind);
+  });
+
+  connection.onRequest(
+    SHARE_DESKTOP_JOB_REQUEST,
+    (params: ShareDesktopJobParams): Promise<ShareDesktopJobResult> => desktopJobs.share(params.jobId),
+  );
+
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
     void refreshAll();
@@ -1444,6 +1490,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.listen();
   return () => {
     stopped = true;
+    desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
     fs.unwatchFile(desktopFile, onDesktopFile);
     if (runTimer) clearTimeout(runTimer);

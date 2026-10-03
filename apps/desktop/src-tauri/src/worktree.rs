@@ -283,18 +283,43 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
     ]
 }
 
-/// The environment a reproduction or a bisect step runs its test with: the
-/// reporter records the run's origin (`reproduce`, `bisect`) and, when the
-/// webview names one, the failure cluster it reproduces as its reference.
+/// The environment a local test runs with: the reporter records the run's
+/// origin (`desktop`, `reproduce`, `bisect`) and, when there is one, its
+/// reference, which the window uses to find the run the reporter recorded.
 pub(crate) fn origin_env(
     kind: &'static str,
-    cluster_id: Option<u64>,
+    origin_ref: Option<&str>,
 ) -> Vec<(&'static str, String)> {
     let mut env = vec![("PIWI_ORIGIN", kind.to_string())];
-    if let Some(id) = cluster_id {
-        env.push(("PIWI_ORIGIN_REF", id.to_string()));
+    if let Some(reference) = origin_ref {
+        env.push(("PIWI_ORIGIN_REF", reference.to_string()));
     }
     env
+}
+
+/// A run's origin reference: the failure cluster (or bug report) it was
+/// launched for, else the reference the webview chose for it. A reference is
+/// at most 200 letters, digits and `._:/#@-`, as the reporter keeps it.
+pub(crate) fn origin_reference(
+    id: Option<u64>,
+    chosen: Option<String>,
+) -> Result<Option<String>, String> {
+    if let Some(id) = id {
+        return Ok(Some(id.to_string()));
+    }
+    match chosen {
+        None => Ok(None),
+        Some(reference)
+            if !reference.is_empty()
+                && reference.len() <= 200
+                && reference
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._:/#@-".contains(c)) =>
+        {
+            Ok(Some(reference))
+        }
+        Some(_) => Err("invalid origin reference".into()),
+    }
 }
 
 /// The `git bisect` subcommand for a flake-aware step's exit code: 0 good, 1
@@ -864,11 +889,13 @@ pub async fn desktop_reproduce_here(
     args: Vec<String>,
     browser: Option<String>,
     cluster_id: Option<u64>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&commit) {
         return Err("invalid commit".into());
     }
+    let origin_ref = origin_reference(cluster_id, origin_ref)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
 
     let state = app.state::<LocalRuns>();
@@ -900,7 +927,7 @@ pub async fn desktop_reproduce_here(
             &worktree,
             &args,
             browser.as_deref(),
-            cluster_id,
+            origin_ref.as_deref(),
             &stop,
         )
         .await;
@@ -918,7 +945,7 @@ async fn reproduce_driver(
     worktree: &Path,
     args: &[String],
     browser: Option<&str>,
-    cluster_id: Option<u64>,
+    origin_ref: Option<&str>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "checkout"));
@@ -939,7 +966,7 @@ async fn reproduce_driver(
     if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
         return None;
     }
-    let env = origin_env("reproduce", cluster_id);
+    let env = origin_env("reproduce", origin_ref);
     run_test_phase(app, id, worktree, args, browser, &env, stop).await
 }
 
@@ -985,11 +1012,13 @@ pub async fn desktop_bisect_here(
     browser: Option<String>,
     flake_test_case_id: Option<u64>,
     cluster_id: Option<u64>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&good) || !valid_sha(&bad) {
         return Err("invalid commit".into());
     }
+    let origin_ref = origin_reference(cluster_id, origin_ref)?;
     // A flake-aware bisect asks `piwi flake verify --bisect` at each step, with
     // this app's server and token.
     let flake = flake_test_case_id.map(|id| (id, server_info(&app)));
@@ -1044,7 +1073,7 @@ pub async fn desktop_bisect_here(
             &args,
             browser.as_deref(),
             flake.as_ref(),
-            cluster_id,
+            origin_ref.as_deref(),
             &stop,
         )
         .await;
@@ -1065,7 +1094,7 @@ async fn bisect_driver(
     args: &[String],
     browser: Option<&str>,
     flake: Option<&(u64, ServerInfo)>,
-    cluster_id: Option<u64>,
+    origin_ref: Option<&str>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
@@ -1153,7 +1182,7 @@ async fn bisect_driver(
                 }
             }
         } else {
-            let env = origin_env("bisect", cluster_id);
+            let env = origin_env("bisect", origin_ref);
             let code = run_test_phase(app, id, worktree, args, browser, &env, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
@@ -1681,7 +1710,7 @@ mod tests {
     #[test]
     fn a_reproduction_or_bisect_test_names_its_origin_and_cluster() {
         assert_eq!(
-            origin_env("reproduce", Some(42)),
+            origin_env("reproduce", Some("42")),
             [
                 ("PIWI_ORIGIN", "reproduce".to_string()),
                 ("PIWI_ORIGIN_REF", "42".to_string())
@@ -1691,6 +1720,22 @@ mod tests {
             origin_env("bisect", None),
             [("PIWI_ORIGIN", "bisect".to_string())]
         );
+    }
+
+    #[test]
+    fn a_cluster_wins_over_the_chosen_reference_and_a_bad_reference_is_refused() {
+        assert_eq!(
+            origin_reference(Some(42), Some("job:ab12".into())),
+            Ok(Some("42".to_string()))
+        );
+        assert_eq!(
+            origin_reference(None, Some("job:ab12".into())),
+            Ok(Some("job:ab12".to_string()))
+        );
+        assert_eq!(origin_reference(None, None), Ok(None));
+        assert!(origin_reference(None, Some("a b".into())).is_err());
+        assert!(origin_reference(None, Some(String::new())).is_err());
+        assert!(origin_reference(None, Some("x".repeat(201))).is_err());
     }
 
     #[test]

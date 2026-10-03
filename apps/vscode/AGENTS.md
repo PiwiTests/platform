@@ -13,7 +13,8 @@ A thin client of the editor service. `npm run vscode:build` builds the service's
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
   failing test and `piwi.failingLineBackground` on the line it failed at: `testDecorations` in `src/glue.ts`) and
   `piwi/runStatus` in the status bar, implements the commands the service names (`piwi.openInDashboard`,
-  `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
+  `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, which shows `piwi/desktopJobChanged`
+  as notifications with the share button), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in

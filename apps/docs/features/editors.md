@@ -21,30 +21,31 @@ run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and s
 [Editor connection](./editor-connection) has the steps.
 
 Nothing from your workspace is sent to the instance: the project's
-[locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
-compared with your files locally.
+[locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
+your files locally.
 
 ## CI failures in the Problems panel
 
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) (whole suite, finished) on the
 checked-out branch, else the default branch, are errors in the Problems panel, at the line that failed: the call in the
-error's stack when that file is in your workspace (often a page object), else the `test(…)` line. The message is the failure's headline. The run is
-read every minute.
+error's stack when that file is in your workspace (often a page object), else the `test(…)` line, with the failure's
+headline. The run is read every minute.
 
 On a failure, the quick fixes are:
 
 - **Heal: use …** — when [locator healing](/features/locator-healing) has a recommendation for the failing locator,
-  the same edit an [auto-heal pull request](/features/auto-heal) would make, applied to the line in place.
-- **Open the trace** — downloads the trace and opens it with `npx playwright show-trace`.
+  the same edit an [auto-heal pull request](/features/auto-heal) would make, applied in place.
+- **Open the trace** — opens it with `npx playwright show-trace`.
+- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** — on a team instance's failure,
+  while the [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records the first bad commit.
 - **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
-  captured): VS Code previews the edit before applying it, then runs the plan's verify command in a terminal.
+  captured): VS Code previews the edit, then runs the plan's verify command in a terminal.
 - **Copy context for agent** — the failure, its healing and fix plan, for a coding agent.
-- **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
+- **Open the failure in the dashboard** — the execution page, with its [evidence](/features/evidence).
 
-Hover the line for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
-cluster or test with their status. Without one, **File an issue** opens the cluster in the dashboard, where issues are
-created.
+Hover for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
+cluster or test. Without one, **File an issue** opens the cluster in the dashboard.
 
 ## The status bar
 
@@ -128,11 +129,11 @@ cursor:
 2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
    that local address.
 3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
-   form you chose; a recording is rendered by the editor as the body of a test, like
+   form you chose; a recording is rendered as the body of a test, like
    [`piwi codegen --body`](/reference/cli#codegen).
 
-The editor listens on the loopback interface only, and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
-the one that paired receives.
+The editor listens on the loopback interface only, and accepts a request only with the token. With several VS Code
+windows open, the one that paired receives.
 
 ## JetBrains IDEs
 
