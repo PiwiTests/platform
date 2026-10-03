@@ -478,8 +478,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 /**
- * Jobs passed to the desktop app: `piwi.desktopJob` (a quick fix on a failure from the team instance) sends one,
- * each update of it shows as a notification, and its share button records the verdict on the instance.
+ * Jobs passed to the desktop app: `piwi.desktopJob` (a quick fix on a failure from the team instance, or a flaky
+ * test's lens) sends one, each update of it shows as a notification, and its share button records the verdict on the
+ * instance.
  */
 function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
   const show = (severity: 'information' | 'warning', text: string, ...actions: string[]) =>

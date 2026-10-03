@@ -25,7 +25,7 @@ use crate::runner::{
 const REPRO_FOLDER: &str = "piwi-repro";
 
 /// A request id as the server mints it: short lowercase hex.
-fn valid_request_id(id: &str) -> bool {
+pub(crate) fn valid_request_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 32
         && id

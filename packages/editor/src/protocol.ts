@@ -12,7 +12,8 @@ export interface PiwiCommand {
   /**
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
-   * `piwi.runCommand` (arguments: `[RunCommandArgs]`) or `piwi.copyText` (arguments: `[text]`).
+   * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`) or
+   * `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
    */
   command:
     | 'piwi.openInDashboard'
@@ -20,7 +21,8 @@ export interface PiwiCommand {
     | 'piwi.openTrace'
     | 'piwi.openScreenshot'
     | 'piwi.runCommand'
-    | 'piwi.copyText';
+    | 'piwi.copyText'
+    | 'piwi.desktopJob';
   arguments: unknown[];
 }
 
@@ -357,17 +359,24 @@ export interface RenderStepsResult {
 
 export const RENDER_STEPS_REQUEST = 'piwi/renderSteps';
 
-/** What the desktop app is asked to do with a failure from the team instance. */
-export type DesktopJobKind = 'reproduce' | 'bisect';
+/**
+ * What the desktop app is asked to do with a failure or a flaky test from the team instance: reproduce the failure,
+ * bisect it, or run the test's Flake Lab experiment.
+ */
+export type DesktopJobKind = 'reproduce' | 'bisect' | 'flake-lab';
 
 /**
  * `piwi/desktopJob`, and the arguments of the client command `piwi.desktopJob` that sends it: ask the desktop app
- * running on this machine to reproduce a failure of the instance the context reads (`root`), at its commit, or to
- * bisect it. The app shows the job in its window and runs nothing until the developer starts it there.
+ * running on this machine to reproduce a failure of the instance the context reads (`root`), at its commit, to
+ * bisect it, or to run Flake Lab on a test (`flake-lab`, with `testCaseId`; `executionId` names the failure it was
+ * offered on, if any). The app shows the job in its window and runs nothing until the developer starts it there.
  */
 export interface DesktopJobParams {
   root: string;
-  executionId: number;
+  /** The failure, for `reproduce` and `bisect`. */
+  executionId?: number | null;
+  /** The test, for `flake-lab`. */
+  testCaseId?: number | null;
   kind: DesktopJobKind;
 }
 
@@ -383,8 +392,8 @@ export const DESKTOP_JOB_REQUEST = 'piwi/desktopJob';
 /**
  * `piwi/desktopJobChanged`, sent while the service follows a job: the developer started it in the desktop app
  * (`running`), it ended (`done`, with the verdict in `message`), or it was `declined`, `expired`, or the app quit
- * (`gone`). `share` names the instance the verdict can be shared on (`piwi/shareDesktopJob`); null when there is
- * nothing to share.
+ * (`gone`). `share` names the instance the verdict can be shared on (`piwi/shareDesktopJob`): a bisect's first bad
+ * commit, or the results of a Flake Lab run; null when there is nothing to share.
  */
 export interface DesktopJobUpdate {
   jobId: string;
@@ -396,7 +405,7 @@ export interface DesktopJobUpdate {
 
 export const DESKTOP_JOB_NOTIFICATION = 'piwi/desktopJobChanged';
 
-/** `piwi/shareDesktopJob`: record a job's verdict on the instance the failure came from, with the editor's key. */
+/** `piwi/shareDesktopJob`: record a job's verdict on the instance the job came from, with the editor's key. */
 export interface ShareDesktopJobParams {
   jobId: string;
 }
@@ -404,7 +413,7 @@ export interface ShareDesktopJobParams {
 export interface ShareDesktopJobResult {
   ok: boolean;
   message: string;
-  /** The failure cluster's page, once shared. */
+  /** The failure cluster's page, or the test's Flakiness tab, once shared. */
   url?: string;
 }
 
