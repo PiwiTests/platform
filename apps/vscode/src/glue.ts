@@ -389,10 +389,34 @@ function importKey(line: string): string {
   return line.replace(/\s+/g, '').replace(/"/g, "'").replace(/;$/, '');
 }
 
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * The names an `import … from` statement binds in the file: its default, its namespace and each named import under
+ * its local name (`B` for `{ A as B }`); none for any other statement.
+ */
+export function importedNames(statement: string): string[] {
+  const clause = /^\s*import\s+(?:type\s+)?([\s\S]*?)\s*\bfrom\s*['"]/.exec(statement)?.[1];
+  if (!clause) return [];
+  const braces = /\{([\s\S]*)\}/.exec(clause)?.[1] ?? '';
+  const named = braces.split(',').map((part) => {
+    const words = part.trim().split(/\s+/);
+    const as = words.lastIndexOf('as');
+    return as === -1 ? words[words.length - 1]! : (words[as + 1] ?? '');
+  });
+  const outside = clause
+    .replace(/\{[\s\S]*\}/, '')
+    .split(',')
+    .map((part) => /^\s*(?:\*\s*as\s+)?([\w$]+)\s*$/.exec(part)?.[1] ?? '');
+  return [...outside, ...named].filter((name) => IDENTIFIER.test(name));
+}
+
 /**
  * The insertion of the import lines a file lacks among `imports`: after its last top-level `import` statement, or at
- * the top when it has none; null when it has them all. An edit that replaces lines `replaced` with `written` is taken
- * into account: the replaced lines no longer count, and the written ones do.
+ * the top when it has none; null when it has them all. A line the file has, or whose names an import of the file
+ * binds already (`import { A, B } from './pages'` for `import { A } from './pages/a'`), is not added, since a second
+ * binding of a name does not compile. An edit that replaces lines `replaced` with `written` is taken into account: the
+ * replaced lines no longer count, and the written ones do.
  */
 export function importInsertion(
   lines: string[],
@@ -402,22 +426,28 @@ export function importInsertion(
 ): TextChange | null {
   const counts = (i: number) => !replaced || i < replaced.start || i > replaced.end;
   const present = new Set([...lines.filter((_, i) => counts(i)), ...written.split(LINE_BREAK)].map(importKey));
-  const missing: string[] = [];
-  for (const line of imports) {
-    const key = importKey(line);
-    if (!key || present.has(key)) continue;
-    present.add(key);
-    missing.push(line.trim());
-  }
-  if (!missing.length) return null;
-  let last = -1;
+  /** The import statements of the file, as the first and last line of each. */
+  const statements: Array<{ start: number; end: number }> = [];
   for (let i = 0; i < lines.length; i++) {
     if (!counts(i) || !IMPORT_START.test(lines[i]!)) continue;
     let end = i;
     while (!IMPORT_END.test(lines[end]!) && end + 1 < lines.length && counts(end + 1)) end++;
-    last = end;
+    statements.push({ start: i, end });
     i = end;
   }
+  const bound = new Set(statements.flatMap(({ start, end }) => importedNames(lines.slice(start, end + 1).join('\n'))));
+  const missing: string[] = [];
+  for (const line of imports) {
+    const key = importKey(line);
+    if (!key || present.has(key)) continue;
+    const names = importedNames(line);
+    if (names.length > 0 && names.every((name) => bound.has(name))) continue;
+    present.add(key);
+    for (const name of names) bound.add(name);
+    missing.push(line.trim());
+  }
+  if (!missing.length) return null;
+  const last = statements.length > 0 ? statements[statements.length - 1]!.end : -1;
   const at = last + 1;
   if (at < lines.length || !lines.length) return { range: point(at, 0), text: `${missing.join('\n')}\n` };
   const end = lines.length - 1;

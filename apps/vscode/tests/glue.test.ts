@@ -7,6 +7,7 @@ import {
   disconnectQuestion,
   followBlock,
   importInsertion,
+  importedNames,
   mcpConfiguration,
   newTestFileName,
   placedBlock,
@@ -420,6 +421,40 @@ describe('the imports a recorded block needs', () => {
     expect(importInsertion(lines, ["import { a } from './a';", "import { a } from './a';"])?.text).toBe(
       "\nimport { a } from './a';",
     );
+  });
+
+  test('are left out when an import of the file binds their names already, from any module', () => {
+    const lines = [
+      "import { test, expect } from '@playwright/test';",
+      'import {',
+      '  CartPage,',
+      '  LoginPage as Login,',
+      "} from './pages';",
+      "import Checkout, * as helpers from './helpers';",
+      "test('pays', async () => {});",
+    ];
+    expect(
+      importInsertion(lines, [
+        "import { CartPage } from './pages/cart.page';",
+        "import { Login } from './pages/login.page';",
+        "import { Checkout } from './checkout';",
+        "import { helpers } from './more-helpers';",
+      ]),
+    ).toBeNull();
+    // `LoginPage` is bound under another name only, so its import is still added.
+    expect(importInsertion(lines, ["import { LoginPage } from './pages/login.page';"])).toEqual({
+      range: span(6, 0, 6, 0),
+      text: "import { LoginPage } from './pages/login.page';\n",
+    });
+  });
+
+  test('read the names each kind of import binds', () => {
+    expect(importedNames("import { A, B as C, type D } from './x';")).toEqual(['A', 'C', 'D']);
+    expect(importedNames("import type { E } from './x';")).toEqual(['E']);
+    expect(importedNames("import F, { G } from './x';")).toEqual(['F', 'G']);
+    expect(importedNames("import * as H from './x';")).toEqual(['H']);
+    expect(importedNames("import './styles.css';")).toEqual([]);
+    expect(importedNames("const { I } = require('./x');")).toEqual([]);
   });
 
   test('count what an edit writes, and not the lines it replaces', () => {
