@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Triage a scenario gap',
     description:
-      'Applies an inbox verb to a gap: `accept` (queues its draft), `snooze` (1-day / 1-week / until the node changes), `dismiss` with a reason (`not-worth-testing`, `covered-elsewhere` — which records a covering test as a manual reaches edge — or `wrong`), or `covered-by` (records a covering test without dismissing). A verdict mutes detectors and closes gaps, so it is reporter/admin only — never the read-only `user` role.',
+      'Applies an inbox verb to a gap: `accept` (queues its draft), `snooze` (1-day / 1-week / until the node changes), `dismiss` with a reason (`not-worth-testing`, `covered-elsewhere` — which records a covering test as a manual reaches edge — or `wrong`), or `covered-by` (closes the gap for good and records a covering test as a manual reaches edge). A verdict mutes detectors and closes gaps, so it is reporter/admin only — never the read-only `user` role.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'gapId', in: 'path', required: true, schema: { type: 'integer' } },

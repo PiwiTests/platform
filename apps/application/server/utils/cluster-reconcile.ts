@@ -10,7 +10,9 @@
  * records a fingerprint alias so future failures route to the survivor. Pairs
  * in the ambiguous band are adjudicated by a reasoning model (fed the clusters'
  * error text plus affected-test and overlap context) or recorded as merge
- * suggestions for human review.
+ * suggestions for human review. A pair already decided against (a person's
+ * rejection, a hand split, the adjudicator's "no") is never merged, and a pair
+ * the adjudicator already judged is not judged again.
  *
  * Vectors are only comparable within one `embeddingModelTag` (model id +
  * input-recipe version): after a model switch or recipe change, stale vectors
@@ -28,7 +30,11 @@
 import { and, asc, count, countDistinct, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import { failureClusters, testCases, testRunsCases } from '../database/schema';
 import { mergeFailureClusters } from '#shared/handlers/failure-cluster-ops';
-import { recordMergeSuggestion } from '#shared/handlers/cluster-merge-suggestions';
+import {
+  DECIDED_AGAINST_STATUSES,
+  getMergePairState,
+  recordMergeSuggestion,
+} from '#shared/handlers/cluster-merge-suggestions';
 import { embedTexts } from './ai-embeddings';
 import { buildEmbedText, cosineSimilarity, embeddingModelTag, parseEmbedding } from './cluster-similarity';
 import { adjudicateClusterPair } from './cluster-adjudicate';
@@ -251,6 +257,9 @@ async function reconcilePass(
     if (seenPairs.has(pairKey)) continue;
     seenPairs.add(pairKey);
 
+    const recorded = await getMergePairState(db, keep, drop);
+    if (recorded && DECIDED_AGAINST_STATUSES.has(recorded.status)) continue;
+
     if (best.score >= MERGE_THRESHOLD) {
       await mergeFailureClusters(db, keep, drop);
       dead.add(drop);
@@ -260,6 +269,8 @@ async function reconcilePass(
 
     // Ambiguous band: adjudicate with the reasoning model (budget-capped), else
     // record a suggestion for human review.
+    // A pair already in review keeps its suggestion; the adjudicator judges a pair once.
+    if (recorded) continue;
     if (reasoningRole && adjudications < MAX_ADJUDICATIONS_PER_RUN) {
       adjudications++;
       const other = await getDetails(best.id);
@@ -291,7 +302,19 @@ async function reconcilePass(
         suggested++;
         continue;
       }
-      // verdict says don't merge (or adjudication failed) → no suggestion.
+      if (verdict) {
+        await recordMergeSuggestion(db, {
+          projectId,
+          clusterAId: keep,
+          clusterBId: drop,
+          score: best.score,
+          method: 'llm',
+          llmConfidence: verdict.confidence,
+          llmReason: verdict.reason,
+          status: 'declined',
+        });
+      }
+      // A failed adjudication records nothing, so a later pass can try again.
       continue;
     }
 

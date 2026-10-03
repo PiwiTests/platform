@@ -287,6 +287,38 @@ export const failureClusterAliases = sqliteTable(
   }),
 );
 
+// Per-test routing out of a cluster. Moving tests to a new cluster records, for
+// each fingerprint that leads to the cluster they left, that their later failures
+// with it join the new cluster instead.
+export const failureClusterTestRoutes = sqliteTable(
+  'failure_cluster_test_routes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    fingerprint: text('fingerprint').notNull(),
+    testCaseId: integer('test_case_id')
+      .notNull()
+      .references(() => testCases.id, { onDelete: 'cascade' }),
+    clusterId: integer('cluster_id')
+      .notNull()
+      .references(() => failureClusters.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    projectFingerprintTestIdx: uniqueIndex('idx_failure_cluster_test_routes_project_fingerprint_test').on(
+      table.projectId,
+      table.fingerprint,
+      table.testCaseId,
+    ),
+    clusterIdx: index('idx_failure_cluster_test_routes_cluster').on(table.clusterId),
+    testCaseIdx: index('idx_failure_cluster_test_routes_test_case').on(table.testCaseId),
+  }),
+);
+
 // Proposed cluster merges awaiting human review. Surfaced when the
 // embedding reconciler / LLM adjudicator find two clusters that are probably —
 // but not certainly — the same root cause. Approving runs mergeFailureClusters.

@@ -153,7 +153,9 @@ export async function runAi(argv: string[], env: NodeJS.ProcessEnv = process.env
     case 'resolve':
       return runResolve(rest, env);
     case 'prune':
-      console.error('piwi ai prune: three-tier cleanup is not available in this build yet.');
+      console.error(
+        'piwi ai prune: not available in this build yet. `piwi ai check` lists orphaned entries: delete their files by hand, and re-author a non-canonical one with `piwi ai resolve --update-ai`.',
+      );
       return EXIT_ERROR;
     default:
       console.error(`piwi ai: unknown command "${sub}"\n`);
