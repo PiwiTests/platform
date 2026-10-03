@@ -13,6 +13,8 @@ import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
 import {
+  flakeLabCiArgs,
+  flakeLabRerunSettings,
   resolveCiRerunSettings,
   hasRerunTarget,
   matchRerunDispatch,
@@ -306,4 +308,102 @@ export async function matchCiRerunRun(db: DbClient, runId: number): Promise<numb
     .set({ lastRerunDispatch: { ...dispatch, runId } })
     .where(eq(failureClusters.id, clusterId));
   return clusterId;
+}
+
+/** The run of a test's newest execution, whose repository and branch a Flake Lab dispatch uses. */
+async function latestTestRunId(db: DbClient, testCaseId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ testRunId: testRunsCases.testRunId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.testCaseId, testCaseId))
+    .orderBy(desc(testRunsCases.id))
+    .limit(1);
+  return row?.testRunId ?? null;
+}
+
+/** Whether `piwi flake` can be dispatched to CI for a test, with a reason when it cannot. */
+export interface FlakeLabCiAvailability {
+  available: boolean;
+  reason: string | null;
+  provider: ScmProviderName | null;
+}
+
+/**
+ * Decide whether a test's Flake Lab experiment can run in CI: CI re-run on, a
+ * Flake Lab target for the provider of the repository of the test's newest run,
+ * and a token. The same checks the dispatch makes.
+ */
+export async function flakeLabCiAvailability(
+  db: DbClient,
+  projectId: number,
+  testCaseId: number,
+): Promise<FlakeLabCiAvailability> {
+  const settings = await getCiRerunSettings(db, projectId);
+  if (!settings.enabled || !settings.flakeLab) {
+    return { available: false, reason: 'No Flake Lab target is configured for CI re-run.', provider: null };
+  }
+  const runId = await latestTestRunId(db, testCaseId);
+  const provider = detectScmProvider(runId ? await clusterRepositoryUrl(db, runId) : null);
+  if (!provider) {
+    return { available: false, reason: 'This test has no supported repository to dispatch to.', provider: null };
+  }
+  if (!flakeLabRerunSettings(settings, provider)) {
+    return { available: false, reason: `No ${provider} Flake Lab target is configured.`, provider };
+  }
+  if (!(await resolveScmToken(db, projectId))) {
+    return { available: false, reason: 'No SCM token is configured to dispatch the experiment.', provider };
+  }
+  return { available: true, reason: null, provider };
+}
+
+export type FlakeLabCiOutcome =
+  | { ok: true; dispatch: ClusterRerunDispatch }
+  | { ok: false; error: 'not-found' | 'unavailable' | 'dispatch-failed'; message: string };
+
+/**
+ * Run a test's Flake Lab experiment in CI: the Flake Lab target receives the
+ * `piwi flake` arguments, through the same dispatch as a cluster's re-run, on
+ * the branch of the test's newest run. The experiment the command records is
+ * the trace; nothing else is stored.
+ */
+export async function runFlakeLabInCi(
+  db: DbClient,
+  testCaseId: number,
+  kind: 'reproduce' | 'verify',
+  actor: CiRerunActor,
+): Promise<FlakeLabCiOutcome> {
+  const [tc] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, testCaseId));
+  if (!tc) return { ok: false, error: 'not-found', message: 'Test case not found' };
+  const availability = await flakeLabCiAvailability(db, tc.projectId, testCaseId);
+  if (!availability.available || !availability.provider) {
+    return { ok: false, error: 'unavailable', message: availability.reason ?? 'Flake Lab in CI is not available' };
+  }
+  const runId = (await latestTestRunId(db, testCaseId))!;
+  const repositoryUrl = await clusterRepositoryUrl(db, runId);
+  const settings = flakeLabRerunSettings(await getCiRerunSettings(db, tc.projectId), availability.provider)!;
+  try {
+    const scm = await createScmProvider(repositoryUrl!, db, tc.projectId);
+    if (!scm) throw new Error('Could not build an SCM client for this repository');
+    const args = flakeLabCiArgs(testCaseId, kind);
+    const id = randomBytes(8).toString('hex');
+    const ref = await clusterRerunRef(db, runId);
+    const sent = await scm.dispatchRerun(settings, args, { ref, dispatchId: id });
+    return {
+      ok: true,
+      dispatch: {
+        id,
+        provider: availability.provider,
+        url: sent.url,
+        args,
+        ref: sent.ref ?? ref,
+        ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
+        ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
+        at: Date.now(),
+        byName: actor.name,
+        byUserId: actor.id,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: 'dispatch-failed', message: e instanceof Error ? e.message : 'Dispatch failed' };
+  }
 }

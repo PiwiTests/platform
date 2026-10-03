@@ -39,8 +39,7 @@ On a failure, the quick fixes are:
 - **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
   captured): VS Code previews the edit before applying it, then runs the plan's verify command in a terminal.
-- **Copy context for agent** — one block with the failure, its locator healing and the cluster's fix plan, for a coding
-  agent.
+- **Copy context for agent** — the failure, its healing and fix plan, for a coding agent.
 - **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
 
 Hover the line for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
@@ -65,6 +64,10 @@ Lines above the code (CodeLens):
 
 In a failing test, the line it failed at (in the spec, the line that calls the page object) is tinted darker, with the
 reason, **Screenshot** and **Trace** above it.
+
+Above a flaky test: its flaky rate and [top suspect](./flake-lab#from-the-editor-and-the-failure-pages), then
+**Reproduce this flake** and, once reproduced, **Verify the flake fix**, which run `piwi flake` against the instance
+the editor reads.
 
 **Piwi: Run the tests that reach this file** runs them in a terminal, with the arguments `piwi run` would use;
 **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
@@ -99,8 +102,7 @@ a warning, with the chains it breaks and their tests on hover, and one quick fix
 ## Piwi's MCP server for the agent
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
-connection it already has: it is listed under the MCP servers, and the agent can read failures, flaky tests and
-healings. In an editor without that API, **Piwi: Copy the MCP server configuration** puts an `mcp.json` entry on the
+connection it already has, listed under the MCP servers. In an editor without that API, **Piwi: Copy the MCP server configuration** puts an `mcp.json` entry on the
 clipboard. It holds your API key: paste it into your user settings, not into the repository.
 
 ## Commands
@@ -127,8 +129,7 @@ cursor:
    that local address.
 3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
    form you chose; a recording is rendered by the editor as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen), with the project's functions and the locators its tests already
-   use.
+   [`piwi codegen --body`](/reference/cli#codegen).
 
 The editor listens on the loopback interface only, and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
 the one that paired receives.

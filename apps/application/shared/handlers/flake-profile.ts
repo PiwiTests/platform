@@ -26,6 +26,7 @@ import { notLabRun } from './probes';
 import { eligibleRunSql } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import type { DrizzleDB } from './db';
+import { topFlakeSuspect, type FlakeSuspectResult } from '../flake-lab';
 
 /** How far back the profile reads, in days. */
 export const FLAKE_PROFILE_WINDOW_DAYS = 30;
@@ -902,14 +903,17 @@ export interface TopFlakeSuspect {
   testCaseId: number;
   failures: number;
   passes: number;
-  /** The first-ranked suspect a lab run reproduced, else the first-ranked one; null when the history names none. */
+  /**
+   * The suspect it is shown with (`topFlakeSuspect`): the first-ranked one a lab run reproduced, else the
+   * first-ranked untested one, else one that did not reproduce; null when the history names none.
+   */
   suspect: FlakeSuspect | null;
 }
 
 /**
- * The top suspect of each listed test of a project, for the flaky list: the
- * highest-ranked of the suspect ids `reproduced` lists for the test, else its
- * first-ranked suspect. Ids of tests outside the project are dropped; at most
+ * The top suspect of each listed test of a project, for the flaky list, picked
+ * by `topFlakeSuspect` from the test's lab `results` (a reproduced suspect
+ * first, one that did not reproduce last). Ids of tests outside the project are dropped; at most
  * {@link TOP_SUSPECTS_MAX_TESTS} are read, a few at a time, each in the
  * summary view.
  */
@@ -917,7 +921,7 @@ export async function getTopFlakeSuspects(
   db: DrizzleDB,
   projectId: number,
   testCaseIds: number[],
-  opts: { now?: Date; reproduced?: Map<number, Set<string>> } = {},
+  opts: { now?: Date; results?: ReadonlyMap<number, ReadonlyMap<string, FlakeSuspectResult>> } = {},
 ): Promise<TopFlakeSuspect[]> {
   const wanted = [...new Set(testCaseIds)].slice(0, TOP_SUSPECTS_MAX_TESTS);
   if (wanted.length === 0) return [];
@@ -936,8 +940,7 @@ export async function getTopFlakeSuspects(
     );
     for (const p of profiles) {
       if (!p) continue;
-      const reproduced = opts.reproduced?.get(p.testCaseId);
-      const suspect = p.suspects.find((sus) => reproduced?.has(sus.id)) ?? p.suspects[0] ?? null;
+      const suspect = topFlakeSuspect(p.suspects, opts.results?.get(p.testCaseId) ?? new Map());
       out.push({ testCaseId: p.testCaseId, failures: p.failures, passes: p.passes, suspect });
     }
   }

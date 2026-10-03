@@ -3020,6 +3020,25 @@ const SCENES = [
     viewport: { width: 390, height: 2400 },
   },
   {
+    name: 'home-flake-lab-inbox',
+    description:
+      'Home’s Flake Lab queue: flaky tests whose fix waits for a verify, then those with an untested top suspect',
+    tags: ['desktop'],
+    route: '/',
+    viewport: { width: 1280, height: 1600 },
+    of: '[data-shot="flake-lab-inbox"]',
+    pad: 12,
+  },
+  {
+    name: 'home-flake-lab-inbox-mobile',
+    description: 'Home’s Flake Lab queue at phone width',
+    tags: ['desktop'],
+    route: '/',
+    viewport: { width: 390, height: 4000 },
+    of: '[data-shot="flake-lab-inbox"]',
+    pad: 8,
+  },
+  {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',
     tags: ['desktop'],

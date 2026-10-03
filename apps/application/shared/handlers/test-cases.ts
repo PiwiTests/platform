@@ -22,7 +22,7 @@ import { getClusterPatchFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
 import { eligibleRunSql } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
-import { getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
+import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
 import { isFailedStatus } from '../utils/test-counts';
@@ -218,7 +218,7 @@ export async function getTestRunCase(
   wastedPatterns: readonly string[] | null = null,
   // Server-only signals the next-step policy reads; the demo and MCP callers
   // omit them.
-  opts: { aiConfigured?: boolean; ciRerunAvailable?: boolean; now?: Date } = {},
+  opts: { aiConfigured?: boolean; ciRerunAvailable?: boolean; flakeLabCiAvailable?: boolean; now?: Date } = {},
 ) {
   const [trc] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!trc) return null;
@@ -481,6 +481,25 @@ export async function getTestRunCase(
         now: opts.now,
       })
     : null;
+  // A flaky failure's next step can be the Flake Lab's: reproduce it, or verify its
+  // fix. Flaky: a retry pass, or a failure that is not a new regression of a test
+  // whose history both fails and passes.
+  const flaked =
+    verdict?.why === 'passed-on-retry' ||
+    verdict?.why === 'new-flaky' ||
+    (isFailedStatus(trc.status) &&
+      verdict?.why !== 'new-regression' &&
+      trc.testCaseId != null &&
+      (await mayHaveFlakeSuspects(db, trc.testCaseId).catch(() => false)));
+  const flakeLab =
+    flaked &&
+    trc.testCaseId != null &&
+    testCase &&
+    !(await isPassiveCapabilityDeclined(db, testCase.projectId, 'flake-lab'))
+      ? await getFlakeLabStepFacts(db, trc.testCaseId, { ciAvailable: opts.flakeLabCiAvailable, now: opts.now }).catch(
+          () => null,
+        )
+      : null;
   const nextStep = computeNextStep({
     status: trc.status,
     blockedByCase: blockedByCase ? { id: blockedByCase.id, title: blockedByCase.title } : null,
@@ -497,6 +516,7 @@ export async function getTestRunCase(
     errorKind: verdict?.kind ?? null,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,
+    flakeLab,
     clusterId: failureCluster?.id ?? null,
     executionId: trc.id,
   });
