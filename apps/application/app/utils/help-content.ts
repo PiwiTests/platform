@@ -945,7 +945,7 @@ export const HELP_TOPICS = {
   },
   'ide.open': {
     title: 'Open in IDE',
-    text: "Click a source path to open it in your local editor. With the Piwi plugin in a JetBrains IDE (Rider, WebStorm, IntelliJ IDEA), there is nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms. Otherwise set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit Test to check it works. The desktop app also opens files through your IDE's command-line launcher (code, rider, …); in the browser, Auto falls back to the JetBrains local server, then to a vscode:// or jetbrains:// launch, which cannot confirm. These preferences live in this browser only.",
+    text: "Click a source path to open it in your local editor. With the Piwi plugin in a JetBrains IDE (Rider, WebStorm, IntelliJ IDEA) whose project is connected to this instance, there is nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms. Otherwise set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit Test to check it works. The desktop app also opens files through your IDE's command-line launcher (code, rider, …); in the browser, Auto falls back to the JetBrains local server, then to a vscode:// or jetbrains:// launch, which cannot confirm. These preferences live in this browser only.",
     doc: 'features/ide-integration',
   },
 

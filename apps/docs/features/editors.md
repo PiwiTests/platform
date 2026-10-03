@@ -175,6 +175,7 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
   Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
   environment.
-- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard opens at its line, with nothing to set.
+- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard of the instance the project is connected to, or
+  in the desktop app, opens at its line.
 
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

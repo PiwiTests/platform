@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.hints.codeVision.DaemonBoundCodeVisionProvider
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.platform.lsp.api.LspServerSupportProvider
@@ -267,16 +268,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val outside = FileUtil.createTempDirectory("piwi-outside", null)
         File(outside, "tests").mkdirs()
         File(outside, "tests/secret.spec.ts").writeText("secret\n")
+        // The dashboard is the instance the project is connected to, here under another loopback name.
+        val settings = project.service<PiwiSettings>().state
+        val saved = settings.serverUrl
+        settings.serverUrl = "http://localhost:3000"
+        com.intellij.openapi.util.Disposer.register(testRootDisposable) { settings.serverUrl = saved }
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
         val client = java.net.http.HttpClient.newHttpClient()
-        fun get(query: String): java.net.http.HttpResponse<String> {
-            val future = client.sendAsync(
-                java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiOpenHandler.PATH}?$query"))
-                    .header("Origin", "http://127.0.0.1:3000")
-                    .GET()
-                    .build(),
-                java.net.http.HttpResponse.BodyHandlers.ofString(),
-            )
+        fun get(query: String, origin: String? = "http://127.0.0.1:3000"): java.net.http.HttpResponse<String> {
+            val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiOpenHandler.PATH}?$query"))
+            if (origin != null) request.header("Origin", origin)
+            val future = client.sendAsync(request.GET().build(), java.net.http.HttpResponse.BodyHandlers.ofString())
             val deadline = System.currentTimeMillis() + 20_000
             while (!future.isDone && System.currentTimeMillis() < deadline) {
                 com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
@@ -285,6 +287,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
             return future.get(1, TimeUnit.SECONDS)
         }
         fun json(response: java.net.http.HttpResponse<String>) = com.google.gson.JsonParser.parseString(response.body()).asJsonObject
+
+        // Another page on this machine, another site, a request without an origin: a 403 and nothing about the project.
+        for (origin in listOf("http://127.0.0.1:5173", "https://evil.example", null)) {
+            val refused = get("file=tests/checkout.spec.ts&check", origin)
+            assertEquals("$origin: ${refused.body()}", 403, refused.statusCode())
+            assertFalse("$origin: ${refused.body()}", refused.body().contains("\"found\"") || refused.body().contains(base.path))
+        }
 
         assertEquals(400, get("line=3").statusCode())
         val missing = get("file=tests/nowhere.spec.ts&check")
