@@ -106,11 +106,12 @@ reporter, never through the blob report, so an imported run shows no lock lanes,
 
 The run's commit and branch come from the archive when Playwright recorded them: a blob report written with
 [`captureGitInfo`](https://playwright.dev/docs/api/class-testconfig#test-config-capture-git-info) carries them in its
-config metadata, and the imported run then joins its branch's history and baselines. A trace carries neither.
+config metadata, and the imported run then joins its branch's history and baselines. A trace carries neither: its
+branch is [unknown](/features/analytics#branch-policy).
 
 Each imported execution is dated from the start of its attempt, so an old archive lands where it ran in a test's
 history, not at the top. An archive older than the project's newest run leaves the tests' current tags, owner,
-priority, locks and locator snapshots as they are.
+priority, locks and locator snapshots as they are, and wakes no snoozed cluster.
 
 Imports are also deliberately **silent**: they never send notifications, never trigger AI diagnosis, and never compute
 regression signals. Backfilling a year of history should not page your team about failures they fixed months ago, or

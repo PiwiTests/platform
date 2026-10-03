@@ -34,14 +34,17 @@ export interface PendingCluster {
  * return fingerprint → cluster id. Existing clusters get their lastSeenRunId
  * and occurrences bumped; new ones start at this run. Insert races with
  * concurrent streaming batches are resolved via the unique
- * (projectId, fingerprint) index + onConflictDoNothing.
+ * (projectId, fingerprint) index + onConflictDoNothing. With `wakeSnoozed`
+ * false, a recurrence leaves an "until it recurs" snooze in place.
  */
 export async function getOrCreateFailureClusters(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
   pending: Map<string, PendingCluster>,
+  options: { wakeSnoozed?: boolean } = {},
 ): Promise<Map<string, number>> {
+  const wakeSnoozed = options.wakeSnoozed !== false;
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
 
@@ -64,7 +67,7 @@ export async function getOrCreateFailureClusters(
         updatedAt: new Date(),
         // A fresh occurrence wakes an "until it recurs" snooze — the cluster
         // returns to the inbox (its "snoozed, back" marker is the surviving mode).
-        ...(snooze ? (wakeOnRecurrence(snooze) ?? {}) : {}),
+        ...(snooze && wakeSnoozed ? (wakeOnRecurrence(snooze) ?? {}) : {}),
         ...(preferExemplar(currentSampleError ?? '', p.sampleError)
           ? {
               sampleError: p.sampleError,

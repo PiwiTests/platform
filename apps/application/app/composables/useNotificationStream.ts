@@ -47,6 +47,7 @@ function renderBody(data: NotificationEventData): string {
     case 'run.finished':
     case 'run.failed':
     case 'run.failed.default_branch':
+    case 'run.interrupted':
     case 'flakiness.spike':
     case 'perf.regression': {
       const name = data.projectName ?? `Project #${data.projectId}`;
@@ -54,6 +55,8 @@ function renderBody(data: NotificationEventData): string {
       if (data.type === 'run.finished') lines.push(`${name}${branchSuffix}: ${data.status ?? 'finished'}`);
       else if (data.type === 'run.failed')
         lines.push(`${name}${branchSuffix}: ${data.failedTests ?? 0}/${data.totalTests ?? 0} tests failed`);
+      else if (data.type === 'run.interrupted')
+        lines.push(`${name}${branchSuffix}: interrupted before it finished, the reporter stopped sending`);
       else if (data.type === 'run.failed.default_branch')
         lines.push(`${name}: ${data.failedTests ?? 0} failures on default branch`);
       else if (data.type === 'flakiness.spike') lines.push(`${name}: flakiness spike detected`);

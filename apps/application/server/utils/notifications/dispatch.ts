@@ -104,6 +104,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   const text = renderEventSubject(event, payload);
   let emoji = ':bell:';
   if (event.startsWith('run.failed')) emoji = ':x:';
+  else if (event === 'run.interrupted') emoji = ':warning:';
   else if (event === 'cluster.new') emoji = ':bug:';
   else if (event === 'cluster.fixed') emoji = ':white_check_mark:';
   else if (event === 'cluster.regressed') emoji = ':rotating_light:';

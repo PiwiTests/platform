@@ -174,6 +174,41 @@ describe('importBlobReportRun', () => {
     expect(testCase!.tags).toEqual(['checkout', 'smoke']);
   });
 
+  test('an archive older than the newest run leaves a snoozed cluster asleep; a newer one wakes it', async () => {
+    const error = 'Error: locator.click: Timeout 5000ms exceeded.\n\n    at /ci/tests/checkout.spec.ts:8:3';
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 1, projectId: 1, status: 'failed', startTime: new Date('2026-09-15T10:00:00Z') });
+    await persistRunCases(db as never, 1, 1, [
+      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'failed', error },
+    ] as never);
+    await db.update(schema.failureClusters).set({ snoozedUntil: new Date(8.64e15), snoozeMode: 'until-recurs' });
+    const failing = (title: string) => {
+      const entry = execution(title, `${title}.png`);
+      entry.case = { ...entry.case, status: 'failed', error };
+      return entry;
+    };
+    const snoozed = async () => (await db.select().from(schema.failureClusters))[0]!.snoozedUntil;
+
+    await importBlobReportRun(db as never, port(), {
+      projectId: 1,
+      parsed: { ...report([failing('pays')]), startTime: new Date('2026-09-01T10:00:00Z') },
+      readEntry,
+      importHash: 'f'.repeat(64),
+      source: 'old-report.zip',
+    });
+    expect(await snoozed()).not.toBeNull();
+
+    await importBlobReportRun(db as never, port(), {
+      projectId: 1,
+      parsed: report([failing('pays')]),
+      readEntry,
+      importHash: '9'.repeat(64),
+      source: 'new-report.zip',
+    });
+    expect(await snoozed()).toBeNull();
+  });
+
   test('links each file to the execution of its own case when a repeated case is deduplicated', async () => {
     const result = await importBlobReportRun(db as never, port(), {
       projectId: 1,

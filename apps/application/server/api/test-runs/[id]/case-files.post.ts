@@ -8,6 +8,7 @@ import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta } from '../../../utils/shard-tokens';
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
+import { recordIngestHealth } from '../../../utils/ingest-health';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
 import { sanitizeFilename } from '../../../utils/sanitize-filename';
@@ -253,6 +254,7 @@ async function handleCaseFiles(
       // 422 (unknown hash) must reach the reporter so it can resend with the file
       if (error && typeof error === 'object' && 'statusCode' in error) throw error;
       console.error(`[CaseFiles] Failed to store trace for case #${runCase.id}: ${error}`);
+      await recordIngestHealth(db, id, { tracesSkipped: 1 });
     }
   }
 
