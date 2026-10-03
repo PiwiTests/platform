@@ -7,6 +7,7 @@ import {
   ProcFs,
   descendantsOf,
   parsePsOutput,
+  parseWindowsProcesses,
   roleOf,
   type ContainerReads,
   type CpuTicks,
@@ -23,8 +24,9 @@ import type { RoleUsage, SeriesPoint, WireRunProfile } from '@piwitests/core/wir
  * counters, free space and the disk the run's output takes. Each reading of
  * the tree is also added up under each Playwright worker process, the browsers
  * it started included. Linux reads all of it; macOS reads the tree through
- * `ps`, every few seconds; elsewhere the tree is not measured. What a platform
- * cannot read is listed as not measured, never reported as zero.
+ * `ps` and Windows through a CIM query, every few seconds; elsewhere the tree
+ * is not measured. What a platform cannot read is listed as not measured,
+ * never reported as zero.
  */
 
 export type { RoleUsage };
@@ -61,9 +63,13 @@ export interface SamplerOptions {
   intervalMs?: number;
   /** Every how many samples the heavy reads run: memory, container, disk. */
   heavyEvery?: number;
+  /** Every how many heavy samples Windows reads the tree; its CIM query costs about half a second of CPU. */
+  windowsTreeEvery?: number;
   now?: () => number;
   /** `ps` output on macOS; a test stands in for it. */
   runPs?: () => Promise<string>;
+  /** CIM JSON on Windows; a test stands in for it. */
+  runWindows?: () => Promise<string>;
 }
 
 /** The most files a disk walk visits per sample; past it the size is a lower bound. */
@@ -139,6 +145,28 @@ function defaultPs(): Promise<string> {
   });
 }
 
+/**
+ * CIM's `Win32_Process` on Windows, the query's own process and its children
+ * excluded, so reading the tree never counts as the run: working set, CPU time
+ * and the parent to build the tree. A cold machine's first query can take
+ * several seconds, so the timeout leaves room for it.
+ */
+function defaultWindowsQuery(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.ParentProcessId -ne $PID } | Select-Object ProcessId,ParentProcessId,WorkingSetSize,UserModeTime,KernelModeTime,Name,CommandLine | ConvertTo-Json -Compress',
+      ],
+      { timeout: 10_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+      (error, stdout) => (error ? reject(error) : resolve(stdout)),
+    );
+  });
+}
+
 /** Free bytes on the filesystem holding `dir`, or on its nearest existing parent. */
 function freeBytes(dir: string): number | null {
   let current = path.resolve(dir);
@@ -188,8 +216,10 @@ export class RunSampler {
   private readonly tmpDir: string;
   private readonly intervalMs: number;
   private readonly heavyEvery: number;
+  private readonly windowsTreeEvery: number;
   private readonly now: () => number;
   private readonly runPs: () => Promise<string>;
+  private readonly runWindows: () => Promise<string>;
   private readonly linux: boolean;
 
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -229,8 +259,10 @@ export class RunSampler {
     this.tmpDir = options.tmpDir ?? os.tmpdir();
     this.intervalMs = options.intervalMs ?? 1000;
     this.heavyEvery = Math.max(1, options.heavyEvery ?? 5);
+    this.windowsTreeEvery = Math.max(1, options.windowsTreeEvery ?? 3);
     this.now = options.now ?? Date.now;
     this.runPs = options.runPs ?? defaultPs;
+    this.runWindows = options.runWindows ?? defaultWindowsQuery;
     this.linux = this.platform === 'linux' && this.proc.available();
   }
 
@@ -255,7 +287,7 @@ export class RunSampler {
     this.timer = null;
     try {
       await this.running;
-      await this.sample(true);
+      await this.sample(true, true);
     } catch {
       // A profile from what was read so far.
     }
@@ -290,7 +322,8 @@ export class RunSampler {
     return this.linux ? this.proc.cpuTicks() : nodeCpuTicks();
   }
 
-  private async sample(heavy: boolean): Promise<void> {
+  private async sample(heavy: boolean, forceTree = false): Promise<void> {
+    const treeDue = forceTree || this.samples % (this.heavyEvery * this.windowsTreeEvery) === 0;
     this.samples++;
     // Every reading of this sample is stamped with the time it started.
     const at = this.now() - this.startedAt;
@@ -307,6 +340,7 @@ export class RunSampler {
 
     if (this.linux) await this.sampleLinuxTree(heavy, at);
     else if (this.platform === 'darwin' && heavy) await this.samplePsTree(at);
+    else if (this.platform === 'win32' && treeDue) await this.sampleWindowsTree(at);
     if (heavy) await this.sampleDisk();
   }
 
@@ -454,29 +488,46 @@ export class RunSampler {
     } catch {
       return;
     }
+    this.noteTree(list, (proc) => roleOf(path.basename(proc.command.split(' ')[0] ?? ''), proc.command), at);
+  }
+
+  private async sampleWindowsTree(at: number): Promise<void> {
+    let list;
+    try {
+      list = parseWindowsProcesses(await this.runWindows());
+    } catch {
+      return;
+    }
+    this.noteTree(list, (proc) => roleOf(proc.name, proc.commandLine), at);
+  }
+
+  /** One reading of the run's tree: each process's role, CPU time and memory, and each worker's share of both. */
+  private noteTree<T extends { pid: number; ppid: number; rssKb: number; cpuMs: number }>(
+    list: T[],
+    role: (proc: T) => ProcessRole | null,
+    at: number,
+  ): void {
     const root = list.find((proc) => proc.pid === this.rootPid);
     if (!root) return;
     this.treeMeasured = true;
     const tree = [root, ...descendantsOf(this.rootPid, list)];
-    const roles = this.resolveRoles(tree.slice(1), (proc) =>
-      roleOf(path.basename(proc.command.split(' ')[0] ?? ''), proc.command),
-    );
+    const roles = this.resolveRoles(tree.slice(1), role);
     let total = 0;
     let largest: { role: ProcessRole; bytes: number } | null = null;
     const workers = this.workersOf(tree, roles, (proc) => String(proc.pid));
     const cpuMsByWorker = new Map<string, number>();
     const bytesByWorker = new Map<string, number>();
     for (const proc of tree) {
-      const role = roles.get(proc.pid) ?? 'other';
+      const procRole = roles.get(proc.pid) ?? 'other';
       const worker = workers.get(proc.pid);
       if (worker) {
         const cpuMs = this.cpuSince(String(proc.pid), proc.cpuMs);
         cpuMsByWorker.set(worker.key, (cpuMsByWorker.get(worker.key) ?? 0) + cpuMs);
         bytesByWorker.set(worker.key, (bytesByWorker.get(worker.key) ?? 0) + proc.rssKb * 1024);
       }
-      this.track(String(proc.pid), role, proc.cpuMs, null);
+      this.track(String(proc.pid), procRole, proc.cpuMs, null);
       total += proc.rssKb * 1024;
-      if (!largest || proc.rssKb * 1024 > largest.bytes) largest = { role, bytes: proc.rssKb * 1024 };
+      if (!largest || proc.rssKb * 1024 > largest.bytes) largest = { role: procRole, bytes: proc.rssKb * 1024 };
     }
     this.memoryKind = 'rss';
     this.notePeak(total, largest, at);

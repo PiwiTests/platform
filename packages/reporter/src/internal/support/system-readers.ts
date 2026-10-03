@@ -6,9 +6,9 @@ import type { ProcessRole } from '@piwitests/core/wire';
  * Readers for what the operating system knows about a run: processes, their
  * CPU and memory, the machine's load and pressure, and the container's limits.
  * Linux reads `/proc` and the cgroup filesystem, whose roots are parameters so
- * a test can stand a directory in for them; macOS reads `ps`. Every reader
- * returns null when its source is missing or unreadable, never zero, and none
- * of them throws.
+ * a test can stand a directory in for them; macOS reads `ps` and Windows CIM.
+ * Every reader returns null when its source is missing or unreadable, never
+ * zero, and none of them throws.
  */
 
 /** Clock ticks per second of the CPU times in `/proc/<pid>/stat` (`USER_HZ`, 100 on Linux's user ABI). */
@@ -126,6 +126,50 @@ export function parsePsOutput(text: string): PsProcess[] {
       rssKb: Number(match[3]),
       cpuMs,
       command: match[5]!.trim(),
+    });
+  }
+  return out;
+}
+
+export interface WindowsProcess {
+  pid: number;
+  ppid: number;
+  rssKb: number;
+  cpuMs: number;
+  name: string;
+  commandLine: string;
+}
+
+/**
+ * The JSON `Get-CimInstance Win32_Process` prints, one row per process or a
+ * single row when the machine has one: the working set in bytes and the CPU
+ * times in 100 ns units. A row without a process id is skipped.
+ */
+export function parseWindowsProcesses(text: string): WindowsProcess[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(text.replace(/^\uFEFF/, ''));
+  } catch {
+    return [];
+  }
+  const rows: unknown[] = Array.isArray(data) ? data : [data];
+  const out: WindowsProcess[] = [];
+  for (const row of rows) {
+    if (typeof row !== 'object' || row === null) continue;
+    const record = row as Record<string, unknown>;
+    const pid = Number(record.ProcessId);
+    const ppid = Number(record.ParentProcessId);
+    if (!Number.isFinite(pid) || !Number.isFinite(ppid)) continue;
+    const workingSet = Number(record.WorkingSetSize);
+    const user = Number(record.UserModeTime);
+    const kernel = Number(record.KernelModeTime);
+    out.push({
+      pid,
+      ppid,
+      rssKb: Number.isFinite(workingSet) ? Math.round(workingSet / 1024) : 0,
+      cpuMs: ((Number.isFinite(user) ? user : 0) + (Number.isFinite(kernel) ? kernel : 0)) / 10_000,
+      name: typeof record.Name === 'string' ? record.Name : '',
+      commandLine: typeof record.CommandLine === 'string' ? record.CommandLine : '',
     });
   }
   return out;

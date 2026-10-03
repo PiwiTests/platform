@@ -3253,7 +3253,7 @@ const SCENES = [
   // Run 62 is Web Dashboard's newest run in the demo seed: a leaky one.
   {
     name: 'run-resources',
-    description: 'Run Resources tab: findings, open pages by worker, the machine and the costliest tests',
+    description: 'Run Resources tab: findings, the open-pages pointer, the machine and the costliest tests',
     tags: ['desktop'],
     route: '/test-runs/62?tab=resources',
     viewport: { width: 1280, height: 2900 },

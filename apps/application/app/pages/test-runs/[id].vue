@@ -871,6 +871,7 @@ const moreMenuItems = computed(() => {
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"
             :refresh-key="runRefreshKey"
+            @open-timeline="activeTab = 'workers'"
           />
         </template>
       </DetailPageLayout>

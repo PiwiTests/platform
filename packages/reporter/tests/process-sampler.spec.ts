@@ -12,6 +12,7 @@ import {
   parsePsTime,
   parsePsiTotal,
   parseSchedstat,
+  parseWindowsProcesses,
   roleOf,
 } from '../src/internal/support/system-readers.js';
 
@@ -101,6 +102,42 @@ describe('system readers', () => {
       { pid: 10, ppid: 1, rssKb: 2048, cpuMs: 1200, command: '/usr/bin/node runner.js' },
       { pid: 11, ppid: 10, rssKb: 1024, cpuMs: 300, command: '/Apps/Chromium Helper --type=renderer' },
     ]);
+  });
+
+  it('parses the CIM JSON of Win32_Process, one row or an array', () => {
+    const row = (
+      pid: number,
+      ppid: number,
+      ticks: number,
+      workingSetKb: number,
+      name: string,
+      commandLine: string | null,
+    ) => ({
+      ProcessId: pid,
+      ParentProcessId: ppid,
+      WorkingSetSize: workingSetKb * 1024,
+      UserModeTime: ticks / 2,
+      KernelModeTime: ticks / 2,
+      Name: name,
+      CommandLine: commandLine,
+    });
+    expect(
+      parseWindowsProcesses(
+        JSON.stringify([
+          row(10, 1, 10_000_000, 2048, 'node.exe', 'node runner.js'),
+          row(11, 10, 3_000_000, 1024, 'chrome.exe', null),
+        ]),
+      ),
+    ).toEqual([
+      { pid: 10, ppid: 1, rssKb: 2048, cpuMs: 1000, name: 'node.exe', commandLine: 'node runner.js' },
+      { pid: 11, ppid: 10, rssKb: 1024, cpuMs: 300, name: 'chrome.exe', commandLine: '' },
+    ]);
+    // One process comes as a single row, with a byte-order mark ahead of it.
+    expect(parseWindowsProcesses(`\uFEFF${JSON.stringify(row(10, 1, 10_000, 1024, 'node.exe', 'node'))}`)).toHaveLength(
+      1,
+    );
+    expect(parseWindowsProcesses('not json')).toEqual([]);
+    expect(parseWindowsProcesses(JSON.stringify([{ WorkingSetSize: 1 }]))).toEqual([]);
   });
 
   it('names each process the run starts by its command line', () => {
@@ -394,12 +431,77 @@ describe('RunSampler', () => {
     expect(profile.notMeasured).toEqual(['time waiting for a CPU', 'steal', 'CPU pressure']);
   });
 
+  it('reads the tree through CIM on Windows, and names what it could not read', async () => {
+    let clock = 0;
+    const row = (
+      pid: number,
+      ppid: number,
+      ticks: number,
+      workingSetKb: number,
+      name: string,
+      commandLine: string,
+    ) => ({
+      ProcessId: pid,
+      ParentProcessId: ppid,
+      WorkingSetSize: workingSetKb * 1024,
+      UserModeTime: ticks / 2,
+      KernelModeTime: ticks / 2,
+      Name: name,
+      CommandLine: commandLine,
+    });
+    let query = JSON.stringify([
+      row(100, 1, 10_000_000, 50_000, 'node.exe', 'node playwright test'),
+      row(200, 100, 20_000_000, 90_000, 'node.exe', 'node /pw/lib/worker/workerProcessEntry.js'),
+    ]);
+    const sampler = new RunSampler({
+      rootPid: 100,
+      platform: 'win32',
+      procRoot: path.join(dir, 'no-proc'),
+      intervalMs: 60_000,
+      heavyEvery: 1,
+      windowsTreeEvery: 1,
+      tmpDir: dir,
+      now: () => clock,
+      runWindows: async () => query,
+    });
+    sampler.start();
+    clock += 5000;
+    query = JSON.stringify([
+      row(100, 1, 10_000_000, 50_000, 'node.exe', 'node playwright test'),
+      row(200, 100, 45_000_000, 90_000, 'node.exe', 'node /pw/lib/worker/workerProcessEntry.js'),
+      row(300, 200, 30_000_000, 300_000, 'chrome.exe', 'chrome --headless'),
+    ]);
+    const profile = await sampler.stop();
+    expect(profile.cpu.byRole).toEqual({
+      runner: { cpuMs: 0, runWaitMs: null, processes: 1 },
+      worker: { cpuMs: 2500, runWaitMs: null, processes: 1 },
+      browser: { cpuMs: 3000, runWaitMs: null, processes: 1 },
+    });
+    expect(profile.memory).toMatchObject({ kind: 'rss', peakBytes: (50_000 + 90_000 + 300_000) * 1024 });
+    // The worker's 2.5 s and its new browser's 3 s over the 5 s between the two reads.
+    expect(sampler.timedSeries().workers).toEqual([
+      {
+        pid: 200,
+        cpuCores: [[5000, 1.1]],
+        memoryBytes: [
+          [0, 90_000 * 1024],
+          [5000, (90_000 + 300_000) * 1024],
+        ],
+      },
+    ]);
+    expect(profile.cpu.pressurePct).toBeNull();
+    expect(profile.notMeasured).toEqual(['time waiting for a CPU', 'steal', 'CPU pressure']);
+  });
+
   it('measures only the machine where the tree cannot be read', async () => {
     const sampler = new RunSampler({
       platform: 'win32',
       procRoot: path.join(dir, 'no-proc'),
       intervalMs: 60_000,
       tmpDir: dir,
+      runWindows: async () => {
+        throw new Error('PowerShell is not available');
+      },
     });
     sampler.start();
     const profile = await sampler.stop();
