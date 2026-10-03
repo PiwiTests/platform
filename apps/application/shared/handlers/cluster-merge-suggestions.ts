@@ -13,6 +13,8 @@
 import { and, eq, desc, or } from 'drizzle-orm';
 import { clusterMergeSuggestions, failureClusters } from '../../server/database/schema';
 import { mergeFailureClusters } from './failure-cluster-ops';
+import { recordOutcome } from '../../server/utils/outcomes';
+import type { HandbackActor } from '../handback-outcomes';
 import type { DrizzleDB } from './db';
 
 export interface SuggestionInput {
@@ -125,27 +127,65 @@ export async function getMergeSuggestionPair(
   return { survivorId: s.clusterAId, victimId: s.clusterBId, projectId: s.projectId };
 }
 
-/** Approve a suggestion: merge clusterB into clusterA (lower id survives). */
-export async function approveMergeSuggestion(db: DrizzleDB, id: number): Promise<{ survivorId: number } | null> {
+/** The suggestion key of a merge suggestion: its ordered cluster pair. */
+export function mergeSuggestionKey(clusterAId: number, clusterBId: number): string {
+  return `${Math.min(clusterAId, clusterBId)}+${Math.max(clusterAId, clusterBId)}`;
+}
+
+/** A person's decision on a suggestion, recorded as its hand-back outcome. */
+async function recordMergeDecision(
+  db: DrizzleDB,
+  s: { projectId: number; clusterAId: number; clusterBId: number; method: string },
+  outcome: 'applied' | 'rejected',
+  actor: HandbackActor,
+): Promise<void> {
+  await recordOutcome(db, {
+    projectId: s.projectId,
+    kind: 'merge-suggestion',
+    subjectType: 'cluster',
+    subjectId: s.clusterAId,
+    suggestionKey: mergeSuggestionKey(s.clusterAId, s.clusterBId),
+    outcome,
+    actor,
+    details: { clusterAId: s.clusterAId, clusterBId: s.clusterBId, method: s.method },
+  });
+}
+
+/**
+ * Approve a suggestion: merge clusterB into clusterA (lower id survives). The
+ * approval is recorded as the suggestion's `applied` outcome first, since the
+ * merge deletes the suggestion row.
+ */
+export async function approveMergeSuggestion(
+  db: DrizzleDB,
+  id: number,
+  actor: HandbackActor = { channel: 'ui' },
+): Promise<{ survivorId: number } | null> {
   const [s] = await db.select().from(clusterMergeSuggestions).where(eq(clusterMergeSuggestions.id, id));
   if (!s || s.status !== 'pending') return null;
+  await recordMergeDecision(db, s, 'applied', actor);
   // Survivor = lower id (longest-lived). Merging deletes clusterB, which cascade-
   // deletes this suggestion (and any others referencing the absorbed cluster).
   await mergeFailureClusters(db, s.clusterAId, s.clusterBId);
   return { survivorId: s.clusterAId };
 }
 
-/** Reject a suggestion (keeps the row for audit, both clusters untouched). */
-export async function rejectMergeSuggestion(db: DrizzleDB, id: number): Promise<boolean> {
-  const [s] = await db
-    .select({ id: clusterMergeSuggestions.id, status: clusterMergeSuggestions.status })
-    .from(clusterMergeSuggestions)
-    .where(eq(clusterMergeSuggestions.id, id));
+/**
+ * Reject a suggestion (keeps the row for audit, both clusters untouched), and
+ * record the person's rejection as the suggestion's `rejected` outcome.
+ */
+export async function rejectMergeSuggestion(
+  db: DrizzleDB,
+  id: number,
+  actor: HandbackActor = { channel: 'ui' },
+): Promise<boolean> {
+  const [s] = await db.select().from(clusterMergeSuggestions).where(eq(clusterMergeSuggestions.id, id));
   if (!s || s.status !== 'pending') return false;
   await db
     .update(clusterMergeSuggestions)
     .set({ status: 'rejected', updatedAt: new Date() })
     .where(eq(clusterMergeSuggestions.id, id));
+  await recordMergeDecision(db, s, 'rejected', actor);
   return true;
 }
 

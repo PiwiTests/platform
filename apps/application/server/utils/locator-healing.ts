@@ -39,6 +39,8 @@ import type {
   ElementAttributes,
 } from '#shared/locator-healing.types';
 import type { DrizzleDB } from '#shared/handlers/db';
+import type { LocatorHealDetails } from '#shared/handback-outcomes';
+import { listOutcomes, type OutcomeRecord } from './outcomes';
 
 // The payload shape lives in shared/ so the API handler, MCP tools, AI context
 // and the dashboard panel all agree on it; re-exported for existing importers.
@@ -371,20 +373,21 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
 
   const breaks = await loadRunLocatorBreaks(db, [row.testRunId]);
 
-  return resolveHealingForCase(
+  const result = await resolveHealingForCase(
     {
       error: row.error,
       ariaSnapshot: row.ariaSnapshot,
       ariaSnapshotJson: row.ariaSnapshotJson,
       playwrightVersion: row.playwrightVersion,
       testSource: row.testSource,
-      failingRunId: row.testRunId,
       filePath: row.filePath,
       locatorBreaks: breaks.get(row.testRunId) ?? null,
     },
     snaps,
     testCaseId ? (sig, method) => findCrossTestSnapshot(db, testCaseId, sig, method) : null,
   );
+  if (testCaseId) await stampStoredHealedRuns(db, [{ result, testCaseId, failingRunId: row.testRunId }]);
+  return result;
 }
 
 /** Per-case healing input — the failing execution's stored fields. */
@@ -396,8 +399,6 @@ export interface HealingCaseInput {
   /** The run's stored Playwright version — gates the `.visible()` narrowing suggestion. */
   playwrightVersion?: string | null;
   testSource?: string | null;
-  /** The failing execution's run id — enables healed-run detection. */
-  failingRunId?: number | null;
   /**
    * The failing test's own source file, used as the edit's file path when the
    * error carries no stack frame (Piwi-submitted errors often don't). The call
@@ -439,8 +440,7 @@ function notApplicableResult(
  * 2.5. Cross-test — the same signature captured by another test in the project.
  * 3. ARIA fallback — generated from the failing run's ARIA snapshot.
  *
- * The failing call site, source line, and any healed-run signal are stamped onto
- * whichever rung wins.
+ * The failing call site and source line are stamped onto whichever rung wins.
  */
 /** Role + accessible name the failing locator targets, parsed from its source form. */
 function failingRoleName(selector: string | null): { role: string | null; name: string | null } {
@@ -527,7 +527,6 @@ export async function resolveHealingForCase(
       fallbackFilePath: input.filePath ?? null,
       literalReplacements: r.source === 'diff-rename' ? (renamed?.replacements ?? null) : null,
     });
-    await stampHealedRun(r, snaps, failingSig, input.failingRunId ?? null);
     return r;
   };
 
@@ -560,28 +559,48 @@ export async function resolveHealingForCase(
 }
 
 /**
- * Close the loop: when the recommended fix now passes at this call site — one of
- * the test's snapshots carries the recommendation's locator signature, captured
- * in a run other than the failing one — stamp that run id so the panel can
- * confirm "healed in run #N". Uses the already-loaded snapshots (no extra
- * query). Skipped when the recommendation is the original locator (a flaky pass
- * — nothing was fixed) or a chained anchor whose re-captured leaf signature we
- * can't reconstruct from the chain expression.
+ * The run in which a heal recorded `applied` for the failure seen in
+ * `failingRunId` at `location`, if one did: the stored outcome, never a later
+ * recomputation.
  */
-async function stampHealedRun(
-  result: LocatorHealingResult,
-  snaps: LocatorSnapshotRow[],
-  failingSig: string | null,
+export function healedInRunFrom(
+  applied: OutcomeRecord[],
+  testCaseId: number,
+  location: string | null,
   failingRunId: number | null,
+): number | null {
+  if (!location || failingRunId == null) return null;
+  let best: number | null = null;
+  for (const row of applied) {
+    const details = row.details as LocatorHealDetails | null;
+    if (row.subjectId !== testCaseId || row.outcome !== 'applied' || !details?.appliedRunId) continue;
+    if (details.appliedRunId <= failingRunId || !sameFileLine(details.location, location)) continue;
+    if (best == null || details.appliedRunId < best) best = details.appliedRunId;
+  }
+  return best;
+}
+
+/**
+ * Stamp `healedInRunId` on healing results from the stored `locator-heal`
+ * outcomes: the first run after the failing one whose code at the failing call
+ * site used the recommended locator.
+ */
+async function stampStoredHealedRuns(
+  db: DrizzleDB,
+  cases: Array<{ result: LocatorHealingResult; testCaseId: number; failingRunId: number }>,
 ): Promise<void> {
-  const rec = result.recommendation?.recommended;
-  if (!rec) return;
-  const recSig = await locatorSignatureFromExpression(rec.locator);
-  if (!recSig || (failingSig && recSig === failingSig)) return;
-  const healed = snaps.find(
-    (s) => s.usedArgsFp === recSig && s.lastSeenRunId != null && s.lastSeenRunId !== failingRunId,
-  );
-  if (healed) result.healedInRunId = healed.lastSeenRunId;
+  const candidates = cases.filter((c) => c.result.applicable && c.result.location);
+  if (candidates.length === 0) return;
+  const applied = await listOutcomes(db, {
+    kind: 'locator-heal',
+    subjectType: 'test-case',
+    subjectIds: [...new Set(candidates.map((c) => c.testCaseId))],
+    outcomes: ['applied'],
+  });
+  for (const c of candidates) {
+    const healed = healedInRunFrom(applied, c.testCaseId, c.result.location ?? null, c.failingRunId);
+    if (healed != null) c.result.healedInRunId = healed;
+  }
 }
 
 /**
@@ -690,7 +709,6 @@ export async function getLocatorHealingBatch(
           ariaSnapshotJson: row.ariaSnapshotJson,
           playwrightVersion: row.playwrightVersion,
           testSource: row.testSource,
-          failingRunId: row.testRunId,
           filePath: row.filePath,
           locatorBreaks: breaksByRun.get(row.testRunId) ?? null,
         },
@@ -699,6 +717,12 @@ export async function getLocatorHealingBatch(
       ),
     );
   }
+  await stampStoredHealedRuns(
+    db,
+    caseRows
+      .filter((row) => row.testCaseId)
+      .map((row) => ({ result: results.get(row.id)!, testCaseId: row.testCaseId, failingRunId: row.testRunId })),
+  );
 
   return results;
 }
@@ -709,7 +733,7 @@ export async function getLocatorHealingBatch(
  * capture location (`tests/x.spec.ts`) still matches an absolute path from an
  * error stack frame (`/repo/tests/x.spec.ts`).
  */
-function sameFileLine(a: string | null, b: string | null): boolean {
+export function sameFileLine(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
   const [fileA, lineA] = splitFileLine(a);
   const [fileB, lineB] = splitFileLine(b);

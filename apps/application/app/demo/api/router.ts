@@ -144,7 +144,7 @@ import {
   computeScenarioGaps,
   listScenarioGaps,
   triageGap,
-  draftScenario,
+  issueScenarioDraft,
   listAcceptedUnwritten,
 } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
@@ -2134,7 +2134,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/draft$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const draft = await draftScenario(await getDemoDb(), +m[1]!, +m[2]!);
+      const draft = await issueScenarioDraft(await getDemoDb(), +m[1]!, +m[2]!, { channel: 'ui' });
       if (!draft) throw demoHttpError(404, 'Gap not found');
       return draft;
     },

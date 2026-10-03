@@ -14,13 +14,14 @@ import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
 import { matchCiRerunRun } from './ci-rerun';
+import { inferRunOutcomes } from './outcome-inference';
 
 /**
  * The finalize side effects for a finished run: the environment-incident
  * check, the daily rollup of its cell, regression signals, the CI re-run
  * dispatch it answers, auto markers, flaky root causes, the history of its
- * resource findings, AI diagnosis, notifications, pull-request feedback and
- * auto-heal.
+ * resource findings, AI diagnosis, notifications, pull-request feedback,
+ * auto-heal and the hand-back outcomes the run shows.
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -92,6 +93,9 @@ export async function runFinalizeSideEffects(
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
   // Healing's diff-rename step reads the locator breaks change coverage stores.
-  void postRunPrFeedbackInBackground(db, id).then(() => maybeEnqueueHealActionInBackground(db, id));
+  void postRunPrFeedbackInBackground(db, id).then(() => {
+    maybeEnqueueHealActionInBackground(db, id);
+    return inferRunOutcomes(db, id).catch((e) => console.error('[outcomes] inferRunOutcomes failed', e));
+  });
   return rollup;
 }

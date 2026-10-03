@@ -39,6 +39,8 @@ import { notLabRun } from './probes';
 import { getVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { TERMINAL_STATUSES, getProjectFlakyTestsWithVerified } from './projects';
 import type { DrizzleDB } from './db';
+import { recordOutcome } from '../../server/utils/outcomes';
+import type { HandbackActor } from '../handback-outcomes';
 import {
   FLAKE_LAB_STATE_ORDER,
   flakeLabNextCommand,
@@ -625,13 +627,14 @@ function judgeVerify(
  * and finish the experiment. The experiment must belong to the project and be
  * unfinished; the arms must include the control (and the `verify` arm for a
  * verify experiment), with failures that fit in their runs and conditions a
- * plan file accepts.
+ * plan file accepts. A `verified` verify records the `flake-verify` hand-back
+ * as `verified`.
  */
 export async function recordFlakeResults(
   db: DrizzleDB,
   projectId: number,
   input: FlakeResultsInput,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; actor?: HandbackActor } = {},
 ): Promise<{ experimentId: number; kind: FlakeExperimentKind; verdict: string; arms: FlakeArmOutcome[] }> {
   const id = Number(input.experimentId);
   if (!Number.isInteger(id) || id <= 0) throw new FlakeResultsRejected(400, 'experimentId must be a numeric id');
@@ -719,6 +722,20 @@ export async function recordFlakeResults(
       })
       .where(eq(flakeExperiments.id, id));
   });
+  if (experiment.kind === 'verify' && verdict === 'verified') {
+    await recordOutcome(db, {
+      projectId,
+      kind: 'flake-verify',
+      subjectType: 'test-case',
+      subjectId: experiment.testCaseId,
+      suggestionKey: `experiment:${id}`,
+      outcome: 'verified',
+      actor: opts.actor ?? { channel: 'cli' },
+      commit: input.commit ?? experiment.commit ?? null,
+      details: { experimentId: id },
+      at: now,
+    });
+  }
   return { experimentId: id, kind: experiment.kind as FlakeExperimentKind, verdict, arms: outcomes };
 }
 

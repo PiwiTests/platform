@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../../../database';
 import { requireProjectAccess, requireRouteId } from '../../../../../utils/project-access';
-import { draftScenario } from '#shared/handlers/scenario-gaps';
+import { issueScenarioDraft } from '#shared/handlers/scenario-gaps';
 
 defineRouteMeta({
   openAPI: {
@@ -19,10 +19,10 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
   const gapId = requireRouteId(event, 'gapId', 'gap ID');
-  await requireProjectAccess(event, projectId);
+  const user = await requireProjectAccess(event, projectId);
   const db = await getDatabase();
 
-  const draft = await draftScenario(db, projectId, gapId);
+  const draft = await issueScenarioDraft(db, projectId, gapId, { channel: 'ui', userId: user.id });
   if (!draft) throw apiError({ statusCode: 404, message: 'Gap not found' });
   return draft;
 });

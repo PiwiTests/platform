@@ -398,3 +398,63 @@ describe('verifyClusterFixes — which quiet runs count', () => {
     expect((await verifyClusterFixes(db, local)).map((f) => f.clusterId)).toEqual([clusterId]);
   });
 });
+
+describe('verifyClusterFixes — diagnosis outcomes', () => {
+  const diagnosisOutcomes = async (clusterId: number) =>
+    (await db.select().from(schema.handbackOutcomes))
+      .filter((o) => o.kind === 'diagnosis' && o.subjectId === clusterId)
+      .map((o) => ({ outcome: o.outcome, key: o.suggestionKey, runId: o.runId, channel: o.channel }));
+
+  test('a diagnosis-verified fix verifies the diagnosis version current when it landed, and a regression regresses it', async () => {
+    const failing = await insertRun('failed', 'd1a000');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    const [diagnosis] = await db
+      .select()
+      .from(schema.failureDiagnoses)
+      .where(eq(schema.failureDiagnoses.clusterId, clusterId));
+    const key = `${diagnosis!.id}@${diagnosis!.createdAt.getTime()}`;
+    changedFiles = ['src/checkout.ts'];
+
+    const green = await insertRun('passed', 'd1b000');
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    expect(await diagnosisOutcomes(clusterId)).toEqual([
+      { outcome: 'verified', key, runId: green, channel: 'inferred' },
+    ]);
+
+    // A re-verified diagnosis is a new version: it starts again, so it carries a new key.
+    await db
+      .update(schema.failureDiagnoses)
+      .set({ createdAt: new Date(diagnosis!.createdAt.getTime() + 60_000) })
+      .where(eq(schema.failureDiagnoses.id, diagnosis!.id));
+
+    const red = await insertRun('failed', 'd1c000');
+    await insertCase(red, 'failed', clusterId);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    expect(await diagnosisOutcomes(clusterId)).toEqual([
+      { outcome: 'verified', key, runId: green, channel: 'inferred' },
+      { outcome: 'regressed', key, runId: red, channel: 'inferred' },
+    ]);
+  });
+
+  test('a stopped-failing fix and its regression record no diagnosis outcome', async () => {
+    const failing = await insertRun('failed', 'd2a000');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['README.md'];
+
+    const green = await insertRun('passed', 'd2b000');
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    const red = await insertRun('failed', 'd2c000');
+    await insertCase(red, 'failed', clusterId);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+
+    expect(await diagnosisOutcomes(clusterId)).toEqual([]);
+  });
+});

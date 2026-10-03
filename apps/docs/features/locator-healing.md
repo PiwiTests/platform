@@ -80,6 +80,9 @@ Copy the recommended fix, or another alternative, and change the line the panel 
 tool works on the recorded page snapshots, so a CI failure nobody watched can still be picked visually. A replacement
 you confirmed with a picker shows a **Your pick** badge and becomes the recommended fix.
 
+The first later run whose code at that call site uses the recommended locator shows as **healed in run #N**, whoever
+made the edit.
+
 ## Inspect the failing page live (local runs)
 
 With `inspectOnFailure: true` (or `PIWI_INSPECT_ON_FAIL=true`), a failing test opens **Piwi's own inspector overlay**
