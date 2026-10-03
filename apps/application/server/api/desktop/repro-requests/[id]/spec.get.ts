@@ -36,7 +36,7 @@ export default eventHandler(async (event) => {
   if (!projectId.success) throw apiError({ statusCode: 400, message: 'Invalid project ID' });
   await requireProjectAccess(event, projectId.data);
   const request = getReproRequest(getRouterParam(event, 'id') ?? '');
-  if (!request) throw apiError({ statusCode: 404, message: 'Repro request not found' });
+  if (!request?.steps) throw apiError({ statusCode: 404, message: 'Repro request not found' });
   // Rendered once the developer started it in the window, never before.
   if (request.status !== 'running') {
     throw apiError({ statusCode: 409, message: 'The repro request is not running' });

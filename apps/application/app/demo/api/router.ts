@@ -194,6 +194,8 @@ import {
   type FlakeResultsInput,
 } from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
+import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { isRunOriginKind } from '@piwitests/core/wire';
 import { getVerifiedFixes } from '#shared/handlers/flake-verified';
 import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
 import {
@@ -205,6 +207,7 @@ import {
   quarantineClusterTests,
   bulkTriageClusters,
   patchClusterBaseCommit,
+  recordClusterBisect,
   extractClusterCases,
   getClusterDiagnosis,
   getExecutionDiagnosis,
@@ -780,9 +783,17 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/latest-run$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return getProjectLatestRun(await getDemoDb(), +m[1]!);
+      const origin = q?.get('origin');
+      if (origin != null && (!isRunOriginKind(origin) || q?.get('ref') == null)) {
+        throw demoHttpError(400, 'origin needs a known run origin and a ref');
+      }
+      return getProjectLatestRun(
+        await getDemoDb(),
+        +m[1]!,
+        isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
+      );
     },
   },
   {
@@ -1106,6 +1117,18 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       const b = body as { commit?: string | null };
       return patchClusterBaseCommit(await getDemoDb(), +m[1]!, b.commit);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/bisect$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseBisectResultBody(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const bisectedCommit = await recordClusterBisect(await getDemoDb(), +m[1]!, parsed.value);
+      if (!bisectedCommit) throw demoHttpError(404, 'Failure cluster not found');
+      return { ok: true, bisectedCommit };
     },
   },
   {

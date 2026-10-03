@@ -284,6 +284,18 @@ function originKindIs(value: SQL, kind: RunOriginKind): SQL {
 }
 
 /**
+ * SQL predicate: the run's origin is exactly `kind` with `ref`, in either
+ * spelling. A ref holds no quote and no LIKE wildcard (`parseRunOriginRef`).
+ */
+export function runOriginIs(metadata: SQLWrapper, kind: RunOriginKind, ref: string): SQL {
+  const key = RUN_ORIGIN_METADATA_KEY;
+  return sql`(${likeAny(text(metadata), [
+    `%"${key}":{"kind":"${kind}","ref":"${ref}"}%`,
+    `%"${key}": {"ref": "${ref}", "kind": "${kind}"}%`,
+  ])})`;
+}
+
+/**
  * SQL predicate: the run's origin (`runOrigin`) is one of `kinds`. `metadata`
  * is the run's metadata column.
  */
