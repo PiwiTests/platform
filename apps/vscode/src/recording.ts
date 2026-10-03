@@ -16,6 +16,7 @@ import {
   STOP_RECORDING_REQUEST,
   type PageCandidatesParams,
   type PageCandidatesResult,
+  type PiwiCommand,
   type RecordInto,
   type RecordParams,
   type RecordResult,
@@ -72,6 +73,8 @@ interface Session {
   applying: Array<{ version: number; changes: TextChange[] }> | null;
   /** The update to write next: each one holds the whole block, so a newer one replaces it. */
   next: RecordingUpdate | null;
+  /** The last message of an update shown, so that one repeated by the next updates shows once. */
+  told: string | null;
   writing: boolean;
 }
 
@@ -202,15 +205,13 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       (e: Error) => void vscode.window.showWarningMessage(`Piwi: could not ${command} the recording: ${e.message}`),
     );
 
-  const failed = async (update: RecordingUpdate) => {
-    const action = update.command?.title;
-    const picked = await vscode.window.showErrorMessage(
-      `Piwi: ${update.message || 'the recording stopped.'}`,
-      ...(action ? [action] : []),
-    );
-    if (picked && update.command) {
-      await vscode.commands.executeCommand(update.command.command, ...update.command.arguments);
-    }
+  /** Shows a message of the service, with the command it offers as a button that runs it. */
+  const tell = async (message: string, command: PiwiCommand | null | undefined, error: boolean) => {
+    const actions = command ? [command.title] : [];
+    const picked = error
+      ? await vscode.window.showErrorMessage(`Piwi: ${message}`, ...actions)
+      : await vscode.window.showInformationMessage(`Piwi: ${message}`, ...actions);
+    if (picked && command) await vscode.commands.executeCommand(command.command, ...command.arguments);
   };
 
   /** The recording ended: its controls go, its warnings stay; `update` is its last one, null when ended here. */
@@ -220,7 +221,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     if (!s.written) forget(s);
     decorate(s.uri);
     refresh();
-    if (update?.state === 'failed') void failed(update);
+    if (update?.state === 'failed') void tell(update.message || 'the recording stopped.', update.command, true);
     else if (update) void vscode.window.showInformationMessage(recordingSummary(update, s.keep));
   };
 
@@ -367,6 +368,8 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       finish(s, update);
       return;
     }
+    if (update.message && update.message !== s.told) void tell(update.message, update.command, false);
+    s.told = update.message ?? s.told;
     decorate(s.uri);
     refresh();
   };
@@ -418,6 +421,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       writtenVersion: null,
       applying: null,
       next: null,
+      told: null,
       writing: false,
     };
     sessions.set(id, s);
@@ -532,19 +536,16 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     const page = await askPage(candidates, title);
     if (!page) return;
     await context.workspaceState.update(LAST_PAGE, page);
-    const remembered = context.workspaceState.get<string>(LAST_PROJECT) || null;
     const params: RecordParams = {
       ...position,
       into: into ?? (candidates.context === 'test' ? 'steps' : 'test'),
-      project: remembered,
+      project: context.workspaceState.get<string>(LAST_PROJECT) || null,
       startUrl: startUrl.trim() || null,
       page,
       language: vscode.env.language,
     };
     let answer = await requestRecord(params);
-    let asked = false;
     if (answer && !answer.result.ok && answer.result.projects?.length) {
-      asked = true;
       const project = await askProject(answer.result.projects, title);
       if (!project) return;
       await context.workspaceState.update(LAST_PROJECT, project);
@@ -553,9 +554,6 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     if (!answer) return;
     const { result, since } = answer;
     if (!result.ok || !result.sessionId || !result.placement) {
-      // The project kept from an earlier recording may be gone: the next recording asks again.
-      if (remembered && !asked && !result.projects?.length)
-        await context.workspaceState.update(LAST_PROJECT, undefined);
       void vscode.window.showWarningMessage(`Piwi: ${result.message}`);
       return;
     }
