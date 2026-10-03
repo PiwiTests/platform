@@ -21,6 +21,33 @@ cache without install scripts, and the extension E2E flake is fixed. What change
   surfaces are hidden with `visibility: hidden` while a step's screenshot is taken, which also drops the focus. The test
   waits for a shown HUD; the product fix is to hide for a screenshot in a way that keeps the focus (`opacity: 0`),
   separately from the hide of a pick, which must also let the pointer through.
+- Three more extension E2E tests failed on this pull request's own runs, each a race between the test and a redraw or
+  an asynchronous render: a helper measured a replay-panel button a redraw had detached (`trusted-replay.spec.ts`),
+  a test focused the popup's project select before the popup showed it (`popup.spec.ts`), and a test moved the
+  pointer off a Tests row the browser had not yet seen under it (`coverage-overlay.spec.ts`). Each is fixed, and the
+  suite retries a failed test once on CI (from phase 3), so the next race reports a flaky test instead of failing
+  the job.
+
+**Phase 2 built 2026-10-03**: the `setup-workspace` action and `.node-version`, the `changes` job, the four
+editor, extension and desktop suites as reusable workflows `ci.yml` calls, `CI result`, the docs build on pull
+requests, `pr-lint.yml`, and `.github/AGENTS.md` with the conventions. What changed while building phase 2:
+
+- The release PR check and the version check are one job, `Versions`, which runs on every pull request; on the release
+  PR it also runs `npm ci`, and it is the only job there. The `changes` job skips the release PR, which skips every job
+  that needs it.
+- `app` also covers `apps/docs/**` and `CHANGELOG.md`: the server bundles both for its MCP tools. `ci` covers
+  `.github/workflows/**`, `.github/actions/**` and `.node-version` only, not the issue templates or `dependabot.yml`.
+- The editor, extension and desktop suites run on pull requests only, as before; on `main` they would run again what
+  the pull request passed.
+- `pr-lint.yml` runs on `pull_request` with the `edited` type, and every job runs on every event. The title check moved
+  from `pull_request_target`: it reads the title from the event and needs no write token. `actionlint` runs from its
+  Docker image, on every pull request.
+- The docs build runs on the `.node-version` Node (24), as the demo it is deployed with.
+- The release workflows (`publish*.yml`, `desktop-release.yml`) keep their own Node setup until phase 4 rewrites them.
+- Dependabot also updates the actions of `.github/actions/*`.
+- Branch protection is still to switch: the required checks become `CI result`, `commitlint`, `title` and
+  `actionlint`. Check names that moved: the four suites report as `Extension E2E / e2e`, `VS Code E2E / e2e`,
+  `JetBrains plugin / plugin`, `JetBrains plugin / verify (…)` and `Desktop E2E / e2e`.
 
 ## What we measured
 
@@ -158,47 +185,28 @@ Each phase is one pull request, measured before and after with the same API quer
 - [x] `timeout-minutes` on every job and `permissions` on every workflow.
 - [x] The extension E2E flake (see Status).
 
-### Phase 2: structure (risk: the required checks change)
+### Phase 2: structure (built; branch protection still to switch)
 
-- [ ] The `setup-workspace` composite action and the root `.node-version`, replacing the copied setup blocks.
-- [ ] A `changes` job in `ci.yml` (`dorny/paths-filter`, or a `git diff --name-only` script to avoid a third-party
-      action) with these outputs:
-      - `app`: `apps/application/**`, `packages/{core,picker-dom,reporter,server}/**`, `integrations/nitro/**`,
-        `package-lock.json`, `scripts/package-smoke.mjs`
-      - `extension`: `apps/extension/**`, `packages/{core,picker-dom}/**`
-      - `editors`: `apps/{vscode,jetbrains}/**`, `packages/{editor,core}/**`
-      - `desktop`: `apps/desktop/**`
-      - `docs`: `apps/docs/**`
-      - `dotnet`: `integrations/{aspnetcore,serilog}/**`
-      - `ci`: `.github/**`, which turns every other output on
-- [ ] The four path-filtered E2E workflows become reusable workflows that `ci.yml` calls on `changes`; they keep
+- [x] The `setup-workspace` composite action and the root `.node-version`, replacing the copied setup blocks of the
+      pull-request and `main` workflows.
+- [x] A `changes` job in `ci.yml` (`dorny/paths-filter`) with the outputs `app`, `js`, `extension`, `vscode`,
+      `jetbrains`, `desktop`, `docs` and `dotnet`; `ci` (`.github/workflows/**`, `.github/actions/**`,
+      `.node-version`) turns every other output on.
+- [x] The four path-filtered suites are reusable workflows that `ci.yml` calls on `changes`; they keep
       `workflow_dispatch`.
-- [ ] A `CI result` job, the one required check:
-
-      ```yaml
-      ci-result:
-        name: CI result
-        if: always()
-        needs: [changes, checks, build, e2e, package-smoke, demo, dotnet, extension, vscode, jetbrains, desktop, docs]
-        runs-on: ubuntu-latest
-        timeout-minutes: 2
-        steps:
-          - name: Fail when a needed job failed or was cancelled
-            if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-            run: exit 1
-      ```
-
-- [ ] A docs build on pull requests that change `apps/docs/**` (about 15 seconds).
-- [ ] `pr-lint.yml`: `commitlint.yml` and `pr-title.yml` as two jobs, plus `actionlint` when `.github/**` changes.
-- [ ] Branch protection switched to `CI result` (and `PR lint`) the day this merges, or pull requests wait for check
-      names that no longer exist.
+- [x] A `CI result` job, the one required check of `ci.yml`: it runs unless the run was cancelled, and fails when a
+      job it needs failed or was cancelled.
+- [x] A docs build on pull requests that change `apps/docs/**`.
+- [x] `pr-lint.yml`: `commitlint`, `title` and `actionlint`.
+- [ ] Branch protection switched to `CI result`, `commitlint`, `title` and `actionlint`, or pull requests wait for
+      check names that no longer exist.
 
 ### Phase 3: test matrices (one pull request per item; D2 and D4 decide the split)
 
 - [ ] E2E on two backends for pull requests, `local + sqlite` (Node 22, the `engines` floor) and `s3 + postgres`, five
       shards each: 20 → 10 jobs. All four backends where D2 says, from a matrix `changes` computes (`fromJSON`).
-- [ ] Extension E2E in three shards by file (`fullyParallel: false` stays) and `retries: 1` on CI, as the dashboard
-      suite retries: about 16 → 7 minutes of wall-clock time. `replay.spec.ts` (5.1 minutes) bounds the longest shard;
+- [ ] Extension E2E in three shards by file (`fullyParallel: false` stays): about 16 → 7 minutes of wall-clock
+      time. (`retries: 1` on CI is built, with phase 1.) `replay.spec.ts` (5.1 minutes) bounds the longest shard;
       split it if needed.
 - [ ] Desktop E2E reuses the `build-output` artifact of `ci.yml`'s `build` job: 2.3 macOS minutes less per run, and no
       `--max-old-space-size` workaround.
