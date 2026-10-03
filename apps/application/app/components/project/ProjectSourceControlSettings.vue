@@ -2,7 +2,7 @@
 /**
  * Project settings → Source control: the repository token and default branch,
  * whether quarantined failures fail the commit status, the CI re-run target per
- * provider, and where the specs generated from bug reports go. The token is write-only: a blank field keeps the stored one.
+ * provider with its optional Flake Lab target, and where the specs generated from bug reports go. The token is write-only: a blank field keeps the stored one.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
 
@@ -24,6 +24,17 @@ const { state, dirty } = useStoredForm(() => {
       },
       gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
       bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
+      flakeLab: {
+        github: {
+          workflow: ci?.flakeLab?.github?.workflow ?? '',
+          inputName: ci?.flakeLab?.github?.inputName ?? '',
+        },
+        gitlab: { variableName: ci?.flakeLab?.gitlab?.variableName ?? '' },
+        bitbucket: {
+          pipeline: ci?.flakeLab?.bitbucket?.pipeline ?? '',
+          variableName: ci?.flakeLab?.bitbucket?.variableName ?? '',
+        },
+      },
     },
     generatedSpecs: {
       bugsFolder: props.project.generatedSpecs?.bugsFolder ?? '',
@@ -185,6 +196,48 @@ async function removeToken() {
                     v-model="state.ciRerun.bitbucket.variableName"
                     placeholder="variable name, e.g. PW_ARGS"
                     aria-label="Bitbucket variable name"
+                    class="font-mono"
+                  />
+                </div>
+              </div>
+              <div class="space-y-2 border-t border-default pt-3" data-testid="ci-rerun-flake-lab">
+                <p class="text-sm text-highlighted">Flake Lab (optional)</p>
+                <p class="text-xs text-muted">
+                  A workflow or pipeline that runs <code class="font-mono">npx @piwitests/reporter</code> with the
+                  arguments it receives (<code class="font-mono">flake 12</code>,
+                  <code class="font-mono">flake verify 12</code>), so a flaky test's experiment can run in CI from its
+                  page. GitHub and GitLab use the ref above.
+                </p>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <UInput
+                    v-model="state.ciRerun.flakeLab.github.workflow"
+                    placeholder="GitHub workflow, e.g. flake.yml"
+                    aria-label="Flake Lab GitHub workflow file"
+                    class="font-mono"
+                  />
+                  <UInput
+                    v-model="state.ciRerun.flakeLab.github.inputName"
+                    placeholder="input name, e.g. piwi_flake"
+                    aria-label="Flake Lab GitHub input name"
+                    class="font-mono"
+                  />
+                  <UInput
+                    v-model="state.ciRerun.flakeLab.gitlab.variableName"
+                    placeholder="GitLab variable, e.g. FLAKE_ARGS"
+                    aria-label="Flake Lab GitLab variable name"
+                    class="font-mono"
+                  />
+                  <div class="hidden sm:block" />
+                  <UInput
+                    v-model="state.ciRerun.flakeLab.bitbucket.pipeline"
+                    placeholder="Bitbucket custom pipeline, e.g. flake"
+                    aria-label="Flake Lab Bitbucket custom pipeline"
+                    class="font-mono"
+                  />
+                  <UInput
+                    v-model="state.ciRerun.flakeLab.bitbucket.variableName"
+                    placeholder="variable name, e.g. FLAKE_ARGS"
+                    aria-label="Flake Lab Bitbucket variable name"
                     class="font-mono"
                   />
                 </div>

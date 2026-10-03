@@ -78,6 +78,9 @@ under **CI re-run**. Turn it on and fill in the block for your provider:
 The dispatch uses the project's SCM token, so that token needs the write scope above. The button is disabled with an
 explanatory tooltip when the feature is off, no target is configured for the repository's provider, or no token is set.
 
+An optional **Flake Lab** block names a second workflow or pipeline that runs `piwi flake` for one flaky test, started
+from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the workflow.
+
 Your workflow has to actually consume the value. A minimal GitHub example that forwards the input to Playwright:
 
 ```yaml

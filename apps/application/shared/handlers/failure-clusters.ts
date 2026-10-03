@@ -29,7 +29,10 @@ import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { computeClusterState, type ClusterState } from '#shared/cluster-state';
-import { computeNextStep, type NextStep } from '#shared/next-step';
+import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
+import { getFlakeLabStepFacts } from './flake-lab';
+import { mayHaveFlakeSuspects } from './flake-profile';
+import { isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
 
 /** Whether a stored patch validation reports the patch applying to the current tree. */
@@ -89,6 +92,8 @@ export async function getFailureCluster(
   opts: {
     aiConfigured?: boolean;
     ciRerunAvailable?: boolean;
+    /** Whether a Flake Lab CI target can run a test's experiment (server only). */
+    flakeLabCiAvailable?: (testCaseId: number) => Promise<boolean>;
     now?: Date;
     affectedTestsLimit?: number | null;
   } = {},
@@ -226,11 +231,17 @@ export async function getFailureCluster(
   const patchFacts = await getClusterPatchFacts(db, clusterId);
   let hasHealingRecommendation = false;
   let latestErrorKind: ReturnType<typeof parsePlaywrightError>['kind'] | null = null;
+  let flakeLab: FlakeLabStepFacts | null = null;
   if (latestOccurrence?.id) {
     const [healing, [latestExec]] = await Promise.all([
       getLocatorHealing(db, latestOccurrence.id).catch(() => null),
       db
-        .select({ error: testRunsCases.error, steps: testRunsCases.steps })
+        .select({
+          error: testRunsCases.error,
+          steps: testRunsCases.steps,
+          status: testRunsCases.status,
+          retries: testRunsCases.retries,
+        })
         .from(testRunsCases)
         .where(eq(testRunsCases.id, latestOccurrence.id)),
     ]);
@@ -242,6 +253,20 @@ export async function getFailureCluster(
           latestExec.error,
         ),
       }).kind;
+    }
+    // The latest occurrence passed on a retry, or its test's history both fails and
+    // passes: the Flake Lab may hold the next step.
+    const testCaseId = latestOccurrence.testCaseId;
+    const retryPassed = latestExec?.status === 'passed' && (latestExec.retries ?? 0) > 0;
+    if (
+      testCaseId != null &&
+      (retryPassed || (await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) &&
+      !(await isPassiveCapabilityDeclined(db, cluster.projectId, 'flake-lab'))
+    ) {
+      const ciAvailable = opts.flakeLabCiAvailable
+        ? await opts.flakeLabCiAvailable(testCaseId).catch(() => false)
+        : false;
+      flakeLab = await getFlakeLabStepFacts(db, testCaseId, { ciAvailable, now: opts.now }).catch(() => null);
     }
   }
 
@@ -259,6 +284,7 @@ export async function getFailureCluster(
     errorKind: latestErrorKind,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,
+    flakeLab,
     clusterId,
     executionId: latestOccurrence?.id ?? null,
   });

@@ -50,12 +50,28 @@ export interface BitbucketRerunTarget {
   variableName: string;
 }
 
+/**
+ * The optional target that runs `piwi flake` in CI for one test. It receives the
+ * command's arguments (`flake 12`, `flake verify 12`), which the workflow passes
+ * to `npx @piwitests/reporter`. GitHub and GitLab dispatch on the re-run
+ * target's ref when the test's run has no branch, so they need that target too.
+ */
+export interface FlakeLabCiTarget {
+  /** A `workflow_dispatch` workflow and the input that receives the arguments. */
+  github?: { workflow: string; inputName: string };
+  /** The pipeline variable that receives the arguments. */
+  gitlab?: { variableName: string };
+  /** A `custom:` pipeline and the variable that receives the arguments. */
+  bitbucket?: { pipeline: string; variableName: string };
+}
+
 export interface CiRerunSettings {
   /** Master switch. Off by default — dispatching CI needs an explicit opt-in. */
   enabled: boolean;
   github?: GitHubRerunTarget;
   gitlab?: GitLabRerunTarget;
   bitbucket?: BitbucketRerunTarget;
+  flakeLab?: FlakeLabCiTarget;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -89,6 +105,20 @@ export function resolveCiRerunSettings(input?: Partial<CiRerunSettings> | null):
     if (pipeline && variableName) out.bitbucket = { pipeline, variableName };
   }
 
+  const lab = input?.flakeLab;
+  if (lab) {
+    const flakeLab: FlakeLabCiTarget = {};
+    const workflow = str(lab.github?.workflow);
+    const inputName = str(lab.github?.inputName);
+    if (workflow && inputName) flakeLab.github = { workflow, inputName };
+    const glVariable = str(lab.gitlab?.variableName);
+    if (glVariable) flakeLab.gitlab = { variableName: glVariable };
+    const pipeline = str(lab.bitbucket?.pipeline);
+    const bbVariable = str(lab.bitbucket?.variableName);
+    if (pipeline && bbVariable) flakeLab.bitbucket = { pipeline, variableName: bbVariable };
+    if (Object.keys(flakeLab).length) out.flakeLab = flakeLab;
+  }
+
   return out;
 }
 
@@ -96,6 +126,35 @@ export function resolveCiRerunSettings(input?: Partial<CiRerunSettings> | null):
 export function hasRerunTarget(settings: CiRerunSettings | null | undefined, provider: ScmProviderName): boolean {
   if (!settings?.enabled) return false;
   return Boolean(settings[provider]);
+}
+
+/**
+ * The settings `dispatchRerun` sends a Flake Lab dispatch with: the provider's
+ * target swapped for the Flake Lab one, on the re-run target's ref. Null when
+ * the provider has no usable Flake Lab target.
+ */
+export function flakeLabRerunSettings(
+  settings: CiRerunSettings | null | undefined,
+  provider: ScmProviderName,
+): CiRerunSettings | null {
+  const lab = settings?.enabled ? settings.flakeLab : undefined;
+  if (!settings || !lab) return null;
+  if (provider === 'github' && lab.github && settings.github) {
+    return {
+      enabled: true,
+      github: { workflow: lab.github.workflow, ref: settings.github.ref, inputName: lab.github.inputName },
+    };
+  }
+  if (provider === 'gitlab' && lab.gitlab && settings.gitlab) {
+    return { enabled: true, gitlab: { ref: settings.gitlab.ref, variableName: lab.gitlab.variableName } };
+  }
+  if (provider === 'bitbucket' && lab.bitbucket) return { enabled: true, bitbucket: lab.bitbucket };
+  return null;
+}
+
+/** The `npx @piwitests/reporter` arguments a Flake Lab dispatch hands CI. */
+export function flakeLabCiArgs(testCaseId: number, kind: 'reproduce' | 'verify'): string {
+  return kind === 'verify' ? `flake verify ${testCaseId}` : `flake ${testCaseId}`;
 }
 
 /**

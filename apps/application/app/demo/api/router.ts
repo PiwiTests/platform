@@ -189,6 +189,7 @@ import {
   getFlakyListSuspects,
   getProjectFlakeLab,
   listFlakeExperiments,
+  listFlakeLabInbox,
   recordFlakeResults,
   resolveTestCaseByLocation,
   type FlakeResultsInput,
@@ -1223,6 +1224,15 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to run the lab in.
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      return { ok: false, demo: true, message: 'Flake Lab in CI is not available in the demo.' };
+    },
+  },
+  {
     method: 'PATCH',
     pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
     handler: async (m, body, _q, ctx) => {
@@ -1355,6 +1365,7 @@ const routes: RouteEntry[] = [
         environment: q?.get('environment')?.trim() || null,
         branch: q?.get('branch')?.trim() || null,
         limit: int('limit'),
+        suspects: q?.get('suspects') === 'true' || q?.get('suspects') === '1',
       });
     },
   },
@@ -2072,6 +2083,13 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/gaps\/inbox$/,
     handler: async () => ({ items: await listAcceptedUnwritten(await getDemoDb(), 'all') }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/flake-lab\/inbox$/,
+    handler: async (_m, _b, _q, ctx) => ({
+      items: await listFlakeLabInbox(await getDemoDb(), !ctx || ctx.scope === 'all' ? 'all' : [...ctx.scope]),
+    }),
   },
   {
     method: 'GET',

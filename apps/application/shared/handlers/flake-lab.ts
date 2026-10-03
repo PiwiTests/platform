@@ -3,7 +3,7 @@
  * reports back, and what the rest of the dashboard reads from them.
  *
  * A plan turns a test's flake profile into arms: a control with no condition,
- * then one arm per suspect in rank order, each condition in the plan-file shape
+ * then one arm per suspect, untested suspects first, each condition in the plan-file shape
  * (`@piwitests/core/flake-plan`), with the other test of an `alongside` or
  * `after` suspect named by file, title and describe path. It carries the error
  * signatures of the test's failures in the profile's window, so the command
@@ -23,13 +23,21 @@ import {
   type FlakeTestRef,
 } from '@piwitests/core/flake-plan';
 import { flakeArmVerdict, flakeFixVerified, flakeVerifyRuns } from '@piwitests/core/flake-verdict';
-import { flakeArms, flakeExperiments, testCases, testRuns, testRunsCases } from '../../server/database/schema';
+import {
+  flakeArms,
+  flakeExperiments,
+  projects,
+  testCases,
+  testRuns,
+  testRunsCases,
+} from '../../server/database/schema';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import {
   FLAKE_PROFILE_MAX_ATTEMPTS,
   FLAKE_PROFILE_WINDOW_DAYS,
   getFlakeProfile,
   getTopFlakeSuspects,
+  TOP_SUSPECTS_MAX_TESTS,
   type FlakeCondition as ProfileCondition,
   type TopFlakeSuspect,
   type FlakeProfile,
@@ -38,12 +46,19 @@ import { notLabRun } from './probes';
 import { getVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { TERMINAL_STATUSES, getProjectFlakyTestsWithVerified } from './projects';
 import type { DrizzleDB } from './db';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import type { FlakeLabStepFacts } from '../next-step';
 import {
   FLAKE_LAB_STATE_ORDER,
   flakeLabNextCommand,
   flakeLabNextStep,
   flakeLabTestState,
+  flakeSuspectLabNote,
+  flakeSuspectLabShort,
+  flakeSuspectStanding,
   latestSuspectResults,
+  planFlakeSuspectOrder,
+  topFlakeSuspect,
   type FlakeArmRecord,
   type FlakeArmVerdictValue,
   type FlakeExperimentKind,
@@ -52,6 +67,7 @@ import {
   type FlakeLabTestState,
   type FlakeReproduceVerdict,
   type FlakeSuspectResult,
+  type FlakeSuspectStanding,
   type FlakeVerifyVerdict,
 } from '../flake-lab';
 
@@ -95,6 +111,8 @@ export interface FlakeLabPlanSuspect {
   sharedRoutes?: string[];
   /** Why the suspect has no arm (its other test is gone), or null. */
   skipped: string | null;
+  /** Its latest lab result and what it says; null when no experiment tested it. */
+  lab: { verdict: FlakeReproduceVerdict; matchingFailures: number; runs: number; note: string } | null;
 }
 
 export interface FlakeExperimentPlan {
@@ -237,20 +255,25 @@ interface PlanInput {
   medianDurationMs: number | null;
   errorSignatures: string[];
   runs?: number | null;
+  /** Each suspect's latest lab result, by suspect id. */
+  results?: ReadonlyMap<string, FlakeSuspectResult>;
 }
 
 /**
- * The reproduce plan for a profile: the control, then one arm per suspect in
- * rank order (a suspect whose other test is unknown gets none and says why),
- * then the combination. Pure.
+ * The reproduce plan for a profile: the control, then one arm per suspect (a
+ * suspect whose other test is unknown gets none and says why), then the
+ * combination. Suspects are listed in rank order; arms run in the lab's order:
+ * untested suspects first, one that did not reproduce last, none dropped. Pure.
  */
 export function buildFlakeReproducePlan(input: PlanInput): FlakeExperimentPlan {
   const runs = input.runs ?? null;
+  const results = input.results ?? new Map<string, FlakeSuspectResult>();
   const suspects: FlakeLabPlanSuspect[] = [];
-  const arms: FlakeLabArmPlan[] = [];
+  const armBySuspect = new Map<string, FlakeLabArmPlan>();
   input.profile.suspects.forEach((s, i) => {
     const rank = i + 1;
     const condition = toPlanCondition(s.condition, input.others);
+    const result = results.get(s.id);
     suspects.push({
       rank,
       id: s.id,
@@ -260,10 +283,18 @@ export function buildFlakeReproducePlan(input: PlanInput): FlakeExperimentPlan {
       conditionLabel: s.conditionLabel,
       ...(s.sharedRoutes?.length ? { sharedRoutes: s.sharedRoutes } : {}),
       skipped: condition ? null : `test #${s.testCaseId} is no longer in the catalog`,
+      lab: result
+        ? {
+            verdict: result.verdict,
+            matchingFailures: result.matchingFailures,
+            runs: result.runs,
+            note: flakeSuspectLabNote(result)!,
+          }
+        : null,
     });
     if (!condition) return;
     const conditions = [condition];
-    arms.push({
+    armBySuspect.set(s.id, {
       id: `suspect-${rank}`,
       label: describeFlakeArm(conditions),
       suspectId: s.id,
@@ -272,6 +303,10 @@ export function buildFlakeReproducePlan(input: PlanInput): FlakeExperimentPlan {
       runs: runs ?? FLAKE_ARM_RUNS,
       stopAt: 3,
     });
+  });
+  const arms = planFlakeSuspectOrder(input.profile.suspects, results).flatMap((s) => {
+    const arm = armBySuspect.get(s.id);
+    return arm ? [arm] : [];
   });
   const combinedConditions = combineFlakeArms(arms);
   return {
@@ -396,6 +431,7 @@ export async function getFlakeExperimentPlan(
     getFlakeProfile(db, testCaseId, { now, summary: true }),
     loadPlanHistory(db, testCaseId, now),
   ]);
+  const results = opts.kind === 'verify' ? undefined : await getFlakeSuspectResults(db, testCaseId);
   if (!profile) throw new FlakePlanUnavailable(404, 'Test case not found');
   const test: FlakePlanTest = {
     file: tc.filePath,
@@ -416,6 +452,7 @@ export async function getFlakeExperimentPlan(
     medianDurationMs: history.medianDurationMs,
     errorSignatures: history.errorSignatures,
     runs: opts.runs,
+    results,
   });
 
   let verifiesArmId: number | null = null;
@@ -569,7 +606,7 @@ export class FlakeResultsRejected extends Error {
 /**
  * The verdicts of a reproduce experiment's arms against its control, and the
  * experiment's: reproduced by the first arm that reproduced (in the order
- * posted, the plan's rank order), else amplified, else not reproduced. Pure.
+ * posted, the plan's order), else amplified, else not reproduced. Pure.
  */
 export function judgeReproduce(arms: FlakeArmResultInput[]): {
   arms: FlakeArmOutcome[];
@@ -935,6 +972,27 @@ export interface FlakeLabTest {
   lastExperimentAt: string | null;
   experiments: number;
   verifiedFix: VerifiedFix | null;
+  /** Share of the runs read in which it failed at least once (failed, or passed on a retry); null off the ranking. */
+  flakeRate: number | null;
+  /**
+   * With `suspects`, on the first tests that need a step: the suspect it is shown with (see
+   * `topFlakeSuspect`); null when its history names none.
+   */
+  suspect?: FlakeLabTopSuspect | null;
+  /** With `suspects`: how many of its suspects no experiment tested yet. */
+  untestedSuspects?: number;
+}
+
+/** A test's top suspect as the lab lists it. */
+export interface FlakeLabTopSuspect {
+  id: string;
+  label: string;
+  standing: FlakeSuspectStanding;
+  /** The latest arm that tested it; null while untested. */
+  matchingFailures: number | null;
+  runs: number | null;
+  /** Its standing in a few words (`reproduced 7 of 10`, `untested`). */
+  lab: string;
 }
 
 /** An experiment of the project, with the test it ran. */
@@ -973,7 +1031,17 @@ export interface ProjectFlakeLab {
 export async function getProjectFlakeLab(
   db: DrizzleDB,
   projectId: number,
-  opts: { runs?: number; environment?: string | null; branch?: string | null; limit?: number } = {},
+  opts: {
+    runs?: number;
+    environment?: string | null;
+    branch?: string | null;
+    limit?: number;
+    /** Also read each listed test's suspects, for the first {@link TOP_SUSPECTS_MAX_TESTS} tests that need a step. */
+    suspects?: boolean;
+    /** With `suspects`: read them for at most this many tests. */
+    suspectLimit?: number;
+    now?: Date;
+  } = {},
 ): Promise<ProjectFlakeLab> {
   const runs = Math.min(200, Math.max(1, opts.runs ?? 50));
   const limit = Math.min(Math.max(1, opts.limit ?? 20), FLAKE_EXPERIMENTS_MAX);
@@ -1011,6 +1079,9 @@ export async function getProjectFlakeLab(
   for (const t of [...ranked, ...verifiedFixed]) {
     known.set(t.testCaseId, { title: t.title, filePath: t.filePath, retryPassRuns: t.retryPassRuns });
   }
+  const flakeRates = new Map(
+    ranked.map((t) => [t.testCaseId, t.totalRuns > 0 ? (t.failedRuns + t.retryPassRuns) / t.totalRuns : null]),
+  );
   const missing = [...experimentsByTest.keys()].filter((id) => !known.has(id));
   const titled = missing.length
     ? await db
@@ -1039,6 +1110,7 @@ export async function getProjectFlakeLab(
       lastExperimentAt: own[0] ? iso(own[0].finishedAt) : null,
       experiments: own.length,
       verifiedFix: fix,
+      flakeRate: flakeRates.get(testCaseId) ?? null,
     });
   }
   const stateRank = (s: FlakeLabTestState) => FLAKE_LAB_STATE_ORDER.indexOf(s);
@@ -1049,6 +1121,8 @@ export async function getProjectFlakeLab(
       (b.lastExperimentAt ?? '').localeCompare(a.lastExperimentAt ?? '') ||
       a.testCaseId - b.testCaseId,
   );
+
+  if (opts.suspects) await addTopSuspects(db, tests, opts.now, opts.suspectLimit);
 
   const newest = await db
     .select()
@@ -1075,4 +1149,174 @@ export async function getProjectFlakeLab(
       experiments: rows.length,
     },
   };
+}
+
+/**
+ * Set `suspect` and `untestedSuspects` on the first {@link TOP_SUSPECTS_MAX_TESTS}
+ * tests that need a step, a few at a time, each profile in the summary view.
+ */
+async function addTopSuspects(
+  db: DrizzleDB,
+  tests: FlakeLabTest[],
+  now?: Date,
+  limit = TOP_SUSPECTS_MAX_TESTS,
+): Promise<void> {
+  const wanted = tests.filter((t) => t.nextCommand).slice(0, Math.min(limit, TOP_SUSPECTS_MAX_TESTS));
+  const BATCH = 5;
+  for (let i = 0; i < wanted.length; i += BATCH) {
+    await Promise.all(
+      wanted.slice(i, i + BATCH).map(async (test) => {
+        const [profile, results] = await Promise.all([
+          getFlakeProfile(db, test.testCaseId, { now, summary: true }),
+          getFlakeSuspectResults(db, test.testCaseId),
+        ]);
+        const suspects = profile?.suspects ?? [];
+        test.untestedSuspects = suspects.filter((sus) => !results.has(sus.id)).length;
+        const top = topFlakeSuspect(suspects, results);
+        const result = top ? results.get(top.id) : undefined;
+        test.suspect = top
+          ? {
+              id: top.id,
+              label: top.label,
+              standing: flakeSuspectStanding(result),
+              matchingFailures: result?.matchingFailures ?? null,
+              runs: result?.runs ?? null,
+              lab: flakeSuspectLabShort(result),
+            }
+          : null;
+      }),
+    );
+  }
+}
+
+/**
+ * A flaky test's Flake Lab facts for the next-step policy: its state's next
+ * step and command, the condition that reproduced it, and, with a reproduce
+ * step, its top suspect and how many suspects are untested. `ciAvailable` is
+ * the caller's (a server-only check).
+ */
+export async function getFlakeLabStepFacts(
+  db: DrizzleDB,
+  testCaseId: number,
+  opts: { ciAvailable?: boolean; now?: Date } = {},
+): Promise<FlakeLabStepFacts> {
+  const [own, fixes] = await Promise.all([
+    db
+      .select({ kind: flakeExperiments.kind, verdict: flakeExperiments.verdict, reproducedBy: flakeArms.label })
+      .from(flakeExperiments)
+      .leftJoin(flakeArms, eq(flakeArms.id, flakeExperiments.reproducingArmId))
+      .where(and(eq(flakeExperiments.testCaseId, testCaseId), isNotNull(flakeExperiments.finishedAt)))
+      .orderBy(desc(flakeExperiments.finishedAt), desc(flakeExperiments.id)),
+    getVerifiedFixes(db, [testCaseId]),
+  ]);
+  const state = flakeLabTestState(own, fixes.get(testCaseId) ?? null);
+  const nextStep = flakeLabNextStep(state);
+  const facts: FlakeLabStepFacts = {
+    testCaseId,
+    nextStep,
+    command: flakeLabNextCommand(testCaseId, state),
+    reproducedBy: own.find((e) => e.kind === 'reproduce' && e.verdict === 'reproduced')?.reproducedBy ?? null,
+    suspect: null,
+    untestedSuspects: 0,
+    ciAvailable: opts.ciAvailable ?? false,
+  };
+  if (nextStep !== 'reproduce') return facts;
+  const [profile, results] = await Promise.all([
+    getFlakeProfile(db, testCaseId, { now: opts.now, summary: true }),
+    getFlakeSuspectResults(db, testCaseId),
+  ]);
+  const suspects = profile?.suspects ?? [];
+  const top = topFlakeSuspect(suspects, results);
+  facts.untestedSuspects = suspects.filter((sus) => !results.has(sus.id)).length;
+  facts.suspect = top ? { id: top.id, label: top.label, standing: flakeSuspectStanding(results.get(top.id)) } : null;
+  return facts;
+}
+
+/** A flaky test Home links to: one with an untested suspect, or a reproduction waiting for a verify. */
+export interface FlakeLabInboxItem {
+  projectId: number;
+  projectName: string;
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  step: FlakeExperimentKind;
+  /** The step's command. */
+  command: string;
+  /** Reproduce: the top untested suspect. Verify: the condition that reproduced it. */
+  detail: string | null;
+  /** Reproduce: the suspects no experiment tested yet. */
+  untestedSuspects: number;
+  flakeRate: number | null;
+}
+
+/** Projects Home reads, the most recently run first. */
+const FLAKE_LAB_INBOX_PROJECTS = 20;
+/** Tests per project whose suspects Home reads. */
+const FLAKE_LAB_INBOX_SUSPECTS = 10;
+/** Items Home lists. */
+export const FLAKE_LAB_INBOX_MAX = 10;
+
+/**
+ * The flaky tests Home links to across the listed projects (the most recently
+ * run {@link FLAKE_LAB_INBOX_PROJECTS}, those that did not decline the Flake
+ * Lab): each reproduced test waiting for a verify, then each test whose top
+ * suspect the lab has not tested, in each project's lab order; at most
+ * {@link FLAKE_LAB_INBOX_MAX}.
+ */
+export async function listFlakeLabInbox(
+  db: DrizzleDB,
+  projectIds: number[] | 'all',
+  opts: { now?: Date } = {},
+): Promise<FlakeLabInboxItem[]> {
+  if (projectIds !== 'all' && projectIds.length === 0) return [];
+  const recent = await db
+    .select({ projectId: testRuns.projectId, name: projects.name, label: projects.label })
+    .from(testRuns)
+    .innerJoin(projects, eq(projects.id, testRuns.projectId))
+    .where(projectIds === 'all' ? undefined : inArray(testRuns.projectId, projectIds))
+    .groupBy(testRuns.projectId, projects.name, projects.label)
+    .orderBy(desc(sql`MAX(${testRuns.id})`))
+    .limit(FLAKE_LAB_INBOX_PROJECTS);
+
+  const items: FlakeLabInboxItem[] = [];
+  for (const project of recent) {
+    if (await isPassiveCapabilityDeclined(db, project.projectId, 'flake-lab')) continue;
+    const lab = await getProjectFlakeLab(db, project.projectId, {
+      limit: 1,
+      suspects: true,
+      suspectLimit: FLAKE_LAB_INBOX_SUSPECTS,
+      now: opts.now,
+    });
+    items.push(...flakeLabInboxItems({ id: project.projectId, name: project.label || project.name }, lab.tests));
+  }
+  return [...items.filter((i) => i.step === 'verify'), ...items.filter((i) => i.step === 'reproduce')].slice(
+    0,
+    FLAKE_LAB_INBOX_MAX,
+  );
+}
+
+/**
+ * The tests of one project's lab Home links to, in lab order: a flaky test that
+ * waits for a verify, or whose top suspect is untested. Pure.
+ */
+export function flakeLabInboxItems(project: { id: number; name: string }, tests: FlakeLabTest[]): FlakeLabInboxItem[] {
+  const out: FlakeLabInboxItem[] = [];
+  for (const t of tests) {
+    if (!t.flaky || !t.nextCommand) continue;
+    const base = {
+      projectId: project.id,
+      projectName: project.name,
+      testCaseId: t.testCaseId,
+      title: t.title,
+      filePath: t.filePath,
+      command: t.nextCommand,
+      flakeRate: t.flakeRate,
+    };
+    if (flakeLabNextStep(t.state) === 'verify') {
+      out.push({ ...base, step: 'verify', detail: t.reproducedBy, untestedSuspects: 0 });
+    } else if (t.suspect?.standing === 'untested') {
+      out.push({ ...base, step: 'reproduce', detail: t.suspect.label, untestedSuspects: t.untestedSuspects ?? 0 });
+    }
+  }
+  return out;
 }
