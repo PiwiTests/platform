@@ -21,6 +21,7 @@ import type {
   ScmFileEdit,
   ScmPullRequest,
   CreatePullRequestInput,
+  ScmPostedComment,
 } from './ScmProvider';
 import { isValidGitRef } from './refs';
 import { TtlCache } from '../ttl-cache';
@@ -518,6 +519,10 @@ export class LocalGitProvider extends ScmProvider {
 
   override upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
     return this.hosted.upsertPullRequestComment(prNumber, marker, body);
+  }
+
+  override postPullRequestComment(prNumber: number, marker: string, body: string): Promise<ScmPostedComment | null> {
+    return this.hosted.postPullRequestComment(prNumber, marker, body);
   }
 
   override postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {

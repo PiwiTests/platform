@@ -394,6 +394,8 @@ export default defineNuxtConfig({
       '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync'],
       // Fire the report schedules that are due (a missed tick fires on the next sweep)
       '*/5 * * * *': ['reports:schedule'],
+      // Read the final state of the pull requests a gate failed on (overrides and escapes)
+      '*/10 * * * *': ['gate:sweep'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged

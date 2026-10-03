@@ -145,7 +145,8 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
 }
 
 async function requestGate(args: GateArgs): Promise<GateResult> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // `X-Piwi-Client: cli` names this command as the evaluation's source.
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-Piwi-Client': 'cli' };
   if (args.apiKey) headers['X-API-Key'] = args.apiKey;
 
   // `maxUncoveredChanges` is a warn-only body field the server reads outside the

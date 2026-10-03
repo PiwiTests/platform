@@ -21,6 +21,7 @@ import type {
   ScmCommitStatus,
   ScmFileEdit,
   CreatePullRequestInput,
+  ScmPostedComment,
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
@@ -404,7 +405,15 @@ export class GitHubProvider extends ScmProvider {
   }
 
   override async upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
-    if (!this.token) return false;
+    return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
+  }
+
+  override async postPullRequestComment(
+    prNumber: number,
+    marker: string,
+    body: string,
+  ): Promise<ScmPostedComment | null> {
+    if (!this.token) return null;
     try {
       // A PR comment is an issue comment; list the most recent page and look
       // for one we previously wrote. Only a comment carrying the marker is ever
@@ -432,9 +441,12 @@ export class GitHubProvider extends ScmProvider {
         body: JSON.stringify({ body }),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      return res.ok;
+      if (!res.ok) return null;
+      const posted = (await res.json().catch(() => null)) as { id?: number } | null;
+      const id = posted?.id ?? existingId;
+      return { id: id != null ? String(id) : null };
     } catch {
-      return false;
+      return null;
     }
   }
 

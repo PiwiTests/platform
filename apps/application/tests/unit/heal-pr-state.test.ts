@@ -49,7 +49,7 @@ const { recordOutcome, pruneOutcomesOlderThan } = await import('../../server/uti
 
 /** Run the migration that records a `suggested` outcome for every heal PR opened before outcomes existed. */
 async function backfillSuggestedOutcomes() {
-  const file = new URL('../../server/database/migrations/0101_heal_pr_suggested_outcomes.sql', import.meta.url);
+  const file = new URL('../../server/database/migrations/0102_heal_pr_suggested_outcomes.sql', import.meta.url);
   await db.run(sql.raw(readFileSync(fileURLToPath(file), 'utf8')));
 }
 
