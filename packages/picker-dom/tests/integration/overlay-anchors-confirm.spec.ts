@@ -125,6 +125,58 @@ test.describe('showAnchorPicker', () => {
     expect(box!.x + box!.width).toBeLessThanOrEqual(320);
   });
 
+  test('reads each parent’s test id, and counts the leaf’s, from the project’s attribute', async ({ page }) => {
+    await page.setContent(`<!doctype html><html><body>
+      <section data-test="cart" data-testid="lib-cart"><div><button id="target" data-test="rm">Remove</button></div></section>
+      <section data-test="wishlist"><button data-test="rm">Remove</button></section>
+    </body></html>`);
+    await page.evaluate(() => {
+      (globalThis as any).__piwiPickedElement = document.getElementById('target');
+    });
+    await page.evaluate(showAnchorPicker, {
+      tagRoles: { button: 'button', section: 'region' },
+      inputRoles: {},
+      roleSources: 'button,section',
+      leafRole: 'button',
+      leafLevel: null,
+      leafTestId: 'rm',
+      testIdAttribute: 'data-test',
+    });
+
+    const rows = page.locator('label');
+    // The <div> carries no hook.
+    await expect(rows.nth(0)).toContainText('add a data-test to make this usable');
+    await expect(rows.nth(1)).toContainText('data-test="cart"');
+    await expect(rows.nth(1)).toContainText('contains exactly 1 matching element');
+    await rows.nth(1).locator('input[type="checkbox"]').check();
+    await expect(page.getByText('Selection matches exactly 1 element')).toBeVisible();
+    await page.getByRole('button', { name: 'Use selected parents' }).click();
+
+    const anchors = await page.evaluate(() => (globalThis as any).__piwiPickAnchors);
+    expect(anchors).toEqual([expect.objectContaining({ tag: 'section', testId: 'cart', testIdCount: 1 })]);
+  });
+
+  test('without it, data-testid is the test id it reads', async ({ page }) => {
+    await page.setContent(`<!doctype html><html><body>
+      <section data-test="cart" data-testid="lib-cart"><button id="target" data-test="rm">Remove</button></section>
+    </body></html>`);
+    await page.evaluate(() => {
+      (globalThis as any).__piwiPickedElement = document.getElementById('target');
+    });
+    await page.evaluate(showAnchorPicker, {
+      tagRoles: { button: 'button', section: 'region' },
+      inputRoles: {},
+      roleSources: 'button,section',
+      leafRole: 'button',
+      leafLevel: null,
+      leafTestId: 'rm',
+    });
+    const row = page.locator('label').first();
+    await expect(row).toContainText('data-testid="lib-cart"');
+    // The leaf has no data-testid="rm": none inside.
+    await expect(row).toContainText('contains 0 matching elements');
+  });
+
   test('Escape resolves as skipped', async ({ page }) => {
     await page.setContent(`<!doctype html><html><body>
       <form data-testid="signup-form"><button id="target">Join</button></form>

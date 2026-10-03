@@ -12,10 +12,12 @@
  *
  * This is the one place recorded steps become code. Every value is written as
  * an escaped literal, every locator is re-rendered from its parsed chain, and
- * every catalog identifier is checked, so steps that arrive from a file can
- * shape the spec but never add code of their own. With no options
- * the output is the plain recorder export; the options adapt it to a project
- * (its `test` import, `baseURL`, stable locators, URL checks, test details).
+ * every catalog identifier and the page expression are checked, so steps that
+ * arrive from a file can shape the spec but never add code of their own. With
+ * no options the output is the plain recorder export; the options adapt it to a
+ * project (its `test` import, `baseURL`, stable locators, URL checks, test
+ * details) and to where it goes (a file, a test, a test's body, the page the
+ * lines run on).
  */
 import {
   VALUE_MATCHERS,
@@ -44,7 +46,7 @@ export interface CodegenOptions {
   preferLocators?: ReadonlySet<string>;
   /** After a step that leads to another page, wait for that page's URL before the next step. */
   urlChecks?: boolean;
-  /** `env` reads every typed value from `PIWI_TEST_VALUE_<step>` instead of writing it into the spec. */
+  /** `env` reads every typed value from an environment variable named after its field (`E2E_EMAIL`) instead of writing it into the spec. */
   values?: 'literal' | 'env';
   /** Mark the test as expected to fail (`test.fail()`), with an optional reason written beside it. */
   expectFail?: boolean | { reason: string };
@@ -52,8 +54,23 @@ export interface CodegenOptions {
   tags?: string[];
   /** Test annotations, such as `{ type: 'piwi:bug', description: '37' }`. */
   annotations?: Array<{ type: string; description?: string }>;
-  /** `file` (default): imports and one test. `body`: only the test's lines, to paste into an existing test. */
-  format?: 'file' | 'body';
+  /**
+   * `file` (default): imports and one test. `test`: the `test(…)` call alone, for a new test in an existing file.
+   * `body`: only the test's lines, to paste into an existing test.
+   */
+  format?: 'file' | 'test' | 'body';
+  /**
+   * In the `test` and `body` formats, the imports a catalog call needs: `comments` (default) writes them first as
+   * `// Needs: import …` lines, `none` leaves them out of `code` (they stay in `CodegenResult.imports`).
+   */
+  bodyImports?: 'comments' | 'none';
+  /**
+   * The expression every line runs on: the locators, navigation, key presses, URL checks and viewport sizes, a
+   * helper's first argument and a page object's constructor. `page` by default; any expression `isPageExpression`
+   * accepts, such as `adminPage`, `this.page` or `app.page`. In the `file` and `test` formats the test's parameter is
+   * its first segment, so it cannot start with `this` there.
+   */
+  page?: string;
 }
 
 type CodegenWarningCode = 'no-locator' | 'brittle-locator' | 'redacted-value' | 'incomplete-assertion' | 'file-needed';
@@ -76,6 +93,12 @@ export interface CodegenWarning {
 
 export interface CodegenResult {
   code: string;
+  /**
+   * The import lines the catalog calls in `code` need (`import { CartPage } from './pages/cart.page';`), deduped, in
+   * the order the calls first appear; never the `test` and `expect` import. The `file` format writes them into `code`
+   * too, the others as `// Needs:` comments unless `bodyImports` is `none`.
+   */
+  imports: string[];
   /** One entry per emitted line that came from a function match, keyed by the matched steps' first index — lets a UI highlight which recorded steps a given call represents. */
   matchedSpans: Array<{ startStep: number; endStep: number; functionName: string }>;
   warnings: CodegenWarning[];
@@ -235,9 +258,44 @@ interface RenderContext {
   options: CodegenOptions;
   /** The origin the steps were recorded on, when they have one. */
   origin: string | null;
+  /** The expression every line runs on. */
+  page: string;
   warnings: CodegenWarning[];
-  /** Environment variables the spec reads typed values from. */
+  /** Environment variables the spec reads typed values from, in step order. */
   envNames: string[];
+}
+
+/** The most characters a field's name gives an environment variable, after its `E2E_` prefix. */
+const ENV_NAME_MAX = 40;
+
+/**
+ * The name of the environment variable a step's typed value is read from,
+ * before it is made unique: `E2E_` and its field's accessible name, else its
+ * test id, else its text, in upper case with diacritics removed and every run
+ * of other characters than letters and digits as one `_`; `E2E_VALUE` when
+ * none of them leaves a letter or a digit.
+ */
+function envNameOf(target: RecordedTarget | null): string {
+  for (const source of [target?.accessibleName, target?.testId, target?.text]) {
+    const name = (source ?? '')
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, ENV_NAME_MAX)
+      .replace(/_+$/, '');
+    if (name) return `E2E_${name}`;
+  }
+  return 'E2E_VALUE';
+}
+
+/** `name` when no earlier step reads it, else the first of `name_2`, `name_3`… that none does. */
+function uniqueEnvName(name: string, taken: readonly string[]): string {
+  if (!taken.includes(name)) return name;
+  let n = 2;
+  while (taken.includes(`${name}_${n}`)) n++;
+  return `${name}_${n}`;
 }
 
 /** A URL as the spec writes it: a path when `urls: 'relative'` and it is on the recorded origin, absolute otherwise. */
@@ -259,7 +317,7 @@ function locatorForStep(step: RecordedStep, index: number, ctx: RenderContext): 
   const chosen = chooseLocator(step.target, ctx.options);
   if (!chosen) {
     ctx.warnings.push({ step: index, code: 'no-locator', message: 'No locator was captured for this element.' });
-    return `page.locator(${quote('/* no locator captured */')})`;
+    return `${ctx.page}.locator(${quote('/* no locator captured */')})`;
   }
   if (chosen.level === 'brittle') {
     ctx.warnings.push({
@@ -269,7 +327,7 @@ function locatorForStep(step: RecordedStep, index: number, ctx: RenderContext): 
       message: `The best locator captured for this element is brittle: ${chosen.text}`,
     });
   }
-  return `page.${chosen.text}`;
+  return `${ctx.page}.${chosen.text}`;
 }
 
 function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext): string[] {
@@ -295,7 +353,7 @@ function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext)
     }
     arg = quote(matcher === 'toHaveURL' ? urlForCode(assertion.expected, ctx) : assertion.expected);
   }
-  const subject = matcher === 'toHaveURL' ? 'page' : locatorForStep(step, index, ctx);
+  const subject = matcher === 'toHaveURL' ? ctx.page : locatorForStep(step, index, ctx);
   let line = `  await expect(${subject})${not}.${matcher}(${arg});`;
   if (assertion?.actual != null && assertion.actual !== assertion.expected) {
     line += ` // recorded: ${quote(assertion.actual)}`;
@@ -313,9 +371,12 @@ export function fileNames(value: string | null): string[] {
 }
 
 function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): string[] {
-  if (step.action === 'goto') return [`  await page.goto(${quote(urlForCode(step.value ?? step.pageUrl, ctx))});`];
+  const { page } = ctx;
+  if (step.action === 'goto') return [`  await ${page}.goto(${quote(urlForCode(step.value ?? step.pageUrl, ctx))});`];
   if (step.action === 'assert' || step.action === 'assertVisible') return renderAssertStep(step, index, ctx);
-  if (step.action === 'press' && !step.target) return [`  await page.keyboard.press(${quote(step.value ?? 'Enter')});`];
+  if (step.action === 'press' && !step.target) {
+    return [`  await ${page}.keyboard.press(${quote(step.value ?? 'Enter')});`];
+  }
   const loc = locatorForStep(step, index, ctx);
   switch (step.action) {
     case 'click':
@@ -342,7 +403,7 @@ function renderRawStep(step: RecordedStep, index: number, ctx: RenderContext): s
       return [`  await ${loc}.hover();`];
     case 'fill': {
       if (step.redacted || ctx.options.values === 'env') {
-        const envVar = `PIWI_TEST_VALUE_${index}`;
+        const envVar = uniqueEnvName(envNameOf(step.target), ctx.envNames);
         ctx.envNames.push(envVar);
         if (step.redacted) {
           ctx.warnings.push({
@@ -390,6 +451,91 @@ export function callIdentifiersAreSafe(entry: TestFunctionEntry): boolean {
   return true;
 }
 
+/** JavaScript's reserved words and literals: none of them but `this` can start a page expression. */
+const RESERVED_WORDS: ReadonlySet<string> = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'let',
+  'new',
+  'null',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+]);
+
+/**
+ * Whether `text` can be the expression the lines run on (`CodegenOptions.page`):
+ * `this` or an identifier, followed by any number of `.identifier` segments,
+ * such as `page`, `adminPage`, `this.page` or `app.page`. It is written into
+ * the spec as it is, so nothing else passes.
+ */
+export function isPageExpression(text: string): boolean {
+  if (typeof text !== 'string') return false;
+  const segments = text.split('.');
+  return (
+    segments.every((segment) => IDENTIFIER_RE.test(segment)) &&
+    (segments[0] === 'this' || !RESERVED_WORDS.has(segments[0]!))
+  );
+}
+
+/**
+ * The page expression a rendering writes: `options.page`, `page` by default.
+ * A `RangeError` for one `isPageExpression` refuses, and in the `file` and
+ * `test` formats, whose test takes the expression's first segment as its
+ * parameter, for one that starts with `this`.
+ */
+function pageExpression(options: CodegenOptions): string {
+  const page = options.page ?? 'page';
+  if (!isPageExpression(page)) {
+    throw new RangeError(
+      `Not a page expression (an identifier or a member chain such as app.page): ${JSON.stringify(page)}`,
+    );
+  }
+  if (options.format !== 'body' && page.split('.')[0] === 'this') {
+    throw new RangeError(
+      `The ${options.format ?? 'file'} format takes the test's parameter from the page expression, which starts with this: ${JSON.stringify(page)}`,
+    );
+  }
+  return page;
+}
+
 /**
  * An `object` param renders as a literal built from whichever of its `fields`
  * resolved — unresolved fields are *omitted* rather than emitted empty, since
@@ -419,13 +565,13 @@ function argExpr(entry: TestFunctionEntry, match: RankedFunctionMatch): string {
     .join(', ');
 }
 
-function renderFunctionCall(match: RankedFunctionMatch): string {
+function renderFunctionCall(match: RankedFunctionMatch, page: string): string {
   const { entry } = match;
   const args = argExpr(entry, match);
   if (entry.kind === 'page-object-method' && entry.receiver) {
     return `  await ${entry.receiver}.${entry.name}(${args});`;
   }
-  return `  await ${entry.name}(page${args ? `, ${args}` : ''});`;
+  return `  await ${entry.name}(${page}${args ? `, ${args}` : ''});`;
 }
 
 /** One `import` + (for page-object methods) one instantiation line per receiver actually used, deduped, in first-use order. */
@@ -447,14 +593,14 @@ function renderImports(usedEntries: TestFunctionEntry[]): string[] {
   return lines;
 }
 
-function renderInstantiations(usedEntries: TestFunctionEntry[]): string[] {
+function renderInstantiations(usedEntries: TestFunctionEntry[], page: string): string[] {
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const entry of usedEntries) {
     if (entry.kind !== 'page-object-method' || !entry.receiver || !entry.importName) continue;
     if (seen.has(entry.receiver)) continue;
     seen.add(entry.receiver);
-    lines.push(`  const ${entry.receiver} = new ${entry.importName}(page);`);
+    lines.push(`  const ${entry.receiver} = new ${entry.importName}(${page});`);
   }
   return lines;
 }
@@ -489,12 +635,13 @@ function samePage(a: string, b: string): boolean {
   return ka === null || kb === null || ka === kb;
 }
 
-/** `page.setViewportSize` for a viewport the steps were recorded at. */
-function viewportLine(viewport: StepViewport): string {
-  return `  await page.setViewportSize({ width: ${Math.round(viewport.width)}, height: ${Math.round(viewport.height)} });`;
+/** `setViewportSize` on the page for a viewport the steps were recorded at. */
+function viewportLine(viewport: StepViewport, page: string): string {
+  return `  await ${page}.setViewportSize({ width: ${Math.round(viewport.width)}, height: ${Math.round(viewport.height)} });`;
 }
 
 export function renderSpec(session: RecordedSession, options: CodegenOptions = {}): CodegenResult {
+  const page = pageExpression(options);
   const { steps } = session;
   /** The viewport each step starts at, when it changes there. */
   const viewportAt = new Map((session.viewports ?? []).map((v) => [v.step, v]));
@@ -503,6 +650,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   const ctx: RenderContext = {
     options,
     origin: originOf(session.startUrl) ?? originOf(steps[0]?.pageUrl ?? ''),
+    page,
     warnings: [],
     envNames: [],
   };
@@ -526,10 +674,10 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     const current = steps[last];
     if (!next || !current || next.action === 'goto' || samePage(current.pageUrl, next.pageUrl)) return;
     const pattern = pageUrlPattern(next.pageUrl);
-    if (pattern) bodyLines.push(`  await expect(page).toHaveURL(${pattern});`);
+    if (pattern) bodyLines.push(`  await expect(${page}).toHaveURL(${pattern});`);
     const acts = next.action !== 'assert' && next.action !== 'assertVisible';
     const chosen = acts && next.target ? chooseLocator(next.target, options) : null;
-    if (chosen) bodyLines.push(`  await expect(page.${chosen.text}).toHaveCount(1);`);
+    if (chosen) bodyLines.push(`  await expect(${page}.${chosen.text}).toHaveCount(1);`);
   };
 
   let pos = 0;
@@ -538,7 +686,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     const step = steps[pos]!;
 
     const viewport = pos > 0 ? viewportAt.get(pos) : undefined;
-    if (viewport) bodyLines.push(viewportLine(viewport));
+    if (viewport) bodyLines.push(viewportLine(viewport, page));
     stepStarts[pos] = bodyLines.length;
     if (step.action === 'goto') {
       bodyLines.push(...renderRawStep(step, pos, ctx));
@@ -552,7 +700,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     const match =
       found && ![...viewportAt.keys()].some((at) => at > pos && at <= Math.max(...found.matchedIndices)) ? found : null;
     if (match) {
-      bodyLines.push(renderFunctionCall(match));
+      bodyLines.push(renderFunctionCall(match, page));
       usedEntries.push(match.entry);
       const last = Math.max(...match.matchedIndices);
       for (let i = pos + 1; i <= last; i++) stepStarts[i] = stepStarts[pos]!;
@@ -570,14 +718,14 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   // The size the steps were recorded at comes first, before the first page opens.
   const start = viewportAt.get(0);
   const opening = [
-    ...(start ? [viewportLine(start)] : []),
-    ...(!sawGoto && session.startUrl ? [`  await page.goto(${quote(urlForCode(session.startUrl, ctx))});`] : []),
+    ...(start ? [viewportLine(start, page)] : []),
+    ...(!sawGoto && session.startUrl ? [`  await ${page}.goto(${quote(urlForCode(session.startUrl, ctx))});`] : []),
   ];
   bodyLines.unshift(...opening);
   const bodyOffset = opening.length;
 
   const importLines = renderImports(usedEntries);
-  const instantiationLines = renderInstantiations(usedEntries);
+  const instantiationLines = renderInstantiations(usedEntries, page);
   const failLine = expectFailLine(options);
   const envLines =
     options.values === 'env' && ctx.envNames.length > 0
@@ -585,23 +733,34 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
       : [];
   const testBody = [...(failLine ? [failLine] : []), ...envLines, ...instantiationLines, ...bodyLines];
   const bodyStart = testBody.length - bodyLines.length + bodyOffset;
-  const linesFrom = (first: number): number[] => steps.map((_, i) => first + bodyStart + (stepStarts[i] ?? 0) + 1);
+  /** The rendering of `lines`, whose test body starts after its first `header` lines. */
+  const result = (lines: string[], header: number): CodegenResult => ({
+    code: lines.join('\n'),
+    imports: importLines,
+    matchedSpans,
+    warnings: ctx.warnings,
+    stepLines: steps.map((_, i) => header + bodyStart + (stepStarts[i] ?? 0) + 1),
+  });
+  /** The imports as the comments the `body` and `test` formats start with, at `indent`. */
+  const needsLines = (indent: string): string[] =>
+    options.bodyImports === 'none' ? [] : importLines.map((line) => `${indent}// Needs: ${line}`);
 
   if (options.format === 'body') {
-    const needs = importLines.map((line) => `  // Needs: ${line}`);
-    return {
-      code: [...needs, ...testBody, ''].join('\n'),
-      matchedSpans,
-      warnings: ctx.warnings,
-      stepLines: linesFrom(needs.length),
-    };
+    const needs = needsLines('  ');
+    return result([...needs, ...testBody, ''], needs.length);
   }
 
   const details = renderDetails(options);
+  const fixture = page.split('.')[0];
   const testOpening =
     details.length > 0
-      ? [`test(${quote(title)}, {`, ...details, `}, async ({ page }) => {`]
-      : [`test(${quote(title)}, async ({ page }) => {`];
+      ? [`test(${quote(title)}, {`, ...details, `}, async ({ ${fixture} }) => {`]
+      : [`test(${quote(title)}, async ({ ${fixture} }) => {`];
+
+  if (options.format === 'test') {
+    const needs = needsLines('');
+    return result([...needs, ...testOpening, ...testBody, `});`, ``], needs.length + testOpening.length);
+  }
 
   const lines = [
     // Package name interpolated rather than adjoining the preceding keyword
@@ -616,6 +775,5 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     ``,
   ];
 
-  const header = 1 + importLines.length + 1 + testOpening.length;
-  return { code: lines.join('\n'), matchedSpans, warnings: ctx.warnings, stepLines: linesFrom(header) };
+  return result(lines, 1 + importLines.length + 1 + testOpening.length);
 }

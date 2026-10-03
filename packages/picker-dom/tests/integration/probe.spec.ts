@@ -4,6 +4,7 @@ import { domRoleOf } from '../../src/dom-role.js';
 import {
   approximateAccessibleName,
   CAPTURED_ATTRIBUTES,
+  generateAlternatives,
   INPUT_TYPE_TO_ROLE,
   TAG_TO_ROLE,
 } from '@piwitests/core/locator-generation';
@@ -345,4 +346,85 @@ test.describe('probeElementAttrs + approximateAccessibleName: form-field names',
       });
     }
   }
+});
+
+test.describe('probeElementAttrs with the project’s test id attribute', () => {
+  test.use({ testIdAttribute: 'data-test' });
+
+  const ROLE_SOURCES = ['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)].join(',');
+  const structural = {
+    keep: [...CAPTURED_ATTRIBUTES],
+    tagRoles: TAG_TO_ROLE,
+    inputRoles: INPUT_TYPE_TO_ROLE,
+    roleSources: ROLE_SOURCES,
+    includeStructural: true,
+  };
+  const CARDS = `<!doctype html><html><body>
+    <section data-test="cart"><div data-testid="lib-row"><button id="target">Remove</button></div></section>
+    <section data-test="wishlist"><div data-testid="lib-row-2"><button>Remove</button></div></section>
+  </body></html>`;
+
+  test('reads and counts it, even when the whitelist leaves it out', async ({ page }) => {
+    await page.setContent(`<!doctype html><html><body>
+      <button id="target" data-test="pay" data-testid="lib-button">Pay</button>
+      <button data-testid="lib-button">Other</button>
+    </body></html>`);
+    const probe = (testIdAttribute?: string) =>
+      page
+        .locator('#target')
+        .evaluate(probeElementAttrs, { keep: ['id', 'data-testid'], includeStructural: false, testIdAttribute });
+    const custom = await probe('data-test');
+    expect(custom.attributes['data-test']).toBe('pay');
+    expect(custom.selectorCounts.testId).toBe(1);
+    const byDefault = await probe();
+    expect(byDefault.attributes).toEqual({ id: 'target', 'data-testid': 'lib-button' });
+    expect(byDefault.selectorCounts.testId).toBe(2);
+  });
+
+  test('takes each ancestor’s test id from it, and data-testid as an ordinary data-* hook', async ({ page }) => {
+    await page.setContent(CARDS);
+    const attrs = await page
+      .locator('#target')
+      .evaluate(probeElementAttrs, { ...structural, testIdAttribute: 'data-test' });
+    expect(attrs.ancestors?.[0]).toMatchObject({
+      tag: 'div',
+      testId: null,
+      dataAttr: { name: 'data-testid', value: 'lib-row' },
+      dataAttrCount: 1,
+    });
+    expect(attrs.ancestors?.[1]).toMatchObject({ tag: 'section', testId: 'cart', testIdCount: 1, scopedRoleCount: 1 });
+    // The test id attribute has its own path: it is never an ancestor's data-* hook.
+    expect(attrs.ancestors?.[1]?.dataAttr).toBeUndefined();
+  });
+
+  test('without it, data-testid is the test id and data-test a test-oriented data-* hook', async ({ page }) => {
+    await page.setContent(CARDS);
+    const attrs = await page.locator('#target').evaluate(probeElementAttrs, structural);
+    expect(attrs.ancestors?.[0]).toMatchObject({ tag: 'div', testId: 'lib-row', testIdCount: 1 });
+    expect(attrs.ancestors?.[0]?.dataAttr).toBeUndefined();
+    expect(attrs.ancestors?.[1]).toMatchObject({
+      tag: 'section',
+      testId: null,
+      dataAttr: { name: 'data-test', value: 'cart' },
+      dataAttrCount: 1,
+    });
+  });
+
+  test('ranked with the same attribute, the best locator is one Playwright finds with it', async ({ page }) => {
+    await page.setContent(CARDS);
+    const attrs = await page
+      .locator('#target')
+      .evaluate(probeElementAttrs, { ...structural, testIdAttribute: 'data-test' });
+    const ranked = generateAlternatives(
+      { ...attrs, accessibleName: approximateAccessibleName({ ...attrs, accessibleName: null }) },
+      { testIdAttribute: 'data-test' },
+    );
+    expect(ranked[0]!.locator).toBe("getByTestId('cart').getByRole('button')");
+    expect(ranked.map((r) => r.locator)).toContain(`locator('[data-testid="lib-row"]').getByRole('button')`);
+    expect(ranked.map((r) => r.locator).filter((l) => l.includes('data-test='))).toEqual([]);
+    // This describe block runs Playwright with `testIdAttribute: 'data-test'`, as the project would.
+    const best = page.getByTestId('cart').getByRole('button');
+    await expect(best).toHaveCount(1);
+    await expect(best).toHaveId('target');
+  });
 });

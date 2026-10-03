@@ -1,5 +1,13 @@
 import { describe, test, expect } from 'vitest';
-import { normalizeSteps, buildSession, type RawCaptureEvent, type RecordedTarget } from '../src/recording';
+import {
+  ASSERTION_MATCHERS,
+  buildSession,
+  normalizeSteps,
+  parseCaptureEvent,
+  viewportsForSteps,
+  type RawCaptureEvent,
+  type RecordedTarget,
+} from '../src/recording';
 
 function target(overrides: Partial<RecordedTarget> = {}): RecordedTarget {
   return {
@@ -325,5 +333,283 @@ describe('buildSession', () => {
     ]);
     const session = buildSession(steps, 0);
     expect(session.startUrl).toBe('https://x.test/no-goto');
+  });
+});
+
+describe('parseCaptureEvent', () => {
+  const button = target({
+    tagName: 'button',
+    role: 'button',
+    accessibleName: 'Pay',
+    testId: 'pay',
+    text: 'Pay',
+    alternatives: [
+      { locator: `getByTestId('pay')`, method: 'getByTestId', score: 100 },
+      { locator: `getByRole('button', { name: 'Pay' })`, method: 'getByRole', score: 90 },
+    ],
+    elementKey: 'k1-3',
+  });
+  const click = ev({ kind: 'click', target: button, pageUrl: 'https://x.test/cart', timestamp: 1700000000000 });
+
+  test('an event the recorder sends comes back as it was', () => {
+    expect(parseCaptureEvent(click)).toEqual(click);
+    const assert = ev({
+      kind: 'assert',
+      target: button,
+      assertion: { matcher: 'toHaveText', expected: 'Total: 42', actual: 'Total: 40', negated: true, note: 'coupon' },
+    });
+    expect(parseCaptureEvent(assert)).toEqual(assert);
+    const drop = ev({ kind: 'drop', target: button, dropTarget: target() });
+    expect(parseCaptureEvent(drop)).toEqual(drop);
+    const viewport = ev({ kind: 'viewport', viewport: { width: 1280, height: 720, zoom: 1.25 } });
+    expect(parseCaptureEvent(viewport)).toEqual(viewport);
+    const input = ev({ kind: 'change', target: target(), value: 'FR', checked: false, inputType: 'select' });
+    expect(parseCaptureEvent(input)).toEqual(input);
+  });
+
+  test('every kind the recorder sends is known, and nothing else', () => {
+    const kinds = [
+      'click',
+      'dblclick',
+      'hover',
+      'input',
+      'change',
+      'files',
+      'drop',
+      'keydown',
+      'navigate',
+      'assert',
+      'viewport',
+    ] as const;
+    for (const kind of kinds) expect(parseCaptureEvent({ ...click, kind })?.kind, kind).toBe(kind);
+    for (const kind of ['scroll', 'Click', '', null, 1, undefined]) {
+      expect(parseCaptureEvent({ ...click, kind }), String(kind)).toBeNull();
+    }
+  });
+
+  test('anything but an object is refused', () => {
+    for (const value of [null, undefined, 'click', 42, true, [click]]) {
+      expect(parseCaptureEvent(value), JSON.stringify(value)).toBeNull();
+    }
+  });
+
+  test('a page URL string and a finite timestamp are required', () => {
+    const { pageUrl: _pageUrl, ...noUrl } = click;
+    const { timestamp: _timestamp, ...noTime } = click;
+    expect(parseCaptureEvent(noUrl)).toBeNull();
+    expect(parseCaptureEvent(noTime)).toBeNull();
+    for (const pageUrl of [null, 42, { href: 'https://x.test/' }]) {
+      expect(parseCaptureEvent({ ...click, pageUrl }), String(pageUrl)).toBeNull();
+    }
+    for (const timestamp of [null, '1700000000000', Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(parseCaptureEvent({ ...click, timestamp }), String(timestamp)).toBeNull();
+    }
+    expect(parseCaptureEvent({ ...click, pageUrl: '', timestamp: -1 })).toMatchObject({ pageUrl: '', timestamp: -1 });
+  });
+
+  test('strings are cut to their limits', () => {
+    const long = (n: number) => 'x'.repeat(n + 5);
+    const parsed = parseCaptureEvent({
+      ...click,
+      target: {
+        ...button,
+        tagName: long(64),
+        role: long(500),
+        accessibleName: long(500),
+        testId: long(500),
+        text: long(500),
+        elementKey: long(128),
+      },
+      value: long(100_000),
+      inputType: long(32),
+      pageUrl: `https://x.test/${long(4096)}`,
+    })!;
+    expect(parsed.target).toMatchObject({
+      tagName: 'x'.repeat(64),
+      role: 'x'.repeat(500),
+      accessibleName: 'x'.repeat(500),
+      testId: 'x'.repeat(500),
+      text: 'x'.repeat(500),
+      elementKey: 'x'.repeat(128),
+    });
+    expect(parsed.value).toHaveLength(100_000);
+    expect(parsed.inputType).toBe('x'.repeat(32));
+    expect(parsed.pageUrl).toHaveLength(4096);
+    expect(parsed.pageUrl.startsWith('https://x.test/xxx')).toBe(true);
+    const assertion = parseCaptureEvent({
+      ...click,
+      kind: 'assert',
+      assertion: { matcher: 'toHaveText', expected: long(2000), actual: long(2000), negated: false, note: long(500) },
+    })!.assertion!;
+    expect([assertion.expected!.length, assertion.actual!.length, assertion.note!.length]).toEqual([2000, 2000, 500]);
+  });
+
+  test('a string at its limit is kept whole', () => {
+    const parsed = parseCaptureEvent({ ...click, value: 'v'.repeat(100_000), inputType: 'i'.repeat(32) })!;
+    expect(parsed.value).toBe('v'.repeat(100_000));
+    expect(parsed.inputType).toBe('i'.repeat(32));
+  });
+
+  test('a field of another type becomes null, and isPasswordField false unless it is true', () => {
+    const parsed = parseCaptureEvent({ ...click, value: 42, checked: 'true', inputType: 7, isPasswordField: 'true' });
+    expect(parsed).toMatchObject({ value: null, checked: null, inputType: null, isPasswordField: false });
+    expect(parseCaptureEvent({ ...click, isPasswordField: 1 })!.isPasswordField).toBe(false);
+    expect(parseCaptureEvent({ ...click, checked: true })!.checked).toBe(true);
+    const { value: _value, checked: _checked, inputType: _inputType, isPasswordField: _password, ...bare } = click;
+    expect(parseCaptureEvent(bare)).toMatchObject({
+      value: null,
+      checked: null,
+      inputType: null,
+      isPasswordField: false,
+    });
+  });
+
+  test('a target is rebuilt from its own fields; anything but an object is no target', () => {
+    for (const value of [undefined, null, 'button', 42, [button]]) {
+      expect(parseCaptureEvent({ ...click, target: value })!.target, JSON.stringify(value)).toBeNull();
+    }
+    const parsed = parseCaptureEvent({
+      ...click,
+      target: { tagName: 5, role: ['button'], accessibleName: null, testId: false, text: {}, elementKey: 9 },
+    })!;
+    expect(parsed.target).toEqual({
+      tagName: '',
+      role: null,
+      accessibleName: null,
+      testId: null,
+      text: null,
+      alternatives: [],
+    });
+  });
+
+  test('a target keeps at most 10 alternatives, the ones that parse', () => {
+    const alt = (i: number) => ({ locator: `getByTestId('t${i}')`, method: 'getByTestId', score: 100 - i });
+    const twelve = Array.from({ length: 12 }, (_, i) => alt(i));
+    expect(parseCaptureEvent({ ...click, target: { ...button, alternatives: twelve } })!.target!.alternatives).toEqual(
+      twelve.slice(0, 10),
+    );
+    const refused = [
+      null,
+      'getByTestId("t")',
+      { locator: 'x'.repeat(2001), method: 'locator', score: 1 },
+      { locator: `getByTestId('t')`, method: 'm'.repeat(65), score: 1 },
+      { locator: `getByTestId('t')`, method: 'getByTestId', score: Number.NaN },
+      { locator: `getByTestId('t')`, method: 'getByTestId', score: Number.POSITIVE_INFINITY },
+      { locator: `getByTestId('t')`, method: 'getByTestId', score: '90' },
+      { locator: `getByTestId('t')`, method: 'getByTestId' },
+      { locator: 42, method: 'getByTestId', score: 1 },
+      { method: 'getByTestId', score: 1 },
+    ];
+    const atLimit = { locator: 'x'.repeat(2000), method: 'm'.repeat(64), score: -3.5 };
+    const parsed = parseCaptureEvent({
+      ...click,
+      target: { ...button, alternatives: [...refused, { ...alt(0), extra: true }, atLimit, ...twelve] },
+    })!;
+    expect(parsed.target!.alternatives).toEqual([alt(0), atLimit, ...twelve.slice(0, 8)]);
+    expect(parseCaptureEvent({ ...click, target: { ...button, alternatives: 'many' } })!.target!.alternatives).toEqual(
+      [],
+    );
+  });
+
+  test('an assertion needs a known matcher, or the event is refused', () => {
+    const assert = (assertion: unknown) => parseCaptureEvent({ ...click, kind: 'assert', assertion });
+    expect(assert({ matcher: 'toBeFunny', expected: null, actual: null, negated: false, note: null })).toBeNull();
+    expect(assert({ expected: 'x' })).toBeNull();
+    expect(assert('toHaveText')).toBeNull();
+    expect(assert([{ matcher: 'toHaveText' }])).toBeNull();
+    expect(assert({ matcher: 'toHaveURL' })!.assertion).toEqual({
+      matcher: 'toHaveURL',
+      expected: null,
+      actual: null,
+      negated: false,
+      note: null,
+    });
+    expect(assert({ matcher: 'toBeVisible', expected: 3, actual: {}, negated: 'yes', note: [] })!.assertion).toEqual({
+      matcher: 'toBeVisible',
+      expected: null,
+      actual: null,
+      negated: false,
+      note: null,
+    });
+    for (const matcher of ASSERTION_MATCHERS) expect(assert({ matcher })!.assertion!.matcher).toBe(matcher);
+    expect(assert(null)).not.toHaveProperty('assertion');
+    expect(parseCaptureEvent(click)).not.toHaveProperty('assertion');
+  });
+
+  test('a viewport needs a finite size from 1 to 10,000, and a zoom from 0.25 to 5 when it has one', () => {
+    const viewport = (value: unknown) => parseCaptureEvent({ ...click, kind: 'viewport', viewport: value })?.viewport;
+    expect(viewport({ width: 1, height: 10_000 })).toEqual({ width: 1, height: 10_000 });
+    expect(viewport({ width: 1280.5, height: 720, zoom: 0.25 })).toEqual({ width: 1280.5, height: 720, zoom: 0.25 });
+    expect(viewport({ width: 1280, height: 720, zoom: 5 })).toEqual({ width: 1280, height: 720, zoom: 5 });
+    expect(viewport({ width: 1280, height: 720, zoom: null })).toEqual({ width: 1280, height: 720 });
+    const outOfBounds = [
+      { width: 0, height: 720 },
+      { width: 1280, height: 10_001 },
+      { width: -5, height: 720 },
+      { width: Number.NaN, height: 720 },
+      { width: Number.POSITIVE_INFINITY, height: 720 },
+      { width: '1280', height: 720 },
+      { width: 1280 },
+      { width: 1280, height: 720, zoom: 0.2 },
+      { width: 1280, height: 720, zoom: 5.5 },
+      { width: 1280, height: 720, zoom: '2' },
+      [1280, 720],
+      'large',
+      null,
+    ];
+    for (const value of outOfBounds) {
+      expect(viewport(value), JSON.stringify(value)).toBeUndefined();
+      expect(parseCaptureEvent({ ...click, kind: 'viewport', viewport: value }), JSON.stringify(value)).not.toBeNull();
+    }
+  });
+
+  test('a drop target goes through the same target parser', () => {
+    expect(parseCaptureEvent({ ...click, kind: 'drop', dropTarget: { ...button, extra: 1 } })!.dropTarget).toEqual(
+      button,
+    );
+    expect(parseCaptureEvent({ ...click, kind: 'drop', dropTarget: 'column' })!.dropTarget).toBeNull();
+    expect(parseCaptureEvent({ ...click, kind: 'drop', dropTarget: null })!.dropTarget).toBeNull();
+    expect(parseCaptureEvent(click)).not.toHaveProperty('dropTarget');
+  });
+
+  test('view and every unknown field are left out', () => {
+    const parsed = parseCaptureEvent({
+      ...click,
+      view: { id: 'v1', box: { x: 0, y: 0, width: 10, height: 10 } },
+      script: 'alert(1)',
+      target: {
+        ...button,
+        frame: 'iframe',
+        alternatives: [{ locator: `getByTestId('pay')`, method: 'getByTestId', score: 100, pickedByUser: true }],
+      },
+      assertion: undefined,
+    })!;
+    expect(parsed).toEqual({
+      ...click,
+      target: { ...button, alternatives: [{ locator: `getByTestId('pay')`, method: 'getByTestId', score: 100 }] },
+    });
+    expect(Object.keys(parsed).sort()).toEqual(
+      ['checked', 'inputType', 'isPasswordField', 'kind', 'pageUrl', 'target', 'timestamp', 'value'].sort(),
+    );
+  });
+
+  test('a password field’s value is never kept', () => {
+    const parsed = parseCaptureEvent(ev({ kind: 'input', target: target(), value: 'hunter2', isPasswordField: true }));
+    expect(parsed).toMatchObject({ value: null, isPasswordField: true });
+  });
+
+  test('the events it returns become the same steps as the recorder’s own', () => {
+    const coupon = target({ accessibleName: 'Coupon', elementKey: 'k1-1' });
+    const events = [
+      ev({ kind: 'viewport', viewport: { width: 1280, height: 720 }, timestamp: 1 }),
+      ev({ kind: 'navigate', value: 'https://x.test/cart', timestamp: 2 }),
+      ev({ kind: 'input', target: coupon, value: 'SPR', timestamp: 3 }),
+      ev({ kind: 'input', target: coupon, value: 'SPRING10', timestamp: 4 }),
+      ev({ kind: 'keydown', target: coupon, value: 'Enter', timestamp: 5 }),
+      ev({ kind: 'click', target: button, timestamp: 6 }),
+    ];
+    const parsed = events.map((e) => parseCaptureEvent(JSON.parse(JSON.stringify(e)))!);
+    expect(normalizeSteps(parsed)).toEqual(normalizeSteps(events));
+    expect(viewportsForSteps(normalizeSteps(parsed), parsed)).toEqual([{ step: 0, width: 1280, height: 720 }]);
   });
 });

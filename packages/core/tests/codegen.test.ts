@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import ts from 'typescript';
-import { pageUrlPattern, renderSpec, safeLocator } from '../src/codegen';
+import { isPageExpression, pageUrlPattern, renderSpec, safeLocator } from '../src/codegen';
 import { buildSession } from '../src/recording';
 import type { RecordedStep, RecordedTarget } from '../src/recording';
 import type { TestFunctionEntry } from '../src/function-match';
@@ -101,9 +101,10 @@ describe('renderSpec — raw mode (no catalog)', () => {
   });
 
   test('a redacted fill emits a process.env placeholder, never the raw value', () => {
-    const session = buildSession([step({ action: 'fill', value: null, redacted: true })], 0);
+    const password = target({ role: 'textbox', tagName: 'input', accessibleName: 'Password' });
+    const session = buildSession([step({ action: 'fill', value: null, redacted: true, target: password })], 0);
     const { code } = renderSpec(session);
-    expect(code).toMatch(/process\.env\.PIWI_TEST_VALUE_\d+/);
+    expect(code).toContain(`.fill(process.env.E2E_PASSWORD ?? '');`);
     expect(code).not.toContain('hunter2');
   });
 
@@ -479,15 +480,20 @@ describe('renderSpec — options', () => {
     const field = target({ role: 'textbox', accessibleName: 'Email' });
     const session = buildSession([step({ action: 'fill', value: 'ana@acme.test', target: field })], 0);
     const { code } = renderSpec(session, { values: 'env' });
-    expect(code).toContain(`.fill(process.env.PIWI_TEST_VALUE_0 ?? '');`);
-    expect(code).toContain('// Typed values come from PIWI_TEST_VALUE_0.');
+    expect(code).toContain(`.fill(process.env.E2E_EMAIL ?? '');`);
+    expect(code).toContain('// Typed values come from E2E_EMAIL.');
     expect(code).not.toContain('ana@acme.test');
   });
 
   test('a redacted value warns', () => {
-    const session = buildSession([step({ action: 'fill', value: null, redacted: true })], 0);
+    const password = target({ role: 'textbox', tagName: 'input', accessibleName: 'Password' });
+    const session = buildSession([step({ action: 'fill', value: null, redacted: true, target: password })], 0);
     expect(renderSpec(session).warnings).toEqual([
-      expect.objectContaining({ code: 'redacted-value', detail: 'PIWI_TEST_VALUE_0' }),
+      expect.objectContaining({
+        code: 'redacted-value',
+        detail: 'E2E_PASSWORD',
+        message: 'A password was typed here; the spec reads it from E2E_PASSWORD.',
+      }),
     ]);
   });
 
@@ -659,5 +665,481 @@ describe('renderSpec — only steps, never code', () => {
       compilerOptions: { target: ts.ScriptTarget.ES2022 },
     });
     expect(out.diagnostics ?? []).toEqual([]);
+  });
+});
+
+const search = target({ role: 'searchbox', tagName: 'input', accessibleName: 'Search' });
+
+const logIn: TestFunctionEntry = {
+  id: 9,
+  name: 'logIn',
+  kind: 'page-object-method',
+  module: './pages/login',
+  receiver: 'loginPage',
+  importName: 'LoginPage',
+  params: [],
+  urlPattern: null,
+  steps: [{ action: 'click', target: { role: 'button', name: 'Log in' } }],
+  paramSources: [],
+};
+
+const checkout: TestFunctionEntry = {
+  id: 11,
+  name: 'checkout',
+  kind: 'helper',
+  module: './helpers/cart',
+  receiver: null,
+  importName: null,
+  params: [],
+  urlPattern: null,
+  steps: [
+    { action: 'click', target: { role: 'button', name: 'Add to cart' } },
+    { action: 'click', target: { role: 'button', name: 'Checkout' } },
+  ],
+  paramSources: [],
+};
+
+const addToCart = target({ accessibleName: 'Add to cart' });
+const checkoutButton = target({ accessibleName: 'Checkout' });
+const IMPORT_LINES = [`import { LoginPage } from './pages/login';`, `import { checkout } from './helpers/cart';`];
+
+describe('renderSpec — formats', () => {
+  test('the test format is the test call alone: details, test.fail(), the environment comment and the body', () => {
+    const session = buildSession([step(), step({ action: 'fill', value: 'mug', target: search })], 0);
+    const { code, imports } = renderSpec(session, {
+      format: 'test',
+      catalog: [logIn],
+      title: 'search a mug',
+      tags: ['smoke'],
+      expectFail: { reason: 'SHOP-1' },
+      values: 'env',
+      testImport: '../fixtures',
+    });
+    expect(code).toBe(
+      [
+        `// Needs: import { LoginPage } from './pages/login';`,
+        `test('search a mug', {`,
+        `  tag: ['@smoke'],`,
+        `}, async ({ page }) => {`,
+        `  test.fail(); // SHOP-1`,
+        `  // Typed values come from E2E_SEARCH.`,
+        `  const loginPage = new LoginPage(page);`,
+        `  await page.goto('https://x.test/login');`,
+        `  await loginPage.logIn();`,
+        `  await page.getByRole('searchbox', { name: 'Search' }).fill(process.env.E2E_SEARCH ?? '');`,
+        `});`,
+        ``,
+      ].join('\n'),
+    );
+    expect(imports).toEqual([`import { LoginPage } from './pages/login';`]);
+  });
+
+  test('without a catalog call the test format has no comment before the test', () => {
+    const { code } = renderSpec(buildSession([step()], 0), { format: 'test' });
+    expect(code).toBe(
+      [
+        `test('recorded flow', async ({ page }) => {`,
+        `  await page.goto('https://x.test/login');`,
+        `  await page.getByRole('button', { name: 'Log in' }).click();`,
+        `});`,
+        ``,
+      ].join('\n'),
+    );
+  });
+
+  test('each format gives the line every step starts on, the steps of a call sharing it', () => {
+    const shop = 'https://x.test/shop';
+    const session = {
+      ...buildSession(
+        [
+          step({ action: 'goto', target: null, value: 'https://x.test/login' }),
+          step(),
+          step({ target: addToCart }),
+          step({ target: checkoutButton }),
+          step({ action: 'fill', value: 'mug', target: search, pageUrl: shop }),
+          step({ action: 'press', target: null, value: 'Enter', pageUrl: shop }),
+        ],
+        0,
+      ),
+      viewports: [
+        { step: 0, width: 1280, height: 720 },
+        { step: 5, width: 390, height: 844 },
+      ],
+    };
+    const expected = [
+      `await page.goto('https://x.test/login');`,
+      `await loginPage.logIn();`,
+      `await checkout(page);`,
+      `await checkout(page);`,
+      `await page.getByRole('searchbox', { name: 'Search' }).fill('mug');`,
+      `await page.keyboard.press('Enter');`,
+    ];
+    for (const format of ['file', 'test', 'body'] as const) {
+      for (const bodyImports of ['comments', 'none'] as const) {
+        const { code, stepLines } = renderSpec(session, {
+          format,
+          bodyImports,
+          catalog: [logIn, checkout],
+          urlChecks: true,
+          tags: ['smoke'],
+          annotations: [{ type: 'piwi:bug', description: '7' }],
+          expectFail: true,
+        });
+        const lines = code.split('\n');
+        expect(
+          stepLines.map((line) => lines[line - 1]!.trim()),
+          `${format}, ${bodyImports}`,
+        ).toEqual(expected);
+      }
+    }
+  });
+
+  test('imports come back in every format, deduped, in first-use order, and never the test import', () => {
+    const session = buildSession([step(), step({ target: addToCart }), step({ target: checkoutButton }), step()], 0);
+    const options = { catalog: [logIn, checkout], testImport: '../fixtures' };
+    for (const format of ['file', 'test', 'body'] as const) {
+      expect(renderSpec(session, { ...options, format }).imports, format).toEqual(IMPORT_LINES);
+    }
+    const file = renderSpec(session, options).code.split('\n');
+    expect(file.slice(0, 4)).toEqual([`import { test, expect } from '../fixtures';`, ...IMPORT_LINES, '']);
+    const test = renderSpec(session, { ...options, format: 'test' }).code.split('\n');
+    expect(test.slice(0, 3)).toEqual([
+      ...IMPORT_LINES.map((line) => `// Needs: ${line}`),
+      `test('recorded flow', async ({ page }) => {`,
+    ]);
+    const body = renderSpec(session, { ...options, format: 'body' }).code.split('\n');
+    expect(body.slice(0, 2)).toEqual(IMPORT_LINES.map((line) => `  // Needs: ${line}`));
+  });
+
+  test('no catalog call, no imports', () => {
+    const session = buildSession([step(), step({ action: 'fill', value: 'mug', target: search })], 0);
+    for (const format of ['file', 'test', 'body'] as const) {
+      expect(renderSpec(session, { format }).imports, format).toEqual([]);
+    }
+  });
+
+  test('bodyImports none leaves the imports out of the code of the body and test formats, not out of the file', () => {
+    const session = buildSession([step(), step({ action: 'fill', value: 'mug', target: search })], 0);
+    const options = { catalog: [logIn], bodyImports: 'none' as const };
+    const body = renderSpec(session, { ...options, format: 'body' });
+    expect(body.code).toBe(
+      [
+        `  const loginPage = new LoginPage(page);`,
+        `  await page.goto('https://x.test/login');`,
+        `  await loginPage.logIn();`,
+        `  await page.getByRole('searchbox', { name: 'Search' }).fill('mug');`,
+        ``,
+      ].join('\n'),
+    );
+    expect(body.imports).toEqual([`import { LoginPage } from './pages/login';`]);
+    expect(body.stepLines).toEqual([3, 4]);
+    const test = renderSpec(session, { ...options, format: 'test' });
+    expect(test.code.split('\n')[0]).toBe(`test('recorded flow', async ({ page }) => {`);
+    expect(test.imports).toEqual([`import { LoginPage } from './pages/login';`]);
+    expect(test.stepLines).toEqual([4, 5]);
+    const file = renderSpec(session, options).code;
+    expect(file).toContain(`\nimport { LoginPage } from './pages/login';\n`);
+    expect(file).not.toContain('Needs:');
+  });
+});
+
+describe('renderSpec — the page expression', () => {
+  const shop = 'https://x.test/shop';
+  const evil = { locator: `getByRole('x')); process.exit(1); ((0`, method: 'getByRole', score: 99 };
+
+  /** Every kind of line codegen writes: a page object, a helper, a URL check, a resize, a key, a URL assertion, no locator. */
+  function everyReceiver() {
+    return {
+      ...buildSession(
+        [
+          step(),
+          step({ target: addToCart }),
+          step({ target: checkoutButton }),
+          step({ action: 'fill', value: 'mug', target: search, pageUrl: shop }),
+          step({ action: 'press', target: null, value: 'Enter', pageUrl: shop }),
+          step({
+            action: 'assert',
+            target: null,
+            pageUrl: shop,
+            assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: null, negated: false, note: null },
+          }),
+          step({ target: target({ role: 'link', accessibleName: 'Help', alternatives: [evil] }), pageUrl: shop }),
+        ],
+        0,
+      ),
+      viewports: [
+        { step: 0, width: 1280, height: 720 },
+        { step: 4, width: 390, height: 844 },
+      ],
+    };
+  }
+
+  test('every line runs on it, and its fixture is the test’s parameter', () => {
+    const { code, warnings } = renderSpec(everyReceiver(), {
+      page: 'adminPage',
+      catalog: [logIn, checkout],
+      urlChecks: true,
+    });
+    expect(code).toBe(
+      [
+        `import { test, expect } from '@playwright/test';`,
+        `import { LoginPage } from './pages/login';`,
+        `import { checkout } from './helpers/cart';`,
+        ``,
+        `test('recorded flow', async ({ adminPage }) => {`,
+        `  const loginPage = new LoginPage(adminPage);`,
+        `  await adminPage.setViewportSize({ width: 1280, height: 720 });`,
+        `  await adminPage.goto('https://x.test/login');`,
+        `  await loginPage.logIn();`,
+        `  await checkout(adminPage);`,
+        `  await expect(adminPage).toHaveURL(/\\/shop(?:[?#]|$)/);`,
+        `  await expect(adminPage.getByRole('searchbox', { name: 'Search' })).toHaveCount(1);`,
+        `  await adminPage.getByRole('searchbox', { name: 'Search' }).fill('mug');`,
+        `  await adminPage.setViewportSize({ width: 390, height: 844 });`,
+        `  await adminPage.keyboard.press('Enter');`,
+        `  await expect(adminPage).toHaveURL('https://x.test/thanks');`,
+        `  await adminPage.locator('/* no locator captured */').click();`,
+        `});`,
+        ``,
+      ].join('\n'),
+    );
+    expect(code).not.toMatch(/\bpage\b/);
+    expect(warnings).toEqual([expect.objectContaining({ step: 6, code: 'no-locator' })]);
+  });
+
+  test('a goto step and a drag run on it too', () => {
+    const bin = target({ role: 'region', accessibleName: 'Archive' });
+    const session = buildSession(
+      [
+        step({ action: 'goto', target: null, value: 'https://x.test/inbox' }),
+        step({ action: 'dragTo', target: target({ role: 'row', accessibleName: 'Invoice 42' }), dropTarget: bin }),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session, { page: 'userPage', format: 'body' });
+    expect(code).toBe(
+      [
+        `  await userPage.goto('https://x.test/inbox');`,
+        `  await userPage.getByRole('row', { name: 'Invoice 42' }).dragTo(userPage.getByRole('region', { name: 'Archive' }));`,
+        ``,
+      ].join('\n'),
+    );
+  });
+
+  test('a member chain is written whole, and its first segment is the test’s parameter', () => {
+    const session = buildSession([step()], 0);
+    const file = renderSpec(session, { page: 'app.page' }).code;
+    expect(file).toContain(
+      `test('recorded flow', async ({ app }) => {\n  await app.page.goto('https://x.test/login');`,
+    );
+    expect(file).toContain(`  await app.page.getByRole('button', { name: 'Log in' }).click();`);
+    const test = renderSpec(session, { page: 'app.page', format: 'test', tags: ['smoke'] }).code;
+    expect(test.split('\n').slice(0, 3)).toEqual([
+      `test('recorded flow', {`,
+      `  tag: ['@smoke'],`,
+      `}, async ({ app }) => {`,
+    ]);
+    expect(test).toContain(`  await app.page.getByRole('button', { name: 'Log in' }).click();`);
+  });
+
+  test('the default is page, the same as naming it', () => {
+    const session = everyReceiver();
+    const options = { catalog: [logIn, checkout], urlChecks: true };
+    expect(renderSpec(session, { ...options, page: 'page' })).toEqual(renderSpec(session, options));
+  });
+
+  test('the body format writes this.page as it is, in a page object’s method', () => {
+    const session = buildSession([step(), step({ action: 'fill', value: 'mug', target: search })], 0);
+    const { code } = renderSpec(session, { format: 'body', page: 'this.page', catalog: [logIn] });
+    expect(code).toBe(
+      [
+        `  // Needs: import { LoginPage } from './pages/login';`,
+        `  const loginPage = new LoginPage(this.page);`,
+        `  await this.page.goto('https://x.test/login');`,
+        `  await loginPage.logIn();`,
+        `  await this.page.getByRole('searchbox', { name: 'Search' }).fill('mug');`,
+        ``,
+      ].join('\n'),
+    );
+    expect(renderSpec(buildSession([step()], 0), { format: 'body', page: 'this' }).code).toContain(
+      `  await this.getByRole('button', { name: 'Log in' }).click();`,
+    );
+  });
+
+  test('the file and test formats refuse an expression that starts with this: a test has no this', () => {
+    const session = buildSession([step()], 0);
+    for (const page of ['this', 'this.page', 'this.app.page']) {
+      expect(() => renderSpec(session, { page }), page).toThrow(RangeError);
+      expect(() => renderSpec(session, { page, format: 'file' }), page).toThrow(RangeError);
+      expect(() => renderSpec(session, { page, format: 'test' }), page).toThrow(RangeError);
+      expect(() => renderSpec(session, { page, format: 'body' }), page).not.toThrow();
+    }
+    expect(renderSpec(session, { page: 'thisPage' }).code).toContain(`async ({ thisPage }) =>`);
+  });
+
+  test('anything but an identifier or a member chain is refused, in every format', () => {
+    const session = buildSession([step()], 0);
+    const refused = [
+      '',
+      ' page',
+      'page ',
+      'page.',
+      '.page',
+      'app..page',
+      'page()',
+      'pages[0]',
+      'app?.page',
+      'app.my-page',
+      '1page',
+      'app.2nd',
+      'pagé',
+      'page;process.exit(1)',
+      "page'",
+      'new',
+      'class.page',
+      'null',
+      'true.page',
+      'await',
+      'yield.page',
+      'super.page',
+    ];
+    for (const page of refused) {
+      for (const format of ['file', 'test', 'body'] as const) {
+        expect(() => renderSpec(session, { page, format }), JSON.stringify(page)).toThrow(RangeError);
+      }
+    }
+  });
+
+  test('isPageExpression: this or an identifier, then .identifier segments, never a reserved word first', () => {
+    for (const text of ['page', 'this', 'this.page', 'adminPage', 'app.page', 'a.b.c', '$page', '_page', 'page2']) {
+      expect(isPageExpression(text), text).toBe(true);
+    }
+    // A property may have a reserved word's name; only the first segment is a variable.
+    expect(isPageExpression('app.default')).toBe(true);
+    expect(isPageExpression('this.new')).toBe(true);
+    for (const text of ['', 'page.', 'a b', 'a-b', 'page()', '0', 'default', 'import', 'let', 'enum.page', 'false']) {
+      expect(isPageExpression(text), text).toBe(false);
+    }
+  });
+});
+
+describe('renderSpec — environment variable names', () => {
+  const field = (overrides: Partial<RecordedTarget>) => target({ role: 'textbox', tagName: 'input', ...overrides });
+  const fill = (fieldTarget: RecordedTarget | null, extra: Partial<RecordedStep> = {}) =>
+    step({ action: 'fill', value: 'x', target: fieldTarget, ...extra });
+  const envNames = (code: string) => [...code.matchAll(/process\.env\.(\w+)/g)].map((m) => m[1]);
+
+  test('a value is named after its field’s accessible name, else its test id, else its text, else VALUE', () => {
+    const session = buildSession(
+      [
+        fill(field({ accessibleName: 'Email' })),
+        fill(field({ accessibleName: null, testId: 'billing-zip' })),
+        fill(field({ accessibleName: null, testId: null, text: 'Card number' })),
+        fill(field({ accessibleName: null, testId: null, text: null })),
+        fill(null),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session, { values: 'env' });
+    expect(envNames(code)).toEqual(['E2E_EMAIL', 'E2E_BILLING_ZIP', 'E2E_CARD_NUMBER', 'E2E_VALUE', 'E2E_VALUE_2']);
+  });
+
+  test('diacritics go, letters go upper case, every other run becomes one underscore, none at either end', () => {
+    const names = ['Prénom', 'Adresse e-mail (pro)', ' Straße ', 'Código  postal', '¿Número?', 'ＰＩＮ', '2FA code'];
+    const session = buildSession(
+      names.map((accessibleName) => fill(field({ accessibleName }))),
+      0,
+    );
+    expect(envNames(renderSpec(session, { values: 'env' }).code)).toEqual([
+      'E2E_PRENOM',
+      'E2E_ADRESSE_E_MAIL_PRO',
+      'E2E_STRASSE',
+      'E2E_CODIGO_POSTAL',
+      'E2E_NUMERO',
+      'E2E_PIN',
+      'E2E_2FA_CODE',
+    ]);
+  });
+
+  test('a name with no letter or digit falls back to the next source', () => {
+    const session = buildSession(
+      [fill(field({ accessibleName: '***', testId: 'pin' })), fill(field({ accessibleName: '密码', testId: null }))],
+      0,
+    );
+    expect(envNames(renderSpec(session, { values: 'env' }).code)).toEqual(['E2E_PIN', 'E2E_VALUE']);
+  });
+
+  test('a long name keeps at most 40 characters after the prefix, and no trailing underscore', () => {
+    const session = buildSession(
+      [
+        fill(field({ accessibleName: 'Please enter the email address you used to sign up' })),
+        fill(field({ accessibleName: 'A'.repeat(60) })),
+      ],
+      0,
+    );
+    const [cut, long] = envNames(renderSpec(session, { values: 'env' }).code);
+    expect(cut).toBe('E2E_PLEASE_ENTER_THE_EMAIL_ADDRESS_YOU_USED');
+    expect(long).toBe(`E2E_${'A'.repeat(40)}`);
+  });
+
+  test('the second and third step that would take a name get _2 and _3, in step order', () => {
+    const password = field({ accessibleName: 'Password' });
+    const session = buildSession(
+      [
+        fill(password, { redacted: true, value: null }),
+        fill(field({ accessibleName: 'Email' })),
+        fill(password, { redacted: true, value: null }),
+        fill(field({ accessibleName: 'password' }), { redacted: true, value: null }),
+      ],
+      0,
+    );
+    const { code, warnings } = renderSpec(session, { values: 'env' });
+    expect(envNames(code)).toEqual(['E2E_PASSWORD', 'E2E_EMAIL', 'E2E_PASSWORD_2', 'E2E_PASSWORD_3']);
+    expect(code).toContain('  // Typed values come from E2E_PASSWORD, E2E_EMAIL, E2E_PASSWORD_2, E2E_PASSWORD_3.\n');
+    expect(warnings.map((w) => [w.step, w.code, w.detail])).toEqual([
+      [0, 'redacted-value', 'E2E_PASSWORD'],
+      [2, 'redacted-value', 'E2E_PASSWORD_2'],
+      [3, 'redacted-value', 'E2E_PASSWORD_3'],
+    ]);
+    expect(warnings[1]!.message).toBe('A password was typed here; the spec reads it from E2E_PASSWORD_2.');
+  });
+
+  test('a field whose own name ends like a suffix still reads a variable of its own', () => {
+    const session = buildSession(
+      [
+        fill(field({ accessibleName: 'Password' })),
+        fill(field({ accessibleName: 'Password' })),
+        fill(field({ accessibleName: 'Password 2' })),
+      ],
+      0,
+    );
+    expect(envNames(renderSpec(session, { values: 'env' }).code)).toEqual([
+      'E2E_PASSWORD',
+      'E2E_PASSWORD_2',
+      'E2E_PASSWORD_2_2',
+    ]);
+  });
+
+  test('a step added before the field leaves its name as it was', () => {
+    const password = fill(field({ accessibleName: 'Password' }), { redacted: true, value: null });
+    const before = renderSpec(buildSession([password], 0)).warnings.map((w) => w.detail);
+    const after = renderSpec(buildSession([step({ target: target({ accessibleName: 'Sign in' }) }), password], 0));
+    expect(before).toEqual(['E2E_PASSWORD']);
+    expect(after.warnings.map((w) => w.detail)).toEqual(['E2E_PASSWORD']);
+    expect(after.code).toContain(`.fill(process.env.E2E_PASSWORD ?? '');`);
+  });
+
+  test('a redacted value is read from the environment without values env, and its name has no comment', () => {
+    const session = buildSession(
+      [
+        fill(field({ accessibleName: 'Email' }), { value: 'ana@acme.test' }),
+        fill(field({ accessibleName: 'Password' }), { redacted: true, value: null }),
+      ],
+      0,
+    );
+    const { code } = renderSpec(session);
+    expect(code).toContain(`.fill('ana@acme.test');`);
+    expect(code).toContain(`.fill(process.env.E2E_PASSWORD ?? '');`);
+    expect(code).not.toContain('Typed values come from');
   });
 });
