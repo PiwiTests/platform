@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "vscode-jsonrpc": "^9.0.3"
   }
 }
