@@ -125,10 +125,13 @@ import { validateExtractedFunction } from '#shared/test-function-extract-prompt'
 import { createTestFunctionSchema, updateTestFunctionSchema } from '#shared/test-function-schemas';
 import {
   addQuarantine,
+  dismissQuarantineProposal,
   listQuarantine,
+  markDismissedProposals,
   releaseQuarantine,
   RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
+import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
   listSelections,
   getSelection,
@@ -1974,8 +1977,11 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/quarantine$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const { entries, debt } = await listQuarantine(db, +m[1]!);
       return {
-        ...(await listQuarantine(await getDemoDb(), +m[1]!)),
+        entries: (await markDismissedProposals(db, +m[1]!, entries, [])).entries,
+        debt,
         candidates: [],
         releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
       };
@@ -2009,6 +2015,34 @@ const routes: RouteEntry[] = [
       const result = await releaseQuarantine(await getDemoDb(), +m[1]!, +m[2]!, reason);
       if (!result.released) throw demoHttpError(404, 'No active quarantine for this test');
       return { success: true, ...result };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/quarantine\/(\d+)\/dismiss$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const b = (body ?? {}) as { proposal?: unknown; reason?: unknown };
+      if (!isQuarantineProposal(b.proposal)) throw demoHttpError(400, 'proposal must be quarantine or release');
+      const proposal = b.proposal;
+      const reason = normalizeDismissReason(b.reason);
+      let dismissed: boolean;
+      try {
+        dismissed = await dismissQuarantineProposal(
+          await getDemoDb(),
+          +m[1]!,
+          +m[2]!,
+          proposal,
+          { channel: 'ui', userId: ctx?.actingUserId ?? null },
+          reason,
+        );
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Test case not found in this project')
+          throw demoHttpError(404, e.message);
+        throw e;
+      }
+      if (!dismissed) throw demoHttpError(404, `No ${proposal} proposal for this test`);
+      return { success: true, proposal, dismissed };
     },
   },
 
