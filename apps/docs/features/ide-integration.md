@@ -52,10 +52,10 @@ variables, **Settings → Tools → Piwi** or the desktop app):
 The IDE answers only a page of the Piwi instance one of its open projects is
 connected to (**Settings → Tools → Piwi**, or `PIWI_DASHBOARD_URL` in the
 environment or the workspace `.env`), or of the [desktop app](./desktop.md)
-running on the same machine. A page from any other address, another page on your
-machine included, gets no answer whatever the IDE's built-in server settings
-allow, and the first address refused in an IDE session is named in a
-notification. When the dashboard you use is the project's instance under another
+running on the same machine; an instance's page finds files only in the projects
+connected to it. A page from any other address, another page on your machine
+included, gets no answer whatever the IDE's built-in server settings allow, and
+the first address refused in an IDE session is named in a notification. When the dashboard you use is the project's instance under another
 address, connect the project to that address.
 
 ## Set it up

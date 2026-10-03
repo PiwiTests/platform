@@ -63,6 +63,21 @@ class OpenOriginsTest {
     }
 
     @Test
+    fun `an instance reaches the projects connected to it, the desktop app every project`() {
+        val byProject = linkedMapOf(
+            "shop" to listOf<String?>("https://piwi.example.com", null),
+            "admin" to listOf<String?>("https://piwi.other.com"),
+            "docs" to listOf<String?>("http://localhost:3000"),
+        )
+        val everywhere = listOf<String?>("http://127.0.0.1:41234")
+        assertEquals(listOf("shop"), OpenOrigins.projectsFor("https://piwi.example.com", everywhere, byProject))
+        assertEquals(listOf("docs"), OpenOrigins.projectsFor("http://127.0.0.1:3000", everywhere, byProject))
+        assertEquals(listOf("shop", "admin", "docs"), OpenOrigins.projectsFor("http://localhost:41234", everywhere, byProject))
+        assertEquals(emptyList<String>(), OpenOrigins.projectsFor("https://evil.example", everywhere, byProject))
+        assertEquals(emptyList<String>(), OpenOrigins.projectsFor(null, everywhere, byProject))
+    }
+
+    @Test
     fun `reads the instance a workspace env file names, as the editor service reads it`() {
         assertEquals("https://piwi.example.com", OpenOrigins.dashboardUrlFromDotEnv("PIWI_DASHBOARD_URL=https://piwi.example.com"))
         assertEquals(

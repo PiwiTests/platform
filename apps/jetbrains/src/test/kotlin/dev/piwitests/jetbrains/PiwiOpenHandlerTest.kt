@@ -16,6 +16,8 @@ class PiwiOpenHandlerTest : BasePlatformTestCase() {
 
             settings.serverUrl = "https://piwi.example.com"
             assertTrue(handler.trusts("https://piwi.example.com"))
+            assertEquals("the files of the project connected to it", listOf(project), handler.projectsFor("https://piwi.example.com"))
+            assertEquals("no project for another site", emptyList<Any>(), handler.projectsFor("https://evil.example"))
             assertFalse("another site", handler.trusts("https://evil.example"))
             assertFalse("a page on this machine", handler.trusts("http://localhost:5173"))
             assertFalse("a request without an origin", handler.trusts(null))
@@ -36,6 +38,7 @@ class PiwiOpenHandlerTest : BasePlatformTestCase() {
         withHome(desktopJson = """{"url":"http://127.0.0.1:41234/","token":"t"}""") {
             assertTrue(handler.trusts("http://127.0.0.1:41234"))
             assertTrue("the same server under another loopback name", handler.trusts("http://localhost:41234"))
+            assertEquals("every open project, none connected to an instance", listOf(project), handler.projectsFor("http://127.0.0.1:41234"))
             assertFalse("another server on this machine", handler.trusts("http://127.0.0.1:41235"))
         }
         withHome(desktopJson = null) {

@@ -4,10 +4,10 @@ import java.net.URI
 import java.net.URISyntaxException
 
 /**
- * Who may use Open in IDE (`/api/piwi/open`): a page of a Piwi instance a project open in this IDE reports to, or of
- * the Piwi desktop app running on this machine. The answer names the projects' files, so a page from any other
- * address gets none: not another page on this machine, and not a page the built-in server's own settings trust. The
- * pure half of `PiwiOpenHandler`'s check.
+ * Who may use Open in IDE (`/api/piwi/open`): a page of a Piwi instance a project open in this IDE reports to, for
+ * that project's files, or of the Piwi desktop app running on this machine, for every open project's. The answer
+ * names the projects' files, so a page from any other address gets none: not another page on this machine, and not a
+ * page the built-in server's own settings trust. The pure half of `PiwiOpenHandler`'s check.
  */
 object OpenOrigins {
     /**
@@ -52,6 +52,18 @@ object OpenOrigins {
 
     /** Whether a request's `Origin` header names one of [allowed]. A request without one (a link followed, an image) does not. */
     fun isAllowed(origin: String?, allowed: Set<String>): Boolean = originOf(origin)?.let { it in allowed } ?: false
+
+    /**
+     * The projects a page of [origin] may open files in: every one of them when it is one of the addresses [everywhere]
+     * names (the desktop app, the environment's instance), else those whose own addresses name it, in [byProject]'s
+     * order.
+     */
+    fun <P> projectsFor(origin: String?, everywhere: Iterable<String?>, byProject: Map<P, Iterable<String?>>): List<P> =
+        if (isAllowed(origin, allowed(everywhere))) {
+            byProject.keys.toList()
+        } else {
+            byProject.filter { (_, addresses) -> isAllowed(origin, allowed(addresses)) }.keys.toList()
+        }
 
     private val DOTENV_LINE = Regex("^\\s*(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.*?)\\s*$")
 

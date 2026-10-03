@@ -66,12 +66,13 @@ the service through the platform's LSP API with the project's Node.js interprete
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
   connected to (its settings, `PIWI_DASHBOARD_URL` in the environment or in a Playwright config folder's `.env`, the
-  instances the editor service reports) or the desktop app; `OpenOrigins.kt` is the pure half. Every other request for
-  the path gets a 403 from the handler itself, whatever the platform's origin rules or **Allow unsigned requests**
-  trust, and the first refused page of the session is named in a notification. It looks the run's path up under the
-  Playwright config folders, the project folder and the content roots (`Glue.candidatePaths`), opens only a file inside
-  an open project, and answers JSON with CORS so the dashboard knows it opened. The dashboard side is `useOpenInIde` /
-  `ide-links.ts` in `apps/application`; a change to the query or the answer changes both.
+  instances the editor service reports) or the desktop app, and an instance's page finds files only in the projects
+  connected to it; `OpenOrigins.kt` is the pure half. Every other request for the path gets a 403 from the handler
+  itself, whatever the platform's origin rules or **Allow unsigned requests** trust, and the first refused page of the
+  session is named in a notification. It looks the run's path up under the Playwright config folders, the project folder
+  and the content roots (`Glue.candidatePaths`), opens only a file inside an open project, and answers JSON with CORS so
+  the dashboard knows it opened. The dashboard side is `useOpenInIde` / `ide-links.ts` in `apps/application`; a change
+  to the query or the answer changes both.
 - `Protocol.kt` mirrors `packages/editor/src/protocol.ts` for lsp4j; `Glue.kt` is the pure half, tested without an IDE.
 - **Connect** (`PiwiConnect.kt`) asks the instance whether it needs a key, then signs in with the browser (the device
   authorization Piwi Picker uses, `/api/extension/connect`) or takes a pasted key, then the project. When the desktop
