@@ -31,6 +31,8 @@ import { failingStepParams } from '#shared/describe-failure';
 import { computeClusterState, type ClusterState } from '#shared/cluster-state';
 import { computeNextStep, type NextStep } from '#shared/next-step';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
+import type { BisectResult } from '@piwitests/core/bisect';
+import type { BisectedCommit } from '#shared/reproduce';
 
 /** Whether a stored patch validation reports the patch applying to the current tree. */
 function patchApplies(status: unknown): boolean {
@@ -510,6 +512,25 @@ export async function patchClusterBaseCommit(db: DrizzleDB, clusterId: number, c
 
   const [updated] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
   return { success: true, cluster: updated };
+}
+
+/**
+ * Record the first bad commit a bisect found on a cluster, so it reaches the
+ * fix plan (its endpoint, the Markdown export and `get_fix_plan`). Null when
+ * the cluster does not exist. The commit URL is derived when the plan is read.
+ */
+export async function recordClusterBisect(
+  db: DrizzleDB,
+  clusterId: number,
+  result: BisectResult,
+): Promise<BisectedCommit | null> {
+  const bisectedCommit: BisectedCommit = { ...result, commitUrl: null };
+  const updated = await db
+    .update(failureClusters)
+    .set({ bisectResult: bisectedCommit, updatedAt: new Date() })
+    .where(eq(failureClusters.id, clusterId))
+    .returning({ id: failureClusters.id });
+  return updated.length ? bisectedCommit : null;
 }
 
 export async function extractClusterCases(

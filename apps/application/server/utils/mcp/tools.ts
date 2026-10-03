@@ -32,12 +32,14 @@ import {
   latestSuspectResults,
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
+import { parseBisectResultBody } from '@piwitests/core/bisect';
 import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
 import {
   getFailureCluster,
   getClusterDiagnosis,
   patchClusterStatus,
   patchClusterBaseCommit,
+  recordClusterBisect,
   getOpenFailureClusters,
   bulkTriageClusters,
   quarantineClusterTests,
@@ -2479,6 +2481,24 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     }
     const { provider, url, args, at } = outcome.dispatch;
     return dropNulls({ clusterId: id, provider, url, args, dispatchedAt: iso(at) });
+  },
+
+  // ── set_cluster_bisect ─────────────────────────────────────────────────────
+  async set_cluster_bisect(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const parsed = parseBisectResultBody(params);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const commit = await recordClusterBisect(db, id, parsed.value);
+    if (!commit) return null;
+    return dropNulls({
+      clusterId: id,
+      sha: commit.sha,
+      subject: commit.subject,
+      author: commit.author,
+      date: commit.date,
+    });
   },
 
   // ── link_issue ─────────────────────────────────────────────────────────────
