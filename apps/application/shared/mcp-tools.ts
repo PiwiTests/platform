@@ -996,6 +996,71 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'record_diagnosis',
+    module: 'agents',
+    capability: 'agent-diagnoses',
+    description:
+      "Record the diagnosis you wrote for a failure cluster as its current diagnosis, written by an agent: pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for (summary; confidenceScore 0-100; severity blocker|high|medium|low; affectedArea or null; hypotheses, ranked, each with category app-bug|test-bug|flaky-test|infrastructure|environment|unknown, rootCause, likelihood 0-100 and evidence; suggestedFix with description, file, code and patch, each null when unknown; investigationSteps; preventionTips). The previous diagnosis is kept in the cluster's history. Your patch (a unified diff) is validated against the source the cluster failed at when source control is connected; the answer says whether it applies. Works without an AI provider on this instance. Returns the diagnosisId to pass to report_fix_attempt. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        model: { type: 'string', description: 'The model you run on, e.g. claude-opus-5-5' },
+        diagnosis: {
+          type: 'object',
+          description: 'The diagnosis, in the schema Piwi asks a model for (see the description)',
+        },
+      },
+      required: ['clusterId', 'model', 'diagnosis'],
+    },
+  },
+  {
+    name: 'report_fix_attempt',
+    module: 'core',
+    description:
+      "Record that you changed the code to fix a failure cluster, after making the change: `kind` is patch, locator-edit or fix-plan; pass the `commit` (7 to 40 hex characters) or the `branch` the change is on, the `patch` you applied (stored as its hash) or its `patchHash`, the `edit` for a locator edit (filePath, line, from, to), and the `diagnosisId` you followed (from get_fix_plan or record_diagnosis). It is recorded as applied; when the cluster's tests pass on a later commit, Piwi records it verified (tied by the commit, a `Piwi-Cluster: <clusterId>` trailer in the commit message, or the branch) and shows it on the cluster's timeline; a later failure records it regressed. Add the trailer get_fix_plan suggests (verify.commitTrailer) to your commit message. Reporting the same change twice records it once. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        kind: { type: 'string', enum: ['patch', 'locator-edit', 'fix-plan'], description: 'What you changed' },
+        commit: { type: 'string', description: 'The commit the change is in' },
+        branch: { type: 'string', description: 'The branch the change is on, when not committed yet' },
+        patch: { type: 'string', description: 'The unified diff you applied' },
+        patchHash: { type: 'string', description: 'A hash of the patch, instead of the patch' },
+        edit: {
+          type: 'object',
+          description: 'For a locator edit: the file, the line, the old and the new locator',
+          properties: {
+            filePath: { type: 'string' },
+            line: { type: 'number' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['filePath'],
+        },
+        diagnosisId: { type: 'number', description: 'The diagnosis the change followed' },
+        note: { type: 'string', description: 'One line on what you changed' },
+      },
+      required: ['clusterId', 'kind'],
+    },
+  },
+  {
+    name: 'set_run_incident',
+    module: 'core',
+    description:
+      'Mark a test run as an environment incident (its failures come from the environment under test being down, not from the tests or the code), or clear the flag, as the run page does. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'number', description: 'Test run ID' },
+        incident: { type: 'boolean', description: 'true marks the run; false clears the flag' },
+        reason: { type: 'string', description: 'What happened (up to 500 characters), with incident: true' },
+      },
+      required: ['runId', 'incident'],
+    },
+  },
+  {
     name: 'link_issue',
     module: 'workflow',
     capability: 'integrations',

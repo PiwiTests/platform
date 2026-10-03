@@ -217,6 +217,13 @@ same error as the test's failures in history count. An arm **reproduced** the fl
 failed that way and it fails significantly more than the control; a **verify** experiment reruns that arm after a
 fix. See [Flake Lab](/features/flake-lab).
 
+### Fix attempt
+
+A change a person or an agent reports having made to fix a failure cluster (a patch, a locator edit, a fix plan
+carried out), on a commit or a branch. It is recorded **applied**, then **verified** when the cluster's tests pass on a
+run that carries it (its commit, a `Piwi-Cluster: <id>` trailer in a commit message, or its branch), and
+**regressed** when the cluster fails again. See [Agent skills](/features/agent-skills#what-agents-report-back).
+
 ### Locator snapshot
 
 When the [capture fixtures](./capture-fixtures) are installed, every successful locator call records

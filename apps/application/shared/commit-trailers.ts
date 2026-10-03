@@ -42,3 +42,23 @@ export function trailerValues(message: string | null | undefined, key: string): 
     .filter((trailer) => trailer.key.toLowerCase() === wanted)
     .map((trailer) => trailer.value);
 }
+
+/** The trailer naming the failure cluster a commit fixes; the fix plan suggests it. */
+export const CLUSTER_TRAILER_KEY = 'Piwi-Cluster';
+
+/** The cluster ids a commit message names in `Piwi-Cluster` trailers, in one or several. */
+export function clusterIdsFromCommitMessage(message: string | null | undefined): number[] {
+  const ids = new Set<number>();
+  for (const value of trailerValues(message, CLUSTER_TRAILER_KEY)) {
+    for (const part of value.split(/[\s,]+/)) {
+      const id = Number(part.replace(/^#/, ''));
+      if (Number.isInteger(id) && id > 0) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
+/** The trailer line a commit fixing a cluster carries. */
+export function clusterTrailerLine(clusterId: number): string {
+  return `${CLUSTER_TRAILER_KEY}: ${clusterId}`;
+}

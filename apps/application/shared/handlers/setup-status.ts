@@ -35,6 +35,8 @@ import {
   probes,
   bugReports,
   testRunResourceReports,
+  failureDiagnoses,
+  mcpToolCalls,
   prFeedbackPosts,
 } from '../../server/database/schema';
 import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
@@ -79,7 +81,9 @@ export type SetupCapabilityId =
   | 'server-probes'
   | 'bug-reports'
   | 'flake-lab'
-  | 'resources';
+  | 'resources'
+  | 'agent-diagnoses'
+  | 'agent-write-log';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -144,6 +148,8 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasBugReports,
     hasRetryPass,
     hasResourceReport,
+    hasAgentDiagnosis,
+    hasAgentWriteLog,
   ] = await Promise.all([
     exists(
       db,
@@ -328,6 +334,24 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             .limit(1)
         : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
     ),
+    // Agent diagnoses: active once an agent recorded a diagnosis.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: failureDiagnoses.id })
+            .from(failureDiagnoses)
+            .innerJoin(failureClusters, eq(failureDiagnoses.clusterId, failureClusters.id))
+            .where(and(eq(failureClusters.projectId, pid), eq(failureDiagnoses.provider, 'agent')))
+            .limit(1)
+        : db
+            .select({ id: failureDiagnoses.id })
+            .from(failureDiagnoses)
+            .where(eq(failureDiagnoses.provider, 'agent'))
+            .limit(1),
+    ),
+    // The agents' write log: active once a write tool was called over MCP. It spans projects.
+    exists(db, db.select({ id: mcpToolCalls.id }).from(mcpToolCalls).limit(1)),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -361,6 +385,8 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'bug-reports': hasBugReports,
     'flake-lab': hasRetryPass,
     resources: hasResourceReport,
+    'agent-diagnoses': hasAgentDiagnosis,
+    'agent-write-log': hasAgentWriteLog,
   };
 }
 
@@ -395,6 +421,8 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'bug-reports',
   'flake-lab',
   'resources',
+  'agent-diagnoses',
+  'agent-write-log',
 ];
 
 /**

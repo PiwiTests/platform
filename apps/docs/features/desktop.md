@@ -129,15 +129,15 @@ pick the project: it is imported as on the [import page](/guide/importing-runs),
 ## Connecting AI assistants
 
 The app serves the [MCP server](/features/mcp) with three local tools a hosted instance cannot offer:
-`import_local_report` (a local `.zip` into a project), `read_local_source` (the file on disk now, not at failure
-time) and `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default). It registers as
-`piwi-desktop`, so it sits beside a hosted Piwi in the same client.
+`import_local_report` (a local `.zip` into a project), `read_local_source` (the file on disk now) and `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default). It registers as
+`piwi-desktop`, beside a hosted Piwi in the same client.
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click by writing a `piwi-desktop` entry, with the address and token, into the client's own config file.
-It keeps a backup, touches only that entry, and rewrites it at each launch if the port changed. Claude Desktop, which takes only local
+It keeps a backup and rewrites only that entry, at each launch if the port changed. Claude Desktop, which takes only local
 commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app has to be
-running for it. Restart the client after connecting.
+running for it. Restart the client after connecting. The page also installs the
+[agent skills](/features/agent-skills) into a linked folder.
 
 ## Updates
 

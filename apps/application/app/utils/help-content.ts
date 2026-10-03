@@ -532,6 +532,11 @@ export const HELP_TOPICS = {
     text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
     doc: 'guide/getting-started',
   },
+  'cluster.activity': {
+    title: 'Activity',
+    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it.',
+    doc: 'features/agent-skills#what-agents-report-back',
+  },
   'fix.toolbox': {
     title: 'More ways to fix',
     text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan get_fix_plan returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',

@@ -1736,6 +1736,35 @@ export const handbackOutcomeRollups = sqliteTable(
   }),
 );
 
+// The write log of agents: one row per call of a write tool over MCP (the API
+// key, the tool, what it acted on and whether it succeeded). Read tools are
+// never logged. Pruned with the notification outbox; an instance that declined
+// the `agent-write-log` capability writes none.
+export const mcpToolCalls = sqliteTable(
+  'mcp_tool_calls',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }), // null when the call named no project
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // null for a session or with auth off
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    tool: text('tool').notNull(),
+    subjectType: text('subject_type'), // 'cluster', 'gap', 'bug-report', 'run', 'test-case', 'suggestion', 'diagnosis'
+    subjectId: integer('subject_id'),
+    result: text('result').notNull(), // 'ok' | 'error'
+    error: text('error'), // the error text an agent was given, truncated
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    subjectIdx: index('idx_mcp_tool_calls_subject').on(table.subjectType, table.subjectId),
+    projectIdx: index('idx_mcp_tool_calls_project').on(table.projectId, table.createdAt),
+    createdIdx: index('idx_mcp_tool_calls_created').on(table.createdAt),
+    apiKeyIdx: index('idx_mcp_tool_calls_api_key').on(table.apiKeyId),
+    userIdx: index('idx_mcp_tool_calls_user').on(table.userId),
+  }),
+);
+
 // One row per gate evaluation (`POST /api/test-runs/:id/gate`): the policy, the
 // verdict and its violations, and the pull request it judged. The PR state
 // sweep (`server/utils/gate-overrides.ts`) fills in what happened to the pull

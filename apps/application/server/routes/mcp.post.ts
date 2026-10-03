@@ -13,6 +13,7 @@ import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/se
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
 import { narrowToolsByModule } from '../utils/mcp/filter';
 import { serveableTools } from '../utils/mcp/served';
+import { logMcpToolCall } from '../utils/mcp/write-log';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
@@ -68,7 +69,7 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
   const db = await getDatabase();
   const scope = await getProjectScope(db, user);
-  const ctx: McpContext = { user, scope };
+  const ctx: McpContext = { user, scope, apiKeyId: (event.context.apiKeyId as number | undefined) ?? null };
 
   const contentLength = Number(event.headers.get('content-length') ?? 0);
   if (contentLength > MAX_BODY_BYTES) {
@@ -139,10 +140,11 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
           'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
-          'Write/triage tools (set_cluster_status, triage_cluster, triage_gap, decide_merge_suggestion, set_bug_report_status, rerun_cluster_in_ci, link_issue, run_cluster_diagnosis, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access. ' +
+          'Write/triage tools (set_cluster_status, triage_cluster, triage_gap, decide_merge_suggestion, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, run_cluster_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) require reporter or admin access, and each call is logged with the key that made it. ' +
+          'After fixing a cluster, call report_fix_attempt with the commit or branch, and put the Piwi-Cluster trailer get_fix_plan suggests in the commit message, so Piwi can verify the fix. ' +
           'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
           'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
-          'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here.' +
+          'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here; the other prompts are the Piwi workflow skills.' +
           (IS_DESKTOP
             ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file).'
             : ''),
@@ -180,6 +182,8 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       const args = p?.arguments ?? {};
       try {
         const data = await tool.handler(db, args, ctx);
+        // Write tools are logged with what they acted on; read tools never are.
+        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok');
         return ok(id, toContent(data));
       } catch (err) {
         // A tool that throws surfaces as a tool result with `isError: true`, not
@@ -187,6 +191,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
         // clients render as a broken connection, while the former is a message the
         // model reads and recovers from (bad argument, missing entity, no access).
         const message = err instanceof Error ? err.message : String(err);
+        await logMcpToolCall(db, ctx, tool.name, args, 'error', message);
         return ok(id, { content: [{ type: 'text', text: `Error: ${message}` }], isError: true });
       }
     }
@@ -218,6 +223,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
         baseUrl,
         authEnabled: isAuthEnabled(event),
         args: p.arguments ?? {},
+        version: String(useRuntimeConfig(event).public.appVersion ?? ''),
       });
       return ok(id, result);
     }

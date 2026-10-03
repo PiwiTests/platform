@@ -68,6 +68,7 @@ export const {
   analyticsDailyRollups,
   handbackOutcomes,
   handbackOutcomeRollups,
+  mcpToolCalls,
   gateEvaluations,
   prFeedbackPosts,
   analyticsDashboards,

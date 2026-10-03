@@ -4,6 +4,7 @@ import { formatRelativeTime } from '~/utils';
 import { DIAGNOSIS_SECTION_SHORT, isKnownSectionId } from '#shared/diagnosis-sections';
 import { escapeHtml } from '#shared/markdown-to-html';
 import type { PatchValidation } from '#shared/patch';
+import { diagnosisAuthorLabel, isAgentDiagnosis } from '#shared/agent-diagnosis';
 
 const props = defineProps<{
   diagnosis: FailureDiagnosis | null;
@@ -164,7 +165,7 @@ function diagnosisMarkdown(): string {
     tips.forEach((t) => lines.push(`- ${t}`));
     lines.push('');
   }
-  if (d.model) lines.push(`_${d.model}_`);
+  if (d.model || isAgentDiagnosis(d.provider)) lines.push(`_${diagnosisAuthorLabel(d.provider, d.model)}_`);
   return lines.join('\n');
 }
 
@@ -654,7 +655,11 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
           >
             2-stage
           </UBadge>
-          <span>
+          <span v-if="isAgentDiagnosis(diagnosis.provider)" data-shot="diagnosis-agent-author">
+            {{ diagnosisAuthorLabel(diagnosis.provider, diagnosis.model) }} ·
+            {{ formatRelativeTime(diagnosis.updatedAt) }}
+          </span>
+          <span v-else>
             {{ diagnosis.model }} · {{ formatTokens(diagnosis.inputTokens, diagnosis.outputTokens)
             }}<template v-if="cachedTokens > 0"> ({{ cachedTokens }} cached)</template> ·
             {{ formatRelativeTime(diagnosis.updatedAt) }}

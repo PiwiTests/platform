@@ -305,6 +305,14 @@ function hashApiKey(plaintext: string): string {
  * Returns null if the key does not exist, is expired, or belongs to no user.
  */
 export async function getUserByApiKey(plaintext: string): Promise<User | null> {
+  return (await resolveApiKey(plaintext))?.user ?? null;
+}
+
+/**
+ * Look up the user and the key id of a plaintext API key value, under the same
+ * rules as {@link getUserByApiKey}.
+ */
+export async function resolveApiKey(plaintext: string): Promise<{ user: User; keyId: number } | null> {
   if (!plaintext.startsWith(API_KEY_PREFIX)) {
     return null;
   }
@@ -331,7 +339,7 @@ export async function getUserByApiKey(plaintext: string): Promise<User | null> {
   }
 
   const userResults = await db.select().from(users).where(eq(users.id, key.userId));
-  return userResults[0] || null;
+  return userResults[0] ? { user: userResults[0], keyId: key.id } : null;
 }
 
 /**
@@ -385,14 +393,15 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
   // 1. Try API key authentication (preferred for CI/reporter usage)
   const apiKeyValue = extractApiKey(event);
   if (apiKeyValue) {
-    const user = await getUserByApiKey(apiKeyValue);
-    if (!user) {
+    const resolved = await resolveApiKey(apiKeyValue);
+    if (!resolved) {
       throw apiError({
         statusCode: 401,
         message: 'Invalid or expired API key',
       });
     }
 
+    const { user } = resolved;
     if (roles && !hasRole(user, roles)) {
       throw apiError({
         statusCode: 403,
@@ -400,6 +409,8 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
       });
     }
 
+    // The key a request was made with, for the records that name who acted (the agents' write log).
+    event.context.apiKeyId = resolved.keyId;
     return user;
   }
 

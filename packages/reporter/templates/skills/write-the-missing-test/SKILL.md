@@ -14,7 +14,7 @@ drafts it from the graph, and opens it in the same change.
 ## How you reach Piwi
 
 Prefer the **Piwi MCP server** if it is connected (`list_scenario_gaps`,
-`draft_scenario`, `get_change_coverage`). Otherwise use the dashboard's **Gaps**
+`draft_scenario`, `get_change_coverage`, `triage_gap`). Otherwise use the dashboard's **Gaps**
 view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
 `PIWI_PROJECT_NAME` set.
 
@@ -55,11 +55,18 @@ view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
    test asserts the missing behavior. If the gap had no reachable path, say so —
    the draft cannot invent an entry point, and the gap may need a fixture.
 
+7. **Report back to Piwi.** Tell Piwi what you decided about the gap with
+   `triage_gap` (reporter or admin access): `verb: "accept"` for the gap you
+   wrote the test for, `covered-by` with the covering test's id when a test you
+   found already covers it, or `dismiss` with the reason (`not-worth-testing`,
+   `covered-elsewhere`, `wrong`) when the evidence did not hold. Each verdict counts toward the precision of the
+   detector that raised the gap, so a detector that keeps being wrong is muted.
+
 ## Guardrails
 
 - A gap is a suggestion with evidence, never a verdict. If the evidence does not
   hold — the route is headless by design, the control is decorative — dismiss it
-  in the dashboard with a reason rather than writing a test that asserts nothing.
+  with `triage_gap` and a reason rather than writing a test that asserts nothing.
 - Do not weaken an assertion to make the draft pass. A test that passes without
   asserting the behavior is the false-comfort gap you were sent to close.
 - The draft's assertion is a `TODO` on purpose: fill it from the source and the

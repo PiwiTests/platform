@@ -36,9 +36,11 @@ COPY apps/application/ ./apps/application/
 COPY integrations/ ./integrations/
 
 # The docs pages and the changelog, bundled into the server as assets for the
-# MCP describe_piwi and get_release_notes tools (.dockerignore keeps only these).
+# MCP describe_piwi and get_release_notes tools, and the workflow skills the MCP
+# server serves as prompts (.dockerignore keeps only these).
 COPY apps/docs/ ./apps/docs/
 COPY CHANGELOG.md ./
+COPY packages/reporter/templates/skills/ ./packages/reporter/templates/skills/
 
 # Build the application. The glibc-flavoured native packages are pruned from the
 # bundled output: this image is Alpine (musl), so only the *-musl* builds are ever

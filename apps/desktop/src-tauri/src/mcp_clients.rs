@@ -430,6 +430,128 @@ pub fn desktop_mcp_reveal(app: AppHandle, client_id: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+// ── Agent skills in a linked folder ──────────────────────────────────────────
+//
+// Next to the client configs, the app installs the Piwi workflow skills into a
+// project's linked folder, under `.claude/skills/<slug>/SKILL.md` (the folder
+// Claude Code reads; other agents read the same files). The dashboard serves the
+// skill files, stamped with the version they ship in, and decides which to write
+// (an edited skill is kept unless the person asks); the shell only reads and
+// writes them, inside the linked folder of the project it is told.
+
+/// Where the skills go, relative to the linked folder.
+const SKILLS_DIR: [&str; 2] = [".claude", "skills"];
+
+/// A skill's file in a folder, for a slug made of lowercase letters, digits and
+/// dashes only, so a slug can never leave the skills directory.
+fn skill_file(folder: &Path, slug: &str) -> Option<PathBuf> {
+    let valid = !slug.is_empty()
+        && slug.len() <= 64
+        && slug
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !slug.starts_with('-');
+    if !valid {
+        return None;
+    }
+    let mut path = folder.to_path_buf();
+    for part in SKILLS_DIR {
+        path.push(part);
+    }
+    Some(path.join(slug).join("SKILL.md"))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFile {
+    slug: String,
+    /// The file's text; `None` when the skill is not installed.
+    content: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedSkills {
+    /// The skills directory inside the linked folder.
+    dir: String,
+    files: Vec<SkillFile>,
+}
+
+fn skills_dir(folder: &Path) -> PathBuf {
+    let mut path = folder.to_path_buf();
+    for part in SKILLS_DIR {
+        path.push(part);
+    }
+    path
+}
+
+fn read_skills(folder: &Path, slugs: &[String]) -> Result<Vec<SkillFile>, String> {
+    slugs
+        .iter()
+        .map(|slug| {
+            let path =
+                skill_file(folder, slug).ok_or_else(|| format!("invalid skill name: {slug}"))?;
+            Ok(SkillFile {
+                slug: slug.clone(),
+                content: std::fs::read_to_string(&path).ok(),
+            })
+        })
+        .collect()
+}
+
+fn write_skills(folder: &Path, files: &[SkillFile]) -> Result<Vec<String>, String> {
+    let mut written = Vec::new();
+    for file in files {
+        let path = skill_file(folder, &file.slug)
+            .ok_or_else(|| format!("invalid skill name: {}", file.slug))?;
+        let Some(content) = &file.content else {
+            continue;
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, content).map_err(|e| e.to_string())?;
+        written.push(file.slug.clone());
+    }
+    Ok(written)
+}
+
+/// The linked folder of a project, or an error the window can show.
+fn linked_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
+    let link =
+        crate::runner::linked_folder(app, project_id).ok_or("this project has no linked folder")?;
+    let folder = PathBuf::from(link.path);
+    if !folder.is_dir() {
+        return Err("the linked folder no longer exists".into());
+    }
+    Ok(folder)
+}
+
+/// Read the installed copy of each named skill in a project's linked folder.
+#[tauri::command]
+pub fn desktop_skills_read(
+    app: AppHandle,
+    project_id: String,
+    slugs: Vec<String>,
+) -> Result<LinkedSkills, String> {
+    let folder = linked_dir(&app, &project_id)?;
+    Ok(LinkedSkills {
+        dir: skills_dir(&folder).to_string_lossy().into_owned(),
+        files: read_skills(&folder, &slugs)?,
+    })
+}
+
+/// Write skill files into a project's linked folder. Returns the slugs written.
+#[tauri::command]
+pub fn desktop_skills_write(
+    app: AppHandle,
+    project_id: String,
+    files: Vec<SkillFile>,
+) -> Result<Vec<String>, String> {
+    let folder = linked_dir(&app, &project_id)?;
+    write_skills(&folder, &files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -728,5 +850,68 @@ mod tests {
     #[test]
     fn pick_returns_nothing_without_candidates() {
         assert_eq!(pick_config_dir(&[]), None);
+    }
+
+    #[test]
+    fn skill_files_stay_inside_the_skills_directory() {
+        let folder = Path::new("/work/shop");
+        assert_eq!(
+            skill_file(folder, "investigate-failure"),
+            Some(PathBuf::from(
+                "/work/shop/.claude/skills/investigate-failure/SKILL.md"
+            ))
+        );
+        for bad in ["", "../etc", "a/b", "Upper", "-x", "a b", "x\\y"] {
+            assert_eq!(skill_file(folder, bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn skills_are_written_then_read_back() {
+        let tmp = TempDir::new("skills");
+        let folder = tmp.mkdir("project");
+        let before = read_skills(&folder, &["investigate-failure".to_string()]).unwrap();
+        assert!(before[0].content.is_none());
+
+        let written = write_skills(
+            &folder,
+            &[
+                SkillFile {
+                    slug: "investigate-failure".into(),
+                    content: Some("---\nname: x\n---\n".into()),
+                },
+                SkillFile {
+                    slug: "apply-locator-healing".into(),
+                    content: None,
+                },
+            ],
+        )
+        .unwrap();
+        assert_eq!(written, vec!["investigate-failure".to_string()]);
+        let after = read_skills(
+            &folder,
+            &[
+                "investigate-failure".to_string(),
+                "apply-locator-healing".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(after[0].content.as_deref(), Some("---\nname: x\n---\n"));
+        assert!(after[1].content.is_none());
+    }
+
+    #[test]
+    fn a_bad_skill_name_is_refused() {
+        let tmp = TempDir::new("skills-bad");
+        let folder = tmp.mkdir("project");
+        assert!(write_skills(
+            &folder,
+            &[SkillFile {
+                slug: "../x".into(),
+                content: Some(String::new())
+            }]
+        )
+        .is_err());
+        assert!(read_skills(&folder, &["../x".to_string()]).is_err());
     }
 }

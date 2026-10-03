@@ -685,6 +685,49 @@ async function classifyFlakyTests({ base, request }) {
   }
 }
 
+/** An agent's diagnosis and two fix attempts on cluster 2, once per server. */
+async function prepareClusterActivity({ base, request }) {
+  const activity = await (await request.get(`${base}/api/failure-clusters/2/activity`)).json();
+  if (activity.items?.length) return;
+  await request.post(`${base}/api/failure-clusters/2/agent-diagnosis`, {
+    data: {
+      model: 'claude-opus-5-5',
+      diagnosis: {
+        summary: 'The checkout total is computed before the coupon applies',
+        confidenceScore: 78,
+        severity: 'high',
+        affectedArea: 'checkout',
+        hypotheses: [
+          {
+            category: 'app-bug',
+            rootCause: 'applyCoupon() runs after computeTotal(), so the total shown is the pre-discount one',
+            likelihood: 78,
+            evidence: ['expected 90.00, received 100.00'],
+          },
+        ],
+        suggestedFix: {
+          description: 'Compute the total once the coupon resolves',
+          file: 'src/checkout.ts',
+          code: null,
+          patch: null,
+        },
+        investigationSteps: [],
+        preventionTips: [],
+      },
+    },
+  });
+  await request.post(`${base}/api/failure-clusters/2/fix-attempts`, {
+    data: { kind: 'patch', commit: '4f2a9c1', channel: 'editor' },
+  });
+  await request.post(`${base}/api/failure-clusters/2/fix-attempts`, {
+    data: {
+      kind: 'locator-edit',
+      branch: 'fix/checkout',
+      edit: { filePath: 'tests/checkout.spec.ts', line: 42, from: '#pay', to: "getByRole('button', { name: 'Pay' })" },
+    },
+  });
+}
+
 /** A global email channel, a weekly schedule on it and one *Run now*, once per server. */
 async function prepareReportSchedule({ base, request }) {
   const schedules = await (await request.get(`${base}/api/reports/schedules`)).json();
@@ -1073,6 +1116,19 @@ const SCENES = [
       await page.getByRole('menuitem', { name: 'Excel' }).waitFor();
       await shoot();
     },
+  })),
+  // A failure cluster's Activity: the fix attempts reported on it and the agent's writes.
+  ...[
+    { suffix: '', width: 1280 },
+    { suffix: '-mobile', width: 375 },
+  ].map(({ suffix, width }) => ({
+    name: `cluster-activity${suffix}`,
+    description: `A failure cluster’s Activity section with reported fix attempts, at ${width} px`,
+    prepare: prepareClusterActivity,
+    route: '/failure-clusters/2',
+    viewport: { width, height: 1400 },
+    of: '[data-shot="cluster-activity"]',
+    pad: 8,
   })),
   // The Reports page and a snapshot: `prepare` makes a channel, a weekly
   // schedule and one run of it, so the page has a snapshot to list.
