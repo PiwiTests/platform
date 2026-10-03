@@ -141,7 +141,11 @@ export class GitLabProvider extends ScmProvider {
     };
     const allDiffs = data.diffs ?? [];
     const result: ScmChanges = {
-      commits: (data.commits ?? []).map((c) => ({ sha: c.id.slice(0, 7), message: c.message.split('\n')[0] ?? '' })),
+      commits: (data.commits ?? []).map((c) => ({
+        sha: c.id.slice(0, 7),
+        message: c.message.split('\n')[0] ?? '',
+        fullMessage: c.message,
+      })),
       files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map((f) => {
         const { additions, deletions } = countDiffLines(f.diff ?? '');
         return {

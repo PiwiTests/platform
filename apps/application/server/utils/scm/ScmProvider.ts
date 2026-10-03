@@ -36,7 +36,10 @@ export interface ChangedFile {
 
 export interface ScmCommit {
   sha: string;
+  /** The subject: the message's first line. */
   message: string;
+  /** The whole message, trailers included, where the host returns it ({@link ScmProvider.fetchChanges} does). */
+  fullMessage?: string;
 }
 
 export interface ScmCommitDetail {
@@ -196,6 +199,10 @@ export abstract class ScmProvider {
 
   abstract listBranches(limit?: number): Promise<string[]>;
   abstract listCommits(limit?: number, branch?: string): Promise<ScmCommitDetail[]>;
+  /**
+   * The commits in `fromSha..toSha`, oldest first, each with its full message,
+   * and the files changed between the two.
+   */
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
   /**
