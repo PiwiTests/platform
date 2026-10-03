@@ -27,6 +27,10 @@ project's Failure clusters tab, for a reporter or admin to approve or dismiss, a
 past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
 whenever an embedding role is configured, independently of auto-diagnose.
 
+Each pair is judged once: the model's no is kept, so the same pair is not sent to the model again. A pair that
+someone dismissed, or that came from [moving tests to a new cluster](#split-a-cluster-by-hand), is never merged
+automatically, however close the two clusters score.
+
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: clusters are embedded, compared by cosine similarity, and kept apart, adjudicated by a model, or merged depending on the score">
   <figcaption>The cosine score decides between keeping two clusters apart, asking a model (or a person), and merging them.</figcaption>
@@ -35,6 +39,14 @@ whenever an embedding role is configured, independently of auto-diagnose.
 With auto-diagnose on, new clusters also get a short **title** from one cheap batched model call per run. Without one,
 a cluster is named from its error kind, locator, route and spec file, such as
 `Timeout on getByLabel('Email address') in checkout.spec.ts`.
+
+### Split a cluster by hand
+
+The opposite of a merge needs no AI. When some of a cluster's tests fail with the same error for a different reason,
+select them in the cluster page's **Affected tests** and choose **Move to a new cluster** (reporter or administrator).
+Their failures move to a new cluster at once, with the triage note you type, and the cluster they left gains a line
+naming the move. Later failures of those tests with the same error join the new cluster, the other tests' failures
+stay where they were, and the two clusters are never merged automatically.
 
 ## Enabling AI diagnosis
 

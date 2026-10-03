@@ -4,9 +4,9 @@ import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId }
 defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
-    summary: 'Extract test cases from failure cluster',
+    summary: 'Move test cases to a new failure cluster',
     description:
-      'Unlinks selected test cases from a failure cluster by setting their failureClusterId to NULL. Optionally updates the triage note.',
+      'Moves the selected tests’ executions out of a failure cluster into a new cluster, which receives the optional triage note. Their later failures with the same error join the new cluster, and the two clusters are never merged automatically. The source cluster’s triage note gains a line naming the move. Returns the new cluster’s id (`clusterId`), null when none of the tests has an execution in the cluster.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter'],
   },

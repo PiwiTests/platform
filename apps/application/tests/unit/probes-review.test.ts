@@ -88,11 +88,6 @@ describe('buildProbePlan — exclude failing and quarantined tests (F11)', () =>
 describe('buildProbePlan — inconclusive cooldown (F11)', () => {
   async function seedInconclusiveProbe(ageMs: number): Promise<void> {
     await seedReach(1, 'GET /api/a');
-    // Age the test's source well before the probe so it does not read as "changed".
-    await db
-      .update(schema.testCases)
-      .set({ updatedAt: new Date(1000) })
-      .where(eq(schema.testCases.id, 1));
     await db.insert(schema.probes).values({
       projectId: 1,
       testCaseId: 1,
@@ -112,6 +107,66 @@ describe('buildProbePlan — inconclusive cooldown (F11)', () => {
 
   test('still blocks a recently-inconclusive pair', async () => {
     await seedInconclusiveProbe(60_000);
+    const plan = await buildProbePlan(db, 1, { budget: 50 });
+    expect(plan.items.map((i) => i.testCaseId)).not.toContain(1);
+  });
+});
+
+describe('buildProbePlan — re-probe when the test changed', () => {
+  const PROBED_AT = Date.UTC(2026, 8, 10);
+  const DAY = 24 * 60 * 60 * 1000;
+  let runSeq = 100;
+
+  /** A passing execution whose steps ran from the given lines of the spec. */
+  async function seedPass(at: number, lines: number[]): Promise<void> {
+    const runId = ++runSeq;
+    await db.insert(schema.testRuns).values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(at) });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: runId,
+      testCaseId: 1,
+      status: 'passed',
+      createdAt: new Date(at),
+      steps: [
+        { title: 'Before Hooks', category: 'hook' },
+        ...lines.map((line) => ({ title: `step at ${line}`, category: 'pw:api', location: `t1.spec.ts:${line}:5` })),
+      ],
+    });
+  }
+
+  async function seedNotNoticed(): Promise<void> {
+    await seedReach(1, 'GET /api/a');
+    await db.insert(schema.probes).values({
+      projectId: 1,
+      testCaseId: 1,
+      routeKey: 'GET /api/a',
+      fault: 'status-500',
+      outcome: 'not-noticed',
+      level: 'client',
+      probedAt: new Date(PROBED_AT),
+    });
+  }
+
+  test('an edit to the test after the probe makes the pair eligible again', async () => {
+    await seedNotNoticed();
+    await seedPass(PROBED_AT - DAY, [10, 11]);
+    // The assertion that notices the fault was added after the probe.
+    await seedPass(PROBED_AT + DAY, [10, 11, 12]);
+    await seedPass(PROBED_AT + 2 * DAY, [10, 11, 12]);
+
+    const plan = await buildProbePlan(db, 1, { budget: 50 });
+    expect(plan.items.map((i) => i.testCaseId)).toContain(1);
+  });
+
+  test('a tag or owner change, or an edit before the probe, does not', async () => {
+    await seedNotNoticed();
+    await seedPass(PROBED_AT - 2 * DAY, [10, 11]);
+    await seedPass(PROBED_AT - DAY, [10, 11, 12]);
+    await seedPass(PROBED_AT + DAY, [10, 11, 12]);
+    await db
+      .update(schema.testCases)
+      .set({ owner: 'team-cart', updatedAt: new Date(PROBED_AT + 2 * DAY) })
+      .where(eq(schema.testCases.id, 1));
+
     const plan = await buildProbePlan(db, 1, { budget: 50 });
     expect(plan.items.map((i) => i.testCaseId)).not.toContain(1);
   });

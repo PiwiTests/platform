@@ -78,13 +78,21 @@ async function confirmMove() {
   if (!selectedCount.value) return;
   moving.value = true;
   try {
-    await $fetch(`/api/failure-clusters/${props.clusterId}/extract-cases`, {
-      method: 'POST',
-      body: { testCaseIds: [...selected.value], triageNote: moveNote.value.trim() || undefined },
-    });
+    const result = await $fetch<{ clusterId: number | null }>(
+      `/api/failure-clusters/${props.clusterId}/extract-cases`,
+      {
+        method: 'POST',
+        body: { testCaseIds: [...selected.value], triageNote: moveNote.value.trim() || undefined },
+      },
+    );
     toast.add({
-      title: `Moved ${selectedCount.value} test${selectedCount.value === 1 ? '' : 's'} to a new cluster`,
-      color: 'success',
+      title: result.clusterId
+        ? `Moved ${selectedCount.value} test${selectedCount.value === 1 ? '' : 's'} to cluster #${result.clusterId}`
+        : 'None of these tests failed in this cluster',
+      color: result.clusterId ? 'success' : 'warning',
+      actions: result.clusterId
+        ? [{ label: 'Open', to: `/failure-clusters/${result.clusterId}`, color: 'neutral', variant: 'outline' }]
+        : undefined,
     });
     moveOpen.value = false;
     clearSelection();
@@ -198,10 +206,12 @@ async function quarantineSelected() {
     <template #body>
       <div class="space-y-3">
         <p class="text-sm text-muted">
-          {{ selectedCount }} test{{ selectedCount === 1 ? '' : 's' }} will be unlinked from this cluster. They regroup
-          into their own cluster on the next run that reproduces the failure.
+          {{ selectedCount }} test{{ selectedCount === 1 ? '' : 's' }} and {{ selectedCount === 1 ? 'its' : 'their' }}
+          failures move to a new cluster. Later failures of
+          {{ selectedCount === 1 ? 'this test' : 'these tests' }} with the same error join the new cluster, and the two
+          clusters are never merged automatically.
         </p>
-        <UFormField label="Triage note (optional)">
+        <UFormField label="Triage note for the new cluster (optional)">
           <UTextarea v-model="moveNote" placeholder="Why are these being moved out?" :rows="2" class="w-full" />
         </UFormField>
       </div>

@@ -86,7 +86,8 @@ see the bug before you fix it.
 
 ## From report to fix
 
-Once a test naming the report (`piwi:bug 37`) runs, the report follows it:
+Once a test naming the report (`piwi:bug 37`) runs on the default branch, the report follows it (the run `piwi bug --write`
+starts moves nothing):
 
 | Status | When |
 |---|---|

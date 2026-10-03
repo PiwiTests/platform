@@ -38,6 +38,10 @@ changed since its last probe, and each test gets one fault per run, up to a budg
 `--budget` to change it). Quarantined tests and tests whose last run failed are left out. A fault that did not change
 the response records the pair as *inconclusive*, and an inconclusive pair waits a week before it returns to the plan.
 
+A test counts as changed when the source lines its steps run from differ from those of its passing runs before the
+probe: an added assertion, an edited helper or a moved line. A new tag or owner does not count, and neither does a
+change to the route's handler alone.
+
 A probe run is stamped as one, with retries off. It never counts as a real run: no failure clusters, no regression
 signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
 compared with, and nothing in the Test Map but the probe outcomes. It never moves a pass rate, a duration or the

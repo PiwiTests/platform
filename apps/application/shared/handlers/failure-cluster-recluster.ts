@@ -17,15 +17,33 @@
  *  - fingerprint now equals another cluster in the same project → merge into it
  *    (the older/lower id wins so the longest-lived triage state survives)
  *  - otherwise → update the fingerprint + derived fields on the row
+ * Per-test routes keyed by a changed fingerprint move to the new one. A cluster
+ * made by moving tests out of another has no computed fingerprint and is left
+ * as-is.
  *
  * Runs once on startup after migrations; safe to run repeatedly.
  */
 
 import { eq, and, ne, asc } from 'drizzle-orm';
-import { failureClusters } from '../../server/database/schema';
+import { failureClusters, failureClusterTestRoutes } from '../../server/database/schema';
 import { computeErrorFingerprint } from '../error-fingerprint';
-import { mergeFailureClusters } from './failure-cluster-ops';
+import { isSplitFingerprint, mergeFailureClusters } from './failure-cluster-ops';
 import type { DrizzleDB } from './db';
+
+/** Move a project's per-test routes from one fingerprint to another; a route already on the new one wins. */
+async function renameRouteFingerprint(db: DrizzleDB, projectId: number, from: string, to: string): Promise<void> {
+  const where = and(eq(failureClusterTestRoutes.projectId, projectId), eq(failureClusterTestRoutes.fingerprint, from));
+  const routes = await db
+    .select({ testCaseId: failureClusterTestRoutes.testCaseId, clusterId: failureClusterTestRoutes.clusterId })
+    .from(failureClusterTestRoutes)
+    .where(where);
+  if (routes.length === 0) return;
+  await db
+    .insert(failureClusterTestRoutes)
+    .values(routes.map((r) => ({ projectId, fingerprint: to, testCaseId: r.testCaseId, clusterId: r.clusterId })))
+    .onConflictDoNothing();
+  await db.delete(failureClusterTestRoutes).where(where);
+}
 
 export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ updated: number; merged: number }> {
   // Process oldest-first so a re-fingerprinted cluster that becomes the merge
@@ -48,6 +66,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
     // Prefer the frozen fingerprint source; older rows only have sampleError.
     const source = cluster.fingerprintSample ?? cluster.sampleError;
     if (!source) continue; // nothing to recompute from — leave as-is
+    if (isSplitFingerprint(cluster.fingerprint)) continue;
 
     const fp = await computeErrorFingerprint(source);
     if (fp.fingerprint === cluster.fingerprint) continue; // already on the current algorithm
@@ -70,6 +89,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       const [keep, drop] = survivor.id < cluster.id ? [survivor.id, cluster.id] : [cluster.id, survivor.id];
       await mergeFailureClusters(db, keep, drop);
       merged++;
+      await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp.fingerprint);
       // The surviving row may still hold the old fingerprint (when it was this
       // cluster). Normalize it to the current algorithm — safe now that the
       // duplicate is gone.
@@ -96,6 +116,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
         updatedAt: new Date(),
       })
       .where(eq(failureClusters.id, cluster.id));
+    await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp.fingerprint);
     updated++;
   }
 
