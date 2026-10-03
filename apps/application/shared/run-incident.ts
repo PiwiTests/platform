@@ -29,7 +29,7 @@ export interface RunIncident {
   projects: number[];
   failedTests: number;
   executedTests: number;
-  /** Failures navigating or connecting to {@link host}. */
+  /** Failures navigating or connecting to {@link host}, by their error or a failed request in their network capture. */
   hostFailures: number;
   decidedBy: 'rule' | 'person';
   /** The person who marked the run, for `decidedBy: 'person'`. */

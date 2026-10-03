@@ -29,9 +29,18 @@ host of the run's Playwright `baseURL`. A run is flagged by one of three rules:
 A failure counts as reaching the host when it is a network error (`net::ERR_CONNECTION_REFUSED`, a name that does not
 resolve, a reset connection, `ECONNREFUSED` from a request fixture) or a `page.goto` that timed out, and the address
 it names is the host of the run's `baseURL`. With no `baseURL` recorded, the host most failures reached stands in for
-it. A third-party host going down (a CDN, an analytics script) does not count, and neither does a failing assertion,
-however many tests it breaks: a login page broken by a commit is a regression, not an incident. A run with fewer than
-three failing tests is never flagged.
+it.
+
+A failure whose error names no such address also counts when the network capture of its execution (recorded by the
+[capture fixtures](/guide/capture-fixtures)) holds a request to the `baseURL` host that got no answer: a network error
+such as a refused connection, or a `502`, `503` or `504` from a gateway in front of the app. That catches an API that
+is down behind a page that still loads, where the tests fail on assertions. A `500` is the app answering, and an
+aborted route (`net::ERR_FAILED`) is the test's own doing, so neither counts. Piwi reads the capture of at most 500
+failing executions per run, and a failure whose capture it did not read counts as not reaching the host.
+
+A third-party host going down (a CDN, an analytics script) does not count, and neither does a failing assertion whose
+requests were answered, however many tests it breaks: a login page broken by a commit is a regression, not an
+incident. A run with fewer than three failing tests is never flagged.
 
 A [probe](./probes) or [Flake Lab](./flake-lab) run is never judged: it injects its failures on purpose.
 

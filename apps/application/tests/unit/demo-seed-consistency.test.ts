@@ -16,7 +16,7 @@ import { flakeLabTestState } from '#shared/flake-lab';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
-import { classifyRunHealth } from '#shared/handlers/run-health';
+import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
 import { runBaseUrls } from '#shared/graph';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
@@ -855,15 +855,26 @@ describe('resource findings match the seeded reports', () => {
 describe('environment incidents', () => {
   // The seeded flag is written by hand; the classifier must reach the same
   // verdict from the seeded failures, and flag no other run.
+  // The failed requests of an execution's network capture, as the classifier reads them.
+  const failedRequestsOf = (executionId: number) =>
+    q(`select url, status, failure from network_requests where test_runs_case_id = ${executionId}
+       and (failure is not null or status in (${GATEWAY_STATUSES.join(', ')}))`).map((r) => ({
+      url: r.url as string | null,
+      status: r.status as number,
+      failure: r.failure as string | null,
+    }));
+
   test('the classifier flags the seeded incident run, with its reason, and no other run', () => {
     const runs = q('select id, passed_tests, failed_tests, metadata from test_runs order by id');
     const flagged: number[] = [];
     for (const run of runs) {
-      const rows = q(`select test_case_id, status, error from test_runs_cases where test_run_id = ${run.id as number}`);
+      const rows = q(
+        `select id, test_case_id, status, error from test_runs_cases where test_run_id = ${run.id as number}`,
+      );
       const passed = new Set(rows.filter((r) => r.status === 'passed').map((r) => r.test_case_id));
       const failures = rows
         .filter((r) => r.status === 'failed' && !passed.has(r.test_case_id))
-        .map((r) => ({ error: r.error as string }));
+        .map((r) => ({ error: r.error as string, failedRequests: failedRequestsOf(r.id as number) }));
       const metadata = JSON.parse((run.metadata as string) ?? 'null');
       const verdict = classifyRunHealth({
         runId: run.id as number,
@@ -886,6 +897,18 @@ describe('environment incidents', () => {
     expect(flagged).toHaveLength(1);
     const markers = q(`select run_id from markers where category = 'incident' and run_id is not null`);
     expect(markers.map((m) => m.run_id)).toEqual(flagged);
+  });
+
+  test("the incident run's network capture holds each failing test's refused navigation", () => {
+    const rows = q(`
+      select trc.id from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
+      where json_extract(r.metadata, '$.incident') is not null and trc.status = 'failed'`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(failedRequestsOf(row.id as number), `trc ${row.id as number}`).toEqual([
+        expect.objectContaining({ status: 0, failure: 'net::ERR_CONNECTION_REFUSED' }),
+      ]);
+    }
   });
 
   test('the incident run gets no regression signal', () => {
