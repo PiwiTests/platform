@@ -897,12 +897,36 @@ export function recordingPlacement(text: string, caretLine: number, into: Record
 }
 
 /**
+ * Whether a call counts as made on a page, seen from offset `at`: its receiver starts with the variable the name
+ * means at `at` (or with `this`, inside the class `klass`), and the method is a page's only, or the receiver looks
+ * like or holds a page.
+ */
+function onPage(model: FileModel, use: PageUse, at: number, klass: ClassInfo | null): boolean {
+  const offset = model.tokens[use.token]!.start;
+  const segments = use.expression.split('.');
+  const last = segments[segments.length - 1]!;
+  if (segments[0] === 'this') return !!klass && model.contains(klass.body, offset) && (!use.ambiguous || pageLikeName(last));
+  const declared = model.resolveAt(segments[0]!, at);
+  if (!declared || model.resolveAt(segments[0]!, offset) !== declared) return false;
+  return !use.ambiguous || pageLikeName(last) || (segments.length === 1 && declared.page === 'page');
+}
+
+/** The page fixtures of a test worth offering: those its calls do not show to be objects holding a page. */
+function pageFixtures(model: FileModel, test: TestCall, uses: PageUse[]): Declaration[] {
+  const direct = new Set(uses.filter((u) => !u.expression.includes('.')).map((u) => u.expression));
+  const holders = new Set(uses.filter((u) => u.expression.includes('.')).map((u) => u.expression.split('.')[0]!));
+  return model.fixturesOf(test).filter((d) => direct.has(d.name) || !holders.has(d.name));
+}
+
+/**
  * The page expressions the lines written at a caret could run on, best first, and where the block goes: in a test's
  * body (hooks included), in a class (a page object), or elsewhere in the file. Offered: the receivers of the page
  * calls around it, the test's page fixtures, the variables holding a page (`newPage()`, a `popup` or `page` event,
  * `firstWindow()`, a `Page` annotation) and a class's page fields. The default is the receiver of the nearest page
- * call before it; else, in a test, its `page` fixture or its first page fixture; in a class, `this.page`; in another
- * function, a page it declares; between tests, the page fixture of the nearest test; else `page`.
+ * call before it; else, in a test, its `page` fixture, the receiver of its next page call, or its first page
+ * fixture; in a class, `this.page`; in another function, a page it declares; between tests, what the nearest test
+ * runs its calls on, else its page fixture; else `page`. A fixture the calls show to hold a page (`app.page`) is
+ * offered through it, not on its own.
  */
 export function pageCandidates(text: string, caretLine: number): PageCandidatesResult {
   const model = new FileModel(text);
@@ -915,18 +939,7 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
   const region = klass ? klass.body : test ? test.body : (fn?.body ?? null);
   const line = (token: number) => model.lineOfToken(token) + 1;
 
-  /** A use counts when its receiver is the variable the name means at the block and looks like, or holds, a page. */
-  const counts = (use: PageUse): boolean => {
-    const offset = model.tokens[use.token]!.start;
-    if (!model.contains(region, offset)) return false;
-    const segments = use.expression.split('.');
-    const last = segments[segments.length - 1]!;
-    if (segments[0] === 'this') return !!klass && (!use.ambiguous || pageLikeName(last));
-    const declared = model.resolveAt(segments[0]!, at);
-    if (!declared || model.resolveAt(segments[0]!, offset) !== declared) return false;
-    return !use.ambiguous || pageLikeName(last) || (segments.length === 1 && declared.page === 'page');
-  };
-  const used = model.uses.filter(counts);
+  const used = model.uses.filter((u) => model.contains(region, model.tokens[u.token]!.start) && onPage(model, u, at, klass));
   const before: PageCandidate[] = used
     .filter((u) => model.tokens[u.token]!.start < at)
     .sort((a, b) => b.token - a.token)
@@ -956,19 +969,23 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
       fields[0] ??
       (declared[0] && asCandidate(declared[0]));
   } else if (test) {
-    const fixtures = model.fixturesOf(test).filter((d) => model.resolveAt(d.name, at) === d);
+    const fixtures = pageFixtures(model, test, used).filter((d) => model.resolveAt(d.name, at) === d);
+    const locals = declared.filter((d) => d.fixture === undefined);
     fallback = { expression: 'page', reason: 'fixture of this test' };
-    others = [...fixtures.map(asCandidate), ...declared.map(asCandidate)];
-    const fixture = fixtures.find((d) => d.fixture === 'page') ?? fixtures[0] ?? declared[0];
-    preferred = before[0] ?? (fixture && asCandidate(fixture));
+    others = [...fixtures.map(asCandidate), ...locals.map(asCandidate)];
+    const pageFixture = fixtures.find((d) => d.fixture === 'page');
+    const guessed = fixtures[0] ?? locals[0];
+    preferred = before[0] ?? (pageFixture && asCandidate(pageFixture)) ?? after[0] ?? (guessed && asCandidate(guessed));
   } else if (fn?.body) {
     fallback = { expression: 'page', reason: "Playwright's page fixture" };
     others = declared.map(asCandidate);
     preferred = before[0] ?? (declared[0] && asCandidate(declared[0]));
   } else {
     fallback = { expression: 'page', reason: "Playwright's page fixture" };
-    others = [...fileFixtures(model, at), fallback];
-    preferred = before[0] ?? nearestTestFixture(model, at);
+    const tests = testsByDistance(model, at);
+    others = [...tests.flatMap((t) => fileCandidates(model, t)), fallback];
+    const nearest = nearestTest(model, at);
+    preferred = before[0] ?? (nearest ? fileCandidates(model, nearest)[0] : undefined);
   }
 
   const seen = new Set<string>();
@@ -981,22 +998,46 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
   return { candidates, default: candidates[0]!.expression, context };
 }
 
-/** The page fixtures of a file's tests, as a new test would name them: the nearest test's first. */
-function fileFixtures(model: FileModel, at: number): PageCandidate[] {
-  const distance = (t: TestCall) => Math.abs(model.tokens[t.body.open]!.start - at);
-  return [...model.tests]
-    .sort((a, b) => distance(a) - distance(b))
-    .flatMap((t) => model.fixturesOf(t).map((d) => ({ expression: d.fixture!, reason: 'fixture in this file' })));
+/**
+ * The page expressions a new test could take from a test of the file: what its page calls run on, rooted at its
+ * fixtures and named after them (`adminPage` for `{ adminPage: admin }`), the most used first; then its page fixtures.
+ */
+function fileCandidates(model: FileModel, test: TestCall): PageCandidate[] {
+  const uses = model.uses.filter((u) => {
+    const offset = model.tokens[u.token]!.start;
+    return model.contains(test.body, offset) && onPage(model, u, offset, null);
+  });
+  const counted = new Map<string, { candidate: PageCandidate; count: number }>();
+  for (const u of uses) {
+    const offset = model.tokens[u.token]!.start;
+    const [first, ...rest] = u.expression.split('.');
+    const declared = model.resolveAt(first!, offset);
+    if (declared?.scope !== test.body || declared.fixture === undefined) continue;
+    const expression = [declared.fixture, ...rest].join('.');
+    const entry = counted.get(expression) ?? {
+      candidate: { expression, reason: `used on line ${model.lineOf(offset) + 1}` },
+      count: 0,
+    };
+    entry.count++;
+    counted.set(expression, entry);
+  }
+  const byUse = [...counted.values()].sort((a, b) => b.count - a.count).map((e) => e.candidate);
+  const fixtures = pageFixtures(model, test, uses)
+    .sort((a, b) => Number(b.fixture === 'page') - Number(a.fixture === 'page'))
+    .map((d) => ({ expression: d.fixture!, reason: 'fixture in this file' }));
+  return [...byUse, ...fixtures];
 }
 
-/** Between tests: the `page` fixture of the nearest test before (else after), or its first page fixture. */
-function nearestTestFixture(model: FileModel, at: number): PageCandidate | undefined {
+/** The file's tests, the nearest to an offset first. */
+function testsByDistance(model: FileModel, at: number): TestCall[] {
+  const distance = (t: TestCall) => Math.abs(model.tokens[t.body.open]!.start - at);
+  return [...model.tests].sort((a, b) => distance(a) - distance(b));
+}
+
+/** The nearest test before an offset, else the first after it. */
+function nearestTest(model: FileModel, at: number): TestCall | undefined {
   const opens = (t: TestCall) => model.tokens[t.body.open]!.start;
-  const test = model.tests.filter((t) => opens(t) < at).pop() ?? model.tests.find((t) => opens(t) >= at);
-  if (!test) return undefined;
-  const fixtures = model.fixturesOf(test);
-  const chosen = fixtures.find((d) => d.fixture === 'page') ?? fixtures[0];
-  return chosen && { expression: chosen.fixture!, reason: 'fixture in this file' };
+  return model.tests.filter((t) => opens(t) < at).pop() ?? model.tests.find((t) => opens(t) >= at);
 }
 
 /** The module a file imports its `test` from (`import { test } from './fixtures'`); null when it imports none. */

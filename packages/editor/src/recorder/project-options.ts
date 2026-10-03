@@ -5,8 +5,8 @@
  */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import { createRequire } from 'node:module';
 import * as path from 'node:path';
+import { resolvePlaywrightCli } from './playwright.js';
 import { USE_LINE } from './use-reporter.js';
 
 export interface ProjectUse {
@@ -43,19 +43,6 @@ const NO_SPEC = '__piwi_no_such_spec__';
 
 /** The most output kept from Playwright. */
 const MAX_OUTPUT = 8 * 1024 * 1024;
-
-/** The project's own Playwright CLI, resolved from a folder; null when Playwright is not installed there. */
-export function resolvePlaywrightCli(dir: string): string | null {
-  const require = createRequire(path.join(dir, 'noop.js'));
-  for (const id of ['@playwright/test/cli', 'playwright/cli', 'playwright/lib/cli/cli']) {
-    try {
-      return require.resolve(id);
-    } catch {
-      // the next candidate
-    }
-  }
-  return null;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -286,7 +286,7 @@ object PiwiRecordFlow {
         })
     }
 
-    /** The service reads the Playwright config's projects first, which can take a while on a large suite. */
+    /** How long `piwi/record` may take: the service first runs the project's Playwright to read the config's projects. */
     private const val RECORD_TIMEOUT_MILLIS = 90_000L
 }
 

@@ -13,6 +13,7 @@ import type { Browser, BrowserContext, BrowserType, Page } from '@playwright/tes
 import { IDE_RECORDER_BINDING } from '@piwitests/core/ide-recorder';
 import { RecorderHost } from './host-state.js';
 import type { LaunchFailure, LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
+import { resolvePlaywrightLibrary } from './playwright.js';
 
 interface Playwright {
   chromium: BrowserType;
@@ -50,17 +51,10 @@ async function fail(reason: LaunchFailure, message: string): Promise<void> {
   await shutdown(1);
 }
 
-/** The project's Playwright, resolved from the config's folder; null when it is not installed there. */
+/** The project's Playwright, loaded from the config's folder; null when it is not installed there. */
 function loadPlaywright(cwd: string): Playwright | null {
-  const require = createRequire(path.join(cwd, 'noop.js'));
-  for (const id of ['playwright-core', 'playwright', '@playwright/test']) {
-    try {
-      return require(id) as Playwright;
-    } catch {
-      // the next candidate
-    }
-  }
-  return null;
+  const library = resolvePlaywrightLibrary(cwd);
+  return library ? (createRequire(path.join(cwd, 'noop.js'))(library) as Playwright) : null;
 }
 
 /** The first line of a Playwright error, without the call it came from (`browserType.launch: `). */

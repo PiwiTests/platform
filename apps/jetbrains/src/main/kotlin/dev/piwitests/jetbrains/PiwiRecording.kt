@@ -217,7 +217,7 @@ class PiwiRecordings(private val project: Project) : Disposable {
             runCatching { request.get(PiwiProjectService.TIMEOUT_SECONDS, TimeUnit.SECONDS) }.isSuccess
         }, AppExecutorUtil.getAppExecutorService()).exceptionally { false }
 
-    /** The project closes: its sessions stop; the sessions, disposed first, wrote what they could. */
+    /** The project closes: the service is asked to stop its sessions, which are disposed already, without waiting. */
     override fun dispose() {
         val server = runCatching { project.getServiceIfCreated(PiwiProjectService::class.java)?.server() }.getOrNull()
         for (id in sessions.keys) runCatching { server?.stopRecording(StopRecordingParams(id)) }
@@ -260,7 +260,7 @@ class RecordingSession internal constructor(
     val document: Document = editor.document
 
     private val group = "piwi.recording.$id"
-    private val bracket = UndoBracket(project, document, group)
+    private val bracket = UndoBracket(project, document)
     private var anchor: RangeMarker? = null
     private var block: RangeMarker? = null
     private var tint: RangeHighlighter? = null
@@ -273,7 +273,7 @@ class RecordingSession internal constructor(
     @Volatile var warnings: List<RecordingWarningMark> = emptyList()
         private set
 
-    /** `starting`, `recording`, `paused`, `stopped` or `failed`, as the service last said. */
+    /** `starting`, `recording`, `paused`, `stopped` or `failed`, as the service last said; `paused` from Pause here, which it does not echo. */
     @Volatile var state: String = "starting"
         private set
 
@@ -511,11 +511,11 @@ class RecordingWarningMark(val marker: RangeMarker, private val text: String, va
 /**
  * Makes everything a recording writes one undo step: a start mark before its first write and a finish mark at its end,
  * and one Undo goes back to the start mark, the developer's own edits of the file in between included. The start mark
- * is a command of its own, just before the write: the caret it records is the one the write starts from, which Undo
- * restores before reaching it, so it never stops there to move the caret instead. While the start mark is undone, it
- * is off the undo stack: the next write starts again, and a finish mark only follows a start mark still there.
+ * is a command of its own, right before the write, so the caret it records is the one Undo restores after undoing that
+ * write: Undo does not stop at it to move the caret. While the start mark is undone, it is off the undo stack: the next
+ * write starts again, and a finish mark only follows a start mark still there.
  */
-private class UndoBracket(private val project: Project, private val document: Document, private val group: String) {
+private class UndoBracket(private val project: Project, private val document: Document) {
     private var mark: StartMarkAction? = null
     private var holder: Editor? = null
     private var start: StartMark? = null
@@ -547,7 +547,7 @@ private class UndoBracket(private val project: Project, private val document: Do
         )
     }
 
-    /** Ends the bracket, with the last write when nothing came in between: one Undo now removes everything since its start. */
+    /** Ends the bracket in a command of its own: one Undo now removes everything since its start. */
     fun close() {
         val mark = mark
         val editor = holder
@@ -559,7 +559,7 @@ private class UndoBracket(private val project: Project, private val document: Do
             project,
             { FinishMarkAction.finish(project, editor, mark) },
             PiwiRecordings.COMMAND,
-            group,
+            null,
             UndoConfirmationPolicy.DO_NOT_REQUEST_CONFIRMATION,
             false,
         )

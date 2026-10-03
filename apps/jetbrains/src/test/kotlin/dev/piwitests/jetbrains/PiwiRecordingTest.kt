@@ -221,7 +221,7 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(listOf("pause s3"), sent)
         assertEquals(listOf(Glue.RecordingAction.RESUME, Glue.RecordingAction.KEEP_EDITS), session.view.actions)
         val twoSteps = "await page.goto('/cart');\nawait page.getByRole('link').click();"
-        send(update("s3", twoSteps, state = "paused"))
+        send(update("s3", twoSteps))
         assertEquals("test('pays', async ({ page }) => {\n  await page.xgoto('/cart');\n});\n", text())
 
         recordings.resume(session)
@@ -312,17 +312,26 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         assertEquals(emptyList<Pair<Any, String>>(), recordings.warnings(document))
     }
 
-    /** A recording that fails before writing anything leaves the file as it was and says why, with the service's command. */
-    fun testAFailureBeforeAnyStepSaysWhyWithItsCommand() {
-        val original = "test('t', async ({ page }) => {\n  \n});\n"
+    /**
+     * A recording that fails or stops before its first step leaves the file as it was, even when the service's last
+     * update holds an empty test; a failure says why, with the service's command.
+     */
+    fun testARecordingEndedBeforeItsFirstStepWritesNothing() {
+        val original = "test('t', async ({ page }) => {\n  await page.goto('/');\n});\n"
         myFixture.configureByText("failed.spec.ts", original)
-        register("s7", line = 1, newLine = false, indent = "  ")
+        val emptyTest = "test('recorded flow', async ({ page }) => {\n});"
+        register("s7", line = 3, newLine = false, indent = "", into = "test")
         val install = PiwiCommand("Install Chromium", "piwi.runCommand", listOf(mapOf("cwd" to "/w", "command" to "npx playwright install chromium")))
-        send(update("s7", "", state = "failed", message = "Chromium is not installed for this project.", command = install))
+        send(update("s7", emptyTest, state = "failed", message = "Chromium is not installed for this project.", command = install).copy(steps = emptyList()))
         assertEquals(original, text())
         assertNull(recordings.sessionFor(myFixture.file.virtualFile))
         assertEquals("Chromium is not installed for this project.", notes.last().content)
         assertEquals(listOf("Install Chromium"), notes.last().actions.map { it.templateText })
+
+        register("s10", line = 3, newLine = false, indent = "", into = "test")
+        send(update("s10", emptyTest, state = "stopped").copy(steps = emptyList()))
+        assertEquals(original, text())
+        assertEquals("Nothing was recorded into failed.spec.ts.", notes.last().content)
     }
 
     /** Stop, Pause and Resume act on the recording of the file at hand, each while it applies. */
@@ -333,12 +342,15 @@ class PiwiRecordingTest : BasePlatformTestCase() {
         val actions = ActionManager.getInstance()
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         send(update("s9", "await page.goto('/');"))
+        // The service sends nothing for a pause: the banner says so at once.
         assertTrue(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertEquals(listOf("pause s9"), sent)
-        send(update("s9", "await page.goto('/');", state = "paused"))
+        assertEquals("Piwi: recording paused · 1 step", session.view.text)
         assertFalse(myFixture.testAction(actions.getAction("Piwi.PauseRecording")).isEnabled)
         assertTrue(myFixture.testAction(actions.getAction("Piwi.ResumeRecording")).isEnabled)
         assertEquals(listOf("pause s9", "resume s9"), sent)
+        assertEquals("recording", session.state)
+        send(update("s9", "await page.goto('/');"))
         assertTrue(myFixture.testAction(actions.getAction("Piwi.StopRecording")).isEnabled)
         assertFalse(myFixture.testAction(actions.getAction("Piwi.StopRecording")).isEnabled)
         assertEquals(listOf("pause s9", "resume s9", "stop s9"), sent)
