@@ -71,6 +71,19 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     cleanupProjectArtifacts(projectName);
   });
 
+  it('a run that stopped before any test began (its global setup threw) sends and saves nothing', async () => {
+    server = await startServer((_req, res) => textRes(res, 400, 'no'));
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      uploadReport: false,
+      uploadTraces: false,
+    });
+    await reporter.onEnd({ status: 'failed' } as any);
+    expect(urlsHit(server)).toEqual([]);
+    expect(fs.existsSync(recoveryFilePath(projectName))).toBe(false);
+  });
+
   it('streaming success path: /start → /events → /finish', async () => {
     let eventsBody: any;
     let finishBody: any;

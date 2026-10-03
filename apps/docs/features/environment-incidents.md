@@ -29,9 +29,18 @@ host of the run's Playwright `baseURL`. A run is flagged by one of three rules:
 A failure counts as reaching the host when it is a network error (`net::ERR_CONNECTION_REFUSED`, a name that does not
 resolve, a reset connection, `ECONNREFUSED` from a request fixture) or a `page.goto` that timed out, and the address
 it names is the host of the run's `baseURL`. With no `baseURL` recorded, the host most failures reached stands in for
-it. A third-party host going down (a CDN, an analytics script) does not count, and neither does a failing assertion,
-however many tests it breaks: a login page broken by a commit is a regression, not an incident. A run with fewer than
-three failing tests is never flagged.
+it.
+
+A failure whose error names no such address also counts when the network capture of its execution (recorded by the
+[capture fixtures](/guide/capture-fixtures)) holds a request to the `baseURL` host that got no answer: a network error
+such as a refused connection, or a `502`, `503` or `504` from a gateway in front of the app. That catches an API that
+is down behind a page that still loads, where the tests fail on assertions. A `500` is the app answering, and an
+aborted route (`net::ERR_FAILED`) is the test's own doing, so neither counts. Piwi reads the capture of at most 500
+failing executions per run, and a failure whose capture it did not read counts as not reaching the host.
+
+A third-party host going down (a CDN, an analytics script) does not count, and neither does a failing assertion whose
+requests were answered, however many tests it breaks: a login page broken by a commit is a regression, not an
+incident. A run with fewer than three failing tests is never flagged.
 
 A [probe](./probes) or [Flake Lab](./flake-lab) run is never judged: it injects its failures on purpose.
 
@@ -72,6 +81,15 @@ change broke something" (`1`):
 The gate's JSON result carries `verdict: "inconclusive"`, `passed: false` and the incident under `facts.incident`, so
 a client that reads only `passed` still blocks the merge.
 
+## Stopping a run before it starts
+
+With the reporter option [`checkBaseUrl`](/reference/reporter-options#checkbaseurl), the reporter checks that each
+`baseURL` of the run's projects answers before any worker starts. When one does not (a refused connection, a name
+that does not resolve, no answer in 10 seconds, or a `502`, `503` or `504`, on each of three tries), the run stops
+with a message naming it and Playwright's failure exit code. No test runs, so the outage costs no CI time, and no run
+reaches the dashboard. The option is off by default, and the check runs before the config's own `globalSetup`, so
+leave it off when that setup is what starts the app.
+
 ## Marking and clearing by hand
 
 The rules can miss an outage or flag a real regression. Anyone who can edit the run can decide instead:
@@ -82,7 +100,9 @@ The rules can miss an outage or flag a real regression. Anyone who can edit the 
   again: its regression signals are computed, and it feeds flaky scores and baselines from then on.
 
 Either decision is kept on the run, and finalizing the run again (a late shard, a report upload) never overrides it.
-The run page says who decided. The same action is in the [API reference](https://piwitests.dev/demo/docs).
+The run page says who decided. The same action is in the [API reference](https://piwitests.dev/demo/docs), and an
+agent makes it with the MCP tool [`set_run_incident`](/reference/mcp-tools#set_run_incident), which needs a reporter
+or administrator key and is kept in the [write log](./mcp).
 
 ## Limits
 
@@ -102,5 +122,6 @@ The run page says who decided. The same action is in the [API reference](https:/
 - [Flaky tests & quarantine](./flaky-tests): the scores an incident leaves alone
 - [Notification events & webhooks](/reference/notification-events): `environment.incident` and its payload
 - [Piwi CLI](/reference/cli#gate): the gate's exit codes
+- [Reporter options](/reference/reporter-options#app-under-test): `checkBaseUrl`
 - [Timeline markers](./timeline-markers): the `incident` category
 - [Concepts](/guide/concepts#environment-incident): the term

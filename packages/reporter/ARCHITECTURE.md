@@ -13,7 +13,7 @@ change. Everything under **`src/internal/`** is private plumbing — change it f
 |---|---|---|
 | `PiwiDashboardReporter` (default + named) | `public/reporter.ts` | the Playwright reporter |
 | `wrapConfig` | `public/config-wrapper.ts` | injects reporter + global setup into a PW config |
-| `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup` |
+| `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup`, after checking each `baseURL` answers when `checkBaseUrl` is on |
 | `resolveSelection` | `public/selection.ts` | resolves `PIWI_SELECTION` from an ESM config, returns a grep and stamps the run |
 | `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures`, `PiwiWorkerFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures types (types) |
 | `piwiFixtures`, `extendPiwiFixtures` | `internal/capture/capture-fixtures.ts` → re-exported by `index.ts` | capture fixtures (imported from `@piwitests/reporter`) |
@@ -129,7 +129,8 @@ src/
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
                 system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, source-snippet, worker-index, errors,
-                selection-client, selection-env, shard-info
+                selection-client, selection-env, shard-info,
+                base-url-check (the `checkBaseUrl` check the global setup runs)
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model

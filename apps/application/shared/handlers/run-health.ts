@@ -4,10 +4,11 @@
  *
  * `classifyRunHealth` decides from data a finished run already stored: the
  * share of tests that failed, how many of the failures were navigating or
- * connecting to the app's host (the host of the run's `baseURL`), how many
- * were browser crashes, the largest group of failures sharing a fingerprint,
- * and whether the same host or fingerprint failed in other projects within
- * {@link INCIDENT_THRESHOLDS}' window. A flagged run carries
+ * connecting to the app's host (the host of the run's `baseURL`), by their
+ * error or by a request to that host that failed in their network capture,
+ * how many were browser crashes, the largest group of failures sharing a
+ * fingerprint, and whether the same host or fingerprint failed in other
+ * projects within {@link INCIDENT_THRESHOLDS}' window. A flagged run carries
  * `metadata.incident` ({@link RunIncident}), which the run eligibility rule
  * reads to leave the run out of baselines, fix verification, flaky scores, the
  * selection catalog, auto-heal and notifications, and which the gate reads as
@@ -19,8 +20,8 @@
  * run is finalized again.
  */
 
-import { and, eq, gte, inArray, lte, ne } from 'drizzle-orm';
-import { failureClusters, markers, testRuns, testRunsCases } from '../../server/database/schema';
+import { and, eq, gte, inArray, isNotNull, lte, ne, or } from 'drizzle-orm';
+import { failureClusters, markers, networkRequests, testRuns, testRunsCases } from '../../server/database/schema';
 import { parsePlaywrightError } from '../error-parse';
 import { runBaseUrls } from '../graph';
 import { eligibleRunSql, isEligibleRun } from '../run-eligibility';
@@ -57,6 +58,10 @@ export const INCIDENT_THRESHOLDS = {
   crossProjectRunLimit: 20,
   /** Failing executions read per run of another project. */
   crossProjectFailureLimit: 100,
+  /** Failing executions whose network capture is read: the ones whose error does not already reach the app. */
+  networkExecutionLimit: 500,
+  /** Failed requests read across those executions. */
+  networkRequestLimit: 5000,
 } as const;
 
 /** Failing executions read from the run being classified. */
@@ -64,8 +69,9 @@ const FAILURE_LIMIT = 2000;
 
 /** What one failure says about the environment. */
 export interface FailureSignal {
-  kind: 'connection' | 'navigation' | 'crash' | 'other';
-  /** The host the failure was reaching, when the error names one. */
+  /** `request`: a request to the app's host failed in the failure's network capture. */
+  kind: 'connection' | 'navigation' | 'request' | 'crash' | 'other';
+  /** The host the failure was reaching, when the error or the failed request names one. */
   host: string | null;
   /** A short phrase for the network error (`connection refused`), when there is one. */
   cause: string | null;
@@ -76,6 +82,20 @@ const NODE_CODE_RE =
 const BROWSER_PHRASE_RE = /Could not connect to (?:the )?server|Could not resolve host|socket hang up/i;
 const GOTO_TIMEOUT_RE = /\b(?:page|frame)\.(?:goto|reload):\s*Timeout \d+ms exceeded/;
 const ANY_URL_RE = /https?:\/\/[^\s'"`)]+/;
+
+/** Answers from a gateway whose app behind it is down. */
+export const GATEWAY_STATUSES = [502, 503, 504] as const;
+const GATEWAY_CAUSE: Record<number, string> = {
+  502: 'bad gateway',
+  503: 'service unavailable',
+  504: 'gateway timeout',
+};
+/**
+ * Request failures that say the host did not answer. `net::ERR_FAILED`, which
+ * `route.abort()` sends, and a request the page cancelled are left out.
+ */
+const REQUEST_OUTAGE_RE =
+  /REFUSED|NAME_NOT_RESOLVED|UNKNOWN_HOST|RESET|CONNECTION_CLOSED|EMPTY_RESPONSE|TIMED_OUT|NET_TIMEOUT|UNREACHABLE|INTERNET_DISCONNECTED|CERT|SSL|Could not connect|could not be found/i;
 
 function causeOf(code: string): string {
   if (/REFUSED/.test(code)) return 'connection refused';
@@ -114,11 +134,39 @@ export function readFailureSignal(error: string | null | undefined): FailureSign
   return { kind: 'other', host: null, cause: null };
 }
 
+/** A request from a failing execution's network capture that got no answer from its app. */
+export interface FailedRequest {
+  url: string | null;
+  status: number;
+  /** Playwright's error text for a request that failed before any answer. */
+  failure: string | null;
+}
+
+/**
+ * What a failing execution's network capture says: a request to one of
+ * `appHosts` that failed with a network error or a gateway's 502, 503 or 504.
+ * Null when none did.
+ */
+export function readRequestSignal(requests: FailedRequest[] | undefined, appHosts: Set<string>): FailureSignal | null {
+  for (const request of requests ?? []) {
+    const host = hostOf(request.url);
+    if (!host || !appHosts.has(host)) continue;
+    if (request.failure) {
+      if (REQUEST_OUTAGE_RE.test(request.failure)) return { kind: 'request', host, cause: causeOf(request.failure) };
+    } else if (GATEWAY_CAUSE[request.status]) {
+      return { kind: 'request', host, cause: GATEWAY_CAUSE[request.status]! };
+    }
+  }
+  return null;
+}
+
 /** One failing test of the run being classified. */
 export interface HealthFailure {
   error: string | null;
   /** The fingerprint of the cluster the failure joined. */
   fingerprint?: string | null;
+  /** Failed requests from its network capture (see {@link FailedRequest}), when they were read. */
+  failedRequests?: FailedRequest[];
 }
 
 /** A run of another project that started within the window. */
@@ -148,6 +196,8 @@ export interface RunHealthMeasure {
   failedShare: number;
   host: string | null;
   hostFailures: number;
+  /** Of {@link hostFailures}, the ones only their network capture showed reaching the host. */
+  requestFailures: number;
   hostFailureShare: number;
   cause: string | null;
   crashShare: number;
@@ -167,9 +217,14 @@ function mostCommon(values: Array<string | null>): { value: string | null; count
   return best;
 }
 
+/** The hosts of the run's `baseURL`s. */
+function baseUrlHosts(baseUrls: string[]): Set<string> {
+  return new Set(baseUrls.map(hostOf).filter((h): h is string => !!h));
+}
+
 /** The app hosts a failure counts against: the `baseURL` hosts, or the host most failures reached when none is known. */
 function appHostsFor(signals: FailureSignal[], baseUrls: string[]): Set<string> {
-  const hosts = new Set(baseUrls.map(hostOf).filter((h): h is string => !!h));
+  const hosts = baseUrlHosts(baseUrls);
   if (hosts.size > 0) return hosts;
   const reaching = signals.filter((s) => s.kind === 'connection' || s.kind === 'navigation').map((s) => s.host);
   const top = mostCommon(reaching).value;
@@ -178,6 +233,7 @@ function appHostsFor(signals: FailureSignal[], baseUrls: string[]): Set<string> 
 
 /** True for a failure navigating or connecting to one of the app's hosts. */
 function hitsAppHost(signal: FailureSignal, appHosts: Set<string>): boolean {
+  if (signal.kind === 'request') return signal.host !== null && appHosts.has(signal.host);
   if (signal.kind !== 'connection' && signal.kind !== 'navigation') return false;
   if (signal.host) return appHosts.has(signal.host);
   // An error that names no address was reaching the app, when the app has one host.
@@ -197,10 +253,25 @@ export function failingHosts(errors: Array<string | null>, baseUrls: string[]): 
   return [...hosts];
 }
 
+/**
+ * The signal each failure counts with: its error's, or, when the error does not
+ * reach the app and is no crash, a failed request to a `baseURL` host from its
+ * network capture.
+ */
+function failureSignals(failures: HealthFailure[], baseUrls: string[]) {
+  const errors = failures.map((f) => readFailureSignal(f.error));
+  const appHosts = appHostsFor(errors, baseUrls);
+  const requestHosts = baseUrlHosts(baseUrls);
+  const signals = errors.map((signal, i) => {
+    if (signal.kind === 'crash' || hitsAppHost(signal, appHosts) || requestHosts.size === 0) return signal;
+    return readRequestSignal(failures[i]!.failedRequests, requestHosts) ?? signal;
+  });
+  return { errors, signals, appHosts };
+}
+
 /** Measure a run's failures against the thresholds. */
 export function measureRunHealth(input: RunHealthInput): RunHealthMeasure {
-  const signals = input.failures.map((f) => readFailureSignal(f.error));
-  const appHosts = appHostsFor(signals, input.baseUrls);
+  const { errors, signals, appHosts } = failureSignals(input.failures, input.baseUrls);
   const hitting = signals.filter((s) => hitsAppHost(s, appHosts));
   const total = Math.max(1, signals.length);
   const hostCounts = mostCommon(hitting.map((s) => s.host ?? (appHosts.size === 1 ? [...appHosts][0]! : null)));
@@ -209,9 +280,10 @@ export function measureRunHealth(input: RunHealthInput): RunHealthMeasure {
     failedShare: input.executedTests > 0 ? input.failedTests / input.executedTests : 0,
     host: hostCounts.value,
     hostFailures: hitting.length,
+    requestFailures: hitting.filter((s) => s.kind === 'request').length,
     hostFailureShare: hitting.length / total,
     cause: mostCommon(hitting.map((s) => s.cause)).value,
-    crashShare: signals.filter((s) => s.kind === 'crash').length / total,
+    crashShare: errors.filter((s) => s.kind === 'crash').length / total,
     topFingerprint: top.value,
     topFingerprintShare: top.count / total,
   };
@@ -253,11 +325,13 @@ export function classifyRunHealth(input: RunHealthInput): RunHealthVerdict | nul
     ...related.filter((n) => n.incident).map((n) => n.incident!.firstRunId ?? n.runId),
   );
   const head = `${input.failedTests} of ${plural(input.executedTests, 'test')} failed`;
+  const seenInCapture =
+    m.requestFailures > 0 ? `, ${m.requestFailures} of those seen only in their network capture` : '';
   const what =
     rule === 'browser-crash'
       ? `, most of them because the browser crashed or closed`
       : hostDown
-        ? `, ${m.hostFailures} of them navigating or connecting to ${m.host}${m.cause ? ` (${m.cause})` : ''}`
+        ? `, ${m.hostFailures} of them navigating or connecting to ${m.host}${m.cause ? ` (${m.cause})` : ''}${seenInCapture}`
         : ', most of them with the same error';
   const elsewhere =
     otherProjects.length > 0
@@ -285,10 +359,16 @@ function metaRecord(metadata: unknown): Record<string, unknown> {
 
 type RunRow = typeof testRuns.$inferSelect;
 
+/** A failing test as loaded: the execution it is read from, for its network capture. */
+interface LoadedFailure extends HealthFailure {
+  executionId: number;
+}
+
 /** The run's failing tests (one per test that never passed in the run), with their cluster's fingerprint. */
-async function loadFailures(db: DrizzleDB, runId: number, limit: number): Promise<HealthFailure[]> {
+async function loadFailures(db: DrizzleDB, runId: number, limit: number): Promise<LoadedFailure[]> {
   const rows = await db
     .select({
+      executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
       error: testRunsCases.error,
       fingerprint: failureClusters.fingerprint,
@@ -313,14 +393,62 @@ async function loadFailures(db: DrizzleDB, runId: number, limit: number): Promis
         )
     ).map((r) => r.testCaseId),
   );
-  const byCase = new Map<number, HealthFailure>();
+  const byCase = new Map<number, LoadedFailure>();
   for (const row of rows) {
     if (passed.has(row.testCaseId)) continue;
     const seen = byCase.get(row.testCaseId);
     if (!seen || (!seen.error && row.error))
-      byCase.set(row.testCaseId, { error: row.error, fingerprint: row.fingerprint });
+      byCase.set(row.testCaseId, { executionId: row.executionId, error: row.error, fingerprint: row.fingerprint });
   }
   return [...byCase.values()];
+}
+
+/**
+ * Add the failed requests to the run's `baseURL` hosts from the network
+ * capture of the failures whose error does not already reach the app (a crash
+ * excepted), reading at most `networkExecutionLimit` executions and
+ * `networkRequestLimit` requests. Without a `baseURL` nothing is read.
+ */
+async function withFailedRequests(
+  db: DrizzleDB,
+  failures: LoadedFailure[],
+  baseUrls: string[],
+): Promise<LoadedFailure[]> {
+  const t = INCIDENT_THRESHOLDS;
+  const hosts = baseUrlHosts(baseUrls);
+  if (hosts.size === 0) return failures;
+  const ids = failures
+    .filter((f) => {
+      const signal = readFailureSignal(f.error);
+      return signal.kind !== 'crash' && !hitsAppHost(signal, hosts);
+    })
+    .slice(0, t.networkExecutionLimit)
+    .map((f) => f.executionId);
+  if (ids.length === 0) return failures;
+  const rows = await db
+    .select({
+      executionId: networkRequests.testRunsCaseId,
+      url: networkRequests.url,
+      status: networkRequests.status,
+      failure: networkRequests.failure,
+    })
+    .from(networkRequests)
+    .where(
+      and(
+        inArray(networkRequests.testRunsCaseId, ids),
+        or(isNotNull(networkRequests.failure), inArray(networkRequests.status, [...GATEWAY_STATUSES])),
+      ),
+    )
+    .limit(t.networkRequestLimit);
+  const byExecution = new Map<number, FailedRequest[]>();
+  for (const { executionId, ...request } of rows) {
+    const list = byExecution.get(executionId) ?? [];
+    list.push(request);
+    byExecution.set(executionId, list);
+  }
+  return failures.map((f) =>
+    byExecution.has(f.executionId) ? { ...f, failedRequests: byExecution.get(f.executionId) } : f,
+  );
 }
 
 /** Runs of other projects that started within the window of `run`, with what their failures reached. */
@@ -365,14 +493,15 @@ export async function classifyStoredRun(db: DrizzleDB, run: RunRow): Promise<Run
   const t = INCIDENT_THRESHOLDS;
   if ((run.failedTests ?? 0) < t.minFailedTests) return null;
   if (executedTests === 0 || run.failedTests / executedTests < t.crossProjectFailedShare) return null;
-  const failures = await loadFailures(db, run.id, FAILURE_LIMIT);
+  const baseUrls = runBaseUrls(run.metadata);
+  const failures = await withFailedRequests(db, await loadFailures(db, run.id, FAILURE_LIMIT), baseUrls);
   const neighbors = await loadNeighbors(db, run);
   return classifyRunHealth({
     runId: run.id,
     executedTests,
     failedTests: run.failedTests,
     failures,
-    baseUrls: runBaseUrls(run.metadata),
+    baseUrls,
     neighbors,
   });
 }
@@ -473,12 +602,13 @@ export async function setRunIncident(
 
   if (input.incident) {
     const executedTests = (run.passedTests ?? 0) + (run.failedTests ?? 0);
+    const baseUrls = runBaseUrls(run.metadata);
     const measured = measureRunHealth({
       runId: run.id,
       executedTests,
       failedTests: run.failedTests ?? 0,
-      failures: await loadFailures(db, run.id, FAILURE_LIMIT),
-      baseUrls: runBaseUrls(run.metadata),
+      failures: await withFailedRequests(db, await loadFailures(db, run.id, FAILURE_LIMIT), baseUrls),
+      baseUrls,
     });
     const host = measured.hostFailureShare >= INCIDENT_THRESHOLDS.hostFailureShare ? measured.host : null;
     const previous = readRunIncident(run.metadata);

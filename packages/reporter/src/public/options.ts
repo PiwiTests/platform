@@ -184,6 +184,22 @@ export interface PiwiDashboardOptions {
    */
   defaultCapture?: boolean;
 
+  // ── App under test ─────────────────────────────────────────────────────────
+  /**
+   * Check that each `baseURL` the run's projects use answers before any worker
+   * starts, and stop the run with a message naming the ones that do not, so a
+   * suite never runs against an environment that is down. Any HTTP answer
+   * counts (a redirect or a 404 included) except a 502, 503 or 504 from a
+   * gateway; each base URL gets three tries of 10 seconds, 2 seconds apart,
+   * sent with the project's `ignoreHTTPSErrors` and `proxy`. A stopped run
+   * runs no test and reaches no dashboard. The check runs in the reporter's
+   * global setup, after `webServer` has started and before the config's own
+   * `globalSetup`, so leave it off when that setup is what starts the app. Only
+   * the projects `--project` selects are checked. **Defaults to `false`**. Can
+   * also be set with `PIWI_CHECK_BASE_URL=true`.
+   */
+  checkBaseUrl?: boolean;
+
   // ── Local debugging aids (headed runs only, never under CI) ────────────────
   /**
    * Open Piwi's own failure-time overlay on the failing page — for inspecting

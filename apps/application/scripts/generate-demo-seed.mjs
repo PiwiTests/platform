@@ -1829,6 +1829,10 @@ const INCIDENT_MARKERS = [];
     .filter((row) => row.status === 'passed')
     .sort((a, b) => a.started_at - b.started_at);
   const failing = rows.slice(INCIDENT_PASSED_CASES);
+  const failingIds = new Set(failing.map((row) => row.id));
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
   for (const row of failing) {
     const caseDef = caseById.get(row.test_case_id);
     const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
@@ -1853,10 +1857,23 @@ const INCIDENT_MARKERS = [];
     row.console_logs = null;
     row.dialogs = null;
     row.aria_snapshot = null;
-  }
-  const failingIds = new Set(failing.map((row) => row.id));
-  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
-    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+    // The network capture holds the one navigation the test tried: refused.
+    NETWORK_REQUESTS.push({
+      id: nrId++,
+      test_runs_case_id: row.id,
+      test_run_id: target.id,
+      method: 'GET',
+      url,
+      normalized_url: seedNormalizeUrl(url),
+      status: 0,
+      duration: row.duration - 20,
+      start_time: row.started_at + 10,
+      resource_type: 'document',
+      content_type: null,
+      server_logs: null,
+      server_traces: null,
+      failure: 'net::ERR_CONNECTION_REFUSED',
+    });
   }
 
   const executed = rows.length;
