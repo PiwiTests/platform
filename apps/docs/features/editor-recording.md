@@ -26,8 +26,8 @@ Before the browser opens, the editor asks for:
 3. **The Playwright project**, when the config has several. The browser gets its `use` options: `baseURL`,
    `storageState`, the viewport and device, the locale, the extra headers and `testIdAttribute`.
 
-The editor offers your last answers again. A new test file goes next to the test file you are in, else in the config's
-`testDir`, and the recording writes a whole spec into it.
+The editor offers your last answers again. A new test file is offered next to the file you are in, and the recording
+writes a whole spec into it.
 
 ## While it records
 
@@ -40,13 +40,14 @@ The editor offers your last answers again. A new test file goes next to the test
 - **Typing in the block** pauses the recording. **Resume** writes the block again from the recorded steps, over your
   edits; **Keep my edits** stops the recording and keeps the code as you changed it.
 - **Warnings** (a brittle locator, a password read from the environment, a file to upload) are on their lines. They stay
-  after the recording until the block is edited.
+  after the recording, until the code they describe is edited.
 
 ## Stop and undo
 
 **Stop** in the editor or in the browser's recording bar, or closing the browser, ends the recording, and the code stays.
-Closing the file ends it too. One **Undo** then removes the whole recording, imports included. A save or an edit of the
-file during the recording starts a new undo step, so your own changes stay undoable on their own.
+Closing the file ends it too. One **Undo** then removes the whole recording, imports included. In VS Code, a save or an
+edit of the file during the recording starts a new undo step, so your own changes stay undoable on their own; in a
+JetBrains IDE, that Undo also takes back the edits you made in the file meanwhile, and Redo brings everything back.
 
 ## The code
 
