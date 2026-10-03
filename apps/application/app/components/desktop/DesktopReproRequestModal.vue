@@ -4,15 +4,18 @@
  * Picker, it shows the steps in words, the linked project the spec will be
  * written to and run in, and the flags; the shell renders the steps as a spec
  * under the project's test directory, runs it in the Local runs tray and
- * deletes it. From an editor, it is a job on a failure of the instance the
- * editor reads: reproduce the failing tests at their commit, or bisect between
- * the last green commit and it, in a throwaway worktree of the linked folder.
- * Nothing runs before **Run with Playwright**, **Reproduce** or **Bisect**;
- * the verdict is recorded on the request, where the sender reads it.
+ * deletes it. From an editor, it is a job on a failure or a flaky test of the
+ * instance the editor reads: reproduce the failing tests at their commit,
+ * bisect between the last green commit and it, or run the test's Flake Lab
+ * plan at the commit of its latest failure, in a throwaway worktree of the
+ * linked folder. Nothing runs before **Run with Playwright**, **Reproduce**,
+ * **Bisect** or **Run the lab**; the verdict is recorded on the request, where
+ * the sender reads it.
  */
 import { reproArgs, type ReproOptions } from '#shared/desktop-repro';
 import { shortCommit } from '#shared/scm-urls';
 import { buildReproduceArgs } from '~/utils/local-run-args';
+import { FLAKE_LAB_JOB_DISPLAY } from '~/composables/useDesktopLocalRuns';
 
 interface ProjectMenuItem {
   id: number;
@@ -72,6 +75,11 @@ const chosen = computed(() => linked.value.find((p) => p.id === projectId.value)
 const args = computed(() => reproArgs({ ...options.value, project: playwrightProject.value.trim() || null }));
 const job = computed(() => current.value?.job ?? null);
 const isBisect = computed(() => current.value?.kind === 'bisect');
+/** A Flake Lab job's arms, the control first, as the lab runs them. */
+const labArms = computed(() => {
+  const plan = job.value?.plan;
+  return plan ? [plan.control, ...plan.arms] : [];
+});
 const instanceHost = computed(() => {
   const url = current.value?.instanceUrl;
   if (!url) return 'another Piwi instance';
@@ -83,6 +91,7 @@ const instanceHost = computed(() => {
 });
 const preview = computed(() => {
   if (!current.value) return '';
+  if (job.value?.plan) return `git worktree add ${shortCommit(job.value.commit)}\n${FLAKE_LAB_JOB_DISPLAY}`;
   if (job.value) {
     const test = ['npx playwright test', ...buildReproduceArgs(job.value.tests)].join(' ');
     return isBisect.value && job.value.good
@@ -94,9 +103,11 @@ const preview = computed(() => {
 const title = computed(() =>
   !job.value
     ? 'Run a bug report with Playwright'
-    : isBisect.value
-      ? 'Find the commit that broke a test'
-      : 'Reproduce a failure at its commit',
+    : job.value.plan
+      ? 'Run Flake Lab on a flaky test'
+      : isBisect.value
+        ? 'Find the commit that broke a test'
+        : 'Reproduce a failure at its commit',
 );
 const expires = computed(() => (current.value ? new Date(current.value.expiresAt) : null));
 
@@ -143,7 +154,15 @@ async function run() {
   <UModal v-model:open="open" :title="title" :ui="{ content: 'max-w-2xl' }">
     <template #body>
       <div v-if="current" class="space-y-4">
-        <p v-if="job" class="text-sm text-muted">
+        <p v-if="job?.plan" class="text-sm text-muted">
+          Your editor asks to run Flake Lab on
+          <span class="font-medium text-highlighted">{{ current.title || job.plan.displayTitle }}</span>
+          from {{ instanceHost }} at <code>{{ shortCommit(job.commit) }}</code> (its latest failure), in a throwaway
+          worktree: your checkout is untouched. Each arm below runs the test under one suspect's condition, next to a
+          control run with none. It runs the code of that commit on this machine, so start it only if you trust it.
+          Nothing runs until you start it; the request expires at {{ expires?.toLocaleTimeString() }}.
+        </p>
+        <p v-else-if="job" class="text-sm text-muted">
           Your editor asks to
           {{ isBisect ? 'find the commit that broke' : 'reproduce' }}
           <span class="font-medium text-highlighted">{{ current.title || 'a failing test' }}</span>
@@ -165,7 +184,17 @@ async function run() {
           {{ expires?.toLocaleTimeString() }}.
         </p>
 
-        <ul v-if="job" class="rounded-md border border-default p-3 max-h-48 overflow-y-auto space-y-1 text-sm">
+        <ul
+          v-if="job?.plan"
+          class="rounded-md border border-default p-3 max-h-48 overflow-y-auto space-y-1 text-sm"
+          data-testid="flake-lab-job-arms"
+        >
+          <li v-for="arm in labArms" :key="arm.id" class="flex items-baseline justify-between gap-3 min-w-0">
+            <span class="text-highlighted truncate">{{ arm.label || arm.id }}</span>
+            <span class="text-xs text-muted shrink-0">up to {{ arm.runs }} runs</span>
+          </li>
+        </ul>
+        <ul v-else-if="job" class="rounded-md border border-default p-3 max-h-48 overflow-y-auto space-y-1 text-sm">
           <li v-for="test in job.tests" :key="`${test.filePath}:${test.line}:${test.projectName}`" class="min-w-0">
             <span class="text-highlighted">{{ test.title || test.filePath }}</span>
             <code class="block text-xs text-muted break-all"
@@ -228,9 +257,11 @@ async function run() {
           <div class="space-y-1">
             <div class="text-xs text-muted">
               {{
-                job
-                  ? 'Installs and runs at each commit in a worktree, then removes it'
-                  : 'Runs in the linked folder, then the spec is deleted'
+                job?.plan
+                  ? 'Installs in a worktree, runs the lab against this app, then removes it'
+                  : job
+                    ? 'Installs and runs at each commit in a worktree, then removes it'
+                    : 'Runs in the linked folder, then the spec is deleted'
               }}
             </div>
             <CodeBlock :code="preview" lang="sh" />
@@ -243,11 +274,11 @@ async function run() {
       <div class="flex justify-end gap-2 w-full">
         <UButton color="neutral" variant="ghost" @click="decline">Decline</UButton>
         <UButton
-          :icon="isBisect ? 'i-lucide-git-commit-horizontal' : 'i-lucide-play'"
+          :icon="job?.plan ? 'i-lucide-flask-conical' : isBisect ? 'i-lucide-git-commit-horizontal' : 'i-lucide-play'"
           :disabled="!chosen"
           :loading="starting"
           @click="run"
-          >{{ !job ? 'Run with Playwright' : isBisect ? 'Bisect' : 'Reproduce' }}</UButton
+          >{{ !job ? 'Run with Playwright' : job.plan ? 'Run the lab' : isBisect ? 'Bisect' : 'Reproduce' }}</UButton
         >
       </div>
     </template>

@@ -31,6 +31,7 @@
     "allow-desktop-reproduce-here",
     "allow-desktop-bisect-here",
     "allow-desktop-flake-lab-here",
+    "allow-desktop-flake-lab-job",
     "allow-desktop-check-local-specs",
     "allow-desktop-check-local-env",
     "allow-desktop-take-pending-open-files",

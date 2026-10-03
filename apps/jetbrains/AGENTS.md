@@ -14,8 +14,9 @@ build copies the editor service's bundle (`packages/editor/dist/piwi-language-se
 with the project's Node.js interpreter.
 
 - `PiwiLspServerSupportProvider.kt` registers the service; the LSP client renders its diagnostics, quick fixes and
-  hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`; `piwi.desktopJob`
-  and the `piwi/desktopJobChanged` notifications, with the share button, are there too). The plugin's
+  hover in open files, and `LspCommandsSupport` runs the client commands it names (`PiwiCommands.kt`; `piwi.desktopJob`,
+  from a quick fix or a flaky test's Code Vision line, and the `piwi/desktopJobChanged` notifications, with the share
+  button, are there too). The plugin's
   own requests go through the service's lsp4j proxy, which the platform hands only to a request's sender:
   `Lsp4jAccess` takes it from a `sendRequestSync` that sends nothing, never from `getLsp4jServer()` (deprecated, then
   removed by 2026.2). Every status, Code Vision, gutter and tool-window answer depends on it. Its

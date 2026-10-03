@@ -28,15 +28,17 @@ import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
-import { desktopJobVerdict, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
+import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import type { ReproRequestView } from '#shared/desktop-repro';
+import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
 export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
 /**
  * What a run is: a plain test run, a full reproduction (checkout → install →
  * test), a bisect, a bug report's steps run from a repro request, or a Flake
- * Lab session (`piwi flake`) at the commit of a test's latest failure.
+ * Lab session (`piwi flake`) at the commit of a test's latest failure, on a
+ * test of this app or on an editor's plan.
  */
 export type LocalRunKind = 'tests' | 'reproduce' | 'bisect' | 'repro' | 'flake';
 
@@ -67,6 +69,9 @@ export function flakeLabDisplay(testCaseId: number, options: FlakeLabOptions): s
   if (options.budgetMinutes != null) parts.push('--budget', `${options.budgetMinutes}m`);
   return parts.join(' ');
 }
+
+/** The command an editor's Flake Lab job runs, as the tray and the confirmation show it. */
+export const FLAKE_LAB_JOB_DISPLAY = 'piwi flake --plan <plan from your editor> --json';
 
 /** `piwi flake`'s exit code, read: 0 reproduced, 1 not reproduced, else it could not run. */
 export function flakeLabOutcome(code: number | null): 'reproduced' | 'not-reproduced' | 'error' {
@@ -183,8 +188,10 @@ export interface LocalRun {
   bisectTarget: BisectTarget | null;
   /** The repro request it answers (kind === 'repro'). */
   repro: ReproRunState | null;
-  /** The Flake Lab session (kind === 'flake'). */
+  /** The Flake Lab session on a test of this app (kind === 'flake'); null for an editor's plan. */
   flake: FlakeLabRunState | null;
+  /** What an editor's Flake Lab job measured, once `piwi flake --json` printed it. */
+  labReport: FlakeLabJobReport | null;
   /** A bisect that runs this test's reproducing Flake Lab arm at each step (kind === 'bisect'). */
   flakeTestCaseId: number | null;
   status: LocalRunStatus;
@@ -192,7 +199,7 @@ export interface LocalRun {
   exitCode: number | null;
   startedAt: number;
   finishedAt: number | null;
-  /** The editor's job this run answers (kind === 'reproduce' or 'bisect'). */
+  /** The editor's job this run answers (kind === 'reproduce', 'bisect' or 'flake'). */
   jobRequestId: string | null;
   /**
    * The origin reference the reporter records for this run (`PIWI_ORIGIN_REF`):
@@ -269,7 +276,7 @@ interface BisectEventPayload {
 
 interface LocalRunEventPayload {
   id: number;
-  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect' | 'repro';
+  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect' | 'repro' | 'lab';
   line: string | null;
   code: number | null;
   /** For kind === 'phase': which phase the run entered. */
@@ -278,6 +285,8 @@ interface LocalRunEventPayload {
   bisect?: BisectEventPayload | null;
   /** For kind === 'repro': what the repro spec recorded, or null. */
   repro?: SpecRunResult | null;
+  /** For kind === 'lab': the report `piwi flake --json` printed, or null. */
+  lab?: unknown;
 }
 
 /** Output lines kept per run — a soak run can produce hundreds of thousands. */
@@ -397,6 +406,10 @@ export function useDesktopLocalRuns() {
       if (run.repro) run.repro.result = payload.repro ?? null;
       return;
     }
+    if (payload.kind === 'lab') {
+      run.labReport = flakeLabJobReport(payload.lab);
+      return;
+    }
     pushLine(run, payload.line ?? '', payload.kind !== 'stdout');
   }
 
@@ -501,6 +514,14 @@ export function useDesktopLocalRuns() {
         args: run.repro.args,
         bugReportId: run.repro.bugReportId ?? null,
         originRef: run.originRef,
+      });
+    }
+    if (run.kind === 'flake' && run.jobRequestId) {
+      // Only the request: the shell reads its commit and plan from this app's
+      // server, writes the plan file and builds the command itself.
+      return spawnCommand(run, 'desktop_flake_lab_job', {
+        projectId: run.projectId,
+        requestId: run.jobRequestId,
       });
     }
     if (run.kind === 'flake' && run.flake) {
@@ -622,12 +643,15 @@ export function useDesktopLocalRuns() {
             ? 'The lab did not reproduce the flake'
             : 'Flake Lab could not run';
       notifyUnfocused(run, label, title, seconds);
+      const lands = run.jobRequestId
+        ? 'Your editor can share the results on its instance.'
+        : "The experiment is on the test's Flakiness tab.";
       toastApi?.add({
         title,
         description:
           outcome === 'error'
             ? (run.lines.findLast((l) => l.error)?.text ?? `Stopped after ${seconds}s`)
-            : `${label} — ${seconds}s. The experiment is on the test's Flakiness tab.`,
+            : `${label} — ${seconds}s. ${lands}`,
         icon: 'i-lucide-flask-conical',
         color: outcome === 'reproduced' ? 'success' : outcome === 'error' ? 'error' : 'neutral',
         actions: [viewOutputAction],
@@ -821,6 +845,7 @@ export function useDesktopLocalRuns() {
       bisectTarget: input.bisectTarget ?? null,
       repro: input.repro ?? null,
       flake: input.flake ?? null,
+      labReport: null,
       flakeTestCaseId: input.flakeTestCaseId ?? null,
       jobRequestId: input.jobRequestId ?? null,
       originRef,
@@ -1034,10 +1059,11 @@ export function useDesktopLocalRuns() {
 
   /**
    * Run an editor's job the developer confirmed: reproduce the failing tests at
-   * the job's commit, or bisect between its good and failing commits, in the
-   * linked folder. The request is marked running here and done, with its
-   * verdict, when the run ends. The result is the editor's to share: it never
-   * reaches a cluster here, whose ids belong to the instance the job came from.
+   * the job's commit, bisect between its good and failing commits, or run its
+   * Flake Lab plan at the commit, in the linked folder. The request is marked
+   * running here and done, with its verdict, when the run ends. The result is
+   * the editor's to share: it never reaches a cluster or a test here, whose ids
+   * belong to the instance the job came from.
    */
   async function startJob(input: {
     projectId: string | number;
@@ -1050,6 +1076,17 @@ export function useDesktopLocalRuns() {
       method: 'PATCH',
       body: { status: 'running', projectId: Number(input.projectId) },
     });
+    if (input.request.kind === 'flake-lab') {
+      return spawn({
+        kind: 'flake',
+        jobRequestId: input.request.id,
+        projectId: input.projectId,
+        projectLabel: input.projectLabel,
+        cases: [],
+        options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+        steps: [{ args: [], display: FLAKE_LAB_JOB_DISPLAY }],
+      });
+    }
     const common = {
       projectId: input.projectId,
       projectLabel: input.projectLabel,
@@ -1101,6 +1138,8 @@ export function useDesktopLocalRuns() {
         flakeTestCaseId: run.flakeTestCaseId,
       });
     }
+    // An editor's plan runs once: its experiment is the editor's to share.
+    if (run.kind === 'flake' && !run.flake) return null;
     if (run.kind === 'flake' && run.flake) {
       return startFlakeLab({
         projectId: run.projectId,
