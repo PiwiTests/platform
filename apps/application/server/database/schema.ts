@@ -66,6 +66,8 @@ export const {
   scenarioGaps,
   probes,
   analyticsDailyRollups,
+  handbackOutcomes,
+  handbackOutcomeRollups,
   analyticsDashboards,
   reportSchedules,
   reportSnapshots,

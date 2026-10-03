@@ -1,12 +1,13 @@
 import { describe, test, expect } from 'vitest';
-import { resolveHealingForCase } from '~~/server/utils/locator-healing';
+import { healedInRunFrom, resolveHealingForCase } from '~~/server/utils/locator-healing';
+import type { OutcomeRecord } from '~~/server/utils/outcomes';
 import { locatorSignatureFromExpression } from '#shared/locator-healing';
 import type { LocatorSnapshotRow } from '~~/server/database/schema';
 import type { RankedLocator } from '#shared/locator-healing.types';
 
 /**
  * The shared healing ladder used by both the single-case and batch entry
- * points: location → signature → cross-test → ARIA fallback, plus the
+ * points: location → signature → cross-test → ARIA fallback, and the stored
  * healed-run signal. Driven with fabricated snapshot rows and an injected
  * cross-test lookup, so no DB is needed.
  */
@@ -190,48 +191,45 @@ describe('resolveHealingForCase — narrowing suggestion', () => {
   });
 });
 
-describe('resolveHealingForCase — healed detection', () => {
-  const healedRows = async (recSig: string, healedRunId: number) => [
-    // The failing call site, matched by location; its recommendation is PAY_TESTID.
-    snap({ id: 1, location: 'tests/checkout.spec.ts:42:5', lastSeenRunId: 5 }),
-    // A later capture at another call site now using the recommended locator.
-    snap({ id: 2, location: 'tests/checkout.spec.ts:80:3', usedArgsFp: recSig, lastSeenRunId: healedRunId }),
-  ];
-
-  test('flags healedInRunId when the recommended locator now passes in another run', async () => {
-    const recSig = await locatorSignatureFromExpression(PAY_TESTID.locator);
-    const r = await resolveHealingForCase(
-      { error: chainError(FAILING), failingRunId: 1 },
-      await healedRows(recSig, 42),
-      null,
-    );
-    expect(r.recommendation?.recommended?.locator).toBe("getByTestId('pay-btn')");
-    expect(r.healedInRunId).toBe(42);
+describe('healedInRunFrom — the stored applied heal', () => {
+  const applied = (o: { subjectId?: number; location?: string; appliedRunId?: number }): OutcomeRecord => ({
+    id: 1,
+    projectId: 1,
+    kind: 'locator-heal',
+    subjectType: 'test-case',
+    subjectId: o.subjectId ?? 10,
+    suggestionKey: 'k',
+    outcome: 'applied',
+    channel: 'inferred',
+    actorUserId: null,
+    actorApiKeyId: null,
+    runId: o.appliedRunId ?? 42,
+    commit: null,
+    details: {
+      location: o.location ?? 'tests/checkout.spec.ts:42:5',
+      recommendedLocator: PAY_TESTID.locator,
+      recommendedSig: 'sig',
+      failingLocator: null,
+      failingRunId: 1,
+      appliedRunId: o.appliedRunId ?? 42,
+    },
+    createdAt: new Date(0),
   });
 
-  test('does not flag when the only matching capture is the failing run itself', async () => {
-    const recSig = await locatorSignatureFromExpression(PAY_TESTID.locator);
-    const r = await resolveHealingForCase(
-      { error: chainError(FAILING), failingRunId: 7 },
-      await healedRows(recSig, 7),
-      null,
-    );
-    expect(r.healedInRunId).toBeUndefined();
+  test('names the run whose code first used the recommendation at the failing call site', () => {
+    const rows = [applied({ appliedRunId: 50 }), applied({ appliedRunId: 42 })];
+    expect(healedInRunFrom(rows, 10, '/repo/tests/checkout.spec.ts:42:9', 1)).toBe(42);
   });
 
-  test('does not flag when the recommendation is the original locator (flaky pass)', async () => {
-    // Recommendation equals the failing locator → a flaky pass, nothing was fixed.
-    const failingSig = await locatorSignatureFromExpression(FAILING);
-    const rows = [
-      snap({
-        location: 'tests/checkout.spec.ts:42:5',
-        alternatives: JSON.stringify([
-          { locator: FAILING, method: 'getByRole', args: { role: 'button', name: 'Pay' }, score: 90 },
-        ]),
-      }),
-      snap({ id: 2, location: 'tests/checkout.spec.ts:80:3', usedArgsFp: failingSig, lastSeenRunId: 99 }),
-    ];
-    const r = await resolveHealingForCase({ error: chainError(FAILING), failingRunId: 1 }, rows, null);
-    expect(r.healedInRunId).toBeUndefined();
+  test('an earlier run never counts as healed', () => {
+    expect(healedInRunFrom([applied({ appliedRunId: 3 })], 10, 'tests/checkout.spec.ts:42:5', 7)).toBeNull();
+    expect(healedInRunFrom([applied({ appliedRunId: 7 })], 10, 'tests/checkout.spec.ts:42:5', 7)).toBeNull();
+  });
+
+  test('another call site or another test does not count', () => {
+    expect(
+      healedInRunFrom([applied({ location: 'tests/checkout.spec.ts:80:3' })], 10, 'tests/checkout.spec.ts:42:5', 1),
+    ).toBeNull();
+    expect(healedInRunFrom([applied({ subjectId: 11 })], 10, 'tests/checkout.spec.ts:42:5', 1)).toBeNull();
   });
 });

@@ -13,6 +13,7 @@ import {
 } from '../../utils/retention';
 import { reclaimOrphanTraceResources } from '../../utils/delete-run-files';
 import { reconcileRecentRollups } from '#shared/handlers/analytics/rollups';
+import { pruneOutcomesOlderThan } from '../../utils/outcomes';
 
 /** Days of retained rollup rows the sweep recomputes before pruning. */
 const RECONCILE_DAYS = 7;
@@ -28,7 +29,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      "Reconcile the recent daily rollups, prune old test runs (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned runs' numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, and excess diagnosis versions",
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, and excess diagnosis versions',
   },
   async run() {
     const db = await getDatabase();
@@ -55,6 +56,10 @@ export default defineTask({
       result.deletedCases = deletedCases;
       if (skippedKept > 0) result.keptRunsSkipped = skippedKept;
       if (skippedNewest > 0) result.newestRunsSkipped = skippedNewest;
+
+      // Hand-back outcomes follow run retention; their daily counters stay.
+      const outcomesPruned = await pruneOutcomesOlderThan(db, retentionDays);
+      if (outcomesPruned > 0) result.outcomesPruned = outcomesPruned;
     }
 
     const orphans = await sweepOrphans(db);
