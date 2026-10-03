@@ -154,6 +154,16 @@ describe('matchFunctionAt', () => {
     expect(matchFunctionAt(steps, 0, [loginEntry])).toBeNull();
   });
 
+  test('a step on an element of the same role but another name is another step, not the call', () => {
+    const otherButton = {
+      ...submitStep,
+      target: { ...submitStep.target!, accessibleName: 'Checkout', text: 'Checkout' },
+    };
+    expect(matchFunctionAt([usernameStep, passwordStep, otherButton], 0, [loginEntry])).toBeNull();
+    // Ranking still counts it as a partial match.
+    expect(rankFunctionMatches([usernameStep, passwordStep, otherButton], [loginEntry])[0]!.score).toBeGreaterThan(0);
+  });
+
   test('a trailing extra step does not stop the contiguous run before it from matching', () => {
     const steps = [usernameStep, passwordStep, submitStep, step({ action: 'click' })];
     const match = matchFunctionAt(steps, 0, [loginEntry]);
