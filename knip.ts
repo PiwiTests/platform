@@ -56,8 +56,9 @@ const config: KnipConfig = {
     'packages/core': {},
     'packages/picker-dom': {},
     'packages/editor': {
-      // The launcher and the reporter `build.mjs` bundles beside the language server.
-      entry: ['src/recorder/launcher.ts', 'src/recorder/use-reporter.ts'],
+      // The language server, and the launcher and the reporter `build.mjs` bundles beside it.
+      entry: ['src/main.ts', 'src/recorder/launcher.ts', 'src/recorder/use-reporter.ts'],
+      ignore: ['tests/fixtures/**'],
     },
     'packages/server': {
       // Native modules the published server installs for the bundled Nitro output.

@@ -46,7 +46,8 @@ clients stay thin and both editors give the same answers.
   `piwi-use-reporter.cjs` and a filter no spec matches, cached until the config changes), picks the project (a config
   with several asks, through `projects`), the start page and the page expression, and forks the launcher in the
   config's folder (`sessions.ts`). The launcher (`launcher.ts`) resolves the project's Playwright at run time (never
-  bundled), opens the browser with the project's options (`context-options.ts`: `headless: false` unless
+  bundled; `playwright.ts`: in the project's own `node_modules`, the test runner's package first, as for the CLI),
+  opens the browser with the project's options (`context-options.ts`: `headless: false` unless
   `PIWI_RECORDER_HEADLESS=1`, an explicit allowlist of context options, a missing `storageState` file left out and
   said so), exposes the binding before loading `record-ide.js` into every page, answers the recorder over it
   (`host-state.ts`: the storage areas and messages of the IDE bundle's `chrome`, every event through core's

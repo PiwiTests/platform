@@ -1312,7 +1312,7 @@ describe('recording from the editor', () => {
       line: 0,
       character: 0,
     })) as PageCandidatesResult;
-    expect(atTop).toMatchObject({ context: 'file', default: 'adminPage' });
+    expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
   });
 
   test('renders steps on the page expression at the caret, with their imports apart when asked', async () => {

@@ -193,6 +193,44 @@ describe('pageCandidates', () => {
     expect(result.candidates[0]).toEqual({ expression: 'page', reason: 'fixture of this test' });
   });
 
+  test('a page object fixture holding the page: offered through it, before its first use and between tests', () => {
+    const text = file(
+      "import { test, expect } from './fixtures-composed';",
+      '',
+      "test('sends a message', async ({ formPage }) => {",
+      '',
+      "  await formPage.sendMessage('mary@example.com', 'Hi');",
+      "  await expect(formPage.page.locator('#result')).toHaveText('Sent!');",
+      '});',
+      '',
+    );
+    expect(pageCandidates(text, 3)).toEqual({
+      context: 'test',
+      default: 'formPage.page',
+      candidates: [{ expression: 'formPage.page', reason: 'used on line 6' }],
+    });
+    expect(pageCandidates(text, 7)).toEqual({
+      context: 'file',
+      default: 'formPage.page',
+      candidates: [
+        { expression: 'formPage.page', reason: 'used on line 6' },
+        { expression: 'page', reason: "Playwright's page fixture" },
+      ],
+    });
+  });
+
+  test('between tests, what the nearest test runs on most, named after its fixture', () => {
+    const text = file(
+      "test('a', async ({ adminPage: admin, userPage }) => {",
+      "  await userPage.goto('/inbox');",
+      "  await admin.goto('/admin');",
+      "  await admin.getByText('Approve').click();",
+      '});',
+      '',
+    );
+    expect(pageCandidates(text, 5).candidates.map((c) => c.expression)).toEqual(['adminPage', 'userPage', 'page']);
+  });
+
   test('a locator variable is not a page', () => {
     const text = file(
       "test('t', async ({ page }) => {",
@@ -219,11 +257,7 @@ describe('pageCandidates', () => {
   });
 
   test('a parameter typed as another Playwright object is not a page, whatever the function returns', () => {
-    const text = file(
-      'async function pageWithScript(context: BrowserContext): Promise<Page> {',
-      '  // here',
-      '}',
-    );
+    const text = file('async function pageWithScript(context: BrowserContext): Promise<Page> {', '  // here', '}');
     expect(pageCandidates(text, 1)).toEqual({
       context: 'file',
       default: 'page',
@@ -243,7 +277,7 @@ describe('pageCandidates', () => {
     expect(result.context).toBe('file');
     expect(result.default).toBe('adminPage');
     expect(result.candidates).toEqual([
-      { expression: 'adminPage', reason: 'fixture in this file' },
+      { expression: 'adminPage', reason: 'used on line 2' },
       { expression: 'page', reason: 'fixture in this file' },
     ]);
   });
@@ -257,7 +291,7 @@ describe('pageCandidates', () => {
     expect(pageCandidates(SPEC, 0)).toEqual({
       context: 'file',
       default: 'page',
-      candidates: [{ expression: 'page', reason: 'fixture in this file' }],
+      candidates: [{ expression: 'page', reason: 'used on line 4' }],
     });
     expect(pageCandidates('', 0)).toEqual({
       context: 'file',

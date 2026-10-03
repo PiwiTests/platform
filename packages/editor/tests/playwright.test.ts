@@ -30,7 +30,11 @@ function project(name: string, packages: string[], cli: string[] = []): string {
 
 describe('the project’s Playwright', () => {
   test('the test runner’s package first, then playwright, then playwright-core', () => {
-    const all = project('all', ['@playwright/test', 'playwright', 'playwright-core'], ['@playwright/test', 'playwright']);
+    const all = project(
+      'all',
+      ['@playwright/test', 'playwright', 'playwright-core'],
+      ['@playwright/test', 'playwright'],
+    );
     expect(resolvePlaywrightLibrary(all)).toBe(path.join(all, 'node_modules', '@playwright', 'test', 'index.js'));
     expect(resolvePlaywrightCli(all)).toBe(path.join(all, 'node_modules', '@playwright', 'test', 'cli.js'));
     const library = project('library', ['playwright', 'playwright-core'], ['playwright']);
@@ -47,7 +51,16 @@ describe('the project’s Playwright', () => {
     expect(resolvePlaywrightLibrary(nested)).toBe(path.join(root, 'node_modules', '@playwright', 'test', 'index.js'));
   });
 
-  test('none without Playwright', () => {
+  test('a node_modules folder that links elsewhere is the project’s too', () => {
+    const store = project('store', ['@playwright/test'], ['@playwright/test']);
+    const linked = path.join(dir, 'linked');
+    fs.mkdirSync(linked);
+    fs.symlinkSync(path.join(store, 'node_modules'), path.join(linked, 'node_modules'), 'dir');
+    expect(resolvePlaywrightLibrary(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'index.js'));
+    expect(resolvePlaywrightCli(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'cli.js'));
+  });
+
+  test('none without Playwright in the project, whatever a global folder holds', () => {
     const bare = project('bare', []);
     expect(resolvePlaywrightLibrary(bare)).toBeNull();
     expect(resolvePlaywrightCli(bare)).toBeNull();

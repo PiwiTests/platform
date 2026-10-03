@@ -905,7 +905,8 @@ function onPage(model: FileModel, use: PageUse, at: number, klass: ClassInfo | n
   const offset = model.tokens[use.token]!.start;
   const segments = use.expression.split('.');
   const last = segments[segments.length - 1]!;
-  if (segments[0] === 'this') return !!klass && model.contains(klass.body, offset) && (!use.ambiguous || pageLikeName(last));
+  if (segments[0] === 'this')
+    return !!klass && model.contains(klass.body, offset) && (!use.ambiguous || pageLikeName(last));
   const declared = model.resolveAt(segments[0]!, at);
   if (!declared || model.resolveAt(segments[0]!, offset) !== declared) return false;
   return !use.ambiguous || pageLikeName(last) || (segments.length === 1 && declared.page === 'page');
@@ -939,7 +940,9 @@ export function pageCandidates(text: string, caretLine: number): PageCandidatesR
   const region = klass ? klass.body : test ? test.body : (fn?.body ?? null);
   const line = (token: number) => model.lineOfToken(token) + 1;
 
-  const used = model.uses.filter((u) => model.contains(region, model.tokens[u.token]!.start) && onPage(model, u, at, klass));
+  const used = model.uses.filter(
+    (u) => model.contains(region, model.tokens[u.token]!.start) && onPage(model, u, at, klass),
+  );
   const before: PageCandidate[] = used
     .filter((u) => model.tokens[u.token]!.start < at)
     .sort((a, b) => b.token - a.token)
