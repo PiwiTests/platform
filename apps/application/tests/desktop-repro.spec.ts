@@ -8,9 +8,10 @@ import { couponBugReport } from './utils/bug-report-sample';
  * A repro request from Piwi Picker or an editor, as the desktop window shows
  * it: driven against the regular web build with a faked Tauri bridge and the
  * desktop endpoints routed (they answer 404 outside the desktop build). Covers
- * the confirmation, the run through `desktop_run_repro` or `desktop_bisect_here`,
- * and the verdict recorded on the request; the spec's writing and the runs
- * themselves are the shell's (`src-tauri/src/repro.rs`, `worktree.rs`).
+ * the confirmation, the run through `desktop_run_repro`, `desktop_bisect_here`
+ * or `desktop_flake_lab_job`, and the verdict recorded on the request; the
+ * spec's writing and the runs themselves are the shell's
+ * (`src-tauri/src/repro.rs`, `worktree.rs`).
  */
 
 interface FakeInvocation {
@@ -71,6 +72,45 @@ async function installFakeBridge(page: Page, linkedProjectId: number) {
                       firstBad: { sha: 'c1c1c1c1c1c1', subject: 'Drop the coupon cache', author: 'Ada', date: null },
                     },
                   });
+                  emit({ id, kind: 'exit', line: null, code: 0 });
+                }, 50);
+                return id;
+              }
+              case 'desktop_flake_lab_job': {
+                const id = ++state.lastRunId;
+                const report = {
+                  kind: 'reproduce',
+                  testCaseId: 9,
+                  experimentId: '77',
+                  commit: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+                  verdict: 'reproduced',
+                  reproducingArm: 'suspect-1',
+                  uploaded: false,
+                  arms: [
+                    {
+                      id: 'control',
+                      runs: 10,
+                      matchingFailures: 0,
+                      otherFailures: 0,
+                      discardedRounds: 0,
+                      stoppedEarly: false,
+                      skipped: null,
+                    },
+                    {
+                      id: 'suspect-1',
+                      runs: 4,
+                      matchingFailures: 3,
+                      otherFailures: 0,
+                      discardedRounds: 0,
+                      stoppedEarly: true,
+                      skipped: null,
+                    },
+                  ],
+                };
+                setTimeout(() => {
+                  emit({ id, kind: 'phase', phase: 'lab', line: null, code: null });
+                  emit({ id, kind: 'stdout', line: JSON.stringify(report), code: null });
+                  emit({ id, kind: 'lab', lab: report, line: null, code: null });
                   emit({ id, kind: 'exit', line: null, code: 0 });
                 }, 50);
                 return id;
@@ -273,6 +313,100 @@ test.describe('Desktop repro request', () => {
       jobVerdict: {
         kind: 'first-bad',
         commit: { sha: 'c1c1c1c1c1c1', subject: 'Drop the coupon cache', author: 'Ada', date: null },
+      },
+    });
+  });
+
+  test("an editor's Flake Lab job waits for the click, runs its plan in a worktree and records what the lab measured", async ({
+    page,
+  }) => {
+    const patches: unknown[] = [];
+    await installFakeBridge(page, projectId);
+    const arm = (id: string, label: string, conditions: unknown[]) => ({
+      id,
+      label,
+      suspectId: id === 'control' ? null : 'slow-route:GET /api/cart',
+      rank: id === 'control' ? null : 1,
+      conditions,
+      runs: 10,
+      stopAt: id === 'control' ? null : 3,
+    });
+    await routeDesktop(page, patches, {
+      kind: 'flake-lab',
+      title: 'cart › applies the coupon',
+      steps: null,
+      bugReportId: null,
+      job: {
+        commit: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+        good: null,
+        tests: [
+          { filePath: 'tests/cart.spec.ts', title: 'cart › applies the coupon', line: null, projectName: 'chromium' },
+        ],
+        browser: null,
+        clusterId: null,
+        plan: {
+          version: 1,
+          experimentId: '77',
+          kind: 'reproduce',
+          projectId: 7,
+          testCaseId: 9,
+          test: { file: 'tests/cart.spec.ts', title: 'applies the coupon', suite: ['cart'], project: 'chromium' },
+          displayTitle: 'cart › applies the coupon',
+          windowDays: 14,
+          failures: 6,
+          passes: 40,
+          failureCommit: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+          medianDurationMs: 1800,
+          errorSignatures: ['Expected <n> to be <n>'],
+          suspects: [],
+          control: arm('control', 'control', []),
+          arms: [
+            arm('suspect-1', 'delay GET /api/cart 1.8 s', [
+              { kind: 'delay', route: 'GET /api/cart', ms: 1800, match: 'all' },
+            ]),
+          ],
+          combined: null,
+          verifies: null,
+        },
+      },
+    });
+    await page.goto('/setup');
+    await waitForHydration(page);
+
+    const dialog = page.getByRole('dialog', { name: 'Run Flake Lab on a flaky test' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('from piwi.example.com')).toBeVisible();
+    const arms = dialog.getByTestId('flake-lab-job-arms');
+    await expect(arms.getByRole('listitem')).toHaveCount(2);
+    await expect(arms.getByText('delay GET /api/cart 1.8 s')).toBeVisible();
+    expect(
+      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_flake_lab_job')),
+    ).toBe(false);
+
+    await dialog.getByRole('button', { name: 'Run the lab', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    // The window names the project and the request only: the shell reads the commit and the plan itself.
+    const runs = await page.evaluate(() =>
+      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job'),
+    );
+    expect(runs).toEqual([
+      { cmd: 'desktop_flake_lab_job', args: { projectId: String(projectId), requestId: REQUEST_ID } },
+    ]);
+    await expect.poll(() => patches.length).toBe(2);
+    expect(patches[0]).toEqual({ status: 'running', projectId });
+    expect(patches[1]).toMatchObject({
+      status: 'done',
+      jobVerdict: {
+        kind: 'lab',
+        report: {
+          verdict: 'reproduced',
+          reproducingArm: 'suspect-1',
+          commit: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
+          arms: [
+            { id: 'control', runs: 10, matchingFailures: 0, otherFailures: 0, discardedRounds: 0, stoppedEarly: false },
+            { id: 'suspect-1', runs: 4, matchingFailures: 3, otherFailures: 0, discardedRounds: 0, stoppedEarly: true },
+          ],
+        },
       },
     });
   });

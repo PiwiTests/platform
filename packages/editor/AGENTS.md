@@ -26,7 +26,8 @@ clients stay thin and both editors give the same answers.
   summary lines; the hover on any line of that stack shows the message and the call chain.
   A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`): its
   flaky rate and top suspect, then `piwi flake` commands run through `piwi.runCommand`, with `--server-url` only when
-  the command, run from the config's folder, would find another instance (`withServerUrl`).
+  the command, run from the config's folder, would find another instance (`withServerUrl`), and, while the desktop app
+  runs beside a team instance, the reproduction as a desktop job (`piwi.desktopJob`, kind `flake-lab`).
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.
@@ -34,7 +35,11 @@ clients stay thin and both editors give the same answers.
 - `src/piwi-client.ts` is the only file that talks to an instance.
 - `src/desktop-jobs.ts` passes a failure of the team instance to the desktop app as a job (`@piwitests/core/desktop-job`,
   with the token of the app's discovery file), polls its verdict and shares a bisect's first bad commit on the instance
-  with the editor's key. The job names commits and tests, never code; the app runs it only after a click in its window.
+  with the editor's key. A `flake-lab` job carries the test's reproduce plan, read from the instance with recording on
+  (`source=desktop`, this machine's name); the app runs it with `piwi flake --plan <file> --json` against itself, and
+  sharing posts the arms' counts, with the plan's conditions, to the experiment the instance recorded. It is offered on
+  a flaky test's line and on a failure whose test has an untested suspect (`hasUntestedSuspect`). The job names commits,
+  tests and lab conditions, never code; the app runs it only after a click in its window.
 
 ## Rules
 

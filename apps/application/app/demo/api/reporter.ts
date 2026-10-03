@@ -225,7 +225,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          eq(testRuns.status, 'initializing'),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -340,8 +340,13 @@ export async function apiBeginTestRun(
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
   // Parallel worker processes race to /begin on the same run; a running run is
-  // tolerated and handed back its existing stream token (server behavior).
-  if (!isSharded && testRun.status !== 'initializing' && testRun.status !== 'running') {
+  // tolerated and handed back its existing stream token (server behavior). A
+  // sharded run also takes a shard after the stale-run sweep marked it interrupted.
+  const canBegin =
+    testRun.status === 'initializing' ||
+    testRun.status === 'running' ||
+    (isSharded && testRun.status === 'interrupted');
+  if (!canBegin) {
     throw demoHttpError(409, 'Test run cannot be transitioned to running state');
   }
 
@@ -351,10 +356,20 @@ export async function apiBeginTestRun(
   if (testRun.streamToken !== body.setupToken && !isValidShardSetupToken) {
     throw demoHttpError(403, 'Invalid setup token');
   }
+  // A setup token opens one /begin.
+  shardTokenSet?.delete(body.setupToken);
 
   const streamToken = randomToken();
 
   if (testRun.status === 'initializing') {
+    if (isSharded) {
+      // A shard's stream token is one of the run's shard tokens, so two shards
+      // that begin at once both keep theirs (server behavior).
+      const tokens = demoShardTokens.get(id) ?? new Set();
+      tokens.add(streamToken);
+      demoShardTokens.set(id, tokens);
+    }
+
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
     await db
@@ -379,11 +394,18 @@ export async function apiBeginTestRun(
   } else if (isSharded) {
     // Subsequent shard in a sharded run: register the per-shard stream token
     // in memory and in the run's stored metadata (so a service-worker restart
-    // mid-run keeps accepting the shard's events).
+    // mid-run keeps accepting the shard's events), and add the shard's slice
+    // of the planned suite to the run's total.
     const tokens = demoShardTokens.get(id) ?? new Set();
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
+    if (body.totalTests) {
+      await db
+        .update(testRuns)
+        .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
+        .where(eq(testRuns.id, id));
+    }
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {

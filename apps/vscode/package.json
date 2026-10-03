@@ -110,7 +110,7 @@
       },
       {
         "command": "piwi.desktopJob",
-        "title": "Reproduce or bisect a failure in the desktop app",
+        "title": "Reproduce, bisect or run Flake Lab in the desktop app",
         "category": "Piwi"
       }
     ],

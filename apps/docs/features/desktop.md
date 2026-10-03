@@ -20,7 +20,7 @@ a local app can do.
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config for them.
 
-Everything binds to `127.0.0.1`, so nothing is exposed to the network. For a shared, always-on server, run the [Docker image](/operate/deployment).
+Everything binds to `127.0.0.1`, so nothing is exposed to the network.
 
 ## Where it is
 
@@ -83,8 +83,7 @@ Playwright and the app's bundled Node. The first time, it asks you to link the p
   sent from Piwi Picker.
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the dialog to fix the link.
 
-The run uses your project's own Playwright config, so its results come here like a run from your terminal, and the
-tray links to the new run.
+The run uses your project's Playwright config, so its results come here, and the tray links to the new run.
 
 ### Reproducing a failure and finding the breaking commit
 
@@ -105,9 +104,11 @@ readiness URL under **Reproduce and bisect**.
 ### Jobs from your editor
 
 On a failure of a team instance, the [editor extensions](/features/editors#ci-failures-in-the-problems-panel) offer
-**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**. The window shows the commits and
-tests, and runs nothing until you start it. The editor gets the verdict and can share a first bad commit on the team
-instance with its own key, which the app never holds.
+**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**; on a flaky test, or a failure
+whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
+the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
+gets the verdict and can share a first bad commit, or the lab's results, on the team instance with its own key, which
+the app never holds.
 
 ### Reproducing a flake
 
@@ -149,7 +150,6 @@ key; a dev build without it says so.
 
 - **One machine, one user.** The app accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Unsigned installers**: the first launch needs the steps above.
 - **Local runs need the checkout**: a linked folder with Playwright installed, and `git` for reproduce, bisect and
   the lab.
 

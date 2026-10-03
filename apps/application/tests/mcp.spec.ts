@@ -113,6 +113,7 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('triage_cluster');
     expect(names).toContain('triage_gap');
     expect(names).toContain('decide_merge_suggestion');
+    expect(names).toContain('dismiss_quarantine_proposal');
     expect(names).toContain('set_bug_report_status');
     expect(names).toContain('rerun_cluster_in_ci');
     expect(names).toContain('link_issue');

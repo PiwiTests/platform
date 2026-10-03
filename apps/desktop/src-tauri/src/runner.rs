@@ -516,6 +516,9 @@ pub(crate) struct RunEventPayload {
     /// For `repro`: the spec's recorded outcome, `null` when it recorded none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repro: Option<serde_json::Value>,
+    /// For `lab`: the report `piwi flake --json` printed, `null` when it printed none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lab: Option<serde_json::Value>,
 }
 
 impl RunEventPayload {
@@ -528,6 +531,7 @@ impl RunEventPayload {
             phase: None,
             bisect: None,
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn exit(id: u32, code: Option<i32>) -> Self {
@@ -539,6 +543,7 @@ impl RunEventPayload {
             phase: None,
             bisect: None,
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn phase(id: u32, phase: &str) -> Self {
@@ -550,6 +555,7 @@ impl RunEventPayload {
             phase: Some(phase.to_string()),
             bisect: None,
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn bisect(id: u32, event: crate::worktree::BisectEvent) -> Self {
@@ -561,6 +567,7 @@ impl RunEventPayload {
             phase: None,
             bisect: Some(event),
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn repro(id: u32, recorded: Option<serde_json::Value>) -> Self {
@@ -572,6 +579,19 @@ impl RunEventPayload {
             phase: None,
             bisect: None,
             repro: Some(recorded.unwrap_or(serde_json::Value::Null)),
+            lab: None,
+        }
+    }
+    pub(crate) fn lab(id: u32, report: Option<serde_json::Value>) -> Self {
+        Self {
+            id,
+            kind: "lab",
+            line: None,
+            code: None,
+            phase: None,
+            bisect: None,
+            repro: None,
+            lab: Some(report.unwrap_or(serde_json::Value::Null)),
         }
     }
 }

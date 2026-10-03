@@ -18,7 +18,7 @@
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { failureDiagnoses, testRunsCases } from '../database/schema';
 import { getProjectFlakyTests } from '#shared/handlers/projects';
-import type { DbClient } from '../database';
+import type { DrizzleDB } from '#shared/handlers/db';
 
 /** Below this, quarantining costs more attention than it saves. */
 const MIN_WASTED_CI_MINUTES = 2;
@@ -52,7 +52,7 @@ interface FlakyDiagnosis {
  * cluster's, or one of its executions') that names a flaky test with high
  * confidence and is not rated unhelpful.
  */
-export async function flakyDiagnosesByTest(db: DbClient, testCaseIds: number[]): Promise<Map<number, FlakyDiagnosis>> {
+export async function flakyDiagnosesByTest(db: DrizzleDB, testCaseIds: number[]): Promise<Map<number, FlakyDiagnosis>> {
   const out = new Map<number, FlakyDiagnosis>();
   if (testCaseIds.length === 0) return out;
   const rows = await db
@@ -101,7 +101,7 @@ export function diagnosisReason(diagnosis: FlakyDiagnosis): string {
  * correct answer for a healthy suite.
  */
 export async function proposeQuarantineCandidates(
-  db: DbClient,
+  db: DrizzleDB,
   projectId: number,
   alreadyQuarantined: Set<number>,
 ): Promise<QuarantineCandidate[]> {
