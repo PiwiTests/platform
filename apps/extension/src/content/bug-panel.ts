@@ -192,8 +192,8 @@ interface BugPanelGlobals {
   __piwiBugFlow?: boolean;
   /** Ends the pick of the flow on screen, as a cancel: see {@link cancelBugPick}. */
   __piwiBugPickCancel?: () => void;
-  /** The HUD on screen and its evidence line: see {@link updateBugHudEvidence}. */
-  __piwiBugHudEvidence?: { host: HTMLElement; summary: HTMLElement };
+  /** The HUD on screen, its shadow root and its evidence line: see {@link updateBugHudEvidence}. */
+  __piwiBugHud?: { host: HTMLElement; root: ShadowRoot; summary: HTMLElement };
   __piwiPickState?: string;
   __piwiPickedElement?: Element;
 }
@@ -869,16 +869,28 @@ function actualInWords(matcher: AssertionMatcher, actual: string): string {
  * False when there is no HUD to update.
  */
 export function updateBugHudEvidence(evidence: StoredBugEvidence): boolean {
-  const shown = panelGlobals().__piwiBugHudEvidence;
-  if (!shown || document.getElementById(HUD_HOST_ID) !== shown.host) return false;
+  const shown = shownBugHud();
+  if (!shown) return false;
   shown.summary.textContent = evidenceSummary(evidence);
   return true;
+}
+
+function shownBugHud(): BugPanelGlobals['__piwiBugHud'] | null {
+  const shown = panelGlobals().__piwiBugHud;
+  return shown && document.getElementById(HUD_HOST_ID) === shown.host ? shown : null;
+}
+
+/** The action of the HUD button that has the focus, or null when the focus is not in the HUD. */
+function focusedHudAction(): string | null {
+  const focused = shownBugHud()?.root.activeElement;
+  return focused instanceof HTMLElement ? (focused.dataset.action ?? null) : null;
 }
 
 /**
  * The HUD of a bug recording: the last steps, the three ways to mark what is
  * wrong, Finish, and what evidence has been collected. Its shadow root
- * delegates focus, so focusing the host reaches its first button.
+ * delegates focus, so focusing the host reaches its first button. A redraw
+ * keeps the focus in the HUD, on the button that had it when it is still there.
  */
 export function renderBugHud(
   state: RecordingState,
@@ -886,6 +898,7 @@ export function renderBugHud(
   captureError: string | null,
   handlers: BugHudHandlers,
 ): void {
+  const focusedAction = focusedHudAction();
   document.getElementById(HUD_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
@@ -949,28 +962,28 @@ export function renderBugHud(
 
   const buttons = document.createElement('div');
   buttons.className = 'row';
-  const button = (label: string, onClick: () => void, className = '') => {
+  const button = (action: keyof BugHudHandlers, label: string, className = '') => {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
+    b.dataset.action = action;
     if (className) b.className = className;
-    b.addEventListener('click', onClick);
+    b.addEventListener('click', () => handlers[action]());
     buttons.appendChild(b);
     return b;
   };
-  button(t('bug_mark'), handlers.mark).title = t('bug_markHint');
-  button(t('bug_missing'), handlers.missing).title = t('bug_missingHint');
-  button(t('bug_wrongPage'), handlers.wrongPage).title = t('bug_wrongPageHint');
-  if (evidence.debugging?.state === 'on')
-    button(t('bug_screenshot'), handlers.screenshot).title = t('bug_screenshotHint');
-  button(t('bug_finish'), handlers.finish, 'finish');
+  button('mark', t('bug_mark')).title = t('bug_markHint');
+  button('missing', t('bug_missing')).title = t('bug_missingHint');
+  button('wrongPage', t('bug_wrongPage')).title = t('bug_wrongPageHint');
+  if (evidence.debugging?.state === 'on') button('screenshot', t('bug_screenshot')).title = t('bug_screenshotHint');
+  button('finish', t('bug_finish'), 'finish');
   bar.appendChild(buttons);
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
   summary.textContent = evidenceSummary(evidence);
   bar.appendChild(summary);
-  panelGlobals().__piwiBugHudEvidence = { host, summary };
+  panelGlobals().__piwiBugHud = { host, root, summary };
 
   const note = debuggingNote(evidence);
   if (note) {
@@ -989,6 +1002,7 @@ export function renderBugHud(
   }
 
   root.append(style, bar);
+  if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();
 }
 
 // ---------------------------------------------------------------------------

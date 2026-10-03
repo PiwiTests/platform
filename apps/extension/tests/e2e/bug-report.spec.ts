@@ -68,6 +68,10 @@ async function attachRecorder(page: Page): Promise<void> {
 const HUD = { mark: 0, missing: 1, wrongPage: 2, finish: 3 } as const;
 
 async function pressHudButton(page: Page, which: keyof typeof HUD): Promise<void> {
+  // A hidden HUD takes no focus: it is hidden while a screenshot is taken.
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.getElementById('piwi-record-hud-host')!).visibility))
+    .toBe('visible');
   await page.focus('#piwi-record-hud-host');
   for (let i = 0; i < HUD[which]; i++) await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
@@ -823,6 +827,34 @@ test.describe('Report a bug', () => {
       ),
     ).toBe(true);
     expect(await page.evaluate(() => document.activeElement?.id)).toBe('piwi-record-hud-host');
+  });
+
+  test('a redraw of the HUD keeps the focus on the button it was on, and Tab goes on from there', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routeShop(context, { fixed: false });
+    const page = await startBugRecording(context, { ok: true });
+    await page.waitForTimeout(1000);
+    await page.focus('#piwi-record-hud-host');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    const focusedButton = () =>
+      page.evaluate(() => document.getElementById('piwi-record-hud-host')?.shadowRoot?.activeElement?.textContent);
+    expect(await focusedButton()).toBe('Wrong page');
+    await page.evaluate(() => {
+      (document.getElementById('piwi-record-hud-host') as HTMLElement & { __same?: boolean }).__same = true;
+    });
+    // Injected again into a page it already records, the recorder draws its HUD again.
+    await attachRecorder(page);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (document.getElementById('piwi-record-hud-host') as { __same?: boolean } | null)?.__same),
+      )
+      .toBeUndefined();
+    expect(await focusedButton()).toBe('Wrong page');
+    await page.keyboard.press('Tab');
+    expect(await focusedButton()).toBe('Finish');
   });
 
   test('a dialog the page removes is cancelled: capture goes on, and the page has its Escape back', async ({
