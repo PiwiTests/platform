@@ -77,12 +77,14 @@ describe('triageGap', () => {
     expect(row!.dismissReason).toBe('not-worth-testing');
   });
 
-  test('covered-by writes a manual reaches edge without dismissing', async () => {
+  test('covered-by closes the gap and writes a manual reaches edge', async () => {
     const id = await seedGap();
     await db.insert(schema.testCases).values({ id: 42, projectId: 1, title: 'covers cart', filePath: 'cart.spec.ts' });
-    await triageGap(db, 1, id, { verb: 'covered-by', coveringTestCaseId: 42 });
+    expect(await triageGap(db, 1, id, { verb: 'covered-by', coveringTestCaseId: 42 })).toEqual({ status: 'closed' });
     const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, id));
-    expect(row!.status).toBe('open');
+    expect(row!.status).toBe('closed');
+    expect(row!.closedAt).not.toBeNull();
+    expect(row!.coveredAt).not.toBeNull();
     const edges = await db
       .select()
       .from(schema.graphEdges)
@@ -90,6 +92,18 @@ describe('triageGap', () => {
     expect(edges).toHaveLength(1);
     expect(edges[0]!.fromKey).toBe('42');
     expect(edges[0]!.toKey).toBe('GET /api/cart');
+  });
+
+  test('a gap closed with covered-by stays closed when its detector raises it again', async () => {
+    const id = await seedGap();
+    await db.insert(schema.testCases).values({ id: 42, projectId: 1, title: 'covers cart', filePath: 'cart.spec.ts' });
+    await triageGap(db, 1, id, { verb: 'covered-by', coveringTestCaseId: 42 });
+
+    // The detector still sees no error path: the next recompute upserts the same gap.
+    await seedGap();
+
+    const [row] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, id));
+    expect(row!.status).toBe('closed');
   });
 
   test('a covering test from another project is rejected and writes no edge', async () => {

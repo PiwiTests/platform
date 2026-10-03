@@ -302,7 +302,7 @@ export const HELP_TOPICS = {
   },
   'analytics.branch-policy': {
     title: 'Branch policy',
-    text: 'Default branch counts runs on each project’s default branch, plus runs whose branch is unknown, so a broken feature branch does not move the trends. All branches counts everything; picking branches by hand overrides both.',
+    text: 'Default branch counts runs on each project’s default branch, so a broken feature branch does not move the trends; a run whose branch is unknown counts only in a project that never reported a branch. All branches counts everything; picking branches by hand overrides both.',
     doc: 'features/analytics#branch-policy',
   },
   'analytics.test-filter': {
@@ -458,6 +458,12 @@ export const HELP_TOPICS = {
     text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only an administrator can release it.',
     doc: 'operate/storage#keeping-runs-forever',
     envVars: ['PIWI_RETENTION_DAYS'],
+  },
+  'run.ingestHealth': {
+    title: 'Ingest',
+    text: 'What the dashboard left out or rebuilt while storing this run: steps and console entries over the ingest caps, traces it could not store, evidence rebuilt from a trace, and the fallback the reporter took when its usual way of sending the run failed. A missing step or console line may be one of these, not something the test skipped.',
+    doc: 'features/ui-overview#test-run-detail',
+    envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
   },
   'run.metadata': {
     title: 'Tags, links & custom data',

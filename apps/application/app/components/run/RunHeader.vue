@@ -4,6 +4,7 @@ import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -54,6 +55,9 @@ const incidentBadges = computed(() =>
 const customDataHtml = computed(() =>
   customData.value ? highlightCode(JSON.stringify(customData.value, null, 2), 'json').html : '',
 );
+
+// What ingest left out or rebuilt, one sentence each; empty for a run stored whole.
+const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.testRun?.metadata)));
 
 const showStorage = computed(() => !!(storageStats.value?.totalFiles || props.finalizing));
 
@@ -271,6 +275,12 @@ function onLabelKeydown(e: KeyboardEvent) {
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />
       </template>
+      <template v-if="ingestNotes.length">
+        <span class="text-dimmed">·</span>
+        <span :title="ingestNotes.join('\n')" data-shot="run-ingest-fact">{{
+          ingestNotes.length === 1 ? '1 ingest note' : `${ingestNotes.length} ingest notes`
+        }}</span>
+      </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
         <a
@@ -321,6 +331,14 @@ function onLabelKeydown(e: KeyboardEvent) {
           </ClientOnly>
         </span>
         <span v-else>Not kept — retention deletes it once it is old enough</span>
+      </div>
+      <div v-if="ingestNotes.length" class="flex items-start gap-1.5" data-shot="run-ingest-health">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Ingest <HelpHint topic="run.ingestHealth"
+        /></span>
+        <ul class="space-y-1">
+          <li v-for="note in ingestNotes" :key="note">{{ note }}</li>
+        </ul>
       </div>
       <div v-if="showStorage" class="flex items-center gap-1.5">
         <span class="text-muted">Storage</span>

@@ -20,6 +20,7 @@ import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
 import { looksFixedTests } from '#shared/status-classify';
+import { isLabRun } from '#shared/handlers/probes';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 import type { LooksFixedTest } from '#shared/notification-events';
@@ -103,6 +104,87 @@ export async function loadNewlyLooksFixedTests(
 }
 
 /**
+ * The run, its project and the payload every run event carries: counts, branch,
+ * environment, the first failures and the owners of every failure. Null when
+ * the run or its project is gone.
+ */
+async function loadRunPayload(db: DbClient, runId: number) {
+  const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+  if (!runRow) return null;
+
+  const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
+  if (!project) return null;
+
+  const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
+  const environment = runRow.environment ?? undefined;
+  const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
+  const isDefaultBranch = branch ? branch === defaultBranch : false;
+
+  // A few failing tests (title + error excerpt + deep-link ids) so a
+  // notification carries enough context to start debugging without opening
+  // the dashboard first.
+  const failedRows = await db
+    .select({
+      title: testCases.title,
+      filePath: testCases.filePath,
+      error: testRunsCases.error,
+      testCaseId: testRunsCases.testCaseId,
+      executionId: testRunsCases.id,
+      owner: testCases.owner,
+      clusterId: testRunsCases.failureClusterId,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(and(eq(testRunsCases.testRunId, runId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])))
+    .limit(OWNER_LOOKUP_LIMIT);
+
+  // The notification still names only the first few failures, but ownership
+  // is resolved across all of them — a subscription scoped to one team must
+  // not miss a run just because that team's failure ranked seventh.
+  const topFailures = buildTopFailures(failedRows.slice(0, TOP_FAILURES_LIMIT));
+  const resolvedOwners = await resolveOwners(db, runRow.projectId, failedRows).catch(() => new Map());
+  const ownersOf = (rows: typeof failedRows) => [
+    ...new Set(rows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner))),
+  ];
+  const owners = ownersOf(failedRows);
+  /** The owners of the tests that failed into one cluster in this run. */
+  const clusterOwners = (clusterId: number) => ownersOf(failedRows.filter((row) => row.clusterId === clusterId));
+
+  const runPayload = {
+    runId,
+    projectId: runRow.projectId,
+    projectName: project.label || project.name,
+    status: runRow.status,
+    totalTests: runRow.totalTests,
+    failedTests: runRow.failedTests,
+    passedTests: runRow.passedTests,
+    flakyTests: runRow.flakyTests,
+    flakinessRate: runRow.totalTests > 0 ? runRow.flakyTests / runRow.totalTests : 0,
+    durationMs: runRow.duration ?? undefined,
+    branch,
+    environment,
+    isDefaultBranch,
+    topFailures,
+    owners,
+  };
+  return { runRow, project, runPayload, branch, environment, isDefaultBranch, clusterOwners };
+}
+
+/**
+ * Emit `run.interrupted` for a run the stale-run sweep reaped: its reporter
+ * stopped sending before the end. Lab runs stay silent, as at finalize.
+ */
+export async function emitRunInterrupted(db: DbClient, runId: number): Promise<void> {
+  try {
+    const loaded = await loadRunPayload(db, runId);
+    if (!loaded || isLabRun(loaded.runRow.metadata)) return;
+    await emitNotification(db, 'run.interrupted', loaded.runPayload);
+  } catch (e) {
+    console.error('[notifications] emitRunInterrupted failed', e);
+  }
+}
+
+/**
  * Emit the notifications of a run flagged as an environment incident:
  * `run.finished`, and one `environment.incident` in place of the run's
  * failure, flakiness, performance, new-cluster and looks-fixed events. The
@@ -152,62 +234,9 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
  */
 export async function emitRunNotifications(db: DbClient, runId: number): Promise<void> {
   try {
-    const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
-    if (!runRow) return;
-
-    const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
-    if (!project) return;
-
-    const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
-    const environment = runRow.environment ?? undefined;
-    const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
-    const isDefaultBranch = branch ? branch === defaultBranch : false;
-
-    // A few failing tests (title + error excerpt + deep-link ids) so a
-    // notification carries enough context to start debugging without opening
-    // the dashboard first.
-    const failedRows = await db
-      .select({
-        title: testCases.title,
-        filePath: testCases.filePath,
-        error: testRunsCases.error,
-        testCaseId: testRunsCases.testCaseId,
-        executionId: testRunsCases.id,
-        owner: testCases.owner,
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(and(eq(testRunsCases.testRunId, runId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])))
-      .limit(OWNER_LOOKUP_LIMIT);
-
-    // The notification still names only the first few failures, but ownership
-    // is resolved across all of them — a subscription scoped to one team must
-    // not miss a run just because that team's failure ranked seventh.
-    const topFailures = buildTopFailures(failedRows.slice(0, TOP_FAILURES_LIMIT));
-    const resolvedOwners = await resolveOwners(db, runRow.projectId, failedRows).catch(() => new Map());
-    const owners = [
-      ...new Set(
-        failedRows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner)),
-      ),
-    ];
-
-    const runPayload = {
-      runId,
-      projectId: runRow.projectId,
-      projectName: project.label || project.name,
-      status: runRow.status,
-      totalTests: runRow.totalTests,
-      failedTests: runRow.failedTests,
-      passedTests: runRow.passedTests,
-      flakyTests: runRow.flakyTests,
-      flakinessRate: runRow.totalTests > 0 ? runRow.flakyTests / runRow.totalTests : 0,
-      durationMs: runRow.duration ?? undefined,
-      branch,
-      environment,
-      isDefaultBranch,
-      topFailures,
-      owners,
-    };
+    const loaded = await loadRunPayload(db, runId);
+    if (!loaded) return;
+    const { runRow, project, runPayload, branch, environment, isDefaultBranch, clusterOwners } = loaded;
 
     await emitNotification(db, 'run.finished', runPayload);
 
@@ -295,6 +324,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+        owners: clusterOwners(cluster.id),
       });
     }
 

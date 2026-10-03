@@ -6,6 +6,7 @@ import { settleFinalizingRun } from './finalizing-runs';
 import { computeRunCountsFromRows } from './run-counts';
 import { recomputeRollupCells } from '#shared/handlers/analytics/rollups';
 import { dayKey } from '#shared/handlers/analytics/common';
+import { emitRunInterrupted } from './notifications/run-notifications';
 
 // A live reporter sends a heartbeat (~every 15s) during idle gaps, so an active
 // run's `updatedAt` never goes quiet for long. This timeout must stay comfortably
@@ -49,9 +50,9 @@ export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now()):
  * `STALE_TIMEOUT_MS` as `interrupted` — its reporter was killed or lost its
  * connection before reporting the end. Each reaped run gets its counters
  * reconciled and its end announced on its own stream and on the global
- * lifecycle stream, like a run that finished normally, and its day's rollup
- * recomputed, since an interrupted run counts as a failed one. Returns the
- * reaped ids.
+ * lifecycle stream, like a run that finished normally, a `run.interrupted`
+ * notification sent, and its day's rollup recomputed, since an interrupted run
+ * counts as a failed one. Returns the reaped ids.
  */
 export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promise<number[]> {
   const staleThreshold = new Date(now - STALE_TIMEOUT_MS);
@@ -114,6 +115,10 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promis
     // App-wide consumers (run lists, the desktop shell's OS progress) track
     // in-flight runs from the global stream and only drop one on its end event.
     runEventBus.publishGlobal({ type: 'run-finished', runId: run.id, projectId: run.projectId, status: 'interrupted' });
+
+    // Subscribers hear of the interruption. The finish-time side effects do not
+    // run: a later event carrying the run's stream token revives it (revive-run.ts).
+    await emitRunInterrupted(db, run.id);
   }
 
   // The analytics read the daily rollups, which count an interrupted run as a failed one: recompute

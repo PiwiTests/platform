@@ -17,6 +17,7 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | `run.finished` | A run completes (any status) |
 | `run.failed` | A run completes with failures |
 | `run.failed.default_branch` | A run fails on the repository's default branch |
+| `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
 | `cluster.new` | A new failure cluster appears |
 | `cluster.fixed` | A run passes every test a cluster covers: the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
 | `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |
@@ -77,8 +78,8 @@ Every event that comes from a run carries that run's `branch` and `environment` 
 
 - **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
   of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
-- **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`) and
-  `affectedCases`.
+- **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`),
+  `affectedCases`, and the `owners` of the tests that failed into it in that run.
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the
   verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).

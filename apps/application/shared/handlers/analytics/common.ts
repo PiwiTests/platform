@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { markers, projects, testRuns, testRunsCases, projectTags, tags } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notLabRun } from '../probes';
@@ -182,7 +182,8 @@ async function loadPeriodMarkers(
 /**
  * The branch policy of a scope: the branches chosen by hand, every branch, or
  * each project's default branch (the project's setting, else the default
- * branch its latest run reported, else `main`) plus the unknown branch.
+ * branch its latest run reported, else `main`). The unknown branch counts only
+ * in projects that never recorded a branch on a run.
  */
 export async function resolveBranchPolicy(
   db: DrizzleDB,
@@ -191,7 +192,7 @@ export async function resolveBranchPolicy(
 ): Promise<BranchPolicy> {
   if (scope.branches && scope.branches.length > 0) return { kind: 'list', branches: scope.branches };
   if (!scope.defaultBranchOnly) return { kind: 'any' };
-  if (allowed !== 'all' && allowed.length === 0) return { kind: 'default', groups: [] };
+  if (allowed !== 'all' && allowed.length === 0) return { kind: 'default', groups: [], unknownProjectIds: [] };
 
   const rows: { id: number; defaultBranch: string | null }[] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
@@ -206,7 +207,33 @@ export async function resolveBranchPolicy(
     const configured = row.defaultBranch?.trim();
     defaults.set(row.id, configured || reported.get(row.id) || FALLBACK_DEFAULT_BRANCH);
   }
-  return defaultBranchPolicy(defaults);
+  const withBranch = await projectsWithKnownBranch(
+    db,
+    rows.map((row) => row.id),
+  );
+  return defaultBranchPolicy(
+    defaults,
+    rows.map((row) => row.id).filter((id) => !withBranch.has(id)),
+  );
+}
+
+/** The projects among `projectIds` holding at least one run with a known branch. */
+async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Promise<Set<number>> {
+  const found = new Set<number>();
+  for (let i = 0; i < projectIds.length; i += 500) {
+    const rows: { projectId: number }[] = await db
+      .selectDistinct({ projectId: testRuns.projectId })
+      .from(testRuns)
+      .where(
+        and(
+          inArray(testRuns.projectId, projectIds.slice(i, i + 500)),
+          isNotNull(testRuns.branch),
+          ne(testRuns.branch, ''),
+        ),
+      );
+    for (const row of rows) found.add(row.projectId);
+  }
+  return found;
 }
 
 /**

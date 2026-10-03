@@ -995,6 +995,45 @@ describe('known-flake-suspect', () => {
     );
   });
 
+  test('several suspects: the reproduced one is named over higher-ranked untested ones', () => {
+    const load = {
+      kind: 'load' as const,
+      label: '3 or more other tests running at once',
+      counts: { failuresWith: 8, failures: 8, passesWith: 10, passes: 44 },
+      executionIds: [10],
+    };
+    const neighbor = {
+      kind: 'alongside' as const,
+      label: 'resets catalog alongside',
+      counts: { failuresWith: 6, failures: 8, passesWith: 4, passes: 44 },
+      title: 'resets catalog',
+      executionIds: [10],
+    };
+    const reproduced = {
+      label: 'delay GET /api/cart 1.8 s',
+      matchingFailures: 3,
+      runs: 4,
+      controlMatchingFailures: 0,
+      controlRuns: 10,
+      pValue: 0.011,
+    };
+    const input = baseInput({
+      networkRequests: [
+        { method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 2_100, startTime: T0 + 200 },
+      ],
+      flakeSuspects: [load, neighbor, { ...slowCart, reproduced }],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.strength).toBe('strong');
+    expect(clue.title).toBe('A reproduced flake cause: GET /api/cart slower (≥1.6 s)');
+
+    // Without a reproduced one, the highest-ranked suspect this failure shows is named.
+    const untested = baseInput({ flakeSuspects: [{ ...load, executionIds: [99] }, neighbor, slowCart] });
+    expect(runClues(untested).find((c) => c.rule === 'known-flake-suspect')!.title).toBe(
+      'A known flake suspect: resets catalog alongside',
+    );
+  });
+
   test('negative: the suspect is not shown by this execution', () => {
     const input = baseInput({ flakeSuspects: [{ ...slowCart, executionIds: [11, 12] }] });
     expect(rules(input)).not.toContain('known-flake-suspect');

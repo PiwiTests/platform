@@ -229,6 +229,8 @@ describe('buildFlakeProfile', () => {
     ];
     const load = buildFlakeProfile(input(attempts)).suspects.find((s) => s.kind === 'load')!;
     expect(load.thresholdCount).toBe(7);
+    // The id names the factor, not the threshold, so a lab result stays attached when the threshold moves.
+    expect(load.id).toBe('load');
     expect(load.counts).toEqual({ failuresWith: 6, failures: 8, passesWith: 11, passes: 44 });
     expect(load.label).toBe('7 or more other tests running at once');
     expect(load.condition).toEqual({ kind: 'cpu', rate: 4 });

@@ -4,6 +4,7 @@ import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
+import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
@@ -276,7 +277,9 @@ export default eventHandler(async (event) => {
       // The reported status waits in the metadata, where it survives a restart,
       // until the report upload or the stale-run sweep settles the run.
       metadata: withPendingStatus(
-        body.metadata ? keepIncidentMetadata(testRun.metadata, sanitizeMetadata(body.metadata)) : testRun.metadata,
+        body.metadata
+          ? keepIncidentMetadata(testRun.metadata, carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata))
+          : testRun.metadata,
         status,
       ),
       ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
@@ -321,7 +324,10 @@ export default eventHandler(async (event) => {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {
-        metadata: keepIncidentMetadata(testRun.metadata, sanitizeMetadata(body.metadata)),
+        metadata: keepIncidentMetadata(
+          testRun.metadata,
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        ),
         branch: resolveRunBranch(body.metadata),
       }),
       ...(body.label !== undefined && { label: body.label }),

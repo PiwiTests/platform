@@ -89,8 +89,9 @@ failure](/guide/first-failure)), across every test that shares the failure. The 
   means the change is not in the code.
 - **The state line**, below.
 
-The **Affected tests** list selects which test's latest execution the evidence shows. The diagnosis, the locator fix,
-verify and reproduce sit in the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
+The **Affected tests** list selects which test's latest execution the evidence shows; its **Move to a new cluster**
+[splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The diagnosis, the locator fix, verify and reproduce sit in
+the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
 
 ### The state line
 

@@ -88,6 +88,10 @@ The ladder, including the stream drain and the remaining file uploads, runs with
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
 in flight and every later one, so the ladder falls through to crash recovery.
 
+A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
+(`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
+so the dashboard can say how the run arrived.
+
 All HTTP goes through `internal/transport/http-client.ts`, which throws `HttpError`
 (carrying `status`) so callers branch on `error.status`, never the message text.
 

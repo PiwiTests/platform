@@ -15,7 +15,7 @@ import { isLabRun } from './probes';
 
 import type { DrizzleDB } from './db';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
-import { recomputeClusterOccurrences } from './failure-cluster-ops';
+import { splitFailureCluster } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
@@ -523,27 +523,31 @@ export async function extractClusterCases(
     return null;
   }
 
-  const [cluster] = await db
-    .select({ id: failureClusters.id })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, clusterId));
-  if (!cluster) return null;
+  const split = await splitFailureCluster(db, clusterId, testCaseIds, triageNote);
+  if (!split) return null;
 
-  await db
-    .update(testRunsCases)
-    .set({ failureClusterId: null })
-    .where(and(eq(testRunsCases.failureClusterId, clusterId), inArray(testRunsCases.testCaseId, testCaseIds)));
-
-  const remainingOccurrences = await recomputeClusterOccurrences(db, clusterId);
-
-  if (triageNote !== undefined) {
+  if (split.clusterId != null) {
+    const [source] = await db
+      .select({ triageNote: failureClusters.triageNote })
+      .from(failureClusters)
+      .where(eq(failureClusters.id, clusterId));
+    const line = `Moved ${split.testCount} test${split.testCount === 1 ? '' : 's'} to cluster #${split.clusterId}.`;
     await db
       .update(failureClusters)
-      .set({ triageNote, updatedAt: new Date() })
+      .set({ triageNote: source?.triageNote ? `${source.triageNote}\n${line}` : line, updatedAt: new Date() })
       .where(eq(failureClusters.id, clusterId));
   }
 
-  return { success: true, extractedCount: testCaseIds.length, remainingOccurrences };
+  const [remaining] = await db
+    .select({ occurrences: failureClusters.occurrences })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  return {
+    success: true,
+    extractedCount: split.testCount,
+    remainingOccurrences: remaining?.occurrences ?? 0,
+    clusterId: split.clusterId,
+  };
 }
 
 /**
