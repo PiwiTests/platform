@@ -7,8 +7,8 @@ lang: en-US
 # Record tests from the editor
 
 **Piwi: Record here** opens a browser through your project's own Playwright and writes what you do there at the cursor,
-as you do it: steps at the cursor inside a test's body, a new test anywhere else in a spec, steps in a page object's
-method. It works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
+as you do it: steps inside a test, a page object's method or a helper function, a new test anywhere else in a spec. It
+works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 [Piwi plugin](./editors#jetbrains-ides), and needs no instance, no desktop app and no browser extension.
 
 ## Start a recording
