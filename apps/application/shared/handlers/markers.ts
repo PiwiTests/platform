@@ -1,5 +1,5 @@
 import { markers, testRuns } from '../../server/database/schema';
-import { eq, and, asc, desc, lt } from 'drizzle-orm';
+import { eq, and, asc, desc, lt, ne } from 'drizzle-orm';
 
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
@@ -89,11 +89,12 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   const run = runRows[0];
   if (!run) return;
 
-  // Don't duplicate an auto marker for this run.
+  // Don't duplicate an auto marker for this run. The run's incident marker is
+  // a different event and does not count.
   const alreadyMarked = await db
     .select({ id: markers.id })
     .from(markers)
-    .where(and(eq(markers.runId, runId), eq(markers.source, 'auto')));
+    .where(and(eq(markers.runId, runId), eq(markers.source, 'auto'), ne(markers.category, 'incident')));
   if (alreadyMarked.length > 0) return;
 
   // Previous runs of this project, most recent first. Filter to the same

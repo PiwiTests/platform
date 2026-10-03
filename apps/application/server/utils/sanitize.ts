@@ -3,6 +3,7 @@ import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import { maskTokenLike } from '@piwitests/core/mask';
 import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
+import { withoutIncidentMetadata } from '#shared/run-incident';
 import { reporterIngestHealth } from '#shared/ingest-health';
 
 /**
@@ -84,8 +85,9 @@ export function sanitizeGitRemoteUrl(url: string): string {
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!metadata || typeof metadata !== 'object') return null;
 
-  // The reporter may name its submit fallback; the ingest counts are the server's own.
-  const meta = reporterIngestHealth({ ...metadata });
+  // A run's incident flag and a person's decision about it are the server's own. The
+  // reporter may name its submit fallback; the ingest counts are the server's own.
+  const meta = reporterIngestHealth(withoutIncidentMetadata(metadata));
 
   // Sanitize scm.remoteUrl
   const scm = meta.scm as Record<string, unknown> | null | undefined;

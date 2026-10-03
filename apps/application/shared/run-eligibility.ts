@@ -28,18 +28,14 @@ import {
   type RunOriginKind,
 } from '@piwitests/core/wire';
 import { testRuns } from '../server/database/schema';
+import { INCIDENT_RUN_METADATA_KEY } from './run-incident';
 
 export { RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, FLAKE_LAB_RUN_METADATA_KEY, type RunOrigin, type RunOriginKind };
 
 /** The run-metadata flag that stamps a run as a probe run (never a real run). */
 export const PROBE_RUN_METADATA_KEY = 'piwiProbe';
 
-/**
- * The run-metadata key that marks a run as an environment incident: its
- * failures come from the environment under test being down, not from the
- * tests or the code.
- */
-export const INCIDENT_RUN_METADATA_KEY = 'incident';
+export { INCIDENT_RUN_METADATA_KEY };
 
 /** A run's origin kind; `other` for a stamp naming a kind this version does not know. */
 export type RunOriginRead = RunOriginKind | 'other';
@@ -67,7 +63,8 @@ export type RunUse =
   | 'shared-state'
   | 'auto-heal'
   | 'bug-lifecycle'
-  | 'notifications';
+  | 'notifications'
+  | 'run-health';
 
 export interface RunUseRule {
   /** The origins whose runs this use never reads. */
@@ -153,10 +150,21 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     completeOnly: false,
     excludesHistoricalImports: false,
   },
-  /** Notifications, pull-request feedback, the gate and the other finalize side effects. */
+  /**
+   * Notifications, pull-request feedback, the gate and the other finalize side
+   * effects. An environment incident sends one `environment.incident` event
+   * instead, and the gate reads it as inconclusive.
+   */
   notifications: {
     excludes: LAB_RUN_ORIGINS,
     excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
+  /** The runs the incident classifier judges, and the runs of other projects it compares them with. */
+  'run-health': {
+    excludes: LAB_RUN_ORIGINS,
+    excludesIncidents: false,
     completeOnly: false,
     excludesHistoricalImports: false,
   },

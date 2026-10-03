@@ -10,6 +10,7 @@ import type {
   NotificationPayload,
   RunFinishedPayload,
   ClusterNewPayload,
+  EnvironmentIncidentPayload,
 } from '#shared/notification-events';
 import { failureTargetPath, notificationTargetPath, renderEventSubject } from '#shared/notification-events';
 import { sparkline } from '#shared/reports/chart';
@@ -77,6 +78,9 @@ export function teamsEventMessage(event: NotificationEvent, payload: Notificatio
     if (p.affectedCases) {
       body.push(textBlock(`${p.affectedCases} affected test${p.affectedCases === 1 ? '' : 's'}`, { isSubtle: true }));
     }
+  }
+  if (event === 'environment.incident') {
+    body.push(textBlock(teamsEscape((payload as EnvironmentIncidentPayload).reason)));
   }
   const path = notificationTargetPath(event, payload);
   const failurePath =

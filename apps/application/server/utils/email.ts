@@ -11,6 +11,7 @@ import type {
   ClusterFixedPayload,
   ClusterNewPayload,
   ClusterRegressedPayload,
+  EnvironmentIncidentPayload,
   NotificationEvent,
   NotificationPayload,
   RunFinishedPayload,
@@ -378,6 +379,18 @@ export function renderNotificationEmail(
     });
   }
   const subject = renderEventSubject(event, payload);
+  if (event === 'environment.incident') {
+    const p = payload as EnvironmentIncidentPayload;
+    const url = `${siteUrl()}/test-runs/${p.runId}`;
+    const note = 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).';
+    const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">${escapeHtml(subject)}</h2>
+    <p style="margin:0 0 16px;color:#18181b;font-size:14px;">${escapeHtml(p.reason)}</p>
+    <p style="margin:0 0 24px;color:#52525b;font-size:13px;">${escapeHtml(note)}</p>
+    <a href="${url}" style="display:inline-block;background:#18181b;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">View run</a>`;
+    const { html } = emailLayout(subject, body);
+    return { html, text: `${subject}\n\n${p.reason}\n${note}\n\nView: ${url}` };
+  }
   return { html: `<p>${escapeHtml(subject)}</p>`, text: subject };
 }
 

@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/failure-clusters',
       },
       {
+        title: 'Environment incidents',
+        summary:
+          'A run that failed because the app under test was down, recognized and kept out of flaky scores, baselines, fix verification and the gate.',
+        needs: [],
+        where: 'Test run header; Home inbox; Project → Timeline',
+        doc: 'features/environment-incidents',
+      },
+      {
         title: 'Flaky tests & quarantine',
         summary:
           'Flaky detection and cost scoring, the suspects each flaky test’s history points at, and quarantine that keeps a known-bad test running but off the merge gate.',

@@ -120,6 +120,13 @@ reporter's `environment` option or `PIWI_ENVIRONMENT`. It's a **scoping** dimens
 configuration one: flaky analysis, analytics, and timeline markers can all be narrowed to a single
 environment so a staging suite's noise doesn't blend into production's numbers.
 
+### Environment incident
+
+A **test run** whose failures come from the environment under test being down or broken (staging refusing
+connections, a host that no longer resolves, a crashing browser), not from the tests or the code. Piwi flags it when
+the run finishes, or a person marks it, and leaves it out of flaky scores, baselines, fix verification and the CI
+gate, which answers *inconclusive*. See [Environment incidents](/features/environment-incidents).
+
 ### Tags & ownership
 
 Two ways to say what a test *is*, both declared in the spec file and both read by the reporter.

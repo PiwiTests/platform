@@ -18,6 +18,7 @@ import type { HandbackActor } from '../handback-outcomes';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
+import { readRunIncident } from '../run-incident';
 import {
   getQuarantinedCaseIds,
   countQuarantinedClusterTests,
@@ -633,7 +634,13 @@ export async function getOpenFailureClusters(
       .groupBy(testRunsCases.failureClusterId),
 
     db
-      .select({ id: testRuns.id, status: testRuns.status, startTime: testRuns.startTime, branch: testRuns.branch })
+      .select({
+        id: testRuns.id,
+        status: testRuns.status,
+        startTime: testRuns.startTime,
+        branch: testRuns.branch,
+        metadata: testRuns.metadata,
+      })
       .from(testRuns)
       .where(inArray(testRuns.id, seenRunIds)),
 
@@ -693,7 +700,10 @@ export async function getOpenFailureClusters(
   const projectById = new Map(projectRows.map((p: any) => [p.id, p]));
   const affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
   const runById = new Map(
-    seenRuns.map((r: any) => [r.id, { status: r.status, startTime: r.startTime, branch: r.branch }]),
+    seenRuns.map((r: any) => [
+      r.id,
+      { status: r.status, startTime: r.startTime, branch: r.branch, incident: readRunIncident(r.metadata) },
+    ]),
   );
 
   // Keep the most-affected test per cluster for the name fallback and owner, and
@@ -775,7 +785,9 @@ export async function getOpenFailureClusters(
   return clusters.map((c): OpenFailureCluster => {
     const project = projectById.get(c.projectId);
     const run = runById.get(c.lastSeenRunId) as { status: string; startTime: Date; branch: string | null } | undefined;
-    const firstRun = runById.get(c.firstSeenRunId) as { startTime: Date } | undefined;
+    const firstRun = runById.get(c.firstSeenRunId) as
+      | { startTime: Date; incident: ReturnType<typeof readRunIncident> }
+      | undefined;
     const rep = repByCluster.get(c.id);
 
     // A regression still failing on the default branch: last seen there, and it
@@ -827,6 +839,14 @@ export async function getOpenFailureClusters(
       mergeSuggestionPending: mergeSuggestionClusterIds.has(c.id),
       snoozedUntil: c.snoozedUntil ?? null,
       snoozeMode: c.snoozeMode ?? null,
+      incidentRun: firstRun?.incident
+        ? {
+            runId: c.firstSeenRunId,
+            reason: firstRun.incident.reason,
+            host: firstRun.incident.host,
+            startedAt: firstRun.startTime ?? null,
+          }
+        : null,
     };
   });
 }

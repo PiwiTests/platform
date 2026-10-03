@@ -112,7 +112,7 @@ const channels = computed(() => channelsData.value?.items ?? []);
 // ── New subscription form ─────────────────────────────────────────────────────
 const showForm = ref(false);
 const selectedChannelId = ref<number | undefined>(undefined);
-const selectedEvents = ref<string[]>(['run.failed']);
+const selectedEvents = ref<string[]>(['run.failed', 'environment.incident']);
 const selectedBranches = ref<string[]>([]);
 const selectedEnvironments = ref<string[]>([]);
 const subscribeGlobal = ref(false);

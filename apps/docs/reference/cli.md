@@ -86,7 +86,7 @@ Fail a CI job on the dashboard's analysis of a run — the [merge gate](/guide/c
 npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 ```
 
-**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate.
+**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate · `3` inconclusive: the run is an [environment incident](/features/environment-incidents), so it cannot say whether the change is good.
 
 | Flag | Description |
 |---|---|

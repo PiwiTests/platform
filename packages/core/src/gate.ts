@@ -96,6 +96,19 @@ export interface GateFacts {
     /** The branch new leaks are read against: the pull request's target, else the default branch. */
     baseBranch: string | null;
   };
+  /**
+   * Set when the run is an environment incident: its failures come from the
+   * environment under test, so no policy can say whether the change is good.
+   */
+  incident?: GateIncident;
+}
+
+/** Why a run is an environment incident, as the gate reports it. */
+export interface GateIncident {
+  /** The rule that flagged the run, or `person` when someone marked it. */
+  rule: string;
+  reason: string;
+  host: string | null;
 }
 
 interface GateViolation {
@@ -121,8 +134,16 @@ interface GateViolation {
   limit?: number;
 }
 
+/**
+ * `passed` and `failed` answer the policy; `inconclusive` means the run cannot
+ * answer it (an environment incident). An inconclusive result has `passed:
+ * false`, so a client that reads only `passed` blocks the merge.
+ */
+export type GateVerdict = 'passed' | 'failed' | 'inconclusive';
+
 export interface GateResult {
   passed: boolean;
+  verdict: GateVerdict;
   violations: GateViolation[];
   facts: GateFacts;
   /** Warn-only notices that never fail the gate (e.g. uncovered changed files). */
@@ -264,7 +285,9 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
     violations.push(...leakViolations(facts.resources, policy));
   }
 
-  return { passed: violations.length === 0, violations, facts };
+  if (facts.incident) return { passed: false, verdict: 'inconclusive', violations: [], facts };
+  const passed = violations.length === 0;
+  return { passed, verdict: passed ? 'passed' : 'failed', violations, facts };
 }
 
 /** `tests/cart.spec.ts:12, fixture "adminPage" at tests/fixtures.ts:21, +2 more`. */
@@ -312,9 +335,11 @@ function leakViolations(resources: NonNullable<GateFacts['resources']>, policy: 
 export function formatGateResult(result: GateResult): string {
   const { facts } = result;
   const lines = [
-    result.passed
-      ? `✔ Piwi gate passed — ${facts.projectName} run #${facts.runId}`
-      : `✖ Piwi gate failed — ${facts.projectName} run #${facts.runId}`,
+    result.verdict === 'inconclusive'
+      ? `? Piwi gate inconclusive — ${facts.projectName} run #${facts.runId}`
+      : result.passed
+        ? `✔ Piwi gate passed — ${facts.projectName} run #${facts.runId}`
+        : `✖ Piwi gate failed — ${facts.projectName} run #${facts.runId}`,
     `  ${facts.totalTests} tests, ${facts.failedTests} failed, ${facts.newRegressions} new, ${facts.newFlaky} newly flaky, ${facts.flakyTests} flaky`,
   ];
   if (facts.quarantinedFailures > 0) {
@@ -325,6 +350,10 @@ export function formatGateResult(result: GateResult): string {
   if (facts.resources?.reported) {
     const { leaks, newLeaks } = facts.resources;
     lines.push(`  ${leaks.length} ${leaks.length === 1 ? 'leak' : 'leaks'}, ${newLeaks.length} new`);
+  }
+  if (facts.incident) {
+    lines.push(`  ? The run is an environment incident: ${facts.incident.reason}`);
+    lines.push('  Re-run once the environment is back, or clear the flag on the run page if it is wrong.');
   }
   for (const violation of result.violations) lines.push(`  ✖ ${violation.message}`);
   for (const warning of result.warnings ?? []) lines.push(`  ⚠ ${warning}`);

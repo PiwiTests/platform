@@ -11,9 +11,12 @@
  *   0  policy satisfied
  *   1  policy violated
  *   2  the gate could not be evaluated (bad arguments, unreachable dashboard)
+ *   3  inconclusive: the run is an environment incident, so it cannot say
+ *      whether the change is good
  *
  * A gate that cannot run exits 2 rather than 0, so a misconfigured pipeline
- * fails loudly instead of silently waving every merge through.
+ * fails loudly instead of silently waving every merge through. An inconclusive
+ * run is non-zero for the same reason, and distinct so a pipeline can re-run.
  */
 import * as fs from 'node:fs';
 import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/core/gate';
@@ -21,6 +24,7 @@ import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/c
 const EXIT_OK = 0;
 const EXIT_VIOLATED = 1;
 const EXIT_ERROR = 2;
+const EXIT_INCONCLUSIVE = 3;
 
 interface GateArgs {
   serverUrl: string;
@@ -66,7 +70,7 @@ Other:
   --json                   Print the raw result as JSON instead of a summary
   -h, --help               Show this help
 
-Exit codes: 0 satisfied, 1 violated, 2 could not evaluate.
+Exit codes: 0 satisfied, 1 violated, 2 could not evaluate, 3 inconclusive (an environment incident).
 `.trim();
 
 /** Read `--flag value` / `--flag=value`, or undefined when absent. */
@@ -189,5 +193,6 @@ export async function runGate(argv: string[], env: NodeJS.ProcessEnv = process.e
     console.log(formatGateResult(result));
   }
 
+  if (result.verdict === 'inconclusive') return EXIT_INCONCLUSIVE;
   return result.passed ? EXIT_OK : EXIT_VIOLATED;
 }

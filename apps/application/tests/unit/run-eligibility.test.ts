@@ -39,6 +39,7 @@ const EXCLUDED: Record<RunUse, string[]> = {
   'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
   notifications: ['flake-lab', 'probe'],
+  'run-health': ['flake-lab', 'probe'],
 };
 
 /** The uses that leave out an environment incident. */
