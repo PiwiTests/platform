@@ -42,6 +42,7 @@ export const shopPage = (title: string, body: string, { signedIn = true, script 
     <a class="brand" href="/shop">Piwi Outdoor</a>
     <a href="/shop">Products</a>
     <a href="/shop/cart" aria-label="Cart">Cart (<span id="cart-count">0</span>)</a>
+    <a href="/shop/orders">Orders</a>
     <span id="shopper"></span>
     <button type="button" id="sign-out" hidden>Sign out</button>
   </header>

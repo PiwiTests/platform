@@ -18,7 +18,7 @@ npm test
 
 Results appear at `http://localhost:3000` under the `playwright-fixtures-example` project. Point elsewhere with `PIWI_DASHBOARD_URL` / `PIWI_PROJECT_NAME`.
 
-> **One test fails on purpose.** `failing-locator.spec.ts` clicks a renamed `data-testid` to demonstrate what the fixtures capture on failure — the ARIA snapshot, a fresh locator suggestion (Playwright annotation), and the dashboard's *Alternative locators* panel.
+> **One test fails and one leaks on purpose.** `failing-locator.spec.ts` clicks a renamed `data-testid` to demonstrate what the fixtures capture on failure — the ARIA snapshot, a fresh locator suggestion (Playwright annotation), and the dashboard's *Alternative locators* panel.
 
 ## What each spec demonstrates
 
@@ -38,6 +38,7 @@ Results appear at `http://localhost:3000` under the `playwright-fixtures-example
 | `before-all.spec.ts` | `beforeAll` activity is intentionally **not** captured |
 | `custom-fixtures.spec.ts` | Dashboard capture composed with your own fixtures (`fixtures-composed.ts`) |
 | `tags-and-ownership.spec.ts` | Test tags (both declaration styles) and `piwi:` owner / priority / feature / link annotations |
+| `resource-leak.spec.ts` | **Intentional leak** → a context opened and never closed, listed with its line in the run's summary and on the *Resources* tab |
 | `shop.spec.ts` | A small shop (`/shop`) driven through page objects the fixtures provide (`shop-fixtures.ts`): sign in, add to cart, place an order |
 | `shop-recorded.spec.ts` | An empty test to [record into from your editor](#record-a-test-from-your-editor) |
 
@@ -79,6 +80,26 @@ The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [
 5. **Stop and undo.** **Stop** in the browser or the editor. One **Undo** removes the whole recording; **Redo** puts it back.
 6. **A new test.** Put the cursor below the last test of `tests/shop.spec.ts` and record again: a whole `test(…)` is written, taking the page objects as fixtures, `async ({ page, loginPage, productsPage, checkoutPage }) => …`, with no import or `new`.
 7. **Run it.** Rename `test.fixme` to `test` and run the spec: it passes (`E2E_PASSWORD` comes from `.env`).
+
+## What the reporter captures here
+
+`playwright.shared.ts` keeps every default on and adds what is off by default:
+
+- **Resources** (on by default): the run's CPU by process, the time spent waiting for a CPU, peak memory and disk,
+  each worker's event loop (with the fixtures), and the browsers, contexts and pages left open. The run's summary and
+  its *Resources* tab show them; `leakCheck: 'fail'` would fail the test that leaks.
+- **Page inventory** (`capturePageInventory: true`): the controls and links each page shows on passing runs, so the
+  dashboard names the ones no test uses (the shop's **Orders** link, for one).
+- **Declared surface**: `piwi.manifest.json` lists the app's pages, and the Nitro instrumentation serves its routes,
+  so a page no test reaches is named (`/shop/orders`).
+- **Failure evidence**: `wrapConfig` defaults the trace to `retain-on-failure` with DOM and accessibility snapshots
+  and keeps a screenshot; the config adds a video (`video: 'retain-on-failure'`).
+- **Server traces and backend logs** through `@piwitests/instrumentation-nitro`, and the ARIA snapshot of passing
+  tests, both on by default.
+- **Ownership and features**: the shop's tests carry tags and `piwi:owner` / `piwi:feature` annotations.
+
+Code reach (`captureCodeReach`) stays off: the app's scripts are inline in its pages, so there is no source file to
+map them to.
 
 ## The two setup options
 
