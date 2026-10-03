@@ -8,8 +8,8 @@ the recorder itself can be reused unchanged: a spike ran Piwi Picker's recorder 
 produces it, inside a browser launched by Playwright, and the code was regenerated in Node 2 to 7 ms after each
 captured action.
 
-**Status.** Proposed 2026-10-03. Nothing built. The spike in the [appendix](#appendix-the-spike) is the evidence for the
-feasibility claims; it is not part of the repository.
+**Status.** Proposed 2026-10-03. Nothing built. The three spikes in the [appendix](#appendix-the-spikes) are the
+evidence for the feasibility claims; they are not part of the repository.
 
 **Summary.** VS Code users have a recorder: Microsoft's Playwright extension records into a new file or at the cursor,
 through Playwright's own code generator. Users of WebStorm, IntelliJ IDEA and Rider have none: JetBrains' Test
@@ -27,8 +27,11 @@ new page), and an editor service both IDE plugins run. This plan connects them:
   uploads, the project's test id attribute, environment variable names that stay stable, imports placed in the file.
 - **Edit a recording before it is code**: a step list with every step's other locators, assertions in two clicks, the
   locator at the caret highlighted in the browser.
-- **Continue from an existing test**: run a test up to the caret through Piwi's capture fixtures, then record from the
-  page it left.
+- **Record at a breakpoint**: run a test up to the caret, an ordinary IDE breakpoint, the breakpoint a debug session is
+  paused at, or a `page.pause()` line, through Piwi's capture fixtures; record from the page it reached, then let the
+  test go on.
+- **Start from a view that is already open**: the window of the last recording, a test's window, a Chromium started
+  with a debugging port, or a tab of the developer's own browser.
 - **Other ways in**: a recording made in the developer's own browser with Piwi Picker, streamed to the IDE as it
   happens; a bug report or a scenario gap opened as a test.
 
@@ -140,8 +143,8 @@ What exists elsewhere, for comparison:
 The launcher is a Node child process of the editor service (`child_process.fork`, one per recording session) that
 starts the browser with the project's own Playwright, loads `record-ide.js` into every page, and passes the recorder's
 messages to the service. A child, not the service's own process: Playwright keeps a driver process and pipes, a stuck
-browser must not stall diagnostics, and **Stop** ends everything by ending the child. It runs in the folder of the
-Playwright config, so relative paths (`storageState`) resolve as they do in a test run.
+browser must not stall diagnostics, and ending the child ends everything, the browser included. It runs in the folder
+of the Playwright config, so relative paths (`storageState`) resolve as they do in a test run.
 
 1. **Playwright**: `createRequire(<config folder>)` resolves `playwright-core` or `@playwright/test`, as
    `resolvePlaywrightCli` does. Missing: the session fails with "Playwright is not installed in <folder>".
@@ -225,7 +228,7 @@ export interface RecordResult {
 }
 export const RECORD_REQUEST = 'piwi/record';
 
-/** `piwi/stopRecording`: stop; the browser closes. */
+/** `piwi/stopRecording`: stop recording; the browser stays open for the next recording (Part 7) until it is closed. */
 export interface StopRecordingParams { sessionId: string }
 export const STOP_RECORDING_REQUEST = 'piwi/stopRecording';
 
@@ -359,35 +362,65 @@ the extension never did.
 7. **Keyboard first.** One shortcut starts a recording at the caret, the same one stops it, and the browser panel's
    buttons have keys.
 
-## Part 5: Continue from an existing test
+## Part 5: Record at the caret or at a breakpoint
 
 The most common case is not a new test: a test reaches the checkout page and the next steps are missing. Recording
-from a fresh browser would mean replaying the start by hand. The capture fixtures can hand the page to the recorder at
-the right moment instead:
+from a fresh browser would mean replaying the start by hand. The capture fixtures can hand the test's page to the
+recorder at the right line instead.
 
-1. The developer puts the caret inside a test and runs **Record from here**. The service starts the run itself, since
-   it holds the channel (today the clients run tests, from commands the service builds), with the project's CLI:
-   `playwright test <file>:<line> --project=<p> --headed --workers=1 --retries=0 --timeout=0`, and
-   `PIWI_RECORD_AT=<file>:<line>`, `PIWI_RECORD_BUNDLE=<path of record-ide.js>`,
-   `PIWI_RECORD_CHANNEL=<a named pipe the service listens on>` and `PIWI_ORIGIN=record`.
-2. In the worker, the locator proxy compares each action's call site with `PIWI_RECORD_AT` before running it. At the
-   first action at or after the caret's line in that file, or when the test ends first (the same `context.close`
-   hook as `maybeOpenPicker`), it stops the test's progress: lifts the timeout (`testInfo.setTimeout(0)`), loads the
-   bundle into the context (`addInitScript` for the next documents, `evaluate` for the current one), and connects to
-   the channel.
-3. The session is the same as in Part 1: the events go to the service, the block is written at the caret, without
-   the opening `page.goto` a fresh browser needs (a `renderSpec` option), since the page is where the test left it.
-4. **Stop** ends the test as skipped (`testInfo.skip()`, "recorded with Piwi"); the lines after the caret never run.
-   `PIWI_ORIGIN=record` is a new origin the reporter does not submit, so the run stays out of the project's history.
+### 5.1 The hand-off
 
-Everything the test does before the caret runs as it always does: `webServer`, `globalSetup`, the setup project,
-`beforeEach` hooks and the project's own fixtures. The same mechanism also gives **Record a test here** a
-second mode, through the runner, for a project whose state comes from fixtures rather than a `storageState` file.
+Every way of asking (5.2) ends in the same record request: a file and a line, the channel to the editor service (a
+named pipe it listens on) and the path of `record-ide.js`. In the worker, the capture fixtures act on it:
 
-It needs the capture fixtures (`import { test } from './fixtures'`, which `piwi init` writes). Without them, the
-session says so, offers `piwi init`, and falls back to a fresh browser. Actions that do not go through a locator
-(`page.goto`, `page.keyboard`) are seen through Playwright's instrumentation listener, which the resource ledger
-already uses (`resource-ledger.ts`), behind the same feature check.
+1. Before running each action, the locator proxy checks for a request: a requested line this action's call site has
+   reached (at or after it, in that file), or a request a debugger has just set. At that action, or when the test ends
+   first (the same `context.close` hook as `maybeOpenPicker`), it holds the test there: lifts the timeout
+   (`testInfo.setTimeout(0)`), loads the bundle into the context (`addInitScript` for the next documents, `evaluate`
+   for the current one), and connects to the channel.
+2. The session is the same as in Part 1: the events go to the service, and the block is written at the requested line,
+   before the statement that was about to run, without the opening `page.goto` a fresh browser needs (a `renderSpec`
+   option), since the page is where the test left it. Inside a page object, the block uses `this.page` instead of
+   `page`; the service reads which one is in scope from the file.
+3. **Stop** offers two endings. **End the test** skips it (`testInfo.skip()`, "recorded with Piwi"): the lines after
+   the block never run. **Continue the test** runs the remaining lines on the page as the recording left it, which
+   checks at once that the new steps fit what follows. With several requested lines, the next one reached opens the
+   recorder again.
+4. A run that records is never reported: `PIWI_ORIGIN=record` is a new origin the reporter does not submit.
+
+Everything the test does before that line runs as it always does: `webServer`, `globalSetup`, the setup project,
+`beforeEach` hooks and the project's own fixtures. The same hand-off gives **Record a test here** a second mode, through
+the runner, for a project whose state comes from fixtures rather than a `storageState` file.
+
+### 5.2 Four ways to ask
+
+| Way | What the developer does | How the request reaches the worker |
+| --- | --- | --- |
+| The caret | **Record from here** inside a test | Piwi starts the run, since it holds the channel (today the clients run tests, from commands the service builds): `playwright test <file>:<line> --project=<p> --headed --workers=1 --retries=0 --timeout=0`, with `PIWI_RECORD_AT=<file>:<line>`, `PIWI_RECORD_CHANNEL` and `PIWI_RECORD_BUNDLE` |
+| The IDE's own breakpoints, without debugging | Sets ordinary line breakpoints in the test, then **Run and Record at Breakpoints** | The same run; `PIWI_RECORD_AT` lists the test's enabled line breakpoints, read from the platform's breakpoint manager (`XBreakpointManager`) or `vscode.debug.breakpoints`. No debugger attaches: the breakpoints only say where. |
+| A breakpoint a debug session is paused at | Debugs the test as usual (WebStorm's Playwright debugging, Microsoft's extension), and at a pause clicks **Record from here** | The client evaluates one assignment in the paused frame, `globalThis.__piwiRecordRequested = { file, line, channel, bundle }`, through the platform's debugger evaluator (`XDebuggerEvaluator`) or the debug adapter's `evaluate` request, then resumes. The hand-off happens at the next action, so the test stays at the breakpoint while recording. |
+| `page.pause()` in the code | Writes `await page.pause()` where the steps should go and runs the test headed, from anywhere | The capture fixtures replace `page.pause` on the pages they instrument: while an editor service runs for the workspace, it hands off to Piwi instead of opening Playwright's Inspector, and the block replaces the `page.pause()` line. |
+
+The first two need only the run Piwi starts. The other two also work in runs Piwi did not start (a debug session, a
+terminal): the debugger carries the request in the assignment it evaluates, and `page.pause()` finds the service
+through a discovery file, `~/.piwi/editor.json` (the channel, a token, the bundle's path and the workspace's root;
+readable by the user only, removed when the service stops), the pattern of the desktop app's `~/.piwi/desktop.json`.
+
+The third way was checked in a spike ([appendix B](#b-a-breakpoint-opens-the-recorder)): a breakpoint set through
+Node's inspector protocol, the assignment evaluated in the paused frame, and the next action loaded the recorder into
+the open page, with the email the earlier lines had typed still there. The two recorded steps came out without a
+`goto`, and the test then went on to the next page.
+
+### 5.3 Limits
+
+- **The capture fixtures** are needed (`import { test } from './fixtures'`, which `piwi init` writes). Without them,
+  the session says so, offers `piwi init`, and falls back to a fresh browser. Actions that do not go through a locator
+  (`page.goto`, `page.keyboard`) are seen through Playwright's instrumentation listener, which the resource ledger
+  already uses (`resource-ledger.ts`), behind the same feature check.
+- **A visible browser.** The runs Piwi starts add `--headed`. A debug session of a headless run cannot show the
+  recorder: Piwi says so and offers to run the test again headed.
+- **Breakpoint conditions and hit counts** are not evaluated without a debugger: **Run and Record at Breakpoints**
+  stops at the first pass on the line. A conditional breakpoint needs the debugging way.
 
 ## Part 6: Other ways in
 
@@ -405,6 +438,32 @@ already uses (`resource-ledger.ts`), behind the same feature check.
    recording at that page.
 4. **From the desktop app, without an IDE plugin.** The launcher is a Node program the app's sidecar can run as well,
    writing into a linked folder; useful for editors without a Piwi plugin. Later, if asked for.
+
+## Part 7: A view that is already open
+
+Most recordings start from an address: `startUrl` (Part 1.4), prefilled with the last one, or the route of a scenario
+gap. Four more starts reuse a window that is already on the right view:
+
+1. **The window of the last recording.** **Stop** keeps the browser open: **Record a Test Here** or **Record Steps
+   Here** at another caret continues in that window, from the view it is on, until the window or the project is closed.
+2. **The window of a test**, held at the caret, a breakpoint or `page.pause()` (Part 5).
+3. **A Chromium already open with a debugging port**: a browser started with `--remote-debugging-port` and its own
+   profile (a debugging profile, Chrome for Testing). **Record in an Open Browser…** lists its pages; the launcher
+   attaches with `connectOverCDP`, loads the recorder into the chosen page and the next ones, and records. Checked in
+   a spike ([appendix C](#c-attaching-to-an-open-window)): attached in 158 ms to a page holding a half-filled form,
+   which stayed as it was, and followed a navigation. Chrome's everyday profile is out of reach: since Chrome 136,
+   remote debugging needs a separate profile, so the IDE cannot attach to the window the developer browses with.
+   That window is Piwi Picker's (next item).
+4. **A tab of the developer's own browser.** Piwi Picker records there and streams to the IDE (Part 6.1), or hands the
+   tab over: **Open in a Recording Browser** sends the IDE the tab's address and the site's sign-in (cookies and
+   storage, as Save login for tests reads them, asked for in that click), and the launcher opens the same page in a
+   Playwright browser, signed in.
+
+**What none of them can do**: generated code starts from an address. What the page held before the recording (a typed
+value, an open menu, an application's state in memory) is not in the code: in appendix C, the email typed before
+attaching is in the window, not in the block. The code needs the steps that led there: record from earlier, or record
+at a breakpoint (Part 5), where the test's earlier lines rebuild that state. When the recorder attaches to an open
+page, it can offer the fields that already hold a value (never a secret) as fill steps at the start of the block.
 
 ## With or without the desktop app
 
@@ -432,8 +491,9 @@ Each PR is usable on its own; sizes are relative (S, M, L).
 | 6 | Assertions while recording (browser panel and IDE), in the extension too | M |
 | 7 | The locator at the caret in the browser, and picking a locator into the code | M |
 | 8 | Run and Verify ×3 after Stop; the desktop job variant | S |
-| 9 | Continue from an existing test (Part 5): fixture hook, the service's run and channel, **Record from here** | L |
+| 9 | Record at the caret or a breakpoint (Part 5): the hand-off, the four ways to ask, `~/.piwi/editor.json` | L |
 | 10 | Part 6: live stream from Piwi Picker, bug report to test, gap to test (one PR each) | M |
+| 11 | A view that is already open (Part 7): keep the window, attach over the DevTools protocol, a tab handed over | M |
 
 PRs 1 and 2 are the first usable release. PR 3 should follow at once: without it, a project with its own test id
 attribute or no `baseURL` gets worse code from the IDE than it expects.
@@ -474,8 +534,12 @@ attribute or no `baseURL` gets worse code from the IDE than it expects.
 - **Playwright versions.** The launcher uses the project's Playwright, so only long-standing APIs (`addInitScript`,
   `exposeBinding`, the reporter API, `--list`); generated code must match the project's version (`contentFrame()`
   from 1.43). The oldest version is the one the reporter supports.
-- **Continue from an existing test** depends on the capture fixtures and, for actions without a locator, on Playwright's
-  instrumentation listener, an internal API the resource ledger already feature-checks.
+- **Recording at the caret or a breakpoint** depends on the capture fixtures and, for actions without a locator, on
+  Playwright's instrumentation listener, an internal API the resource ledger already feature-checks.
+- **Taking over `page.pause()`** changes what a Playwright method does in the project. It happens only while an
+  editor service runs for the workspace and the run is headed, and the first time it asks (Open questions).
+- **Attaching to an open window** needs Chromium with a debugging port and a separate profile; the everyday browser
+  stays out of reach, by Chrome's design.
 
 ## Open questions
 
@@ -492,6 +556,8 @@ attribute or no `baseURL` gets worse code from the IDE than it expects.
    bundle are FSL, the reporter that holds the CLI is MIT. Ship it from an FSL package, or not at all?
 5. **Names of environment variables for secrets**: from the field's label (`E2E_PASSWORD`), or with a project prefix
    set in the reporter's options?
+6. **`page.pause()`**: hand off to Piwi whenever an editor service runs, or ask once per project? Recommendation: ask
+   the first time, and keep the answer in the workspace settings.
 
 ## Not in this plan
 
@@ -510,10 +576,14 @@ attribute or no `baseURL` gets worse code from the IDE than it expects.
   (Part 3, item 6); found by reading the code, not reproduced.
 - `piwi/renderSteps` writes paths whatever the project's `baseURL` (Part 3, item 4).
 
-## Appendix: the spike
+## Appendix: the spikes
 
-`record-host.ts`, about 190 lines run with `tsx` against this repository's `node_modules` (Playwright 1.63, headless
-Chromium), with `apps/extension/dist/record-panel.js` from `npm run extension:build` (233 KB, unchanged):
+Three scripts, run with this repository's `node_modules` (Playwright 1.63, headless Chromium) and
+`apps/extension/dist/record-panel.js` from `npm run extension:build` (233 KB, unchanged). None is in the repository.
+
+### A. The recorder in a browser launched by Playwright
+
+`record-host.ts`, about 190 lines run with `tsx`:
 
 1. `context.exposeBinding('__piwiHost', …)` kept the recording state in Node and answered `piwi-session-storage`,
    `piwi-append-recording-event`, `piwi-ping` and `piwi-tab-zoom`.
@@ -561,3 +631,48 @@ A second check read the resolved `use` options of `apps/application/playwright.c
 (`onBegin` prints `config.projects[].use`) run as `playwright test --list --reporter=<file>`: 2.2 s, `baseURL`,
 `viewport`, `userAgent`, `deviceScaleFactor`, `extraHTTPHeaders` and `launchOptions` as Playwright resolved them.
 `--reporter=json` leaves `use` out.
+
+### B. A breakpoint opens the recorder
+
+`test-flow.js` (plain JavaScript, so its lines are exact) stands for a test: it opens a sign-in page and types an
+email, and before each action calls a hook that stands for the capture fixtures' locator proxy.
+`debugger-controller.js` stands for the IDE's debugger: it starts the test with `--inspect-brk`, sets a line breakpoint
+through Node's inspector protocol (`Debugger.setBreakpointByUrl`) on the line before the Continue click, and when it is
+hit, evaluates `globalThis.__piwiRecordRequested = { file, line }` on the paused frame (`Debugger.evaluateOnCallFrame`)
+and resumes.
+
+```
+[debugger] breakpoint set at test-flow.js:36
+[debugger] paused at test-flow.js:36; "Record from here"
+[fixture] record requested at test-flow.js:36; the page is https://shop.test/login, Email holds "dev@example.com"
+[fixture] recorded block, written at the breakpoint line:
+  await page.getByRole('checkbox', { name: 'Keep me signed in' }).check();
+  await page.getByRole('textbox', { name: 'Password' }).fill(process.env.PIWI_TEST_VALUE_1 ?? '');
+[fixture] stopped; the test continues
+[test] reached https://shop.test/account, keep-signed-in was checked before Continue
+```
+
+The hook loaded the recorder into the open page with `evaluate`, and into the next documents with `addInitScript`; the
+two recorded steps were the person's, played by Playwright's input. Not tested: Playwright's test runner (the hook is a
+function here, not the capture fixtures) and the IDEs' own debugger APIs; both IDEs' JavaScript debuggers talk to Node
+through this inspector protocol.
+
+### C. Attaching to an open window
+
+`attach-existing.js`: a Chromium started by Playwright with `--remote-debugging-port=9333` and its own profile
+(`launchPersistentContext`), on a sign-in page with the email typed, stands for the open window. A second client
+attached with `connectOverCDP`, found the page by its address and loaded the recorder; the person went on in the first
+client's page: the password, Continue, then Orders on the next page.
+
+```
+[launcher] attached to https://shop.test/login in 158 ms; Email holds "dev@example.com"
+[launcher] recorded from the open view:
+  await page.goto('/login');
+  await page.getByRole('textbox', { name: 'Password' }).fill(process.env.PIWI_TEST_VALUE_1 ?? '');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page).toHaveURL(/\/account(?:[?#]|$)/);
+  await expect(page.getByRole('button', { name: 'Orders' })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Orders' }).click();
+```
+
+The email typed before attaching is in the window and not in the code (Part 7). Not tested: a Chrome started by hand.
