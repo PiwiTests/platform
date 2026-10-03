@@ -528,19 +528,12 @@ object Glue {
      * replaces text around it, leaves it after the last line break the change wrote, else at the change's start.
      */
     fun followLineStart(text: CharSequence, line: Int, changes: List<TextChange>): Int {
-        var offset = text.length
-        var current = 0
-        var start = 0
-        while (current < line.coerceAtLeast(0) && start <= text.length) {
-            val next = text.indexOf('\n', start)
-            if (next < 0) {
-                start = text.length + 1
-                break
-            }
-            start = next + 1
-            current++
+        var offset = 0
+        var lines = 0
+        while (lines < line && offset < text.length) {
+            offset = text.indexOf('\n', offset).let { if (it < 0) text.length else it + 1 }
+            lines++
         }
-        if (start <= text.length) offset = start
         for (change in changes) {
             val end = change.offset + change.oldLength
             offset = when {

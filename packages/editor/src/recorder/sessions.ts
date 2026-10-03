@@ -22,6 +22,7 @@ import {
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { sessionFromEvents, type RawCaptureEvent, type RecordedStep } from '@piwitests/core/recording';
 import type {
+  PageCandidatesResult,
   PiwiCommand,
   RecordInto,
   RecordParams,
@@ -32,7 +33,8 @@ import type {
 } from '../protocol.js';
 import { recorderBrowser, type RecorderBrowser } from './context-options.js';
 import type { LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
-import { pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
+import { missingImports } from './imports.js';
+import { declaredNamesAt, pageCandidates, recordingPlacement, testImportOf } from './page-candidates.js';
 import type { ProjectOptions } from './project-options.js';
 
 /** The files of the editor service's `dist/` a recording needs beside the language server. */
@@ -125,6 +127,11 @@ export interface RecordingSessionsOptions {
   launch?: LauncherFactory;
   /** The environment: `PIWI_RECORDER_HEADLESS=1` opens the browser headless. The process's by default. */
   env?: Record<string, string | undefined>;
+  /**
+   * The current text of the file at `uri`, as the editor holds it; null when the service holds none. An update's
+   * imports leave out what the file imports already; without it, the text the recording started from is read.
+   */
+  readText?(uri: string): string | null;
 }
 
 type Final = 'stopped' | 'failed';
@@ -132,6 +139,8 @@ type Final = 'stopped' | 'failed';
 interface Session {
   id: string;
   uri: string;
+  /** The file's text when the recording started. */
+  text: string;
   into: RecordInto;
   state: RecordingUpdate['state'];
   events: RawCaptureEvent[];
@@ -241,6 +250,20 @@ function siblingTestImport(file: string): string | null {
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
+/** Why a recording into `into` cannot start where the caret is (`context`); null when it can. */
+function placementRefusal(into: RecordInto, context: PageCandidatesResult['context']): string | null {
+  if (into === 'steps' && (context === 'class' || context === 'file'))
+    return 'Put the cursor inside a test, a method or a function to record steps there.';
+  if (into !== 'test') return null;
+  if (context === 'class')
+    return 'A test cannot go inside a class: put the cursor inside a method to record its steps, or outside the class for a new test.';
+  if (context === 'test')
+    return 'A new test cannot go inside another test: record steps there instead, or put the cursor outside the test for a new test.';
+  if (context === 'function')
+    return 'A new test cannot go inside another function: record steps there instead, or put the cursor outside the function for a new test.';
+  return null;
+}
+
 /** The recorded block as a client writes it: no trailing newline, and steps without the test body's indentation. */
 function blockCode(code: string, into: RecordInto): string {
   const lines = code.replace(/\n+$/, '').split('\n');
@@ -272,7 +295,10 @@ export class RecordingSessions {
     if (into !== 'steps' && into !== 'test' && into !== 'file')
       return { ok: false, message: 'Unknown recording target.' };
     const line = Number.isInteger(params.line) ? params.line : 0;
-    const page = params.page?.trim() || pageCandidates(target.text, line).default;
+    const at = pageCandidates(target.text, line);
+    const refusal = into === 'file' ? null : placementRefusal(into, at.context);
+    if (refusal) return { ok: false, message: refusal };
+    const page = params.page?.trim() || at.default;
     if (!isPageExpression(page)) {
       return {
         ok: false,
@@ -339,7 +365,7 @@ export class RecordingSessions {
       ...(into === 'file'
         ? { testImport: testImportOf(target.text) ?? siblingTestImport(target.file) ?? undefined }
         : {}),
-      ...(into !== 'file' ? { bodyImports: 'none' as const } : {}),
+      ...(into !== 'file' ? { bodyImports: 'none' as const, declaredNames: declaredNamesAt(target.text, line) } : {}),
       locators: 'stable',
       urlChecks: true,
       page,
@@ -354,6 +380,7 @@ export class RecordingSessions {
     const session: Session = {
       id: randomUUID(),
       uri: params.uri,
+      text: target.text,
       into,
       state: 'starting',
       events: [],
@@ -521,6 +548,15 @@ export class RecordingSessions {
     void session.exited.then(() => clearTimeout(timer));
   }
 
+  /** The text of the session's file now, else as it was when the recording started. */
+  private currentText(session: Session): string {
+    try {
+      return this.options.readText?.(session.uri) ?? session.text;
+    } catch {
+      return session.text;
+    }
+  }
+
   private send(update: RecordingUpdate): void {
     try {
       this.options.notify(update);
@@ -553,7 +589,7 @@ export class RecordingSessions {
       session.latest = {
         ...base,
         code: blockCode(result.code, session.into),
-        imports: session.into === 'file' ? [] : result.imports,
+        imports: session.into === 'file' ? [] : missingImports(this.currentText(session), result.imports),
         steps: recorded.steps.map((step, i) => stepOf(step, i, result, preferLocators)),
         warnings: result.warnings.map((w) => ({
           step: w.step,
