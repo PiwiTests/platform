@@ -501,8 +501,8 @@ export const HELP_TOPICS = {
     doc: 'features/resource-leaks#what-it-reports',
   },
   'run.resource-pages': {
-    title: 'Open pages by worker',
-    text: 'How many pages were still open in each worker at the end of each of its tests. A line that keeps rising is a page left open test after test; every line shares one scale.',
+    title: 'Open pages over time',
+    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows. A line that keeps rising is a page left open test after test.',
     doc: 'features/resource-leaks#in-the-dashboard',
   },
   'run.resource-machine': {
