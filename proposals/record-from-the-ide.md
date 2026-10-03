@@ -32,6 +32,8 @@ new page), and an editor service both IDE plugins run. This plan connects them:
   test go on.
 - **Start from a view that is already open**: the window of the last recording, a test's window, a Chromium started
   with a debugging port, or a tab of the developer's own browser.
+- **Choose the page the steps run on**: `this.page` in a page object, `adminPage` or `userPage` in a test with two
+  users, a popup's variable; proposed from the code around the caret, exact when the test runs.
 - **Other ways in**: a recording made in the developer's own browser with Piwi Picker, streamed to the IDE as it
   happens; a bug report or a scenario gap opened as a test.
 
@@ -217,6 +219,8 @@ export interface RecordParams {
   /** A path on the `baseURL`, or an absolute URL; the `baseURL` when absent. */
   startUrl?: string | null;
   title?: string | null;
+  /** The expression the steps run on (Part 8); the default of `piwi/pageCandidates` when absent. */
+  page?: string | null;
 }
 export interface RecordResult {
   ok: boolean;
@@ -257,6 +261,7 @@ export interface RecordingUpdate {
 export const RECORDING_NOTIFICATION = 'piwi/recordingChanged';
 ```
 
+`piwi/pageCandidates` (Part 8) answers, for a position, the expressions the steps could run on and the default.
 `piwi/editRecording` (Part 4) and the requests of Parts 4 and 5 follow the same shape. A client command `piwi.record`
 lets the service offer a recording from a summary line or a quick fix (an empty test body, a scenario gap).
 
@@ -265,8 +270,9 @@ lets the service offer a recording from a summary line or a quick fix (an empty 
 - **Entry points**: **Tools → Piwi → Record a Test Here**; the editor's context menu; an intention (Alt+Enter) inside
   a spec: **Record a test here** between tests, **Record steps here** inside a test body; **New → Playwright Test
   (Recorded)** in the Project view, which creates the file first.
-- **First run in a project**: a popup with the Playwright project (the names `piwi/record` answers with) and the start
-  page, prefilled from the last recording, kept in `.idea/workspace.xml` (`PiwiLocalSettings`).
+- **First run in a project**: a popup with the Playwright project (the names `piwi/record` answers with), the start
+  page and the page the steps run on (Part 8), prefilled from the last recording, kept in `.idea/workspace.xml`
+  (`PiwiLocalSettings`).
 - **The recorded block**: a `RangeMarker` over the block, tinted with a new `PIWI_RECORDING_BLOCK` attribute (beside
   `PIWI_FAILING_TEST`, in `PiwiColorSettingsPage` and both default schemes). Each update replaces the marker's text in
   a write command. A block inlay above it shows the state and **Stop**, **Pause**, **Assert…**, and the status bar
@@ -465,6 +471,41 @@ attaching is in the window, not in the block. The code needs the steps that led 
 at a breakpoint (Part 5), where the test's earlier lines rebuild that state. When the recorder attaches to an open
 page, it can offer the fields that already hold a value (never a secret) as fill steps at the start of the block.
 
+## Part 8: The page the steps run on
+
+`renderSpec` writes `page` as the receiver of every line: locators, `goto`, `keyboard`, URL checks, viewport lines, a
+helper's first argument (`fill(page, …)`), a page object's constructor (`new CartPage(page)`) and the test's parameters.
+That is right in a test whose fixture is `page`, and wrong in a page object (`this.page`), a test with two users
+(`adminPage`, `userPage`), after a popup (`popup`), or with a fixture object (`app.page`).
+
+1. **A `page` option in `renderSpec`**: the expression every line runs on, an identifier or a member chain such as
+   `this.page` or `app.page`, checked like a catalog identifier before it is written. In the `file` and `test`
+   formats, a fixture name also goes into the test's parameters (`async ({ adminPage }) => …`). With several pages
+   (Part 3, item 6), a map from each page to its expression.
+2. **Candidates at the caret**, found by the editor service in the file's text, with the same kind of scanner as
+   `callEndLine`, no TypeScript needed: the receivers of the Playwright calls around the caret, the test's fixture
+   parameters (`{ page, adminPage }`), local variables assigned from `newPage()`, a `'popup'` event or
+   `firstWindow()`, or annotated `Page`, and `this.page` in a class with a `page` field. The default is the receiver of
+   the nearest Playwright call before the caret, else the test's `page` parameter, else `this.page` in a class.
+   `piwi/pageCandidates` returns them; `piwi/renderSteps` uses the same default, so a flow sent from Piwi Picker into
+   a page object comes out with `this.page`.
+3. **The developer picks**: in the record popup (**Steps run on: adminPage ▾**, the candidates and a field for any
+   other expression), and during the recording in the step list, which re-renders the block. A page the recording
+   opens (a popup) gets a name the developer can change (`page1` to `invoicePopup`).
+4. **Exact when the test runs** (Part 5): the capture fixtures see which page object each action of the test used
+   (the locator proxy wraps each locator with its page) and where it was written; the service reads the expression
+   at that call site. For each page the test holds, the name the test itself gives it is known, and the steps
+   recorded in that page's window get it: record in the second user's window and the lines say `userPage`. In a debug
+   session, the paused frame's variables give the same answer: the client lists those holding a `Page`.
+5. **Two actors in one recording.** The launcher can open one window per actor, each with its own `storageState` (a
+   requester and an approver, from the project's setup files), each tied to a variable. The steps are written in the
+   order they happen, against the variable of the window they happen in: a workflow between two roles, recorded in
+   one go.
+6. **A locator as the receiver** (later): steps inside a container the test already holds
+   (`const dialog = page.getByRole('dialog')`) written as `dialog.getByRole(…)`, each locator verified inside that
+   container rather than on the whole page. Navigation, keyboard and URL checks still need the page, so this takes two
+   choices instead of one.
+
 ## With or without the desktop app
 
 | Setup | What a recording gets |
@@ -485,23 +526,27 @@ Each PR is usable on its own; sizes are relative (S, M, L).
 | --- | --- | --- |
 | 1 | `record-ide.js` (extension build), the launcher, its headless test; both IDE plugins ship the two files | M |
 | 2 | Recording sessions in the service, the protocol, the JetBrains client (Part 2), the VS Code client (commands, live block, status bar), docs in `features/editors.md` | L |
-| 3 | Part 3, items 1 to 4: test id attribute, stable variable names, imports as data, `baseURL`-aware URLs | M |
+| 3 | Part 3, items 1 to 4: test id attribute, stable variable names, imports as data, `baseURL`-aware URLs; Part 8, items 1 to 3: the page the steps run on | M |
 | 4 | Part 3, items 5 to 12: frames, popups, dialogs, downloads, uploads, other origins, matchers, steps document v2 | L |
 | 5 | The step list (`piwi/editRecording`; JetBrains tab, then a VS Code tree view) | M |
 | 6 | Assertions while recording (browser panel and IDE), in the extension too | M |
 | 7 | The locator at the caret in the browser, and picking a locator into the code | M |
 | 8 | Run and Verify ×3 after Stop; the desktop job variant | S |
-| 9 | Record at the caret or a breakpoint (Part 5): the hand-off, the four ways to ask, `~/.piwi/editor.json` | L |
+| 9 | Record at the caret or a breakpoint (Part 5): the hand-off, the four ways to ask, `~/.piwi/editor.json`; the test's own page names (Part 8, item 4) | L |
 | 10 | Part 6: live stream from Piwi Picker, bug report to test, gap to test (one PR each) | M |
 | 11 | A view that is already open (Part 7): keep the window, attach over the DevTools protocol, a tab handed over | M |
+| 12 | Two actors in one recording (Part 8, item 5) | M |
 
 PRs 1 and 2 are the first usable release. PR 3 should follow at once: without it, a project with its own test id
 attribute or no `baseURL` gets worse code from the IDE than it expects.
 
 ## Verification
 
-- **Core**: unit tests for every `renderSpec` change (frames, pages, dialogs, variable names, imports, URLs) and for
-  `parseSteps` refusing a `v: 2` document in the old reader's terms.
+- **Core**: unit tests for every `renderSpec` change (frames, pages, dialogs, variable names, imports, URLs, the page
+  expression, including one that is refused) and for `parseSteps` refusing a `v: 2` document in the old reader's
+  terms.
+- **The editor service**: page candidates on fixture files covering a test with `page`, a test with two fixtures, a
+  popup variable and a page-object class.
 - **The launcher**: `packages/editor/tests/launcher.test.ts` starts headless Chromium with the repository's
   Playwright, serves fixture pages through `context.route`, drives them with Playwright's own input (trusted, as a
   person's is), and compares the rendered block with the expected code: the spike, made a test. Frames, popups,
