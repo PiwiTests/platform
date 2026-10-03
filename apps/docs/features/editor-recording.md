@@ -56,7 +56,7 @@ JetBrains IDE, that Undo also takes back the edits you made in the file meanwhil
   each is verified to find the element alone on the page, the stable ones first and those your tests already use
   preferred. A `getByTestId` uses the attribute your config sets.
 - **Pages**: an address on the project's `baseURL` is written as a path, and the step that leads to another page is
-  followed by a wait for it.
+  followed by a wait for it, except next to a call to your own code, which waits for its pages itself.
 - **Your own code**: when the editor is connected to an instance or the [desktop app](./desktop), steps that match one
   of your [test functions](./test-functions) become a call to it.
 - **Passwords** are never recorded: the code reads them from an environment variable named after the field, such as

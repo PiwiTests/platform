@@ -68,11 +68,13 @@ The shop (`app/routes/shop/`, at `http://localhost:4173/shop`) is there to try [
    await productsPage.addToCart('Trail shoes');
    await productsPage.addToCart('Water bottle');
    await page.getByRole('link', { name: 'Cart' }).click();
+   await expect(page).toHaveURL(/\/shop\/cart(?:[?#]|$)/);
+   await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);
    await page.getByRole('button', { name: 'Checkout' }).click();
    await checkoutPage.placeOrder({ name: 'Alice Martin', address: '12 Harbour Street', city: 'La Rochelle' });
    ```
 
-   (A wait for each new page goes between them.) The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so.
+   Between two steps of your own that lead to another page, the code waits for it; a page object's call waits for its pages itself. The password is never recorded: the code reads `E2E_PASSWORD`, and a warning says so.
 4. **Pause.** Press **Pause** in the browser's recording bar, look around the shop, then **Resume**: nothing done meanwhile is written. The editor shows the pause too.
 5. **Stop and undo.** **Stop** in the browser or the editor. One **Undo** removes the whole recording; **Redo** puts it back.
 6. **A new test.** Put the cursor below the last test of `tests/shop.spec.ts` and record again: a whole `test(…)` is written, taking the page objects as fixtures, `async ({ page, loginPage, productsPage, checkoutPage }) => …`, with no import or `new`.

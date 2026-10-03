@@ -729,7 +729,9 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
    * is on another one: its URL, then its element as the only match. An app
    * can keep the previous page on screen a moment after the address changes,
    * while the next one loads; an action fails at once on a locator that
-   * matches there too, where `toHaveCount` waits for the old page to go.
+   * matches there too, where `toHaveCount` waits for the old page to go. Only
+   * between two lines of the steps' own: a catalog call on either side waits
+   * for its pages itself.
    */
   const checkNextPage = (last: number): void => {
     if (!options.urlChecks) return;
@@ -741,6 +743,19 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     const acts = next.action !== 'assert' && next.action !== 'assertVisible';
     const chosen = acts && next.target ? chooseLocator(next.target, options) : null;
     if (chosen) bodyLines.push(`  await expect(${page}.${chosen.text}).toHaveCount(1);`);
+  };
+
+  /** The catalog call that stands for the steps from `at`, if any, by start. */
+  const calls = new Map<number, RankedFunctionMatch | null>();
+  const callAt = (at: number): RankedFunctionMatch | null => {
+    if (calls.has(at)) return calls.get(at)!;
+    const step = steps[at];
+    const found = step && step.action !== 'goto' && catalog.length > 0 ? matchFunctionAt(steps, at, catalog) : null;
+    // A call cannot resize the page between the steps it stands for: those steps stay raw lines.
+    const match =
+      found && ![...viewportAt.keys()].some((v) => v > at && v <= Math.max(...found.matchedIndices)) ? found : null;
+    calls.set(at, match);
+    return match;
   };
 
   let pos = 0;
@@ -758,23 +773,19 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
       continue;
     }
 
-    const found = catalog.length > 0 ? matchFunctionAt(steps, pos, catalog) : null;
-    // A call cannot resize the page between the steps it stands for: those steps stay raw lines.
-    const match =
-      found && ![...viewportAt.keys()].some((at) => at > pos && at <= Math.max(...found.matchedIndices)) ? found : null;
+    const match = callAt(pos);
     if (match) {
       bodyLines.push(renderFunctionCall(match, page, envArgsOf(match, steps, ctx)));
       usedEntries.push(match.entry);
       const last = Math.max(...match.matchedIndices);
       for (let i = pos + 1; i <= last; i++) stepStarts[i] = stepStarts[pos]!;
       matchedSpans.push({ startStep: pos, endStep: last, functionName: match.entry.name });
-      checkNextPage(last);
       pos = last + 1;
       continue;
     }
 
     bodyLines.push(...renderRawStep(step, pos, ctx));
-    checkNextPage(pos);
+    if (!callAt(pos + 1)) checkNextPage(pos);
     pos++;
   }
 

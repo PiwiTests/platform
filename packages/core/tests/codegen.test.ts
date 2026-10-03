@@ -234,6 +234,36 @@ describe('renderSpec — with a catalog', () => {
     expect(other.code).toContain('  const loginPage = new LoginPage(page);');
   });
 
+  test('the next page is waited for between two lines of the steps, not next to a call, which waits itself', () => {
+    const cart = target({ role: 'link', accessibleName: 'Cart' });
+    const checkout = target({ role: 'button', accessibleName: 'Checkout' });
+    const steps = [
+      ...loginSteps(),
+      step({ action: 'click', target: cart, pageUrl: 'https://x.test/shop' }),
+      step({ action: 'click', target: checkout, pageUrl: 'https://x.test/cart' }),
+      ...loginSteps().map((s) => ({ ...s, pageUrl: 'https://x.test/checkout/login' })),
+    ];
+    const { code } = renderSpec(buildSession(steps, 0), {
+      catalog: [{ ...loginEntry, urlPattern: null }],
+      format: 'body',
+      bodyImports: 'none',
+      urlChecks: true,
+    });
+    expect(code).toBe(
+      [
+        '  const loginPage = new LoginPage(page);',
+        "  await page.goto('https://x.test/login');",
+        "  await loginPage.login('alice', 'secret');",
+        "  await page.getByRole('link', { name: 'Cart' }).click();",
+        '  await expect(page).toHaveURL(/\\/cart(?:[?#]|$)/);',
+        "  await expect(page.getByRole('button', { name: 'Checkout' })).toHaveCount(1);",
+        "  await page.getByRole('button', { name: 'Checkout' }).click();",
+        "  await loginPage.login('alice', 'secret');",
+        '',
+      ].join('\n'),
+    );
+  });
+
   test('a new test takes a page object the file’s tests take as a fixture, after the page', () => {
     const session = buildSession(loginSteps(), 0);
     const result = renderSpec(session, {
@@ -997,8 +1027,6 @@ describe('renderSpec — the page expression', () => {
         `  await adminPage.goto('https://x.test/login');`,
         `  await loginPage.logIn();`,
         `  await checkout(adminPage);`,
-        `  await expect(adminPage).toHaveURL(/\\/shop(?:[?#]|$)/);`,
-        `  await expect(adminPage.getByRole('searchbox', { name: 'Search' })).toHaveCount(1);`,
         `  await adminPage.getByRole('searchbox', { name: 'Search' }).fill('mug');`,
         `  await adminPage.setViewportSize({ width: 390, height: 844 });`,
         `  await adminPage.keyboard.press('Enter');`,
