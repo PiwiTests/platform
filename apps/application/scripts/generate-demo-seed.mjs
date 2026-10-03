@@ -3600,6 +3600,284 @@ function collectAnchorSec() {
 
 const ANCHOR_SEC = collectAnchorSec();
 
+// ── Hand-back outcomes and diagnosis ratings (rng-free) ────────────────────
+// What became of what Piwi handed back over the last weeks, so the Analytics
+// page's Hand-back outcomes section and the AI usage panel have something to
+// read: locator heals adopted and verified, auto-heal pull requests merged and
+// one closed, diagnoses rated and confirmed by the fix, failed gates with one
+// pull request merged anyway that then failed again, and a flaky test Flake
+// Lab proved fixed. Every row is placed before the anchor, so the rebase lands
+// it in the past.
+const HANDBACK_OUTCOMES = [];
+{
+  const anchorMs = ANCHOR_SEC * 1000;
+  const DAY_MS = 86_400_000;
+  const daysAgo = (days, hours = 0) => anchorMs - days * DAY_MS - hours * 3_600_000;
+  const add = (row) => {
+    const key = row.suggestion_key ?? '';
+    HANDBACK_OUTCOMES.push({
+      id: HANDBACK_OUTCOMES.length + 1,
+      project_id: row.project_id ?? 1,
+      kind: row.kind,
+      subject_type: row.subject_type,
+      subject_id: row.subject_id,
+      suggestion_key: key,
+      outcome: row.outcome,
+      channel: row.channel ?? 'inferred',
+      actor_user_id: null,
+      actor_api_key_id: null,
+      run_id: null,
+      commit_sha: row.commit_sha ?? null,
+      details: row.details ?? null,
+      dedupe_key: [row.kind, `${row.subject_type}:${row.subject_id}`, key, row.outcome, ''].join('|'),
+      created_at: Math.round(row.at),
+    });
+  };
+
+  // Locator heals: 12 call sites given a replacement, 8 of them now use it, 6 passed since.
+  const shopCases = TEST_CASES.filter((c) => c.project_id === 1).slice(0, 12);
+  shopCases.forEach((testCase, i) => {
+    const key = `heal-${i + 1}`;
+    const details = {
+      location: `${testCase.file_path}:${20 + i}:5`,
+      failingLocator: "getByRole('button', { name: 'Submit' })",
+      recommendedLocator: "getByRole('button', { name: 'Place order' })",
+      recommendedSig: `demo-sig-${i + 1}`,
+      failingRunId: 0,
+    };
+    const base = 24 - i * 2;
+    add({
+      kind: 'locator-heal',
+      subject_type: 'test-case',
+      subject_id: testCase.id,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(base),
+    });
+    if (i < 8) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'applied',
+        details: { ...details, label: 'matched-recommendation' },
+        at: daysAgo(base - 1),
+      });
+    }
+    if (i < 6) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(base - 1, -6),
+      });
+    }
+  });
+
+  // Auto-heal pull requests: 5 opened, 3 merged (2 verified on main since), 1 closed.
+  for (let n = 1; n <= 5; n++) {
+    const details = { prNumber: 40 + n, testCaseIds: [shopCases[n - 1].id] };
+    const key = `heal:v1:1:demo-${n}`;
+    add({
+      kind: 'auto-heal-pr',
+      subject_type: 'heal-action',
+      subject_id: n,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(22 - n * 3),
+    });
+    if (n <= 3)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'applied',
+        details,
+        at: daysAgo(21 - n * 3),
+      });
+    if (n <= 2)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(20 - n * 3),
+      });
+    if (n === 4)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(8),
+      });
+  }
+
+  // Diagnoses: the fixes of clusters 1 and 10 changed the files their diagnosis
+  // named; cluster 1 then failed again.
+  for (const clusterId of [1, 10]) {
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const diagnosis = FAILURE_DIAGNOSES.find((d) => d.cluster_id === clusterId);
+    const details = { diagnosisId: diagnosis.id, provider: diagnosis.provider, model: diagnosis.model };
+    // The live key carries the version's start time, which the rebase would leave stale here.
+    const key = `${diagnosis.id}@demo`;
+    add({
+      kind: 'diagnosis',
+      subject_type: 'cluster',
+      subject_id: clusterId,
+      suggestion_key: key,
+      outcome: 'verified',
+      commit_sha: cluster.fix_commit,
+      details,
+      at: cluster.fix_landed_at * 1000,
+    });
+    if (cluster.fix_verification === 'regressed') {
+      add({
+        kind: 'diagnosis',
+        subject_type: 'cluster',
+        subject_id: clusterId,
+        suggestion_key: key,
+        outcome: 'regressed',
+        details,
+        at: cluster.updated_at * 1000,
+      });
+    }
+  }
+
+  // The gate: 6 failed evaluations; the pull request of the third was merged
+  // anyway, and the failure it caught came back on main.
+  for (let n = 1; n <= 6; n++) {
+    const details = { prNumber: 60 + n, verdict: 'failed', rules: ['maxNewFailures'] };
+    add({
+      kind: 'gate',
+      subject_type: 'gate-evaluation',
+      subject_id: n,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(26 - n * 4),
+    });
+    if (n === 3) {
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(13),
+      });
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'regressed',
+        details: { ...details, clusterId: 1 },
+        at: daysAgo(11),
+      });
+    }
+  }
+
+  // Flake Lab: a verify run proved one flaky test fixed (not the one whose flake the lab reproduced).
+  const verifiedFlake = TEST_CASES.filter((c) => c.project_id === 1 && c.id !== FLAKE_DEMO.caseId).at(-1);
+  add({
+    kind: 'flake-verify',
+    subject_type: 'test-case',
+    subject_id: verifiedFlake.id,
+    suggestion_key: 'verify-1',
+    outcome: 'verified',
+    channel: 'cli',
+    at: daysAgo(6),
+  });
+}
+
+// Ratings on the diagnoses, and earlier versions of them, so the AI usage
+// panel has a helpful share over enough ratings, and one version an agent
+// recorded with the model it ran on.
+{
+  const RATINGS = { 1: 'up', 3: 'up', 6: 'down', 7: 'up', 10: 'up' };
+  for (const d of FAILURE_DIAGNOSES) d.feedback = RATINGS[d.cluster_id] ?? null;
+  FAILURE_DIAGNOSIS_VERSIONS[0].feedback = 'down';
+  const stalePatch = {
+    status: 'stale-file',
+    filesChecked: 1,
+    filesInPatch: 1,
+    errors: ['The file changed since the diagnosis was written.'],
+  };
+  const EARLIER = [
+    { clusterId: 3, minutes: -720, feedback: 'up', patch: appliesPatch },
+    { clusterId: 3, minutes: -1440, feedback: 'down', patch: stalePatch },
+    { clusterId: 6, minutes: -600, feedback: 'down', patch: stalePatch },
+    { clusterId: 7, minutes: -480, feedback: 'up', patch: appliesPatch },
+    { clusterId: 7, minutes: -960, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -300, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -900, feedback: null, patch: null },
+  ];
+  for (const v of EARLIER) {
+    const current = FAILURE_DIAGNOSES.find((d) => d.cluster_id === v.clusterId);
+    FAILURE_DIAGNOSIS_VERSIONS.push({
+      id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+      diagnosis_id: current.id,
+      cluster_id: v.clusterId,
+      scope: 'cluster',
+      test_runs_case_id: null,
+      status: 'completed',
+      provider: 'demo',
+      model: 'demo-simulated',
+      category: current.category,
+      confidence: 'medium',
+      summary: `Earlier take: ${current.summary}`,
+      root_cause: current.root_cause,
+      details: JSON.stringify({ ...JSON.parse(current.details), patchValidation: v.patch }),
+      error: null,
+      input_tokens: 900,
+      output_tokens: 260,
+      duration_ms: 2100,
+      context_sha: null,
+      feedback: v.feedback,
+      created_at: diagnosisTs(v.clusterId, v.minutes),
+    });
+  }
+  const agentBase = FAILURE_DIAGNOSES.find((d) => d.cluster_id === 3);
+  const agentDetails = JSON.parse(agentBase.details);
+  FAILURE_DIAGNOSIS_VERSIONS.push({
+    id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+    diagnosis_id: agentBase.id,
+    cluster_id: 3,
+    scope: 'cluster',
+    test_runs_case_id: null,
+    status: 'completed',
+    provider: 'agent',
+    model: 'demo-agent',
+    category: agentBase.category,
+    confidence: 'high',
+    summary: `Recorded by an agent: ${agentBase.summary}`,
+    root_cause: agentBase.root_cause,
+    details: JSON.stringify({
+      ...agentDetails,
+      patchValidation: undefined,
+      suggestedFix: { ...agentDetails.suggestedFix, patchValidation: appliesPatch },
+      recordedBy: { channel: 'mcp', userId: null, apiKeyId: null },
+    }),
+    error: null,
+    input_tokens: null,
+    output_tokens: null,
+    duration_ms: null,
+    context_sha: null,
+    feedback: 'up',
+    created_at: diagnosisTs(3, -200),
+  });
+}
+
 // ── Flake-lab experiment (rng-free) ─────────────────────────────────────────
 // Two days before the anchor, someone ran `piwi flake` on the checkout
 // project's flaky test: the control stayed clean in 10 runs and delaying
@@ -3855,6 +4133,7 @@ const REBASE_SQL = [
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
   // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
   // candidates to it; they are all stamped at BASE_START_MS, which the run
@@ -4740,6 +5019,9 @@ const lines = [
   '',
   '-- Diagnosis version history (references failure_diagnoses + failure_clusters)',
   insert('failure_diagnosis_versions', FAILURE_DIAGNOSIS_VERSIONS),
+  '',
+  '-- Hand-back outcomes (references projects)',
+  insert('handback_outcomes', HANDBACK_OUTCOMES),
   '',
   '-- Content-addressed case payloads (referenced by test_runs_cases, so must come first)',
   insert('case_payloads', CASE_PAYLOADS),

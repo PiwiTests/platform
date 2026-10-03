@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -74,7 +75,10 @@ vi.mock('../../server/utils/ai-provider', async (importOriginal) => {
 });
 
 const { getAppSetting } = await import('../../server/utils/app-settings');
-const { selectAutoDiagnoseClusters, streamClusterDiagnosis } = await import('../../server/utils/ai-diagnosis');
+const { selectAutoDiagnoseClusters, streamClusterDiagnosis, loadDiagnosisSystemPrompt } =
+  await import('../../server/utils/ai-diagnosis');
+const { contextStalenessHash, diagnosisPromptHash } = await import('#shared/diagnosis-staleness');
+const { DIAGNOSIS_JSON_SCHEMA } = await import('#shared/ai-diagnosis');
 const { diagnosisFrame } = await import('../../server/utils/diagnosis-stream-frames');
 const { useStreamingDiagnosis } = await import('../../app/composables/useStreamingDiagnosis');
 
@@ -110,8 +114,13 @@ async function seedCluster(n: number): Promise<schema.FailureCluster> {
   return row!;
 }
 
-async function seedDiagnosis(clusterId: number, status: string, updatedAt = new Date()): Promise<void> {
-  await db.insert(schema.failureDiagnoses).values({ clusterId, scope: 'cluster', status, updatedAt });
+async function seedDiagnosis(
+  clusterId: number,
+  status: string,
+  updatedAt = new Date(),
+  extra: { feedback?: string; contextSha?: string | null } = {},
+): Promise<void> {
+  await db.insert(schema.failureDiagnoses).values({ clusterId, scope: 'cluster', status, updatedAt, ...extra });
 }
 
 async function seedFailingExecution(clusterId: number, runId: number): Promise<number> {
@@ -252,6 +261,60 @@ describe('selectAutoDiagnoseClusters', () => {
     const chosen = await selectAutoDiagnoseClusters(dbc, [strong, weak, none, newerNone], runIds[3]!);
 
     expect(ids(chosen)).toEqual([newerNone.id, none.id, weak.id, strong.id]);
+  });
+});
+
+describe('selectAutoDiagnoseClusters and ratings', () => {
+  const ids = (clusters: schema.FailureCluster[]) => clusters.map((c) => c.id);
+
+  test('ignored clusters never take a budget slot', async () => {
+    process.env.PIWI_AI_AUTO_DIAGNOSE_MAX = '1';
+    const older = await seedCluster(1);
+    const ignored = await seedCluster(2);
+    await db.update(schema.failureClusters).set({ status: 'ignored' }).where(eq(schema.failureClusters.id, ignored.id));
+    const ignoredRow = { ...ignored, status: 'ignored' };
+
+    expect(ids(await selectAutoDiagnoseClusters(dbc, [ignoredRow, older], runIds[1]!))).toEqual([older.id]);
+  });
+
+  test('a diagnosis rated unhelpful is written again once the evidence changed since it', async () => {
+    // The mocked context has no sections, so its hash is the hash of nothing.
+    const current = await contextStalenessHash([]);
+    const changed = await seedCluster(1);
+    const unchanged = await seedCluster(2);
+    const helpful = await seedCluster(3);
+    const unhashed = await seedCluster(4);
+    await seedDiagnosis(changed.id, 'completed', new Date(), { feedback: 'down', contextSha: 'evidence-before' });
+    await seedDiagnosis(unchanged.id, 'completed', new Date(), { feedback: 'down', contextSha: current });
+    await seedDiagnosis(helpful.id, 'completed', new Date(), { feedback: 'up', contextSha: 'evidence-before' });
+    await seedDiagnosis(unhashed.id, 'completed', new Date(), { feedback: 'down', contextSha: null });
+
+    const chosen = await selectAutoDiagnoseClusters(dbc, [unhashed, helpful, unchanged, changed], runIds[4]!);
+
+    expect(ids(chosen)).toEqual([changed.id]);
+  });
+});
+
+describe('the prompt hash', () => {
+  test('a completed diagnosis stores the hash of the instructions it was written under', async () => {
+    const cluster = await seedCluster(1);
+    await streamClusterDiagnosis(dbc, cluster, aiConfig(null));
+
+    const [row] = await db
+      .select()
+      .from(schema.failureDiagnoses)
+      .where(eq(schema.failureDiagnoses.clusterId, cluster.id));
+    const expected = await diagnosisPromptHash(await loadDiagnosisSystemPrompt(dbc, cluster), DIAGNOSIS_JSON_SCHEMA);
+    expect(row!.status).toBe('completed');
+    expect((row!.details as { promptSha?: string }).promptSha).toBe(expected);
+  });
+
+  test('the hash moves with the instructions and the schema', async () => {
+    const a = await diagnosisPromptHash('Explain the failure.', { type: 'object' });
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(await diagnosisPromptHash('Explain the failure.', { type: 'object' })).toBe(a);
+    expect(await diagnosisPromptHash('Explain the failure in French.', { type: 'object' })).not.toBe(a);
+    expect(await diagnosisPromptHash('Explain the failure.', { type: 'array' })).not.toBe(a);
   });
 });
 

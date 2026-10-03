@@ -1073,6 +1073,34 @@ const SCENES = [
     outputs: ['analytics-headline-tiles.png', 'analytics-headline-trend.png'],
   },
   ...[
+    { name: 'analytics-handbacks', width: 1280, height: 3600, docs: true },
+    { name: 'analytics-handbacks-mobile', width: 390, height: 7000, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `Analytics, the Overview dashboard: the Hand-back outcomes section (locator heals, AI diagnoses, the CI gate, a verified flaky test), at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    route: '/analytics?period=last-30d',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="analytics-handbacks"] dl').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="analytics-handbacks"]', pad: 12 });
+    },
+  })),
+  {
+    name: 'ai-usage',
+    description: "Settings → AI: the AI usage panel, tokens per model, then how each model's diagnoses fared",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/ai',
+    viewport: { width: 1280, height: 2600 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="ai-usage-quality"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="ai-usage"]', pad: 12 });
+    },
+  },
+  ...[
     { name: 'quality-report-preview', width: 1280, height: 1800 },
     { name: 'quality-report-preview-mobile', width: 375, height: 1400 },
   ].map(({ name, width, height }) => ({

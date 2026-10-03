@@ -1,6 +1,12 @@
 import { getMetric, type MetricId } from '#shared/analytics/metrics';
 import type { ProjectTargetVerdict } from '#shared/analytics/targets';
-import type { AnalyticsListItem, AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
+import type {
+  AnalyticsHandbacks,
+  AnalyticsListItem,
+  AnalyticsProgress,
+  AnalyticsRisks,
+  VerdictFacts,
+} from '#shared/analytics/types';
 import {
   targetGapValue,
   writeInsight,
@@ -10,7 +16,7 @@ import {
 import type { GapClass } from '#shared/handlers/scenario-gaps';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
-import type { ReportSentences, ReportTypography } from './sentences';
+import type { HandbackLine, ReportSentences, ReportTypography } from './sentences';
 
 /** Before a colon. */
 const NBSP = '\u00a0';
@@ -97,6 +103,34 @@ const METRIC_LABELS: Record<MetricId, [label: string, definition: string]> = {
     'Constats de résilience ouverts',
     'Constats ouverts des sondes serveur, dans les classes non géré et dégradé.',
   ],
+  'heal-adoption': [
+    'Réparations adoptées',
+    'Appels de localisateur en échec dont le code a ensuite utilisé le localisateur recommandé par Piwi, vus dans la période, quel que soit l’auteur du changement.',
+  ],
+  'heal-pr-merge-rate': [
+    'Taux de fusion des réparations',
+    'Pull requests de réparation automatique fusionnées dans la période, sur celles fusionnées ou fermées sans fusion.',
+  ],
+  'diagnosis-helpful-rate': [
+    'Diagnostics jugés utiles',
+    'Diagnostics écrits dans la période et jugés utiles, sur ceux jugés utiles ou inutiles.',
+  ],
+  'diagnosis-verified-rate': [
+    'Diagnostics confirmés par le correctif',
+    'Causes d’échec diagnostiquées corrigées dans la période dont le correctif a modifié les fichiers nommés par le diagnostic, sur les causes diagnostiquées corrigées dans la période.',
+  ],
+  'gate-blocked-merges': [
+    'Fusions bloquées par la barrière',
+    'Évaluations de la barrière en échec dans la période, chacune retenant une fusion.',
+  ],
+  'gate-overrides': [
+    'Barrière contournée',
+    'Pull requests fusionnées dans la période alors que leur dernière évaluation de la barrière avait échoué.',
+  ],
+  'flakes-verified-fixed': [
+    'Instabilités corrigées vérifiées',
+    'Tests instables qu’une vérification Flake Lab a prouvés corrigés dans la période.',
+  ],
 };
 
 const TITLES: Record<string, string> = {
@@ -129,6 +163,7 @@ const TITLES: Record<string, string> = {
   'Pass rate over time': 'Taux de réussite dans le temps',
   'What changed': 'Ce qui a changé',
   'Fixes and triage': 'Correctifs et tri',
+  'Hand-back outcomes': 'Devenir des propositions',
   Insights: 'Constats',
   Risks: 'Risques',
   'Portfolio health': 'Santé du portefeuille',
@@ -322,6 +357,90 @@ function progress(p: AnalyticsProgress): string[] {
     lines.push(
       `${p.healPullRequests} ${plural(p.healPullRequests, 'pull request de réparation automatique ouverte', 'pull requests de réparation automatique ouvertes')}.`,
     );
+  }
+  return lines;
+}
+
+/** `(75 %)`, or why there is no rate: none to judge, or fewer than the floor. */
+function rateText(part: number, whole: number, min: number, f: ValueFormatter, items: string): string {
+  if (whole === 0) return '';
+  if (whole < min) return ` (trop peu de ${items} pour un taux, ${whole} sur les ${min} nécessaires)`;
+  return ` (${f.value(Math.round((Math.min(part, whole) / whole) * 1000) / 10, 'percent', 0)})`;
+}
+
+function handbacks(d: AnalyticsHandbacks, f: ValueFormatter): HandbackLine[] {
+  const lines: HandbackLine[] = [];
+  const heals: string[] = [];
+  if (d.heals && (d.heals.suggested > 0 || d.heals.adopted > 0)) {
+    heals.push(
+      `${d.heals.adopted} ${plural(d.heals.adopted, 'appel utilise', 'appels utilisent')} désormais le localisateur recommandé, sur ${d.heals.suggested} ${plural(d.heals.suggested, 'proposé', 'proposés')}`,
+    );
+  }
+  const prs = d.healPullRequests;
+  if (prs && (prs.opened > 0 || prs.merged > 0 || prs.closed > 0)) {
+    const settled = prs.merged + prs.closed;
+    heals.push(
+      `${prs.merged} ${plural(prs.merged, 'pull request de réparation fusionnée', 'pull requests de réparation fusionnées')}, ${prs.closed} ${plural(prs.closed, 'fermée', 'fermées')}${rateText(prs.merged, settled, d.minSample, f, 'pull requests fermées')}`,
+    );
+  }
+  if (heals.length > 0) lines.push({ label: 'Réparations de localisateurs', text: `${heals.join(' · ')}.` });
+
+  const dx = d.diagnoses;
+  if (dx && (dx.written > 0 || dx.diagnosedFixes > 0)) {
+    const parts = [`${dx.written} ${plural(dx.written, 'écrit', 'écrits')}`];
+    if (dx.rated > 0) {
+      parts.push(
+        `${dx.helpful} ${plural(dx.helpful, 'jugé utile', 'jugés utiles')} sur ${dx.rated}${rateText(dx.helpful, dx.rated, d.minSample, f, 'avis')}`,
+      );
+    }
+    if (dx.diagnosedFixes > 0) {
+      parts.push(
+        `le correctif a touché les fichiers diagnostiqués pour ${Math.min(dx.verified, dx.diagnosedFixes)} ${plural(dx.diagnosedFixes, 'cause corrigée', 'causes corrigées')} sur ${dx.diagnosedFixes}${rateText(dx.verified, dx.diagnosedFixes, d.minSample, f, 'correctifs')}`,
+      );
+    }
+    if (dx.regressed > 0) {
+      parts.push(
+        `${dx.regressed} ${plural(dx.regressed, 'a de nouveau échoué', 'ont de nouveau échoué')} après le correctif`,
+      );
+    }
+    lines.push({ label: 'Diagnostics IA', text: `${parts.join(' · ')}.` });
+  }
+
+  const g = d.gate;
+  if (g && (g.blocked > 0 || g.overrides > 0 || g.escapes > 0)) {
+    const parts = [`${g.blocked} ${plural(g.blocked, 'fusion bloquée', 'fusions bloquées')}`];
+    if (g.overrides > 0 || g.escapes > 0) {
+      const escaped =
+        g.escapes > 0
+          ? `, ${g.escapes} ${plural(g.escapes, 'a ensuite échoué', 'ont ensuite échoué')} sur la branche par défaut`
+          : '';
+      parts.push(`${g.overrides} ${plural(g.overrides, 'fusionnée', 'fusionnées')} malgré tout${escaped}`);
+    }
+    lines.push({ label: 'Barrière de CI', text: `${parts.join(' · ')}.` });
+  }
+
+  const fl = d.flakes;
+  if (fl && (fl.verified > 0 || fl.regressed > 0)) {
+    const again =
+      fl.regressed > 0
+        ? ` · ${fl.regressed} ${plural(fl.regressed, 'est redevenu instable', 'sont redevenus instables')}`
+        : '';
+    lines.push({
+      label: 'Tests instables',
+      text: `${fl.verified} ${plural(fl.verified, 'correction vérifiée', 'corrections vérifiées')} avec Flake Lab${again}.`,
+    });
+  }
+
+  const fx = d.fixAttempts;
+  if (fx && (fx.reported > 0 || fx.verified > 0 || fx.regressed > 0)) {
+    const again =
+      fx.regressed > 0
+        ? ` · ${fx.regressed} ${plural(fx.regressed, 'a de nouveau échoué', 'ont de nouveau échoué')}`
+        : '';
+    lines.push({
+      label: 'Tentatives de correction',
+      text: `${fx.reported} ${plural(fx.reported, 'signalée', 'signalées')} · ${fx.verified} ${plural(fx.verified, 'confirmée', 'confirmées')} par le correctif${again}.`,
+    });
   }
   return lines;
 }
@@ -693,6 +812,7 @@ export const FR_SENTENCES: ReportSentences = {
   },
   verdict,
   progress,
+  handbacks,
   risks,
   target,
   tileTarget: (mark, value) => {

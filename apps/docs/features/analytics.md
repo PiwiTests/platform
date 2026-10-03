@@ -95,6 +95,25 @@ The page is the built-in **Overview** dashboard, in four bands. [Analytics widge
 lists every widget an [analytics dashboard](./dashboards) can place, and [Metrics](/reference/metrics) defines every
 number they show, with its unit and which direction is better.
 
+## Hand-back outcomes
+
+The **Hand-back outcomes** section, in the *Where the pain is* band, says what became of what Piwi handed back over
+the period, one line per kind:
+
+- **Locator heals**: call sites whose code now uses the recommended locator, whoever changed it, and the
+  [auto-heal](./auto-heal) pull requests merged or closed.
+- **AI diagnoses**: those written, rated helpful, and confirmed by a fix that changed the files they named.
+- **CI gate**: failed [gate verdicts](./pr-feedback#the-gate-verdict), and pull requests merged anyway, with any
+  failure that came back.
+- **Flaky tests**: fixes a [Flake Lab](./flake-lab) verify run proved, and those that flaked again.
+- **Fix attempts**: fixes a person or an agent reported, and what the runs made of them.
+
+![Hand-back outcomes: locator heals, AI diagnoses, the CI gate and a verified flaky test](/screenshots/analytics-handbacks.png)
+
+A rate needs 10 ratings, pull requests or fixes; below that the line says the sample is too small. The counts
+survive retention, and are kept per project and day, so branch and environment filters do not narrow them. A
+project that declined a kind's capability is left out of it. Each number is also a [metric](/reference/metrics).
+
 ## From a number to its rows
 
 A number links to the list behind it, opened with the same period and filters. In the portfolio, a

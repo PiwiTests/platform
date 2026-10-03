@@ -187,6 +187,7 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
       <p class="text-2xl font-semibold tabular-nums" :class="metricValueClass(widget.value)">
         {{ formatMetric(widget.value, f) }}
       </p>
+      <p v-if="sampleNote(widget.value)" class="text-xs text-muted">{{ sampleNote(widget.value) }}</p>
       <p class="text-xs text-muted">{{ widget.value.definition }}</p>
     </div>
     <MetricDisplay v-else-if="widget && (widget.breakdown || widget.display !== 'line')" :widget="widget" />

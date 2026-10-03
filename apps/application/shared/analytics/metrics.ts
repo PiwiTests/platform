@@ -8,6 +8,7 @@
  * window; `source: 'live'` metrics read the stored rows, so the ones about test
  * identities only reach as far back as retention keeps runs. Days are UTC.
  */
+import type { CapabilityId } from '#shared/capabilities';
 
 /** A breakdown a metric can be cut by. */
 export const DIMENSIONS = [
@@ -30,7 +31,7 @@ export const DIMENSIONS = [
 ] as const;
 
 export type DimensionId = (typeof DIMENSIONS)[number]['id'];
-export type MetricGrain = 'run' | 'test' | 'cluster' | 'gap';
+export type MetricGrain = 'run' | 'test' | 'cluster' | 'gap' | 'handback';
 export type MetricUnit = 'percent' | 'count' | 'minutes' | 'ms' | 'days' | 'money';
 
 export interface MetricDef {
@@ -50,8 +51,16 @@ export interface MetricDef {
   /** Decimal places shown. */
   precision: number;
   /** Capability the metric depends on; hidden where the capability is declined. */
-  capability?: 'test-map';
+  capability?: CapabilityId;
+  /**
+   * For a rate: the fewest items it is computed over. Below it the value is
+   * null and the surfaces say the sample is too small.
+   */
+  minSample?: number;
 }
+
+/** The fewest ratings, pull requests or fixes a hand-back rate is computed over. */
+export const HANDBACK_MIN_SAMPLE = 10;
 
 const RUN_DIMENSIONS = ['project', 'project-tag', 'environment', 'branch', 'run-kind'] as const;
 const TEST_DIMENSIONS = [
@@ -334,6 +343,93 @@ export const METRICS = [
     dimensions: GAP_DIMENSIONS,
     precision: 0,
     capability: 'test-map',
+  },
+  {
+    id: 'heal-adoption',
+    label: 'Heals adopted',
+    unit: 'count',
+    betterWhen: 'higher',
+    definition:
+      'Failing locator call sites whose code went on to use the locator Piwi recommended, seen in the period, whoever made the change.',
+    source: 'rollup',
+    grain: 'handback',
+    dimensions: [],
+    precision: 0,
+    capability: 'locator-healing',
+  },
+  {
+    id: 'heal-pr-merge-rate',
+    label: 'Auto-heal merge rate',
+    unit: 'percent',
+    betterWhen: 'higher',
+    definition: 'Auto-heal pull requests merged in the period, over those merged or closed without merging.',
+    source: 'rollup',
+    grain: 'handback',
+    dimensions: [],
+    precision: 1,
+    capability: 'auto-heal',
+    minSample: HANDBACK_MIN_SAMPLE,
+  },
+  {
+    id: 'diagnosis-helpful-rate',
+    label: 'Diagnoses rated helpful',
+    unit: 'percent',
+    betterWhen: 'higher',
+    definition: 'Diagnoses written in the period and rated helpful, over those rated helpful or unhelpful.',
+    source: 'live',
+    grain: 'handback',
+    dimensions: [],
+    precision: 1,
+    capability: 'ai',
+    minSample: HANDBACK_MIN_SAMPLE,
+  },
+  {
+    id: 'diagnosis-verified-rate',
+    label: 'Diagnoses verified by the fix',
+    unit: 'percent',
+    betterWhen: 'higher',
+    definition:
+      'Diagnosed failure causes fixed in the period whose fix changed the files the diagnosis named, over the diagnosed failure causes fixed in the period.',
+    source: 'live',
+    grain: 'handback',
+    dimensions: [],
+    precision: 1,
+    capability: 'ai',
+    minSample: HANDBACK_MIN_SAMPLE,
+  },
+  {
+    id: 'gate-blocked-merges',
+    label: 'Merges the gate blocked',
+    unit: 'count',
+    betterWhen: 'neutral',
+    definition: 'Gate evaluations that failed in the period, each one holding back a merge.',
+    source: 'rollup',
+    grain: 'handback',
+    dimensions: [],
+    precision: 0,
+  },
+  {
+    id: 'gate-overrides',
+    label: 'Gate overrides',
+    unit: 'count',
+    betterWhen: 'lower',
+    definition: 'Pull requests merged in the period while their last gate evaluation failed.',
+    source: 'rollup',
+    grain: 'handback',
+    dimensions: [],
+    precision: 0,
+  },
+  {
+    id: 'flakes-verified-fixed',
+    label: 'Flakes verified fixed',
+    unit: 'count',
+    betterWhen: 'higher',
+    definition: 'Flaky tests a Flake Lab verify run proved fixed in the period.',
+    source: 'rollup',
+    grain: 'handback',
+    dimensions: [],
+    precision: 0,
+    capability: 'flake-lab',
   },
 ] as const satisfies readonly MetricDef[];
 

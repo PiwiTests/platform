@@ -24,7 +24,7 @@ import { reconcileNewClusters } from './cluster-reconcile';
 import { nameNewClusters } from './cluster-naming';
 import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, formatResearchBlock } from './ai-research';
 import { buildDiagnosisVersionValues } from '#shared/handlers/diagnosis-versions';
-import { contextStalenessHash } from '#shared/diagnosis-staleness';
+import { contextStalenessHash, diagnosisPromptHash } from '#shared/diagnosis-staleness';
 import { emitNotification } from './notifications/emit';
 import type { DbClient } from '../database';
 
@@ -376,15 +376,17 @@ async function persistCompletedDiagnosis(
     pipeline: PipelineStage[];
     model: string;
     t0: number;
+    systemPrompt: string;
   },
 ): Promise<FailureDiagnosis> {
-  const { diagnosis, ctx, pipeline, model, t0 } = args;
+  const { diagnosis, ctx, pipeline, model, t0, systemPrompt } = args;
   const sumTokens = (k: 'inputTokens' | 'outputTokens') => pipeline.reduce((acc, s) => acc + (s[k] ?? 0), 0) || null;
 
   // Hash the evidence the model was shown (its own prior-assessment section
   // excluded, so a diagnosis never marks itself stale), so staleness can later ask
   // "has the evidence changed since this diagnosis?" by re-hashing the current one.
   const contextSha = await contextStalenessHash(ctx.sections);
+  const promptSha = await diagnosisPromptHash(systemPrompt, DIAGNOSIS_JSON_SCHEMA);
 
   const updated = await db
     .update(failureDiagnoses)
@@ -411,6 +413,7 @@ async function persistCompletedDiagnosis(
         additionalContext: opts.additionalContext ?? null,
         autoSelectedCommits: ctx.scmChanges?.commits?.slice(0, 3).map((c) => c.sha) ?? null,
         patchValidation: validateSuggestedPatch(ctx, diagnosis.suggestedFix.patch),
+        promptSha,
       },
       error: null,
       inputTokens: sumTokens('inputTokens'),
@@ -510,7 +513,14 @@ export async function runClusterDiagnosis(
       });
 
       const diagnosis = parseDiagnosisJson(result.text);
-      return await persistCompletedDiagnosis(db, cluster, opts, { diagnosis, ctx, pipeline, model: result.model, t0 });
+      return await persistCompletedDiagnosis(db, cluster, opts, {
+        diagnosis,
+        ctx,
+        pipeline,
+        model: result.model,
+        t0,
+        systemPrompt,
+      });
     } catch (err) {
       return await persistFailedDiagnosis(db, cluster, opts, err instanceof Error ? err.message : String(err), t0);
     }
@@ -596,6 +606,7 @@ export async function streamClusterDiagnosis(
         pipeline,
         model: streamModel,
         t0,
+        systemPrompt,
       });
       if (opts.onChunk) opts.onChunk({ type: 'done', data: finalDiagnosis });
       return finalDiagnosis;
@@ -614,15 +625,34 @@ export async function streamClusterDiagnosis(
 const CLUE_STRENGTH_PRIORITY: Record<string, number> = { none: 0, weak: 1, medium: 2, strong: 3 };
 
 /**
+ * Whether the evidence of a cluster moved on since a diagnosis was written: the
+ * hash of the context as it is now differs from the one stored with it. A
+ * diagnosis stored without a hash never reads as changed.
+ */
+async function contextChangedSince(db: DbClient, clusterId: number, storedSha: string | null): Promise<boolean> {
+  if (!storedSha) return false;
+  const ctx = await buildDiagnosisContext(db, { kind: 'cluster', clusterId });
+  return (await contextStalenessHash(ctx.sections)) !== storedSha;
+}
+
+/**
  * A cluster needs an auto-diagnosis unless a diagnosis is running in this
  * process or its stored one is completed or still in progress. A failed or a
- * stale running one is retried.
+ * stale running one is retried, and a completed one rated unhelpful is written
+ * again once the evidence has changed since it (the new version starts unrated,
+ * so that happens once per rating).
  */
 async function needsAutoDiagnosis(db: DbClient, clusterId: number): Promise<boolean> {
   if (running.has(`cluster:${clusterId}`)) return false;
-  const [existing] = await db.select().from(failureDiagnoses).where(eq(failureDiagnoses.clusterId, clusterId)).limit(1);
+  const [existing] = await db
+    .select()
+    .from(failureDiagnoses)
+    .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')))
+    .limit(1);
   if (!existing) return true;
-  if (existing.status === 'completed') return false;
+  if (existing.status === 'completed') {
+    return existing.feedback === 'down' && (await contextChangedSince(db, clusterId, existing.contextSha));
+  }
   return !(existing.status === 'running' && !isDiagnosisStale(existing));
 }
 
@@ -671,18 +701,20 @@ async function orderClustersByWeakestClue(
 
 /**
  * The clusters a finished run auto-diagnoses: those without a completed or
- * running diagnosis, ranked and capped to the budget. Clusters that need
- * nothing are dropped first so they never take a slot.
+ * running diagnosis, or whose diagnosis was rated unhelpful before the evidence
+ * changed, ranked and capped to the budget. Ignored clusters and clusters that
+ * need nothing are dropped first so they never take a slot.
  */
 export async function selectAutoDiagnoseClusters(
   db: DbClient,
   candidates: FailureCluster[],
   runId: number,
 ): Promise<FailureCluster[]> {
-  const needed = await Promise.all(candidates.map((cluster) => needsAutoDiagnosis(db, cluster.id)));
+  const live = candidates.filter((cluster) => cluster.status !== 'ignored');
+  const needed = await Promise.all(live.map((cluster) => needsAutoDiagnosis(db, cluster.id)));
   return orderClustersByWeakestClue(
     db,
-    candidates.filter((_, i) => needed[i]),
+    live.filter((_, i) => needed[i]),
     runId,
   );
 }
@@ -720,7 +752,8 @@ export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: nu
   // Diagnose every cluster that surfaced in THIS run (not only clusters first seen
   // in it) that doesn't already have a fresh diagnosis, so a known cluster that
   // regresses after going undiagnosed is still picked up. Clusters that already
-  // have one never take a budget slot. The budget is spent where it buys the
+  // have one, and ignored clusters, never take a budget slot; a diagnosis rated
+  // unhelpful takes one again once the evidence has changed. The budget is spent where it buys the
   // most: candidates are ordered by their representative failing execution's top
   // clue — the failures with no deterministic clue (the ones the model has to
   // reason about from scratch) come first, then the weakest clues, and only then

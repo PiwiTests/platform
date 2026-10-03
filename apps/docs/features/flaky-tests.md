@@ -111,9 +111,9 @@ list only grows.
   to be asked.
 - A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to
   click.
-- **Candidates** (API only) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact. A test that
-  flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is
-  what actually hurts.
+- **Candidates** (API only) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact; a
+  high-confidence AI diagnosis calling the test flaky adds a reason. A 200 ms flake costs nothing; one burning a
+  four-minute timeout weekly hurts.
 - **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
   been in, and how many still have no passing streak at all.
 
