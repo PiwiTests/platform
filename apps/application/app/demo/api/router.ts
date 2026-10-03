@@ -335,6 +335,8 @@ import {
   type UrlPatternWriteResult,
 } from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
+import { setRunIncident } from '#shared/handlers/run-health';
+import { parseSetRunIncident } from '#shared/run-incident';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -899,6 +901,25 @@ const routes: RouteEntry[] = [
       }
       try {
         return await patchTestRun(db, +m[1]!, patch, { userId: ctx?.actingUserId ?? null });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
+        throw err;
+      }
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/incident$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const input = parseSetRunIncident(body);
+      if (typeof input === 'string') throw demoHttpError(400, input);
+      const db = await getDemoDb();
+      const by = ctx?.actingUserId
+        ? ((await db.select({ name: users.name }).from(users).where(eq(users.id, ctx.actingUserId)))[0]?.name ?? null)
+        : null;
+      try {
+        return await setRunIncident(db, +m[1]!, { ...input, by });
       } catch (err) {
         if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
         throw err;

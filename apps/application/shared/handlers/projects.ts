@@ -39,6 +39,7 @@ import {
 } from '#shared/test-search';
 import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecution, notLabRun } from './probes';
+import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -1557,13 +1558,14 @@ export async function getProjectFlakyTestsWithVerified(
   // that branch. Otherwise, when the project's default branch is known, the
   // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
   // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently. Lab runs
-  // (probes, flake experiments) inject faults and conditions, so their
-  // executions never enter the flaky leaderboard.
+  // project's health signal. Environment scopes independently. Only runs the
+  // `flakiness` use reads count: lab runs inject faults and conditions,
+  // bisect and reproduction runs replay an older commit, and an environment
+  // incident fails every test at once.
   const runsConditions = [
     eq(testRuns.projectId, projectId),
     inArray(testRuns.status, TERMINAL_STATUSES),
-    notLabRun(testRuns.metadata),
+    eligibleRunSql('flakiness'),
   ];
   if (environment) runsConditions.push(eq(testRuns.environment, environment));
   if (branch) {

@@ -1618,6 +1618,23 @@ const SCENES = [
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
+    name: 'environment-incident',
+    description:
+      'Run header of an environment incident: not counted, the reason, the rule that decided and the action to clear it',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/test-runs/14',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="run-incident"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="run-header"]', pad: 12 });
+    },
+  },
+  {
     name: 'execution-locators',
     description: 'Execution Locators tab: every locator the test used, in order, with how many tests share each chain',
     tags: ['docs'],

@@ -8,6 +8,7 @@ import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
+import { keepIncidentMetadata } from '#shared/run-incident';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -274,7 +275,10 @@ export default eventHandler(async (event) => {
       ...(p90TestDuration !== null && { p90TestDuration }),
       // The reported status waits in the metadata, where it survives a restart,
       // until the report upload or the stale-run sweep settles the run.
-      metadata: withPendingStatus(body.metadata ? sanitizeMetadata(body.metadata) : testRun.metadata, status),
+      metadata: withPendingStatus(
+        body.metadata ? keepIncidentMetadata(testRun.metadata, sanitizeMetadata(body.metadata)) : testRun.metadata,
+        status,
+      ),
       ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
@@ -316,7 +320,10 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      ...(body.metadata && {
+        metadata: keepIncidentMetadata(testRun.metadata, sanitizeMetadata(body.metadata)),
+        branch: resolveRunBranch(body.metadata),
+      }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),

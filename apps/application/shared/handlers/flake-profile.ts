@@ -23,6 +23,7 @@ import { projects, testCases, testRuns, testRunsCases, networkRequests } from '.
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import { requestRouteKey } from '../utils/route';
 import { notLabRun } from './probes';
+import { eligibleRunSql } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import type { DrizzleDB } from './db';
 
@@ -594,7 +595,7 @@ function windowStart(now: Date): Date {
 
 /**
  * The attempts a profile reads, joined with their runs: the runs the flaky
- * leaderboard reads (finished, not probes, and on the default branch or no
+ * leaderboard reads (finished, eligible for the `flakiness` use, and on the default branch or no
  * branch when the project names one), passed or failed, in the window.
  */
 function windowAttempts(testCaseId: number, defaultBranch: string | null, since: Date) {
@@ -603,7 +604,7 @@ function windowAttempts(testCaseId: number, defaultBranch: string | null, since:
     gte(testRunsCases.createdAt, since),
     inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS]),
     inArray(testRuns.status, TERMINAL_STATUSES),
-    notLabRun(testRuns.metadata),
+    eligibleRunSql('flakiness'),
     defaultBranch ? or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch)) : undefined,
   );
 }

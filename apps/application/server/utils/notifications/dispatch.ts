@@ -11,6 +11,7 @@ import type {
   RunFinishedPayload,
   ClusterNewPayload,
   BugLooksFixedPayload,
+  EnvironmentIncidentPayload,
 } from '#shared/notification-events';
 import {
   clusterOutcome,
@@ -109,6 +110,7 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   else if (event === 'cluster.regressed') emoji = ':rotating_light:';
   else if (event === 'flakiness.spike') emoji = ':game_die:';
   else if (event === 'bug.looks_fixed') emoji = ':white_check_mark:';
+  else if (event === 'environment.incident') emoji = ':construction:';
 
   const base = siteBase();
   // Slack section text is capped at 3000 chars; keep excerpts short.
@@ -142,6 +144,11 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
     if (triageNote) parts.push(triageNote);
     if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
+  } else if (event === 'environment.incident') {
+    const p = payload as EnvironmentIncidentPayload;
+    const parts = [p.reason, 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).'];
+    parts.push(`<${base}/test-runs/${p.runId}|View run>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   } else if (event === 'bug.looks_fixed') {
     const p = payload as BugLooksFixedPayload;

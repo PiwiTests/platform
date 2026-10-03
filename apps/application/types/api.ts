@@ -351,6 +351,16 @@ export interface OpenFailureCluster {
   /** Snooze state — hidden from queues while snoozed; cleared/marked on wake. */
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
+  /** Set when the cluster first appeared in a run flagged as an environment incident. */
+  incidentRun: InboxIncidentRun | null;
+}
+
+/** The environment-incident run a cluster first appeared in, as the failure inbox groups it. */
+export interface InboxIncidentRun {
+  runId: number;
+  reason: string;
+  host: string | null;
+  startedAt: string | Date | null;
 }
 
 /**

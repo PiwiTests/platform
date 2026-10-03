@@ -226,7 +226,8 @@ violation.
 | `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
 
 At least one rule is required. Exit codes are part of the contract:
-**0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline fails instead of passing.
+**0** satisfied, **1** violated, **2** could not evaluate, so a misconfigured pipeline never passes,
+**3** [inconclusive](/features/environment-incidents).
 
 Three behaviors worth knowing:
 

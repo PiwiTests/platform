@@ -14,6 +14,7 @@ export const NOTIFICATION_EVENTS = [
   'diagnosis.completed',
   'auto_heal.pr_opened',
   'bug.looks_fixed',
+  'environment.incident',
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
@@ -21,6 +22,7 @@ export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 const EVENT_LABELS: Partial<Record<NotificationEvent, string>> = {
   'auto_heal.pr_opened': 'Auto-heal › PR opened',
   'bug.looks_fixed': 'Bug › looks fixed',
+  'environment.incident': 'Environment incident',
 };
 
 /** How the subscription pickers name an event. */
@@ -300,6 +302,34 @@ export interface BugLooksFixedPayload extends RunScope {
   tests: LooksFixedTest[];
 }
 
+/**
+ * A run flagged as an environment incident: its failures come from the
+ * environment under test, so it sends this one event in place of the run's
+ * failure, flakiness, performance and new-cluster events.
+ */
+export interface EnvironmentIncidentPayload extends RunScope {
+  runId: number;
+  projectId: number;
+  projectName: string;
+  status: string;
+  totalTests: number;
+  failedTests: number;
+  isDefaultBranch?: boolean;
+  /** The rule that flagged the run (`host-unreachable`, `browser-crash`, `cross-project`). */
+  rule: string;
+  /** One sentence: how many tests failed, and reaching which host. */
+  reason: string;
+  /** The app's host the failures were reaching, when one stood out. */
+  host?: string;
+  /** How many other projects saw the same host or error fail within the window. */
+  otherProjects: number;
+  /**
+   * The same value for every run of one incident across projects: a channel
+   * that hears from several of them receives one message.
+   */
+  incidentKey: string;
+}
+
 export type NotificationPayload =
   | RunFinishedPayload
   | ClusterNewPayload
@@ -307,7 +337,8 @@ export type NotificationPayload =
   | ClusterRegressedPayload
   | DiagnosisCompletedPayload
   | AutoHealPrOpenedPayload
-  | BugLooksFixedPayload;
+  | BugLooksFixedPayload
+  | EnvironmentIncidentPayload;
 
 /** Per-subscription delivery filters, stored as JSON on the subscription row. */
 export interface SubscriptionFilters {
@@ -341,6 +372,7 @@ export const RUN_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notific
   'cluster.fixed',
   'cluster.regressed',
   'bug.looks_fixed',
+  'environment.incident',
 ]);
 
 /**
@@ -388,6 +420,9 @@ export function passesSubscriptionFilters(
     const runOwners = runPayload.owners ?? [];
     if (!runOwners.some((owner) => filters.owners!.includes(owner))) return false;
   }
+  // An incident is about the environment, not anyone's tests: a subscription
+  // scoped to owners does not hear about it.
+  if (filters.owners?.length && event === 'environment.incident') return false;
   if (filters.flakinessThreshold != null && event === 'flakiness.spike') {
     const rate = runPayload.flakinessRate ?? 0;
     if (rate < filters.flakinessThreshold) return false;
@@ -422,8 +457,9 @@ export function describeSubscriptionFilters(filters: SubscriptionFilters | null 
  * entity the event is about — the run for run-scoped events, the cluster for
  * cluster.new (one run can surface several new clusters), the cluster plus the
  * run for cluster.fixed / cluster.regressed (a cluster can be fixed and regress
- * more than once), and the cluster plus completion time for
- * diagnosis.completed (the same cluster can be re-diagnosed).
+ * more than once), the cluster plus completion time for
+ * diagnosis.completed (the same cluster can be re-diagnosed), and the incident
+ * for environment.incident (one incident can flag runs in several projects).
  */
 export function buildNotificationDedupeKey(
   event: NotificationEvent,
@@ -441,6 +477,10 @@ export function buildNotificationDedupeKey(
   if (event === 'diagnosis.completed') {
     const p = payload as DiagnosisCompletedPayload;
     return `${event}:c${p.clusterId}:${p.completedAt ?? 'x'}:${channelId}`;
+  }
+  if (event === 'environment.incident') {
+    const p = payload as EnvironmentIncidentPayload;
+    return `${event}:${p.incidentKey}:${channelId}`;
   }
   const runId = (payload as RunFinishedPayload).runId;
   return `${event}:r${runId ?? 'x'}:${channelId}`;
@@ -532,6 +572,10 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return `Auto-heal opened PR #${p.prNumber} — ${p.projectName}`;
+    }
+    case 'environment.incident': {
+      const p = payload as EnvironmentIncidentPayload;
+      return `Environment incident — ${p.projectName}${p.host ? ` (${p.host})` : ''}`;
     }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;

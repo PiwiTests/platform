@@ -21,6 +21,7 @@ export interface DemoExampleExpect {
     | 'verified'
     | 'flaked-again';
   resources?: 'leaky';
+  incident?: true;
 }
 
 export interface DemoExample {

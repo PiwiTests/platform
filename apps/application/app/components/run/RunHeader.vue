@@ -3,6 +3,7 @@ import type { TestRunDetails, ReportInfo } from '~~/types/api';
 import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -43,6 +44,13 @@ const ci = computed(() => props.testRun?.metadata?.ci);
 const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
+const incident = computed(() => readRunIncident(props.testRun?.metadata));
+const incidentReview = computed(() => readIncidentReview(props.testRun?.metadata));
+const incidentBadges = computed(() =>
+  incident.value
+    ? [{ label: 'Incident', color: 'warning' as const, title: 'An environment incident: this run is not counted' }]
+    : [],
+);
 const customDataHtml = computed(() =>
   customData.value ? highlightCode(JSON.stringify(customData.value, null, 2), 'json').html : '',
 );
@@ -129,7 +137,12 @@ function onLabelKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <DetailHeader :status="testRun?.status ?? ''" :title="`Run #${testRun?.id}`" data-shot="run-header">
+  <DetailHeader
+    :status="testRun?.status ?? ''"
+    :title="`Run #${testRun?.id}`"
+    :badges="incidentBadges"
+    data-shot="run-header"
+  >
     <template #badges-extra>
       <!-- The label editor sits right after the title. -->
       <template v-if="editingLabel">
@@ -328,12 +341,30 @@ function onLabelKeydown(e: KeyboardEvent) {
           @updated="emit('label-updated')"
         />
       </div>
+      <RunIncidentLine
+        v-if="testRun?.id && !incident"
+        variant="action"
+        :run-id="testRun.id"
+        :incident="null"
+        :review="incidentReview"
+        @changed="emit('label-updated')"
+      />
       <div v-if="customData">
         <span class="text-muted">Custom data</span>
         <pre
           class="mt-1 bg-zinc-50 dark:bg-zinc-900 p-2 rounded text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto"
         ><code v-html="customDataHtml" /></pre>
       </div>
+    </template>
+
+    <template v-if="incident" #below>
+      <RunIncidentLine
+        variant="line"
+        :run-id="testRun.id"
+        :incident="incident"
+        :review="incidentReview"
+        @changed="emit('label-updated')"
+      />
     </template>
 
     <template #count-bar>

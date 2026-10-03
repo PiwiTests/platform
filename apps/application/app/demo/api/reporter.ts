@@ -58,6 +58,7 @@ import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-c
 import { durationStats } from '#shared/utils/stats';
 import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { recordRunHealth } from '#shared/handlers/run-health';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
@@ -1101,6 +1102,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
+      await recordRunHealth(db, id).catch(() => {});
       await syncAutoMarkersForRun(db, id).catch(() => {});
       await recordRunResourceFindings(db, id).catch(() => {});
       await upsertDailyRollup(db, id).catch(() => {});
@@ -1186,6 +1188,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
+  await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
   await recordRunResourceFindings(db, id).catch(() => {});
   await upsertDailyRollup(db, id).catch(() => {});

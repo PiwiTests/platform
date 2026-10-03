@@ -17,6 +17,7 @@ import {
   isSnoozeOption,
   SNOOZE_FOREVER_MS,
   type InboxClusterLike,
+  groupIncidentClusters,
 } from '#shared/inbox-queues';
 
 describe('queue identity', () => {
@@ -179,5 +180,31 @@ describe('bulk id validation', () => {
     expect(parseBulkIds([1.5])).toBeNull();
     expect(parseBulkIds([-1])).toBeNull();
     expect(parseBulkIds(Array.from({ length: 201 }, (_, i) => i + 1))).toBeNull();
+  });
+});
+
+describe('groupIncidentClusters', () => {
+  const incident = { runId: 930, reason: '41 of 44 tests failed', host: 'staging.example.test', startedAt: null };
+
+  it('collapses the clusters an incident run opened into one row per run', () => {
+    const clusters = [
+      { id: 1, projectId: 1, incidentRun: null },
+      { id: 2, projectId: 1, incidentRun: incident },
+      { id: 3, projectId: 1, incidentRun: incident },
+      { id: 4, projectId: 2, incidentRun: { ...incident, runId: 931 } },
+      { id: 5, projectId: 1 },
+    ];
+    const { clusters: rest, incidents } = groupIncidentClusters(clusters);
+    expect(rest.map((c) => c.id)).toEqual([1, 5]);
+    expect(incidents.map((row) => [row.runId, row.projectId, row.clusters.map((c) => c.id)])).toEqual([
+      [930, 1, [2, 3]],
+      [931, 2, [4]],
+    ]);
+    expect(incidents[0]).toMatchObject({ reason: '41 of 44 tests failed', host: 'staging.example.test' });
+  });
+
+  it('leaves an inbox with no incident as it is', () => {
+    const clusters = [{ id: 1, projectId: 1, incidentRun: null }];
+    expect(groupIncidentClusters(clusters)).toEqual({ clusters, incidents: [] });
   });
 });
