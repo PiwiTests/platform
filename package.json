@@ -14,7 +14,6 @@
     "apps/vscode",
     "integrations/nitro"
   ],
-  "type": "module",
   "scripts": {
     "prepare": "husky",
     "knip": "knip"
