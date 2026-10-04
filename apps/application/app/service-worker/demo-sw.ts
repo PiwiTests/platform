@@ -19,9 +19,38 @@
 
 import { handleDemoRequest } from '../demo/api/router';
 import { configureDemoDb, resetDemoDb } from '../demo/db.client';
+import { DEMO_USER_COOKIE } from '../demo/demo-users';
 import { type ErrorCode, errorCodeForStatus } from '#shared/utils/error-codes';
 
 declare const self: ServiceWorkerGlobalScope & typeof globalThis;
+
+// Minimal shape of the Cookie Store API this worker uses. It is not in every
+// browser's worker types (and absent entirely in some, e.g. Firefox), so it is
+// typed and accessed defensively rather than assumed present.
+interface CookieStoreLike {
+  get(name: string): Promise<{ value: string } | null | undefined>;
+}
+const cookieStore = (self as unknown as { cookieStore?: CookieStoreLike }).cookieStore;
+
+// The "act as" demo identity published by the page via postMessage — the
+// fallback the fetch handler reads when the Cookie Store API is unavailable.
+let postedActingUserId: number | null = null;
+
+// Resolve the demo user a request should act as. An explicit header wins (the
+// API playground sets one directly); otherwise fall back to the cookie the
+// demo-fetch plugin sets, then to the last postMessage. Returns null for the
+// default identity.
+async function resolveActingUserId(request: Request): Promise<number | null> {
+  const header = request.headers.get('x-demo-user-id');
+  if (header) return Number(header) || null;
+  try {
+    const cookie = await cookieStore?.get(DEMO_USER_COOKIE);
+    if (cookie?.value) return Number(cookie.value) || null;
+  } catch {
+    // Cookie Store API not available in this worker; use the postMessage value.
+  }
+  return postedActingUserId;
+}
 
 // Derive the base URL from the service worker's own location.
 // e.g. if SW is at https://host/piwi-dashboard/demo/sw.js
@@ -61,7 +90,11 @@ self.addEventListener('activate', (event) => {
 // the next query re-seeds from the freshly-wiped IndexedDB, then acknowledge on
 // the message port so the page can reload only once the reset has taken effect.
 self.addEventListener('message', (event) => {
-  const data = event.data as { type?: string } | undefined;
+  const data = event.data as { type?: string; id?: number | null } | undefined;
+  if (data?.type === 'piwi-demo-user') {
+    postedActingUserId = typeof data.id === 'number' ? data.id : null;
+    return;
+  }
   if (data?.type !== 'piwi-demo-reset') return;
   event.waitUntil(
     resetDemoDb()
@@ -115,12 +148,11 @@ self.addEventListener('fetch', (event) => {
   const queryString = url.search ? url.search.slice(1) : undefined;
   const method = event.request.method.toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
-  // The "act as" demo identity (used to apply that user's project affectations).
-  const demoUserIdHeader = event.request.headers.get('x-demo-user-id');
-  const actingUserId = demoUserIdHeader ? Number(demoUserIdHeader) || null : null;
-
   event.respondWith(
     (async () => {
+      // The "act as" demo identity (applies that user's project affectations).
+      const actingUserId = await resolveActingUserId(event.request);
+
       let body: unknown;
       if (method !== 'GET') {
         // The import endpoint uploads an archive, so multipart bodies reach the
