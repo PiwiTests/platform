@@ -13,11 +13,27 @@ describe('recorderBrowser', () => {
   test('Chromium, headed, with no option set', () => {
     expect(recorderBrowser({}, options())).toEqual({
       browserName: 'chromium',
-      launchOptions: { headless: false },
+      launchOptions: { args: ['--disable-features=Translate'], headless: false },
       contextOptions: {},
       testIdAttribute: null,
       notes: [],
     });
+  });
+
+  test('Chromium’s translation feature is disabled, merged into a --disable-features the project set', () => {
+    const args = (use: Record<string, unknown>) => recorderBrowser(use, options()).launchOptions.args;
+    expect(args({ launchOptions: { args: ['--no-sandbox'] } })).toEqual([
+      '--no-sandbox',
+      '--disable-features=Translate',
+    ]);
+    expect(args({ channel: 'chrome', launchOptions: { args: ['--disable-features=Foo'] } })).toEqual([
+      '--disable-features=Foo,Translate',
+    ]);
+    expect(args({ launchOptions: { args: ['--disable-features=Translate,Foo'] } })).toEqual([
+      '--disable-features=Translate,Foo',
+    ]);
+    expect(args({ browserName: 'firefox' })).toBeUndefined();
+    expect(args({ browserName: 'webkit' })).toBeUndefined();
   });
 
   test('the project’s browser, channel and launch options; headless only when asked', () => {

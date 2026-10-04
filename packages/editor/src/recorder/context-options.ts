@@ -47,14 +47,30 @@ const CONTEXT_OPTIONS = [
 
 const BROWSERS: readonly BrowserName[] = ['chromium', 'firefox', 'webkit'];
 
+/** The `--disable-features` switch and the Chromium feature whose translation bubble covers a page in another language. */
+const DISABLE_FEATURES = '--disable-features=';
+const TRANSLATE = 'Translate';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The project's `args` with Chromium's translation feature disabled, merged into a `--disable-features` it sets. */
+function withTranslateDisabled(args: unknown): unknown[] {
+  const list = Array.isArray(args) ? [...args] : [];
+  const at = list.findIndex((arg) => typeof arg === 'string' && arg.startsWith(DISABLE_FEATURES));
+  if (at < 0) return [...list, `${DISABLE_FEATURES}${TRANSLATE}`];
+  const arg = list[at] as string;
+  if (arg.slice(DISABLE_FEATURES.length).split(',').includes(TRANSLATE)) return list;
+  list[at] = `${arg},${TRANSLATE}`;
+  return list;
+}
+
 /**
  * The browser for a project's `use` options, as Playwright's fixtures read them: `browserName` (else the device's
- * `defaultBrowserType`, else Chromium), `launchOptions` with `channel` over it and `headless: false` unless
- * `headless` is asked for; the context options of `contextOptions` with the project's own over them, `screen` only
+ * `defaultBrowserType`, else Chromium), `launchOptions` with `channel` over it, `headless: false` unless
+ * `headless` is asked for, and Chromium's translation feature disabled (its bubble covers the page while recording
+ * one in another language); the context options of `contextOptions` with the project's own over them, `screen` only
  * with a viewport; a `storageState` file that does not exist (relative to `cwd`, the config's folder) is left out,
  * and said so.
  */
@@ -65,9 +81,11 @@ export function recorderBrowser(
   const named = [use.browserName, use.defaultBrowserType].find((b): b is BrowserName =>
     BROWSERS.includes(b as BrowserName),
   );
+  const browserName = named ?? 'chromium';
   const launchOptions: Record<string, unknown> = isRecord(use.launchOptions) ? { ...use.launchOptions } : {};
   if (typeof use.channel === 'string' && use.channel) launchOptions.channel = use.channel;
   launchOptions.headless = options.headless;
+  if (browserName === 'chromium') launchOptions.args = withTranslateDisabled(launchOptions.args);
 
   const contextOptions: Record<string, unknown> = {};
   const extra = isRecord(use.contextOptions) ? use.contextOptions : {};
@@ -86,5 +104,5 @@ export function recorderBrowser(
   }
 
   const testIdAttribute = typeof use.testIdAttribute === 'string' && use.testIdAttribute ? use.testIdAttribute : null;
-  return { browserName: named ?? 'chromium', launchOptions, contextOptions, testIdAttribute, notes };
+  return { browserName, launchOptions, contextOptions, testIdAttribute, notes };
 }
