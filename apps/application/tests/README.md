@@ -28,6 +28,36 @@ npm run app:test:ui
 npm run app:test:report
 ```
 
+### Against the running desktop app
+
+Run the whole suite against the locally installed Piwi **desktop app** instead of
+a Playwright-managed server:
+
+```bash
+# 1. Launch the Piwi desktop app and leave it running.
+# 2. From apps/application/:
+npm run app:test:desktop
+```
+
+`PIWI_DESKTOP_E2E=1` (what the script sets) makes the suite adopt the desktop
+app's loopback URL and per-launch access token from `~/.piwi/desktop.json` — the
+same discovery file the reporter reads — points `baseURL`, the reporter stream
+and the setup/teardown cleanup at it, injects the token on every request, and
+starts no server of its own. Override the discovery path with
+`PIWI_DESKTOP_CONFIG`; see [`desktop-target.ts`](./desktop-target.ts).
+
+Notes and limits, since the desktop bundles the **production** server with its
+own config (we adopt a running app, we do not configure it):
+
+- **Cleanup is best-effort.** `DELETE /api/tests/cleanup` refuses a production
+  build unless the app was launched with `PIWI_TEST_CLEANUP_ENABLED=true`; setup
+  and teardown just warn otherwise, so test projects accumulate in your desktop
+  data folder.
+- **Feature-flag-gated specs may skip or fail** (share links, auth, email, or
+  the Postgres/multi-server specs) — those depend on servers Playwright starts
+  itself or on env the desktop was not launched with. Launch the desktop with
+  the matching env (e.g. `PIWI_SHARE_LINKS_ENABLED=true`) for a fully green run.
+
 ### Watch Mode
 
 ```bash
@@ -38,8 +68,8 @@ npx playwright test --watch
 
 Tests are configured in `playwright.config.ts` at the project root. Key settings:
 
-- **baseURL**: `http://localhost:3000`
-- **webServer**: Automatically starts the dev server before tests
+- **baseURL**: `http://localhost:3000` (the running desktop app's loopback URL in `PIWI_DESKTOP_E2E` mode)
+- **webServer**: Automatically starts the dev server before tests (skipped in desktop mode — the app is already running)
 - **retries**: 2 retries on CI, 0 locally
 - **workers**: 1 (serial execution — the suite uses static project names shared across tests, requiring sequential cleanup)
 

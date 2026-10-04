@@ -14,16 +14,20 @@
  * is told a run appeared. Everything else is shared.
  */
 
-import { and, eq } from 'drizzle-orm';
-import { testRuns, testRunsCases, testCases, files } from '../../server/database/schema';
+import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
+import { and, eq, gt, ne } from 'drizzle-orm';
+import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
+import { resolveRunBranch } from '../../server/utils/run-branch';
+import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
 import { sumFailedAndTimedOut } from '../utils/test-counts';
 import { joinSuitePath } from '../utils/suites';
 import { formatBytes } from '../utils/format-bytes';
 import type { ImportCheckResult, ImportRunResponse } from '../import.types';
+import { upsertDailyRollup } from './analytics/rollups';
 
 /** A file the host stored, as it should be recorded in `files`. */
 export interface StoredImportFile {
@@ -56,16 +60,18 @@ export async function toBytes(value: StorableBytes): Promise<Uint8Array> {
 /** What an import needs from its host runtime. */
 export interface ImportPort {
   /**
-   * Persist executions and return the inserted junction rows **in input
-   * order**, so files can be linked by position. The server and the demo have
-   * separate implementations of this already.
+   * Persist executions and return the inserted junction rows, each with the
+   * index of the case it came from, so files are linked by `inputIndex`. A case
+   * deduplicated on the junction's unique key returns no row. The server and
+   * the demo have separate implementations of this already.
    */
   persistRunCases(
     db: DrizzleDB,
     projectId: number,
     testRunId: number,
     cases: unknown[],
-  ): Promise<Array<{ id: number }>>;
+    options?: PersistRunCasesOptions,
+  ): Promise<Array<{ id: number; inputIndex: number }>>;
 
   /**
    * Write one file and report where it landed, or null if it could not be
@@ -99,12 +105,15 @@ export interface ImportPort {
   /** Tell the dashboard a run appeared. */
   publishRunSubmitted(event: { runId: number; projectId: number; status: string }): void;
 
+  /** Tell the analytics the run's daily rollup now counts it (the widget cache, the live dashboards). */
+  publishRollupUpdated(event: { runId: number; projectId: number }): void;
+
   /** Optional diagnostics; the server logs, the demo stays quiet. */
   warn?(message: string): void;
 }
 
 /** Reads one entry out of the archive, or null when absent or unreadable. */
-export type ArchiveEntryReader = (name: string) => Promise<Uint8Array | null>;
+type ArchiveEntryReader = (name: string) => Promise<Uint8Array | null>;
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
@@ -169,6 +178,41 @@ export function judgeImportFiles(
 
     return { name, status: 'ok' };
   });
+}
+
+/**
+ * Whether an imported run is historical: the project already holds a run that
+ * started after it. A historical import writes no shared state (the tests'
+ * tags, owner, priority, locks and locator snapshots) and wakes no snoozed
+ * cluster.
+ */
+export async function isHistoricalImport(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number,
+  startTime: Date,
+): Promise<boolean> {
+  const [newer] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, projectId), ne(testRuns.id, runId), gt(testRuns.startTime, startTime)))
+    .limit(1);
+  return newer !== undefined;
+}
+
+/**
+ * How an imported run's executions are persisted: dated from their attempts,
+ * and, for a historical import ({@link isHistoricalImport}), leaving the tests'
+ * current state and snoozed clusters as they are.
+ */
+export async function importPersistOptions(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number,
+  startTime: Date,
+): Promise<PersistRunCasesOptions> {
+  const historical = await isHistoricalImport(db, projectId, runId, startTime);
+  return { datedFrom: startTime, keepTestState: historical, keepSnoozed: historical };
 }
 
 /** Return an already-imported archive's summary, or null when it is new. */
@@ -248,10 +292,13 @@ export async function importBlobReportRun(
       didNotRunTests: parsed.didNotRunTests,
       flakyTests: parsed.flakyTests,
       environment: input.environment ?? null,
+      branch: resolveRunBranch({ scm: parsed.scm }),
       label: input.label ?? null,
       playwrightVersion: parsed.playwrightVersion,
       importHash,
       metadata: {
+        ...(parsed.scm ? { scm: parsed.scm } : {}),
+        [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
         import: {
           source,
           importedAt: new Date().toISOString(),
@@ -265,29 +312,29 @@ export async function importBlobReportRun(
   const run = inserted[0];
   if (!run) throw new Error('Failed to create the imported test run');
 
-  const insertedCases = await port.persistRunCases(
-    db,
-    projectId,
-    run.id,
-    parsed.cases.map((entry) => entry.case),
-  );
-
-  // Files link by position, which only holds when every case produced a row. A
-  // repeatEach run collides on the junction's unique key and drops one; linking
-  // anyway would attach evidence to the wrong test.
-  const aligned = insertedCases.length === parsed.cases.length;
-  if (!aligned) {
-    port.warn?.(
-      `${parsed.cases.length - insertedCases.length} of ${parsed.cases.length} executions were deduplicated; skipping file links for run #${run.id}`,
-    );
-  }
-
   let traceCount = 0;
   let attachmentCount = 0;
 
-  if (aligned) {
+  try {
+    const insertedCases = await port.persistRunCases(
+      db,
+      projectId,
+      run.id,
+      parsed.cases.map((entry) => entry.case),
+      await importPersistOptions(db, projectId, run.id, parsed.startTime),
+    );
+
+    // A repeatEach run collides on the junction's unique key and drops a case;
+    // the files of a dropped case have no execution to link to.
+    const executionByIndex = new Map(insertedCases.map((row) => [row.inputIndex, row.id]));
+    if (insertedCases.length < parsed.cases.length) {
+      port.warn?.(
+        `${parsed.cases.length - insertedCases.length} of ${parsed.cases.length} executions were deduplicated in run #${run.id}; their files are not linked`,
+      );
+    }
+
     for (const [index, entry] of parsed.cases.entries()) {
-      const testRunsCaseId = insertedCases[index]?.id;
+      const testRunsCaseId = executionByIndex.get(index);
       if (!testRunsCaseId) continue;
 
       for (const staged of stagedTraces.get(index) ?? []) {
@@ -328,17 +375,24 @@ export async function importBlobReportRun(
         attachmentCount++;
       }
     }
+
+    const stats = durationStats(parsed.cases.map((entry) => entry.case.duration));
+    if (stats) {
+      await db
+        .update(testRuns)
+        .set({ avgTestDuration: stats.avg, p90TestDuration: stats.p90 })
+        .where(eq(testRuns.id, run.id));
+    }
+  } catch (error) {
+    // A failed import leaves no run behind, so a retry of the same archive is
+    // not taken for a duplicate of it.
+    await discardImportedRun(db, port, run.id);
+    throw error;
   }
 
-  const stats = durationStats(parsed.cases.map((entry) => entry.case.duration));
-  if (stats) {
-    await db
-      .update(testRuns)
-      .set({ avgTestDuration: stats.avg, p90TestDuration: stats.p90 })
-      .where(eq(testRuns.id, run.id));
-  }
-
+  await upsertDailyRollup(db, run.id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   port.publishRunSubmitted({ runId: run.id, projectId, status: parsed.status });
+  port.publishRollupUpdated({ runId: run.id, projectId });
 
   return {
     status: 'imported',
@@ -399,6 +453,7 @@ export async function importTraceRun(
   // The group is the run's identity when set, so a re-uploaded batch reuses the
   // same run rather than building a second copy of it beside the first.
   const runKey = importGroup ?? importHash;
+  let createdRun = false;
   let run = (
     await db
       .select()
@@ -421,11 +476,13 @@ export async function importTraceRun(
             playwrightVersion: parsed.playwrightVersion,
             importHash: runKey,
             metadata: {
+              [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
               import: { source, importedAt: new Date().toISOString(), kind: 'trace' },
             } as never,
           })
           .returning()
       )[0];
+      createdRun = true;
     } catch {
       // Another trace from the same group created the run in between.
       run = (
@@ -438,55 +495,70 @@ export async function importTraceRun(
   }
   if (!run) throw new Error('Failed to create the imported test run');
 
-  // Stage the trace first: its stored path is derived from the bytes, so it
-  // doubles as the check for whether this very trace is already in the run.
-  const stored = await port.storeFile({
-    projectId,
-    testRunId: run.id,
-    testRunsCaseId: null,
-    kind: 'trace',
-    entryName: `${importHash}.zip`,
-    bytes,
-    // The archive's own digest is what identifies this import, so the store can
-    // address it by that instead of reading the whole thing a second time.
-    digest: importHash,
-  });
-
-  if (stored) {
-    const already = await db
-      .select({ id: files.id })
-      .from(files)
-      .where(and(eq(files.testRunId, run.id), eq(files.path, stored.path)));
-    // The same trace already here is a repeat upload, not a second attempt.
-    if (already.length > 0) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
-  }
-
-  // A different trace for a test the run already has is a retry. Traces carry
-  // no attempt index of their own, so it comes from how many attempts of this
-  // test the run already holds — which makes upload order the attempt order.
-  parsed.case.retries = await countPriorAttempts(db, projectId, run.id, parsed.case);
-
-  const inserted = await port.persistRunCases(db, projectId, run.id, [parsed.case]);
-  const testRunsCaseId = inserted[0]?.id;
-  if (!testRunsCaseId) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
-
   let traceCount = 0;
-  if (stored) {
-    await db.insert(files).values({
-      testRunsCaseId,
+  try {
+    // Stage the trace first: its stored path is derived from the bytes, so it
+    // doubles as the check for whether this very trace is already in the run.
+    const stored = await port.storeFile({
+      projectId,
       testRunId: run.id,
-      type: 'trace',
-      path: stored.path,
-      size: stored.size,
-      blobId: stored.blobId ?? null,
+      testRunsCaseId: null,
+      kind: 'trace',
+      entryName: `${importHash}.zip`,
+      bytes,
+      // The archive's own digest is what identifies this import, so the store can
+      // address it by that instead of reading the whole thing a second time.
+      digest: importHash,
     });
-    traceCount = 1;
-  }
 
-  await rollUpTraceRun(db, run.id, new Date(parsed.startedAt));
+    if (stored) {
+      const already = await db
+        .select({ id: files.id })
+        .from(files)
+        .where(and(eq(files.testRunId, run.id), eq(files.path, stored.path)));
+      // The same trace already here is a repeat upload, not a second attempt.
+      if (already.length > 0) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
+    }
+
+    // A different trace for a test the run already has is a retry. Traces carry
+    // no attempt index of their own, so it comes from how many attempts of this
+    // test the run already holds — which makes upload order the attempt order.
+    parsed.case.retries = await countPriorAttempts(db, projectId, run.id, parsed.case);
+
+    const inserted = await port.persistRunCases(
+      db,
+      projectId,
+      run.id,
+      [parsed.case],
+      await importPersistOptions(db, projectId, run.id, new Date(parsed.startedAt)),
+    );
+    const testRunsCaseId = inserted[0]?.id;
+    if (!testRunsCaseId) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
+
+    if (stored) {
+      await db.insert(files).values({
+        testRunsCaseId,
+        testRunId: run.id,
+        type: 'trace',
+        path: stored.path,
+        size: stored.size,
+        blobId: stored.blobId ?? null,
+      });
+      traceCount = 1;
+    }
+
+    await rollUpTraceRun(db, run.id, new Date(parsed.startedAt));
+  } catch (error) {
+    // A failed import leaves no run of its own behind, so a retry of the same
+    // trace is not taken for a duplicate of it.
+    if (createdRun) await discardImportedRun(db, port, run.id);
+    throw error;
+  }
 
   const updated = await reloadRun(db, run.id);
+  await upsertDailyRollup(db, run.id).catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   port.publishRunSubmitted({ runId: run.id, projectId, status: updated.status });
+  port.publishRollupUpdated({ runId: run.id, projectId });
 
   return summarizeRun(
     updated,
@@ -497,6 +569,23 @@ export async function importTraceRun(
     [parsed.case.filePath],
     [...(parsed.case.suitePath ?? []), parsed.case.title].join(' › '),
   );
+}
+
+/**
+ * Remove a run an import created and could not finish, with the rows written
+ * for it so far. Child rows are deleted explicitly, since the in-browser
+ * database does not enforce foreign keys. A failure here is only reported, so
+ * the caller rethrows the import's own error.
+ */
+async function discardImportedRun(db: DrizzleDB, port: ImportPort, runId: number): Promise<void> {
+  try {
+    await db.delete(files).where(eq(files.testRunId, runId));
+    await db.delete(networkRequests).where(eq(networkRequests.testRunId, runId));
+    await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, runId));
+    await db.delete(testRuns).where(eq(testRuns.id, runId));
+  } catch (error) {
+    port.warn?.(`Could not remove the unfinished run #${runId}: ${error}`);
+  }
 }
 
 /** Recover the evidence Playwright's `error-context` attachment still holds. */
@@ -562,7 +651,7 @@ async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date)
   const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
   for (const row of rows) {
     if (row.status === 'passed') counts.passed++;
-    else if (row.status === 'timedOut') counts.timedOut++;
+    else if (row.status === 'timedout' || row.status === 'timedOut') counts.timedOut++;
     else if (row.status === 'skipped') counts.skipped++;
     else if (row.status === 'didnotrun') counts.didNotRun++;
     else counts.failed++;

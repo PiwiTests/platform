@@ -2,18 +2,24 @@
 //
 // The dashboard's /mcp page shows copy-paste snippets for connecting MCP
 // clients; on this machine the shell can do better and write the client's own
-// config file. Almost every client is configured the same way: a `piwi` entry
-// inside the client's server map, pointing at this app's /mcp endpoint with the
-// local access token as the Bearer header. Claude Desktop is the exception —
+// config file. Almost every client is configured the same way: a `piwi-desktop`
+// entry inside the client's server map, pointing at this app's /mcp endpoint with
+// the local access token as the Bearer header. Claude Desktop is the exception —
 // it accepts only stdio servers there, so it gets a command instead (see
 // `stdio_bridge_entry`).
+//
+// The entry is keyed `piwi-desktop`, not `piwi`, so it never collides with a
+// hosted Piwi a user has added by hand under `piwi` — the two coexist in one
+// client. Connecting also removes a `piwi` entry with a loopback URL (a remote
+// one is kept).
 //
 // Editing another app's config is done conservatively:
 //   - only strict JSON is ever rewritten — a file that does not parse (JSONC
 //     with comments, trailing commas) is reported as `manual` and left alone;
-//   - the previous content is copied to `<file>.piwi-backup` before a write;
-//   - only the `piwi` key is added, updated or removed — everything else in
-//     the file is preserved as parsed.
+//   - the previous content is copied to `<name>.piwi-backup.json` (the file's
+//     extension replaced) before a write;
+//   - only the `piwi-desktop` key (and a stale loopback `piwi`) is touched —
+//     everything else in the file is preserved as parsed.
 //
 // A written URL embeds the port picked at launch, which is not guaranteed
 // across launches — so `heal_configured_clients` runs at startup and rewrites
@@ -41,6 +47,14 @@ impl ServerInfo {
         format!("Bearer {}", self.token)
     }
 }
+
+/// The key this app writes its MCP entry under. Distinct from `piwi` so a hosted
+/// Piwi added by hand (conventionally `piwi`) and this local app live together.
+const PIWI_ENTRY_KEY: &str = "piwi-desktop";
+
+/// The key older builds wrote under. Removed on connect/disconnect when it holds
+/// an entry only this app would have written (see `is_local_piwi_entry`).
+const LEGACY_ENTRY_KEY: &str = "piwi";
 
 const CLIENT_IDS: [&str; 7] = [
     "claude-code",
@@ -222,7 +236,7 @@ pub struct McpClientStatus {
 fn classify(existing: Option<&Value>, container: &str, expected: &Value) -> &'static str {
     match existing
         .and_then(|v| v.get(container))
-        .and_then(|c| c.get("piwi"))
+        .and_then(|c| c.get(PIWI_ENTRY_KEY))
     {
         None => "not_connected",
         Some(current) if current == expected => "connected",
@@ -230,8 +244,28 @@ fn classify(existing: Option<&Value>, container: &str, expected: &Value) -> &'st
     }
 }
 
-/// Set or remove the `piwi` entry, preserving everything else. `entry: None`
-/// removes. Returns the new document.
+/// Whether an entry is one only this app would have written under `piwi`: a
+/// loopback `/mcp` URL (the URL-client shape) or a command spawning this exe in
+/// bridge mode (the Claude Desktop shape). A hosted Piwi added by hand points at
+/// a real host, so it never matches — its `piwi` entry is left untouched.
+fn is_local_piwi_entry(value: &Value) -> bool {
+    for key in ["url", "serverUrl", "httpUrl"] {
+        if let Some(url) = value.get(key).and_then(|v| v.as_str()) {
+            if (url.contains("127.0.0.1") || url.contains("localhost")) && url.ends_with("/mcp") {
+                return true;
+            }
+        }
+    }
+    let has_bridge_arg = value
+        .get("args")
+        .and_then(|v| v.as_array())
+        .is_some_and(|args| args.iter().any(|a| a.as_str() == Some(mcp_stdio::STDIO_ARG)));
+    has_bridge_arg && value.get("command").is_some()
+}
+
+/// Set or remove this app's entry (keyed `PIWI_ENTRY_KEY`), preserving everything
+/// else, and drop a stale loopback `piwi` an older build left behind. `entry:
+/// None` removes ours. Returns the new document.
 fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> Value {
     let mut root = match existing {
         Value::Object(map) => map,
@@ -246,12 +280,17 @@ fn merge_piwi_entry(existing: Value, container: &str, entry: Option<Value>) -> V
         *servers = Value::Object(Map::new());
     }
     let map = servers.as_object_mut().expect("container is an object");
+    // Retire the pre-`piwi-desktop` entry, but only when it is unmistakably ours
+    // — never a hosted Piwi a user keeps under `piwi`.
+    if map.get(LEGACY_ENTRY_KEY).is_some_and(is_local_piwi_entry) {
+        map.remove(LEGACY_ENTRY_KEY);
+    }
     match entry {
         Some(value) => {
-            map.insert("piwi".to_string(), value);
+            map.insert(PIWI_ENTRY_KEY.to_string(), value);
         }
         None => {
-            map.remove("piwi");
+            map.remove(PIWI_ENTRY_KEY);
         }
     }
     Value::Object(root)
@@ -391,6 +430,128 @@ pub fn desktop_mcp_reveal(app: AppHandle, client_id: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+// ── Agent skills in a linked folder ──────────────────────────────────────────
+//
+// Next to the client configs, the app installs the Piwi workflow skills into a
+// project's linked folder, under `.claude/skills/<slug>/SKILL.md` (the folder
+// Claude Code reads; other agents read the same files). The dashboard serves the
+// skill files, stamped with the version they ship in, and decides which to write
+// (an edited skill is kept unless the person asks); the shell only reads and
+// writes them, inside the linked folder of the project it is told.
+
+/// Where the skills go, relative to the linked folder.
+const SKILLS_DIR: [&str; 2] = [".claude", "skills"];
+
+/// A skill's file in a folder, for a slug made of lowercase letters, digits and
+/// dashes only, so a slug can never leave the skills directory.
+fn skill_file(folder: &Path, slug: &str) -> Option<PathBuf> {
+    let valid = !slug.is_empty()
+        && slug.len() <= 64
+        && slug
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !slug.starts_with('-');
+    if !valid {
+        return None;
+    }
+    let mut path = folder.to_path_buf();
+    for part in SKILLS_DIR {
+        path.push(part);
+    }
+    Some(path.join(slug).join("SKILL.md"))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFile {
+    slug: String,
+    /// The file's text; `None` when the skill is not installed.
+    content: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedSkills {
+    /// The skills directory inside the linked folder.
+    dir: String,
+    files: Vec<SkillFile>,
+}
+
+fn skills_dir(folder: &Path) -> PathBuf {
+    let mut path = folder.to_path_buf();
+    for part in SKILLS_DIR {
+        path.push(part);
+    }
+    path
+}
+
+fn read_skills(folder: &Path, slugs: &[String]) -> Result<Vec<SkillFile>, String> {
+    slugs
+        .iter()
+        .map(|slug| {
+            let path =
+                skill_file(folder, slug).ok_or_else(|| format!("invalid skill name: {slug}"))?;
+            Ok(SkillFile {
+                slug: slug.clone(),
+                content: std::fs::read_to_string(&path).ok(),
+            })
+        })
+        .collect()
+}
+
+fn write_skills(folder: &Path, files: &[SkillFile]) -> Result<Vec<String>, String> {
+    let mut written = Vec::new();
+    for file in files {
+        let path = skill_file(folder, &file.slug)
+            .ok_or_else(|| format!("invalid skill name: {}", file.slug))?;
+        let Some(content) = &file.content else {
+            continue;
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, content).map_err(|e| e.to_string())?;
+        written.push(file.slug.clone());
+    }
+    Ok(written)
+}
+
+/// The linked folder of a project, or an error the window can show.
+fn linked_dir(app: &AppHandle, project_id: &str) -> Result<PathBuf, String> {
+    let link =
+        crate::runner::linked_folder(app, project_id).ok_or("this project has no linked folder")?;
+    let folder = PathBuf::from(link.path);
+    if !folder.is_dir() {
+        return Err("the linked folder no longer exists".into());
+    }
+    Ok(folder)
+}
+
+/// Read the installed copy of each named skill in a project's linked folder.
+#[tauri::command]
+pub fn desktop_skills_read(
+    app: AppHandle,
+    project_id: String,
+    slugs: Vec<String>,
+) -> Result<LinkedSkills, String> {
+    let folder = linked_dir(&app, &project_id)?;
+    Ok(LinkedSkills {
+        dir: skills_dir(&folder).to_string_lossy().into_owned(),
+        files: read_skills(&folder, &slugs)?,
+    })
+}
+
+/// Write skill files into a project's linked folder. Returns the slugs written.
+#[tauri::command]
+pub fn desktop_skills_write(
+    app: AppHandle,
+    project_id: String,
+    files: Vec<SkillFile>,
+) -> Result<Vec<String>, String> {
+    let folder = linked_dir(&app, &project_id)?;
+    write_skills(&folder, &files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,14 +653,14 @@ mod tests {
         );
         assert_eq!(expected, other_port);
 
-        let configured = json!({ "mcpServers": { "piwi": expected } });
+        let configured = json!({ "mcpServers": { "piwi-desktop": expected } });
         assert_eq!(
             classify(Some(&configured), "mcpServers", &expected),
             "connected"
         );
 
         let old_shape = json!({
-            "mcpServers": { "piwi": { "type": "http", "url": "http://127.0.0.1:3000/mcp" } }
+            "mcpServers": { "piwi-desktop": { "type": "http", "url": "http://127.0.0.1:3000/mcp" } }
         });
         assert_eq!(classify(Some(&old_shape), "mcpServers", &expected), "stale");
     }
@@ -514,13 +675,26 @@ mod tests {
             classify(Some(&empty), "mcpServers", &expected),
             "not_connected"
         );
-        let connected = json!({ "mcpServers": { "piwi": expected } });
+        let connected = json!({ "mcpServers": { "piwi-desktop": expected } });
         assert_eq!(
             classify(Some(&connected), "mcpServers", &expected),
             "connected"
         );
-        let stale = json!({ "mcpServers": { "piwi": { "url": "http://127.0.0.1:9999/mcp" } } });
+        let stale =
+            json!({ "mcpServers": { "piwi-desktop": { "url": "http://127.0.0.1:9999/mcp" } } });
         assert_eq!(classify(Some(&stale), "mcpServers", &expected), "stale");
+    }
+
+    /// A hosted Piwi a user keeps under `piwi` is invisible to classify — the
+    /// app only ever looks at its own `piwi-desktop` key, so the two never fight.
+    #[test]
+    fn a_hosted_piwi_under_the_legacy_key_does_not_read_as_connected() {
+        let expected = entry_for("cursor", &info());
+        let hosted = json!({ "mcpServers": { "piwi": { "url": "https://piwi.example.com/mcp" } } });
+        assert_eq!(
+            classify(Some(&hosted), "mcpServers", &expected),
+            "not_connected"
+        );
     }
 
     #[test]
@@ -532,23 +706,76 @@ mod tests {
         let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "url": "u" })));
         assert_eq!(merged["theme"], "dark");
         assert_eq!(merged["mcpServers"]["other"]["command"], "npx");
-        assert_eq!(merged["mcpServers"]["piwi"]["url"], "u");
+        assert_eq!(merged["mcpServers"]["piwi-desktop"]["url"], "u");
     }
 
     #[test]
-    fn merge_removes_only_the_piwi_entry() {
+    fn merge_removes_only_our_own_entry() {
         let existing = json!({
-            "mcpServers": { "piwi": { "url": "u" }, "other": { "command": "npx" } }
+            "mcpServers": { "piwi-desktop": { "url": "u" }, "other": { "command": "npx" } }
         });
         let merged = merge_piwi_entry(existing, "mcpServers", None);
-        assert!(merged["mcpServers"].get("piwi").is_none());
+        assert!(merged["mcpServers"].get("piwi-desktop").is_none());
         assert_eq!(merged["mcpServers"]["other"]["command"], "npx");
     }
 
     #[test]
     fn merge_creates_the_container_on_a_fresh_file() {
         let merged = merge_piwi_entry(json!({}), "servers", Some(json!({ "type": "http" })));
-        assert_eq!(merged["servers"]["piwi"]["type"], "http");
+        assert_eq!(merged["servers"]["piwi-desktop"]["type"], "http");
+    }
+
+    /// Connecting rewrites an older build's loopback `piwi` to `piwi-desktop`,
+    /// leaving no dead duplicate behind.
+    #[test]
+    fn merge_retires_a_legacy_loopback_entry_it_wrote() {
+        let existing = json!({
+            "mcpServers": {
+                "piwi": { "type": "http", "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_old" } }
+            }
+        });
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "url": "new" })));
+        assert!(
+            merged["mcpServers"].get("piwi").is_none(),
+            "stale loopback piwi should be dropped"
+        );
+        assert_eq!(merged["mcpServers"]["piwi-desktop"]["url"], "new");
+    }
+
+    /// The legacy Claude Desktop shape (this exe in bridge mode) is also ours to
+    /// retire.
+    #[test]
+    fn merge_retires_a_legacy_stdio_bridge_entry() {
+        let existing = json!({
+            "mcpServers": { "piwi": { "command": "/Applications/Piwi.app/piwi-desktop", "args": ["mcp-stdio"] } }
+        });
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "command": "x", "args": ["mcp-stdio"] })));
+        assert!(merged["mcpServers"].get("piwi").is_none());
+        assert!(merged["mcpServers"].get("piwi-desktop").is_some());
+    }
+
+    /// A hosted Piwi under `piwi` is never removed — only this app's own leftovers.
+    #[test]
+    fn merge_keeps_a_hosted_piwi_under_the_legacy_key() {
+        let existing = json!({
+            "mcpServers": { "piwi": { "url": "https://piwi.example.com/mcp", "headers": { "Authorization": "Bearer pd_x" } } }
+        });
+        let merged = merge_piwi_entry(existing, "mcpServers", Some(json!({ "url": "new" })));
+        assert_eq!(
+            merged["mcpServers"]["piwi"]["url"],
+            "https://piwi.example.com/mcp",
+            "a remote piwi must be left alone"
+        );
+        assert_eq!(merged["mcpServers"]["piwi-desktop"]["url"], "new");
+    }
+
+    #[test]
+    fn local_piwi_entries_are_recognized_but_remote_ones_are_not() {
+        assert!(is_local_piwi_entry(&json!({ "url": "http://127.0.0.1:5000/mcp" })));
+        assert!(is_local_piwi_entry(&json!({ "serverUrl": "http://localhost:5000/mcp" })));
+        assert!(is_local_piwi_entry(&json!({ "command": "piwi-desktop", "args": ["mcp-stdio"] })));
+        assert!(!is_local_piwi_entry(&json!({ "url": "https://piwi.example.com/mcp" })));
+        assert!(!is_local_piwi_entry(&json!({ "command": "npx", "args": ["other-mcp"] })));
     }
 
     #[test]
@@ -623,5 +850,68 @@ mod tests {
     #[test]
     fn pick_returns_nothing_without_candidates() {
         assert_eq!(pick_config_dir(&[]), None);
+    }
+
+    #[test]
+    fn skill_files_stay_inside_the_skills_directory() {
+        let folder = Path::new("/work/shop");
+        assert_eq!(
+            skill_file(folder, "investigate-failure"),
+            Some(PathBuf::from(
+                "/work/shop/.claude/skills/investigate-failure/SKILL.md"
+            ))
+        );
+        for bad in ["", "../etc", "a/b", "Upper", "-x", "a b", "x\\y"] {
+            assert_eq!(skill_file(folder, bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn skills_are_written_then_read_back() {
+        let tmp = TempDir::new("skills");
+        let folder = tmp.mkdir("project");
+        let before = read_skills(&folder, &["investigate-failure".to_string()]).unwrap();
+        assert!(before[0].content.is_none());
+
+        let written = write_skills(
+            &folder,
+            &[
+                SkillFile {
+                    slug: "investigate-failure".into(),
+                    content: Some("---\nname: x\n---\n".into()),
+                },
+                SkillFile {
+                    slug: "apply-locator-healing".into(),
+                    content: None,
+                },
+            ],
+        )
+        .unwrap();
+        assert_eq!(written, vec!["investigate-failure".to_string()]);
+        let after = read_skills(
+            &folder,
+            &[
+                "investigate-failure".to_string(),
+                "apply-locator-healing".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(after[0].content.as_deref(), Some("---\nname: x\n---\n"));
+        assert!(after[1].content.is_none());
+    }
+
+    #[test]
+    fn a_bad_skill_name_is_refused() {
+        let tmp = TempDir::new("skills-bad");
+        let folder = tmp.mkdir("project");
+        assert!(write_skills(
+            &folder,
+            &[SkillFile {
+                slug: "../x".into(),
+                content: Some(String::new())
+            }]
+        )
+        .is_err());
+        assert!(read_skills(&folder, &["../x".to_string()]).is_err());
     }
 }

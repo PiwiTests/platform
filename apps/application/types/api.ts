@@ -1,13 +1,25 @@
+import type { Serialize, Simplify } from 'nitropack/types';
 /**
  * Shared types for API responses and requests
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, TestMetadata, TestSourceFrame } from '#shared/types';
+import type { IngestHealth } from '#shared/ingest-health';
+import type {
+  Role,
+  FilterDetails,
+  KeepSource,
+  TestMetadata,
+  TestSourceFrame,
+  TestStepEventHook,
+  WireExecutionResources,
+} from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
+import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
 export type { NextStep } from '#shared/next-step';
@@ -55,6 +67,8 @@ export interface TestRunMetadata {
   relatedIssue?: string | null;
   tags?: string[];
   customData?: Record<string, unknown>;
+  /** What ingest left out or rebuilt for the run; absent when it was stored whole. */
+  ingestHealth?: IngestHealth;
   [key: string]: unknown;
 }
 
@@ -243,6 +257,8 @@ export interface ProjectWithStats {
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    /** `test.fixme()` skips — a subset of `skippedTests`. */
+    fixmeTests?: number;
     didNotRunTests: number;
     flakyTests: number;
     totalTests: number;
@@ -338,6 +354,16 @@ export interface OpenFailureCluster {
   /** Snooze state — hidden from queues while snoozed; cleared/marked on wake. */
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
+  /** Set when the cluster first appeared in a run flagged as an environment incident. */
+  incidentRun: InboxIncidentRun | null;
+}
+
+/** The environment-incident run a cluster first appeared in, as the failure inbox groups it. */
+export interface InboxIncidentRun {
+  runId: number;
+  reason: string;
+  host: string | null;
+  startedAt: string | Date | null;
 }
 
 /**
@@ -353,6 +379,26 @@ export interface ProjectWithTestRuns {
   createdAt: Date;
   updatedAt: Date;
   testRuns: TestRunSummary[];
+  diagnosisInstructions?: string | null;
+  aiLanguage?: string | null;
+  hasScmToken?: boolean;
+  defaultBranch?: string | null;
+  openApiUrl?: string | null;
+  serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
+  /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
+  ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
+  quarantineFailsStatus?: boolean;
+  /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
+  gateStatus?: boolean;
+  /** Test import and bugs folder for specs rendered from bug reports. */
+  generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
+  /** Stored per-project capability decisions, for the edit form's overrides. */
+  capabilities?: Partial<
+    Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
+  > | null;
 }
 
 /**
@@ -368,8 +414,20 @@ export interface ProjectDetails {
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
+  quarantineFailsStatus?: boolean;
+  /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
+  gateStatus?: boolean;
+  /** Test import and bugs folder for specs rendered from bug reports. */
+  generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
   color?: string | null;
   tags?: TagInfo[];
+  /** Stored per-project capability decisions, for the edit form's overrides. */
+  capabilities?: Partial<
+    Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
+  > | null;
 }
 
 // ============================================================================
@@ -389,6 +447,8 @@ export interface TestRunSummary {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   avgTestDuration?: number | null;
@@ -402,6 +462,10 @@ export interface TestRunSummary {
   metadata?: any | null;
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
   createdAt: Date;
 }
 
@@ -427,6 +491,8 @@ export interface TestRunDetails {
   shardTotal?: number | null;
   shardsFinished?: number;
   isFullRun?: boolean;
+  /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
+  hasResources?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
@@ -435,6 +501,13 @@ export interface TestRunDetails {
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
+  /** Set when the run is kept forever: retention never deletes it. */
+  keptAt?: string | Date | null;
+  /** Who asked for the keep: a person, the reporter at ingest, or a release marker. */
+  keepSource?: KeepSource | null;
+  keepReason?: string | null;
+  /** Display name of the person who kept the run, when one did and still exists. */
+  keptByName?: string | null;
   createdAt: Date;
   project?: {
     id: number;
@@ -461,22 +534,6 @@ export interface TestRunDetails {
 }
 
 /**
- * Lightweight test run summary for comparison pages — omits heavy JSON blobs
- * returned by GET /api/test-runs/[id]/summary
- */
-export interface TestRunForCompare {
-  id: number;
-  status: string;
-  totalTests: number;
-  testCases: Array<{
-    title: string;
-    status: string;
-    duration?: number | null;
-    location?: string;
-  }>;
-}
-
-/**
  * Test run for charts and visualization
  */
 export interface TestRunForChart {
@@ -489,6 +546,8 @@ export interface TestRunForChart {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  /** `test.fixme()` skips — a subset of `skippedTests`. */
+  fixmeTests?: number;
   didNotRunTests: number;
   flakyTests: number;
   totalTests: number;
@@ -515,10 +574,15 @@ export interface PerformanceStep {
   subtitle?: string;
   /** Curated per-step arguments (rendered locator, URL, value, `test.step` author values). */
   params?: Record<string, string | number | boolean>;
-  /** Error message when the step failed (undefined when the step passed). */
-  error?: { message?: string };
+  /**
+   * The step's error when it failed (undefined when the step passed): its
+   * message, and where it was thrown (`file:line:col`) on runs from a recent reporter.
+   */
+  error?: { message?: string; location?: string };
   /** True when the step failed. */
   failed?: boolean;
+  /** True when the test caught the step's error and went on; set by a recent reporter. */
+  recovered?: boolean;
   /** Source pointer `file:line:col` (not a code snippet); present on runs from a recent reporter. */
   location?: string;
   /** Absolute start time in ms; present on runs from a recent reporter. Enables per-step timing. */
@@ -538,6 +602,10 @@ export interface TestStepEvent {
   duration: number;
   status: string;
   location?: string | null;
+  /** The first line of the step's error, when it failed — hook and fixture events only. */
+  error?: string | null;
+  /** The hooks and fixtures a hook section (`Before Hooks`, `After Hooks`) ran, in order. */
+  hooks?: TestStepEventHook[] | null;
 }
 
 /**
@@ -587,6 +655,8 @@ export interface NetworkRequest {
   startTime?: number;
   serverLogs?: ServerLogEntry[];
   serverTraces?: ServerSpanEntry[];
+  /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`); null or absent when it finished. */
+  failure?: string | null;
 }
 
 /** One frame of the trace-derived full call stack (innermost first). */
@@ -864,6 +934,8 @@ export interface TestCaseResult {
   wastedTimeMs?: number | null;
   networkRequests?: NetworkRequest[] | null;
   webVitals?: WebVitals | null;
+  /** What the test cost its worker and browser processes, and what it found open or left open. */
+  resources?: WireExecutionResources | null;
   /** AI-step usage manifest: replayed artifacts + the prompts their locators compile from. */
   aiUsage?: { entries: string[]; intents?: AiStepIntent[] } | null;
   consoleLogs?: ConsoleEntry[] | null;
@@ -882,6 +954,8 @@ export interface TestCaseResult {
   isNewFlaky?: boolean | null;
   /** Why a `didnotrun` case never executed; null for tests that ran. */
   didNotRunReason?: DidNotRunReason | null;
+  /** Playwright's expected status: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
@@ -896,6 +970,11 @@ export interface BlockedCaseRef {
   title: string;
   location: string;
   status: string;
+  /**
+   * On the execution that blocked this one: the hook or fixture its failure
+   * happened in (a failing `beforeAll` skips the rest of its group), or null.
+   */
+  failedIn?: import('#shared/step-tree').FailureHookContext | null;
 }
 
 /**
@@ -937,7 +1016,15 @@ export interface FailureGroup {
    * locator already passes at that call site in a later run.
    */
   locatorHealing?: { recommended: string; source: string; healed: boolean } | null;
+  /** The tracker issue the cluster is known by, when one is linked or was created for it. */
+  knownIssue?: KnownIssueRef | null;
 }
+
+/**
+ * Per-cluster facts a run's test rows show next to a failing execution: the
+ * cluster's name, its triage status and the issue it is tracked in.
+ */
+export type RunClusterMeta = Record<number, { name: string; status: string | null; issue?: KnownIssueRef | null }>;
 
 /**
  * What a landed fix was corroborated against.
@@ -958,6 +1045,8 @@ export interface ClusterResolutionFields {
   fixCommit: string | null;
   timeToResolutionMs: number | null;
   fixVerification: FixVerification | null;
+  /** The latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix. */
+  flakeEvidenceRunId?: number | null;
 }
 
 /**
@@ -1064,6 +1153,8 @@ export interface TestCaseWithStats {
   passedRuns: number;
   failedRuns: number;
   skippedRuns: number;
+  /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
+  fixmeRuns?: number;
   didNotRunRuns: number;
   flakyRuns: number;
   recentFlakyRuns?: number;
@@ -1071,6 +1162,9 @@ export interface TestCaseWithStats {
   avgDuration: number | null;
   lastRun: number | null;
   lastStatus: string | null;
+  /** Where the test is declared, as its latest execution reported it; null before it ever ran. */
+  line: number | null;
+  column: number | null;
 }
 
 /**
@@ -1191,6 +1285,20 @@ export interface ProjectMembersResponse {
   items: ProjectMemberEntry[];
 }
 
+/**
+ * Permission grid (GET /api/project-access)
+ */
+export interface ProjectAccessResponse extends ProjectAccessGrid {
+  authEnabled: boolean;
+}
+
+/**
+ * One grid cell changed (PUT /api/project-access) — the user's updated row
+ */
+export interface ProjectAccessUpdateResponse {
+  user: ProjectAccessUser;
+}
+
 // ============================================================================
 // Admin types
 // ============================================================================
@@ -1205,6 +1313,77 @@ export interface AdminStats {
   totalRunsCases: number;
   totalFiles: number;
   totalFileSize: number;
+  storageSizeOnDisk: number | null;
+  /** Where the database lives: a resolved SQLite file path, or a label for PostgreSQL. */
+  databaseLocation: string;
+  /** Where files live: a resolved local storage path, or a label for S3. */
+  storageLocation: string;
+}
+
+/**
+ * The evidence families a stored file belongs to, for the storage dashboard.
+ * Trace bytes fold in the deduplicated blobs and their shared trace resources.
+ */
+export type StorageKind = 'trace' | 'screenshot' | 'video' | 'report' | 'attachment' | 'visual-diff';
+
+/** Storage consumed by one evidence family. */
+export interface StorageKindUsage {
+  kind: StorageKind;
+  bytes: number;
+  files: number;
+}
+
+/** Storage consumed by one project. */
+export interface StorageProjectUsage {
+  projectId: number;
+  name: string;
+  label: string | null;
+  bytes: number;
+  files: number;
+}
+
+/** One time bucket in the storage-growth series. */
+export interface StorageTimeBucket {
+  /** Bucket start, ISO `YYYY-MM-DD` (UTC). */
+  date: string;
+  /** Bytes first stored within this bucket. */
+  bytes: number;
+  /** Running total of stored bytes through the end of this bucket. */
+  cumulativeBytes: number;
+}
+
+/** The computed part of the storage analysis (shared by server + demo). */
+export interface StorageAnalysisData {
+  /** True physical footprint: non-deduplicated files + trace blobs + trace resources. */
+  totalBytes: number;
+  /** Number of `files` rows (logical evidence files). */
+  totalFiles: number;
+  /** Projects that hold any stored bytes. */
+  projectCount: number;
+  /** Usage per evidence family, largest first. */
+  byKind: StorageKindUsage[];
+  /** Usage per project, largest first. */
+  byProject: StorageProjectUsage[];
+  /** Storage growth over the lifetime of the retained data. */
+  overTime: StorageTimeBucket[];
+  /** Width of each `overTime` bucket, in days. */
+  bucketDays: number;
+  /**
+   * Runs kept forever (never pruned by retention) and the files they hold.
+   * `bytes` counts their own files only — a deduplicated trace is shared, so
+   * it is not attributed to any one run.
+   */
+  kept: { runs: number; files: number; bytes: number };
+  /** When the analysis was computed (ISO). */
+  generatedAt: string;
+}
+
+/**
+ * Storage analysis returned by GET /api/admin/storage — the computed breakdown
+ * plus the physical location labels and, for local storage, the measured
+ * on-disk size (which can exceed `totalBytes` when untracked files linger).
+ */
+export interface StorageAnalysis extends StorageAnalysisData {
   storageSizeOnDisk: number | null;
   /** Where the database lives: a resolved SQLite file path, or a label for PostgreSQL. */
   databaseLocation: string;
@@ -1267,50 +1446,6 @@ export interface AttachmentInfo {
   contentType: string | null;
   path: string;
   size: number | null;
-}
-
-// ============================================================================
-// Regression context types (Pillar 2)
-// ============================================================================
-
-/**
- * Commit range between last passing run and this run
- */
-export interface RegressionContextCommitRange {
-  fromSha: string;
-  toSha: string;
-  fromShort: string;
-  toShort: string;
-  repositoryUrl: string | null;
-  compareUrl: string | null;
-  gitCommand: string;
-}
-
-/**
- * A single field that changed between the last passing run and this run
- */
-export interface RegressionContextMetaDiff {
-  key: string;
-  label: string;
-  before: string | null;
-  after: string | null;
-}
-
-/**
- * Regression context for a test run — returned by GET /api/test-runs/[id]/regression-context.
- * hasGreen: false means no prior passing run exists for this project.
- */
-export interface RegressionContext {
-  hasGreen: boolean;
-  lastGreenRunId?: number;
-  lastGreenRunAt?: string | Date | null;
-  lastGreenCommit?: string | null;
-  lastGreenBranch?: string | null;
-  currentCommit?: string | null;
-  currentBranch?: string | null;
-  commitRange?: RegressionContextCommitRange | null;
-  metadataDiff?: RegressionContextMetaDiff[];
-  newFailures?: number;
 }
 
 /**
@@ -1376,6 +1511,18 @@ export interface DiagnosisContextCoverage {
     baselineKind?: 'run-green' | 'test-green' | 'manual';
     /** Error message when the SCM diff fetch failed. */
     error?: string | null;
+    /** The repository the runs point at, when they record one. */
+    repositoryUrl?: string | null;
+    /** The commit range compared, as short SHAs, when both ends are known. */
+    range?: { from: string; to: string } | null;
+    /** The range on the Git host's own compare page, when the host is one Piwi knows. */
+    compareUrl?: string | null;
+    /** The local command that lists the range. */
+    gitCommand?: string | null;
+    /** Whether a repository access token is set for the project or the instance. */
+    hasToken?: boolean;
+    /** The commits were read with git in the folder the desktop app links to the project, not from the host. */
+    localGit?: boolean;
   } | null;
   /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
   alreadyGreen?: boolean;
@@ -1604,6 +1751,8 @@ export interface AiSettings {
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  canStoreSecrets: boolean;
 }
 
 // ============================================================================
@@ -1646,6 +1795,15 @@ export interface AiUsageModelRow {
   inputTokens: number;
   outputTokens: number;
   avgDurationMs: number | null;
+  /** Completed diagnoses rated helpful, and rated at all (helpful or unhelpful). */
+  helpful: number;
+  rated: number;
+  /** Suggested patches checked against the source files, and those that apply. */
+  patchesChecked: number;
+  patchesApplying: number;
+  /** Diagnoses a fix confirmed in the window (it changed the diagnosed files), and those whose cause failed again. */
+  verified: number;
+  regressed: number;
 }
 
 /**
@@ -1653,6 +1811,8 @@ export interface AiUsageModelRow {
  */
 export interface AiUsageSummary {
   days: number;
+  /** The fewest ratings a helpful share is given over. */
+  minRatings: number;
   totals: { diagnoses: number; inputTokens: number; outputTokens: number };
   byModel: AiUsageModelRow[];
 }
@@ -1719,6 +1879,22 @@ export interface FlakyTest {
   avgFailedDurationMs: number;
 }
 
+/** A flaky test a Flake Lab verified fix took off the ranking, until it retry-passes again. */
+export interface VerifiedFixedFlakyTest {
+  testCaseId: number;
+  title: string;
+  filePath: string;
+  retryPassRuns: number;
+  lastFlakeAt: string | Date | null;
+  verifiedFix: {
+    testCaseId: number;
+    experimentId: number;
+    commit: string | null;
+    verifiedAt: string;
+    flakedAgainAt: string | null;
+  };
+}
+
 /** A page diff between a failing execution and its last green sample. */
 export interface PageDiff {
   status: 'ok' | 'no-failure-snapshot' | 'no-green-sample' | 'not-applicable' | 'not-found';
@@ -1734,3 +1910,12 @@ export interface PageDiff {
   summary?: import('#shared/page-diff').PageDiffSummary;
   hunks?: import('#shared/page-diff').PageDiffHunk[];
 }
+
+/**
+ * The JSON response type of a server route handler, as the client receives it
+ * (dates serialized to strings): `ApiResponse<typeof import('~~/server/api/version.get').default>`.
+ * The app's `$fetch` and `useFetch` carry no route map (see the `types:extend`
+ * hook in `nuxt.config.ts`), so a call site names its response type, with this
+ * helper or with a type from this file.
+ */
+export type ApiResponse<H extends (...args: any[]) => unknown> = Simplify<Serialize<Awaited<ReturnType<H>>>>;

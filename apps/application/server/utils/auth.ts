@@ -50,10 +50,9 @@ function getSessionPassword(config: ReturnType<typeof useRuntimeConfig>): string
 const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 7; // 7 days
 
 /**
- * Name of the sealed session cookie. Set explicitly rather than left to h3's
- * default (`h3`) so the public cookie name reads as ours and does not leak the
- * framework — the name is frozen contract at 1.0 (documented in the OpenAPI
- * `sessionCookie` scheme in nuxt.config.ts).
+ * Name of the sealed session cookie. It names Piwi, not the framework (h3's
+ * default is `h3`), and is part of the public contract documented in the
+ * OpenAPI `sessionCookie` scheme in nuxt.config.ts.
  */
 export const SESSION_COOKIE_NAME = 'piwi_session';
 
@@ -62,12 +61,11 @@ export const SESSION_COOKIE_NAME = 'piwi_session';
  * attributes stay consistent (including on clear).
  *
  * `httpOnly` and `secure` keep the cookie out of reach of page scripts and off
- * plaintext connections. `sameSite: 'lax'` is set explicitly rather than left to
- * the browser's implicit default so the cookie is withheld from cross-site
+ * plaintext connections. `sameSite: 'lax'` withholds the cookie from cross-site
  * subrequests — a CSRF defense for the cookie-authenticated API — while still
- * riding top-level navigations, which OAuth callbacks and ordinary links into
- * the dashboard depend on. These are pinned here rather than inherited from h3's
- * defaults so the posture cannot silently change across h3 versions.
+ * sending it on top-level navigations, which OAuth callbacks and ordinary links
+ * into the dashboard depend on. Every attribute is set here, so neither the
+ * browser's nor h3's defaults apply.
  */
 function sessionOptions(config: ReturnType<typeof useRuntimeConfig>) {
   return {
@@ -169,7 +167,7 @@ export async function verifyUser(username: string, password: string): Promise<Us
   // Equalize response time whether or not the account exists and has a
   // password: a missing or OAuth-only (password-less) account still spends one
   // scrypt verification against a dummy hash, so login timing can't be used to
-  // enumerate which usernames are registered (audit L3).
+  // enumerate which usernames are registered.
   if (!user || !user.password) {
     await verifyPassword(password, DUMMY_PASSWORD_HASH);
     return null;
@@ -307,6 +305,14 @@ function hashApiKey(plaintext: string): string {
  * Returns null if the key does not exist, is expired, or belongs to no user.
  */
 export async function getUserByApiKey(plaintext: string): Promise<User | null> {
+  return (await resolveApiKey(plaintext))?.user ?? null;
+}
+
+/**
+ * Look up the user and the key id of a plaintext API key value, under the same
+ * rules as {@link getUserByApiKey}.
+ */
+export async function resolveApiKey(plaintext: string): Promise<{ user: User; keyId: number } | null> {
   if (!plaintext.startsWith(API_KEY_PREFIX)) {
     return null;
   }
@@ -333,7 +339,7 @@ export async function getUserByApiKey(plaintext: string): Promise<User | null> {
   }
 
   const userResults = await db.select().from(users).where(eq(users.id, key.userId));
-  return userResults[0] || null;
+  return userResults[0] ? { user: userResults[0], keyId: key.id } : null;
 }
 
 /**
@@ -341,7 +347,7 @@ export async function getUserByApiKey(plaintext: string): Promise<User | null> {
  * X-API-Key header.  Returns null if neither is present or if the value does
  * not start with the API key prefix.
  */
-function extractApiKey(event: H3Event): string | null {
+export function extractApiKey(event: H3Event): string | null {
   const authHeader = getRequestHeader(event, 'authorization');
   if (authHeader) {
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -387,14 +393,15 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
   // 1. Try API key authentication (preferred for CI/reporter usage)
   const apiKeyValue = extractApiKey(event);
   if (apiKeyValue) {
-    const user = await getUserByApiKey(apiKeyValue);
-    if (!user) {
+    const resolved = await resolveApiKey(apiKeyValue);
+    if (!resolved) {
       throw apiError({
         statusCode: 401,
         message: 'Invalid or expired API key',
       });
     }
 
+    const { user } = resolved;
     if (roles && !hasRole(user, roles)) {
       throw apiError({
         statusCode: 403,
@@ -402,6 +409,8 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
       });
     }
 
+    // The key a request was made with, for the records that name who acted (the agents' write log).
+    event.context.apiKeyId = resolved.keyId;
     return user;
   }
 

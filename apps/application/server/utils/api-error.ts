@@ -1,12 +1,11 @@
 /**
- * The 1.0 HTTP error contract.
+ * The HTTP error contract.
  *
  * Nuxt serializes a thrown h3 error as
- * `{ error, url, statusCode, statusMessage, message, data }`. `createError`'s
- * `data` was overloaded — a bare zod `.issues` array on validation failures,
- * absent otherwise — so a client had nothing stable to branch on but the prose
- * `message`. `apiError` is a drop-in replacement that guarantees `data` is
- * always an object shaped `{ errorCode, issues? }`:
+ * `{ error, url, statusCode, statusMessage, message, data }`. `apiError` wraps
+ * `createError` and guarantees `data` is always an object shaped
+ * `{ errorCode, issues? }`, so a client branches on a stable code rather than
+ * on the prose `message`:
  *
  * - `errorCode` is a stable, machine-readable string. It defaults to the
  *   mirror of the HTTP status (404 → `NOT_FOUND`, 409 → `CONFLICT`, …); pass an
@@ -31,8 +30,8 @@ export interface ApiErrorInput {
   /** Stable machine-readable code; defaults from the status when omitted. */
   errorCode?: ErrorCode;
   /**
-   * Structured detail. A bare array is folded into `issues` (the legacy zod
-   * shape); an object is merged into the normalized `data`.
+   * Structured detail. A bare array (a zod `.issues` array) is folded into
+   * `issues`; an object is merged into the normalized `data`.
    */
   data?: unknown;
   cause?: unknown;

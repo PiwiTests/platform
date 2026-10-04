@@ -15,7 +15,8 @@
 import { markdownToHtml } from '#shared/markdown-to-html';
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from './html';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { highlightCode } from '#shared/highlight';
+import { highlightCode, highlightLines, languageForPath } from '#shared/highlight';
+import { parseSourceSnippet } from '#shared/source-snippet';
 import {
   caseFacts,
   clusterFacts,
@@ -27,9 +28,10 @@ import {
   projectLabel,
   type Fact,
 } from './fields';
+import { STATUS_COLORS as C } from '#shared/status-colors';
 import type { ExportAsset, ExportBundle, ExportCase } from './types';
 
-export interface RenderOptions {
+interface RenderOptions {
   /** Resolves an asset to a URL usable from the rendered document, or null to omit it. */
   assetUrl: (asset: ExportAsset) => string | null;
 }
@@ -39,7 +41,7 @@ const STYLES = `
   color-scheme: light dark;
   --bg:#fff; --fg:#1c1c20; --muted:#6b6b76; --faint:#8b8b96;
   --line:#e2e2e7; --line-strong:#c9c9d2; --card:#fafafa; --sunken:#f5f5f8;
-  --accent:#4338ca; --fail:#be123c; --pass:#047857; --warn:#b45309; --info:#1d4ed8; --skip:#6b6b76;
+  --accent:#4338ca; --fail:${C.failed.text}; --pass:${C.passed.text}; --warn:${C.didnotrun.text}; --info:#1d4ed8; --skip:${C.skipped.text};
   --tok-key:#7c3aed; --tok-str:#0f766e; --tok-num:#b45309; --tok-fn:#1d4ed8; --tok-attr:#a21caf; --tok-builtin:#0369a1;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
@@ -47,7 +49,7 @@ const STYLES = `
   :root {
     --bg:#161619; --fg:#ececf1; --muted:#a0a0ad; --faint:#7e7e8c;
     --line:#2f2f36; --line-strong:#43434d; --card:#1d1d21; --sunken:#131316;
-    --accent:#a5b4fc; --fail:#fb7185; --pass:#34d399; --warn:#fbbf24; --info:#93c5fd; --skip:#a0a0ad;
+    --accent:#a5b4fc; --fail:${C.failed.textDark}; --pass:${C.passed.textDark}; --warn:${C.didnotrun.textDark}; --info:#93c5fd; --skip:${C.skipped.textDark};
     --tok-key:#c4b5fd; --tok-str:#5eead4; --tok-num:#fcd34d; --tok-fn:#93c5fd; --tok-attr:#f0abfc; --tok-builtin:#7dd3fc;
   }
 }
@@ -127,6 +129,7 @@ pre.hljs[data-lang]:not([data-lang=""])::before {
 .hljs-deletion { color:var(--fail); }
 .hljs-emphasis { font-style:italic; }
 .hljs-strong { font-weight:650; }
+.ln { color:var(--faint); user-select:none; }
 p { margin:.4rem 0; }
 ul { margin:.35rem 0; padding-left:1.1rem; }
 li { margin:.1rem 0; }
@@ -148,11 +151,11 @@ td.num { font-family:var(--mono); white-space:nowrap; }
   display:inline-block; padding:0 .4rem; border-radius:3px; font-size:.7rem;
   font-weight:650; border:1px solid currentColor; vertical-align:.15em;
 }
-.s-failed, .s-error, .s-open { color:var(--fail); }
+/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
+.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
 .s-passed, .s-resolved { color:var(--pass); }
 .s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
-/* Matches getStatusColor in app/utils: a timeout is a warning, not a failure. */
-.s-timedout, .s-timedout_, .s-interrupted, .s-warning, .s-warn { color:var(--warn); }
+.s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
 .s-info { color:var(--info); }
 .tag { font-weight:650; }
 
@@ -167,7 +170,7 @@ td.num { font-family:var(--mono); white-space:nowrap; }
   :root {
     --bg:#fff; --fg:#000; --muted:#3f3f46; --faint:#52525b;
     --line:#b8b8bf; --line-strong:#71717a; --card:transparent; --sunken:transparent;
-    --accent:#3730a3; --fail:#9f1239; --pass:#065f46; --warn:#92400e; --info:#1e40af;
+    --accent:#3730a3; --fail:${C.failed.print}; --pass:${C.passed.print}; --warn:${C.didnotrun.print}; --info:#1e40af;
     --tok-key:#5b21b6; --tok-str:#115e59; --tok-num:#92400e; --tok-fn:#1e3a8a; --tok-attr:#86198f; --tok-builtin:#075985;
   }
   body { padding:0; font-size:10.5pt; }
@@ -248,6 +251,18 @@ function pre(text: string): RawHtml {
 function code(text: string, lang: string): RawHtml {
   const { html: highlighted, language } = highlightCode(stripAnsi(text), lang);
   return html`<pre class="hljs" data-lang="${language || lang}"><code>${raw(highlighted)}</code></pre>`;
+}
+
+/** A captured source snippet: the line-number gutter kept plain, the code syntax-highlighted. */
+function snippet(text: string, file: string): RawHtml {
+  const rows = parseSourceSnippet(stripAnsi(text));
+  const lang = languageForPath(file);
+  const code = highlightLines(
+    rows.map((row) => row.code),
+    lang,
+  );
+  const lines = rows.map((row, i) => toHtmlString(html`<span class="ln">${row.gutter}</span>${raw(code[i] ?? '')}`));
+  return html`<pre class="hljs" data-lang="${lang ?? ''}"><code>${raw(lines.join('\n'))}</code></pre>`;
 }
 
 /** AI prose is Markdown; links are flattened so the document stays self-contained. */
@@ -464,7 +479,7 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, index: number, 
           (d.testSourceFrames as Record<string, any>[]).map(
             (f) =>
               html`<h3>${`${f.file ?? ''}:${f.line ?? ''}`}</h3>
-                ${pre(String(f.snippet ?? ''))}`,
+                ${snippet(String(f.snippet ?? ''), String(f.file ?? ''))}`,
           ),
         ),
       ),

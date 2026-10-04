@@ -1,86 +1,69 @@
-import { getDatabase } from '../../database';
 import { collectClusterBundle, collectExecutionBundle } from '#shared/export/collect';
 import { buildExport } from '#shared/export/build';
-import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
+import { renderReportHtml } from '#shared/reports/render-html';
+import { sentencesFor } from '#shared/reports/sentences';
 import { resolveExportBudget, resolveExportMaxCases, serverAssetReader } from '../../utils/export-assets';
 import { exportPiwiVersion, exportSourceUrl } from '../../utils/export-request';
-import { recordShareLinkView, resolveShareToken, shareLinksEnabled } from '../../utils/share-links';
-
-/** Requests per client address per window — log-noise defense; the 256-bit token is the security boundary. */
-const LOOKUP_LIMIT = 120;
-const LOOKUP_WINDOW_MS = 15 * 60 * 1000;
+import { recordShareLinkView } from '../../utils/share-links';
+import {
+  LIVE_DASHBOARD_REFRESH_SECONDS,
+  openShareLink,
+  setShareDocumentHeaders,
+  shareLinkReport,
+} from '../../utils/share-view';
 
 /**
- * The public face of a share link: renders the linked execution or failure
- * cluster as the offline export's self-contained HTML, resolved live at view
- * time. Evidence is inlined under the export size budget, so this one route is
- * the whole anonymous surface — no session, no cookies, no follow-up requests.
+ * The public face of a share link. An execution or a failure cluster renders
+ * as the offline export's self-contained HTML, resolved live at view time,
+ * with its evidence inlined under the export size budget. A report link
+ * renders its snapshot's stored quality report; a live dashboard link renders
+ * the saved dashboard as a quality report computed now, reloading itself
+ * every minute. No session, no cookies, no follow-up requests.
  */
 export default eventHandler(async (event) => {
-  // Every branch is uncacheable and uninteresting to crawlers, valid or not.
-  setResponseHeader(event, 'Cache-Control', 'no-store');
-  setResponseHeader(event, 'X-Robots-Tag', 'noindex, nofollow');
+  const opened = await openShareLink(event, { gonePage: true });
+  if ('gone' in opened) return opened.gone;
+  const { db, link } = opened;
 
-  if (!shareLinksEnabled()) {
-    throw apiError({ statusCode: 404, message: 'Not found' });
+  let bytes: Uint8Array;
+  let contentType: string;
+  if (link.entityKind === 'report' || link.entityKind === 'dashboard') {
+    const report = await shareLinkReport(db, link);
+    // The snapshot was pruned, the dashboard deleted, or its minter lost access —
+    // indistinguishable from an unknown token by design.
+    if (!report) throw apiError({ statusCode: 404, message: 'Not found' });
+    const s = sentencesFor(report.bundle.language);
+    const doc = renderReportHtml(
+      report.bundle,
+      report.live ? { refreshSeconds: LIVE_DASHBOARD_REFRESH_SECONDS, banner: s.labels.liveDashboard } : {},
+    );
+    bytes = new TextEncoder().encode(doc);
+    contentType = 'text/html; charset=utf-8';
+  } else {
+    const bundle =
+      link.entityKind === 'cluster'
+        ? await collectClusterBundle(db, link.entityId, {
+            maxCases: resolveExportMaxCases(),
+            sourceUrl: exportSourceUrl(event, `/failure-clusters/${link.entityId}`),
+            piwiVersion: exportPiwiVersion(event),
+          })
+        : await collectExecutionBundle(db, link.entityId, {
+            maxCases: 1,
+            sourceUrl: exportSourceUrl(event, `/test-run-cases/${link.entityId}`),
+            piwiVersion: exportPiwiVersion(event),
+          });
+    // The entity was pruned (retention) or deleted — indistinguishable from an
+    // unknown token by design.
+    if (!bundle) throw apiError({ statusCode: 404, message: 'Not found' });
+    const built = await buildExport(bundle, 'html', link.entityId, {
+      reader: serverAssetReader,
+      budget: resolveExportBudget(),
+    });
+    bytes = built.bytes;
+    contentType = built.contentType;
   }
-
-  const rateKey = `share:${rateLimitClientIp(event)}`;
-  if (!checkRateLimit(rateKey, LOOKUP_LIMIT, LOOKUP_WINDOW_MS)) {
-    throw rateLimitedError(event, [rateKey]);
-  }
-
-  const token = String(getRouterParam(event, 'token') ?? '');
-  const db = await getDatabase();
-  const resolved = await resolveShareToken(db, token);
-
-  if (resolved.state === 'missing') {
-    throw apiError({ statusCode: 404, message: 'Not found' });
-  }
-  if (resolved.state === 'gone') {
-    // The hash matched, so the holder once had the real link — telling them it
-    // is dead has no enumeration value and beats a bare 404.
-    setResponseStatus(event, 404);
-    setResponseHeader(event, 'Content-Type', 'text/html; charset=utf-8');
-    setResponseHeader(event, 'Content-Security-Policy', 'sandbox');
-    return '<!doctype html><html><head><title>Link no longer available</title></head><body style="font-family: system-ui, sans-serif; margin: 4rem auto; max-width: 32rem; text-align: center;"><h1>This link is no longer available</h1><p>The share link was revoked or has expired. Ask the person who sent it for a new one.</p></body></html>';
-  }
-
-  const { link } = resolved;
-  const bundle =
-    link.entityKind === 'cluster'
-      ? await collectClusterBundle(db, link.entityId, {
-          maxCases: resolveExportMaxCases(),
-          sourceUrl: exportSourceUrl(event, `/failure-clusters/${link.entityId}`),
-          piwiVersion: exportPiwiVersion(event),
-        })
-      : await collectExecutionBundle(db, link.entityId, {
-          maxCases: 1,
-          sourceUrl: exportSourceUrl(event, `/test-run-cases/${link.entityId}`),
-          piwiVersion: exportPiwiVersion(event),
-        });
-
-  // The entity was pruned (retention) or deleted — indistinguishable from an
-  // unknown token by design.
-  if (!bundle) {
-    throw apiError({ statusCode: 404, message: 'Not found' });
-  }
-
-  const built = await buildExport(bundle, 'html', link.entityId, {
-    reader: serverAssetReader,
-    budget: resolveExportBudget(),
-  });
 
   await recordShareLinkView(db, link.id);
-
-  setResponseHeader(event, 'Content-Type', built.contentType);
-  setResponseHeader(event, 'Content-Length', built.bytes.length);
-  setResponseHeader(event, 'Content-Disposition', 'inline');
-  setResponseHeader(event, 'X-Content-Type-Options', 'nosniff');
-  setResponseHeader(event, 'Referrer-Policy', 'no-referrer');
-  // Unique opaque origin: the document cannot read cookies or make
-  // credentialed calls back into the dashboard, exactly like a print export.
-  setResponseHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts allow-modals');
-
-  return Buffer.from(built.bytes);
+  setShareDocumentHeaders(event, contentType, bytes.length);
+  return Buffer.from(bytes);
 });

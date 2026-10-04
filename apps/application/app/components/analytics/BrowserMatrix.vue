@@ -10,14 +10,7 @@ const {
   refresh,
 } = await useAnalyticsWidget<AnalyticsBrowserMatrix>('browser-matrix', () => props.query);
 
-function cellClass(rate: number | null): string {
-  if (rate === null) return 'bg-gray-100 dark:bg-gray-800 text-gray-400';
-  if (rate >= 99.5) return 'bg-green-500/85 text-white';
-  if (rate >= 90) return 'bg-green-500/45';
-  if (rate >= 75) return 'bg-amber-500/50';
-  if (rate >= 50) return 'bg-orange-500/60';
-  return 'bg-red-500/70 text-white';
-}
+const EMPTY_CELL_CLASS = 'bg-gray-100 dark:bg-gray-800 text-gray-400';
 </script>
 
 <template>
@@ -60,7 +53,8 @@ function cellClass(rate: number | null): string {
               v-for="(rate, index) in row.cells"
               :key="index"
               class="text-center tabular-nums rounded-md px-2 py-1.5 font-medium"
-              :class="cellClass(rate)"
+              :class="rate === null ? EMPTY_CELL_CLASS : passRateStep(rate).text"
+              :style="rate === null ? undefined : { backgroundColor: passRateStep(rate).color }"
               :title="`${row.label || row.name} · ${matrix.browsers[index]}: ${rate !== null ? `${rate}% passed` : 'no tests'}`"
             >
               {{ rate !== null ? `${Math.round(rate)}%` : '—' }}

@@ -9,6 +9,7 @@
  * `details` and can be shown in full without another round-trip.
  */
 import type { FailureDiagnosis } from '~~/server/database/schema';
+import { diagnosisAuthorLabel } from '#shared/agent-diagnosis';
 import { formatRelativeTime, prettyDateFormat } from '~/utils';
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ interface VersionItem {
   confidence: string | null;
   summary: string | null;
   rootCause: string | null;
+  provider?: string | null;
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -80,7 +82,7 @@ function toDiagnosis(v: VersionItem): FailureDiagnosis {
     testRunsCaseId: null,
     contextSha: null,
     status: v.status,
-    provider: null,
+    provider: v.provider ?? null,
     model: v.model,
     category: v.category,
     confidence: v.confidence,
@@ -203,7 +205,7 @@ const feedbackIcon = (f: string | null) =>
                 </UBadge>
               </div>
               <p class="text-xs text-gray-400 mt-1 truncate">
-                {{ e.diagnosis.model || 'unknown model' }}
+                {{ diagnosisAuthorLabel(e.diagnosis.provider, e.diagnosis.model) }}
                 <template v-if="e.diagnosis.inputTokens != null || e.diagnosis.outputTokens != null">
                   · {{ (e.diagnosis.inputTokens ?? 0) + (e.diagnosis.outputTokens ?? 0) }} tokens
                 </template>

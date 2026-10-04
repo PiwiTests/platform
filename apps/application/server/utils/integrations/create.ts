@@ -3,7 +3,12 @@
  * queued action and one immediate attempt, so a click resolves in a single
  * round-trip when Jira is up. The body and labels are rebuilt server-side from
  * the entity — the client's edits pick the fields, never the evidence — and the
- * dedupe key makes a second click a no-op.
+ * dedupe key makes a second click a no-op once an issue exists.
+ *
+ * The fields the tracker requires are checked first: the project's field
+ * defaults and the request's own values fill them, and a create that would still
+ * leave one empty is refused with the field names before Jira is called. A
+ * request that failed before is replaced by the new one rather than replayed.
  */
 import { eq } from 'drizzle-orm';
 import { failureClusters, testRunsCases } from '../../database/schema';
@@ -11,11 +16,27 @@ import type { DbClient } from '../../database';
 import { issueLabels } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
-import { buildClusterIssue, buildExecutionIssue } from './documents';
+import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue } from './documents';
 import { clusterShareTokenMinter } from './share-url';
-import { enqueueAction, runActionNow, type CreateIssueActionPayload, type CreateIssueResult } from './actions';
+import {
+  enqueueOrReplaceAction,
+  findActionByKey,
+  runActionNow,
+  type CreateIssueActionPayload,
+  type CreateIssueResult,
+} from './actions';
+import { forgetCreateFields, getCreateFields } from './fields';
+import {
+  fieldPayload,
+  hasFieldValue,
+  missingFieldsMessage,
+  missingRequiredFields,
+  type FieldValues,
+  type TrackerField,
+} from '#shared/integrations/fields';
+import type { IssueFieldProblem } from '#shared/integrations/types';
 import { readProjectIntegration } from './binding';
-import { pickOwnerRoute } from '#shared/integrations/binding';
+import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { createIssueKey } from '#shared/integrations/action-keys';
 import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import type { DraftEntityType } from './draft';
@@ -31,17 +52,54 @@ export interface CreateIssueParams {
   assignee?: string | null;
   locale?: IssueLocale;
   include?: Partial<IssueIncludeOptions>;
+  /** Values for tracker fields, over the project's field defaults. */
+  fields?: FieldValues;
   requestedBy?: number | null;
   siteUrl?: string | null;
 }
 
 export interface CreateIssueOutcome {
-  actionId: number;
+  /** The queued action; null when the create was refused before anything was queued. */
+  actionId: number | null;
   status: 'done' | 'pending' | 'failed' | 'skipped';
   key?: string;
   url?: string;
   error?: string;
+  /** Required fields the create would leave empty — nothing was sent to the tracker. */
+  missingFields?: IssueFieldProblem[];
+  /** The tracker's own per-field refusals, with the fields' names. */
+  fieldErrors?: IssueFieldProblem[];
   projectId: number;
+}
+
+/** The request's values over the project defaults, dropping any left empty. */
+function mergeFieldValues(defaults: FieldValues, requested: FieldValues | undefined): FieldValues {
+  const merged: FieldValues = { ...defaults };
+  for (const [id, entry] of Object.entries(requested ?? {})) {
+    if (hasFieldValue(entry?.value)) merged[id] = entry;
+    else delete merged[id];
+  }
+  return merged;
+}
+
+/** The tracker's per-field refusals, named from the create screen when it is known. */
+function namedFieldErrors(errors: Record<string, string>, screen: TrackerField[] | null): IssueFieldProblem[] {
+  const names = new Map((screen ?? []).map((f) => [f.id, f.name]));
+  return Object.entries(errors).map(([id, message]) => ({ id, name: names.get(id) ?? id, message }));
+}
+
+/** The create screen's fields, or null when the tracker cannot be asked; a create never waits on it failing. */
+async function screenFields(
+  db: DbClient,
+  connectionId: number,
+  projectKey: string,
+  issueType: string,
+): Promise<TrackerField[] | null> {
+  try {
+    return await getCreateFields(db, connectionId, projectKey, issueType);
+  } catch {
+    return null;
+  }
 }
 
 /** The cluster an entity belongs to, plus the project it lives in. */
@@ -50,6 +108,7 @@ async function resolveTarget(
   entityType: DraftEntityType,
   entityId: number,
 ): Promise<{ clusterId: number; projectId: number } | null> {
+  if (entityType === 'bug_report') return null;
   const clusterId =
     entityType === 'failure_cluster'
       ? entityId
@@ -69,6 +128,7 @@ async function resolveTarget(
 }
 
 export async function createIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  if (params.entityType === 'bug_report') return createBugReportIssue(db, params);
   const target = await resolveTarget(db, params.entityType, params.entityId);
   if (!target) return null;
 
@@ -105,25 +165,110 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
 
   const labels = [...new Set([...(params.labels ?? built.labels), ...(route?.labels ?? []), ...standardLabels])];
 
-  const payload: CreateIssueActionPayload = {
-    projectKey: params.projectKey,
-    issueType: params.issueType,
-    title: params.title?.trim() || built.title,
+  return fileIssue(db, params, binding, {
+    projectId: target.projectId,
+    title: built.title,
     document: built.document,
     labels,
-    assigneeId: params.assignee ?? null,
     componentId: route?.componentId ?? null,
-    locale,
     // The created known-issue link always attaches to the cluster, so the chip
     // shows on the cluster page and the inbox regardless of the entity clicked.
     linkEntityType: 'failure_cluster',
     linkEntityId: target.clusterId,
+  });
+}
+
+/**
+ * File an issue for a bug report: the report's own document and labels, no
+ * cluster, the created link on the report. Its screenshots follow as `attach`
+ * actions once the issue exists (see `applyCreateIssue`).
+ */
+async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Promise<CreateIssueOutcome | null> {
+  const locale = params.locale ?? DEFAULT_LOCALE;
+  const built = await buildBugReportIssue(db, params.entityId, { locale, siteUrl: params.siteUrl });
+  if (!built) return null;
+  const binding = await readProjectIntegration(db, built.projectId);
+  const labels = [...new Set([...(params.labels ?? binding.labels), ...built.labels])];
+
+  return fileIssue(db, params, binding, {
+    projectId: built.projectId,
+    title: built.title,
+    document: built.document,
+    labels,
+    componentId: null,
+    linkEntityType: 'bug_report',
+    linkEntityId: params.entityId,
+  });
+}
+
+/** What an issue is filed with, once the entity it is filed for is resolved. */
+interface IssueToFile {
+  projectId: number;
+  /** The title used when the request names none. */
+  title: string;
+  document: CreateIssueActionPayload['document'];
+  labels: string[];
+  componentId: string | null;
+  linkEntityType: CreateIssueActionPayload['linkEntityType'];
+  linkEntityId: number;
+}
+
+/**
+ * File the issue: the one already filed for this entity when there is one,
+ * else a refusal naming the required fields still empty, else a `create-issue`
+ * action enqueued and run now, its outcome mapped for the caller.
+ */
+async function fileIssue(
+  db: DbClient,
+  params: CreateIssueParams,
+  binding: ResolvedProjectIntegration,
+  issue: IssueToFile,
+): Promise<CreateIssueOutcome> {
+  // An issue already filed for this entity is the answer, whatever the request says.
+  const dedupeKey = createIssueKey(params.entityType, params.entityId, params.connectionId);
+  const filed = await findActionByKey(db, dedupeKey);
+  if (filed?.status === 'done') {
+    const result = filed.result as CreateIssueResult | null;
+    return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: issue.projectId };
+  }
+
+  // Required fields: refuse before calling Jira when the defaults and the
+  // request still leave one empty, naming them.
+  const values = mergeFieldValues(binding.fieldDefaults, params.fields);
+  const screen = await screenFields(db, params.connectionId, params.projectKey, params.issueType);
+  if (screen) {
+    const missing = missingRequiredFields(screen, values, {
+      assignee: !!params.assignee,
+      components: !!issue.componentId,
+    });
+    if (missing.length) {
+      return {
+        actionId: null,
+        status: 'failed',
+        error: missingFieldsMessage(missing),
+        missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+        projectId: issue.projectId,
+      };
+    }
+  }
+
+  const payload: CreateIssueActionPayload = {
+    projectKey: params.projectKey,
+    issueType: params.issueType,
+    title: params.title?.trim() || issue.title,
+    document: issue.document,
+    labels: issue.labels,
+    assigneeId: params.assignee ?? null,
+    componentId: issue.componentId,
+    fields: fieldPayload(values, screen),
+    locale: params.locale ?? DEFAULT_LOCALE,
+    linkEntityType: issue.linkEntityType,
+    linkEntityId: issue.linkEntityId,
   };
 
-  const dedupeKey = createIssueKey(params.entityType, params.entityId, params.connectionId);
-  const action = await enqueueAction(db, {
+  const action = await enqueueOrReplaceAction(db, {
     connectionId: params.connectionId,
-    projectId: target.projectId,
+    projectId: issue.projectId,
     kind: 'create-issue',
     entityType: params.entityType,
     entityId: params.entityId,
@@ -133,13 +278,22 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   });
 
   const outcome = await runActionNow(db, action.id);
-  const base: CreateIssueOutcome = { actionId: action.id, status: 'pending', projectId: target.projectId };
+  const base: CreateIssueOutcome = { actionId: action.id, status: 'pending', projectId: issue.projectId };
   if (!outcome) return base;
   if (outcome.status === 'done') {
     const result = outcome.result as CreateIssueResult | undefined;
     return { ...base, status: 'done', key: result?.key, url: result?.url };
   }
-  if (outcome.status === 'failed') return { ...base, status: 'failed', error: outcome.error };
+  if (outcome.status === 'failed') {
+    // A refusal naming fields means the cached screen may be stale.
+    if (outcome.fieldErrors) forgetCreateFields(params.connectionId, params.projectKey, params.issueType);
+    return {
+      ...base,
+      status: 'failed',
+      error: outcome.error,
+      ...(outcome.fieldErrors ? { fieldErrors: namedFieldErrors(outcome.fieldErrors, screen) } : {}),
+    };
+  }
   if (outcome.status === 'skipped') return { ...base, status: 'skipped', error: outcome.reason };
   return base;
 }

@@ -4,6 +4,7 @@ import { requireAuth, isAuthEnabled } from '../../utils/auth';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { Role } from '#shared/types';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
@@ -13,7 +14,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Create a subscription',
     description:
-      'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global.',
+      'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global. Optional `filters` narrow what is delivered: `branches` and `environments` (exact names or `*` patterns such as `release/*`, matched against the run every run-scoped event comes from), `statuses`, `defaultBranchOnly`, `owners`, `flakinessThreshold` and `perfRegressionPct`.',
     'x-required-roles': [],
   },
 });
@@ -22,15 +23,7 @@ const schema = z.object({
   channelId: z.number().int(),
   projectId: z.number().int().nullable().optional(),
   events: z.array(z.enum(NOTIFICATION_EVENTS)).min(1),
-  filters: z
-    .object({
-      branches: z.array(z.string()).optional(),
-      statuses: z.array(z.string()).optional(),
-      defaultBranchOnly: z.boolean().optional(),
-      flakinessThreshold: z.number().min(0).max(1).optional(),
-      perfRegressionPct: z.number().min(0).optional(),
-    })
-    .optional(),
+  filters: subscriptionFiltersSchema.optional(),
   mode: z.enum(['realtime', 'digest']).optional(),
   digestAt: z
     .string()
@@ -95,7 +88,7 @@ export default eventHandler(async (event) => {
       channelId,
       projectId: projectId ?? null,
       events: events as unknown as string[],
-      filters: (filters as unknown as Record<string, unknown>) ?? null,
+      filters: filters ?? null,
       mode: mode || 'realtime',
       digestAt: digestAt || null,
       active: true,

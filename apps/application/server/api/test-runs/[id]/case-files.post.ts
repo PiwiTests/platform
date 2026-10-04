@@ -3,11 +3,12 @@ import { getDatabase } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
-import { parseLocation } from '../../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { readShardTokensFromMeta } from '../../../utils/shard-tokens';
+import { matchesShardToken, readShardTokensFromMeta } from '../../../utils/shard-tokens';
 import { upsertTraceBlob, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
+import { recordIngestHealth } from '../../../utils/ingest-health';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
 import { sanitizeFilename } from '../../../utils/sanitize-filename';
@@ -141,7 +142,7 @@ async function handleCaseFiles(
   // case files, and only one of them holds the run's primary stream token.
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-  const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
+  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, streamToken, isShardToken);
 
   // Locate the run case row the reporter streamed earlier
@@ -253,6 +254,7 @@ async function handleCaseFiles(
       // 422 (unknown hash) must reach the reporter so it can resend with the file
       if (error && typeof error === 'object' && 'statusCode' in error) throw error;
       console.error(`[CaseFiles] Failed to store trace for case #${runCase.id}: ${error}`);
+      await recordIngestHealth(db, id, { tracesSkipped: 1 });
     }
   }
 

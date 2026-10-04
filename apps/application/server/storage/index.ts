@@ -13,8 +13,8 @@ let storageInstance: StorageAdapter | null = null;
  * - PIWI_STORAGE_PATH: Path for local storage (default: '.data/storage')
  * - PIWI_S3_BUCKET: S3 bucket name (required if PIWI_STORAGE_TYPE=s3)
  * - PIWI_S3_REGION: AWS region (required if PIWI_STORAGE_TYPE=s3)
- * - PIWI_S3_ACCESS_KEY_ID: AWS access key (required if PIWI_STORAGE_TYPE=s3)
- * - PIWI_S3_SECRET_ACCESS_KEY: AWS secret key (required if PIWI_STORAGE_TYPE=s3)
+ * - PIWI_S3_ACCESS_KEY_ID: Optional static S3 access key
+ * - PIWI_S3_SECRET_ACCESS_KEY: Optional static S3 secret key
  * - PIWI_S3_ENDPOINT: Optional custom S3 endpoint
  */
 export function getStorage(): StorageAdapter {
@@ -31,23 +31,26 @@ export function getStorage(): StorageAdapter {
     const accessKeyId = process.env.PIWI_S3_ACCESS_KEY_ID;
     const secretAccessKey = process.env.PIWI_S3_SECRET_ACCESS_KEY;
 
-    if (!bucket || !region || !accessKeyId || !secretAccessKey) {
+    if (!bucket || !region) {
+      throw new Error('S3 storage requires PIWI_S3_BUCKET and PIWI_S3_REGION environment variables');
+    }
+    if (!!accessKeyId !== !!secretAccessKey) {
       throw new Error(
-        'S3 storage requires PIWI_S3_BUCKET, PIWI_S3_REGION, PIWI_S3_ACCESS_KEY_ID, and PIWI_S3_SECRET_ACCESS_KEY environment variables',
+        'PIWI_S3_ACCESS_KEY_ID and PIWI_S3_SECRET_ACCESS_KEY must be set together when using static S3 credentials',
       );
     }
 
-    const s3Config: S3Config = {
+    const baseConfig = {
       bucket,
       region,
-      accessKeyId,
-      secretAccessKey,
       endpoint: process.env.PIWI_S3_ENDPOINT,
       // When PIWI_S3_FORCE_PATH_STYLE is explicitly set, use its value; otherwise default to true when a custom endpoint is configured
       ...(process.env.PIWI_S3_FORCE_PATH_STYLE !== undefined && {
         forcePathStyle: process.env.PIWI_S3_FORCE_PATH_STYLE !== 'false',
       }),
     };
+    const s3Config: S3Config =
+      accessKeyId && secretAccessKey ? { ...baseConfig, accessKeyId, secretAccessKey } : baseConfig;
 
     console.log(`[Storage] Initializing S3 storage with bucket: ${bucket}, region: ${region}`);
     storageInstance = new S3StorageAdapter(s3Config);

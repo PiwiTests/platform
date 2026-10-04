@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { AiStepIntent, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
+import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
+import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { renderAnsi } from '~/utils';
 import { buildRetryCommand } from '~/utils/retry-command';
 import type { FailureVerdict } from '#shared/failure-verdict';
@@ -13,13 +14,21 @@ import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
 import type { Situation, SituationPart } from '#shared/situation';
+import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
 import { commitUrl } from '#shared/scm-urls';
+import { shouldNudgeFixtures } from '#shared/capability-nudge';
+import type { LocatorHealingResult } from '#shared/locator-healing.types';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const { data: testCase, refresh } = await useFetch(`/api/test-run-cases/${testCaseId}`);
+const { data: testCase, refresh } = await useFetch<
+  ApiResponse<typeof import('~~/server/api/test-run-cases/[id].get').default>
+>(`/api/test-run-cases/${testCaseId}`);
+
+// Server-rendered fetches carry the viewer's session.
+const requestFetch = useRequestFetch();
 
 // The rows ride in the SSR payload, so the server and the client agree on the
 // History block's strip at hydration.
@@ -28,7 +37,7 @@ const { data: historyData } = await useAsyncData(
   () => {
     const tcId = testCase.value?.testCaseId;
     return tcId
-      ? $fetch<{ items: TestCaseHistoryPoint[] }>(`/api/test-cases/${tcId}/history`).then((r) => r.items)
+      ? requestFetch<{ items: TestCaseHistoryPoint[] }>(`/api/test-cases/${tcId}/history`).then((r) => r.items)
       : Promise.resolve([]);
   },
   { default: (): TestCaseHistoryPoint[] => [], watch: [() => testCase.value?.testCaseId] },
@@ -92,6 +101,7 @@ const failureCluster = computed(() => {
       confidence?: string | null;
       summary?: string | null;
     } | null;
+    knownIssue?: KnownIssueRef | null;
   } | null;
 });
 
@@ -149,9 +159,71 @@ const isProblem = computed(() => {
 
 const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
 
+// The capture-fixtures nudge: one contextual line under the headline that offers
+// to decline the fixtures, shown only to an administrator, only where fixtures
+// are undecided for the project, and only when the leading clue (or a timeout)
+// would have used what the fixtures capture. It replaces the evidence footer's
+// naming line on this page.
+const {
+  state: projectCapState,
+  isHidden: capHidden,
+  canDecide: canDecideCap,
+  decide: decideProjectCap,
+} = await useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
+const { decide: decideInstanceCap } = await useInstanceCapabilities();
+
+// The evidence footer's decline controls: both write a `declined` decision, one
+// per level, and the resolver hides the sources everywhere on the next read.
+async function declineFixtures(level: 'project' | 'instance') {
+  if (level === 'project') await decideProjectCap('fixtures', 'declined');
+  else await decideInstanceCap('fixtures', 'declined');
+}
+const isTimeoutFailure = computed(() => {
+  const s = testCase.value?.status;
+  return s === 'timedout' || s === 'timedOut';
+});
+const showFixturesNudge = computed(
+  () =>
+    canDecideCap.value &&
+    shouldNudgeFixtures({
+      clueSection: defaultHint.value.section,
+      isTimeout: isTimeoutFailure.value,
+      fixturesState: projectCapState('fixtures'),
+    }),
+);
+const nudgeDeciding = ref(false);
+async function declineFixturesForProject() {
+  if (nudgeDeciding.value) return;
+  nudgeDeciding.value = true;
+  try {
+    await decideProjectCap('fixtures', 'declined');
+  } finally {
+    nudgeDeciding.value = false;
+  }
+}
+
 /** A locator-resolution failure — the only case the Locator fix section applies to. */
 const isLocatorFailure = computed(() =>
   Boolean(verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
+);
+
+// The Locator fix section rides on the healing data. Hoisting the same fetch the
+// panel makes (shared by key) lets the toolbox add the section only when there
+// is something to show — and never when healing is hidden for this project.
+const { data: locatorHealingData } = await useFetch<LocatorHealingResult>(
+  () => `/api/test-run-cases/${testCaseId}/locator-healing`,
+  { lazy: true, immediate: isLocatorFailure.value, key: `locator-healing-${testCaseId}` },
+);
+const locatorHealingHasData = computed(() => {
+  const h = locatorHealingData.value;
+  return (
+    !!h &&
+    h.source !== 'none' &&
+    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
+  );
+});
+const showLocatorFix = computed(
+  () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
 
 // CI re-run for the cluster this failure belongs to, for the Verify section.
@@ -159,7 +231,7 @@ const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo 
   `test-run-case-rerun-${testCaseId}`,
   () => {
     const id = failureCluster.value?.id;
-    return id ? $fetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
+    return id ? requestFetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
   },
   { default: (): RerunInfo | null => null, watch: [() => failureCluster.value?.id] },
 );
@@ -169,7 +241,7 @@ const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncDat
   () => {
     const id = failureCluster.value?.id;
     return id
-      ? $fetch<{ items: FixedBeforeMatch[] }>(`/api/failure-clusters/${id}/fixed-before`).then((r) => r.items)
+      ? requestFetch<{ items: FixedBeforeMatch[] }>(`/api/failure-clusters/${id}/fixed-before`).then((r) => r.items)
       : Promise.resolve([]);
   },
   { default: (): FixedBeforeMatch[] => [], watch: [() => failureCluster.value?.id] },
@@ -183,7 +255,7 @@ const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   `test-run-case-fix-plan-${testCaseId}`,
   () => {
     const id = failureCluster.value?.id;
-    return id ? $fetch<FixPlan>(`/api/failure-clusters/${id}/fix-plan`).catch(() => null) : Promise.resolve(null);
+    return id ? requestFetch<FixPlan>(`/api/failure-clusters/${id}/fix-plan`).catch(() => null) : Promise.resolve(null);
   },
   { default: (): FixPlan | null => null, watch: [() => failureCluster.value?.id] },
 );
@@ -207,7 +279,7 @@ const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduce
 /** The Fix card's sections, in the order the card renders them. */
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = [];
-  if (isLocatorFailure.value) s.push('locator-fix');
+  if (showLocatorFix.value) s.push('locator-fix');
   if (failureCluster.value) s.push('fix-plan');
   s.push('diagnosis');
   if (fixedBefore.value.length) s.push('fixed-before');
@@ -245,6 +317,11 @@ const annotations = computed(() =>
 
 const quarantined = computed(() => Boolean((testCase.value as { quarantined?: boolean } | null)?.quarantined));
 
+// The situation block's edge, in this execution's outcome color.
+const statusEdge = computed(() =>
+  testCase.value ? statusPalette(testCase.value.status, testCase.value.retries).color : null,
+);
+
 /**
  * Exceptional badges only. The why-signals (regression, passed on retry, newly
  * flaky) live in the headline's fact row when there is a headline, so they show
@@ -255,13 +332,20 @@ const headerBadges = computed(() => {
   const tc = testCase.value;
   type Badge = {
     label: string;
-    color?: 'error' | 'warning' | 'neutral';
+    color?: 'error' | 'flaky' | 'neutral' | 'success';
     icon?: string;
     title?: string;
     mono?: boolean;
   };
   if (!tc) return [] as Badge[];
   const out: Badge[] = [];
+  if (isExpectedFailurePassed(tc.status, tc.expectedStatus))
+    out.push({
+      label: 'Looks fixed',
+      color: 'success',
+      icon: 'i-lucide-bug-off',
+      title: 'Marked test.fail() and passed: the bug it reproduces no longer shows. Remove test.fail() with the fix.',
+    });
   if (!verdict.value) {
     if (tc.isNewRegression)
       out.push({
@@ -273,14 +357,14 @@ const headerBadges = computed(() => {
     if (tc.status === 'passed' && (tc.retries ?? 0) > 0)
       out.push({
         label: 'Passed on retry',
-        color: 'warning',
+        color: 'flaky',
         icon: 'i-lucide-refresh-cw',
         title: 'This test failed then passed on a retry',
       });
     if (tc.isNewFlaky)
       out.push({
         label: 'Newly flaky',
-        color: 'warning',
+        color: 'flaky',
         icon: 'i-lucide-shuffle',
         title: 'Newly started passing only on retry',
       });
@@ -291,8 +375,7 @@ const headerBadges = computed(() => {
 });
 
 // ── Retry command ────────────────────────────────────────────────────────────
-// The trailing "then" on the next-step line, plus the More menu and the Verify
-// section — no longer an always-on header button.
+// In the next-step line's overflow menu, the More menu and the Verify section.
 const retryCases = computed(() => [
   {
     filePath: testCase.value?.filePath ?? '',
@@ -368,25 +451,10 @@ function copyFailure() {
 const linksModalOpen = ref(false);
 
 // ── Create issue / link to the cluster's known issue ─────────────────────────
-const toast = useToast();
 const { hasTracker } = useTrackerStatus();
-const knownIssue = computed(() => fixPlanData.value?.issue ?? null);
+// The execution carries its cluster's issue, so it is current right after a create.
+const knownIssue = computed(() => failureCluster.value?.knownIssue ?? fixPlanData.value?.issue ?? null);
 const issueModalOpen = ref(false);
-
-async function linkKnownIssue() {
-  const issue = knownIssue.value;
-  if (!issue || !testCase.value) return;
-  try {
-    await $fetch('/api/links', {
-      method: 'POST',
-      body: { entityType: 'test_runs_case', entityId: testCase.value.id, url: issue.url, title: issue.key },
-    });
-    toast.add({ title: `Linked ${issue.key}`, color: 'success' });
-    await refresh();
-  } catch (e) {
-    toast.add({ title: 'Could not link the issue', description: errorMessage(e), color: 'error' });
-  }
-}
 
 function onIssueCreated() {
   issueModalOpen.value = false;
@@ -395,9 +463,16 @@ function onIssueCreated() {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'warning'; onSelect: () => void }[] = [];
-  // The retry command was the header's always-on primary; it now lives here and
-  // on the next-step line (for code-change steps) and in the Verify section.
+  const items: {
+    label: string;
+    icon: string;
+    color?: 'warning';
+    to?: string;
+    target?: '_blank';
+    onSelect?: () => void;
+  }[] = [];
+  // The retry command also appears on the next-step line (for code-change
+  // steps) and in the Verify section.
   if (retryCommand.value && !desktopBridge.value) {
     items.push({
       label: 'Copy retry command',
@@ -422,16 +497,15 @@ const moreMenuItems = computed(() => {
           },
     );
   }
-  if (canWrite.value && hasTracker.value && failureCluster.value) {
-    if (knownIssue.value) {
-      items.push({
-        label: `Link to ${knownIssue.value.key}`,
-        icon: 'i-simple-icons-jira',
-        onSelect: () => void linkKnownIssue(),
-      });
-    } else {
-      items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
-    }
+  if (knownIssue.value) {
+    items.push({
+      label: `Open ${knownIssue.value.key}`,
+      icon: 'i-simple-icons-jira',
+      to: knownIssue.value.url,
+      target: '_blank',
+    });
+  } else if (canWrite.value && hasTracker.value && failureCluster.value) {
+    items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
   }
   items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
   if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
@@ -619,7 +693,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
       <!-- No side gutter below `sm`: the cards go full-bleed to the screen edge. -->
       <div class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: what broke, what is going on, what to do next ── -->
-        <SituationBlock help="case.situation">
+        <SituationBlock help="case.situation" :edge="statusEdge">
           <!-- Line 1: identity kicker — status, title, marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -645,7 +719,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               data-shot="failure-headline"
               class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words"
             >
-              <FailureHeadline :parts="verdict.parts" plain />
+              <FailureHeadline :parts="verdict.parts" chip />
             </h1>
             <p
               v-if="verdict.detail && !story"
@@ -653,6 +727,18 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :title="verdict.detail"
             >
               {{ verdict.detail }}
+            </p>
+            <!-- The capture-fixtures nudge, at the point where their absence is felt. -->
+            <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted">
+              Capture fixtures would have recorded the network activity behind this failure.
+              <button
+                type="button"
+                :class="SENTENCE_LINK_CLASS"
+                :disabled="nudgeDeciding"
+                @click="declineFixturesForProject"
+              >
+                Not for this project
+              </button>
             </p>
           </template>
 
@@ -665,10 +751,19 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <template v-if="situation" #situation>
             <p data-shot="situation">
               <template v-for="(part, i) in situation.parts" :key="i">
+                <a
+                  v-if="part.kind === 'issue' && part.url"
+                  :href="part.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
+                  data-testid="situation-issue"
+                  >{{ part.text }}</a
+                >
                 <NuxtLink
-                  v-if="part.href"
+                  v-else-if="part.href"
                   :to="part.href"
-                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? 'font-mono' : '']"
+                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? CODE_CHIP_CLASS : '']"
                   >{{ part.text }}</NuxtLink
                 >
                 <a
@@ -676,10 +771,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   :href="situationCommitHref(part)!"
                   target="_blank"
                   rel="noopener"
-                  :class="[SENTENCE_LINK_CLASS, 'font-mono']"
+                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
                   >{{ part.text }}</a
                 >
-                <span v-else-if="part.kind === 'commit'" class="font-mono">{{ part.text }}</span>
+                <span v-else-if="part.kind === 'commit'" :class="CODE_CHIP_CLASS">{{ part.text }}</span>
                 <span v-else-if="part.kind === 'owner'" class="text-highlighted">{{ part.text }}</span>
                 <template v-else>{{ part.text }}</template>
               </template>
@@ -717,7 +812,11 @@ const { handle: handleNextStepAction } = useNextStepActions({
             :traces="(traceData as TraceInfo[]) ?? []"
             :has-trace="hasTrace"
             :default-hint="defaultHint"
+            :suppress-fixtures-footer="showFixturesNudge"
+            :fixtures-state="projectCapState('fixtures')"
+            :can-decide-fixtures="canDecideCap"
             help="case.evidence"
+            @decline-fixtures="declineFixtures"
           />
         </div>
 
@@ -745,9 +844,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <!-- Ranked replacement locators for a broken locator -->
             <template #locator-fix>
               <LocatorHealingPanel
-                v-if="testCase?.testRun?.id"
+                v-if="testCase"
                 ref="locatorPanel"
-                :run-id="testCase.testRun.id"
                 :test-runs-case-id="Number(testCaseId)"
                 :ai-intents="aiIntents"
                 :chrome="false"
@@ -892,10 +990,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
   <UModal v-model:open="linksModalOpen" title="Links">
     <template #body>
       <EntityLinks
-        v-if="testCase?.executionId"
+        v-if="testCase?.testCaseId"
         entity-type="test_case"
-        :entity-id="testCase.executionId"
-        :links="(testCase as any)?.stableLinks ?? null"
+        :entity-id="testCase.testCaseId"
+        :links="testCase.stableLinks ?? null"
         @updated="refresh()"
       />
     </template>

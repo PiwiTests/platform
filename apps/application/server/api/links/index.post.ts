@@ -1,11 +1,7 @@
 import { requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { getDatabase } from '../../database';
-import { entityLinks } from '../../database/schema';
-import { eq } from 'drizzle-orm';
-import { createLink } from '#shared/handlers/links';
-import { z } from 'zod';
-import { detectProviderWithConnections } from '../../utils/integrations/link-resolve';
-import { unfurlLink } from '../../utils/integrations/link-unfurl';
+import { createLinkSchema } from '#shared/handlers/links';
+import { createEnrichedLink } from '../../utils/integrations/link-create';
 
 defineRouteMeta({
   openAPI: {
@@ -15,13 +11,6 @@ defineRouteMeta({
       'Attach an external URL to a run, test-case run, test case, or failure cluster. Provider is auto-detected from the URL.',
     'x-required-roles': ['administrator', 'reporter'],
   },
-});
-
-const createLinkSchema = z.object({
-  entityType: z.enum(['test_run', 'test_runs_case', 'test_case', 'failure_cluster']),
-  entityId: z.number().int().positive(),
-  url: z.string().url('Must be a valid URL'),
-  title: z.string().max(200).nullable().optional(),
 });
 
 export default eventHandler(async (event) => {
@@ -43,37 +32,18 @@ export default eventHandler(async (event) => {
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
   await requireProjectAccess(event, projectId);
 
-  let result: { link: any };
+  let link: Awaited<ReturnType<typeof createEnrichedLink>>;
   try {
-    result = await createLink(db, { entityType, entityId, url, title }, (u) => detectProviderWithConnections(db, u));
+    link = await createEnrichedLink(db, { entityType, entityId, url, title });
   } catch (err) {
     throw apiError({
       statusCode: 404,
       message: err instanceof Error ? err.message : 'Failed to create link',
     });
   }
-
-  const inserted = result.link;
-  if (!inserted) {
+  if (!link) {
     throw apiError({ statusCode: 500, message: 'Failed to create link' });
   }
 
-  // Best-effort unfurl (server-only enrichment) — through the connection when the
-  // link matched one, otherwise the rich provider / OpenGraph path.
-  const { title: fetchedTitle, statusText, statusColor } = await unfurlLink(db, inserted);
-  if (fetchedTitle || statusText) {
-    await db
-      .update(entityLinks)
-      .set({
-        title: fetchedTitle ?? inserted.title,
-        statusText: statusText ?? null,
-        statusColor: statusColor ?? null,
-        unfurledAt: new Date(),
-      })
-      .where(eq(entityLinks.id, inserted.id));
-    const updated = await db.select().from(entityLinks).where(eq(entityLinks.id, inserted.id));
-    return { success: true, link: updated[0] };
-  }
-
-  return { success: true, link: inserted };
+  return { success: true, link };
 });

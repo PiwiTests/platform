@@ -4,7 +4,8 @@
  * hands this composable the page-specific targets (its locator panel, its scroll
  * anchors, how it sets the cluster status, quarantines, re-runs) as callbacks,
  * and the composable owns the shared plumbing — the diagnosed patch's copy /
- * download / open-in-IDE, the recipe copy, the AI-prompt copy, the navigation —
+ * download / open-in-IDE, the recipe copy, the AI-prompt copy, the Flake Lab
+ * command and its CI dispatch, the navigation —
  * so the execution page and the cluster page never duplicate the switch.
  */
 import { reproScript, type ReproRecipe } from '#shared/reproduce';
@@ -60,6 +61,30 @@ function patchTargetFile(patch: string): { filePath: string; line: number | null
   if (!file?.[1]) return null;
   const hunk = patch.match(/^@@ -\d+(?:,\d+)? \+(\d+)/m);
   return { filePath: file[1].trim(), line: hunk ? Number(hunk[1]) : null };
+}
+
+/** Dispatch a test's Flake Lab experiment to the project's Flake Lab CI target, and say how it went. */
+async function runFlakeLabInCi(testCaseId: number, kind: string) {
+  const toast = useToast();
+  try {
+    const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string } }>(
+      `/api/test-cases/${testCaseId}/flake-lab-ci`,
+      { method: 'POST', body: { kind } },
+    );
+    if (res.ok && res.dispatch) {
+      toast.add({
+        title: 'Flake Lab dispatched to CI',
+        description: 'The experiment shows on the Flakiness tab when it finishes.',
+        color: 'success',
+        actions: [{ label: 'Watch it', to: res.dispatch.url, target: '_blank' }],
+      });
+    } else {
+      toast.add({ title: 'Flake Lab not started', description: res.message ?? 'Not available.', color: 'warning' });
+    }
+  } catch (e: unknown) {
+    const message = (e as { data?: { message?: string } })?.data?.message ?? 'Dispatch failed.';
+    toast.add({ title: 'Flake Lab dispatch failed', description: message, color: 'error' });
+  }
 }
 
 export function useNextStepActions(handlers: NextStepActionHandlers) {
@@ -144,6 +169,18 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
       case 'copy-ai-prompt':
         await copyPrompt(handlers.diagnosisContextEndpoint());
         break;
+      case 'copy-flake-command':
+        if (typeof payload?.command === 'string') copyPlain(payload.command, { toast: 'Lab command copied' });
+        break;
+      case 'flake-lab-ci':
+        if (typeof payload?.testCaseId === 'number') await runFlakeLabInCi(payload.testCaseId, String(payload.kind));
+        break;
+      case 'flakiness-tab': {
+        if (typeof payload?.testCaseId !== 'number') break;
+        const suspect = typeof payload.suspect === 'string' ? payload.suspect : undefined;
+        await navigateTo({ path: `/test-cases/${payload.testCaseId}`, query: { tab: 'flakiness', suspect } });
+        break;
+      }
       case 'configure-ai':
         await navigateTo('/settings/ai');
         break;

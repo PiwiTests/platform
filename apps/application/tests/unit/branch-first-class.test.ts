@@ -10,7 +10,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // the handler modules under test load the SQLite schema.
 delete process.env.PIWI_DATABASE_URL;
 const { resolveRunBranch, resolveRunPrNumber, resolveRunBaseBranch } = await import('../../server/utils/run-branch');
-const { selectBaselineRun } = await import('../../server/utils/branch-baseline');
+const { selectBaselineRun, listBaselineBranches } = await import('../../server/utils/branch-baseline');
 const { resolveDefaultBranch } = await import('../../server/utils/scm/default-branch');
 const { FALLBACK_DEFAULT_BRANCH } = await import('../../server/utils/scm/git-url');
 
@@ -108,7 +108,7 @@ describe('selectBaselineRun', () => {
       fallbackBranch: 'main',
     });
     expect(baseline?.run.id).toBe(sameBranch);
-    expect(baseline?.match).toEqual({ branch: 'same', environment: null });
+    expect(baseline?.match).toEqual({ branch: 'same', environment: null, outcome: 'passed' });
   });
 
   test('falls back to the fallback branch when the branch has no history', async () => {
@@ -123,7 +123,7 @@ describe('selectBaselineRun', () => {
       fallbackBranch: 'main',
     });
     expect(baseline?.run.id).toBe(onMain);
-    expect(baseline?.match).toEqual({ branch: 'fallback', environment: null });
+    expect(baseline?.match).toEqual({ branch: 'fallback', environment: null, outcome: 'passed' });
   });
 
   test('an unknown branch keeps branch-blind behavior (most recent passing)', async () => {
@@ -139,7 +139,7 @@ describe('selectBaselineRun', () => {
       fallbackBranch: 'main',
     });
     expect(baseline?.run.id).toBe(newest);
-    expect(baseline?.match).toEqual({ branch: null, environment: null });
+    expect(baseline?.match).toEqual({ branch: null, environment: null, outcome: 'passed' });
   });
 
   test('returns null when there is no passing run before the target', async () => {
@@ -174,7 +174,7 @@ describe('selectBaselineRun', () => {
       fallbackBranch: 'main',
     });
     expect(baseline?.run.id).toBe(mainStaging);
-    expect(baseline?.match).toEqual({ branch: 'fallback', environment: 'same' });
+    expect(baseline?.match).toEqual({ branch: 'fallback', environment: 'same', outcome: 'passed' });
   });
 
   test('walks the branch ladder again without the environment when it has no passing run', async () => {
@@ -196,7 +196,7 @@ describe('selectBaselineRun', () => {
       fallbackBranch: 'main',
     });
     expect(baseline?.run.id).toBe(sameBranchProd);
-    expect(baseline?.match).toEqual({ branch: 'same', environment: 'other' });
+    expect(baseline?.match).toEqual({ branch: 'same', environment: 'other', outcome: 'passed' });
   });
 
   test('a run with no environment label ignores the environment axis', async () => {
@@ -218,7 +218,7 @@ describe('selectBaselineRun', () => {
       fallbackBranch: 'main',
     });
     expect(baseline?.run.id).toBe(labeled);
-    expect(baseline?.match).toEqual({ branch: 'same', environment: null });
+    expect(baseline?.match).toEqual({ branch: 'same', environment: null, outcome: 'passed' });
   });
 
   test('an explicit base branch restricts the baseline to that branch, same environment first', async () => {
@@ -249,11 +249,11 @@ describe('selectBaselineRun', () => {
     };
     const chosen = await selectBaselineRun(db as any, { ...query, baseBranch: 'release/1' });
     expect(chosen?.run.id).toBe(releaseStaging);
-    expect(chosen?.match).toEqual({ branch: 'chosen', environment: 'same' });
+    expect(chosen?.match).toEqual({ branch: 'chosen', environment: 'same', outcome: 'passed' });
 
     const otherEnv = await selectBaselineRun(db as any, { ...query, environment: 'qa', baseBranch: 'release/1' });
     expect(otherEnv?.run.id).toBe(releaseProd);
-    expect(otherEnv?.match).toEqual({ branch: 'chosen', environment: 'other' });
+    expect(otherEnv?.match).toEqual({ branch: 'chosen', environment: 'other', outcome: 'passed' });
 
     const nothing = await selectBaselineRun(db as any, { ...query, baseBranch: 'does-not-exist' });
     expect(nothing).toBeNull();
@@ -273,7 +273,85 @@ describe('selectBaselineRun', () => {
       fullRunOnly: true,
     });
     expect(baseline?.run.id).toBe(full);
-    expect(baseline?.match).toEqual({ branch: 'fallback', environment: null });
+    expect(baseline?.match).toEqual({ branch: 'fallback', environment: null, outcome: 'passed' });
+  });
+
+  test('failedFallback takes the last failed run only when no rung finds a passing one', async () => {
+    await seedProject(12, 'main');
+    await seedRun({ projectId: 12, status: 'interrupted', branch: 'feature/i', environment: 'staging', daysAgo: 1 });
+    await seedRun({ projectId: 12, status: 'timedout', branch: 'feature/i', environment: 'staging', daysAgo: 2 });
+    await seedRun({
+      projectId: 12,
+      status: 'failed',
+      branch: 'feature/i',
+      environment: 'staging',
+      daysAgo: 3,
+      isFullRun: 0,
+    });
+    await seedRun({ projectId: 12, status: 'failed', branch: 'feature/i', environment: 'production', daysAgo: 4 });
+    const mainStaging = await seedRun({
+      projectId: 12,
+      status: 'failed',
+      branch: 'main',
+      environment: 'staging',
+      daysAgo: 5,
+    });
+    const query = {
+      projectId: 12,
+      before: daysAgo(0),
+      branch: 'feature/i',
+      environment: 'staging',
+      fallbackBranch: 'main',
+      fullRunOnly: true,
+    };
+
+    expect(await selectBaselineRun(db as any, query)).toBeNull();
+
+    // Interrupted, timed-out and partial runs never qualify; the environment
+    // still comes before the branch, as on the passing ladder.
+    const failed = await selectBaselineRun(db as any, { ...query, failedFallback: true });
+    expect(failed?.run.id).toBe(mainStaging);
+    expect(failed?.match).toEqual({ branch: 'fallback', environment: 'same', outcome: 'failed' });
+
+    // Any passing run, even on another branch and environment, beats a failed one.
+    const passing = await seedRun({ projectId: 12, status: 'passed', branch: 'hotfix', environment: 'qa', daysAgo: 9 });
+    const preferred = await selectBaselineRun(db as any, { ...query, failedFallback: true });
+    expect(preferred?.run.id).toBe(passing);
+    expect(preferred?.match).toEqual({ branch: 'any', environment: 'other', outcome: 'passed' });
+  });
+
+  test('failedFallback also applies to a chosen base branch', async () => {
+    await seedProject(13, 'main');
+    await seedRun({ projectId: 13, status: 'passed', branch: 'main', daysAgo: 1 });
+    const release = await seedRun({ projectId: 13, status: 'failed', branch: 'release/3', daysAgo: 2 });
+    const query = {
+      projectId: 13,
+      before: daysAgo(0),
+      branch: 'feature/j',
+      environment: null,
+      fallbackBranch: 'main',
+      baseBranch: 'release/3',
+    };
+    expect(await selectBaselineRun(db as any, query)).toBeNull();
+    const chosen = await selectBaselineRun(db as any, { ...query, failedFallback: true });
+    expect(chosen?.run.id).toBe(release);
+    expect(chosen?.match).toEqual({ branch: 'chosen', environment: null, outcome: 'failed' });
+  });
+});
+
+describe('listBaselineBranches', () => {
+  test('lists the branches of earlier eligible runs, failed ones only with failedFallback', async () => {
+    await seedProject(14, 'main');
+    await seedRun({ projectId: 14, status: 'passed', branch: 'main', daysAgo: 3 });
+    await seedRun({ projectId: 14, status: 'failed', branch: 'release/4', daysAgo: 3 });
+    await seedRun({ projectId: 14, status: 'interrupted', branch: 'feature/k', daysAgo: 3 });
+    await seedRun({ projectId: 14, status: 'passed', branch: 'feature/partial', daysAgo: 3, isFullRun: 0 });
+    await seedRun({ projectId: 14, status: 'passed', branch: 'feature/later', daysAgo: 0 });
+    await seedRun({ projectId: 14, status: 'passed', branch: null, daysAgo: 3 });
+
+    const query = { projectId: 14, before: daysAgo(1), fullRunOnly: true };
+    expect(await listBaselineBranches(db as any, query)).toEqual(['main']);
+    expect(await listBaselineBranches(db as any, { ...query, failedFallback: true })).toEqual(['main', 'release/4']);
   });
 });
 

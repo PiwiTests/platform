@@ -173,7 +173,10 @@ export function parseRankBy(raw: unknown): SelectionRankBy | null {
   return typeof raw === 'string' && VALID_RANK_BY.has(raw) ? (raw as SelectionRankBy) : null;
 }
 
-/** Parse a `i/n` shard spec (e.g. `2/4`) into 1-based index and total, or null. */
+/** Most shards a selection splits into: the split allocates and scans one bucket per shard. */
+export const MAX_SHARDS = 1000;
+
+/** Parse a `i/n` shard spec (e.g. `2/4`) into 1-based index and total, or null (also past {@link MAX_SHARDS}). */
 export function parseShard(raw: unknown): { index: number; total: number } | null {
   if (typeof raw !== 'string') return null;
   const match = raw.trim().match(/^(\d+)\s*\/\s*(\d+)$/);
@@ -181,7 +184,7 @@ export function parseShard(raw: unknown): { index: number; total: number } | nul
   const index = Number(match[1]);
   const total = Number(match[2]);
   if (!Number.isInteger(index) || !Number.isInteger(total)) return null;
-  if (total < 1 || index < 1 || index > total) return null;
+  if (total < 1 || total > MAX_SHARDS || index < 1 || index > total) return null;
   return { index, total };
 }
 

@@ -1,11 +1,14 @@
 /**
- * Wire shapes the integration UI reads. Credentials never appear here — a
- * connection summary carries only a `hasCredentials` flag, and the test result
- * carries the resolved account, not the token that resolved it.
+ * Wire shapes the integration UI reads. Secret credentials never appear here — a
+ * connection summary carries a `hasCredentials` flag and its non-secret credential
+ * values (the account email), and the test result carries the resolved account,
+ * not the token that resolved it.
  */
 import type { IntegrationProviderName } from './registry';
 import type { IssueDocument } from './document';
 import type { IssueLocale } from './messages';
+import type { JiraTokenKind } from './jira-setup';
+import type { FieldValues } from './fields';
 
 export type ConnectionStatus = 'unverified' | 'ok' | 'failed';
 export type ConnectionManagedBy = 'db' | 'env';
@@ -24,6 +27,12 @@ export interface ConnectionSummary {
   managedBy: ConnectionManagedBy;
   /** True when the connection has stored credentials, without revealing them. */
   hasCredentials: boolean;
+  /**
+   * The non-secret credential values (e.g. the account email), so the settings UI
+   * can show the account and pre-fill the edit form. Secret fields such as the API
+   * token are never included.
+   */
+  credentialValues: Record<string, string>;
   /** True when an inbound-webhook token is set (the token itself is never returned). */
   hasWebhookToken: boolean;
   createdAt: string | null;
@@ -45,8 +54,52 @@ export interface ConnectionTestResult {
   ok: boolean;
   /** The account the credentials resolved to, when the test succeeded. */
   account?: { id: string; displayName: string };
+  /** Whether the token turned out classic or scoped, when the test succeeded. */
+  tokenKind?: JiraTokenKind;
   /** Provider error text when the test failed. */
   error?: string;
+  /** What to do about the failure, when there is more to say than the error. */
+  hint?: string | null;
+}
+
+/** One step of a connection check. */
+export interface ConnectionCheckStep {
+  ok: boolean;
+  error?: string;
+  hint?: string | null;
+}
+
+/**
+ * What `POST connections/check` reports before anything is saved: whether the
+ * address is a Jira site, then — when credentials were supplied — whether they
+ * sign in, which kind of token they are, and how many projects the account sees.
+ */
+export interface ConnectionCheckResult {
+  /** The site URL the check ran against, read from what was typed. */
+  baseUrl: string;
+  site: ConnectionCheckStep & {
+    /** False when nothing answered at the address (DNS, refused connection, timeout). */
+    reachable: boolean;
+    /** `Cloud`, `Server` or `DataCenter`, as the site reports itself. */
+    deploymentType: string | null;
+    /** The site's own name for itself. */
+    title: string | null;
+    /** The address the site reports for itself, when it differs from `baseUrl`. */
+    reportedUrl: string | null;
+    /** A Cloud site's tenant id — the gateway path a scoped token calls. */
+    cloudId: string | null;
+  };
+  /** Present when credentials were supplied (or kept from the connection being edited). */
+  auth?: ConnectionCheckStep & {
+    account?: { id: string; displayName: string };
+    tokenKind?: JiraTokenKind;
+  };
+  /** Present once the credentials signed in. */
+  projects?: ConnectionCheckStep & {
+    count: number;
+    /** The first few project keys, to recognize the account's reach at a glance. */
+    keys: string[];
+  };
 }
 
 /** A tracker the UI can file into — what `GET status` returns. */
@@ -54,6 +107,8 @@ export interface TrackerSummary {
   id: number;
   provider: IntegrationProviderName;
   name: string;
+  /** The tracker's site URL, for linking to a project on it. */
+  baseUrl: string;
 }
 
 /** A tracker project option for the create modal's picker. */
@@ -96,8 +151,11 @@ export interface IssueIncludeOptions {
 }
 
 /** The prefilled draft `GET issue-draft` returns; the modal edits it and POSTs it back. */
+/** What an issue can be filed for: a failure cluster, one failing execution, or a bug report. */
+export type IssueEntityType = 'failure_cluster' | 'test_runs_case' | 'bug_report';
+
 export interface IssueDraft {
-  entityType: 'failure_cluster' | 'test_runs_case';
+  entityType: IssueEntityType;
   entityId: number;
   /** The cluster the created link attaches to (the entity's own cluster). */
   clusterId: number | null;
@@ -110,6 +168,8 @@ export interface IssueDraft {
   assignee: string | null;
   /** The language the ticket is written in — binding, else connection default, else en. */
   locale: IssueLocale;
+  /** The project's values for tracker fields — the binding's field defaults. */
+  fieldValues: FieldValues;
   include: IssueIncludeOptions;
   /** Markdown preview of the body — what the modal renders through `MarkdownPreview`. */
   markdown: string;
@@ -118,25 +178,23 @@ export interface IssueDraft {
   existing: ExistingIssueCandidate[];
 }
 
-/** The body `POST issues` accepts — the draft with a person's edits. */
-export interface CreateIssueRequest {
-  entityType: 'failure_cluster' | 'test_runs_case';
-  entityId: number;
-  connectionId: number;
-  title: string;
-  projectKey: string;
-  issueType: string;
-  labels?: string[];
-  assignee?: string | null;
-  locale?: IssueLocale;
-  include?: Partial<IssueIncludeOptions>;
+/** A field a create was refused over: its id, its display name and, from the tracker, why. */
+export interface IssueFieldProblem {
+  id: string;
+  name: string;
+  message?: string;
 }
 
 /** What `POST issues` returns once the immediate attempt resolves. */
 export interface CreateIssueResponse {
-  actionId: number;
+  /** The queued action; null when the create was refused before anything was queued. */
+  actionId: number | null;
   status: 'done' | 'pending' | 'failed' | 'skipped';
   key?: string;
   url?: string;
   error?: string;
+  /** Required fields the create would leave empty — nothing was sent to the tracker. */
+  missingFields?: IssueFieldProblem[];
+  /** The tracker's own per-field refusals. */
+  fieldErrors?: IssueFieldProblem[];
 }

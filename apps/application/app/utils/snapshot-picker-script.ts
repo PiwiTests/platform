@@ -2,17 +2,17 @@
  * Host-side helpers for the DOM-snapshot locator picker.
  *
  * The document assembly (`buildPickerDocument` / `buildReadonlyDocument` and the
- * serialized in-iframe scripts) now lives in `#shared/snapshot-picker-document`
+ * serialized in-iframe scripts) lives in `#shared/snapshot-picker-document`
  * so the server's `dom-snapshot-frame` endpoint can build the identical document
  * (a `src`-loaded frame escapes the desktop page CSP that blocks a `srcdoc`
- * one). It is re-exported here so existing call sites keep importing from
+ * one). It is re-exported here for call sites importing from
  * `~/utils/snapshot-picker-script`. The only host-only piece — deriving the
  * highlight hints the picker is driven with — stays below.
  */
 import type { RankedLocator } from '#shared/locator-healing.types';
 
 export {
-  stripBaseTag,
+  stripNetworkReferences,
   snapshotPickerScriptTag,
   buildPickerDocument,
   buildReadonlyDocument,

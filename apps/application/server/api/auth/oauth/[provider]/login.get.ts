@@ -41,7 +41,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  const redirectUrl = initiateOAuth(event, provider, { link });
+  const returnTo = typeof getQuery(event).redirect === 'string' ? String(getQuery(event).redirect) : null;
+  const redirectUrl = initiateOAuth(event, provider, { link, returnTo });
   if (!redirectUrl) {
     throw apiError({
       statusCode: 400,

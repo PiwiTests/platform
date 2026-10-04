@@ -1,9 +1,10 @@
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { TestRun } from '../database/schema';
 import type { DrizzleDB } from '../../shared/handlers/db';
 import type { RunBaselineMatch } from '#shared/run-baseline';
+import { notLabRun } from '#shared/handlers/probes';
 
 export interface BaselineQuery {
   projectId: number;
@@ -26,6 +27,12 @@ export interface BaselineQuery {
   baseBranch?: string | null;
   /** Restrict the baseline to full-suite runs (partial/--grep runs skew a diff). */
   fullRunOnly?: boolean;
+  /**
+   * When no rung finds a passing run, walk the same rungs again for the last
+   * failed run. Timed-out and interrupted runs stopped before the suite ended,
+   * so they never qualify.
+   */
+  failedFallback?: boolean;
 }
 
 export interface BaselineSelection {
@@ -35,10 +42,26 @@ export interface BaselineSelection {
 
 interface Rung {
   conditions: SQL[];
-  match: RunBaselineMatch;
+  match: Omit<RunBaselineMatch, 'outcome'>;
 }
 
-async function firstPassing(db: DrizzleDB, conditions: SQL[]): Promise<TestRun | null> {
+/** The runs any baseline is taken from: earlier runs of the project, never a lab run. */
+function eligibleRuns(q: Pick<BaselineQuery, 'projectId' | 'before' | 'fullRunOnly'>): SQL[] {
+  const conditions: SQL[] = [
+    eq(testRuns.projectId, q.projectId),
+    lt(testRuns.startTime, q.before),
+    notLabRun(testRuns.metadata),
+  ];
+  if (q.fullRunOnly) conditions.push(eq(testRuns.isFullRun, 1));
+  return conditions;
+}
+
+/** The run outcomes a baseline may have: passed, then failed when the caller accepts it. */
+function baselineOutcomes(q: Pick<BaselineQuery, 'failedFallback'>): Array<RunBaselineMatch['outcome']> {
+  return q.failedFallback ? ['passed', 'failed'] : ['passed'];
+}
+
+async function mostRecent(db: DrizzleDB, conditions: SQL[]): Promise<TestRun | null> {
   const [row] = await db
     .select()
     .from(testRuns)
@@ -113,21 +136,41 @@ function chosenRungs(q: BaselineQuery, baseBranch: string): Rung[] {
  *
  * Each rung is tried **within the run's environment** first, then without it.
  * A run whose branch is unknown only has rung 3. An explicit `baseBranch`
- * replaces the ladder with that branch alone (same environment first).
+ * replaces the ladder with that branch alone (same environment first). With
+ * `failedFallback`, a ladder that finds no passing run is walked again for the
+ * last failed run.
+ *
+ * A lab run (probe or flake experiment) is never a baseline: it replays a few
+ * tests under injected faults or conditions.
  */
 export async function selectBaselineRun(db: DrizzleDB, q: BaselineQuery): Promise<BaselineSelection | null> {
-  const base: SQL[] = [
-    eq(testRuns.projectId, q.projectId),
-    eq(testRuns.status, 'passed'),
-    lt(testRuns.startTime, q.before),
-  ];
-  if (q.fullRunOnly) base.push(eq(testRuns.isFullRun, 1));
-
+  const base = eligibleRuns(q);
   const chosen = q.baseBranch?.trim() || null;
   const rungs = chosen ? chosenRungs(q, chosen) : automaticRungs(q);
-  for (const rung of rungs) {
-    const run = await firstPassing(db, [...base, ...rung.conditions]);
-    if (run) return { run, match: rung.match };
+  for (const outcome of baselineOutcomes(q)) {
+    for (const rung of rungs) {
+      const run = await mostRecent(db, [...base, eq(testRuns.status, outcome), ...rung.conditions]);
+      if (run) return { run, match: { ...rung.match, outcome } };
+    }
   }
   return null;
+}
+
+/**
+ * The branches a baseline can be taken from, sorted: every branch with an
+ * eligible earlier run whose outcome the query accepts — the base branches
+ * the Changes tab offers.
+ */
+export async function listBaselineBranches(
+  db: DrizzleDB,
+  q: Pick<BaselineQuery, 'projectId' | 'before' | 'fullRunOnly' | 'failedFallback'>,
+): Promise<string[]> {
+  const rows: Array<{ branch: string | null }> = await db
+    .selectDistinct({ branch: testRuns.branch })
+    .from(testRuns)
+    .where(and(...eligibleRuns(q), inArray(testRuns.status, baselineOutcomes(q)), isNotNull(testRuns.branch)));
+  return rows
+    .map((r) => r.branch)
+    .filter((b): b is string => !!b)
+    .sort();
 }

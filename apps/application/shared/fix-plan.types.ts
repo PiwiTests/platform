@@ -54,7 +54,7 @@ export interface FixedBeforeMatch {
   triageNote: string | null;
   /** Effective owner of the earlier cluster's tests (`piwi:owner` annotation). */
   owner: string | null;
-  /** One-line summary of the earlier cluster's diagnosis, when it had one. */
+  /** One-line summary of the earlier cluster's diagnosis, when it had one not rated unhelpful. */
   diagnosisTitle: string | null;
   /** Whether that diagnosis was marked helpful/unhelpful. */
   diagnosisFeedback: 'up' | 'down' | null;
@@ -76,6 +76,11 @@ export interface FixPlan {
     fixVerification: string | null;
   };
   diagnosis: {
+    /** The diagnosis row, to name in a fix attempt. */
+    id: number;
+    /** `agent` when an agent wrote it; otherwise the AI provider. */
+    provider: string | null;
+    model: string | null;
     category: string | null;
     confidence: string | null;
     rootCause: string | null;
@@ -94,6 +99,8 @@ export interface FixPlan {
     command: string;
     /** What happens on the dashboard when it passes. */
     expectation: string;
+    /** The trailer to put in the fix's commit message, so the fix is tied to this cluster. */
+    commitTrailer: string;
   };
   /** Copy-paste steps to reproduce the failure locally (checkout, install, run). */
   reproduce: ReproRecipe;

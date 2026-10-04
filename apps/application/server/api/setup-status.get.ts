@@ -13,13 +13,10 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // Admin-only: the response describes how this instance is configured — whether
-  // an AI provider and an SCM token are set up, whether notifications are wired.
-  // That is deployment shape, not test data, so it follows the Setup page's role
-  // rather than staying readable by any authenticated user. `requireAuth` reads
-  // the role from `x-required-roles` above and returns a virtual admin when auth
-  // is disabled.
+  // Administrators only (`x-required-roles` above): the response describes how
+  // this instance is configured.
   await requireAuth(event);
   const db = await getDatabase();
-  return getSetupStatus(db);
+  const appVersion = useRuntimeConfig(event).public.appVersion as string | undefined;
+  return getSetupStatus(db, appVersion);
 });

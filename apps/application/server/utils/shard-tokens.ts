@@ -1,9 +1,29 @@
+import { createHash } from 'node:crypto';
 import { testRuns } from '../database/schema';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
 
 /**
- * Read shard tokens from a test run's metadata JSON column.
+ * How a shard token is kept, in run metadata (which every project member can
+ * read) and in memory: its SHA-256 digest, never the token itself.
+ */
+export function shardTokenDigest(token: string): string {
+  return `sha256:${createHash('sha256').update(token).digest('hex')}`;
+}
+
+/**
+ * Whether `token` is one of a run's stored shard tokens. A plain entry kept by an
+ * older build still matches, but a presented digest never does: reading the
+ * stored value back must not yield a usable token.
+ */
+export function matchesShardToken(stored: Set<string> | undefined, token: string | null | undefined): boolean {
+  if (!stored || !token) return false;
+  if (stored.has(shardTokenDigest(token))) return true;
+  return !token.startsWith('sha256:') && stored.has(token);
+}
+
+/**
+ * Read the stored shard tokens (digests) from a test run's metadata JSON column.
  * Returns undefined when the run has no stored shard tokens.
  */
 export function readShardTokensFromMeta(metadata: unknown): Set<string> | undefined {
@@ -16,7 +36,23 @@ export function readShardTokensFromMeta(metadata: unknown): Set<string> | undefi
 }
 
 /**
- * Append a shard token to a test run's stored metadata in the database.
+ * Every shard token a run holds: the digests cached in memory together with the
+ * ones stored in its metadata. A new set, so the caller may change it freely.
+ */
+export function knownShardTokens(cached: Set<string> | undefined, metadata: unknown): Set<string> {
+  return new Set([...(cached ?? []), ...(readShardTokensFromMeta(metadata) ?? [])]);
+}
+
+/** A copy of a run's metadata whose stored shard tokens are `tokens`, every other key kept. */
+export function withShardTokens(metadata: unknown, tokens: Set<string>): Record<string, unknown> {
+  const meta = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
+  if (tokens.size > 0) meta.shardTokens = [...tokens];
+  else delete meta.shardTokens;
+  return meta;
+}
+
+/**
+ * Append a shard token's digest to a test run's stored metadata in the database.
  * Reads current metadata, appends the token, writes back via Drizzle JSON serialization.
  */
 export async function persistShardToken(
@@ -34,8 +70,9 @@ export async function persistShardToken(
   }
 
   const tokens: string[] = Array.isArray(meta.shardTokens) ? [...meta.shardTokens] : [];
-  if (tokens.includes(token)) return;
-  tokens.push(token);
+  const digest = shardTokenDigest(token);
+  if (tokens.includes(digest)) return;
+  tokens.push(digest);
   meta.shardTokens = tokens;
 
   await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
@@ -49,7 +86,8 @@ export async function removeStoredShardToken(db: DB, runId: number, token: strin
 
   const meta = (row[0]?.metadata as Record<string, unknown>) ?? {};
   const tokens: string[] = Array.isArray(meta.shardTokens) ? meta.shardTokens : [];
-  const filtered = tokens.filter((t) => t !== token);
+  const digest = shardTokenDigest(token);
+  const filtered = tokens.filter((t) => t !== token && t !== digest);
   if (filtered.length === tokens.length) return;
 
   if (filtered.length > 0) {

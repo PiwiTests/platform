@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { computeNextStep, type NextStepInput } from '#shared/next-step';
+import { computeNextStep, type FlakeLabStepFacts, type NextStepInput } from '#shared/next-step';
 
 function step(overrides: Partial<NextStepInput> = {}) {
   return computeNextStep({ clusterId: 10, executionId: 100, ...overrides });
@@ -47,21 +47,26 @@ describe('computeNextStep — one row per rule', () => {
     expect(s.title).toContain('demo001');
   });
 
-  test('7: passed-on-retry → compare attempts', () => {
+  test('6: a regressed fix names its commit by the short SHA', () => {
+    const s = step({ fixVerification: 'regressed', fixCommit: '3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e' });
+    expect(s.title).toBe('See what changed since the fix in 3f9c2e1 — it did not hold');
+  });
+
+  test('9: passed-on-retry → compare attempts', () => {
     expect(step({ why: 'passed-on-retry' }).kind).toBe('compare-attempts');
     expect(step({ why: 'new-flaky' }).kind).toBe('compare-attempts');
   });
 
-  test('8: a crash with a CI re-run configured', () => {
+  test('10: a crash with a CI re-run configured', () => {
     expect(step({ errorKind: 'crash', ciRerunAvailable: true }).kind).toBe('rerun-in-ci');
     expect(step({ errorKind: 'navigation', ciRerunAvailable: true }).kind).toBe('rerun-in-ci');
   });
 
-  test('9: AI configured and no diagnosis → diagnose', () => {
+  test('11: AI configured and no diagnosis → diagnose', () => {
     expect(step({ aiConfigured: true }).kind).toBe('diagnose');
   });
 
-  test('10: otherwise reproduce locally', () => {
+  test('12: otherwise reproduce locally', () => {
     expect(step({}).kind).toBe('reproduce');
   });
 });
@@ -120,5 +125,70 @@ describe('computeNextStep — precedence between rows', () => {
       expect(s.primary).toBeTruthy();
       expect(typeof s.primary.action).toBe('string');
     }
+  });
+});
+
+describe('computeNextStep — the Flake Lab rows', () => {
+  const lab = (overrides: Partial<FlakeLabStepFacts> = {}): FlakeLabStepFacts => ({
+    testCaseId: 42,
+    nextStep: 'reproduce',
+    command: 'npx @piwitests/reporter flake 42',
+    reproducedBy: null,
+    suspect: { id: 'slow-route:GET /api/cart', label: 'GET /api/cart slower (≥1.6 s)', standing: 'untested' },
+    untestedSuspects: 3,
+    ciAvailable: false,
+    ...overrides,
+  });
+
+  test('reproduce under the top suspect while it is untested', () => {
+    const s = step({ why: 'passed-on-retry', flakeLab: lab() });
+    expect(s.kind).toBe('reproduce-flake');
+    expect(s.title).toBe('Reproduce this flake under GET /api/cart slower (≥1.6 s)');
+    expect(s.why).toMatch(/and 2 more the Flake Lab has not tested/);
+    expect(s.primary).toEqual({
+      label: 'Copy lab command',
+      action: 'copy-flake-command',
+      payload: { command: 'npx @piwitests/reporter flake 42' },
+    });
+    expect(s.secondary.map((a) => a.action)).toEqual(['flakiness-tab', 'attempts-tab']);
+    expect(s.secondary[0]!.payload).toEqual({ testCaseId: 42, suspect: 'slow-route:GET /api/cart' });
+  });
+
+  test('verify once reproduced, under the condition that reproduced it', () => {
+    const s = step({
+      why: 'passed-on-retry',
+      flakeLab: lab({
+        nextStep: 'verify',
+        command: 'npx @piwitests/reporter flake verify 42',
+        reproducedBy: 'delay GET /api/cart 1.8 s',
+        suspect: null,
+      }),
+    });
+    expect(s.kind).toBe('verify-flake-fix');
+    expect(s.title).toBe('Verify the flake fix under delay GET /api/cart 1.8 s');
+    expect(s.primary.payload).toEqual({ command: 'npx @piwitests/reporter flake verify 42' });
+  });
+
+  test('a Flake Lab CI target adds a CI action', () => {
+    expect(step({ flakeLab: lab({ ciAvailable: true }) }).secondary[0]).toEqual({
+      label: 'Reproduce in CI',
+      action: 'flake-lab-ci',
+      payload: { testCaseId: 42, suspect: 'slow-route:GET /api/cart', kind: 'reproduce' },
+    });
+    const verify = step({ flakeLab: lab({ nextStep: 'verify', ciAvailable: true }) });
+    expect(verify.secondary[0]).toMatchObject({ action: 'flake-lab-ci', payload: { testCaseId: 42, kind: 'verify' } });
+  });
+
+  test('falls through to comparing attempts when no suspect is left untested or the fix holds', () => {
+    const tested = lab({ suspect: { id: 'load', label: 'load', standing: 'not-reproduced' }, untestedSuspects: 0 });
+    expect(step({ why: 'passed-on-retry', flakeLab: tested }).kind).toBe('compare-attempts');
+    expect(step({ why: 'passed-on-retry', flakeLab: lab({ suspect: null }) }).kind).toBe('compare-attempts');
+    expect(step({ why: 'passed-on-retry', flakeLab: lab({ nextStep: null, command: null }) }).kind).toBe(
+      'compare-attempts',
+    );
+  });
+
+  test('a diagnosed patch still comes first', () => {
+    expect(step({ diagnosisCompleted: true, patchAppliesCleanly: true, flakeLab: lab() }).kind).toBe('apply-patch');
   });
 });

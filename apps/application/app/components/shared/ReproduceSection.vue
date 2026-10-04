@@ -96,6 +96,7 @@ function reproduceHere() {
     cases: ctx.cases,
     commit: commit.value,
     browserName: ctx.browserName,
+    clusterId: ctx.clusterId,
   });
 }
 
@@ -110,16 +111,16 @@ function bisectHere() {
     bad: ctx.bad,
     browserName: ctx.browserName,
     target: { clusterId: ctx.clusterId, repositoryUrl: ctx.repositoryUrl },
+    flakeTestCaseId: ctx.flakeArm?.testCaseId ?? null,
   });
 }
 
-// ── The bisected commit: the live result of a bisect just run, else the one
-//    persisted on the cluster from a previous session. ──────────────────────────
+// ── The bisected commit: the live result of a bisect of this cluster just run,
+//    else the one persisted on the cluster from a previous session. ────────────
 const liveBisected = computed(() => {
   const id = projectId.value;
   if (id == null) return null;
-  const run = store.runs.value.find((r) => r.kind === 'bisect' && r.projectId === String(id) && r.bisect?.firstBad);
-  const found = run?.bisect?.firstBad;
+  const found = findLiveBisect(store.runs.value, id, props.context?.clusterId ?? null);
   if (!found) return null;
   return {
     sha: found.sha,
@@ -243,10 +244,21 @@ async function saveStartCommand() {
         <PlatformCodeBlock :bash="bisect.bash" :powershell="bisect.powershell" storage-key="piwi-repro-shell" />
         <p class="text-xs text-muted">{{ bisect.explanation }}</p>
         <ClientOnly>
-          <div v-if="desktop && canBisectHere" class="pt-0.5">
-            <UButton size="xs" color="primary" variant="soft" icon="i-lucide-git-branch" @click="bisectHere">
+          <div v-if="desktop && canBisectHere" class="pt-0.5 space-y-1">
+            <UButton
+              size="xs"
+              color="primary"
+              variant="soft"
+              icon="i-lucide-git-branch"
+              data-testid="bisect-here"
+              @click="bisectHere"
+            >
               Find the breaking commit here
             </UButton>
+            <p v-if="context?.flakeArm" class="text-xs text-muted" data-testid="bisect-flake-arm">
+              Flake-aware: each step runs the arm that reproduced this flake ({{ context.flakeArm.label }}). A step is
+              bad on a failure with the same error as in CI, good after enough clean runs.
+            </p>
           </div>
         </ClientOnly>
       </template>

@@ -1,20 +1,41 @@
 <script setup lang="ts">
-import { computed, nextTick, watch, ref, onUnmounted } from 'vue';
-import type { TestCaseResult } from '~~/types/api';
+import { computed, nextTick, watch, ref } from 'vue';
+import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
+import { summarizeRunCases } from '#shared/utils/test-counts';
+import { isFixmeSkip } from '#shared/utils/skip-kind';
+import { stripAnsi } from '#shared/error-parse';
+import { parseLocation } from '#shared/parse-location';
+import {
+  RUN_SEARCH_FIELDS,
+  collectTestSearchValues,
+  compileTestSearch,
+  parseTestSearch,
+  testSearchHighlights,
+  type TestSearchSubject,
+} from '#shared/test-search';
+import {
+  compareFileOrder,
+  compareRunOrder,
+  describeGroupKeys,
+  fileGroupKey,
+  fileGroupRows,
+  type TestPosition,
+} from '~/utils/test-list-order';
 
 /** Cluster id → its display name and triage status, for the row chip and the
  *  cluster group header. Supplied by the page from the failure-groups payload. */
-type ClusterMeta = Record<number, { name: string; status: string | null }>;
-
 type GroupBy = 'cluster' | 'file' | 'file-describe' | 'lock' | 'none';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
   isLive: boolean;
+  /** Planned suite size — the "N / total completed" denominator while live, so
+   *  it counts toward the whole run, not just the tests seen so far. */
+  total?: number | null;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
-  clusterMeta?: ClusterMeta | null;
+  clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
   /** Piwi project id + name, threaded so the IDE opener can resolve a workspace root. */
@@ -32,6 +53,10 @@ function clusterName(id: number): string {
   return props.clusterMeta?.[id]?.name ?? `Cluster #${id}`;
 }
 
+function clusterIssue(id: number | null | undefined) {
+  return id != null ? (props.clusterMeta?.[id]?.issue ?? null) : null;
+}
+
 function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
 }
@@ -39,30 +64,76 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
 // Filter state is owned by the parent page so it survives tab switches.
 const testCaseSearch = defineModel<string>('search', { default: '' });
 const activeStatuses = defineModel<string[]>('activeStatuses', { default: () => [] });
-const testCaseBrowserFilter = defineModel<string>('browserFilter', { default: 'all' });
 
 const showNewRegressionsOnly = ref(false);
 const showNewFlakyOnly = ref(false);
-const testCaseLockFilter = ref('all');
-
-/** Lock names present anywhere in this run, for the lock filter dropdown. */
-const testCaseLockOptions = computed(() => {
-  const locks = new Set<string>();
-  for (const tc of props.testCases) for (const lock of tc.locks ?? []) locks.add(lock);
-  const items = [{ label: 'All locks', value: 'all' }];
-  for (const lock of [...locks].sort()) items.push({ label: lock, value: lock });
-  return items;
-});
 
 /** True when at least one execution in the run carries a lock. */
 const hasAnyLocks = computed(() => props.testCases.some((tc) => (tc.locks?.length ?? 0) > 0));
 
+// ── Search ──────────────────────────────────────────────────────────────────
+// The search box's language (`file:`, `describe:`, `tag:`, `browser:`, `-…`)
+// is shared with the project catalog; here it runs in memory over the run.
+const parsedSearch = computed(() => parseTestSearch(testCaseSearch.value, RUN_SEARCH_FIELDS));
+const searchMatcher = computed(() => compileTestSearch(parsedSearch.value));
+const searchHighlights = computed(() =>
+  parsedSearch.value.terms.length > 0 ? testSearchHighlights(parsedSearch.value) : null,
+);
+
+// What search, sort and grouping read from an execution, built once per row
+// object (a live row is replaced by a new object when it changes).
+const subjectCache = new WeakMap<TestCaseResult, TestSearchSubject>();
+function searchSubject(tc: TestCaseResult): TestSearchSubject {
+  let subject = subjectCache.get(tc);
+  if (!subject) {
+    subject = {
+      title: tc.title,
+      suitePath: tc.suitePath ?? [],
+      filePath: tc.filePath || tc.location ? positionOf(tc).filePath : null,
+      error: tc.error ? stripAnsi(tc.error) : null,
+      tags: tc.tags ?? [],
+      locks: tc.locks ?? [],
+      browser: tc.browser?.projectName ?? null,
+      owner: tc.testMeta?.owner ?? null,
+      priority: tc.testMeta?.priority ?? null,
+      feature: tc.testMeta?.feature ?? null,
+    };
+    subjectCache.set(tc, subject);
+  }
+  return subject;
+}
+
+const positionCache = new WeakMap<TestCaseResult, TestPosition>();
+function positionOf(tc: TestCaseResult): TestPosition {
+  let position = positionCache.get(tc);
+  if (!position) {
+    const parsed = tc.location ? parseLocation(tc.location) : null;
+    // A retried test is listed by its final attempt; it ran first when its first attempt did.
+    const starts = [tc.startedAt, ...(tc.attempts ?? []).map((a) => a.startedAt)].filter(
+      (t): t is number => typeof t === 'number' && t > 0,
+    );
+    position = {
+      filePath: tc.filePath || parsed?.filePath || 'unknown',
+      suitePath: tc.suitePath ?? [],
+      line: parsed?.line ?? null,
+      column: parsed?.column ?? null,
+      startedAt: starts.length > 0 ? Math.min(...starts) : null,
+    };
+    positionCache.set(tc, position);
+  }
+  return position;
+}
+
+/** Every value the search qualifiers can take in this run, for completion. */
+const searchValues = computed(() => collectTestSearchValues(props.testCases.map(searchSubject), RUN_SEARCH_FIELDS));
+
 const STATUS_OPTIONS = [
-  { label: 'Passed', value: 'passed', color: 'green' },
-  { label: 'Failed', value: 'failed', color: 'red' },
-  { label: 'Passed on retry', value: 'flaky', color: 'orange' },
-  { label: 'Skipped', value: 'skipped', color: 'gray' },
-  { label: "Didn't run", value: 'didnotrun', color: 'amber' },
+  { label: 'Passed', value: 'passed' },
+  { label: 'Failed', value: 'failed' },
+  { label: 'Passed on retry', value: 'flaky' },
+  { label: 'Skipped', value: 'skipped' },
+  { label: 'Fixme', value: 'fixme' },
+  { label: "Didn't run", value: 'didnotrun' },
 ] as const;
 
 function toggleStatus(value: string) {
@@ -71,21 +142,14 @@ function toggleStatus(value: string) {
     : [...activeStatuses.value, value];
 }
 
-const testCaseBrowserOptions = computed(() => {
-  const browsers = new Set<string>();
-  for (const tc of props.testCases) {
-    const name = tc.browser?.projectName;
-    if (name) browsers.add(name);
-  }
-  const items = [{ label: 'All browsers', value: 'all' }];
-  for (const b of [...browsers].sort()) items.push({ label: b, value: b });
-  return items;
-});
-
 function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
-  // "Passed on retry" means passed only after a retry — a subset of passed.
+  // Passed and passed on retry are disjoint here, like skipped and fixme, so
+  // each chip and bar segment lands on exactly the rows it counts.
+  if (filter === 'passed') return tc.status === 'passed' && (tc.retries ?? 0) === 0;
   if (filter === 'flaky') return tc.status === 'passed' && (tc.retries ?? 0) > 0;
+  if (filter === 'fixme') return isFixmeSkip(tc);
+  if (filter === 'skipped') return tc.status === 'skipped' && !isFixmeSkip(tc);
   return tc.status === filter;
 }
 
@@ -94,77 +158,18 @@ const filteredTestCases = computed<TestCaseResult[]>(() => {
   if (activeStatuses.value.length > 0) {
     cases = cases.filter((tc) => activeStatuses.value.some((s) => matchesStatus(tc, s)));
   }
-  if (testCaseBrowserFilter.value !== 'all') {
-    cases = cases.filter((tc) => tc.browser?.projectName === testCaseBrowserFilter.value);
-  }
-  if (testCaseSearch.value) {
-    // Search matches the title, the path AND the error text, so a failure is
-    // findable by what broke, not only by which test broke.
-    const query = testCaseSearch.value.toLowerCase();
-    cases = cases.filter(
-      (tc) =>
-        tc.title.toLowerCase().includes(query) ||
-        tc.location?.toLowerCase().includes(query) ||
-        tc.error?.toLowerCase().includes(query),
-    );
+  if (parsedSearch.value.terms.length > 0) {
+    // A free word looks in the title, the describe blocks, the path AND the
+    // error text, so a failure is findable by what broke, not only by which test broke.
+    const matches = searchMatcher.value;
+    cases = cases.filter((tc) => matches(searchSubject(tc)));
   }
   if (showNewRegressionsOnly.value) cases = cases.filter((tc) => tc.isNewRegression);
   if (showNewFlakyOnly.value) cases = cases.filter((tc) => tc.isNewFlaky);
-  if (testCaseLockFilter.value !== 'all') {
-    cases = cases.filter((tc) => (tc.locks ?? []).includes(testCaseLockFilter.value));
-  }
   return cases;
 });
 
-// ── Sort (inside each group) ────────────────────────────────────────────────
-const SORT_NATURAL = 'natural';
-const sortKey = ref<string>(SORT_NATURAL);
-const sortDir = ref<'asc' | 'desc'>('asc');
-
 const failedCount = computed(() => props.testCases.filter((tc) => isFailedStatus(tc.status)).length);
-
-const sortOptions = computed(() => [
-  { label: failedCount.value > 0 ? 'Failures first' : 'Run order', value: SORT_NATURAL },
-  { label: 'Title', value: 'title' },
-  { label: 'Status', value: 'status' },
-  { label: 'Duration', value: 'duration' },
-  { label: 'Worker', value: 'workerIndex' },
-  { label: 'Retries', value: 'retries' },
-  { label: 'Wasted', value: 'wastedTimeMs' },
-]);
-
-function sortValue(tc: TestCaseResult, key: string): string | number {
-  switch (key) {
-    case 'title':
-      return tc.title ?? '';
-    case 'status':
-      return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
-    case 'duration':
-      return tc.duration ?? 0;
-    case 'workerIndex':
-      return tc.workerIndex ?? -1;
-    case 'retries':
-      return tc.retries ?? 0;
-    case 'wastedTimeMs':
-      return tc.wastedTimeMs ?? 0;
-    default:
-      return '';
-  }
-}
-
-function sortCases(cases: TestCaseResult[]): TestCaseResult[] {
-  if (sortKey.value === SORT_NATURAL) {
-    if (failedCount.value === 0) return cases;
-    return [...cases].sort((a, b) => failureFirstCompare(a.status, b.status));
-  }
-  const dir = sortDir.value === 'asc' ? 1 : -1;
-  return [...cases].sort((a, b) => {
-    const va = sortValue(a, sortKey.value);
-    const vb = sortValue(b, sortKey.value);
-    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-    return String(va).localeCompare(String(vb)) * dir;
-  });
-}
 
 // ── Grouping ────────────────────────────────────────────────────────────────
 const { raw: storedGroup, set: setGroup } = useGroupByCookie('run-tests', [
@@ -193,21 +198,129 @@ const groupByItems = computed(() => [
   ...(hasAnyLocks.value ? [{ label: 'Lock', value: 'lock' }] : []),
   { label: 'None', value: 'none' },
 ]);
+const groupedByFile = computed(() => groupBy.value === 'file' || groupBy.value === 'file-describe');
+/** The describe blocks are on the row unless the grouping shows them as headers. */
+const showSuitePath = computed(() => groupBy.value !== 'file-describe');
 
-// The quiet buckets (passed, skipped, didn't run) start collapsed; every other
+// ── Sort (inside each group) ────────────────────────────────────────────────
+// Run order is when each test first started; file order is where it is
+// declared. Until a sort is picked, the file groupings read in file order and
+// the others in run order.
+type SortKey =
+  | 'run'
+  | 'file'
+  | 'failures'
+  | 'title'
+  | 'status'
+  | 'duration'
+  | 'workerIndex'
+  | 'retries'
+  | 'wastedTimeMs';
+/** The direction each sort starts in: the slowest, most retried and most wasteful first. */
+const SORT_DIRECTIONS: Record<SortKey, 'asc' | 'desc'> = {
+  run: 'asc',
+  file: 'asc',
+  failures: 'asc',
+  title: 'asc',
+  status: 'asc',
+  duration: 'desc',
+  workerIndex: 'asc',
+  retries: 'desc',
+  wastedTimeMs: 'desc',
+};
+const SORT_OPTIONS: Array<{ label: string; value: SortKey }> = [
+  { label: 'Run order', value: 'run' },
+  { label: 'File order', value: 'file' },
+  { label: 'Failures first', value: 'failures' },
+  { label: 'Title', value: 'title' },
+  { label: 'Status', value: 'status' },
+  { label: 'Duration', value: 'duration' },
+  { label: 'Worker', value: 'workerIndex' },
+  { label: 'Retries', value: 'retries' },
+  { label: 'Wasted', value: 'wastedTimeMs' },
+];
+const chosenSort = ref<SortKey | null>(null);
+const sortDir = ref<'asc' | 'desc'>('asc');
+const sortKey = computed<SortKey>({
+  get: () => chosenSort.value ?? (groupedByFile.value ? 'file' : 'run'),
+  set: (value) => {
+    chosenSort.value = value;
+    sortDir.value = SORT_DIRECTIONS[value];
+  },
+});
+/** The sort follows where tests sit, so describe blocks sit among the tests by position. */
+const positionalSort = computed(() => sortKey.value === 'run' || sortKey.value === 'file');
+
+function sortValue(tc: TestCaseResult, key: SortKey): string | number {
+  switch (key) {
+    case 'title':
+      return tc.title ?? '';
+    case 'status':
+      return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
+    case 'duration':
+      return tc.duration ?? 0;
+    case 'workerIndex':
+      return tc.workerIndex ?? -1;
+    case 'retries':
+      return tc.retries ?? 0;
+    case 'wastedTimeMs':
+      return tc.wastedTimeMs ?? 0;
+    default:
+      return '';
+  }
+}
+
+const runOrder = (a: TestCaseResult, b: TestCaseResult) =>
+  compareRunOrder(positionOf(a), positionOf(b)) || a.executionId - b.executionId;
+
+const compareCases = computed<(a: TestCaseResult, b: TestCaseResult) => number>(() => {
+  const key = sortKey.value;
+  const dir = sortDir.value === 'asc' ? 1 : -1;
+  switch (key) {
+    case 'run':
+      return (a, b) => runOrder(a, b) * dir;
+    case 'file':
+      return (a, b) => (compareFileOrder(positionOf(a), positionOf(b)) || runOrder(a, b)) * dir;
+    case 'failures':
+      return (a, b) => failureFirstCompare(a.status, b.status) || runOrder(a, b);
+    default:
+      return (a, b) => {
+        const va = sortValue(a, key);
+        const vb = sortValue(b, key);
+        const order = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
+        return order * dir || runOrder(a, b);
+      };
+  }
+});
+
+function sortCases(cases: TestCaseResult[]): TestCaseResult[] {
+  return [...cases].sort(compareCases.value);
+}
+
+// The quiet buckets (passed, skipped, fixme, didn't run) start collapsed; every other
 // group starts open. A user click flips a group from its default; a filter
 // forces everything open so a match is never hidden behind a collapsed header.
-const DEFAULT_COLLAPSED_BUCKETS = new Set(['bucket:passed', 'bucket:skipped', 'bucket:didnotrun', 'lock:none']);
+const DEFAULT_COLLAPSED_BUCKETS = new Set([
+  'bucket:passed',
+  'bucket:skipped',
+  'bucket:fixme',
+  'bucket:didnotrun',
+  'lock:none',
+]);
 const userToggled = ref(new Set<string>());
 const hasFilter = computed(
   () =>
-    testCaseSearch.value !== '' ||
+    parsedSearch.value.terms.length > 0 ||
     activeStatuses.value.length > 0 ||
-    testCaseBrowserFilter.value !== 'all' ||
-    testCaseLockFilter.value !== 'all' ||
     showNewRegressionsOnly.value ||
     showNewFlakyOnly.value,
 );
+function clearFilters() {
+  testCaseSearch.value = '';
+  activeStatuses.value = [];
+  showNewRegressionsOnly.value = false;
+  showNewFlakyOnly.value = false;
+}
 function defaultOpen(key: string): boolean {
   return !DEFAULT_COLLAPSED_BUCKETS.has(key);
 }
@@ -234,6 +347,8 @@ interface GroupHeaderItem {
   filePath?: string | null;
   /** Nesting depth for the File + Describe grouping (0 = file). */
   depth?: number;
+  /** Which search matches to mark in the label: a file's or a describe block's. */
+  labelField?: 'file' | 'describe';
 }
 interface TestItem {
   kind: 'test';
@@ -245,15 +360,8 @@ interface TestItem {
 type Row = GroupHeaderItem | TestItem;
 
 function computeStats(cases: TestCaseResult[]) {
-  const s = { passed: 0, failed: 0, skipped: 0, didnotrun: 0, running: 0 };
-  for (const tc of cases) {
-    if (isFailedStatus(tc.status)) s.failed++;
-    else if (tc.status === 'passed') s.passed++;
-    else if (tc.status === 'skipped') s.skipped++;
-    else if (tc.status === 'didnotrun') s.didnotrun++;
-    else if (tc.status === 'running') s.running++;
-  }
-  return s;
+  const s = summarizeRunCases(cases);
+  return { passed: s.passed, failed: s.failed, skipped: s.skipped, didnotrun: s.didNotRun, running: s.running };
 }
 
 /** The remainder buckets (non-failing) shown as their own groups; the quiet
@@ -261,7 +369,8 @@ function computeStats(cases: TestCaseResult[]) {
 const REMAINDER_BUCKETS: Array<{ key: string; label: string; match: (tc: TestCaseResult) => boolean }> = [
   { key: 'running', label: 'Running', match: (tc) => tc.status === 'running' },
   { key: 'passed', label: 'Passed', match: (tc) => tc.status === 'passed' },
-  { key: 'skipped', label: 'Skipped', match: (tc) => tc.status === 'skipped' },
+  { key: 'skipped', label: 'Skipped', match: (tc) => tc.status === 'skipped' && !isFixmeSkip(tc) },
+  { key: 'fixme', label: 'Fixme', match: isFixmeSkip },
   { key: 'didnotrun', label: "Didn't run", match: (tc) => tc.status === 'didnotrun' },
 ];
 
@@ -274,77 +383,30 @@ const rows = computed<Row[]>(() => {
 
   const out: Row[] = [];
 
-  if (groupBy.value === 'file') {
-    const byFile = new Map<string, TestCaseResult[]>();
-    for (const tc of cases) {
-      const fp = tc.filePath ?? 'unknown';
-      if (!byFile.has(fp)) byFile.set(fp, []);
-      byFile.get(fp)!.push(tc);
-    }
-    for (const [filePath, fileCases] of [...byFile.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-      const key = `file:${filePath}`;
-      out.push({
-        kind: 'group',
-        key,
-        label: filePath,
-        count: fileCases.length,
-        icon: 'i-lucide-file-code-2',
-        filePath,
-        stats: computeStats(fileCases),
-      });
-      if (isOpen(key)) for (const tc of sortCases(fileCases)) out.push({ kind: 'test', key: `t${tc.executionId}`, tc });
-    }
-    return out;
-  }
-
-  if (groupBy.value === 'file-describe') {
-    const byFile = new Map<string, TestCaseResult[]>();
-    for (const tc of cases) {
-      const fp = tc.filePath ?? 'unknown';
-      if (!byFile.has(fp)) byFile.set(fp, []);
-      byFile.get(fp)!.push(tc);
-    }
-    // Recurse the describe hierarchy: a group per suitePath segment, then the
-    // tests declared directly at this level. Sort applies within each level.
-    const addLevel = (levelCases: TestCaseResult[], filePath: string, parentSuite: string[], depth: number) => {
-      const parentLen = parentSuite.length;
-      const direct = levelCases.filter((t) => (t.suitePath ?? []).length === parentLen);
-      const nested = levelCases.filter((t) => (t.suitePath ?? []).length > parentLen);
-      const groups = new Map<string, TestCaseResult[]>();
-      for (const t of nested) {
-        const seg = (t.suitePath ?? [])[parentLen]!;
-        if (!groups.has(seg)) groups.set(seg, []);
-        groups.get(seg)!.push(t);
-      }
-      for (const [seg, groupTests] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-        const groupPath = [...parentSuite, seg];
-        const key = `describe:${filePath}\x1f${groupPath.join('\x1f')}`;
+  if (groupedByFile.value) {
+    for (const row of fileGroupRows(cases, {
+      describe: groupBy.value === 'file-describe',
+      position: positionOf,
+      compare: compareCases.value,
+      positional: positionalSort.value,
+      isOpen,
+      testKey: (tc) => `t${tc.executionId}`,
+    })) {
+      if (row.kind === 'test') {
+        out.push({ kind: 'test', key: row.key, tc: row.test, depth: row.depth });
+      } else {
         out.push({
           kind: 'group',
-          key,
-          label: seg,
-          count: groupTests.length,
-          icon: 'i-lucide-folder',
-          depth,
-          stats: computeStats(groupTests),
+          key: row.key,
+          label: row.label,
+          count: row.tests.length,
+          icon: row.isFile ? 'i-lucide-file-code-2' : 'i-lucide-folder',
+          filePath: row.isFile ? row.filePath : null,
+          stats: computeStats(row.tests),
+          depth: row.depth,
+          labelField: row.isFile ? 'file' : 'describe',
         });
-        if (isOpen(key)) addLevel(groupTests, filePath, groupPath, depth + 1);
       }
-      for (const tc of sortCases(direct)) out.push({ kind: 'test', key: `t${tc.executionId}`, tc, depth });
-    };
-    for (const [filePath, fileCases] of [...byFile.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-      const key = `file:${filePath}`;
-      out.push({
-        kind: 'group',
-        key,
-        label: filePath,
-        count: fileCases.length,
-        icon: 'i-lucide-file-code-2',
-        filePath,
-        stats: computeStats(fileCases),
-        depth: 0,
-      });
-      if (isOpen(key)) addLevel(fileCases, filePath, [], 1);
     }
     return out;
   }
@@ -435,17 +497,13 @@ const groupKeysByExecution = computed(() => {
   const map = new Map<number, string[]>();
   if (groupBy.value === 'none') return map;
   for (const tc of filteredTestCases.value) {
-    const fp = tc.filePath ?? 'unknown';
     if (groupBy.value === 'lock') {
       const locks = tc.locks ?? [];
       map.set(tc.executionId, locks.length ? locks.map((l) => `lock:${l}`) : ['lock:none']);
     } else if (groupBy.value === 'file') {
-      map.set(tc.executionId, [`file:${fp}`]);
+      map.set(tc.executionId, [fileGroupKey(positionOf(tc).filePath)]);
     } else if (groupBy.value === 'file-describe') {
-      const keys = [`file:${fp}`];
-      const sp = tc.suitePath ?? [];
-      for (let i = 1; i <= sp.length; i++) keys.push(`describe:${fp}\x1f${sp.slice(0, i).join('\x1f')}`);
-      map.set(tc.executionId, keys);
+      map.set(tc.executionId, describeGroupKeys(positionOf(tc)));
     } else if (isFailedStatus(tc.status)) {
       map.set(tc.executionId, [tc.failureClusterId != null ? `cluster:${tc.failureClusterId}` : 'cluster:none']);
     } else {
@@ -629,131 +687,61 @@ function scrollToCase(id: number) {
   });
 }
 
-onUnmounted(() => {});
 defineExpose({ scrollToCase });
 </script>
 
 <template>
   <div class="flex flex-col min-h-0">
-    <FilterToolbar class="mb-4 shrink-0">
-      <template #start>
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-muted">Group by</span>
-          <USelect v-model="groupBy" :items="groupByItems" size="sm" class="w-28" aria-label="Group tests by" />
-        </div>
-        <span
-          v-if="isLive"
-          aria-live="polite"
-          class="text-sm text-zinc-500 tabular-nums inline-flex items-center gap-1"
-        >
-          {{ finishedCount }} / {{ testCases.length }} completed <HelpHint topic="run.live" />
-        </span>
-        <span v-else class="text-sm text-zinc-500 tabular-nums inline-flex items-center gap-1">
-          {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions
-          <HelpHint topic="run.test-cases" />
-        </span>
-      </template>
-
-      <UInput
+    <!-- Filters, in two rows: the search (words and file:, describe:, tag:,
+         browser:… qualifiers), then outcomes. How the rows are grouped and
+         sorted sits on the list's own header. -->
+    <div class="mb-3 shrink-0 space-y-2">
+      <TestSearchInput
         v-model="testCaseSearch"
-        placeholder="Search title, path, error…"
-        icon="i-lucide-search"
-        size="sm"
-        class="min-w-48 max-sm:flex-1"
+        :fields="RUN_SEARCH_FIELDS"
+        :values="searchValues"
+        placeholder="Search tests, or filter with file:, describe:, tag:…"
       />
+
       <div class="flex flex-wrap items-center gap-1">
-        <button
+        <StatusFilterChip
           v-for="opt in STATUS_OPTIONS"
           :key="opt.value"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="
-            activeStatuses.includes(opt.value)
-              ? opt.color === 'green'
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                : opt.color === 'red'
-                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-                  : opt.color === 'orange'
-                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                    : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-          "
-          :aria-pressed="activeStatuses.includes(opt.value)"
+          :status="opt.value"
+          :label="opt.label"
+          :pressed="activeStatuses.includes(opt.value)"
           @click="toggleStatus(opt.value)"
-        >
-          <span
-            class="size-2 rounded-full shrink-0"
-            :class="
-              opt.color === 'green'
-                ? 'bg-emerald-500'
-                : opt.color === 'red'
-                  ? 'bg-rose-500'
-                  : opt.color === 'orange'
-                    ? 'bg-orange-500'
-                    : 'bg-zinc-400'
-            "
-          />
-          {{ opt.label }}
-        </button>
+        />
         <!-- The two signals join the status chips as toggles, not checkboxes. -->
-        <button
-          v-if="!isLive"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="
-            showNewRegressionsOnly
-              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-          "
-          :aria-pressed="showNewRegressionsOnly"
-          @click="showNewRegressionsOnly = !showNewRegressionsOnly"
-        >
-          <UIcon name="i-lucide-flame" class="size-3 shrink-0" />
-          New regressions
-        </button>
-        <button
-          v-if="!isLive"
-          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="
-            showNewFlakyOnly
-              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-          "
-          :aria-pressed="showNewFlakyOnly"
-          @click="showNewFlakyOnly = !showNewFlakyOnly"
-        >
-          <UIcon name="i-lucide-shuffle" class="size-3 shrink-0" />
-          Newly flaky
-        </button>
-      </div>
-      <USelect
-        v-model="testCaseBrowserFilter"
-        :items="testCaseBrowserOptions"
-        size="sm"
-        class="w-36"
-        aria-label="Filter by browser"
-      />
-      <USelect
-        v-if="hasAnyLocks"
-        v-model="testCaseLockFilter"
-        :items="testCaseLockOptions"
-        icon="i-lucide-lock"
-        size="sm"
-        class="w-36"
-        aria-label="Filter by lock"
-      />
-      <div class="flex items-center gap-1">
-        <USelect v-model="sortKey" :items="sortOptions" size="sm" class="w-36" aria-label="Sort tests by" />
+        <template v-if="!isLive">
+          <span class="mx-1 h-4 w-px bg-accented" aria-hidden="true" />
+          <StatusFilterChip
+            status="failed"
+            label="New regressions"
+            icon="i-lucide-flame"
+            :pressed="showNewRegressionsOnly"
+            @click="showNewRegressionsOnly = !showNewRegressionsOnly"
+          />
+          <StatusFilterChip
+            status="flaky"
+            label="Newly flaky"
+            icon="i-lucide-shuffle"
+            :pressed="showNewFlakyOnly"
+            @click="showNewFlakyOnly = !showNewFlakyOnly"
+          />
+        </template>
         <UButton
-          size="sm"
-          variant="outline"
+          v-if="hasFilter"
+          size="xs"
+          variant="ghost"
           color="neutral"
-          :disabled="sortKey === 'natural'"
-          :icon="sortDir === 'asc' ? 'i-lucide-arrow-up-narrow-wide' : 'i-lucide-arrow-down-wide-narrow'"
-          :title="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
-          :aria-label="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
-          @click="sortDir = sortDir === 'asc' ? 'desc' : 'asc'"
+          icon="i-lucide-x"
+          label="Clear filters"
+          class="ml-auto"
+          @click="clearFilters"
         />
       </div>
-    </FilterToolbar>
+    </div>
 
     <!-- Bulk triage bar — appears once failing rows are selected. -->
     <div
@@ -796,20 +784,61 @@ defineExpose({ scrollToCase });
     </div>
 
     <div v-if="rows.length > 0" class="flex-1 min-h-0 rounded-lg border border-default bg-default flex flex-col">
-      <!-- Select-all failing, above the list (no column header to host it). -->
+      <!-- List header: select-all failing and the count on the left, how the
+           rows are grouped and sorted on the right. -->
       <div
-        v-if="selectionEnabled"
-        class="flex items-center gap-2 border-b border-default bg-elevated/40 px-3 py-1.5 shrink-0"
+        class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-default bg-elevated/40 px-3 py-1.5 shrink-0"
       >
-        <input
-          type="checkbox"
-          class="size-4 cursor-pointer accent-primary focus-visible:ring-2 focus-visible:ring-primary rounded"
-          :checked="allSelectableSelected"
-          :indeterminate.prop="someSelectableSelected"
-          :aria-label="allSelectableSelected ? 'Deselect all failing tests' : 'Select all failing tests'"
-          @change="toggleAll"
-        />
-        <span class="text-xs text-muted">Select all failing</span>
+        <div v-if="selectionEnabled" class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="size-4 cursor-pointer accent-primary focus-visible:ring-2 focus-visible:ring-primary rounded"
+            :checked="allSelectableSelected"
+            :indeterminate.prop="someSelectableSelected"
+            :aria-label="allSelectableSelected ? 'Deselect all failing tests' : 'Select all failing tests'"
+            @change="toggleAll"
+          />
+          <span class="text-xs text-muted">Select all failing</span>
+        </div>
+        <span v-if="isLive" aria-live="polite" class="text-xs text-muted tabular-nums inline-flex items-center gap-1">
+          {{ finishedCount }} / {{ Math.max(total ?? 0, testCases.length) }} completed <HelpHint topic="run.live" />
+        </span>
+        <span v-else class="text-xs text-muted tabular-nums inline-flex items-center gap-1">
+          {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions
+          <HelpHint topic="run.test-cases" />
+        </span>
+        <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-xs text-muted whitespace-nowrap">Group by</span>
+            <USelect
+              v-model="groupBy"
+              :items="groupByItems"
+              size="xs"
+              class="min-w-0 flex-1 sm:w-32 sm:flex-none"
+              aria-label="Group tests by"
+            />
+          </div>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-xs text-muted">Sort</span>
+            <USelect
+              v-model="sortKey"
+              :items="SORT_OPTIONS"
+              size="xs"
+              class="min-w-0 flex-1 sm:w-32 sm:flex-none"
+              aria-label="Sort tests by"
+            />
+            <UButton
+              size="xs"
+              variant="outline"
+              color="neutral"
+              :disabled="sortKey === 'failures'"
+              :icon="sortDir === 'asc' ? 'i-lucide-arrow-up-narrow-wide' : 'i-lucide-arrow-down-wide-narrow'"
+              :title="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
+              :aria-label="sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending'"
+              @click="sortDir = sortDir === 'asc' ? 'desc' : 'asc'"
+            />
+          </div>
+        </div>
       </div>
 
       <ClientOnly>
@@ -836,6 +865,8 @@ defineExpose({ scrollToCase });
                       item.tc.tags,
                       item.tc.locks,
                       liveStep(item.tc)?.title,
+                      showSuitePath,
+                      item.tc.suitePath,
                     ]
                   : [item.label, item.count, item.triageStatus]
               "
@@ -852,6 +883,7 @@ defineExpose({ scrollToCase });
                 :cluster-id="item.clusterId"
                 :stats="item.stats"
                 :file-path="item.filePath"
+                :highlight="item.labelField ? searchHighlights?.[item.labelField] : null"
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleGroup(item.key)"
@@ -860,12 +892,15 @@ defineExpose({ scrollToCase });
                 v-else
                 :test-case="item.tc"
                 :cluster-name="item.tc.failureClusterId != null ? clusterName(item.tc.failureClusterId) : null"
+                :issue="clusterIssue(item.tc.failureClusterId)"
                 :quarantined="isQuarantined(item.tc)"
                 :selectable="selectionEnabled && isFailedStatus(item.tc.status)"
                 :selected="selectedIds.has(item.tc.executionId)"
                 :live-step="liveStep(item.tc)"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
+                :suite-path="showSuitePath ? item.tc.suitePath : null"
+                :highlight="searchHighlights"
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleRow(item.tc)"
@@ -886,20 +921,7 @@ defineExpose({ scrollToCase });
     <EmptyState v-else-if="testCases.length === 0" icon="i-lucide-beaker" text="No tests recorded for this run." />
 
     <EmptyState v-else icon="i-lucide-search-x" text="No tests match your filters.">
-      <UButton
-        size="xs"
-        variant="outline"
-        color="neutral"
-        label="Clear filters"
-        @click="
-          testCaseSearch = '';
-          activeStatuses = [];
-          testCaseBrowserFilter = 'all';
-          testCaseLockFilter = 'all';
-          showNewRegressionsOnly = false;
-          showNewFlakyOnly = false;
-        "
-      />
+      <UButton size="xs" variant="outline" color="neutral" label="Clear filters" @click="clearFilters" />
     </EmptyState>
 
     <!-- Confirm quarantining a larger selection. -->

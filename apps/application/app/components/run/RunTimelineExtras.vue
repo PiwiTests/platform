@@ -7,20 +7,20 @@
  * any finished run.
  */
 import { computed } from 'vue';
-import type { TestCaseResult } from '~~/types/api';
+import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import { useTimelineModel } from '~/composables/useTimelineModel';
 import { formatTimelineTime, lockColorHex } from '~/utils/timeline';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
-  clusterMeta?: Record<number, { name: string; status: string | null }>;
+  clusterMeta?: RunClusterMeta;
   projectKey?: string | number | null;
   projectName?: string | null;
 }>();
 
-// Reuse the timeline's own interval model so the held time and serialization
-// estimate line up exactly with the bars above.
-const { runLocks, lockSummary } = useTimelineModel(props);
+// Reuse the timeline's own interval model so the held time, the serialization
+// estimate and the worker lanes line up exactly with the bars above.
+const { runLocks, lockSummary, timelineData, workerRows } = useTimelineModel(props);
 
 /** Lock name → color, matching the timeline's brackets and legend. */
 const lockColor = computed(() => {
@@ -42,16 +42,19 @@ const slowest = computed(() =>
     .slice(0, 10),
 );
 
+// Tests per timeline lane: a worker slot, whichever of its processes ran them,
+// so a process replaced after a failure does not read as a worker that idled.
 const workerCounts = computed(() => {
   const counts = new Map<number, number>();
-  for (const tc of props.testCases) {
-    if (tc.workerIndex != null && tc.workerIndex >= 0) {
-      counts.set(tc.workerIndex, (counts.get(tc.workerIndex) ?? 0) + 1);
-    }
+  for (const item of timelineData.value) {
+    if (item.kind === 'test') counts.set(item.rowIndex, (counts.get(item.rowIndex) ?? 0) + 1);
   }
-  return [...counts.entries()]
-    .map(([workerIndex, count]) => ({ workerIndex, count }))
-    .sort((a, b) => a.workerIndex - b.workerIndex);
+  const sharded = new Set(workerRows.value.map((row) => row.shardIndex)).size > 1;
+  return workerRows.value.map((row) => ({
+    key: row.baseLane,
+    label: sharded && row.shardIndex != null ? `S${row.shardIndex} W${row.slot}` : `W${row.slot}`,
+    count: counts.get(row.baseLane) ?? 0,
+  }));
 });
 
 const maxWorkerCount = computed(() => Math.max(1, ...workerCounts.value.map((w) => w.count)));
@@ -63,16 +66,20 @@ const imbalanceWarning = computed<string | null>(() => {
   const max = Math.max(...counts.map((w) => w.count));
   const min = Math.min(...counts.map((w) => w.count));
   if (min > 0 && max >= min * 1.5) {
-    const maxW = counts.find((w) => w.count === max)?.workerIndex;
-    const minW = counts.find((w) => w.count === min)?.workerIndex;
+    const maxW = counts.find((w) => w.count === max)?.label;
+    const minW = counts.find((w) => w.count === min)?.label;
     const ratio = Math.round((max / min) * 10) / 10;
-    return `Worker W${maxW} ran ${ratio}× more tests than worker W${minW}`;
+    return `Worker ${maxW} ran ${ratio}× more tests than worker ${minW}`;
   }
   return null;
 });
 
 function clusterName(tc: TestCaseResult): string | null {
   return tc.failureClusterId != null ? (props.clusterMeta?.[tc.failureClusterId]?.name ?? null) : null;
+}
+
+function clusterIssue(tc: TestCaseResult) {
+  return tc.failureClusterId != null ? (props.clusterMeta?.[tc.failureClusterId]?.issue ?? null) : null;
 }
 </script>
 
@@ -85,6 +92,7 @@ function clusterName(tc: TestCaseResult): string | null {
           :key="tc.executionId"
           :test-case="tc"
           :cluster-name="clusterName(tc)"
+          :issue="clusterIssue(tc)"
           :project-key="projectKey"
           :project-name="projectName"
         />
@@ -146,13 +154,13 @@ function clusterName(tc: TestCaseResult): string | null {
         <span>{{ imbalanceWarning }}</span>
       </div>
       <div class="flex items-end gap-2 h-20">
-        <div v-for="w in workerCounts" :key="w.workerIndex" class="flex-1 flex flex-col items-center gap-1">
+        <div v-for="w in workerCounts" :key="w.key" class="flex-1 flex flex-col items-center gap-1">
           <span class="text-xs text-muted tabular-nums">{{ w.count }}</span>
           <div
             class="w-full bg-blue-400 rounded-t"
             :style="{ height: Math.max(4, (w.count / maxWorkerCount) * 60) + 'px' }"
           />
-          <span class="text-xs text-muted">W{{ w.workerIndex }}</span>
+          <span class="text-xs text-muted">{{ w.label }}</span>
         </div>
       </div>
     </SectionCard>

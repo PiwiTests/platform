@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: import archives the OS handed to the app (drag & drop,
- * "Open with", dock drops). Each file goes to the desktop-only local import
- * route, which reads it from disk server-side — same semantics as the import
- * page: idempotent, silent (no notifications or regression signals).
+ * "Open with", dock drops). Each file goes to a desktop-only route that reads
+ * it from disk server-side: Playwright archives to the local import route —
+ * same semantics as the import page: idempotent, silent (no notifications or
+ * regression signals) — and Piwi Picker's `.piwibug` files to the bug report
+ * import, as Send to Piwi would.
  */
 interface ProjectMenuItem {
   id: number;
@@ -14,6 +16,7 @@ interface ProjectMenuItem {
 interface ImportOutcome {
   status: 'importing' | 'imported' | 'duplicate' | 'error';
   testRunId?: number;
+  bugReportId?: number;
   message?: string;
 }
 
@@ -62,6 +65,18 @@ async function importAll() {
       const current = outcomes[path]?.status;
       if (current === 'imported' || current === 'duplicate') continue;
       outcomes[path] = { status: 'importing' };
+      if (isBugReportFile(path)) {
+        try {
+          const result = await $fetch<{ id: number }>('/api/desktop/import-bug-report', {
+            method: 'POST',
+            body: { path, projectName: projectName.value },
+          });
+          outcomes[path] = { status: 'imported', bugReportId: result.id };
+        } catch (error) {
+          outcomes[path] = { status: 'error', message: errorMessage(error) };
+        }
+        continue;
+      }
       try {
         const result = await $fetch<{ status: 'imported' | 'duplicate'; runId: number }>('/api/desktop/import-local', {
           method: 'POST',
@@ -127,12 +142,16 @@ function outcomeBadge(path: string): { label: string; color: 'info' | 'success' 
       <div class="space-y-4">
         <p class="text-sm text-muted">
           Playwright blob reports become complete runs; bare traces become single executions. Re-importing the same
-          archive is a no-op, and imports never trigger notifications or regression signals.
+          archive is a no-op, and imports never trigger notifications or regression signals. A bug report saved by Piwi
+          Picker (.piwibug) becomes a bug report of the project.
         </p>
 
         <div class="space-y-2">
           <div v-for="path in files" :key="path" class="flex items-center gap-2 rounded-md border border-default p-2">
-            <UIcon name="i-lucide-file-archive" class="size-4 text-gray-400 shrink-0" />
+            <UIcon
+              :name="isBugReportFile(path) ? 'i-lucide-bug' : 'i-lucide-file-archive'"
+              class="size-4 text-gray-400 shrink-0"
+            />
             <div class="min-w-0 flex-1">
               <p class="text-sm truncate">{{ fileName(path) }}</p>
               <p class="text-xs text-muted truncate">{{ path }}</p>
@@ -142,7 +161,17 @@ function outcomeBadge(path: string): { label: string; color: 'info' | 'success' 
               {{ outcomeBadge(path)!.label }}
             </UBadge>
             <UButton
-              v-if="outcomes[path]?.status === 'imported' || outcomes[path]?.status === 'duplicate'"
+              v-if="outcomes[path]?.bugReportId"
+              :to="`/bug-reports/${outcomes[path]?.bugReportId}`"
+              size="xs"
+              color="neutral"
+              variant="soft"
+              @click="open = false"
+            >
+              View report
+            </UButton>
+            <UButton
+              v-else-if="outcomes[path]?.status === 'imported' || outcomes[path]?.status === 'duplicate'"
               :to="`/test-runs/${outcomes[path]?.testRunId}`"
               size="xs"
               color="neutral"

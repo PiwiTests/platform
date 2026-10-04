@@ -2,13 +2,11 @@ import { h } from 'vue';
 import { UIcon } from '#components';
 import type { Column } from '@tanstack/vue-table';
 import type { CommitListItem } from '~~/types/api';
-import {
-  format as formatDate,
-  formatDistanceToNow,
-  formatDuration as formatDurationLib,
-  intervalToDuration,
-} from 'date-fns';
+import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDuration } from 'date-fns';
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
+import { formatAbsolute } from '#shared/i18n/locale-format';
+import { activeLocalePrefs } from './locale-format';
+import { statusPalette, statusPaletteKey } from './status-palette';
 
 /**
  * A link that lives inside a sentence keeps the sentence's color and carries a
@@ -17,6 +15,14 @@ import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
  * and both failure pages share this one class string.
  */
 export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset-2 hover:decoration-solid';
+
+/**
+ * Code inside a heading or a sentence of the situation block — a locator, a
+ * commit — sits in a small chip, so it reads as code at a glance without a second
+ * font color for the prose around it. The chip wraps with its text on a narrow
+ * screen, each line keeping its own edges.
+ */
+export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
 
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
@@ -95,9 +101,11 @@ export { formatBytes } from '#shared/utils/format-bytes';
  * works for both `integer(timestamp)` columns (seconds) and raw millisecond
  * fields such as `startedAt`, as well as `Date` objects (e.g. PostgreSQL).
  *
- * The format is fixed (not locale-dependent): the server renders the same
- * strings the client hydrates, and the server has no browser locale to match.
- * Dates read in American English, consistent with the rest of the UI copy.
+ * The locale and time zone come from the viewer's effective preferences
+ * (`activeLocalePrefs`): the built-in `en-US` reads exactly as before
+ * (`M/d/yyyy, h:mm:ss a`), while another locale renders in its own convention
+ * (`fr-FR` → `22/09/2026 14:30:05`). Absolute dates render client-only
+ * (`ClientDate`), so the viewer's browser locale and zone always apply.
  *
  * @param date The value to format.
  * @param options.dateOnly Omit the time component (date only).
@@ -107,29 +115,13 @@ export function prettyDateFormat(
   date: string | Date | number | null | undefined,
   options: { dateOnly?: boolean } = {},
 ): string {
-  if (date === null || date === undefined || date === '') return 'N/A';
-
-  let d: Date;
-  if (date instanceof Date) {
-    d = date;
-  } else {
-    const n = typeof date === 'number' ? date : Number(date);
-    if (!Number.isNaN(n) && String(date).trim() !== '') {
-      // Numeric input: values below 1e12 are Unix seconds, otherwise milliseconds
-      d = new Date(n < 1e12 ? n * 1000 : n);
-    } else {
-      // Non-numeric string (ISO 8601, etc.)
-      d = new Date(date);
-    }
-  }
-
-  if (Number.isNaN(d.getTime())) return 'N/A';
-  return options.dateOnly ? formatDate(d, 'M/d/yyyy') : formatDate(d, 'M/d/yyyy, h:mm:ss a');
+  const prefs = activeLocalePrefs();
+  return formatAbsolute(date, { locale: prefs.locale, timeZone: prefs.timeZone, dateOnly: options.dateOnly });
 }
 
 export function formatRelativeTime(date: string | Date | number | null | undefined): string {
   if (!date) return 'N/A';
-  return formatDistanceToNow(new Date(date), { addSuffix: true });
+  return formatDistanceToNow(new Date(date), { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
 }
 
 export function formatDuration(ms?: number | null) {
@@ -214,25 +206,21 @@ export function getBrowserHexColor(browserName?: string | null): string {
   return '#6b7280';
 }
 
-export function getStatusColor(status: string) {
-  switch (status) {
+/**
+ * Badge color for a test or run status, on the same hues as the test outcome
+ * palette (`status-palette.ts`): timed-out and interrupted read as failed.
+ */
+export function getStatusColor(status: string): BadgeColor {
+  switch (statusPaletteKey(status)) {
     case 'passed':
       return 'success';
     case 'failed':
       return 'error';
-    case 'timedout':
+    case 'flaky':
+      return 'flaky';
+    case 'didnotrun':
       return 'warning';
-    case 'timedOut':
-      return 'warning';
-    case 'interrupted':
-      return 'warning';
-    case 'cancelled':
-      return 'neutral';
-    case 'initializing':
-      return 'info';
     case 'running':
-      return 'info';
-    case 'finalizing':
       return 'info';
     default:
       return 'neutral';
@@ -254,7 +242,10 @@ export function getStatusIcon(status: string): string {
       return 'i-lucide-check-circle-2';
     case 'failed':
     case 'timedout':
+    case 'interrupted':
       return 'i-lucide-x-circle';
+    case 'flaky':
+      return 'i-lucide-shuffle';
     case 'didnotrun':
       return 'i-lucide-circle-slash';
     case 'running':
@@ -268,21 +259,7 @@ export function getStatusIcon(status: string): string {
 
 /** Text colour classes matching `getStatusIcon`, for an icon drawn without a chip. */
 export function getStatusTextClass(status: string): string {
-  switch (normalizeStatusKey(status)) {
-    case 'passed':
-      return 'text-emerald-600 dark:text-emerald-400';
-    case 'failed':
-    case 'timedout':
-      return 'text-rose-600 dark:text-rose-400';
-    case 'didnotrun':
-      return 'text-amber-600 dark:text-amber-400';
-    case 'running':
-    case 'initializing':
-    case 'finalizing':
-      return 'text-blue-600 dark:text-blue-400';
-    default:
-      return 'text-zinc-400 dark:text-zinc-500';
-  }
+  return statusPalette(status).text;
 }
 
 /** Whether a status icon should spin (the run is still in flight). */
@@ -301,6 +278,11 @@ export function formatStatusLabel(status: string): string {
   if (status === 'didnotrun') return "didn't run";
   if (status === 'never-run') return 'never run';
   return status;
+}
+
+/** Status label for one execution: a pass that needed a retry reads "passed on retry". */
+export function formatExecutionStatus(status: string, retries?: number | null): string {
+  return statusPaletteKey(status, retries) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
 }
 
 /**
@@ -428,7 +410,7 @@ export function clusterErrorTypeColor(
  * Curated tag palette — the Tailwind 500 shades, which keep even perceived
  * saturation across hues. `TagBadge` derives its tint/text from whatever it
  * gets, but picking from a fixed set keeps sibling tags looking like one
- * family instead of the arbitrary HSL spins this used to generate.
+ * family.
  */
 export const TAG_COLOR_PALETTE = [
   '#ef4444', // red
@@ -504,14 +486,14 @@ export function fileApiUrl(
  * `/api/files/` endpoint. Demo mode needs this for its committed sample traces:
  * the trace viewer fetches through its own service worker, which bypasses the
  * demo's API-emulating service worker, so only a real static URL is reachable.
+ *
+ * The trace URL is root-relative, so the server and the browser build the same
+ * link; the viewer resolves it against its own origin.
  */
 export function getTraceViewerUrl(filePath: string, baseURL: string = '/', staticAsset: boolean = false): string {
   const base = (baseURL || '/').replace(/\/$/, '');
-  // `location` only exists in the browser; during SSR render a relative trace
-  // URL — the client re-render fills the origin in before the link is clickable.
-  const origin = typeof location === 'undefined' ? '' : location.origin;
   const filePrefix = staticAsset ? '' : 'api/files/';
-  const traceUrl = `${origin}${base}/${filePrefix}${getFileApiPath(filePath)}`;
+  const traceUrl = `${base}/${filePrefix}${getFileApiPath(filePath)}`;
   return `${base}/trace-viewer/?trace=${encodeURIComponent(traceUrl)}`;
 }
 
@@ -699,24 +681,12 @@ export function copyPreview(text: string | null | undefined, max = 120): string 
   return singleLine.length <= max ? singleLine : singleLine.slice(0, max) + '…';
 }
 
-/** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites. */
-export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info';
+/** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites (`flaky` is registered in nuxt.config.ts). */
+export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info' | 'flaky';
 
 /** Pass rate (0–100) for a single run, guarding against divide-by-zero. */
 export function passRate(run: { passedTests: number; totalTests: number }): number {
   return run.totalTests > 0 ? Math.round((run.passedTests / run.totalTests) * 100) : 0;
-}
-
-/**
- * Badge color for a test case's derived status category (the server-computed
- * `status` on `TestCaseWithStats`: flaky wins, timeouts fold into failed,
- * `never-run` for cases without executions).
- */
-export function testCaseCategoryColor(category: string): BadgeColor {
-  if (category === 'flaky') return 'warning';
-  if (category === 'never-run') return 'neutral';
-  if (category === 'didnotrun') return 'warning';
-  return getStatusColor(category) as BadgeColor;
 }
 
 /** Badge color for an HTTP method (network request rows). */

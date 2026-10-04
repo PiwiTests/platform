@@ -140,6 +140,13 @@ describe('parseLeafLocatorExpression', () => {
     ).toEqual({ method: 'getByRole', args: ['button', { name: 'Delete' }] });
   });
 
+  it('skips narrowing calls: the leaf is the last locating call', () => {
+    expect(parseLeafLocatorExpression(`getByRole('row', { name: 'Acme' }).getByRole('button').first()`)).toEqual({
+      method: 'getByRole',
+      args: ['button'],
+    });
+  });
+
   it('unescapes quotes inside string args', () => {
     expect(parseLeafLocatorExpression(`getByText('It\\'s here')`)).toEqual({ method: 'getByText', args: ["It's here"] });
   });
@@ -166,7 +173,7 @@ describe('deriveFailedLocator', () => {
   });
 
   it('strips ANSI colour codes from the error before matching', () => {
-    const colored = `[2mLocator:[22m getByText('Pay now')`;
+    const colored = `\x1b[2mLocator:\x1b[22m getByText('Pay now')`;
     const testInfo = { errors: [{ message: colored }] } as never;
     expect(deriveFailedLocator(testInfo)).toEqual({ method: 'getByText', args: ['Pay now'], location: null });
   });

@@ -2,44 +2,37 @@
  * Impact-from-diff — map a set of changed files to the tests they affect,
  * resolved through observed edges rather than a build-time dependency graph.
  *
- * Two edges, both cheap and config-free:
+ * Three edges, all cheap and config-free:
  *  1. **Direct** — a changed file that IS a test file → the tests defined in it.
  *  2. **Reach** — a changed support file (page object, helper, app module) that
- *     a test's most recent execution actually ran through, per its captured
+ *     a test's most recent execution ran through, per its captured
  *     `test_source_frames`.
+ *  3. **Code reach** — a changed application file whose functions a test
+ *     executed (`code_reach`), or the handler file of a route a test called.
  *
- * Honest by construction: it degrades in the safe direction. A changed *source*
- * file that maps to no test can't be ruled out, so the selection widens to the
- * full suite (with a warning) rather than silently skipping it. Route/page-level
- * mapping (server routes → tests that hit them) needs a per-project config and
- * is intentionally not attempted here.
+ * Honest by construction: it degrades in the safe direction, widening to the
+ * full suite (with a warning) rather than silently skipping a test:
+ *  - A changed file that maps to no test can't be ruled out, unless it is
+ *    documentation (`DOCUMENTATION_EXTENSIONS`). Styles, markup, JSON and YAML
+ *    widen too: no edge maps them.
+ *  - A changed file mapped only through source frames widens. Source frames are
+ *    recorded on failure only, so they name the tests that failed inside the
+ *    file, never the passing tests that also use it.
+ * Code reach only adds tests: it leaves out module top-level code, server
+ * modules and type-only modules, so a file it never saw may still be run by
+ * every test.
  */
 import { eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveCasePayloadContents } from './case-payloads';
+import { sameFilePath } from '@piwitests/core/locator-break';
+import { loadCodeReachPairs } from './code-reach';
 import { resolveSelectionDefinition } from '#shared/handlers/selections';
 import type { ResolvedSelection, SelectionDefinition, SelectionFormat, SelectionRankBy } from '#shared/selection';
 
-/** Extensions we treat as source: an unmapped one of these widens to full suite. */
-const SOURCE_EXTENSIONS = new Set([
-  'ts',
-  'tsx',
-  'js',
-  'jsx',
-  'mjs',
-  'cjs',
-  'vue',
-  'svelte',
-  'astro',
-  'py',
-  'rb',
-  'go',
-  'java',
-  'cs',
-  'php',
-  'kt',
-]);
+/** Documentation extensions: a changed file with one of these that maps to no test runs nothing. */
+const DOCUMENTATION_EXTENSIONS = new Set(['md', 'mdx', 'markdown', 'txt', 'rst', 'adoc']);
 
 function normalizePath(p: string): string {
   return p.replace(/\\/g, '/').replace(/^\.\//, '').trim();
@@ -112,9 +105,9 @@ export interface ImpactResolution extends ResolvedSelection {
     changedFiles: number;
     /** Changed files that mapped to at least one test. */
     mappedFiles: number;
-    /** True when unmapped source files forced a full-suite run. */
+    /** True when files that could not be fully mapped forced a full-suite run. */
     widened: boolean;
-    /** Source files that mapped to no test (capped). */
+    /** Changed files that forced the full suite (capped): mapped to no test, or only through source frames. */
     unmappedSourceFiles: string[];
   };
 }
@@ -137,9 +130,12 @@ export async function resolveImpact(
     .from(testCases)
     .where(eq(testCases.projectId, projectId));
   const reach = await loadSourceReach(db, projectId);
+  const codeReach = await loadCodeReachPairs(db, projectId);
 
   const matched = new Set<number>();
   const mappedFiles = new Set<string>();
+  // Files mapped by an edge that names every test using them: the test file itself, or code reach.
+  const fullyMappedFiles = new Set<string>();
 
   for (const testCase of cases) {
     const filePath = normalizePath(testCase.filePath);
@@ -147,6 +143,7 @@ export async function resolveImpact(
       if (pathsMatch(filePath, changed)) {
         matched.add(testCase.id);
         mappedFiles.add(changed);
+        fullyMappedFiles.add(changed);
       }
     }
   }
@@ -159,8 +156,26 @@ export async function resolveImpact(
     }
   }
 
-  const unmappedSource = files.filter((f) => !mappedFiles.has(f) && SOURCE_EXTENSIONS.has(fileExtension(f)));
-  const widened = unmappedSource.length > 0;
+  // Many tests reach the same files: match each distinct file once.
+  const testsByFile = new Map<string, Set<number>>();
+  for (const pair of codeReach) {
+    const tests = testsByFile.get(pair.file);
+    if (tests) tests.add(pair.testCaseId);
+    else testsByFile.set(pair.file, new Set([pair.testCaseId]));
+  }
+  for (const [file, tests] of testsByFile) {
+    for (const changed of files) {
+      if (!sameFilePath(file, changed)) continue;
+      for (const id of tests) matched.add(id);
+      mappedFiles.add(changed);
+      fullyMappedFiles.add(changed);
+    }
+  }
+
+  const unmapped = files.filter((f) => !mappedFiles.has(f) && !DOCUMENTATION_EXTENSIONS.has(fileExtension(f)));
+  const framesOnly = files.filter((f) => mappedFiles.has(f) && !fullyMappedFiles.has(f));
+  const widening = [...unmapped, ...framesOnly];
+  const widened = widening.length > 0;
 
   const definition: SelectionDefinition = widened ? {} : { include: [{ ids: [...matched] }] };
   const resolved = await resolveSelectionDefinition(db, projectId, definition, {
@@ -172,10 +187,18 @@ export async function resolveImpact(
   });
 
   if (widened) {
-    const sample = unmappedSource.slice(0, 5).join(', ');
+    const reasons: string[] = [];
+    if (unmapped.length > 0) {
+      reasons.push(`${unmapped.length} changed file${unmapped.length === 1 ? '' : 's'} mapped to no test`);
+    }
+    if (framesOnly.length > 0) {
+      reasons.push(
+        `${framesOnly.length} changed file${framesOnly.length === 1 ? '' : 's'} mapped only through failure frames, which miss the passing tests that use ${framesOnly.length === 1 ? 'it' : 'them'}`,
+      );
+    }
     resolved.warnings.push({
       code: 'impact-widened',
-      message: `${unmappedSource.length} changed source file${unmappedSource.length === 1 ? '' : 's'} could not be mapped to any test — running the full suite: ${sample}`,
+      message: `${reasons.join('; ')} — running the full suite: ${widening.slice(0, 5).join(', ')}`,
     });
   }
 
@@ -185,7 +208,7 @@ export async function resolveImpact(
       changedFiles: files.length,
       mappedFiles: mappedFiles.size,
       widened,
-      unmappedSourceFiles: unmappedSource.slice(0, 50),
+      unmappedSourceFiles: widening.slice(0, 50),
     },
   };
 }

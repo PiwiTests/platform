@@ -51,6 +51,12 @@ const KNOWN_DIALECT_DIFFS: Record<string, [string, string]> = {
   // Millisecond epoch values exceed int32 on PostgreSQL.
   'test_runs_cases.started_at': ['int', 'bigint'],
   'network_requests.start_time': ['int', 'bigint'],
+  // Millisecond sums over a day's runs exceed int32 on PostgreSQL.
+  'analytics_daily_rollups.duration_ms': ['int', 'bigint'],
+  'analytics_daily_rollups.avg_test_duration_sum_ms': ['int', 'bigint'],
+  'analytics_daily_rollups.p90_test_duration_sum_ms': ['int', 'bigint'],
+  'analytics_daily_rollups.wait_ms': ['int', 'bigint'],
+  'analytics_daily_rollups.failed_exec_ms': ['int', 'bigint'],
 };
 
 interface ColumnShape {

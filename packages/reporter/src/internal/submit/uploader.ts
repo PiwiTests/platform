@@ -6,7 +6,7 @@ import { HttpError } from '../transport/http-client.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
-import type { CollectedTestCase, TraceHashInfo, FilterDetails } from '../../types.js';
+import type { CollectedTestCase, TraceHashInfo, FilterDetails, WireResourceReport } from '../../types.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -31,6 +31,8 @@ export interface RunPayload {
   environment?: string;
   /** Optional display label for the test run (e.g. "v2.3.1 release") */
   label?: string | null;
+  /** Keep the run forever: the dashboard's retention never deletes it */
+  keep?: boolean;
   /** Arbitrary metadata collected from the environment, CI, and Playwright config */
   metadata: Record<string, any>;
   /** Unique instance identifier for deduplication */
@@ -49,6 +51,8 @@ export interface RunPayload {
   isFullRun?: boolean;
   /** Filter details when isFullRun is false */
   filterDetails?: FilterDetails | null;
+  /** The run's resource findings and what it cost its machine, when the reporter measured them */
+  resourceReport?: WireResourceReport | null;
 }
 
 /** Options controlling which report files and traces to upload */

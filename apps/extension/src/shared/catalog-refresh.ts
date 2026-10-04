@@ -4,12 +4,16 @@
  * Split from `catalog-cache.ts` (pure storage) because this is the *request*
  * side: content scripts have no API key and no host permission for the Piwi
  * instance, so they can't fetch. The background worker owns the fetch
- * (`handleRefreshCatalog` in `background/index.ts`) and writes the cache;
- * callers here re-read it afterwards.
+ * (`handleRefreshCatalog` in `background/project-refresh.ts`) and writes the
+ * cache; callers here re-read it afterwards. From a content script, the
+ * worker refreshes only the project the page's own address maps to.
  *
  * Callers should render from cache first and treat this as a background
  * revalidation — never block the UI on it.
  */
+
+import { t } from './i18n.js';
+import { outdatedWorkerMessage } from './worker-status.js';
 
 export type RefreshCatalogResult =
   | { ok: true; refreshed: boolean; count: number | null }
@@ -23,16 +27,17 @@ export async function requestCatalogRefresh(
   projectId: number | null,
   opts: { force?: boolean } = {},
 ): Promise<RefreshCatalogResult> {
-  if (projectId == null) return { ok: false, error: 'No project mapped to this page.' };
+  if (projectId == null) return { ok: false, error: t('common_noProject') };
   try {
-    return (await chrome.runtime.sendMessage({
+    const answer = (await chrome.runtime.sendMessage({
       type: 'piwi-refresh-catalog',
       projectId,
       force: opts.force === true,
-    })) as RefreshCatalogResult;
+    })) as RefreshCatalogResult | undefined;
+    return answer ?? { ok: false, error: outdatedWorkerMessage() };
   } catch {
     // The worker can be asleep or the extension mid-reload; the caller is
     // already showing cached data, so this is not worth surfacing loudly.
-    return { ok: false, error: 'Piwi Picker background worker is unavailable.' };
+    return { ok: false, error: t('common_workerNoAnswer') };
   }
 }

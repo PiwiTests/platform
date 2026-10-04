@@ -1,18 +1,18 @@
 <script setup lang="ts">
 /**
- * A failure cluster's state as one sentence with one verb: a coloured dot for the
+ * A failure cluster's state as one sentence with one verb: a colored dot for the
  * kind, the sentence's typed spans as prose (run references linked), the single
  * reconcile action the machine verdict and the human status imply (mark resolved,
- * reopen, unsnooze, release), and two menus — Triage (open / resolved / ignored,
- * a note, an assignee) and Snooze. It replaces the segmented control, the note
- * icon, the verification badge and its sentence, and the snooze row.
+ * reopen, unsnooze, release), and one Triage panel — open / resolved / ignored,
+ * a note, an assignee, and a snooze.
  *
  * Every save toasts and asks the page to refresh; a viewer without write access
  * sees the sentence alone.
  */
 import type { FailureClusterDetail } from '~~/types/api';
-import type { ClusterState, ClusterStateKind, ClusterStateAction } from '#shared/cluster-state';
+import type { ClusterState, ClusterStateAction } from '#shared/cluster-state';
 import { SNOOZE_OPTIONS, type SnoozeOption } from '#shared/inbox-queues';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   cluster: FailureClusterDetail;
@@ -38,22 +38,8 @@ function onIssueCreated() {
   emit('saved');
 }
 
-// The dot colour reads the state at a glance: red still-failing, green fixed,
-// amber quiet or parked, neutral resolved / ignored / snoozed.
-const DOT: Record<ClusterStateKind, string> = {
-  failing: 'bg-error',
-  'failing-assigned': 'bg-error',
-  regressed: 'bg-error',
-  quiet: 'bg-warning',
-  quarantined: 'bg-warning',
-  'fix-verified-open': 'bg-success',
-  'stopped-failing-open': 'bg-success',
-  'ticket-done': 'bg-success',
-  resolved: 'bg-success',
-  ignored: 'bg-muted',
-  snoozed: 'bg-muted',
-};
-const dotClass = computed(() => DOT[props.state.kind] ?? 'bg-muted');
+// The dot reads the state at a glance, in the color the block's edge carries.
+const dotClass = computed(() => clusterStateColor(props.state.kind).dot);
 
 const RECONCILE_LABEL: Record<Exclude<ClusterStateAction, null>, string> = {
   'mark-resolved': 'Mark resolved',
@@ -177,12 +163,11 @@ async function snooze(option: SnoozeOption | null) {
   }
 }
 const isSnoozed = computed(() => props.state.kind === 'snoozed');
-const snoozeItems = computed(() => [
-  [
-    ...SNOOZE_OPTIONS.map((o) => ({ label: SNOOZE_LABEL[o], onSelect: () => void snooze(o) })),
-    ...(isSnoozed.value ? [{ label: 'Unsnooze', onSelect: () => void snooze(null) }] : []),
-  ],
-]);
+// A snooze applies at once, apart from the status, note and assignee Save applies.
+async function snoozeFromTriage(option: SnoozeOption | null) {
+  await snooze(option);
+  triageOpen.value = false;
+}
 </script>
 
 <template>
@@ -228,7 +213,7 @@ const snoozeItems = computed(() => [
         color="neutral"
         variant="outline"
         icon="i-simple-icons-jira"
-        :to="knownIssue.url"
+        :to="safeHttpUrl(knownIssue.url) ?? undefined"
         target="_blank"
       >
         Open in Jira
@@ -286,16 +271,35 @@ const snoozeItems = computed(() => [
             <div class="flex justify-end">
               <UButton size="xs" icon="i-lucide-check" :loading="savingTriage" @click="saveTriage">Save</UButton>
             </div>
+            <div class="space-y-1 border-t border-default pt-3" role="group" aria-label="Snooze">
+              <p class="text-xs font-medium text-muted">Snooze</p>
+              <div class="flex flex-wrap gap-1.5">
+                <UButton
+                  v-for="option in SNOOZE_OPTIONS"
+                  :key="option"
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  :disabled="snoozing"
+                  @click="snoozeFromTriage(option)"
+                >
+                  {{ SNOOZE_LABEL[option] }}
+                </UButton>
+                <UButton
+                  v-if="isSnoozed"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  :disabled="snoozing"
+                  @click="snoozeFromTriage(null)"
+                >
+                  Unsnooze
+                </UButton>
+              </div>
+            </div>
           </div>
         </template>
       </UPopover>
-
-      <!-- Snooze. -->
-      <UDropdownMenu :items="snoozeItems">
-        <UButton size="xs" color="neutral" variant="ghost" trailing-icon="i-lucide-chevron-down" :loading="snoozing">
-          Snooze
-        </UButton>
-      </UDropdownMenu>
     </div>
 
     <CreateIssueModal

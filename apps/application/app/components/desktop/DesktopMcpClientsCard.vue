@@ -2,9 +2,9 @@
 /**
  * Desktop shell only: one-click MCP client configuration. The shell detects
  * installed clients (Claude Code, Claude Desktop, Cursor, VS Code, Windsurf,
- * Gemini CLI), writes the `piwi` entry into their own config files, and keeps
- * written entries current across launches. Renders nothing without the IPC
- * bridge, so the /mcp page can mount it unconditionally.
+ * Gemini CLI, Opencode), writes the `piwi-desktop` entry into their own config
+ * files, and keeps written entries current across launches. Renders nothing
+ * without the IPC bridge, so the /mcp page can mount it unconditionally.
  */
 interface McpClientStatus {
   id: string;
@@ -90,8 +90,8 @@ function badgeOf(client: McpClientStatus): { label: string; color: 'success' | '
 <template>
   <SectionCard v-if="available" icon="i-lucide-plug-zap" title="Connect a client on this machine">
     <template #subtitle>
-      One click writes the <code>piwi</code> entry into the client's own config file (a backup is kept next to it), and
-      entries are kept current when this app's address changes. Restart the client after connecting.
+      One click writes the <code>piwi-desktop</code> entry into the client's own config file (a backup is kept next to
+      it), and entries are kept current when this app's address changes. Restart the client after connecting.
     </template>
 
     <div v-if="loading" class="flex items-center gap-2 text-sm text-muted">

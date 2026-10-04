@@ -10,7 +10,8 @@ import { files } from '../database/schema';
 import { getStorage } from '../storage';
 import { ariaJsonToText } from '#shared/aria-json';
 import { parseZip, parseZipDirectory, decompressEntry, type ZipEntry } from './trace-zip';
-import { parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
+import { decodeResource } from './resource-compression';
+import { pageActionOf, parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import {
   buildActionCallsites,
   buildTraceBodyPreview,
@@ -33,6 +34,7 @@ import type {
   TraceNetworkResponse,
   TraceSnapshotsResponse,
 } from '../../types/api';
+import { safeStorageSegment } from './sanitize-filename';
 
 /** Path of the execution's stored (slim) trace blob, or null when no trace was uploaded. */
 export async function resolveCaseTraceBlobPath(db: DbClient, testRunsCaseId: number): Promise<string | null> {
@@ -115,8 +117,10 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
       : // Without a manifest only exact-shaped probes are possible.
         resourceNameCandidates(name, []);
     for (const candidate of poolCandidates) {
+      // Names come from the uploaded trace: only a single path segment may address the pool.
+      if (!safeStorageSegment(candidate)) continue;
       try {
-        return await storage.readFile(`${projectPrefix}/trace-resources/${candidate}`);
+        return decodeResource(await storage.readFile(`${projectPrefix}/trace-resources/${candidate}`));
       } catch {
         // Try the next candidate.
       }
@@ -128,9 +132,11 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
 }
 
 /**
- * Resolve the stored spellings a resource may have: exact, and — because
- * `_sha1` refs sometimes include the file extension and sometimes don't —
- * the bare-hash / extension-bearing variants from a known-names listing.
+ * Resolve the stored spellings a resource may have: exact, and — because a body
+ * ref (`_sha1` in v8 traces, `_file` in v9, already stripped of its `resources/`
+ * prefix by `matchNetworkBodySha1`) sometimes includes the file extension and
+ * sometimes not — the bare-hash / extension-bearing variants from a known-names
+ * listing.
  */
 function resourceNameCandidates(requested: string, knownNames: Iterable<string>): string[] {
   const candidates = [requested];
@@ -274,13 +280,16 @@ export async function getTraceSnapshotResourceFromBlob(
 }
 
 /**
- * The failing action's *before* aria tree rendered as ARIA text, for the
- * fixture-less fallback evidence. Null when the trace carries no failing-action
- * aria snapshot.
+ * The failing action's *before* aria tree rendered as ARIA text (for a runner
+ * action, the page-side action it drove), for the fixture-less fallback
+ * evidence. Null when the trace carries no failing-action aria snapshot.
  */
 export async function getTraceFallbackAriaTextFromBlob(blobPath: string): Promise<string | null> {
   const bundle = await loadTraceBundle(blobPath);
-  const file = bundle?.parsed?.failingAction?.ariaSnapshotBefore;
+  const failing = bundle?.parsed?.failingAction ?? null;
+  const file =
+    failing?.ariaSnapshotBefore ??
+    (bundle?.parsed ? pageActionOf(bundle.parsed, failing)?.ariaSnapshotBefore : undefined);
   if (!bundle || !file) return null;
   return readAriaText(bundle, file);
 }

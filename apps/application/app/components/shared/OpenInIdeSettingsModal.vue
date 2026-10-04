@@ -16,8 +16,10 @@ import {
   type IdeMethod,
 } from '~/composables/useOpenInIde';
 import type { VscodeScheme } from '~/utils/ide-links';
+import { JETBRAINS_PLUGIN_URL } from '#shared/companion-links';
 
-const { prefs, settingsOpen, settingsContext } = useOpenInIde();
+const { prefs, settingsOpen, settingsContext, openInIde } = useOpenInIde();
+const isDesktop = useIsDesktop();
 
 const methodItems = (Object.keys(IDE_METHOD_LABELS) as IdeMethod[]).map((value) => ({
   label: IDE_METHOD_LABELS[value],
@@ -52,6 +54,33 @@ function mapEntry(map: 'projectRoots' | 'jetbrainsProjectNames') {
 }
 const projectRoot = mapEntry('projectRoots');
 const projectJbName = mapEntry('jetbrainsProjectNames');
+
+// The Playwright config's real file name comes from inspecting the linked folder
+// (desktop shell); off desktop, fall back to the most common name so the test
+// button still opens something meaningful.
+const pwConfigName = ref('playwright.config.ts');
+watch(
+  [settingsOpen, projectKey],
+  async ([open, key]) => {
+    pwConfigName.value = 'playwright.config.ts';
+    if (!open || !key) return;
+    const linked = await getDesktopProjectLink(key);
+    if (!linked?.exists) return;
+    const inspection = await inspectDesktopFolder(linked.path);
+    if (inspection?.playwrightConfig) pwConfigName.value = inspection.playwrightConfig;
+  },
+  { immediate: true },
+);
+
+/** Open a well-known file to check the current settings actually reach the editor. */
+function testOpen(filePath: string) {
+  openInIde({
+    filePath,
+    line: 1,
+    projectKey: projectKey.value,
+    projectName: settingsContext.value.projectName ?? null,
+  });
+}
 </script>
 
 <template>
@@ -71,10 +100,34 @@ const projectJbName = mapEntry('jetbrainsProjectNames');
           browser only.
         </p>
 
+        <UAlert
+          v-if="isDesktop"
+          color="primary"
+          variant="soft"
+          icon="i-lucide-app-window"
+          title="Desktop app opens files directly"
+          description="Files open through your IDE's command-line launcher (code, cursor, rider, idea, …), and the app says whether it started. It finds the launcher on your PATH, then where the IDEs install it: the Toolbox scripts folder, the IDE's own folder (rider64.exe on Windows, Rider.app on macOS), VS Code's bin folder. When no launcher is found it falls back to a URL scheme."
+        />
+
+        <UAlert
+          v-if="showJetbrains"
+          color="primary"
+          variant="soft"
+          icon="i-lucide-puzzle"
+          title="JetBrains: install the Piwi plugin"
+          description="With the Piwi plugin in your JetBrains IDE (Rider, WebStorm, IntelliJ IDEA, …) and its project connected to this instance, files open there with no setting: the IDE finds the file in its open projects, opens it at the line, and confirms it did. Auto and both JetBrains methods ask it first, on every IDE running."
+        >
+          <template #actions>
+            <UButton :to="JETBRAINS_PLUGIN_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              JetBrains Marketplace
+            </UButton>
+          </template>
+        </UAlert>
+
         <UFormField
           label="Method"
           name="method"
-          description="Auto probes the JetBrains local server first, then falls back to a URL launch."
+          description="Auto asks the Piwi JetBrains plugin first, then the IDE's command-line launcher in the desktop app, then the JetBrains local server, then falls back to a URL launch."
         >
           <USelect v-model="prefs.method" :items="methodItems" class="w-full" />
         </UFormField>
@@ -99,7 +152,7 @@ const projectJbName = mapEntry('jetbrainsProjectNames');
                 <option v-for="p in JETBRAINS_PRODUCTS" :key="p" :value="p" />
               </datalist>
             </UFormField>
-            <UFormField label="Local server port" name="jetbrainsPort" description="Remote Control plugin.">
+            <UFormField label="Local server port" name="jetbrainsPort" description="The IDE's built-in server.">
               <UInput v-model.number="prefs.jetbrainsPort" type="number" class="w-full" />
             </UFormField>
           </div>
@@ -137,8 +190,30 @@ const projectJbName = mapEntry('jetbrainsProjectNames');
           variant="soft"
           icon="i-lucide-info"
           title="JetBrains prerequisites"
-          description="The jetbrains:// link needs JetBrains Toolbox. The local server needs the IDE Remote Control plugin with 'Allow unsigned requests', and browsers block it when this dashboard is served over HTTPS."
+          description="Without the Piwi plugin: the jetbrains:// link needs JetBrains Toolbox and the IDE project name (in Rider, the solution's name); the local server needs the IDE Remote Control plugin with 'Allow unsigned requests', and neither can confirm the file opened. When this dashboard is served over HTTPS, some browsers block requests to the IDE on localhost, or ask for your permission first."
         />
+
+        <USeparator />
+        <UFormField
+          label="Test"
+          name="test"
+          description="Open a known file with the current settings to check it lands in your editor."
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-file-code"
+              @click="testOpen('package.json')"
+            >
+              Open package.json
+            </UButton>
+            <UButton size="sm" color="neutral" variant="soft" icon="i-lucide-file-cog" @click="testOpen(pwConfigName)">
+              Open {{ pwConfigName }}
+            </UButton>
+          </div>
+        </UFormField>
 
         <div class="flex items-center justify-between pt-1">
           <DocLink to="features/ide-integration">Learn more</DocLink>

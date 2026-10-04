@@ -12,7 +12,8 @@ export type EvidenceTabValue =
   | 'network'
   | 'console'
   | 'state'
-  | 'performance';
+  | 'performance'
+  | 'locators';
 
 export const EVIDENCE_SECTION_TAB: Record<string, EvidenceTabValue> = {
   steps: 'timeline',

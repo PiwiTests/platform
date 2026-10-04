@@ -22,13 +22,14 @@ async function seedCase(title: string): Promise<number> {
 }
 
 /** One run recording `status` for `testCaseId`. Returns the run id. */
-async function seedExecution(testCaseId: number, status: string): Promise<number> {
+async function seedExecution(testCaseId: number, status: string, metadata: object | null = null): Promise<number> {
   const runId = ++runSeq;
   await db.insert(schema.testRuns).values({
     id: runId,
     projectId: 1,
     status: status === 'passed' ? 'passed' : 'failed',
     startTime: new Date(Date.now() - (1000 - runId) * 60_000),
+    metadata,
   });
   await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status });
   return runId;
@@ -102,6 +103,21 @@ describe('release streaks', () => {
     expect(entries[0]!.consecutivePasses).toBe(RELEASE_AFTER_CONSECUTIVE_PASSES);
     expect(entries[0]!.releaseProposed).toBe(true);
     expect(debt.readyToRelease).toBe(1);
+  });
+
+  test('lab runs neither count toward nor break the streak', async () => {
+    const caseId = await seedCase('wobbly');
+    await addQuarantine(db, 1, caseId);
+    await seedExecution(caseId, 'passed');
+    const lab = { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } };
+    for (let i = 0; i < RELEASE_AFTER_CONSECUTIVE_PASSES; i++) await seedExecution(caseId, 'passed', lab);
+    await seedExecution(caseId, 'failed', lab);
+    await seedExecution(caseId, 'failed', { piwiProbe: true });
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries[0]!.consecutivePasses).toBe(1);
+    expect(entries[0]!.runsSinceQuarantine).toBe(1);
+    expect(entries[0]!.releaseProposed).toBe(false);
   });
 
   test('one failure resets the streak', async () => {

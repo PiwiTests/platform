@@ -87,7 +87,7 @@ export interface RankedFunctionMatch {
 }
 
 /** The `args` key one param source resolves into — see `RankedFunctionMatch.args`. */
-export function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>): string {
+function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>): string {
   return source.path ? `${source.param}.${source.path}` : source.param;
 }
 
@@ -98,8 +98,7 @@ export function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>)
  *
  * `?` belongs in the escaped set even though it is not glob syntax here: a URL
  * pattern that names a query string (`**\/search?tab=orders`) is entirely
- * ordinary, and leaving `?` as a regex quantifier made every one of them match
- * nothing at all.
+ * ordinary, and as a regex quantifier `?` would make it match nothing at all.
  */
 function globToRegExp(glob: string): RegExp {
   const escaped = glob
@@ -297,15 +296,24 @@ export function rankFunctionMatches(
  * Aligns a pattern against the run of steps starting at `startIndex`, one
  * pattern step per recorded step with nothing skipped on either side.
  *
- * Deliberately *not* `bestAlignment`: that one maximizes score over an
- * in-order-but-gapped alignment, which is the right rule for ranking how close
- * a recording is to a function, and the wrong one for substitution. A gapped
- * match let codegen collapse `[click user, click UNRELATED, click submit]` into
- * a single `login(page)` and advance past all three — the interleaved action
- * vanished from the exported spec with nothing to show it had ever been
- * recorded. Requiring a contiguous run means a substituted call always stands
- * for exactly the steps it replaced.
+ * Not `bestAlignment`: that one maximizes score over an in-order-but-gapped
+ * alignment, which is the right rule for ranking how close a recording is to a
+ * function, and the wrong one for substitution — a gapped match would fold
+ * `[click user, click UNRELATED, click submit]` into a single `login(page)` and
+ * drop the interleaved action from the exported spec. Requiring a contiguous
+ * run means a substituted call always stands for exactly the steps it replaced.
  */
+/**
+ * Whether a recorded step's element is the one a pattern step names: its test id, or a name its accessible name or
+ * text holds. A pattern step that names neither takes any element of its role.
+ */
+function sameElement(pattern: FunctionPatternTarget, recorded: RecordedStep['target']): boolean {
+  if (pattern.testId || !pattern.name) return true;
+  const haystack = `${recorded?.accessibleName ?? ''} ${recorded?.text ?? ''}`.toLowerCase().trim();
+  const needle = pattern.name.toLowerCase();
+  return haystack.length > 0 && (haystack.includes(needle) || needle.includes(haystack));
+}
+
 function contiguousAlignment(
   steps: RecordedStep[],
   startIndex: number,
@@ -315,8 +323,10 @@ function contiguousAlignment(
   const pairs: Array<[number, number]> = [];
   let total = 0;
   for (let j = 0; j < pattern.length; j++) {
-    const score = stepPairScore(pattern[j]!, steps[startIndex + j]!);
-    if (score <= 0) return null;
+    const recorded = steps[startIndex + j]!;
+    const score = stepPairScore(pattern[j]!, recorded);
+    // A call stands only for the elements its steps name: a button of another name is another step.
+    if (score <= 0 || !sameElement(pattern[j]!.target, recorded.target)) return null;
     total += score;
     pairs.push([j, j]);
   }

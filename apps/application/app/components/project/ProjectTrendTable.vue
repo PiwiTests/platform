@@ -28,20 +28,14 @@ const sortedProjects = computed(() => {
   return tableExpanded.value ? sorted : sorted.slice(0, props.limit);
 });
 
-function passRateColorClass(rate: number): string {
-  if (rate >= 90) return 'text-green-600 dark:text-green-400';
-  if (rate >= 50) return 'text-yellow-600 dark:text-yellow-400';
-  return 'text-red-600 dark:text-red-400';
-}
-
 function tendencyStyle(t: Row['tendency']): string {
   switch (t) {
     case 'failing':
-      return 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+      return 'text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800';
     case 'flaky':
-      return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800';
+      return 'text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
     case 'passing':
-      return 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
+      return 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800';
     default:
       return 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
   }
@@ -145,7 +139,7 @@ const columns: TableColumn<Row>[] = [
           <span
             v-if="row.original.latestFullRun"
             class="font-semibold tabular-nums text-sm"
-            :class="passRateColorClass(passRate(row.original.latestFullRun))"
+            :class="passRateTextClass(passRate(row.original.latestFullRun))"
           >
             {{ passRate(row.original.latestFullRun) }}%
           </span>
@@ -214,7 +208,7 @@ const columns: TableColumn<Row>[] = [
           <span v-else class="text-gray-400">No full runs</span>
 
           <span v-if="row.latestFullRun" class="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">
-            <span class="font-semibold" :class="passRateColorClass(passRate(row.latestFullRun))">
+            <span class="font-semibold" :class="passRateTextClass(passRate(row.latestFullRun))">
               {{ passRate(row.latestFullRun) }}%
             </span>
             · {{ row.latestFullRun.passedTests }}/{{ row.latestFullRun.totalTests }}

@@ -12,6 +12,7 @@
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { extractCitedSectionIds } from '#shared/diagnosis-sections';
 import { isDiagnosisStale, stalenessReason } from '#shared/diagnosis-staleness';
+import { isAgentDiagnosis } from '#shared/agent-diagnosis';
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
 import { formatRelativeTime, errorMessage } from '~/utils';
 
@@ -294,7 +295,7 @@ defineExpose({
     <div class="flex items-center justify-between gap-2">
       <span class="text-xs text-gray-400 inline-flex items-center gap-1">
         <UIcon name="i-lucide-triangle-alert" class="size-3 shrink-0" />
-        AI-generated, verify before applying
+        {{ isAgentDiagnosis(diagnosis?.provider) ? 'Written by an agent' : 'AI-generated' }}, verify before applying
       </span>
       <div class="flex items-center gap-1.5">
         <UButton
@@ -350,7 +351,6 @@ defineExpose({
     <DiagnosisCoverageStrip
       v-if="aiStatus?.configured"
       :sections="contextSections"
-      :not-applicable="coverage?.notApplicable"
       :token-estimate="tokenEstimate"
       :loading="contextLoading"
       @view-section="onViewSection"
@@ -602,6 +602,7 @@ defineExpose({
     <!-- Result — rendered whether or not a provider is configured. -->
     <DiagnosisResult
       v-if="showResult()"
+      data-shot="diagnosis-result"
       :diagnosis="diagnosis"
       :last-seen-run-id="lastSeenRunId"
       :stale="diagnosisStale"

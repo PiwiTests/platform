@@ -15,6 +15,11 @@
  * a plain reason instead of a script.
  */
 import { buildRetryCommand, type RetryCase } from '#shared/retry-command';
+import { isPlainRevision } from '#shared/scm-urls';
+
+// The recipe's values come from the reporter and are pasted into a shell, so each must look like what it names.
+const PLAYWRIGHT_VERSION = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
+const BROWSER_NAME = /^[a-z][\w-]*$/i;
 
 /** One numbered line of the local reproduction, in both shell dialects. */
 export interface ReproStep {
@@ -133,6 +138,11 @@ export interface ReproduceDesktopContext {
   repositoryUrl: string | null;
   /** A bisect result already recorded on the cluster, when one was found. */
   bisectedCommit: BisectedCommit | null;
+  /**
+   * The Flake Lab arm that reproduced the failing test, when it is one test and
+   * an experiment reproduced it: a bisect then runs that arm at each step.
+   */
+  flakeArm: { testCaseId: number; label: string } | null;
 }
 
 /**
@@ -145,9 +155,11 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
 
   // 1. Check out the exact commit the run failed on. git is portable, so both
   //    shell forms are the same command.
-  if (input.commit) {
+  if (input.commit && isPlainRevision(input.commit)) {
     const checkout = `git switch --detach ${input.commit}`;
     steps.push({ step: 'Check out the failing commit', bash: checkout, powershell: checkout });
+  } else if (input.commit) {
+    notes.push('The recorded commit is not a plain revision, so the checkout step is skipped.');
   } else {
     notes.push(
       'No commit was recorded for this run, so the checkout step is skipped — reproduce against your current tree.',
@@ -159,7 +171,7 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
 
   // 3. Pin Playwright to the version the run used, so the browsers and the
   //    runner match. Without a recorded version the project's own pin is used.
-  if (input.playwrightVersion) {
+  if (input.playwrightVersion && PLAYWRIGHT_VERSION.test(input.playwrightVersion)) {
     const pin = `npm install -D @playwright/test@${input.playwrightVersion}`;
     steps.push({ step: "Pin Playwright to the run's version", bash: pin, powershell: pin });
   } else {
@@ -167,7 +179,10 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
   }
 
   // 4. Install the browser the failure ran on (all browsers when unknown).
-  const install = input.browserName ? `npx playwright install ${input.browserName}` : 'npx playwright install';
+  const install =
+    input.browserName && BROWSER_NAME.test(input.browserName)
+      ? `npx playwright install ${input.browserName}`
+      : 'npx playwright install';
   steps.push({ step: 'Install the browser', bash: install, powershell: install });
 
   // 5. Run exactly the failing test(s) — file:line specs, scoped to the project.
@@ -222,17 +237,30 @@ export function reproScript(recipe: ReproRecipe, shell: 'bash' | 'powershell'): 
 export function buildBisectScript(input: BisectInput): BisectResult {
   const { good, bad, verifyCommand } = input;
 
-  if (!good || !bad) {
+  if (!bad) {
     return {
       available: false,
       reason:
-        'A git bisect needs a last-green commit and the failing commit. Piwi has no commit for one of them — connect an SCM provider and make sure your runs record their commit.',
+        'A git bisect needs the failing commit, and the failing run does not record one: the reporter reads it from the Git checkout the tests run in.',
+    };
+  }
+  if (!isPlainRevision(bad) || (good && !isPlainRevision(good))) {
+    return {
+      available: false,
+      reason: 'A recorded commit is not a plain revision, so no bisect is built from it.',
+    };
+  }
+  if (!good) {
+    return {
+      available: false,
+      reason: `A git bisect needs a last-green commit, and no passing run records one yet. With a commit you know was good: git bisect start ${bad.slice(0, 7)} <good commit>.`,
     };
   }
   if (good === bad) {
     return {
       available: false,
-      reason: 'The last green run and the failing run are the same commit — there is nothing to bisect.',
+      reason:
+        'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the code.',
     };
   }
 

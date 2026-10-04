@@ -1,14 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { projects, testRuns } from '../../database/schema';
-import { eq, and, or } from 'drizzle-orm';
+import { testRuns } from '../../database/schema';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken } from '../../utils/shard-tokens';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
+import { getProjectScope } from '../../utils/project-access';
+import { resolveIngestProject } from '../../utils/ingest-project';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 
 defineRouteMeta({
   openAPI: {
@@ -56,34 +58,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
 
-  // Get or create project
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
-  let project = existingProjects[0];
-
-  if (project) {
-    if (!scopeAllows(scope, project.id)) {
-      throw apiError({ statusCode: 403, message: 'No access to this project' });
-    }
-  } else {
-    if (scope !== 'all') {
-      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-    }
-    const result = await db
-      .insert(projects)
-      .values({
-        name: body.projectName,
-        description: body.projectDescription || null,
-      })
-      .returning();
-    project = result[0];
-  }
-
-  if (!project) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create or retrieve project',
-    });
-  }
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
   const instanceId = body.instanceId || null;
   const shardTotal = body.shardTotal as number | undefined;
@@ -115,6 +90,16 @@ export default eventHandler(async (event) => {
         existingShardedRun.metadata as Record<string, unknown> | null,
       );
 
+      // Each shard contributes its slice of the planned suite, so the run's
+      // total is the sum across shards.
+      if (body.totalTests) {
+        await db
+          .update(testRuns)
+          .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
+          .where(eq(testRuns.id, existingShardedRun.id));
+      }
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
+
       return {
         success: true,
         runId: existingShardedRun.id,
@@ -135,7 +120,7 @@ export default eventHandler(async (event) => {
         status: 'running',
         startTime: new Date(body.startTime || new Date().toISOString()),
         duration: null,
-        totalTests: 0,
+        totalTests: body.totalTests || 0,
         passedTests: 0,
         failedTests: 0,
         skippedTests: 0,
@@ -143,10 +128,10 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { ...(sanitizeMetadata(body.metadata ?? {}) ?? {}), shardTokens: [streamToken] } as Record<
-          string,
-          unknown
-        >,
+        metadata: {
+          ...(sanitizeMetadata(body.metadata ?? {}) ?? {}),
+          shardTokens: [shardTokenDigest(streamToken)],
+        } as Record<string, unknown>,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -168,6 +153,7 @@ export default eventHandler(async (event) => {
       });
     }
 
+    await applyReporterKeep(db, testRun.id, body.keep);
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
     runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id, shardTokens: new Set() });
 
@@ -218,6 +204,7 @@ export default eventHandler(async (event) => {
     });
   }
 
+  await applyReporterKeep(db, testRun.id, body.keep);
   runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
   runEventBus.cacheRunState(testRun.id, { streamToken, projectId: project.id });
 

@@ -5,14 +5,14 @@ import type { TestFunctionEntry } from '@piwitests/core/function-match';
  * `record-panel.ts`/`test-function-panel.ts` (content scripts, with no host
  * permission for the Piwi instance's origin, and deliberately no access to
  * the API key) can read it locally instead of fetching. Writes come from the
- * options page on save and from the background worker's refresh handler —
- * those are the only two places `piwi-client.ts` is called from.
+ * options page on save and from the background worker's refresh handler
+ * (`piwi-refresh-catalog`), which fetch it through `piwi-client.ts`.
  * `chrome.storage.local`: useful across a browser restart even with no
  * recording running, and small (a handful of projects' catalogs, not
  * per-session data). Keyed by project id (as a string — object keys are
  * always strings once round-tripped through `chrome.storage`'s JSON
- * serialization) since a connection now maps many projects at once
- * (`ConnectionSettings.projectMappings`), not just one.
+ * serialization), since a connection maps many projects at once
+ * (`ConnectionSettings.projectMappings`).
  */
 const CACHE_KEY = 'piwiCatalogCache';
 

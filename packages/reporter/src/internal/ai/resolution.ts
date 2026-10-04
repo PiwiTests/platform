@@ -20,10 +20,10 @@ import { assertPostcondition, buildLocator, executeStep } from './interpreter.js
 import { extractPlaceholders, isParametric, maskValues, type ParamValues } from './params.js';
 
 /** ARIA snapshots can be large; cap what we send so cost/latency stay bounded. */
-export const MAX_SNAPSHOT_CHARS = 24_000;
+const MAX_SNAPSHOT_CHARS = 24_000;
 
 /** Default ceiling on how many steps one flow resolution may take. */
-export const DEFAULT_MAX_STEPS = 20;
+const DEFAULT_MAX_STEPS = 20;
 
 // ── Wire contract (mirror of #shared/ai-step-resolution) ─────────────────────
 
@@ -151,9 +151,9 @@ export const readMaskedSnapshot: SnapshotReader = async (page, params) => {
  * injectable for tests. Runs the action, then settles briefly to catch
  * fire-and-forget replies before sampling.
  */
-export type ResponseObserver = (page: Page, action: () => Promise<void>, settleMs?: number) => Promise<string[]>;
+type ResponseObserver = (page: Page, action: () => Promise<void>, settleMs?: number) => Promise<string[]>;
 
-export const observeXhrResponses: ResponseObserver = async (page, action, settleMs) => {
+const observeXhrResponses: ResponseObserver = async (page, action, settleMs) => {
   const urls: string[] = [];
   const onResponse = (res: Response): void => {
     const type = res.request().resourceType();
@@ -175,9 +175,9 @@ export const observeXhrResponses: ResponseObserver = async (page, action, settle
 export type Screenshot = { mediaType: 'image/png' | 'image/jpeg'; data: string };
 
 /** Capture a viewport screenshot (browser-facing; injectable for tests). Null on failure. */
-export type ScreenshotCapturer = (page: Page) => Promise<Screenshot | null>;
+type ScreenshotCapturer = (page: Page) => Promise<Screenshot | null>;
 
-export const captureViewportScreenshot: ScreenshotCapturer = async (page) => {
+const captureViewportScreenshot: ScreenshotCapturer = async (page) => {
   try {
     const buffer = await page.screenshot({ type: 'jpeg', quality: 60 });
     return { mediaType: 'image/jpeg', data: buffer.toString('base64') };

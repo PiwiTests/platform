@@ -57,7 +57,7 @@ interface SelectionAnalytics {
 }
 
 const { data: analytics, refresh: refreshAnalytics } = await useFetch<SelectionAnalytics>(
-  `/api/projects/${projectId}/selections/analytics`,
+  `/api/projects/${projectId}/selections/overview`,
   { lazy: true },
 );
 const coverage = computed(() => analytics.value?.coverage ?? null);
@@ -376,7 +376,7 @@ function saveSmoke(testCaseIds: number[]) {
               <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">piwi run</code> and
               <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">piwi select</code> resolve against this dashboard
               — see the
-              <DocLink to="guide/test-selection" no-icon class="text-primary hover:underline"
+              <DocLink to="features/test-selection" no-icon class="text-primary hover:underline"
                 >test selection docs</DocLink
               >.
             </p>

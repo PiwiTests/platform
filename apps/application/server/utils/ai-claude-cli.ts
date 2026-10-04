@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import type { AiCallOptions, AiCallResult, StreamChunk } from './ai-provider';
@@ -215,8 +215,9 @@ interface SpawnResult {
 /**
  * Run the CLI with `args`, feeding `input` on stdin and streaming stdout lines
  * to `onLine` as they arrive. Always resolves (never rejects) with the captured
- * output and exit code so callers can build a clear error from it. Runs in a
- * throwaway temp dir so no project `CLAUDE.md` or files leak into the prompt.
+ * output and exit code so callers can build a clear error from it. Runs in its
+ * own private temp dir, removed afterwards, so no project `CLAUDE.md` or files
+ * leak into the prompt and no other local user can plant settings there.
  */
 function runClaude(
   binary: string,
@@ -224,12 +225,27 @@ function runClaude(
   opts: { input?: string; timeoutMs: number; onLine?: (line: string) => void },
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, {
-      cwd: tmpdir(),
-      env: spawnEnv(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    const cwd = mkdtempSync(join(tmpdir(), 'piwi-claude-'));
+    const removeCwd = () => {
+      try {
+        rmSync(cwd, { recursive: true, force: true });
+      } catch {
+        // A Windows handle still closing; the OS temp cleanup takes it.
+      }
+    };
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(binary, args, {
+        cwd,
+        env: spawnEnv(),
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (err) {
+      removeCwd();
+      resolve({ code: null, stdout: '', stderr: err instanceof Error ? err.message : String(err), timedOut: false });
+      return;
+    }
 
     let stdout = '';
     let stderr = '';
@@ -246,6 +262,7 @@ function runClaude(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      removeCwd();
       if (lineBuffer && opts.onLine) opts.onLine(lineBuffer);
       resolve({ code, stdout, stderr, timedOut });
     };
@@ -456,14 +473,10 @@ async function buildArgs(
 function outcomeFromJson(json: ClaudeJsonResult, fallbackModel: string): ClaudeCallOutcome {
   const modelName = json.modelUsage ? Object.keys(json.modelUsage)[0] : undefined;
   const u = json.usage;
-  // Claude Code caches its large system prompt + tool definitions, so on every
-  // call the bulk of the prompt is reported under cache_creation / cache_read
-  // and `input_tokens` is only the small uncached delta (e.g. 2 tokens for a
-  // prompt that actually sent ~39k). Report the *full* prompt size as input
-  // tokens — the sum of the plain, cache-write and cache-read counts — so the
-  // usage tally and the persisted per-diagnosis totals aren't wildly undercounted.
-  // Cost is unaffected: it comes straight from total_cost_usd, which the CLI has
-  // already priced across the cache tiers.
+  // Claude Code caches its system prompt and tool definitions, so `input_tokens`
+  // is only the uncached delta. Input tokens are the full prompt size: the sum
+  // of the plain, cache-write and cache-read counts. Cost comes from
+  // total_cost_usd, which the CLI prices across the cache tiers.
   const inputTokens =
     u == null ? null : (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
   return {

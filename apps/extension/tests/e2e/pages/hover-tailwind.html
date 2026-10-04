@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Builds</title>
+    <!-- Written the way Tailwind v4 writes `invisible group-hover:visible`: nested, in a layer, behind (hover: hover). -->
+    <style>
+      @layer theme, base, components, utilities;
+      @layer base {
+        body {
+          font: 14px sans-serif;
+          margin: 40px;
+        }
+        .card {
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          padding: 12px;
+          margin-bottom: 12px;
+          width: 360px;
+        }
+      }
+      @layer utilities {
+        .invisible {
+          visibility: hidden;
+        }
+        .group-hover\:visible {
+          &:is(:where(.group):hover *) {
+            @media (hover: hover) {
+              visibility: visible;
+            }
+          }
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Builds</h1>
+    <article class="group card" aria-label="Build 17">
+      <h2>Build 17</h2>
+      <div class="invisible group-hover:visible"><button onclick="done('Re-ran build 17')">Re-run</button></div>
+    </article>
+    <article class="group card" aria-label="Build 18">
+      <h2>Build 18</h2>
+      <div class="invisible group-hover:visible"><button onclick="done('Re-ran build 18')">Re-run</button></div>
+    </article>
+    <output id="out"></output>
+    <script>
+      function done(text) {
+        document.getElementById('out').textContent = text;
+      }
+    </script>
+  </body>
+</html>

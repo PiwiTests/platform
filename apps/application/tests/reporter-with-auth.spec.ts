@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { join, resolve } from 'path';
 import { existsSync, rmSync } from 'fs';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
   try {
@@ -14,7 +15,6 @@ function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
 
 const AUTH_PORT = 3099;
 const AUTH_SERVER_URL = `http://localhost:${AUTH_PORT}`;
-const DB_PATH = join(process.cwd(), '.test-temp', 'auth-test.db');
 const STORAGE_PATH = join(process.cwd(), '.test-temp', 'auth-test-storage');
 
 /**
@@ -44,15 +44,14 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // when running in CI. Skip all tests in this file when not in CI.
   test.skip(!process.env.CI, 'Auth server tests only run in CI (see playwright.config.ts webServer)');
 
+  // The auth server opens its database file when it starts, so the file stays in
+  // place: libSQL opens a new connection after each transaction, and one opened
+  // on a deleted path starts an empty database.
   test.beforeAll(() => {
-    // Clean up test database and storage before running, in case of retries from a previous run
-    for (const path of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) safeRmSync(path);
     safeRmSync(STORAGE_PATH, { recursive: true, force: true });
   });
 
   test.afterAll(() => {
-    // Clean up test database and storage created by the auth server
-    for (const path of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) safeRmSync(path);
     safeRmSync(STORAGE_PATH, { recursive: true, force: true });
   });
 
@@ -468,9 +467,13 @@ test.describe.serial('Reporter with authentication enabled', () => {
     });
     expect(loginRes.ok()).toBeTruthy();
 
+    // The user list is admin-only (it exposes every account's email and role),
+    // so a non-admin resolves its own id from the session instead.
     const usersRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
-    const usersData = await usersRes.json();
-    const reporterUser = usersData.items.find((u: { username: string }) => u.username === 'ci-reporter');
+    expect(usersRes.status()).toBe(403);
+    const meRes = await request.get(`${AUTH_SERVER_URL}/api/auth/me`);
+    const reporterUser = (await meRes.json()).user;
+    expect(reporterUser.username).toBe('ci-reporter');
 
     const keysRes = await request.get(`${AUTH_SERVER_URL}/api/users/${reporterUser.id}/api-keys`);
     expect(keysRes.ok()).toBeTruthy();
@@ -888,6 +891,147 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Permission grid API — administrator-only, and a grant changes what the user sees
+  // ---------------------------------------------------------------------------
+
+  test('the permission grid API is rejected for non-admin roles', async ({ request }) => {
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'ci-reporter', password: 'reporterpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    expect((await request.get(`${AUTH_SERVER_URL}/api/project-access`)).status()).toBe(403);
+    const put = await request.put(`${AUTH_SERVER_URL}/api/project-access`, {
+      data: { userId: ciReporterId, projectId: null, granted: true },
+    });
+    expect(put.status()).toBe(403);
+  });
+
+  test('admin grants and revokes all-projects access through the permission grid', async ({ request }) => {
+    const projectIdsSeenBy = async (username: string, password: string) => {
+      const login = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
+      expect(login.ok()).toBeTruthy();
+      const res = await request.get(`${AUTH_SERVER_URL}/api/projects`);
+      expect(res.ok()).toBeTruthy();
+      return ((await res.json()) as { items: { id: number }[] }).items.map((p) => p.id);
+    };
+    const setAccessAsAdmin = async (granted: boolean) => {
+      const login = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+        data: { username: 'admin', password: 'adminpassword123' },
+      });
+      expect(login.ok()).toBeTruthy();
+      const res = await request.put(`${AUTH_SERVER_URL}/api/project-access`, {
+        data: { userId: ciUserId, projectId: null, granted },
+      });
+      expect(res.ok()).toBeTruthy();
+      return ((await res.json()) as { user: { global: boolean; projectIds: number[] } }).user;
+    };
+
+    // ci-user is an explicit member of the members-check project only.
+    expect(await projectIdsSeenBy('ci-user', 'userpassword123')).toEqual([membersProjectId]);
+
+    expect(await setAccessAsAdmin(true)).toEqual(
+      expect.objectContaining({ global: true, projectIds: [membersProjectId] }),
+    );
+    const seenWithAll = await projectIdsSeenBy('ci-user', 'userpassword123');
+    expect(seenWithAll).toContain(membersProjectId);
+    expect(seenWithAll.length).toBeGreaterThan(1);
+
+    // Revoking all-projects falls back to the projects granted one by one.
+    expect(await setAccessAsAdmin(false)).toEqual(
+      expect.objectContaining({ global: false, projectIds: [membersProjectId] }),
+    );
+    expect(await projectIdsSeenBy('ci-user', 'userpassword123')).toEqual([membersProjectId]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Capability endpoints — reads open to any signed-in user with access, writes
+  // administrator-only, and a project decision overriding the instance default.
+  // ---------------------------------------------------------------------------
+
+  async function loginAs(request: import('@playwright/test').APIRequestContext, username: string, password: string) {
+    const res = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
+    expect(res.ok()).toBeTruthy();
+  }
+
+  test('GET /api/capabilities is readable by a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.get(`${AUTH_SERVER_URL}/api/capabilities`);
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string; module: string; state: string }> };
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThan(0);
+  });
+
+  test('PATCH /api/capabilities is rejected for a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: 'declined' } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('GET /api/projects/:id/capabilities is readable by a member "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.some((i) => i.id === 'fixtures')).toBe(true);
+  });
+
+  test('PATCH /api/projects/:id/capabilities is rejected for a "user" role', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: 'declined' } },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('PATCH /api/capabilities applies several decisions in one request', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    const stateOf = (items: Array<{ id: string; state: string }>, id: string) => items.find((i) => i.id === id)?.state;
+
+    const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: 'declined', tags: 'declined' } },
+    });
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'notifications')).toBe('declined');
+    expect(stateOf(body.items, 'tags')).toBe('declined');
+
+    // Restore a clean slate for later tests.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
+      data: { decisions: { notifications: null, tags: null } },
+    });
+  });
+
+  test('a project enable overrides an instance decline', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+
+    const stateOf = (items: Array<{ id: string; state: string }>, id: string) => items.find((i) => i.id === id)?.state;
+
+    // Decline quarantine instance-wide; the project sees it declined.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, { data: { decisions: { quarantine: 'declined' } } });
+    let res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    let body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'quarantine')).toBe('declined');
+
+    // Enable it for this project; the override lifts the decline.
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: 'enabled' } },
+    });
+    res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
+    body = (await res.json()) as { items: Array<{ id: string; state: string }> };
+    expect(stateOf(body.items, 'quarantine')).not.toBe('declined');
+
+    // Restore a clean slate for later tests.
+    await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, { data: { decisions: { quarantine: null } } });
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { quarantine: null } },
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // POST /api/failure-clusters/:id/diagnose/stream — required-role enforcement.
   //
   // The route declares `x-required-roles: ['administrator', 'reporter']`, which
@@ -945,5 +1089,95 @@ test.describe.serial('Reporter with authentication enabled', () => {
     // The "user" role is not in [administrator, reporter], so enforcement from
     // the route meta rejects the request with 403 (before the AI-config check).
     expect(streamRes.status()).toBe(403);
+  });
+
+  // ---------------------------------------------------------------------------
+  // PATCH /api/users/:id — admins can reassign a role (the only way to promote
+  // an OAuth-provisioned account, which self-registers as `user`), but the last
+  // administrator can never be demoted into a lockout.
+  // ---------------------------------------------------------------------------
+
+  test('admin can reassign a role but cannot demote the last administrator', async ({ request }) => {
+    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
+      data: { username: 'admin', password: 'adminpassword123' },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+
+    const usersRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
+    const usersData = await usersRes.json();
+    const adminUser = usersData.items.find((u: { username: string }) => u.username === 'admin');
+    const targetUser = usersData.items.find((u: { username: string }) => u.username === 'ci-user');
+    expect(adminUser).toBeDefined();
+    expect(targetUser).toBeDefined();
+
+    // Promote ci-user (role: user) to reporter, then restore it.
+    const promote = await request.patch(`${AUTH_SERVER_URL}/api/users/${targetUser.id}`, {
+      data: { role: 'reporter' },
+    });
+    expect(promote.ok()).toBeTruthy();
+    expect((await promote.json()).user.role).toBe('reporter');
+
+    const restore = await request.patch(`${AUTH_SERVER_URL}/api/users/${targetUser.id}`, {
+      data: { role: 'user' },
+    });
+    expect(restore.ok()).toBeTruthy();
+
+    // `admin` is the only administrator, so demoting it is refused and the
+    // account keeps its role.
+    const demote = await request.patch(`${AUTH_SERVER_URL}/api/users/${adminUser.id}`, {
+      data: { role: 'user' },
+    });
+    expect(demote.status()).toBe(400);
+    expect((await demote.json()).message).toContain('last administrator');
+
+    const afterRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
+    const afterData = await afterRes.json();
+    expect(afterData.items.find((u: { username: string }) => u.username === 'admin').role).toBe('administrator');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Capability roles in the browser: a "user" sees the effect of an undecided capability (the
+  // one naming line) but none of the decline controls, and cannot reach Setup.
+  // Reuses ci-user, who already has access to a fixtureless failing run in
+  // PROJECT.AUTH_ROLE_CHECKS from an earlier test in this serial suite.
+  // ---------------------------------------------------------------------------
+
+  test('a "user" sees the evidence footer sentence with no decline controls, and Setup is unreachable', async ({
+    page,
+    request,
+  }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    // The capture fixtures are undecided for this project, so the footer names the
+    // missing sources — clear any stored decision to be sure.
+    await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
+      data: { decisions: { fixtures: null } },
+    });
+    const detail = (await (await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}`)).json()) as {
+      testRuns: Array<{ id: number }>;
+    };
+    const run = (await (await request.get(`${AUTH_SERVER_URL}/api/test-runs/${detail.testRuns[0]!.id}`)).json()) as {
+      testCases: Array<{ status: string; executionId: number }>;
+    };
+    const execId = run.testCases.find((c) => c.status === 'failed')!.executionId;
+
+    // Sign in as the "user"-role account in the browser.
+    await page.goto(`${AUTH_SERVER_URL}/login`);
+    await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
+    await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
+    await page.getByRole('button', { name: 'Login' }).click();
+    await page.waitForURL(`${AUTH_SERVER_URL}/`);
+
+    // The footer names the missing sources but offers no decline controls.
+    await page.goto(`${AUTH_SERVER_URL}/test-run-cases/${execId}`);
+    await waitForHydration(page);
+    const footer = page.locator('[data-shot="evidence-fixtures-footer"]');
+    await expect(footer).toContainText('not captured for this project');
+    await expect(footer.getByRole('button', { name: 'Not for this project' })).toHaveCount(0);
+    await expect(footer.getByRole('button', { name: 'Not for this instance' })).toHaveCount(0);
+    await expect(footer.getByRole('link', { name: 'Add fixtures' })).toHaveCount(0);
+
+    // Setup is administrator-only: the user is redirected away from it.
+    await page.goto(`${AUTH_SERVER_URL}/setup`);
+    await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/setup`);
   });
 });

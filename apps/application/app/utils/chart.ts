@@ -1,12 +1,5 @@
 /** Shared geometry helpers, palette and series definitions for the SVG trend charts. */
-
-/** Series colors for run-status stacks and their legends. */
-export const CHART_STATUS_COLORS = {
-  passed: 'rgb(34, 197, 94)',
-  failed: 'rgb(239, 68, 68)',
-  skipped: 'rgb(245, 158, 11)',
-  flaky: 'rgb(147, 51, 234)',
-} as const;
+import { STATUS_PALETTE } from './status-palette';
 
 /** One plotted series: how it is drawn and how the legend names it. */
 export interface ChartSeries<K extends string = string> {
@@ -17,13 +10,16 @@ export interface ChartSeries<K extends string = string> {
 
 /**
  * Run-status series, in stacking order — failed sits on the baseline so red is
- * comparable across bars, and passed carries the bulk on top.
+ * comparable across bars, and passed carries the bulk on top. `skipped` is the
+ * plain `test.skip()` share and `fixme` the `test.fixme()` one, in two greys.
  */
 export const RUN_STATUS_SERIES = [
-  { key: 'failed', color: CHART_STATUS_COLORS.failed, label: 'Failed' },
-  { key: 'flaky', color: CHART_STATUS_COLORS.flaky, label: 'Flaky' },
-  { key: 'skipped', color: CHART_STATUS_COLORS.skipped, label: 'Skipped' },
-  { key: 'passed', color: CHART_STATUS_COLORS.passed, label: 'Passed' },
+  { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
+  { key: 'flaky', color: STATUS_PALETTE.flaky.color, label: 'Flaky' },
+  { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
+  { key: 'fixme', color: STATUS_PALETTE.fixme.color, label: 'Fixme' },
+  { key: 'didNotRun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
+  { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
 ] as const satisfies readonly ChartSeries[];
 
 /** Duration series of the project performance trend. */
@@ -35,10 +31,43 @@ export const RUN_DURATION_SERIES = [
 
 /** Per-execution outcomes coloring the test-case history bars. */
 export const CASE_STATUS_SERIES = [
-  { key: 'passed', color: CHART_STATUS_COLORS.passed, label: 'Passed' },
-  { key: 'failed', color: CHART_STATUS_COLORS.failed, label: 'Failed' },
-  { key: 'skipped', color: 'rgb(156, 163, 175)', label: 'Skipped' },
+  { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
+  { key: 'flaky', color: STATUS_PALETTE.flaky.color, label: 'Passed on retry' },
+  { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
+  { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
+  { key: 'didnotrun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
 ] as const satisfies readonly ChartSeries[];
+
+/**
+ * Storage families for the storage-analysis dashboard, coloured with an
+ * Okabe-Ito categorical palette (colorblind-safe; validated for both surfaces).
+ * Every mark that uses it is directly labelled, which is what keeps the closest
+ * pair legible under deuteranopia.
+ */
+export const STORAGE_KIND_SERIES = [
+  { key: 'trace', color: 'rgb(0, 114, 178)', label: 'Traces' },
+  { key: 'screenshot', color: 'rgb(230, 159, 0)', label: 'Screenshots' },
+  { key: 'video', color: 'rgb(213, 94, 0)', label: 'Videos' },
+  { key: 'report', color: 'rgb(0, 158, 115)', label: 'Reports' },
+  { key: 'attachment', color: 'rgb(204, 121, 167)', label: 'Attachments' },
+  { key: 'visual-diff', color: 'rgb(86, 180, 233)', label: 'Visual diffs' },
+] as const satisfies readonly ChartSeries[];
+
+/**
+ * Colors for the groups of a metric breakdown drawn as lines, in rank order:
+ * the Okabe-Ito categorical palette (colorblind-safe), as the storage
+ * families use. A breakdown draws at most this many lines.
+ */
+export const GROUP_SERIES_COLORS = [
+  'rgb(0, 114, 178)',
+  'rgb(230, 159, 0)',
+  'rgb(0, 158, 115)',
+  'rgb(213, 94, 0)',
+  'rgb(204, 121, 167)',
+  'rgb(86, 180, 233)',
+  'rgb(240, 228, 66)',
+  'rgb(117, 117, 117)',
+] as const;
 
 /** Legend rows for a series list — the color/label pairs `ChartCard` renders. */
 export function legendOf(series: readonly ChartSeries[]): { color: string; label: string }[] {
@@ -78,7 +107,7 @@ export function formatTickDate(date: Date): string {
 /**
  * Maps a timestamp onto an ordinal (per-point) x axis by interpolating between
  * the centers of the two neighboring points. Returns null outside the plotted
- * range, matching how markers off the time axis were previously skipped.
+ * range, so a marker off the time axis is skipped.
  */
 export function timeToOrdinalX(dates: Date[], centers: number[], time: number): number | null {
   if (dates.length === 0 || dates.length !== centers.length) return null;
@@ -97,6 +126,18 @@ export function timeToOrdinalX(dates: Date[], centers: number[], time: number): 
     return start + fraction * (end - start);
   }
   return null;
+}
+
+/**
+ * {@link timeToOrdinalX} for charts whose points are bucket starts: a time
+ * after the newest bucket's start but before `endMs` (the end of the period)
+ * sits on the newest bucket instead of falling off the axis.
+ */
+export function bucketTimeToX(dates: Date[], centers: number[], time: number, endMs: number): number | null {
+  const x = timeToOrdinalX(dates, centers, time);
+  if (x !== null) return x;
+  const last = dates[dates.length - 1]?.getTime();
+  return last !== undefined && time >= last && time < endMs ? (centers[centers.length - 1] ?? null) : null;
 }
 
 /**
@@ -147,4 +188,14 @@ export function stackSegments(
     segments.push({ color: (series[i] as { color: string }).color, y, height });
   }
   return segments;
+}
+
+/** One series of `TrendLinesChart`: a line over time buckets. */
+export interface TrendLine {
+  label: string;
+  /** A CSS color: a palette entry's `color`, or one of `GROUP_SERIES_COLORS`. */
+  color: string;
+  /** Bucket start dates (`YYYY-MM-DD`), the same for every series. */
+  points: Array<{ date: string; value: number | null }>;
+  dashed?: boolean;
 }

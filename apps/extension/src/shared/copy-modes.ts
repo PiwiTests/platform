@@ -1,11 +1,18 @@
+import { t, type MessageKey } from './i18n.js';
+
 export const COPY_MODES = ['bare', 'action', 'expect'] as const;
 export type CopyMode = (typeof COPY_MODES)[number];
 
-export const COPY_MODE_LABELS: Record<CopyMode, string> = {
-  bare: 'Locator',
-  action: 'Action',
-  expect: 'Assertion',
-};
+const COPY_MODE_KEYS = {
+  bare: 'common_copyModeBare',
+  action: 'common_copyModeAction',
+  expect: 'common_copyModeExpect',
+} as const satisfies Record<CopyMode, MessageKey>;
+
+/** The label of a copy mode's button, in the interface language. */
+export function copyModeLabel(mode: CopyMode): string {
+  return t(COPY_MODE_KEYS[mode]);
+}
 
 /** Render a locator string as source in the requested copy mode. Takes just `{ locator }` (not the full `RankedLocator`) since that's the only field this ever reads — any locator-bearing candidate can reuse this, ranked or not. */
 export function renderCopyMode(locator: { locator: string }, mode: CopyMode): string {

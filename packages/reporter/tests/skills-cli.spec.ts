@@ -5,12 +5,14 @@ import * as path from 'node:path';
 import {
   ALL_SKILLS,
   findTemplatesDir,
+  readTemplatesVersion,
   installSkills,
   listSkills,
   runSkills,
   SETUP_SKILL,
   WORKFLOW_SKILLS,
 } from '../src/cli/skills.js';
+import { classifyInstalledSkill, readSkillStamp, stampSkill } from '@piwitests/core/skill-stamp';
 
 const TEMPLATES = path.join(import.meta.dirname, '..', 'templates');
 
@@ -37,7 +39,7 @@ describe('skill templates ship with the package', () => {
   it('separates the setup skill from the workflow skills', () => {
     expect(ALL_SKILLS).toContain(SETUP_SKILL);
     expect(WORKFLOW_SKILLS).not.toContain(SETUP_SKILL);
-    expect(WORKFLOW_SKILLS.length).toBe(4);
+    expect(WORKFLOW_SKILLS.length).toBe(6);
   });
 });
 
@@ -120,5 +122,68 @@ describe('runSkills', () => {
 
   it('lists skills and exits 0', () => {
     expect(runSkills(['list'], TEMPLATES)).toBe(0);
+  });
+});
+
+describe('skill version stamps', () => {
+  const opts = (version?: string) => ({
+    templatesDir: TEMPLATES,
+    root,
+    skillsDir: '.claude/skills',
+    slugs: ['investigate-failure'],
+    force: false,
+    dryRun: false,
+    version,
+  });
+  const file = () => path.join(root, '.claude', 'skills', 'investigate-failure', 'SKILL.md');
+
+  it('stamps the package version and a hash into the front matter', () => {
+    installSkills(opts());
+    const stamp = readSkillStamp(fs.readFileSync(file(), 'utf-8'));
+    expect(stamp.version).toBe(readTemplatesVersion(TEMPLATES));
+    expect(stamp.hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(fs.readFileSync(file(), 'utf-8')).toMatch(/^---\nname: investigate-failure\n/);
+  });
+
+  it('updates an untouched skill from an older release and reports it outdated', () => {
+    installSkills(opts('0.1.0'));
+    const [result] = installSkills(opts('0.2.0'));
+    expect(result.status).toBe('updated');
+    expect(result.detail).toBe('outdated (0.1.0) — updated to 0.2.0');
+    expect(readSkillStamp(fs.readFileSync(file(), 'utf-8')).version).toBe('0.2.0');
+  });
+
+  it('keeps a skill edited since it was installed, and reports it edited', () => {
+    installSkills(opts('0.1.0'));
+    fs.appendFileSync(file(), '\nAlways run the smoke suite first.\n');
+    const [result] = installSkills(opts('0.2.0'));
+    expect(result.status).toBe('skipped');
+    expect(result.detail).toContain('edited since 0.1.0 installed');
+    expect(fs.readFileSync(file(), 'utf-8')).toContain('Always run the smoke suite first.');
+
+    const [forced] = installSkills({ ...opts('0.2.0'), force: true });
+    expect(forced.status).toBe('updated');
+    expect(fs.readFileSync(file(), 'utf-8')).not.toContain('Always run the smoke suite first.');
+  });
+
+  it('classifies a skill against the stamped template', () => {
+    const template = fs.readFileSync(path.join(TEMPLATES, 'skills', 'investigate-failure', 'SKILL.md'), 'utf-8');
+    const current = stampSkill(template, '0.2.0');
+    expect(classifyInstalledSkill(current, current)).toBe('current');
+    expect(classifyInstalledSkill(stampSkill(template, '0.1.0'), current)).toBe('outdated');
+    expect(classifyInstalledSkill(`${stampSkill(template, '0.1.0')}\nmore`, current)).toBe('edited');
+    expect(classifyInstalledSkill(template, current)).toBe('unstamped');
+  });
+});
+
+describe('workflow skills report back to Piwi', () => {
+  const read = (slug: string) => fs.readFileSync(path.join(TEMPLATES, 'skills', slug, 'SKILL.md'), 'utf-8');
+
+  it('ends each workflow with its write-back tools', () => {
+    expect(read('investigate-failure')).toContain('submit_diagnosis_feedback');
+    expect(read('investigate-failure')).toContain('report_fix_attempt');
+    expect(read('investigate-failure')).toContain('record_diagnosis');
+    expect(read('apply-locator-healing')).toContain('report_fix_attempt');
+    expect(read('write-the-missing-test')).toContain('triage_gap');
   });
 });

@@ -24,6 +24,7 @@ import {
   type ImpactResolution,
   type SelectionResolution,
 } from '../internal/support/selection-client.js';
+import { PIWI_SHARD_ENV } from '../internal/config/env.js';
 import { computeAddReporterArgs } from './add-reporter.js';
 
 const EXIT_OK = 0;
@@ -171,20 +172,25 @@ export function parseSelectArgs(argv: string[], env: NodeJS.ProcessEnv): SelectA
 
 const CACHE_FILE = path.join('.piwi', 'selection-cache.json');
 
-function cacheKey(projectId: number, args: SelectArgs): string {
-  return `${projectId}:${args.key}:${args.format}:${args.budgetMs ?? 0}:${args.shard ?? ''}:${args.order ?? ''}`;
+/**
+ * The entry key: the project exactly as `--project` names it (lower-cased, since
+ * the dashboard matches names that way), so a project given by name is found
+ * without asking the dashboard for its id. An id and a name are separate entries.
+ */
+function cacheKey(args: SelectArgs): string {
+  return `${args.project.toLowerCase()}:${args.key}:${args.format}:${args.budgetMs ?? 0}:${args.shard ?? ''}:${args.order ?? ''}`;
 }
 
-function readCache(projectId: number, args: SelectArgs): Resolution | null {
+function readCache(args: SelectArgs): Resolution | null {
   try {
     const store = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8')) as Record<string, Resolution>;
-    return store[cacheKey(projectId, args)] ?? null;
+    return store[cacheKey(args)] ?? null;
   } catch {
     return null;
   }
 }
 
-function writeCache(projectId: number, args: SelectArgs, resolution: Resolution): void {
+function writeCache(args: SelectArgs, resolution: Resolution): void {
   try {
     let store: Record<string, Resolution> = {};
     try {
@@ -192,7 +198,7 @@ function writeCache(projectId: number, args: SelectArgs, resolution: Resolution)
     } catch {
       // No cache yet — start fresh.
     }
-    store[cacheKey(projectId, args)] = resolution;
+    store[cacheKey(args)] = resolution;
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
     fs.writeFileSync(CACHE_FILE, JSON.stringify(store, null, 2));
   } catch {
@@ -200,23 +206,26 @@ function writeCache(projectId: number, args: SelectArgs, resolution: Resolution)
   }
 }
 
-/** Resolve from the dashboard, then from the cache; null means neither worked. */
-async function resolveWithCache(
-  args: SelectArgs,
-  projectId: number,
-): Promise<{ resolution: Resolution; fromCache: boolean } | null> {
+type CachedResolution = { resolution: Resolution; fromCache: boolean } | { error: Error };
+
+/**
+ * Resolve the project and the selection from the dashboard, then from the cache;
+ * `error` is why the dashboard could not answer when the cache had nothing either.
+ */
+async function resolveWithCache(args: SelectArgs): Promise<CachedResolution> {
   try {
+    const projectId = await resolveProjectId(args);
     const resolution = await fetchResolution(args, projectId);
-    writeCache(projectId, args, resolution);
+    writeCache(args, resolution);
     return { resolution, fromCache: false };
   } catch (e) {
     if (args.strict) throw e;
-    const cached = readCache(projectId, args);
+    const cached = readCache(args);
     if (cached) {
       console.error(`piwi: dashboard unreachable, using cached resolution — ${(e as Error).message}`);
       return { resolution: cached, fromCache: true };
     }
-    return null;
+    return { error: e as Error };
   }
 }
 
@@ -353,10 +362,19 @@ function spawnPlaywright(pkgRunner: string, playwrightArgs: string[], env: NodeJ
  * when the target config has no Piwi reporter and the installed Playwright is
  * 1.63 or later. Logs one line naming what was added, or why it was not.
  */
-function spawnPlaywrightForRun(pkgRunner: string, playwrightArgs: string[], env: NodeJS.ProcessEnv): Promise<number> {
+export function spawnPlaywrightForRun(
+  pkgRunner: string,
+  playwrightArgs: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
   const decision = computeAddReporterArgs(process.cwd(), playwrightArgs);
   if (decision.log) console.error(decision.log);
   return spawnPlaywright(pkgRunner, [...decision.args, ...playwrightArgs], env);
+}
+
+/** The shard the resolved tests belong to, for the reporter to report — none when the run is not sharded. */
+function shardEnv(args: SelectArgs): NodeJS.ProcessEnv {
+  return args.shard ? { [PIWI_SHARD_ENV]: args.shard } : {};
 }
 
 async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<number> {
@@ -387,7 +405,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
   printWarnings(impact);
   if (impact.impact.widened) {
     console.error(
-      `piwi run: impact widened to the full suite (${impact.impact.unmappedSourceFiles.length} unmapped source file(s))`,
+      `piwi run: impact widened to the full suite (${impact.impact.unmappedSourceFiles.length} changed file(s) not fully mapped to tests)`,
     );
     return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
@@ -401,6 +419,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
     PIWI_SELECTION_VERSION: '0',
     PIWI_SELECTION_HASH: impact.resolvedHash,
     PIWI_SELECTION_COUNT: String(impact.estimate.count),
+    ...shardEnv(args),
   };
   console.error(`piwi run: impact → ${impact.estimate.count} test(s)`);
   return spawnPlaywrightForRun(args.pkgRunner, [...impact.materialization.args, ...args.extra], runEnv);
@@ -433,28 +452,16 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
     return runRunImpact(args, env);
   }
 
-  let projectId: number;
+  let outcome: CachedResolution;
   try {
-    projectId = await resolveProjectId(args);
-  } catch (e) {
-    if (args.strict) {
-      console.error(`piwi run: ${(e as Error).message}`);
-      return EXIT_ERROR;
-    }
-    console.error(`piwi run: ${(e as Error).message} — running the full suite`);
-    return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
-  }
-
-  let outcome: { resolution: Resolution; fromCache: boolean } | null;
-  try {
-    outcome = await resolveWithCache(args, projectId);
+    outcome = await resolveWithCache(args);
   } catch (e) {
     console.error(`piwi run: ${(e as Error).message}`);
     return EXIT_ERROR;
   }
 
-  if (!outcome) {
-    console.error('piwi run: dashboard unreachable and no cached resolution — running the full suite');
+  if ('error' in outcome) {
+    console.error(`piwi run: ${outcome.error.message} — no cached resolution, running the full suite`);
     return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
   }
 
@@ -471,6 +478,7 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
     PIWI_SELECTION_VERSION: String(resolution.version ?? 0),
     PIWI_SELECTION_HASH: resolution.resolvedHash,
     PIWI_SELECTION_COUNT: String(resolution.estimate.count),
+    ...shardEnv(args),
   };
   console.error(
     `piwi run: ${args.key} → ${resolution.estimate.count} tests${resolution.materialization.format !== args.format ? ` (materialized as ${resolution.materialization.format})` : ''}`,

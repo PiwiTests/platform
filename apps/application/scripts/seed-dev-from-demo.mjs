@@ -13,7 +13,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
-import { join, dirname, isAbsolute } from 'path';
+import { join, dirname, isAbsolute, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { copyDemoMedia } from './copy-demo-media.mjs';
@@ -24,7 +24,10 @@ const { createClient } = require('@libsql/client');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appDir = join(__dirname, '..');
 const sqlPath = join(appDir, 'public/demo/seed.sql');
-const dbPath = join(appDir, '.data/piwi.db');
+// The server's SQLite path (`PIWI_DATABASE_PATH`, default `.data/piwi.db`).
+const dbPath = process.env.PIWI_DATABASE_PATH
+  ? resolve(appDir, process.env.PIWI_DATABASE_PATH)
+  : join(appDir, '.data/piwi.db');
 
 // The file endpoint resolves a row's `demo/…` path inside the storage
 // directory, so the seeded evidence binaries must be copied there. Match the
@@ -41,7 +44,7 @@ const sql = readFileSync(sqlPath, 'utf8');
 
 // The dev schema comes from the Drizzle migrations, not from the seed: run them
 // when the database is missing or still empty, then open it for the inserts.
-mkdirSync(join(appDir, '.data'), { recursive: true });
+mkdirSync(dirname(dbPath), { recursive: true });
 let db = createClient({ url: `file:${dbPath}` });
 const schema = await db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_runs'");
 if (schema.rows.length === 0) {
@@ -151,6 +154,15 @@ if (skip > 0) {
 // earlier seed.
 const copied = copyDemoMedia(publicDemoDir, storageDir);
 console.log(`Demo media: ${copied} file(s) copied into ${storageDir}.`);
+
+// The seeded runs bypass the ingest hook, so the next server start recomputes
+// the daily rollups of every stored run (the backfill runs once per setting).
+const rollupsTable = await db.execute(
+  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'analytics_daily_rollups'",
+);
+if (rollupsTable.rows.length > 0) {
+  await db.execute("DELETE FROM app_settings WHERE key = 'analytics_rollups_backfilled_at'");
+}
 
 // The rebase adds a fixed delta to every timestamp, so it may only run over a
 // load that brought in the whole seed. Re-running it against rows that already

@@ -44,7 +44,8 @@ All configuration is via environment variables (same as the Docker image). `PORT
 documented — with its default and whether the Settings UI can override it — in the
 [configuration reference](https://piwitests.dev/reference/configuration). Most deployments set at
 least `PIWI_SECRET_KEY`, the master key for encrypting secrets stored in the database
-(AI API keys, SCM tokens); recommended in any real deployment. Generate one with:
+(AI API keys, SCM tokens). Unset, saving any of those credentials fails, so set it in any
+real deployment. Generate one with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
@@ -65,6 +66,9 @@ PORT=8080 npx @piwitests/server
 $env:PORT='8080'; npx @piwitests/server
 ```
 
+The server listens on `127.0.0.1` only: with authentication off, anyone who reaches the port is an
+administrator. To serve other machines, enable authentication and set `HOST=0.0.0.0`.
+
 ## Sending results
 
 Add the [`@piwitests/reporter`](https://www.npmjs.com/package/@piwitests/reporter) to your
@@ -73,4 +77,6 @@ Playwright project and point it at this server — see the
 
 ## License
 
-MIT
+[FSL-1.1-MIT](LICENSE) (fair source): free to use, self-host and modify, at work too. It rules out offering Piwi, or a
+product built from it, as a commercial product or service that competes with it. Each release becomes MIT two years
+after it is published. See [License](https://piwitests.dev/guide/license).

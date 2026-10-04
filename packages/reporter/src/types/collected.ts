@@ -14,6 +14,9 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  LocatorPageUse,
+  WireExecutionResources,
+  WireNetworkRequest,
 } from './wire.js';
 import type { LocatorSnapshot } from '../internal/capture/locator-healing.js';
 
@@ -30,7 +33,7 @@ export interface RawAttachment {
   originalName?: string;
 }
 
-/** Performance metrics collected from `result.steps` by `step-analyzer`. */
+/** Performance metrics collected from `result.steps` by `collectStepMetrics`. */
 export interface CollectedPerformanceMetrics {
   steps: Array<{ title: string; duration: number; category: string; error?: { message: string }; failed?: boolean }>;
   totalStepDuration: number;
@@ -51,8 +54,8 @@ export interface CollectedPerformanceMetrics {
  *  - the `type` discriminant so the same collected object can be queued as a
  *    stream event.
  *
- * Upload bookkeeping (`_filesUploaded`) is deliberately NOT on this object —
- * `StreamManager` tracks it in a side `Set` so the data model stays clean.
+ * Upload bookkeeping is not on this object — `StreamManager` tracks uploaded
+ * cases in a `WeakSet` (`uploadedCaseFiles`) so the data model stays clean.
  */
 export interface CollectedTestCase {
   /** Stream-event discriminant: `'begin'` or `'complete'`. Omitted for batch-only runs. */
@@ -90,10 +93,12 @@ export interface CollectedTestCase {
   performanceMetrics?: CollectedPerformanceMetrics;
   stepEvents?: TestStepEvent[];
   /** Parsed from `piwi-network` attachments by `FileHandler`. */
-  networkRequests?: unknown;
+  networkRequests?: WireNetworkRequest[];
   /** Parsed from `piwi-web-vitals` attachments. */
   webVitals?: unknown;
   pageState?: unknown;
+  /** Parsed from `piwi-page-inventory`: controls and links per visited page (passing runs). */
+  pageInventory?: unknown;
   /** Parsed from the `piwi-ai-usage` manifest: committed AI-step artifacts this test replayed. */
   aiUsage?: unknown;
   /** Parsed from `piwi-console` attachments. */
@@ -106,8 +111,16 @@ export interface CollectedTestCase {
   ariaSnapshotJson?: string;
   /** Parsed from `piwi-locators` attachment. */
   locatorSnapshots?: LocatorSnapshot[];
+  /** Parsed from `piwi-locator-pages`: the page each locator call ran on. */
+  locatorPages?: LocatorPageUse[];
+  /** Parsed from `piwi-code-reach`: the repository-relative source files the test executed. */
+  codeReach?: string[];
+  /** What the execution cost its worker and browsers, from its resource census. */
+  resources?: WireExecutionResources;
   /** Why a `didnotrun` case never executed; unset for tests that ran. */
   didNotRunReason?: string | null;
+  /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
+  expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }

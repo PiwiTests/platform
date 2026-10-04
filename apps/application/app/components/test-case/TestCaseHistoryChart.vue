@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TestCaseHistoryPoint, MarkerInfo } from '~~/types/api';
-import { CASE_STATUS_SERIES, barGeometry, dayTickIndices, formatTickDate, timeToOrdinalX } from '~/utils/chart';
+import { barGeometry, dayTickIndices, formatTickDate, timeToOrdinalX } from '~/utils/chart';
 
 interface Props {
   data: TestCaseHistoryPoint[];
@@ -25,19 +25,12 @@ const chartData = computed(() => {
     date: new Date(point.startTime),
     duration: point.duration ?? 0,
     status: point.status,
+    retries: point.retries,
     runStatus: point.runStatus,
   }));
 });
 
 type DataPoint = (typeof chartData)['value'][number];
-
-const [PASSED, FAILED, SKIPPED] = CASE_STATUS_SERIES;
-
-const statusColor = (status: string): string => {
-  if (status === 'passed') return PASSED.color;
-  if (status === 'failed' || status === 'timedOut' || status === 'timedout') return FAILED.color;
-  return SKIPPED.color;
-};
 
 const yMax = computed(() => Math.max(1, ...chartData.value.map((d) => d.duration)));
 
@@ -56,7 +49,7 @@ function layout(plotWidth: number, plotHeight: number, yScale: (value: number) =
       barWidth: geo.barWidth,
       barY: plotHeight - barHeight,
       barHeight,
-      color: statusColor(d.status),
+      color: statusPalette(d.status, d.retries).color,
     };
   });
 }
@@ -98,7 +91,7 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
         :y="bar.barY"
         :width="bar.barWidth"
         :height="bar.barHeight"
-        :fill="bar.color"
+        :style="{ fill: bar.color }"
       />
 
       <text
@@ -153,19 +146,9 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
       <div class="space-y-0.5">
         <div>
           Status:
-          <span
-            class="font-medium capitalize"
-            :class="
-              tooltipData.status === 'passed'
-                ? 'text-green-600'
-                : tooltipData.status === 'failed' ||
-                    tooltipData.status === 'timedOut' ||
-                    tooltipData.status === 'timedout'
-                  ? 'text-red-600'
-                  : ''
-            "
-            >{{ formatStatusLabel(tooltipData.status) }}</span
-          >
+          <span class="font-medium capitalize" :class="statusPalette(tooltipData.status, tooltipData.retries).text">{{
+            formatExecutionStatus(tooltipData.status, tooltipData.retries)
+          }}</span>
         </div>
         <div>Duration: {{ tooltipData.duration }}ms</div>
         <div v-if="tooltipData.runStatus" class="text-gray-400 text-xs">

@@ -1,201 +1,149 @@
 ---
 title: UI overview
+description: "A map of the dashboard: every page and tab, what it is for, and the page of these docs that explains it."
 lang: en-US
 ---
 
 # UI overview
 
-This page is a **map of the dashboard** — where each view lives and what it's for. For the concepts behind a feature, follow the links to the dedicated pages ([Core concepts](/guide/concepts), [Flaky tests](./flaky-tests), [AI diagnosis & clustering](./ai-diagnosis), [Reporter](/guide/reporter)).
+This page is a **map of the dashboard**: where each view lives and which page of these docs explains it.
 
-The dashboard is a single-page app built with [Nuxt UI](https://ui.nuxt.com). It updates itself in real time over Server-Sent Events — pages refresh automatically when runs start or finish, so you never reload manually.
-
-## Inline help
-
-Blocks that aren't self-explanatory carry a small muted help icon (a circled question mark) next to their title. Click it for a short explanation and, where relevant, a **Learn more** link into these docs. The icon is keyboard-focusable and closes with `Esc`. Self-explanatory blocks (counters, search boxes) have no icon, keeping the UI uncluttered.
-
-## Open in IDE
-
-Every source path shown in the dashboard is clickable — hover it to reveal an **open in IDE** control that jumps to that file (and line) in VS Code or JetBrains. See [Open in IDE](/features/ide-integration) for setup and the available methods.
-
-## Navigation
-
-The sidebar gives access to the top-level sections:
-
-| Section | Path | Purpose |
-|---------|------|---------|
-| Home | `/` | Aggregate stats and activity across all projects |
-| Analytics | `/analytics` | Cross-project trends, portfolio health, and insights over a chosen time window (see [Analytics](./analytics)) |
-| Projects | `/projects` | Full project listing with search and tag filters |
-| Settings | `/settings` | Configuration, in two groups — **Instance** (account, users, notifications, storage) and **Analysis** (AI diagnosis, wasted time, timeout hygiene, tags, pull requests) |
-| Setup *(admins)* | `/setup` | Connect the reporter, and a checklist of which optional capabilities are actually active on this instance |
-| API docs | `/docs` | Self-contained OpenAPI 3.1 reference (no external CDN) — browse endpoints and schemas, try requests live, copy cURL / fetch snippets |
-| MCP server | `/mcp` | Setup guide for connecting AI clients (see [MCP server](/features/mcp)) |
-
-Everything else is reached by drilling into a project, run, or test case:
-
-| Page | Path |
-|------|------|
-| Project detail | `/projects/:id` |
-| Project edit | `/projects/:id/edit` |
-| Test cases (project) | `/projects/:id/test-cases` |
-| Failure cluster | `/failure-clusters/:id` |
-| Test run | `/test-runs/:id` |
-| Test case | `/test-cases/:id` |
-
-## Setup
-
-Reachable from the sidebar at any time — not just before your first run. **Administrators only**, since it governs how results reach the instance and, in the desktop build, shows the local access token; when authentication is disabled every visitor is a virtual administrator, so it stays available on a default install. It carries the reporter setup steps (install, configure, run, plus `wrapConfig` and the capture fixtures under **Go further**) and a **capability checklist**: for each optional feature, whether this instance shows evidence of actually using it.
-
-The checklist is deliberately evidence-based rather than config-based, so it answers the question an empty panel raises — *is this blank because it's broken, or because I never switched it on?* In the desktop build the page also carries the local instance's reporter URL and token, its MCP client configuration, the data location, and background-service control.
+Pages refresh on their own when runs start or finish. Blocks that need it carry a help icon with a short explanation
+and a **Learn more** link into these docs, and every source path [opens in your IDE](./ide-integration).
 
 ## Home
 
-A quick health check across all projects: a **stat strip** whose every number is a link (projects, failing now, flaky, average pass rate, runs today), an **Open failures** card, a **Project health** table (per-project run-history bars and a tendency badge), and **recent activity**. New instances show a getting-started wizard instead until the first run arrives.
-
-**Open failures** lists the failure clusters still open across the projects you can see, newest first by when they were last seen — each row shows the cluster name, its project, the number of affected tests, its age, the owner when known, its triage status and any pinned known-issue link. The row opens the cluster; reporters and admins can triage without leaving Home: `j` / `k` move the selection, `o` opens it, `r` resolves and `i` ignores.
+`/`: a health check across all projects. A **stat strip** whose every number but the average pass rate is a link, the **failure inbox** of open clusters, triaged from the row or the keyboard
+([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)), a **Project health** table with run-history
+bars and a tendency badge, and recent activity.
 
 ## Analytics
 
-A cross-project decision view — where Home answers *"what's happening now"*, Analytics answers *"across projects, over time"*. A **scope bar** at the top sets the period (last 7 / 30 / 90 days, last year, or all time) and the projects, then the same **filter bar** Home and each project use — environments and branches (multi-select) and a full-runs-only toggle; every widget re-aggregates against that scope.
+`/analytics`: trends across projects and over time, where Home shows what is happening now. The filters at the top
+scope every widget; the widgets are listed on [Analytics widgets](/reference/analytics-widgets), and the filters and
+period comparisons on [Analytics](./analytics). The page is the built-in *Overview* [dashboard](./dashboards), and the
+header switcher opens the others. [Timeline markers](./timeline-markers) overlay deploys and infrastructure changes on
+the trend charts.
 
-Widgets are grouped into four bands, in reading order:
+## Quality reports
 
-- **Where things stand** — portfolio health, the insights feed, the pass-rate heatmap.
-- **Where the pain is** — open failure clusters, the flakiest-tests leaderboard, wasted CI time.
-- **Which way it is going** — regression velocity, CI time.
-- **Detail** — the browser matrix, cross-project slow endpoints.
-
-[Timeline markers](./timeline-markers) overlay your deploys and infrastructure changes on the trend charts.
-
-See [Analytics](./analytics) for what each widget answers and how the periods are compared.
+`/reports`: the report snapshots kept and the schedules that send them; `/reports/:id` opens one snapshot. See
+[Quality reports](./quality-reports).
 
 ## Projects
 
-The primary hub: instant **text search**, **tag filters**, and a table showing each project's run count, last-run date, duration, status, test pass/fail bar, report links, and actions. Create a project manually with **New project** (it's also created automatically on first result submission).
+`/projects`: every project with search, tag filters, its last run and pass/fail bar. A project is created on its
+first result, or with **New project**.
 
 ## Project detail
 
-The complete history for one project. The header states the project's condition on entry — a **status line** with the latest run and its age, the pass rate over the last 20 runs, and the open clusters, flaky and quarantined counts, each a link to the tab that holds it. One **filter bar** (environment, branch, full-runs-only) scopes every list on the page and is remembered per project. The navbar keeps the notification bell and **Import** (admins); **Edit**, **Test functions**, **Selections**, **Delete** and **Refresh** live in a **More** menu.
+`/projects/:id`: one project's history. A **status line** gives the latest run, the pass rate over the last 20 runs and
+the open clusters, flaky and quarantined counts, and one **filter bar** (environment, branch,
+full runs only) scopes every list. The **More** menu holds Edit, [Test functions](./test-functions),
+[Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The tabs:
 
-Five tabs:
+- **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over every run; select two runs and
+  **Compare** to see [what changed](./run-changes) between them, or select any number and
+  [delete them](/operate/storage#storage-management).
+- **Tests**: every test case with its pass rate and last run, in file order, with the
+  [test search](/reference/test-search) (title, describe block, file, tag, lock, owner, priority, feature) and a status
+  filter, and groupable by file, or by file and describe block.
+- **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
+  [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
+- **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the
+  project's newest experiments. Hidden when the Flake Lab is switched off.
+- **Gaps**: the tests the suite does not have yet, proposed from the Test Map, with the feature map and the graph view
+  ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
+- **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
+  ([Slow tests & wasted time](./slow-tests)).
+- **Settings**: one section at a time, picked from a menu beside it: the label and tags, the project's
+  [members](/operate/project-access), [source control](/guide/source-control) (token, default branch, CI re-run),
+  [AI instructions](./ai-diagnosis#custom-instructions), [capabilities](/operate/capabilities),
+  [targets](./analytics#targets), the [issue tracker](./issue-tracking), the
+  [browser extension URLs](./extension-connection#url-patterns) and, in the desktop app, the
+  [local folder](./desktop#running-tests-from-the-app).
 
-- **Runs** — the run trend chart (timeline **Markers** open in a slide-over from the chart header, where they can be added, edited and deleted) over a table of every run with status, start time, duration, test counts, and browser badges. A row opens the run; selecting two runs and clicking **Compare** opens the newer run's **Changes** tab with the older as its baseline.
-- **Tests** — every unique test with status, executed-only pass rate, result breakdown, average duration, and last run; searchable, filterable by status, [tag](/guide/reporter#test-tags), [lock](/guide/reporter#test-locks), owner, priority and last-run age (stale cases hidden by default). **Group by File** groups the tests under each spec file and carries that file's pass rate, flaky rate, failure count, test count and average time in the group header. A row opens the test's full history.
-- **Failures** — one place for everything broken, switched with a segmented control: the **Failure clusters** (executions that failed the same way — see [AI diagnosis & clustering](./ai-diagnosis)), the **Flaky** tests scored by a composite flakiness metric with root-cause classification and impact ranking (see [Flaky tests](./flaky-tests#flaky-test-detection)), each with a **Quarantine** action, and the **Quarantine** list — tests excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict while still running, each with its passing streak and whether it has earned a release. See [Quarantine](./flaky-tests#quarantine-with-a-way-out).
-- **Performance** — average/P90 duration trends, a slowest-tests table, timeout opportunities, and the [slow endpoints](./slow-tests) for a selected run; the AI-step coverage card appears when the project replays committed [AI-step artifacts](/guide/ai-steps).
-- **Settings** *(admins when auth is enabled, otherwise everyone)* — project [access](/operate/authentication#project-access) (members) and the edit form: label, description, tags, default branch, per-project SCM token, and **AI diagnosis instructions** (project-specific context combined with the global instructions for every diagnosis).
+## Locators
 
-Project **import** (`/projects/:id/import`, admins only) backfills runs recorded before you adopted Piwi from Playwright blob reports, checking each archive against the server's size limit and the project's existing imports before uploading anything. See [Importing past runs](/guide/importing-runs).
+`/projects/:id/locators`: check pasted locators against the ones the project's tests use, and browse every locator
+chain in the locator index, per branch. See [Who uses a locator](./locator-usage#the-locators-page).
 
 ## Test run detail
 
-A deep dive into a single run. The **header** shows status, `Run #N`, the run label and marker on the first
-line with the primary action (**Copy retry command** on a red run, the **HTML report** on a green one), then
-one facts line — started, duration, branch, commit, author, environment, CI build — with a **Details** popover
-holding the rest (shards, Playwright and Piwi versions, avg/P90 durations, wasted time, storage and every
-report, tags, links, custom data). Below it, **one count bar** carries the numbers on its segments
-(*N passed · N failed · N passed on retry · N skipped · N didn't run*, zero segments hidden); clicking a
-segment filters the Tests tab and switches to it. While a run is still `running`, a **live progress bar** and
-streaming results appear in real time, and each still-running row shows the **step its worker is on right now**,
-inline under the test title.
+`/test-runs/:id`: one run. The header carries the status, the primary action (**Copy retry command** on a red run,
+the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
+results stream in live. When ingest left something out or rebuilt it, the facts line counts **ingest notes** and
+**Details** lists them: steps and console entries over the [ingest caps](/reference/configuration#ingest-limits), traces not stored,
+evidence rebuilt from a trace, and the fallback the reporter took to send the run. The tabs:
 
-The right panel is tabbed:
-
-- **Tests** — every execution as one row (status, title, exceptional badges with a `+N` overflow, the failure
-  headline and source path, duration, browser, retries, wasted time and its cluster). **Group by** *Cluster*
-  (the default on a red run — each group header names the cluster, its test count and triage status, with an
-  *Open cluster* link, and passing tests fold into a collapsed *Passed* group), *File* (with per-file tallies),
-  *File + Describe* (the file nested by its describe blocks), *Lock* (each [lock](/guide/reporter#test-locks) the run
-  declared, holders grouped under it, when the run has locks) or *None*. Search matches the title, path **and**
-  error text; filter by status, browser, lock, new regressions and
-  newly flaky. Select failing rows for bulk triage (quarantine, or set the cluster status) in any grouping.
-- **Changes** — what differs against **one baseline** (the last passing run on the same branch by default, or the
-  run you pick — deep-linkable as `?baseline=<runId>`): new failures, fixed, still failing, newly flaky / passed on
-  retry, the slower / faster tests, the commits landed since the baseline, and the environment fields that moved. The
-  "new failures" count is computed once against that baseline. Disabled until the run finishes. See
-  [What changed in a run](./run-changes).
-- **Timeline** — a horizontal per-worker timeline of test execution, with a *Show hooks and waits* toggle to reveal
-  setup, hook, fixture and wasted-wait spans and, when the run declared [locks](/guide/reporter#test-locks), a *Show locks*
-  toggle that colors each holder's bar by the lock it held (one color per lock, legend above, and the bar tooltip lists
-  a test's locks); click a bar to jump to that test. Beneath it, the **slowest tests**, a **Locks** table (per lock:
-  its tests, how long it was held, its share of the run's wall time, and an estimate of the time that ran serialized
-  behind another holder) with a note when a lock's holders run one at a time into the tail of the run, and the
-  **worker distribution** for the run.
-
-Administrators can **delete** the entire run and its files from the header's More menu, which also copies a
-run summary and refreshes.
+- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
+  file, describe block or [lock](/reference/test-metadata#test-locks), with the same
+  [test search](/reference/test-search) as a project's Tests tab and bulk triage.
+- **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
+- **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
+  distribution ([Slow tests & wasted time](./slow-tests)).
+  - **Hooks**: hook time is hatched over each test's bar: setup (`beforeAll`, `beforeEach`, fixtures) at the start,
+    teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is drawn in dark red and counted in
+    the header, even with **Show hooks** off; hover it for the hooks that section ran, their times and the error, and
+    click it to open the test's steps on that hook. Playwright leaves `beforeAll` / `afterAll` hooks and worker
+    fixtures out of a test's duration; the bar spans them anyway, and its tooltip gives the duration Playwright
+    reported. Runs sent by an older reporter show the sections without their hook list.
+  - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test (and starts one for
+    tests that need another project or different worker options), so a lane can hold several processes one after
+    another: **↻** marks where a new one took over, and the stretch before it is the old process shutting down and
+    the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
+    or after its last one while the others finished. Hover either to see which it was.
+  - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
+    workers are drawn above the worker rows, on the same axis, and one metric of your choice under each worker row.
+    Hover a track for its values at that moment; turn each one off from the **Resources** menu. See
+    [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard).
 
 ## Test case detail
 
-Two pages live under this heading, and [Core concepts](/guide/concepts#execution) draws the line between
-them: an **execution** (`/test-run-cases/:id`) answers *"why did this attempt fail?"*, and a **test
-case** (`/test-cases/:id`) answers *"how has this test behaved over time?"*. Most links from a run land
-on an execution; the test's title links to the test case above it.
-
-A failing execution reads top to bottom in one column, and leads with one **situation block** that
-answers three questions in stacked lines: an **identity** kicker (status, title, marks), the **headline**
-(what broke), **Most likely** (the [story](/guide/concepts#story) or top clue, every clue folded under
-*more*), the **situation** sentence (what's going on), the **Next** step (what to do), and a **facts**
-line — the failing file and line, browser, duration, attempts as linked chips, branch and CI build, with
-a **Details** popover and the verbatim **Raw error** one click away. Below it, one **evidence** card whose
-content-level tabs — Timeline, Screen, Source, Network, Console, State, Performance — hold everything
-captured, opening on the tab the story cites and going deeper when a trace is attached. A Playwright 1.63
-trace with [aria and screen snapshots](./evidence#aria-and-screen-snapshots) adds a filmstrip of the page
-before each step to the Timeline tab, and the before/at-failure screenshots plus an in-execution page diff
-to the Screen tab. After the evidence, the folded **More ways to fix** toolbox holds every other way to
-fix, verify or reproduce, and a **history** block strips this test's recent executions with its failing
-streak. All of it, plus the bundled trace viewer, is described in [Failure evidence](./evidence).
-
-The **test history** page (`/test-cases/:id`) opens on a single facts line under the title — how many
-runs, the pass rate, how many failed, the average duration, the flaky-run count and when it last ran —
-with **Latest execution →** and, in the desktop shell, **Reproduce locally** on the right. A **duration
-trend** chart plots each run coloured by status, and its footer is a strip of the recent executions where
-every square links to that execution. Below it, **Recent executions** lists each attempt as a row that
-opens the execution, and the **failure clusters** the test belongs to and its **links** follow.
+Two pages: an **execution** (`/test-run-cases/:id`) answers *"why did this attempt fail?"*, and a **test case**
+(`/test-cases/:id`) answers *"how has this test behaved over time?"*. A failing execution opens on the situation block
+([Your first failure, explained](/guide/first-failure)), then the evidence card and the **More ways to fix** toolbox
+([Failure evidence](./evidence)). The test case page shows the test's history
+([The test case page](./evidence#the-test-case-page)). Both can be exported as a file with
+[Offline export](./offline-export).
 
 ## Failure cluster detail
 
-Each cluster (`/failure-clusters/:id`) reads top to bottom in one column and leads with the same **situation block** the execution page uses, plus the cluster-only lines. The **identity** kicker names the cluster, error kind, project, owner and known issue; the **headline** is the cluster's name (its AI title when one exists), with the latest occurrence's headline a smaller second line only when it adds a value. **Most likely** leads with the completed [diagnosis](./ai-diagnosis) when there is one, else the [story or top clue](./evidence#clues). An **occurrence sparkline** shows how often it failed across recent runs (*N occurrences in M tests over D · last X ago*). **What changed** sums up the commits and files between the last passing run and the failure in one line, or says why there is no diff and offers the commit browser. The **state line** says where the cluster stands in one sentence with one verb next to a coloured dot, offers the one reconcile action when the human status and machine verdict disagree, and carries the **Triage** and **Snooze** menus (see [Did the fix work?](./ai-diagnosis#did-the-fix-work)). The **Next** step and a **facts** line (Details, Raw error, Copy summary) close the block.
+`/failure-clusters/:id`: every test that failed for one cause. It opens on the same situation block, with the
+occurrence sparkline, what changed and the state line, then the affected tests and their evidence
+([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to fix** toolbox holds the
+[AI diagnosis](./ai-diagnosis), the [locator fix](./locator-healing) and the [fix plan](./fix-plans).
 
-Below it, the **What changed** card (the baseline picker and the diff, only when there is a diff to browse) sits above the evidence, and the **Affected tests** list is the evidence selector — selecting a test switches the evidence below to its latest execution and links through with **Open execution**. The **evidence** is one card whose content-level tabs — Timeline, Screen, Source, Network, Console, State, Performance — hold everything captured for the selected execution. After the evidence, the folded **More ways to fix** toolbox holds the **AI diagnosis** and its patch (its stored result stays visible even with no provider configured, with a versions control and a staleness banner that fires only while the failure is still live), the **locator fix**, the **verify** command, **reproduce and bisect**, **fixed before**, and the whole **fix plan** as Markdown for a ticket or an agent. Full detail: [AI diagnosis & clustering](./ai-diagnosis) and [Failure clusters & the inbox](./failure-clusters).
+## Setup
 
-## Offline export
-
-An **Export** button on a test-case execution (`/test-run-cases/:id`) and on a failure cluster
-(`/failure-clusters/:id`) writes the investigation to an HTML, ZIP, PDF, Markdown or JSON file that
-opens with no network and no Piwi server. See [Offline export](./offline-export).
+`/setup`, administrators only: the reporter setup steps and a checklist of which optional capabilities this instance
+actually uses, judged from the data it holds ([Choose what you use](/operate/capabilities)).
 
 ## Settings
 
-| Page | Path | What it does |
-|------|------|--------------|
-| General | `/settings` | Basic app configuration; a **Reset Demo** button in demo mode |
-| Account | `/settings/account` | Your display name, email, password, and **connected accounts** (link/unlink Google or GitHub — see [OAuth](/operate/authentication#oauth-google-github)) |
-| Users | `/settings/users` | User accounts, roles, project access, and API keys (shown once, stored hashed) — see [Authentication](/operate/authentication) |
-| Storage | `/settings/storage` | Storage stats and cleanup (bulk-delete runs older than N days) — see [Storage](/operate/storage#storage-management) |
-| Tags | `/settings/tags` | Create, color, edit, and delete the tags used to organize projects |
-| Pull requests | `/settings/pr-feedback` | What Piwi posts back to a pull request when a run finishes — see [Pull-request feedback](/guide/ci#pull-request-feedback) |
-| Performance | `/settings/performance` | Wasted-time patterns (which Playwright waits count as "wasted time") and timeout-hygiene thresholds (oversized per-test timeouts, stale `test.slow()` marks) — see [Configuration](/reference/configuration#wasted-time) |
-| AI | `/settings/ai` | Provider/model roles, auto-diagnose, global instructions, and context limits — see [AI diagnosis](./ai-diagnosis#enabling-ai-diagnosis) |
-| Notifications | `/settings/notifications` | Channels, subscriptions, and SMTP — see [Notifications & alerts](./notifications) |
+`/settings`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
+**Users** ([Authentication](/operate/authentication), [API keys](/operate/api-keys)) and **Permissions**
+([Permission grid](/operate/project-access#permission-grid)), **Storage**
+([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
+**Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
+**Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
+**Notifications** ([Notifications & alerts](./notifications)) and **Localization**
+([Localization](/operate/localization)). A setting backed by an environment variable is shown read-only with the
+variable's name ([Configuration reference](/reference/configuration)).
 
-Where an environment variable backs a setting, the field is shown read-only with a lock badge and the env var name (see [Configuration](/reference/configuration)).
-
-## Real-time updates
-
-The dashboard uses Server-Sent Events so it never needs a manual refresh:
-
-- **Global stream** (`/api/stream`) — tells every connected client when a run starts, finishes, or is submitted; pages re-fetch their data.
-- **Per-run stream** (`/api/test-runs/:id/stream`) — drives the live progress on the run detail page during a streaming run.
+The sidebar also links the **MCP server** setup page, `/mcp` ([MCP server](./mcp)), and the **API docs**, `/docs`, the
+instance's own OpenAPI reference.
 
 ## Live demo
 
-The [live demo](https://piwitests.dev/demo/) runs entirely in your browser (in-memory SQLite) and adds two things the real app doesn't need:
+The [live demo](https://piwitests.dev/demo/) runs entirely in your browser and adds two controls. **Simulate a test
+run** replays a reporter's stream, so you can watch a run arrive. **Acting as** switches between seeded identities to
+show how [project access](/operate/project-access) changes what each one sees, including changes made on
+the [permission grid](/operate/project-access#permission-grid).
 
-**Simulate a test run** — the demo banner replays the exact streaming protocol a Piwi reporter speaks during a real run, so you can watch one arrive live. Scenarios: a passing run, a run with failures (joining a known cluster plus a brand-new one), flaky retries, a performance regression, an interrupted run, and a cross-browser run. Each creates a real run in the in-browser database, so worker timeline, failure clusters, and history comparisons all behave exactly as they would against a server.
+## Related
 
-**Acting as** — the demo runs with authentication conceptually enabled. Switch between pre-seeded identities (an admin, a CI reporter, and several project-scoped users) to see how [project access](/operate/authentication#project-access) changes what each user sees. Acting as the admin, you can change affectations live and then switch users to see the effect.
-
-## Responsive & dark mode
-
-The dashboard is fully responsive — sidebar navigation on desktop, collapsible sidebar and horizontally scrolling tables on tablet, and a stacked/hamburger layout on mobile. It supports light and dark themes, following the system preference by default, with a manual toggle in the sidebar.
+- [Core concepts](/guide/concepts): the words this map uses
+- [Your first failure, explained](/guide/first-failure): the page you open most, read top to bottom
+- [All features](/reference/features): every feature and where it lives
+- [Keyboard shortcuts](/reference/keyboard-shortcuts): the command palette and the go-to keys

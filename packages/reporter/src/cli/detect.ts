@@ -8,9 +8,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
-export type ConfigLang = 'ts' | 'js';
+type ConfigLang = 'ts' | 'js';
 
-export interface PackageJson {
+interface PackageJson {
   name?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;

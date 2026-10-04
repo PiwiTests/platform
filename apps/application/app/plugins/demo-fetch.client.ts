@@ -1,4 +1,3 @@
-import { configureDemoDb } from '~/demo/db.client';
 import { DEFAULT_DEMO_USER_ID, DEMO_USER_COOKIE, DEMO_USER_STORAGE_KEY } from '~/demo/demo-users';
 
 /**
@@ -18,13 +17,12 @@ import { DEFAULT_DEMO_USER_ID, DEMO_USER_COOKIE, DEMO_USER_STORAGE_KEY } from '~
  * and we unblock all pending requests — the SW is now the controller and its
  * fetch listener is active, so every rewritten API call is intercepted correctly.
  *
- * We intentionally do NOT reload the page on `controllerchange`.  A reload was
- * tried previously but caused a Firefox-specific failure: after the programmatic
- * reload, `navigator.serviceWorker.controller` was still null when the plugin
- * ran again, so the page got stuck waiting for a second `controllerchange` that
- * never arrived and only escaped after the 30-second safety-net timeout.
- * Because every `$fetch` call already awaits `swReady`, no request can escape
- * to the real server before the SW is active — no reload is required.
+ * The page is not reloaded on `controllerchange`: in Firefox, after a
+ * programmatic reload `navigator.serviceWorker.controller` can still be null
+ * when the plugin runs again, and the page would wait for a second
+ * `controllerchange` that never arrives. Because every `$fetch` call already
+ * awaits `swReady`, no request can escape to the real server before the SW is
+ * active.
  */
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig();
@@ -40,8 +38,12 @@ export default defineNuxtPlugin(() => {
 
   // Pass the base URL to the db module so it can locate WASM + seed SQL
   // in the (unlikely) event a request is handled before the SW is active.
+  // Imported lazily: the module pulls the server schema, server utils and
+  // Drizzle, which a non-demo client (and its dev server) should never load.
+  // Any later window-side caller reaches the module through the same dynamic
+  // import, so this `then` still runs before theirs.
   const base = (config.app?.baseURL ?? '/').replace(/\/$/, '');
-  configureDemoDb(base);
+  void import('~/demo/db.client').then(({ configureDemoDb }) => configureDemoDb(base));
 
   // Publish the selected "act as" demo user to the service worker. In the built
   // SPA the app's data fetching does not attach request headers (Nuxt resolves
@@ -63,7 +65,7 @@ export default defineNuxtPlugin(() => {
   navigator.serviceWorker?.addEventListener('controllerchange', publishActingUser);
 
   // Pre-register the bundled trace viewer's own service worker. Without this,
-  // the first "View trace" navigation is controlled by the demo API service
+  // the first "Open trace" navigation is controlled by the demo API service
   // worker (scope covers the whole app), which cannot answer the viewer's
   // virtual snapshot URLs — the viewer would hang until a manual reload. With
   // the viewer SW registered up front, its more specific scope takes the page

@@ -8,6 +8,16 @@
  *
  * We only parse what is useful for the diagnosis context and DOM snapshots.
  */
+import { stripAnsi } from '#shared/error-parse';
+import { sameCodeLocation } from '#shared/step-tree';
+import { safeStorageSegment } from './sanitize-filename';
+
+/** A source position, as a trace records a call site or an error's stack frame. */
+export interface TraceSourceFrame {
+  file: string;
+  line: number;
+  column: number;
+}
 
 export interface TraceAction {
   callId: string;
@@ -19,6 +29,10 @@ export interface TraceAction {
   endTime?: number;
   error?: { message?: string; stack?: string };
   pageId?: string;
+  /** The runner step this action ran inside (`Test.*` actions nest: a `test.step` holds its calls). */
+  parentId?: string;
+  /** The call site: the first frame of the stack the trace recorded for the action. */
+  location?: TraceSourceFrame;
   wallTime?: number;
   log?: string[];
   snapshotName?: string;
@@ -66,6 +80,8 @@ export interface TraceNetworkRequest {
 export interface TraceFrameSnapshot {
   callId?: string;
   snapshotName?: string;
+  /** v9 traces key a snapshot by `callId` + `phase` (`before`/`action`/`after`) instead of `snapshotName`. */
+  phase?: string;
   pageId?: string;
   frameId?: string;
   frameUrl?: string;
@@ -96,7 +112,7 @@ export interface TraceContextOptions {
   options?: Record<string, unknown>;
 }
 
-/** A top-level `error` event: the failure the trace was recorded for. */
+/** A top-level `error` event: one of the errors the test ended with. */
 export interface TraceErrorEvent {
   message?: string;
   stack?: Array<{ file?: string; line?: number; column?: number }>;
@@ -108,7 +124,10 @@ export interface ParsedTraceData {
   networkRequests: TraceNetworkRequest[];
   /** DOM snapshots in trace order (back-references resolve against earlier ones). */
   frameSnapshots: TraceFrameSnapshot[];
-  /** The action that had an error, if any. */
+  /**
+   * The action that raised the test's own error (see `fatalActionIndex`), else
+   * the action a test timeout interrupted.
+   */
   failingAction: TraceAction | null;
   /** Failing action index in `actions` array for nearby context. */
   failingActionIndex: number;
@@ -161,21 +180,34 @@ export function parseTraceTexts(texts: string[]): ParsedTraceData {
   return extractFromEvents(events);
 }
 
-/** A captured response body: the content hash naming its stored file, plus its recorded MIME type. */
+/** A captured response body: the filename naming its stored body, plus its recorded MIME type. */
 export interface TraceResource {
-  /** The `_sha1` filename in the project's shared `trace-resources` pool. */
+  /** The resource filename in the project's shared `trace-resources` pool (the ZIP's `resources/` entry name, prefix stripped). */
   sha1: string;
   /** The recorded `Content-Type` (`response.content.mimeType`), when known — names the data: URI. */
   mimeType?: string;
 }
 
+/** The bare `resources/` filename a response body is stored under, from either trace format. */
+function resourceBodyName(content: { _sha1?: unknown; _file?: unknown } | undefined): string | null {
+  // Trace format v8 names the stored body `_sha1` (a bare filename such as
+  // `<hash>.css`); v9 — Playwright's current format — renamed it to `_file` and
+  // prefixes it with `resources/`. Both name the same on-disk file: reduce either
+  // to the bare filename the pool (`trace-resources/<name>`) and the demo ZIP
+  // (`resources/<name>`) are keyed by.
+  const ref =
+    typeof content?._sha1 === 'string' ? content._sha1 : typeof content?._file === 'string' ? content._file : '';
+  // The name addresses the storage pool, so it must be a single path segment.
+  return safeStorageSegment(ref.replace(/^resources\//, ''));
+}
+
 /**
  * Map every resource URL captured in a trace's `.network` stream to the stored
- * body naming it (`_sha1`) and its MIME type. Used to inline a DOM snapshot's
- * external assets: a `<link href>` (or a CSS `url(...)`) resolves to a URL here,
- * whose `_sha1` names the file in the project's shared `trace-resources` pool.
+ * body naming it and its MIME type. Used to inline a DOM snapshot's external
+ * assets: a `<link href>` (or a CSS `url(...)`) resolves to a URL here, whose
+ * filename names the body in the project's shared `trace-resources` pool.
  * Later snapshots win on duplicate URLs. Node-free (shared with the browser
- * demo, which reads `resources/<sha1>` straight from the ZIP). Unparseable lines
+ * demo, which reads `resources/<name>` straight from the ZIP). Unparseable lines
  * are skipped.
  */
 export function parseResourceSnapshots(texts: string[]): Map<string, TraceResource> {
@@ -192,11 +224,12 @@ export function parseResourceSnapshots(texts: string[]): Map<string, TraceResour
       if (!evt || evt.type !== 'resource-snapshot') continue;
       const snapshot = evt.snapshot as Record<string, unknown> | undefined;
       const request = snapshot?.request as { url?: unknown } | undefined;
-      const content = (snapshot?.response as { content?: { _sha1?: unknown; mimeType?: unknown } } | undefined)
-        ?.content;
+      const content = (
+        snapshot?.response as { content?: { _sha1?: unknown; _file?: unknown; mimeType?: unknown } } | undefined
+      )?.content;
       const url = request?.url;
-      const sha1 = content?._sha1;
-      if (typeof url === 'string' && url && typeof sha1 === 'string' && sha1) {
+      const sha1 = resourceBodyName(content);
+      if (typeof url === 'string' && url && sha1) {
         map.set(url, { sha1, mimeType: typeof content?.mimeType === 'string' ? content.mimeType : undefined });
       }
     }
@@ -243,7 +276,12 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
       const callId = evt.callId as string;
       if (!callId) continue;
       const pointers = (evt.pointers ?? {}) as Record<string, string>;
-      const beforeSnapshot = (evt.beforeSnapshot as string) || pointers.beforeSnapshot;
+      // v8 `before` events carry the snapshot name; v9 omits it and instead emits a
+      // standalone `frame-snapshot` with `phase: 'before'`, named `before@${callId}`
+      // above. Fall back to that name so the failing action still points at its
+      // before-snapshot; a name with no matching snapshot is simply skipped by
+      // extractDomSnapshot, so this is safe when an action captured none.
+      const beforeSnapshot = (evt.beforeSnapshot as string) || pointers.beforeSnapshot || `before@${callId}`;
       if (beforeSnapshot) beforeSnapshots.set(callId, beforeSnapshot);
       const cls = evt.class as string | undefined;
       const method = evt.method as string | undefined;
@@ -257,6 +295,9 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
         pageId: evt.pageId as string | undefined,
         beforeSnapshot,
       };
+      if (typeof evt.parentId === 'string') action.parentId = evt.parentId;
+      const location = topFrame(evt.stack);
+      if (location) action.location = location;
       openActions.set(callId, action);
       actions.push(action);
     }
@@ -268,8 +309,12 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
         if (typeof evt.endTime === 'number') action.endTime = evt.endTime;
         const error = unwrapAfterError(evt.error);
         if (error) action.error = error;
+        // Same v8/v9 split as the `before` event: v9 omits the pointer and emits a
+        // `frame-snapshot` with `phase: 'after'`, named `after@${callId}` above.
         const afterSnapshot =
-          (evt.afterSnapshot as string) || ((evt.pointers as Record<string, string> | undefined)?.afterSnapshot ?? '');
+          (evt.afterSnapshot as string) ||
+          ((evt.pointers as Record<string, string> | undefined)?.afterSnapshot ?? '') ||
+          `after@${callId}`;
         if (afterSnapshot) {
           action.afterSnapshot = afterSnapshot;
           afterSnapshots.set(callId, afterSnapshot);
@@ -293,7 +338,15 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
     }
 
     if (type === 'frame-snapshot' && evt.snapshot && typeof evt.snapshot === 'object') {
-      frameSnapshots.push(evt.snapshot as TraceFrameSnapshot);
+      const snapshot = evt.snapshot as TraceFrameSnapshot;
+      // Trace format v9 (Playwright's current format) dropped `snapshotName` and
+      // identifies a frame snapshot by `callId` + `phase` instead. Rebuild the v8
+      // `${phase}@${callId}` name so the existing name-based matching keeps working
+      // (renderSnapshotHtml, extractDomSnapshot, and the action pointers below).
+      if (!snapshot.snapshotName && snapshot.callId && snapshot.phase) {
+        snapshot.snapshotName = `${snapshot.phase}@${snapshot.callId}`;
+      }
+      frameSnapshots.push(snapshot);
     }
 
     // 1.63 aria / screen snapshots: one file per action per phase, keyed to the
@@ -349,6 +402,8 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
         endTime: evt.endTime as number | undefined,
         error: evt.error as { message?: string; stack?: string } | undefined,
         pageId: evt.pageId as string,
+        parentId: typeof evt.parentId === 'string' ? evt.parentId : undefined,
+        location: topFrame(evt.stack),
         log: evt.log as string[] | undefined,
         snapshotName: (pointers.snapshot as string) || pointers.afterSnapshot,
         beforeSnapshot: beforeSnapshots.get(callId) || (pointers.beforeSnapshot as string),
@@ -417,8 +472,9 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
     }
   }
 
-  // Find the failing action: error-bearing action first, then timeout fallback.
-  let failingIndex = actions.findIndex((a) => a.error);
+  // Find the failing action: the one that raised the test's own error, then the
+  // timeout fallback.
+  let failingIndex = fatalActionIndex(actions, errors);
   let failingAction: TraceAction | null = failingIndex >= 0 ? actions[failingIndex]! : null;
   let timeoutFallback = false;
 
@@ -451,6 +507,111 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
     traceEndTime,
   };
 }
+
+/** The first frame of a recorded stack, when it names a file and a line. */
+function topFrame(stack: unknown): TraceSourceFrame | undefined {
+  const frame = Array.isArray(stack) ? (stack[0] as Record<string, unknown> | undefined) : undefined;
+  if (typeof frame?.file !== 'string' || typeof frame.line !== 'number') return undefined;
+  return { file: frame.file, line: frame.line, column: typeof frame.column === 'number' ? frame.column : 0 };
+}
+
+/** The first line of an error message, without ANSI codes. */
+function firstLine(message: string | undefined): string {
+  return stripAnsi(message ?? '')
+    .split('\n')[0]!
+    .trim();
+}
+
+/**
+ * The action that raised the test's own error. A run can hold several errored
+ * actions: an error the test caught and went on from, a runner step around the
+ * action that threw (it carries the same error), and the page-side twin of a
+ * runner action (`Frame.expect`, which only says `Expect failed`). The trace's
+ * test-level `error` events name the errors the test ended with, in order: the
+ * action whose error reads the same first line and was called where the event's
+ * stack points wins, then one that matches the first line alone — the innermost
+ * of them, and the latest when several remain. Without a match, the latest
+ * errored action, preferring the runner's `Test.*` actions. -1 when no action
+ * errored.
+ */
+export function fatalActionIndex(actions: readonly TraceAction[], errors: readonly TraceErrorEvent[]): number {
+  const errored = actions.flatMap((action, i) => (action.error ? [i] : []));
+  if (errored.length === 0) return -1;
+  const headOf = (i: number) => firstLine(actions[i]!.error!.message);
+  for (const error of errors) {
+    const head = firstLine(error.message);
+    const frame = topFrame(error.stack);
+    if (!head || !frame) continue;
+    const thrownThere = errored.filter((i) => headOf(i) === head && sameCodeLocation(actions[i]!.location, frame));
+    if (thrownThere.length > 0) return innermostAction(actions, thrownThere);
+  }
+  for (const error of errors) {
+    const head = firstLine(error.message);
+    const matching = errored.filter((i) => head && headOf(i) === head);
+    if (matching.length > 0) return innermostAction(actions, matching);
+  }
+  const runner = errored.filter((i) => actions[i]!.class === 'Test');
+  return latestAction(actions, runner.length > 0 ? runner : errored);
+}
+
+const actionsById = new WeakMap<readonly TraceAction[], Map<string, TraceAction>>();
+
+/**
+ * Whether action `outer` holds action `inner`: `outer` is on `inner`'s runner
+ * parent chain, or, when `inner` records no parent, `outer` is a runner action
+ * whose time span contains it.
+ */
+export function actionHolds(actions: readonly TraceAction[], outer: TraceAction, inner: TraceAction): boolean {
+  if (outer === inner) return false;
+  if (inner.parentId) {
+    let byId = actionsById.get(actions);
+    if (!byId) actionsById.set(actions, (byId = new Map(actions.map((a) => [a.callId, a]))));
+    for (let p = byId.get(inner.parentId); p; p = p.parentId ? byId.get(p.parentId) : undefined) {
+      if (p === outer) return true;
+    }
+    return false;
+  }
+  return (
+    outer.class === 'Test' &&
+    outer.startTime <= inner.startTime &&
+    (inner.endTime ?? Number.POSITIVE_INFINITY) <= (outer.endTime ?? Number.POSITIVE_INFINITY)
+  );
+}
+
+/** The innermost of `indices` (one that holds none of the others), the latest when several are. */
+function innermostAction(actions: readonly TraceAction[], indices: number[]): number {
+  const leaves = indices.filter((i) => !indices.some((j) => actionHolds(actions, actions[i]!, actions[j]!)));
+  return latestAction(actions, leaves.length > 0 ? leaves : indices);
+}
+
+/** The action of `indices` that started last, the later one in the list on a tie. */
+function latestAction(actions: readonly TraceAction[], indices: number[]): number {
+  return indices.reduce((best, i) => (actions[i]!.startTime >= actions[best]!.startTime ? i : best));
+}
+
+/**
+ * The page-side action a runner action (`Test.*`) drove: the snapshots and the
+ * aria and screen captures live on the library call (`Frame.click`,
+ * `Frame.expect`), which runs inside the runner action's span. The last one
+ * inside the span, an errored one first. Null for a library action, or when
+ * none ran inside it.
+ */
+export function pageActionOf(parsed: Pick<ParsedTraceData, 'actions'>, action: TraceAction | null): TraceAction | null {
+  if (!action || action.class !== 'Test') return null;
+  const end = action.endTime ?? Number.POSITIVE_INFINITY;
+  const inside = parsed.actions.filter(
+    (a) =>
+      a.class !== 'Test' &&
+      a.startTime >= action.startTime - SPAN_TOLERANCE_MS &&
+      (a.endTime ?? a.startTime) <= end + SPAN_TOLERANCE_MS,
+  );
+  const errored = inside.filter((a) => a.error);
+  const pool = errored.length > 0 ? errored : inside;
+  return pool[pool.length - 1] ?? null;
+}
+
+/** Slack for the rounding between the runner's clock readings and the library's. */
+const SPAN_TOLERANCE_MS = 1;
 
 /**
  * `after` events carry the failure either flat (`{ message, stack }`) or, in

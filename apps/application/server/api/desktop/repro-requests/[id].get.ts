@@ -1,0 +1,24 @@
+import { requireAuth } from '../../../utils/auth';
+import { apiError } from '../../../utils/api-error';
+import { getReproRequest } from '../../../utils/desktop-repro';
+
+defineRouteMeta({
+  openAPI: {
+    tags: ['System'],
+    summary: 'Read a repro request (desktop app)',
+    description:
+      'Desktop build only — 404 on the server build. The request, its status (`waiting`, `running`, `done`, `declined`, `expired`) and, once done, the verdict of the Playwright run. For steps (`verdict`): `reproduced` at a step with the value found, `not-reproduced`, `diverged` at a step with the reason, `completed` (nothing expected) or `stopped`. For an editor’s job (`jobVerdict`): `reproduced`, `not-reproduced`, `first-bad` with the commit a bisect named, `lab` with what a Flake Lab run measured (`report`: the verdict, the reproducing arm, the commit and each arm’s counts), `error` with the reason, or `stopped`. Readable ten minutes after its last change.',
+    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+    'x-required-roles': ['administrator', 'reporter', 'user'],
+  },
+});
+
+export default eventHandler(async (event) => {
+  if (!process.env.PIWI_DESKTOP_TOKEN) {
+    throw apiError({ statusCode: 404, message: 'Desktop build only' });
+  }
+  await requireAuth(event);
+  const request = getReproRequest(getRouterParam(event, 'id') ?? '');
+  if (!request) throw apiError({ statusCode: 404, message: 'Repro request not found' });
+  return request;
+});

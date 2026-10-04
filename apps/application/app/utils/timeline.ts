@@ -3,6 +3,7 @@
  * and SVG layout constants). Kept dependency-free so the timeline composables
  * and the presentational sub-components can all share one source of truth.
  */
+import { statusPalette } from './status-palette';
 
 /** Fixed pixel geometry for the timeline SVG. */
 export const TIMELINE_LAYOUT = {
@@ -13,6 +14,18 @@ export const TIMELINE_LAYOUT = {
   axisHeight: 28,
   /** Height of a step bar inside an expanded sub-lane (shorter than a test bar). */
   stepBarHeight: 15,
+  /** Narrowest a passed hook section is drawn; below it the section would not show anyway. */
+  hookMinWidth: 1,
+  /** Narrowest a failed hook section is drawn, so a millisecond teardown failure stays visible. */
+  failedHookMinWidth: 8,
+  /** Height of a resource track's plot, and the gap below it. */
+  trackHeight: 22,
+  trackGap: 6,
+  /** Space between a band of resource tracks and the worker rows under it. */
+  bandGap: 6,
+  /** Height a worker row's strip adds, and the height of its plot (it starts 2px under the row's last bar). */
+  stripHeight: 12,
+  stripPlot: 10,
   /** Derived: a full row is a bar plus the gap below it. */
   get rowHeight(): number {
     return this.barHeight + this.rowGap;
@@ -44,18 +57,6 @@ export function timelineStepColor(category: string, failed: boolean): string {
   return STEP_CATEGORY_HEX[category] ?? STEP_CATEGORY_HEX.other!;
 }
 
-const STATUS_HEX: Record<string, string> = {
-  passed: '#16a34a',
-  failed: '#dc2626',
-  timedOut: '#ea580c',
-  running: '#2563eb',
-  initializing: '#2563eb',
-  skipped: '#9ca3af',
-  cancelled: '#a1a1aa',
-  interrupted: '#ea580c',
-  flaky: '#ca8a04',
-};
-
 /**
  * Amber palette for wasted-wait bars, shared by the bar renderer and the
  * tooltip swatch.
@@ -67,19 +68,20 @@ export const TIMELINE_WAIT_COLORS = {
 } as const;
 
 /**
- * Distinct colors for lock lanes/brackets, chosen to sit apart from the status
- * palette (green/red/orange/blue/gray/amber) so a lock never reads as a result.
+ * Distinct colors for lock lanes/brackets, chosen to sit apart from the test
+ * outcome palette (emerald/rose/purple/zinc/amber/blue) and the amber of wasted
+ * waits, so a lock never reads as a result.
  * Assigned by index in the run's sorted lock order and reused past the end.
  */
 export const TIMELINE_LOCK_COLORS = [
-  '#8b5cf6',
+  '#0369a1',
   '#0891b2',
   '#db2777',
   '#0d9488',
   '#c026d3',
   '#4f46e5',
   '#65a30d',
-  '#e11d48',
+  '#c2410c',
 ] as const;
 
 /** Color for the lock at `index` in the run's sorted lock order. */
@@ -89,19 +91,42 @@ export function lockColorHex(index: number): string {
   ]!;
 }
 
-/** Bar fill color for a test-case status (falls back to neutral gray). */
-export function timelineStatusHex(status: string): string {
-  return STATUS_HEX[status] || '#a1a1aa';
+/** Bar fill color for a test-case status, from the test outcome palette (a pass after a retry is flaky). */
+export function timelineStatusColor(status: string, retries?: number | null): string {
+  return statusPalette(status, retries).color;
 }
 
-/** Fill for a hook/fixture bar: the status color at 40% alpha. */
-export function timelineHookFill(status: string): string {
-  return timelineStatusHex(status) + '66';
+const statusFillStyles = new Map<string, { fill: string }>();
+
+/**
+ * A test bar's fill as an inline style (the palette colors are CSS variables,
+ * which a `fill` attribute cannot read): one shared object per color, so a bar
+ * re-rendered by a zoom patches no style.
+ */
+export function timelineStatusFill(status: string, retries?: number | null): { fill: string } {
+  const color = timelineStatusColor(status, retries);
+  let style = statusFillStyles.get(color);
+  if (!style) {
+    style = { fill: color };
+    statusFillStyles.set(color, style);
+  }
+  return style;
 }
 
-/** Stroke for a hook/fixture bar's dashed outline: the full status color. */
-export function timelineHookStroke(status: string): string {
-  return timelineStatusHex(status);
+/**
+ * Hook sections sit over their test's bar as a hatched overlay: a dark wash
+ * when they passed, so the bar reads setup · body · teardown in any outcome
+ * color, and a deep red with a light outline when they failed, so the broken
+ * hook stands out even on a red bar.
+ */
+export const TIMELINE_HOOK_COLORS = {
+  passed: { fill: '#0f172a', opacity: 0.3, stroke: 'none' },
+  failed: { fill: '#7f1d1d', opacity: 0.9, stroke: '#fecaca' },
+} as const;
+
+/** The overlay colors for a hook section with this status. */
+export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS)[keyof typeof TIMELINE_HOOK_COLORS] {
+  return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
 /** Human-readable duration used for timeline ticks, bar labels and tooltips. */

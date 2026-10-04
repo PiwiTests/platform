@@ -1,9 +1,10 @@
 /**
  * The per-project binding — how a project's failures reach a tracker: which
  * connection, which Jira project and issue type, the default labels and
- * assignee, the include toggles, the two-way sync policies, the owner routes
- * that file a team's failures into that team's project, and the auto-create
- * fields (stored but inert this milestone).
+ * assignee, the values for the fields the tracker requires, the include
+ * toggles, the two-way sync policies, the owner routes that file a team's
+ * failures into that team's project, and the auto-create fields (stored, but
+ * nothing creates issues from them).
  *
  * Pure + dependency-free, mirroring `shared/auto-heal.ts`: the code that reads
  * the binding and talks to Jira lives in `server/utils/integrations/`. The
@@ -13,6 +14,7 @@
  */
 import { toIssueLocale, type IssueLocale } from './messages';
 import type { IssueIncludeOptions } from './types';
+import { normalizeFieldValues, TRANSITION_SKIPPED_FIELDS, type FieldValues } from './fields';
 
 /** One owner → tracker route. The first route whose owner matches wins. */
 export interface OwnerRoute {
@@ -28,7 +30,7 @@ export interface OwnerRoute {
   labels?: string[];
 }
 
-/** The two-way sync policies — each a boolean off by default, plus the transition ids. */
+/** The two-way sync policies — each a boolean off by default, plus the transitions and their field values. */
 export interface ProjectIntegrationPolicies {
   /** Comment on the known issue when the cluster's fix is verified. */
   commentOnFix: boolean;
@@ -36,10 +38,14 @@ export interface ProjectIntegrationPolicies {
   transitionOnFix: boolean;
   /** The transition id (or status name) used when `transitionOnFix` is on. */
   fixTransitionId: string | null;
+  /** Values for the fields the fix transition's screen asks for, such as a resolution. */
+  fixTransitionFields: FieldValues;
   /** Comment on the known issue when the cluster regresses. */
   commentOnRegression: boolean;
   /** The transition id (or status name) used to reopen the issue on regression. */
   reopenTransitionId: string | null;
+  /** Values for the fields the reopen transition's screen asks for. */
+  reopenTransitionFields: FieldValues;
   /** At most one comment per day when new occurrences land on an open ticket. */
   commentOnNewOccurrences: boolean;
   /** Resolve the cluster automatically when its ticket moves to Done. */
@@ -50,11 +56,13 @@ export interface ProjectIntegrationPolicies {
   commentOnMerge: boolean;
   /** Days a cluster may sit open on the default branch with no ticket before the needs-ticket queue lists it. */
   needsTicketAfterDays: number;
+  /** File an issue for every bug report sent to the project, whoever sends it. */
+  fileEveryBugReport: boolean;
 }
 
-/** The auto-create guards — stored so the form persists them, inert until step 4. */
+/** The auto-create guards — stored so the form persists them; nothing acts on them. */
 export interface AutoCreatePolicy {
-  /** Master switch. Always false this milestone — the trigger is unimplemented. */
+  /** Master switch. Stored only: no trigger reads it, and the form renders it disabled. */
   enabled: boolean;
   /** Minimum distinct occurrences before a cluster qualifies. */
   minOccurrences: number;
@@ -78,6 +86,12 @@ export interface ResolvedProjectIntegration {
   labels: string[];
   /** The account id issues are assigned to by default. */
   defaultAssignee: string | null;
+  /**
+   * Values for tracker fields, keyed by field id — typically the fields the
+   * project's create screen requires and Piwi does not fill. A create request's
+   * own values override them; a value for a field the screen lacks is not sent.
+   */
+  fieldDefaults: FieldValues;
   /** The ticket language, or null to inherit the connection's default. */
   locale: IssueLocale | null;
   /** What a ticket body carries. */
@@ -101,13 +115,16 @@ export const DEFAULT_POLICIES: ProjectIntegrationPolicies = {
   commentOnFix: false,
   transitionOnFix: false,
   fixTransitionId: null,
+  fixTransitionFields: {},
   commentOnRegression: false,
   reopenTransitionId: null,
+  reopenTransitionFields: {},
   commentOnNewOccurrences: false,
   resolveOnClose: false,
   reopenOnTicketReopen: false,
   commentOnMerge: false,
   needsTicketAfterDays: 2,
+  fileEveryBugReport: false,
 };
 
 export const DEFAULT_AUTO_CREATE: AutoCreatePolicy = {
@@ -124,6 +141,7 @@ export const DEFAULT_PROJECT_INTEGRATION: ResolvedProjectIntegration = {
   issueType: null,
   labels: [],
   defaultAssignee: null,
+  fieldDefaults: {},
   locale: null,
   include: DEFAULT_INCLUDE,
   policies: DEFAULT_POLICIES,
@@ -182,21 +200,23 @@ function resolvePolicies(raw: unknown): ProjectIntegrationPolicies {
     commentOnFix: r.commentOnFix === true,
     transitionOnFix: r.transitionOnFix === true,
     fixTransitionId: trimOrNull(r.fixTransitionId, 100),
+    fixTransitionFields: normalizeFieldValues(r.fixTransitionFields, TRANSITION_SKIPPED_FIELDS),
     commentOnRegression: r.commentOnRegression === true,
     reopenTransitionId: trimOrNull(r.reopenTransitionId, 100),
+    reopenTransitionFields: normalizeFieldValues(r.reopenTransitionFields, TRANSITION_SKIPPED_FIELDS),
     commentOnNewOccurrences: r.commentOnNewOccurrences === true,
     resolveOnClose: r.resolveOnClose === true,
     reopenOnTicketReopen: r.reopenOnTicketReopen === true,
     commentOnMerge: r.commentOnMerge === true,
     needsTicketAfterDays: clampInt(r.needsTicketAfterDays, 0, 365, DEFAULT_POLICIES.needsTicketAfterDays),
+    fileEveryBugReport: r.fileEveryBugReport === true,
   };
 }
 
 function resolveAutoCreate(raw: unknown): AutoCreatePolicy {
   const r = (raw ?? {}) as Partial<AutoCreatePolicy>;
   return {
-    // The trigger is unimplemented this milestone — the field is stored but never
-    // read to create anything, and the form renders it disabled.
+    // No trigger reads this field to create anything; the form renders it disabled.
     enabled: r.enabled === true,
     minOccurrences: clampInt(r.minOccurrences, 1, 1000, DEFAULT_AUTO_CREATE.minOccurrences),
     minRuns: clampInt(r.minRuns, 1, 1000, DEFAULT_AUTO_CREATE.minRuns),
@@ -222,6 +242,7 @@ export function resolveProjectIntegration(
     issueType: trimOrNull(input?.issueType, 100),
     labels: normalizeLabels(input?.labels),
     defaultAssignee: trimOrNull(input?.defaultAssignee),
+    fieldDefaults: normalizeFieldValues(input?.fieldDefaults),
     locale: toIssueLocale(input?.locale),
     include: resolveInclude(input?.include),
     policies: resolvePolicies(input?.policies),

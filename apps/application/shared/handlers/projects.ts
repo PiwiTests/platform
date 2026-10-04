@@ -10,10 +10,42 @@ import {
   failureDiagnoses,
   casePayloads,
   entityLinks,
+  bugReports,
+  analyticsDailyRollups,
+  handbackOutcomes,
+  handbackOutcomeRollups,
+  mcpToolCalls,
 } from '../../server/database/schema';
-import { asc, desc, eq, exists, sql, and, or, inArray, gte, lte, isNull, isNotNull, count } from 'drizzle-orm';
+import {
+  asc,
+  desc,
+  eq,
+  exists,
+  sql,
+  and,
+  or,
+  inArray,
+  gte,
+  lte,
+  isNull,
+  isNotNull,
+  count,
+  type SQL,
+} from 'drizzle-orm';
 import { jsonArrayContainsAll, parseLockFilter, parseTagFilter } from '../utils/tag-filter';
-import { FAILED_STATUS_KEYS } from '../utils/test-counts';
+import { testSearchConditions } from '#shared/utils/test-search-sql';
+import {
+  CATALOG_SEARCH_FIELDS,
+  collectTestSearchValues,
+  parseTestSearch,
+  type TestSearchValues,
+} from '#shared/test-search';
+import { splitSuitePath } from '#shared/utils/suites';
+import { notLabExecution, notLabRun } from './probes';
+import { eligibleRunSql } from '../run-eligibility';
+import { isFailedStatus } from '../utils/test-counts';
+import { getHoldingVerifiedFixes } from './flake-verified';
+import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -23,8 +55,36 @@ import {
   type TimeoutOpportunity,
   type TimeoutThresholds,
 } from '../analytics/timeout-hygiene';
+import { parseProjectDecisions } from '#shared/capabilities';
+import { normalizeProjectTargets } from '#shared/analytics/targets';
 
 type ProjectScope = 'all' | Set<number>;
+
+/**
+ * `test.fixme()` skips per run, for runs with any skipped test — the subset of
+ * `skippedTests` the status bars draw in their second grey. Counted from the
+ * cases' annotations in one grouped query; a run missing from the map has none.
+ */
+async function fixmeTestsByRunId(
+  db: DrizzleDB,
+  runs: ReadonlyArray<{ id: number; skippedTests?: number | null }>,
+): Promise<Map<number, number>> {
+  const runIds = runs.filter((r) => (r.skippedTests ?? 0) > 0).map((r) => r.id);
+  const out = new Map<number, number>();
+  if (runIds.length === 0) return out;
+  const rows: Array<{ testRunId: number; n: number }> = await db
+    .select({ testRunId: testRunsCases.testRunId, n: count() })
+    .from(testRunsCases)
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, runIds),
+        fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations),
+      ),
+    )
+    .groupBy(testRunsCases.testRunId);
+  for (const r of rows) out.set(r.testRunId, Number(r.n));
+  return out;
+}
 
 // ─── listProjects ────────────────────────────────────────────────
 
@@ -47,7 +107,7 @@ async function getProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
 export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
-  // 1. Run counts per project (single GROUP BY query instead of loading all rows)
+  // 1. Run counts per project
   const runStats: any[] = await db
     .select({
       projectId: testRuns.projectId,
@@ -63,10 +123,8 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   }
 
   // Latest run id per project, ranked by start_time (id as a deterministic
-  // tiebreaker). Using start_time rather than MAX(id) keeps "latest run"
-  // correct even when rows are ingested out of chronological order — e.g.
-  // historical uploads on the server, or the demo seed which inserts runs
-  // newest-first (so MAX(id) would be the oldest run).
+  // tiebreaker): rows can be ingested out of chronological order (historical
+  // uploads on the server; the demo seed inserts runs newest-first).
   const rankedRuns = db.$with('ranked_latest_runs').as(
     db
       .select({
@@ -89,9 +147,10 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   // 2. Fetch full latest run rows
   const latestRuns: any[] =
     latestRunIds.length > 0 ? await db.select().from(testRuns).where(inArray(testRuns.id, latestRunIds)) : [];
+  const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {
-    latestRunByProjectId.set(r.projectId, r);
+    latestRunByProjectId.set(r.projectId, { ...r, fixmeTests: fixmeByRunId.get(r.id) ?? 0 });
   }
 
   // 3. Total test cases per project (batched GROUP BY)
@@ -158,51 +217,49 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
 
 // ─── getProject ──────────────────────────────────────────────────
 
-export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
-  // Bounds the run list (and the charts derived from it) — projects grow
-  // unboundedly, so an uncapped select scales with total history.
-  const runLimit = Math.min(Math.max(options?.runLimit ?? 200, 1), 1000);
+/** The run-list columns: everything the table shows, no wide JSON besides the metadata it slims. */
+const RUN_SUMMARY_COLUMNS = {
+  id: testRuns.id,
+  projectId: testRuns.projectId,
+  status: testRuns.status,
+  startTime: testRuns.startTime,
+  duration: testRuns.duration,
+  totalTests: testRuns.totalTests,
+  passedTests: testRuns.passedTests,
+  failedTests: testRuns.failedTests,
+  skippedTests: testRuns.skippedTests,
+  didNotRunTests: testRuns.didNotRunTests,
+  flakyTests: testRuns.flakyTests,
+  avgTestDuration: testRuns.avgTestDuration,
+  p90TestDuration: testRuns.p90TestDuration,
+  shardTotal: testRuns.shardTotal,
+  shardsFinished: testRuns.shardsFinished,
+  environment: testRuns.environment,
+  branch: testRuns.branch,
+  label: testRuns.label,
+  instanceId: testRuns.instanceId,
+  playwrightVersion: testRuns.playwrightVersion,
+  reporterVersion: testRuns.reporterVersion,
+  isFullRun: testRuns.isFullRun,
+  filterDetails: testRuns.filterDetails,
+  metadata: testRuns.metadata,
+  keptAt: testRuns.keptAt,
+  keepSource: testRuns.keepSource,
+  keepReason: testRuns.keepReason,
+  createdAt: testRuns.createdAt,
+  updatedAt: testRuns.updatedAt,
+};
 
-  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
-  const project = projectResults[0];
+/** Clamp a requested run-list size to 1–1000, 200 by default. */
+function clampRunLimit(limit: number | undefined): number {
+  return Math.min(Math.max(limit ?? 200, 1), 1000);
+}
 
-  if (!project) throw new Error('Project not found');
-
-  // Select only the columns needed for the run list — omit wide JSON columns
-  const runs: any[] = await db
-    .select({
-      id: testRuns.id,
-      projectId: testRuns.projectId,
-      status: testRuns.status,
-      startTime: testRuns.startTime,
-      duration: testRuns.duration,
-      totalTests: testRuns.totalTests,
-      passedTests: testRuns.passedTests,
-      failedTests: testRuns.failedTests,
-      skippedTests: testRuns.skippedTests,
-      didNotRunTests: testRuns.didNotRunTests,
-      flakyTests: testRuns.flakyTests,
-      avgTestDuration: testRuns.avgTestDuration,
-      p90TestDuration: testRuns.p90TestDuration,
-      shardTotal: testRuns.shardTotal,
-      shardsFinished: testRuns.shardsFinished,
-      environment: testRuns.environment,
-      branch: testRuns.branch,
-      label: testRuns.label,
-      instanceId: testRuns.instanceId,
-      playwrightVersion: testRuns.playwrightVersion,
-      reporterVersion: testRuns.reporterVersion,
-      isFullRun: testRuns.isFullRun,
-      filterDetails: testRuns.filterDetails,
-      metadata: testRuns.metadata,
-      createdAt: testRuns.createdAt,
-      updatedAt: testRuns.updatedAt,
-    })
-    .from(testRuns)
-    .where(eq(testRuns.projectId, id))
-    .orderBy(desc(testRuns.startTime))
-    .limit(runLimit);
-
+/**
+ * Shape run-list rows for the runs table: attach each run's reports and
+ * browsers, and slim the metadata JSON down to the SCM branch and commit.
+ */
+async function toRunSummaries(db: DrizzleDB, runs: any[]) {
   // Fetch reports for all runs in a single query
   const runIds: number[] = runs.map((r: any) => r.id);
   const reportResults: any[] =
@@ -233,6 +290,8 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
           .where(and(inArray(testRunsCases.testRunId, runIds), isNotNull(testRunsCases.browserName)))
       : [];
 
+  const fixmeByRunId = await fixmeTestsByRunId(db, runs);
+
   const browsersByRunId = new Map<number, string[]>();
   for (const row of browserRows) {
     const name = row.browserName as string | null;
@@ -241,6 +300,38 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
     if (!list.includes(name)) list.push(name);
     browsersByRunId.set(row.testRunId, list);
   }
+
+  return runs.map((r: any) => {
+    // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
+    const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
+    return {
+      ...r,
+      isFullRun: r.isFullRun === 1,
+      metadata: scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
+      reports: reportsByRunId.get(r.id) ?? [],
+      browsers: browsersByRunId.get(r.id) ?? [],
+      fixmeTests: fixmeByRunId.get(r.id) ?? 0,
+    };
+  });
+}
+
+export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
+  // Bounds the run list (and the charts derived from it) — projects grow
+  // unboundedly, so an uncapped select scales with total history.
+  const runLimit = clampRunLimit(options?.runLimit);
+
+  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
+  const project = projectResults[0];
+
+  if (!project) throw new Error('Project not found');
+
+  // Select only the columns needed for the run list — omit wide JSON columns
+  const runs: any[] = await db
+    .select(RUN_SUMMARY_COLUMNS)
+    .from(testRuns)
+    .where(eq(testRuns.projectId, id))
+    .orderBy(desc(testRuns.startTime))
+    .limit(runLimit);
 
   // Get tags for this project
   const projectTagRows: any[] = await db
@@ -252,20 +343,30 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
   return {
     ...project,
     hasScmToken: !!project.scmToken,
+    // Validated per-project capability decisions, so the edit form preselects a
+    // stored "declined"/"enabled" rather than always reading "instance default".
+    capabilities: parseProjectDecisions(project.capabilities ?? null),
     tags: projectTagRows.map((r: any) => r.tag),
-    testRuns: runs.map((r: any) => {
-      // Slim the wide metadata JSON down to just the SCM branch/commit shown in the run list
-      const scm = (r.metadata as { scm?: { branch?: string | null; commit?: string | null } } | null)?.scm;
-      return {
-        ...r,
-        isFullRun: r.isFullRun === 1,
-        metadata:
-          scm?.branch || scm?.commit ? { scm: { branch: scm.branch ?? null, commit: scm.commit ?? null } } : null,
-        reports: reportsByRunId.get(r.id) ?? [],
-        browsers: browsersByRunId.get(r.id) ?? [],
-      };
-    }),
+    testRuns: await toRunSummaries(db, runs),
   };
+}
+
+// ─── listKeptRuns ────────────────────────────────────────────────
+
+/**
+ * A project's kept runs, newest first, in the run-list shape. Kept runs are
+ * mostly old ones, past the window `getProject` loads, so they list on their own.
+ */
+export async function listKeptRuns(db: DrizzleDB, projectId: number, options?: { limit?: number }) {
+  const where = and(eq(testRuns.projectId, projectId), isNotNull(testRuns.keptAt));
+  const runs: any[] = await db
+    .select(RUN_SUMMARY_COLUMNS)
+    .from(testRuns)
+    .where(where)
+    .orderBy(desc(testRuns.startTime))
+    .limit(clampRunLimit(options?.limit));
+  const [total] = await db.select({ n: count() }).from(testRuns).where(where);
+  return { items: await toRunSummaries(db, runs), total: Number(total?.n ?? 0) };
 }
 
 // ─── createProject ───────────────────────────────────────────────
@@ -280,19 +381,29 @@ export async function createProject(
   const existing: any[] = await db.select().from(projects).where(eq(projects.name, name));
   if (existing.length > 0) throw new Error('A project with this name already exists');
 
-  const result: any[] = await db.insert(projects).values({ name, label, description }).returning();
-  const project = result[0]!;
+  const uniqueTagIds = tagIds ? await validTagIds(db, tagIds) : [];
 
-  // Link tags if provided
-  if (tagIds && tagIds.length > 0) {
-    const existingTags: any[] = await db.select().from(tags).where(inArray(tags.id, tagIds));
-    if (existingTags.length !== tagIds.length) {
-      throw new Error('One or more tag IDs are invalid');
+  const project = await db.transaction(async (tx) => {
+    const result: any[] = await tx.insert(projects).values({ name, label, description }).returning();
+    const created = result[0]!;
+    if (uniqueTagIds.length > 0) {
+      await tx.insert(projectTags).values(uniqueTagIds.map((tagId) => ({ projectId: created.id, tagId })));
     }
-    await db.insert(projectTags).values(tagIds.map((tagId: number) => ({ projectId: project.id, tagId })));
-  }
+    return created;
+  });
 
   return { success: true, project };
+}
+
+/** The distinct tag ids, or throws when one of them names no tag. */
+async function validTagIds(db: DrizzleDB, tagIds: number[]): Promise<number[]> {
+  const unique = [...new Set(tagIds)];
+  if (unique.length === 0) return unique;
+  const existingTags: any[] = await db.select({ id: tags.id }).from(tags).where(inArray(tags.id, unique));
+  if (existingTags.length !== unique.length) {
+    throw new Error('One or more tag IDs are invalid');
+  }
+  return unique;
 }
 
 // ─── updateProject ───────────────────────────────────────────────
@@ -307,7 +418,17 @@ export async function updateProject(
     aiLanguage?: string | null;
     scmToken?: string | null;
     defaultBranch?: string | null;
+    openApiUrl?: string | null;
+    serverProbes?: unknown;
     ciRerun?: unknown;
+    /** Whether a quarantined failure turns the run's commit status red. */
+    quarantineFailsStatus?: boolean;
+    /** Whether each gate evaluation also posts the `<statusContext>/gate` commit status. */
+    gateStatus?: boolean;
+    /** `GeneratedSpecSettings`; null clears them. */
+    generatedSpecs?: unknown;
+    /** Per-project targets (`ProjectTargets`); null clears them. */
+    targets?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -321,41 +442,46 @@ export async function updateProject(
     aiLanguage,
     scmToken,
     defaultBranch,
+    openApiUrl,
+    serverProbes,
     ciRerun,
+    quarantineFailsStatus,
+    gateStatus,
+    generatedSpecs,
+    targets,
     tagIds: dataTagIds,
   } = data;
+  const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
+  const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
-  // Update project
-  await db
-    .update(projects)
-    .set({
-      label,
-      description,
-      diagnosisInstructions: diagnosisInstructions ?? undefined,
-      aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
-      scmToken: scmToken !== undefined ? scmToken : undefined,
-      defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
-      ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
-      updatedAt: new Date(),
-    })
-    .where(eq(projects.id, id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(projects)
+      .set({
+        label,
+        description,
+        diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
+        aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
+        scmToken: scmToken !== undefined ? scmToken : undefined,
+        defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
+        openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
+        serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
+        ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+        quarantineFailsStatus,
+        gateStatus,
+        generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
+        targets: resolvedTargets,
+        updatedAt: new Date(),
+      })
+      .where(eq(projects.id, id));
 
-  // Update project tags if provided
-  if (dataTagIds !== undefined) {
-    // Remove all existing tags for this project
-    await db.delete(projectTags).where(eq(projectTags.projectId, id));
-
-    if (dataTagIds.length > 0) {
-      // Validate that all tag IDs exist
-      const existingTags: any[] = await db.select().from(tags).where(inArray(tags.id, dataTagIds));
-      if (existingTags.length !== dataTagIds.length) {
-        throw new Error('One or more tag IDs are invalid');
+    if (uniqueTagIds !== undefined) {
+      await tx.delete(projectTags).where(eq(projectTags.projectId, id));
+      if (uniqueTagIds.length > 0) {
+        await tx.insert(projectTags).values(uniqueTagIds.map((tagId) => ({ projectId: id, tagId })));
       }
-
-      // Insert new tag associations
-      await db.insert(projectTags).values(dataTagIds.map((tagId: number) => ({ projectId: id, tagId })));
     }
-  }
+  });
 
   // Get updated project with tags
   const updatedProject: any[] = await db.select().from(projects).where(eq(projects.id, id));
@@ -377,35 +503,54 @@ export async function updateProject(
 }
 
 // ─── deleteProjectData ───────────────────────────────────────────
-// Cascading DB-only delete — no storage operations, so it's safe to call from
-// both the server (via server/utils/delete-project.ts, which also clears
-// storage) and demo mode (directly, against the in-browser DB). The
-// storage-touching `deleteProject` wrapper lives in server/utils/ instead of
-// here so this shared module never imports server/storage — that module's
-// LocalStorageAdapter does synchronous fs/util promisify() calls at import
-// time, which crashes when bundled into the demo service worker (no Node
-// fs/util in a Worker global scope).
+// Cascading DB-only delete with no storage operations, called by the server
+// (via server/utils/delete-project.ts, which also clears storage) and by demo
+// mode (against the in-browser DB). This module must not import
+// server/storage: its LocalStorageAdapter calls Node fs/util at import time,
+// which the demo service worker does not have.
 
-export async function deleteProjectData(db: DrizzleDB, projectId: number) {
-  // Get all run IDs to cascade-delete dependent rows that lack DB-level cascade
-  const runRows: any[] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, projectId));
-  const runIds: number[] = runRows.map((r: any) => r.id);
+/**
+ * Where a project deletion stands. `files` removes the stored reports and
+ * evidence, `runs` deletes the test runs in batches (`runsDeleted` counts up to
+ * `totalRuns`), `project` removes the test cases, clusters and the project row.
+ */
+export interface ProjectDeletionProgress {
+  phase: 'files' | 'runs' | 'project';
+  totalRuns: number;
+  runsDeleted: number;
+}
 
-  if (runIds.length > 0) {
-    const caseRows: any[] = await db
+/** Runs deleted per batch — keeps every `IN (…)` list far below SQLite's bound-parameter limit. */
+const DELETE_RUN_BATCH = 50;
+
+export async function deleteProjectData(
+  db: DrizzleDB,
+  projectId: number,
+  onProgress?: (progress: ProjectDeletionProgress) => void,
+) {
+  // Run IDs, to delete the dependent rows that lack a DB-level cascade
+  const runRows: { id: number }[] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(eq(testRuns.projectId, projectId));
+  const runIds = runRows.map((r) => r.id);
+  const totalRuns = runIds.length;
+  onProgress?.({ phase: 'runs', totalRuns, runsDeleted: 0 });
+
+  for (let i = 0; i < totalRuns; i += DELETE_RUN_BATCH) {
+    const batch = runIds.slice(i, i + DELETE_RUN_BATCH);
+    const batchCaseIds = db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
-      .where(inArray(testRunsCases.testRunId, runIds));
-    const caseIds: number[] = caseRows.map((c: any) => c.id);
-
-    if (caseIds.length > 0) {
-      await db.delete(files).where(inArray(files.testRunsCaseId, caseIds));
-    }
-
-    await db.delete(files).where(inArray(files.testRunId, runIds));
-    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, runIds));
-    await db.delete(testRuns).where(eq(testRuns.projectId, projectId));
+      .where(inArray(testRunsCases.testRunId, batch));
+    await db.delete(files).where(inArray(files.testRunsCaseId, batchCaseIds));
+    await db.delete(files).where(inArray(files.testRunId, batch));
+    await db.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+    await db.delete(testRuns).where(inArray(testRuns.id, batch));
+    onProgress?.({ phase: 'runs', totalRuns, runsDeleted: i + batch.length });
   }
+
+  onProgress?.({ phase: 'project', totalRuns, runsDeleted: totalRuns });
 
   await db.delete(testCases).where(eq(testCases.projectId, projectId));
   await db.delete(casePayloads).where(eq(casePayloads.projectId, projectId));
@@ -421,6 +566,23 @@ export async function deleteProjectData(db: DrizzleDB, projectId: number) {
   if (projectClusterIds.length > 0) {
     await db.delete(entityLinks).where(inArray(entityLinks.failureClusterId, projectClusterIds));
   }
+  const projectBugReports = await db
+    .select({ id: bugReports.id })
+    .from(bugReports)
+    .where(eq(bugReports.projectId, projectId));
+  if (projectBugReports.length > 0) {
+    await db.delete(entityLinks).where(
+      inArray(
+        entityLinks.bugReportId,
+        projectBugReports.map((r: { id: number }) => r.id),
+      ),
+    );
+  }
+
+  await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));
+  await db.delete(handbackOutcomes).where(eq(handbackOutcomes.projectId, projectId));
+  await db.delete(handbackOutcomeRollups).where(eq(handbackOutcomeRollups.projectId, projectId));
+  await db.delete(mcpToolCalls).where(eq(mcpToolCalls.projectId, projectId));
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources
@@ -458,7 +620,7 @@ export async function getProjectPerformance(
   if (!projectResults[0]) throw new Error('Project not found');
 
   // Build conditions
-  const conditions = [eq(testRuns.projectId, projectId)];
+  const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)];
   if (fullRunsOnly) {
     conditions.push(eq(testRuns.isFullRun, 1));
   }
@@ -516,7 +678,7 @@ export async function getProjectPerformance(
 
 // ─── getProjectTestCases ─────────────────────────────────────────
 
-export const TEST_CASE_SORTS = ['lastRun', 'title', 'totalRuns', 'passRate', 'avgDuration', 'status'] as const;
+export const TEST_CASE_SORTS = ['file', 'lastRun', 'title', 'totalRuns', 'passRate', 'avgDuration', 'status'] as const;
 export type TestCasesSort = (typeof TEST_CASE_SORTS)[number];
 
 /** Filterable per-case status categories (the derived `status` field, not raw run statuses). */
@@ -525,7 +687,10 @@ export const TEST_CASE_STATUS_FILTERS = ['passed', 'failed', 'flaky', 'skipped',
 export interface TestCasesQuery {
   limit: number;
   offset: number;
+  /** A test-list search (`#shared/test-search`): words, phrases and qualifiers such as `file:` or `-tag:`. */
   q?: string;
+  /** Exact spec file path, as the test case stores it. */
+  file?: string;
   statuses?: string[];
   /** Every tag here must be present on a case for it to match. */
   tags?: string[];
@@ -568,6 +733,7 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     limit: Math.min(1000, Math.max(1, Math.floor(num('limit', 50)))),
     offset: Math.max(0, Math.floor(num('offset', 0))),
     q: get('q')?.trim() || undefined,
+    file: get('file')?.trim() || undefined,
     statuses: statuses.length > 0 ? statuses : undefined,
     tags: tags.length > 0 ? tags : undefined,
     locks: locks.length > 0 ? locks : undefined,
@@ -579,18 +745,44 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
   };
 }
 
+/** Test cases with an execution (outside lab runs) in the last `maxAgeDays` days. */
+function executedWithin(db: DrizzleDB, maxAgeDays: number) {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+  return exists(
+    db
+      .select({ one: sql`1` })
+      .from(testRunsCases)
+      .where(
+        and(
+          eq(testRunsCases.testCaseId, testCases.id),
+          gte(testRunsCases.createdAt, cutoff),
+          notLabExecution(testRunsCases.testRunId),
+        ),
+      ),
+  );
+}
+
+/** The column of a test case's latest execution (outside lab runs), as a correlated subquery. */
+function latestExecutionColumn(column: typeof testRunsCases.line | typeof testRunsCases.column) {
+  return sql<number | null>`(
+      SELECT ${column}
+      FROM ${testRunsCases}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        AND ${notLabExecution(testRunsCases.testRunId)}
+      ORDER BY ${testRunsCases.createdAt} DESC
+      LIMIT 1
+    )`;
+}
+
 /**
- * Normalize a `MAX(created_at)` aggregate to epoch milliseconds. The raw value
- * is a ms integer on SQLite, a Date (or timestamp string) on PostgreSQL, and
- * Unix seconds in demo databases seeded before the unit fix.
+ * Epoch milliseconds of a `MAX(created_at)` aggregate mapped to a Date. A demo
+ * database whose seed stored Unix seconds yields a date in January 1970, so a
+ * value below 1e12 ms is read as seconds.
  */
-function toEpochMs(value: unknown): number | null {
+function toEpochMs(value: Date | null): number | null {
   if (value == null) return null;
-  if (value instanceof Date) return value.getTime();
-  const n = typeof value === 'number' ? value : Number(value);
-  if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
-  const parsed = Date.parse(String(value));
-  return Number.isNaN(parsed) ? null : parsed;
+  const ms = value.getTime();
+  return ms < 1e12 ? ms * 1000 : ms;
 }
 
 /**
@@ -602,13 +794,15 @@ function toEpochMs(value: unknown): number | null {
  * (passed + failed; skipped/didnotrun excluded) and is null when nothing ran.
  * The derived `status` category is what the status filter and sort operate on:
  * `flaky` when any of the last 10 executions is a retry-pass, otherwise the
- * latest run's status (timeouts shown as failed), or `never-run`.
+ * latest run's status (timeouts shown as failed), or `never-run`. Executions
+ * of lab runs (probes, flake experiments) stay out of every aggregate.
  */
 export async function getProjectTestCases(db: DrizzleDB, projectId: number, options: Partial<TestCasesQuery> = {}) {
   const {
     limit = 50,
     offset = 0,
     q,
+    file,
     statuses,
     tags,
     locks,
@@ -619,21 +813,29 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     dir = 'desc',
   } = options;
 
-  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`;
-  const failed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`;
+  // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
+  // (numeric) as strings, and a timestamp aggregate unparsed: each selected
+  // aggregate is mapped so both dialects agree.
+  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number);
+  const failed =
+    sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
+      Number,
+    );
   const recentFlaky = sql<number>`(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
         FROM ${testRunsCases}
         WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+          AND ${notLabExecution(testRunsCases.testRunId)}
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
-    )`;
+    )`.mapWith(Number);
   const lastStatus = sql<string | null>`(
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        AND ${notLabExecution(testRunsCases.testRunId)}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
@@ -644,24 +846,30 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     END`;
   const passRate = sql<
     number | null
-  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`;
+  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`.mapWith(Number);
 
   const conditions = [eq(testCases.projectId, projectId)];
   if (q) {
-    const pattern = `%${q.toLowerCase()}%`;
-    conditions.push(sql`(lower(${testCases.title}) LIKE ${pattern} OR lower(${testCases.filePath}) LIKE ${pattern})`);
-  }
-  if (maxAgeDays > 0) {
-    const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
     conditions.push(
-      exists(
-        db
-          .select({ one: sql`1` })
-          .from(testRunsCases)
-          .where(and(eq(testRunsCases.testCaseId, testCases.id), gte(testRunsCases.createdAt, cutoff))),
-      ),
+      ...testSearchConditions(parseTestSearch(q, CATALOG_SEARCH_FIELDS), {
+        title: testCases.title,
+        describe: testCases.suitePath,
+        file: testCases.filePath,
+        tag: testCases.tags,
+        lock: testCases.locks,
+        owner: testCases.owner,
+        priority: testCases.priority,
+        feature: testCases.feature,
+      }),
     );
   }
+  if (file) {
+    // The reporter stores paths from the CI working directory, which may sit above the Playwright config the
+    // caller's path starts from: `e2e/tests/cart.spec.ts` answers for `tests/cart.spec.ts`.
+    const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
+    conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
+  }
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, maxAgeDays));
   if (statuses && statuses.length > 0) {
     conditions.push(inArray(category, statuses));
   }
@@ -684,14 +892,24 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   const countRows: any[] = await db.select({ total: count() }).from(testCases).where(where);
   const total = Number(countRows[0]?.total ?? 0);
 
-  const sortExpressions: Record<TestCasesSort, ReturnType<typeof sql>> = {
-    lastRun: sql`MAX(${testRunsCases.createdAt})`,
-    title: sql`lower(${testCases.title})`,
-    totalRuns: sql`COUNT(${testRunsCases.id})`,
-    passRate,
-    avgDuration: sql`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-    status: category,
+  // Where the test sits in its file, as its latest execution reported it.
+  const line = latestExecutionColumn(testRunsCases.line);
+  const column = latestExecutionColumn(testRunsCases.column);
+
+  // Each sort is a list of keys; `file` is the order the tests are declared in,
+  // file by file, which is the order Playwright lists and runs them.
+  const sortExpressions: Record<TestCasesSort, SQL[]> = {
+    file: [sql`lower(${testCases.filePath})`, line, column, sql`lower(${testCases.title})`],
+    lastRun: [sql`MAX(${testRunsCases.createdAt})`],
+    title: [sql`lower(${testCases.title})`],
+    totalRuns: [sql`COUNT(${testRunsCases.id})`],
+    passRate: [passRate],
+    avgDuration: [
+      sql`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
+    ],
+    status: [category],
   };
+  const direction = sql.raw(dir === 'asc' ? 'ASC' : 'DESC');
 
   const rows: any[] = await db
     .select({
@@ -706,25 +924,38 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       feature: testCases.feature,
       link: testCases.link,
       status: category,
-      totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
+      totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
       passedRuns: passed,
       failedRuns: failed,
-      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`,
-      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`,
-      flakyRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`,
+      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
+      fixmeRuns:
+        sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`.mapWith(
+          Number,
+        ),
+      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`.mapWith(
+        Number,
+      ),
+      flakyRuns:
+        sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
+          Number,
+        ),
       recentFlakyRuns: recentFlaky,
       passRate,
       avgDuration: sql<
         number | null
-      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-      lastRun: sql<number | null>`MAX(${testRunsCases.createdAt})`,
+      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`.mapWith(
+        Number,
+      ),
+      lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
+      line,
+      column,
     })
     .from(testCases)
-    .leftJoin(testRunsCases, eq(testCases.id, testRunsCases.testCaseId))
+    .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), notLabExecution(testRunsCases.testRunId)))
     .where(where)
     .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title)
-    .orderBy(sql`${sortExpressions[sort]} ${sql.raw(dir === 'asc' ? 'ASC' : 'DESC')} NULLS LAST`, asc(testCases.id))
+    .orderBy(...sortExpressions[sort].map((key) => sql`${key} ${direction} NULLS LAST`), asc(testCases.id))
     .limit(limit)
     .offset(offset);
 
@@ -737,8 +968,47 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
 }
 
 /**
+ * Every value the catalog's search qualifiers can take in a project — spec
+ * files, describe blocks, tags, locks, owners, priorities and features — with
+ * how many test cases carry each, for the search box's completion. With
+ * `maxAgeDays` it covers the cases the catalog shows for that window.
+ */
+export async function getProjectTestCaseFacets(
+  db: DrizzleDB,
+  projectId: number,
+  options: { maxAgeDays?: number } = {},
+): Promise<{ values: TestSearchValues }> {
+  const maxAgeDays = options.maxAgeDays ?? 0;
+  const conditions = [eq(testCases.projectId, projectId)];
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, maxAgeDays));
+  const rows: any[] = await db
+    .select({
+      filePath: testCases.filePath,
+      suitePath: testCases.suitePath,
+      tags: testCases.tags,
+      locks: testCases.locks,
+      owner: testCases.owner,
+      priority: testCases.priority,
+      feature: testCases.feature,
+    })
+    .from(testCases)
+    .where(and(...conditions));
+  const subjects = rows.map((row) => ({
+    title: '',
+    filePath: row.filePath as string,
+    suitePath: splitSuitePath(row.suitePath),
+    tags: (row.tags as string[] | null) ?? [],
+    locks: (row.locks as string[] | null) ?? [],
+    owner: row.owner as string | null,
+    priority: row.priority as string | null,
+    feature: row.feature as string | null,
+  }));
+  return { values: collectTestSearchValues(subjects, CATALOG_SEARCH_FIELDS) };
+}
+
+/**
  * Group a project's recent test executions by spec-file prefix and compute
- * pass rate, flaky rate, failure count, test count, and average duration over
+ * pass rate, flaky rate, failure count, execution count, and average duration over
  * the last `days` days. Shared by the REST spec-health endpoint and the MCP
  * `get_spec_health` tool.
  */
@@ -749,14 +1019,15 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const projRows: any[] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
   if (projRows.length === 0) throw new Error('Project not found');
 
+  // Lab runs (probes, flake experiments) inject faults and conditions, so their
+  // executions never count toward spec health.
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
-
   const runIds: number[] = recentRuns.map((r: any) => r.id);
   const rows: any[] = await db
     .select({
@@ -900,7 +1171,7 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1224,7 +1495,8 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
 
 // ─── getProjectFlakyTests ────────────────────────────────────────
 
-const TERMINAL_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'];
+/** Run statuses of a finished run; the flaky leaderboard and the flake profile read only these runs. */
+export const TERMINAL_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'];
 
 /**
  * Resolve the `test_cases.id`s in a project matching a tag/owner/priority
@@ -1264,6 +1536,25 @@ export async function getProjectFlakyTests(
   filter?: FlakyTestsFilter,
   branch?: string | null,
 ) {
+  return (await getProjectFlakyTestsWithVerified(db, projectId, runsLimit, environment, filter, branch)).items;
+}
+
+/**
+ * The flaky leaderboard, and apart from it the tests a verified fix took off
+ * it. A test whose Flake Lab `verify` experiment held, and that has not
+ * retry-passed in a run started since (`getHoldingVerifiedFixes`), leaves the
+ * ranking: every reader of `getProjectFlakyTests` (the MCP tools, quarantine
+ * candidates, PR feedback, the analytics leaderboard) sees it gone. The
+ * Failures tab lists it under `verifiedFixed`.
+ */
+export async function getProjectFlakyTestsWithVerified(
+  db: DrizzleDB,
+  projectId: number,
+  runsLimit: number,
+  environment?: string | null,
+  filter?: FlakyTestsFilter,
+  branch?: string | null,
+) {
   const projectResults: any[] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
     .from(projects)
@@ -1277,33 +1568,29 @@ export async function getProjectFlakyTests(
   // that branch. Otherwise, when the project's default branch is known, the
   // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
   // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently.
-  const runsConditions = [eq(testRuns.projectId, projectId)];
+  // project's health signal. Environment scopes independently. Only runs the
+  // `flakiness` use reads count: lab runs inject faults and conditions,
+  // bisect and reproduction runs replay an older commit, and an environment
+  // incident fails every test at once.
+  const runsConditions = [
+    eq(testRuns.projectId, projectId),
+    inArray(testRuns.status, TERMINAL_STATUSES),
+    eligibleRunSql('flakiness'),
+  ];
   if (environment) runsConditions.push(eq(testRuns.environment, environment));
   if (branch) {
     runsConditions.push(eq(testRuns.branch, branch));
   } else if (project.defaultBranch) {
     runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
   }
-  const recentRuns: any[] = await db
+  const filteredRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)
     .where(and(...runsConditions))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
-  if (recentRuns.length === 0) return [];
-
-  const runIds: number[] = recentRuns.map((r: any) => r.id);
-
-  // Re-fetch with status filter
-  const runsWithStatus: any[] = await db
-    .select({ id: testRuns.id, startTime: testRuns.startTime, status: testRuns.status })
-    .from(testRuns)
-    .where(inArray(testRuns.id, runIds));
-  const filteredRuns: any[] = runsWithStatus.filter((r: any) => TERMINAL_STATUSES.includes(r.status));
-
-  if (filteredRuns.length === 0) return [];
+  if (filteredRuns.length === 0) return { items: [], verifiedFixed: [] };
   const filteredRunIds: number[] = filteredRuns.map((r: any) => r.id);
   const runStartTimeById = new Map(filteredRuns.map((r: any) => [r.id, r.startTime]));
 
@@ -1355,7 +1642,7 @@ export async function getProjectFlakyTests(
         const sorted = group.rows.slice().sort((a: any, b: any) => (a.retries ?? 0) - (b.retries ?? 0));
         const maxRetryRow = sorted[sorted.length - 1];
         group.finalStatus = maxRetryRow?.status ?? 'unknown';
-        const hasFailed = group.rows.some((r: any) => FAILED_STATUS_KEYS.includes(r.status));
+        const hasFailed = group.rows.some((r: any) => isFailedStatus(r.status));
         const hasPassed = group.rows.some((r: any) => r.status === 'passed');
         group.retryPass = hasFailed && hasPassed;
       }
@@ -1400,12 +1687,12 @@ export async function getProjectFlakyTests(
       let runRetryPass = false;
 
       for (const [, group] of byBrowser) {
-        if (group.finalStatus === 'failed' || group.finalStatus === 'timedOut') runFinalFailed = true;
+        if (isFailedStatus(group.finalStatus)) runFinalFailed = true;
         if (group.retryPass) runRetryPass = true;
 
         for (const row of group.rows) {
           if (row.id > latestRunsCaseId) latestRunsCaseId = row.id;
-          if ((row.status === 'failed' || row.status === 'timedOut') && row.duration != null) {
+          if (isFailedStatus(row.status) && row.duration != null) {
             failedDurations.push(row.duration);
           }
         }
@@ -1494,13 +1781,21 @@ export async function getProjectFlakyTests(
     });
   }
 
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return { items: [], verifiedFixed: [] };
 
-  candidates.sort((a, b) => b.impact - a.impact || b.score - a.score || b.retryPassRuns - a.retryPassRuns);
-  const top = candidates.slice(0, 50);
+  // A verified fix that still holds takes the test off the ranking.
+  const verified = await getHoldingVerifiedFixes(
+    db,
+    candidates.map((c) => c.testCaseId),
+  );
+  const ranked = candidates.filter((c) => !verified.has(c.testCaseId));
+  const verifiedCandidates = candidates.filter((c) => verified.has(c.testCaseId));
+
+  ranked.sort((a, b) => b.impact - a.impact || b.score - a.score || b.retryPassRuns - a.retryPassRuns);
+  const top = ranked.slice(0, 50);
 
   // Step 6: Join titles/filePaths + rootCause
-  const testCaseIds: number[] = top.map((c) => c.testCaseId);
+  const testCaseIds: number[] = [...top, ...verifiedCandidates].map((c) => c.testCaseId);
   const testCaseRows: any[] = await db
     .select({
       id: testCases.id,
@@ -1515,7 +1810,7 @@ export async function getProjectFlakyTests(
     .where(inArray(testCases.id, testCaseIds));
   const testCaseById = new Map(testCaseRows.map((t: any) => [t.id, t]));
 
-  return top.map((c) => {
+  const items = top.map((c) => {
     const tc = testCaseById.get(c.testCaseId);
     return {
       testCaseId: c.testCaseId,
@@ -1538,6 +1833,20 @@ export async function getProjectFlakyTests(
       avgFailedDurationMs: c.avgFailedDurationMs,
     };
   });
+  const verifiedFixed = verifiedCandidates
+    .sort((a, b) => b.impact - a.impact)
+    .map((c) => {
+      const tc = testCaseById.get(c.testCaseId);
+      return {
+        testCaseId: c.testCaseId,
+        title: tc?.title ?? '',
+        filePath: tc?.filePath ?? '',
+        retryPassRuns: c.retryPassRuns,
+        lastFlakeAt: c.lastFlakeAt,
+        verifiedFix: verified.get(c.testCaseId)!,
+      };
+    });
+  return { items, verifiedFixed };
 }
 
 // ─── getProjectsOverview ─────────────────────────────────────────────────────
@@ -1581,7 +1890,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
       totalFullRuns: count(),
     })
     .from(testRuns)
-    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1)))
+    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata)))
     .groupBy(testRuns.projectId);
 
   const totalFullRunsByProjectId = new Map<number, number>();
@@ -1610,7 +1919,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
           ),
         })
         .from(testRuns)
-        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1))),
+        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata))),
     );
 
     recentFullRuns = await db

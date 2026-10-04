@@ -9,10 +9,13 @@
 import { and, eq, ne, notInArray, sql, inArray } from 'drizzle-orm';
 import { locatorSnapshots, testCases, testRuns, testRunsCases, type LocatorSnapshotRow } from '../database/schema';
 import { extractLeafSelector } from '#shared/error-fingerprint';
+import { canonicalLocator } from '#shared/locator-chain';
+import { loadRunLocatorBreaks, type RunLocatorBreak } from '#shared/handlers/locator-breaks';
 import { classifyLocatorResolution } from '#shared/locator-resolution';
 import {
   locatorSignatureFromExpression,
   locatorExpressionMethod,
+  parseLocatorExpression,
   locatorSignature,
   recommendLocatorFix,
   locatorIdentityEquals,
@@ -25,7 +28,7 @@ import {
   parseAriaCandidates,
   type ElementFingerprint,
 } from '#shared/locator-fingerprint';
-import { parsePlaywrightError } from '#shared/error-parse';
+import { extractLocatorChain, parsePlaywrightError } from '#shared/error-parse';
 import { ariaTextPreferJson } from '#shared/aria-json';
 import { buildHealEdit } from '#shared/heal-edit';
 import { inlineCasePayloads, resolveCasePayloadContents } from './case-payloads';
@@ -36,152 +39,12 @@ import type {
   ElementAttributes,
 } from '#shared/locator-healing.types';
 import type { DrizzleDB } from '#shared/handlers/db';
+import type { LocatorHealDetails } from '#shared/handback-outcomes';
+import { listOutcomes, type OutcomeRecord } from './outcomes';
 
 // The payload shape lives in shared/ so the API handler, MCP tools, AI context
 // and the dashboard panel all agree on it; re-exported for existing importers.
 export type { LocatorHealingResult, LocatorHealingSource } from '#shared/locator-healing.types';
-
-/**
- * Parse a Playwright locator expression into method + args.
- *
- * Examples:
- *   getByTestId('submit-btn') → { method: 'getByTestId', args: { testId: 'submit-btn' } }
- *   getByRole('button', { name: 'Submit' }) → { method: 'getByRole', args: { role: 'button', name: 'Submit' } }
- *   locator('.my-class') → { method: 'locator', args: { selector: '.my-class' } }
- */
-function parseLocatorExpression(expr: string): {
-  method: string;
-  args: Record<string, unknown>;
-} | null {
-  const methodMatch = expr.match(/^(\w+)\(/);
-  if (!methodMatch) return null;
-  const method = methodMatch[1]!;
-
-  const inner = expr.slice(method.length + 1, -1).trim();
-  if (!inner) return { method, args: {} };
-
-  const args: unknown[] = [];
-  let i = 0;
-
-  while (i < inner.length) {
-    const ch = inner[i];
-    if (ch === ',' || ch === ' ') {
-      i++;
-      continue;
-    }
-
-    if (ch === "'" || ch === '"') {
-      const end = findMatchingQuote(inner, i);
-      args.push(inner.slice(i + 1, end));
-      i = end + 1;
-      continue;
-    }
-
-    if (ch === '{') {
-      const end = findMatchingBrace(inner, i);
-      args.push(parseOptionsObject(inner.slice(i, end + 1)));
-      i = end + 1;
-      continue;
-    }
-
-    // Fallback: skip unknown token
-    i++;
-  }
-
-  return normalizeParsedArgs(method, args);
-}
-
-function findMatchingQuote(s: string, start: number): number {
-  const quote = s[start];
-  for (let i = start + 1; i < s.length; i++) {
-    if (s[i] === '\\') {
-      i++;
-      continue;
-    }
-    if (s[i] === quote) return i;
-  }
-  return s.length - 1;
-}
-
-/**
- * Parse a Playwright option object as printed in error text, e.g.
- * `{ name: 'Submit', exact: true }`. This is NOT JSON — keys are unquoted and
- * strings use single quotes — so `JSON.parse` would throw. Values are read
- * loosely (string / boolean / number / regex) for display only; matching uses
- * the locator signature, not these parsed args.
- */
-function parseOptionsObject(src: string): Record<string, unknown> {
-  const obj: Record<string, unknown> = {};
-  const re = /(\w+)\s*:\s*('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|true|false|-?\d+(?:\.\d+)?|\/(?:\\.|[^/])*\/[a-z]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    const key = m[1]!;
-    const raw = m[2]!;
-    if (raw === 'true') obj[key] = true;
-    else if (raw === 'false') obj[key] = false;
-    else if (/^-?\d/.test(raw)) obj[key] = Number(raw);
-    else if (raw.startsWith('/'))
-      obj[key] = raw; // regex — keep as text for display
-    else obj[key] = raw.slice(1, -1).replace(/\\(.)/g, '$1'); // unquote + unescape
-  }
-  return obj;
-}
-
-function findMatchingBrace(s: string, start: number): number {
-  let depth = 0;
-  for (let i = start; i < s.length; i++) {
-    if (s[i] === '{') depth++;
-    else if (s[i] === '}') {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return s.length - 1;
-}
-
-function normalizeParsedArgs(method: string, args: unknown[]): { method: string; args: Record<string, unknown> } {
-  const obj: Record<string, unknown> = {};
-
-  switch (method) {
-    case 'getByTestId':
-      obj.testId = args[0];
-      break;
-    case 'getByRole': {
-      const role = args[0] as string | undefined;
-      if (role) obj.role = role;
-      const opts = (args[1] as Record<string, unknown>) ?? {};
-      for (const [k, v] of Object.entries(opts)) {
-        if (k !== 'exact') obj[k] = v;
-      }
-      break;
-    }
-    case 'getByText':
-      obj.text = args[0];
-      break;
-    case 'getByLabel':
-      obj.label = args[0];
-      break;
-    case 'getByPlaceholder':
-      obj.placeholder = args[0];
-      break;
-    case 'getByAltText':
-      obj.text = args[0];
-      break;
-    case 'getByTitle':
-      obj.title = args[0];
-      break;
-    case 'locator':
-      obj.selector = args[0];
-      break;
-    case 'page.locator':
-      obj.selector = args[0];
-      break;
-    default:
-      obj.args = args;
-  }
-
-  return { method, args: obj };
-}
 
 /**
  * Extract the call-site location (`file:line:col`) from a Playwright error's
@@ -241,9 +104,14 @@ function buildHealingResult(
   source: LocatorHealingResult['source'],
   fromElementMatch: RankedLocator[] | null = null,
   capturedAt: Date | null = null,
-  opts: { recommendFrom?: RankedLocator[]; priorNameMayBeStale?: boolean } = {},
+  opts: {
+    recommendFrom?: RankedLocator[];
+    priorNameMayBeStale?: boolean;
+    fromDiffRename?: RankedLocator[];
+    diffRename?: LocatorHealingResult['diffRename'];
+  } = {},
 ): LocatorHealingResult {
-  const alternatives = fromElementMatch ?? fromPriorSuccess ?? fromAriaSnapshot ?? [];
+  const alternatives = opts.fromDiffRename ?? fromElementMatch ?? fromPriorSuccess ?? fromAriaSnapshot ?? [];
   // The recommendation may be picked from a filtered pool (stale name-derived
   // entries excluded) while the full list stays visible. An empty pool means
   // nothing trustworthy remains — recommendation: null, never a stale pick.
@@ -265,7 +133,64 @@ function buildHealingResult(
     recommendation,
     capturedAt: capturedAt ? capturedAt.toISOString() : null,
     ...(opts.priorNameMayBeStale ? { priorNameMayBeStale: true } : {}),
+    ...(opts.fromDiffRename ? { fromDiffRename: opts.fromDiffRename, diffRename: opts.diffRename ?? null } : {}),
   };
+}
+
+/**
+ * Score of a `diff-rename` replacement: the change under test renamed the
+ * string, so the rewritten chain is what the author meant. High enough for an
+ * auto-heal pull request.
+ */
+const DIFF_RENAME_SCORE = 95;
+
+/**
+ * The run's stored `likely` break whose chain is the failing chain and whose
+ * call sites include the failing one (any, when the error names no call site),
+ * with a rewrite to offer. A `possible` break, a bare string that happened to
+ * match, is not evidence enough for a replacement auto-heal may apply.
+ */
+function findDiffRename(
+  error: string,
+  location: string | null,
+  breaks: RunLocatorBreak[] | null | undefined,
+): RunLocatorBreak | null {
+  if (!breaks?.length) return null;
+  const raw = extractLocatorChain(error);
+  const chain = raw ? canonicalLocator(raw) : null;
+  if (!chain) return null;
+  return (
+    breaks.find(
+      (b) =>
+        b.confidence === 'likely' &&
+        b.rewrite &&
+        b.locator === chain &&
+        (!location || b.callSites.some((site) => sameFileLine(site, location))),
+    ) ?? null
+  );
+}
+
+/** A `diff-rename` result: the stored rewrite as the one alternative, with the diff as its evidence. */
+function diffRenameResult(
+  failingLocator: LocatorHealingResult['failingLocator'],
+  b: RunLocatorBreak,
+): LocatorHealingResult {
+  const parsed = parseLocatorExpression(b.rewrite!);
+  const rewritten: RankedLocator = {
+    locator: b.rewrite!,
+    method: parsed?.method ?? failingLocator?.method ?? 'locator',
+    args: parsed?.args ?? {},
+    score: DIFF_RENAME_SCORE,
+  };
+  return buildHealingResult(failingLocator, null, null, 'diff-rename', null, null, {
+    fromDiffRename: [rewritten],
+    diffRename: {
+      before: b.anchor.before,
+      after: b.anchor.after ?? '',
+      file: b.anchor.file,
+      line: b.anchor.line,
+    },
+  });
 }
 
 /**
@@ -446,19 +371,23 @@ export async function getLocatorHealing(db: DrizzleDB, testRunsCaseId: number): 
     ? await db.select().from(locatorSnapshots).where(eq(locatorSnapshots.testCaseId, testCaseId))
     : [];
 
-  return resolveHealingForCase(
+  const breaks = await loadRunLocatorBreaks(db, [row.testRunId]);
+
+  const result = await resolveHealingForCase(
     {
       error: row.error,
       ariaSnapshot: row.ariaSnapshot,
       ariaSnapshotJson: row.ariaSnapshotJson,
       playwrightVersion: row.playwrightVersion,
       testSource: row.testSource,
-      failingRunId: row.testRunId,
       filePath: row.filePath,
+      locatorBreaks: breaks.get(row.testRunId) ?? null,
     },
     snaps,
     testCaseId ? (sig, method) => findCrossTestSnapshot(db, testCaseId, sig, method) : null,
   );
+  if (testCaseId) await stampStoredHealedRuns(db, [{ result, testCaseId, failingRunId: row.testRunId }]);
+  return result;
 }
 
 /** Per-case healing input — the failing execution's stored fields. */
@@ -470,14 +399,14 @@ export interface HealingCaseInput {
   /** The run's stored Playwright version — gates the `.visible()` narrowing suggestion. */
   playwrightVersion?: string | null;
   testSource?: string | null;
-  /** The failing execution's run id — enables healed-run detection. */
-  failingRunId?: number | null;
   /**
    * The failing test's own source file, used as the edit's file path when the
    * error carries no stack frame (Piwi-submitted errors often don't). The call
    * site's line still comes from the source snippet.
    */
   filePath?: string | null;
+  /** The locator breaks the failing run's diff predicts, for the `diff-rename` rung. */
+  locatorBreaks?: RunLocatorBreak[] | null;
 }
 
 /** An empty result for a failure healing cannot address, with the one-line reason. */
@@ -503,14 +432,15 @@ function notApplicableResult(
  * error, or an error naming no locator returns `applicable: false` with a
  * reason and no alternatives — the ARIA fallback included.
  *
+ * 0. Diff rename — the run's own diff renamed the string the failing chain
+ *    finds its element by, at this call site: the rewritten chain.
  * 1. Call-site location — exact `file:line:col`, then `file:line` (tolerates a
  *    column drift). Disambiguates repeated identical locators by where they run.
  * 2. Locator signature — method + ordered string literals; survives line shifts.
  * 2.5. Cross-test — the same signature captured by another test in the project.
  * 3. ARIA fallback — generated from the failing run's ARIA snapshot.
  *
- * The failing call site, source line, and any healed-run signal are stamped onto
- * whichever rung wins.
+ * The failing call site and source line are stamped onto whichever rung wins.
  */
 /** Role + accessible name the failing locator targets, parsed from its source form. */
 function failingRoleName(selector: string | null): { role: string | null; name: string | null } {
@@ -580,6 +510,8 @@ export async function resolveHealingForCase(
   const failingSig = selector ? await locatorSignatureFromExpression(selector) : null;
   const method = selector ? locatorExpressionMethod(selector) : null;
 
+  const renamed = findDiffRename(error, location, input.locatorBreaks);
+
   const finish = async (r: LocatorHealingResult): Promise<LocatorHealingResult> => {
     r.applicable = true;
     r.reason = null;
@@ -593,10 +525,13 @@ export async function resolveHealingForCase(
       recommendedLocator: r.recommendation?.recommended?.locator ?? null,
       testSource: input.testSource ?? null,
       fallbackFilePath: input.filePath ?? null,
+      literalReplacements: r.source === 'diff-rename' ? (renamed?.replacements ?? null) : null,
     });
-    await stampHealedRun(r, snaps, failingSig, input.failingRunId ?? null);
     return r;
   };
+
+  // Ladder 0: the run's own diff renamed the string this chain finds its element by.
+  if (renamed) return finish(diffRenameResult(failingLocator, renamed));
 
   // Ladder 1: call-site location.
   if (location && snaps.length > 0) {
@@ -624,28 +559,48 @@ export async function resolveHealingForCase(
 }
 
 /**
- * Close the loop: when the recommended fix now passes at this call site — one of
- * the test's snapshots carries the recommendation's locator signature, captured
- * in a run other than the failing one — stamp that run id so the panel can
- * confirm "healed in run #N". Uses the already-loaded snapshots (no extra
- * query). Skipped when the recommendation is the original locator (a flaky pass
- * — nothing was fixed) or a chained anchor whose re-captured leaf signature we
- * can't reconstruct from the chain expression.
+ * The run in which a heal recorded `applied` for the failure seen in
+ * `failingRunId` at `location`, if one did: the stored outcome, never a later
+ * recomputation.
  */
-async function stampHealedRun(
-  result: LocatorHealingResult,
-  snaps: LocatorSnapshotRow[],
-  failingSig: string | null,
+export function healedInRunFrom(
+  applied: OutcomeRecord[],
+  testCaseId: number,
+  location: string | null,
   failingRunId: number | null,
+): number | null {
+  if (!location || failingRunId == null) return null;
+  let best: number | null = null;
+  for (const row of applied) {
+    const details = row.details as LocatorHealDetails | null;
+    if (row.subjectId !== testCaseId || row.outcome !== 'applied' || !details?.appliedRunId) continue;
+    if (details.appliedRunId <= failingRunId || !sameFileLine(details.location, location)) continue;
+    if (best == null || details.appliedRunId < best) best = details.appliedRunId;
+  }
+  return best;
+}
+
+/**
+ * Stamp `healedInRunId` on healing results from the stored `locator-heal`
+ * outcomes: the first run after the failing one whose code at the failing call
+ * site used the recommended locator.
+ */
+async function stampStoredHealedRuns(
+  db: DrizzleDB,
+  cases: Array<{ result: LocatorHealingResult; testCaseId: number; failingRunId: number }>,
 ): Promise<void> {
-  const rec = result.recommendation?.recommended;
-  if (!rec) return;
-  const recSig = await locatorSignatureFromExpression(rec.locator);
-  if (!recSig || (failingSig && recSig === failingSig)) return;
-  const healed = snaps.find(
-    (s) => s.usedArgsFp === recSig && s.lastSeenRunId != null && s.lastSeenRunId !== failingRunId,
-  );
-  if (healed) result.healedInRunId = healed.lastSeenRunId;
+  const candidates = cases.filter((c) => c.result.applicable && c.result.location);
+  if (candidates.length === 0) return;
+  const applied = await listOutcomes(db, {
+    kind: 'locator-heal',
+    subjectType: 'test-case',
+    subjectIds: [...new Set(candidates.map((c) => c.testCaseId))],
+    outcomes: ['applied'],
+  });
+  for (const c of candidates) {
+    const healed = healedInRunFrom(applied, c.testCaseId, c.result.location ?? null, c.failingRunId);
+    if (healed != null) c.result.healedInRunId = healed;
+  }
 }
 
 /**
@@ -739,6 +694,8 @@ export async function getLocatorHealingBatch(
     else snapsByTc.set(s.testCaseId, [s]);
   }
 
+  const breaksByRun = await loadRunLocatorBreaks(db, [...new Set(caseRows.map((r) => r.testRunId))]);
+
   // 3. Run the shared ladder for each case (cross-test still queried per case,
   // but only when the cheaper location/signature rungs miss).
   for (const row of caseRows) {
@@ -752,14 +709,20 @@ export async function getLocatorHealingBatch(
           ariaSnapshotJson: row.ariaSnapshotJson,
           playwrightVersion: row.playwrightVersion,
           testSource: row.testSource,
-          failingRunId: row.testRunId,
           filePath: row.filePath,
+          locatorBreaks: breaksByRun.get(row.testRunId) ?? null,
         },
         snaps,
         row.testCaseId ? (sig, method) => findCrossTestSnapshot(db, row.testCaseId, sig, method) : null,
       ),
     );
   }
+  await stampStoredHealedRuns(
+    db,
+    caseRows
+      .filter((row) => row.testCaseId)
+      .map((row) => ({ result: results.get(row.id)!, testCaseId: row.testCaseId, failingRunId: row.testRunId })),
+  );
 
   return results;
 }
@@ -770,7 +733,7 @@ export async function getLocatorHealingBatch(
  * capture location (`tests/x.spec.ts`) still matches an absolute path from an
  * error stack frame (`/repo/tests/x.spec.ts`).
  */
-function sameFileLine(a: string | null, b: string | null): boolean {
+export function sameFileLine(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
   const [fileA, lineA] = splitFileLine(a);
   const [fileB, lineB] = splitFileLine(b);
@@ -954,7 +917,7 @@ export async function saveLocatorPick(
       : null;
   if (!location && !sig) return { status: 'not-persisted', reason: 'no-identity' };
 
-  const pick: RankedLocator = { ...input.pickedLocator, pickedByUser: true };
+  const pick: RankedLocator = { ...input.pickedLocator, pickedByUser: true, pickedAt: new Date().toISOString() };
   const mergePick = (existing: RankedLocator[] | null): string =>
     JSON.stringify([pick, ...(existing ?? []).filter((a) => a.locator !== pick.locator)].slice(0, 10));
 

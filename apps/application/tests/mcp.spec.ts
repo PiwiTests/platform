@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
+import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 
 function rpc(method: string, params?: Record<string, unknown>, id = 1) {
   return { jsonrpc: '2.0', id, method, params: params ?? {} };
@@ -91,7 +92,7 @@ test.describe.serial('MCP server', () => {
   test('tools/list — returns all tools', async ({ request }) => {
     const body = await mcp(request, 'tools/list');
     const tools: { name: string }[] = body.result.tools;
-    expect(tools.length).toBe(46);
+    expect(tools.length).toBe(MCP_TOOL_DEFS.length);
     const names = tools.map((t) => t.name);
     expect(names).toContain('list_projects');
     expect(names).toContain('get_run');
@@ -109,6 +110,17 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('search');
     expect(names).toContain('explain_failure');
     expect(names).toContain('set_cluster_status');
+    expect(names).toContain('triage_cluster');
+    expect(names).toContain('triage_gap');
+    expect(names).toContain('decide_merge_suggestion');
+    expect(names).toContain('dismiss_quarantine_proposal');
+    expect(names).toContain('set_bug_report_status');
+    expect(names).toContain('rerun_cluster_in_ci');
+    expect(names).toContain('link_issue');
+    expect(names).toContain('set_cluster_bisect');
+    expect(names).toContain('record_diagnosis');
+    expect(names).toContain('report_fix_attempt');
+    expect(names).toContain('set_run_incident');
     expect(names).toContain('list_open_clusters');
     expect(names).toContain('get_fix_plan');
     expect(names).toContain('create_test_function');
@@ -128,6 +140,16 @@ test.describe.serial('MCP server', () => {
     expect(setup).toBeDefined();
     expect(setup!.description.length).toBeGreaterThan(20);
     expect(Array.isArray(setup!.arguments)).toBe(true);
+  });
+
+  test('prompts/get investigate_failure — serves the bundled workflow skill', async ({ request }) => {
+    const list = await mcp(request, 'prompts/list');
+    const names = (list.result.prompts as { name: string }[]).map((p) => p.name);
+    expect(names).toContain('investigate_failure');
+    const body = await mcp(request, 'prompts/get', { name: 'investigate_failure', arguments: { focus: 'cluster 1' } });
+    const text: string = body.result.messages[0].content.text;
+    expect(text).toContain('Work on: cluster 1');
+    expect(text).toContain('report_fix_attempt');
   });
 
   test('prompts/get setup_piwi — returns server-aware setup messages', async ({ request }) => {
@@ -288,7 +310,7 @@ test.describe.serial('MCP server', () => {
       (await mcp(request, 'tools/call', { name: 'get_test_case_context', arguments: { executionId: execId } })).result
         .content[0].text,
     );
-    // Previously execution scope produced an empty coverage stub with 0 sections.
+    // Execution scope carries evidence: context sections or the raw execution.
     const hasEvidence = (ctx.sections?.length ?? 0) > 0 || !!ctx.rawExecution;
     expect(hasEvidence).toBe(true);
   });
@@ -442,6 +464,116 @@ test.describe.serial('MCP server', () => {
     const ping = body.find((r: any) => r.id === 1);
     const list = body.find((r: any) => r.id === 2);
     expect(ping.result).toEqual({});
-    expect(list.result.tools.length).toBe(46);
+    expect(list.result.tools.length).toBe(MCP_TOOL_DEFS.length);
+  });
+
+  test('tools/list — ?modules=core narrows to the core module', async ({ request }) => {
+    const res = await request.post('/mcp?modules=core', { data: rpc('tools/list') });
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    const names: string[] = body.result.tools.map((t: { name: string }) => t.name);
+    const coreNames = new Set(MCP_TOOL_DEFS.filter((t) => t.module === 'core').map((t) => t.name));
+    // Every listed tool belongs to the core module …
+    for (const name of names) expect(coreNames.has(name), `${name} should be a core-module tool`).toBe(true);
+    // … and a known tool from each other module is gone.
+    expect(names).not.toContain('get_locator_healing'); // healing
+    expect(names).not.toContain('create_issue'); // workflow
+    expect(names).not.toContain('get_cluster_diagnosis'); // agents
+  });
+
+  /** Call a tool and parse its JSON text result; `isError` results come back as `{ error }`. */
+  async function callTool(request: any, name: string, args: Record<string, unknown> = {}) {
+    const body = await mcp(request, 'tools/call', { name, arguments: args });
+    const text: string = body.result.content[0].text;
+    return body.result.isError ? { error: text } : JSON.parse(text);
+  }
+
+  test('tools/call describe_piwi — overview quotes the docs and describes this instance', async ({ request }) => {
+    const overview = await callTool(request, 'describe_piwi');
+    expect(overview.tagline).toBe('Your Playwright results, kept and explained.');
+    expect(overview.thisInstance.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(overview.thisInstance.authentication).toBe('off');
+    // Auth is off, so the caller is a virtual admin and sees the capability states.
+    expect(overview.thisInstance.capabilities).toBeDefined();
+    // The jobs are quoted from the bundled "What Piwi does" page.
+    expect(overview.jobs.length).toBeGreaterThanOrEqual(3);
+    expect(overview.jobs[0]).toContain('Keep the history');
+    expect(Object.keys(overview.topics)).toEqual(
+      expect.arrayContaining(['ecosystem', 'choices', 'configuration', 'feedback', 'docs']),
+    );
+    expect(overview.ecosystem.map((p: { id: string }) => p.id)).toEqual(
+      expect.arrayContaining(['server', 'reporter', 'desktop', 'extension', 'mcp']),
+    );
+  });
+
+  test('tools/call describe_piwi — reads one docs section and searches the docs', async ({ request }) => {
+    const section = await callTool(request, 'describe_piwi', { page: 'guide/ci#sharding' });
+    expect(section.section).toBe('Sharding');
+    expect(section.url).toBe('https://piwitests.dev/guide/ci#sharding');
+    expect(section.markdown).toMatch(/^## Sharding/);
+
+    const page = await callTool(request, 'describe_piwi', { page: '/operate/deployment.md' });
+    expect(page.outline.length).toBeGreaterThan(3);
+    // The Docker quick start is a snippet include, served as the command itself.
+    expect(page.markdown).toContain('docker run');
+
+    const found = await callTool(request, 'describe_piwi', { query: 'retention days' });
+    expect(found.hits[0]).toMatchObject({ page: 'operate/storage', anchor: 'data-retention' });
+    expect(found.variables.map((v: { name: string }) => v.name)).toContain('PIWI_RETENTION_DAYS');
+
+    const missing = await callTool(request, 'describe_piwi', { page: 'guide/no-such-page' });
+    expect(missing.error).toContain('No docs page');
+
+    // A generated page is answered from its registry, under its own name.
+    const tools = await callTool(request, 'describe_piwi', { page: 'reference/mcp-tools' });
+    expect(tools.page).toBe('reference/mcp-tools');
+    expect(tools.note).toContain('MCP tool catalog');
+    expect(tools.modules.length).toBeGreaterThan(0);
+  });
+
+  test('tools/call describe_piwi — topics: choices, configuration, mcp, feedback, docs', async ({ request }) => {
+    const choices = await callTool(request, 'describe_piwi', { topic: 'choices' });
+    const database = choices.decisions.find((d: { id: string }) => d.id === 'database');
+    expect(database.current).toMatch(/SQLite|PostgreSQL/);
+    expect(database.page).toBe('operate/database');
+
+    const config = await callTool(request, 'describe_piwi', { topic: 'configuration', query: 'secret key' });
+    expect(config.variables.map((v: { name: string }) => v.name)).toContain('PIWI_SECRET_KEY');
+
+    const mcpTopic = await callTool(request, 'describe_piwi', { topic: 'mcp' });
+    const served = mcpTopic.modules.flatMap((m: { tools: string[] }) => m.tools).map((t: string) => t.split(' ')[0]);
+    expect(served).toEqual(expect.arrayContaining(MCP_TOOL_DEFS.map((t) => t.name)));
+    expect(mcpTopic.desktopOnly.tools).toContain('apply_locator_fix');
+
+    const feedback = await callTool(request, 'describe_piwi', { topic: 'feedback' });
+    expect(feedback.bug.url).toContain('issues/new');
+
+    const docs = await callTool(request, 'describe_piwi', { topic: 'docs' });
+    const pages = docs.groups.flatMap((g: { pages: { page: string }[] }) => g.pages.map((p) => p.page));
+    expect(pages).toEqual(expect.arrayContaining(['guide/getting-started', 'features/mcp', 'operate/authentication']));
+
+    const unknown = await callTool(request, 'describe_piwi', { topic: 'nope' });
+    expect(unknown.error).toContain('Unknown topic');
+  });
+
+  test('tools/call get_release_notes — current release, one version, a range and a search', async ({ request }) => {
+    const latest = await callTool(request, 'get_release_notes');
+    expect(latest.current.version).toBe(latest.runningVersion);
+    expect(latest.recent.length).toBeGreaterThan(1);
+
+    const one = await callTool(request, 'get_release_notes', { version: '0.33.0' });
+    expect(one.releases[0].highlights.length).toBeGreaterThan(0);
+    // Commit links are stripped: entries read as plain text.
+    expect(JSON.stringify(one.releases[0])).not.toContain('/commit/');
+
+    const range = await callTool(request, 'get_release_notes', { since: '0.30.0' });
+    expect(range.releases.every((r: { version: string }) => r.version !== '0.30.0')).toBe(true);
+    expect(range.count).toBe(range.releases.length);
+
+    const search = await callTool(request, 'get_release_notes', { query: 'share links' });
+    expect(search.matches.length).toBeGreaterThan(0);
+
+    const missing = await callTool(request, 'get_release_notes', { version: '99.0.0' });
+    expect(missing.error).toContain('No release 99.0.0');
   });
 });

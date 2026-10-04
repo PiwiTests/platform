@@ -84,6 +84,115 @@ describe('JiraClient write methods', () => {
     });
   });
 
+  test("a rejected create carries Jira's field errors and messages", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(
+        {
+          errorMessages: ['Issue type is a sub-task but parent issue key or id not specified.'],
+          errors: { customfield_10042: 'Team is required.', labels: "Field 'labels' cannot be set." },
+        },
+        { ok: false, status: 400 },
+      ),
+    );
+    const err = await client.createIssue({ projectKey: 'P', issueType: 'Bug', title: 't', body }).catch((e) => e);
+    expect(err).toMatchObject({ status: 400 });
+    expect(err.message).toBe(
+      'Jira request failed (400 Error): Issue type is a sub-task but parent issue key or id not specified.; ' +
+        "customfield_10042: Team is required.; labels: Field 'labels' cannot be set.",
+    );
+    expect(err.fieldErrors).toEqual({
+      customfield_10042: 'Team is required.',
+      labels: "Field 'labels' cannot be set.",
+    });
+  });
+
+  test('createIssue sends field values under its own fields, which always win', async () => {
+    fetchMock.mockResolvedValueOnce(response({ id: '1', key: 'P-1' }));
+    await client.createIssue({
+      projectKey: 'P',
+      issueType: '10001',
+      title: 'Real title',
+      body,
+      fields: { customfield_10050: { id: '10100' }, summary: 'Overridden?' },
+    });
+    const sent = JSON.parse(fetchMock.mock.calls[0]![1].body as string).fields;
+    expect(sent.customfield_10050).toEqual({ id: '10100' });
+    expect(sent.summary).toBe('Real title');
+  });
+
+  test('listCreateFields resolves an issue type name and pages through the create metadata', async () => {
+    fetchMock
+      .mockResolvedValueOnce(response({ issueTypes: [{ id: '10004', name: 'Bug' }] }))
+      .mockResolvedValueOnce(
+        response({
+          startAt: 0,
+          maxResults: 1,
+          total: 2,
+          fields: [
+            { fieldId: 'summary', name: 'Summary', required: true, schema: { type: 'string', system: 'summary' } },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          startAt: 1,
+          maxResults: 1,
+          total: 2,
+          fields: [{ fieldId: 'customfield_10001', name: 'Team', required: true, schema: { type: 'team' } }],
+        }),
+      );
+    const fields = await client.listCreateFields('PROJ', 'bug');
+    expect(fields.map((f) => [f.id, f.kind])).toEqual([
+      ['summary', 'string'],
+      ['customfield_10001', 'raw'],
+    ]);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls[1]).toBe(
+      'https://acme.atlassian.net/rest/api/3/issue/createmeta/PROJ/issuetypes/10004?startAt=0&maxResults=100',
+    );
+    expect(urls[2]).toContain('startAt=1');
+  });
+
+  test('listCreateFields refuses an issue type the project does not have', async () => {
+    fetchMock.mockResolvedValueOnce(response({ issueTypes: [{ id: '10004', name: 'Bug' }] }));
+    await expect(client.listCreateFields('PROJ', 'Epic')).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("a gateway rejection carries its message, such as a scoped token's missing scope", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response({ code: 401, message: 'Unauthorized; scope does not match' }, { ok: false, status: 401 }),
+    );
+    const scoped = new JiraClient({
+      baseUrl: 'https://acme.atlassian.net',
+      email: 'me@acme.io',
+      apiToken: 'scoped',
+      cloudId: 'cloud-1',
+    });
+    await expect(scoped.addComment('P-1', body)).rejects.toThrow(
+      'Jira request failed (401 Error): Unauthorized; scope does not match',
+    );
+  });
+
+  test('a non-JSON error body falls back to the status line', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: { get: () => null },
+      text: async () => '<html>upstream error</html>',
+    } as unknown as Response);
+    await expect(client.addComment('P-1', body)).rejects.toThrow(/^Jira request failed \(502 Bad Gateway\)$/);
+  });
+
+  test("a rejected attachment carries Jira's explanation", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response({ errorMessages: ['Attachments are disabled.'] }, { ok: false, status: 403 }),
+    );
+    await expect(
+      client.attach('P-1', { name: 'shot.png', bytes: new Uint8Array([1]), mime: 'image/png' }),
+    ).rejects.toThrow('Jira attachment failed (403 Error): Attachments are disabled.');
+  });
+
   test('no error message ever contains the credential', async () => {
     fetchMock.mockResolvedValueOnce(response({}, { ok: false, status: 500 }));
     const err = await client.createIssue({ projectKey: 'P', issueType: 'Bug', title: 't', body }).catch((e) => e);

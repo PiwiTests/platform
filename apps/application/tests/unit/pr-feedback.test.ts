@@ -1,11 +1,16 @@
 import { describe, test, expect } from 'vitest';
 import {
+  buildChangeCoverageStatus,
   buildCommitStatus,
+  buildGateStatus,
   buildPrComment,
+  isQuietRun,
   DEFAULT_PR_FEEDBACK,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
+  renderChangeCoverage,
   resolvePrFeedbackSettings,
+  type PrChangeCoverage,
   type PrFailureEntry,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
@@ -71,6 +76,22 @@ describe('resolvePrFeedbackSettings', () => {
 });
 
 describe('buildPrComment', () => {
+  test('tells the reader to remove test.fail() from the spec of a bug that looks fixed', () => {
+    const body = buildPrComment(
+      summary({
+        status: 'failed',
+        failedTests: 1,
+        looksFixed: [
+          { title: 'bug: coupon not applied', filePath: 'tests/bugs/coupon.spec.ts', executionId: 7, bugId: 37 },
+        ],
+      }),
+    );
+    expect(body).toContain('#### 🐞 Looks fixed (1)');
+    expect(body).toContain(
+      '[the spec](https://piwi.example.com/test-run-cases/7) of bug #37 now passes: remove `test.fail()` in `tests/bugs/coupon.spec.ts`',
+    );
+  });
+
   test('starts with the marker so the comment can be found and edited later', () => {
     expect(buildPrComment(summary()).startsWith(PR_COMMENT_MARKER)).toBe(true);
   });
@@ -248,6 +269,24 @@ describe('buildPrComment — fixed clusters', () => {
     expect(body).toContain('matches the diagnosed change');
   });
 
+  test('names the auto-heal pull request that landed the fix', () => {
+    const body = buildPrComment(
+      summary({
+        fixedClusters: [
+          {
+            id: 9,
+            label: 'Locator',
+            testCount: 1,
+            verification: 'stopped-failing',
+            timeToResolutionMs: null,
+            healPr: { number: 12, url: 'https://github.com/acme/app/pull/12' },
+          },
+        ],
+      }),
+    );
+    expect(body).toContain('landed by auto-heal [#12](https://github.com/acme/app/pull/12)');
+  });
+
   test('says nothing when no cluster was closed', () => {
     expect(buildPrComment(summary())).not.toContain('Fixed by this change');
     expect(buildPrComment(summary({ fixedClusters: [] }))).not.toContain('Fixed by this change');
@@ -283,8 +322,85 @@ describe('buildCommitStatus', () => {
     expect(status.description).toBe('118/120 passed, 1 new, 3 flaky');
   });
 
+  test('stays green when only quarantined tests failed, and says how many', () => {
+    const status = buildCommitStatus(
+      summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2 }),
+      'piwi/tests',
+    );
+    expect(status.state).toBe('success');
+    expect(status.description).toBe('118/120 passed, 2 quarantined');
+  });
+
+  test('is a failure when a test outside quarantine failed too', () => {
+    const status = buildCommitStatus(
+      summary({ failedTests: 3, passedTests: 117, quarantinedFailures: 2 }),
+      'piwi/tests',
+    );
+    expect(status.state).toBe('failure');
+    expect(status.description).toBe('117/120 passed, 2 quarantined');
+  });
+
+  test('the strict project setting turns quarantined failures red', () => {
+    const status = buildCommitStatus(
+      summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2, quarantineFailsStatus: true }),
+      'piwi/tests',
+    );
+    expect(status.state).toBe('failure');
+    expect(status.description).toBe('118/120 passed, 2 quarantined');
+  });
+
   test('caps the description at what GitHub accepts', () => {
     const status = buildCommitStatus(summary({ projectName: 'x'.repeat(500) }), 'piwi/tests');
+    expect(status.description.length).toBeLessThanOrEqual(140);
+  });
+});
+
+describe('isQuietRun', () => {
+  const onlyOnFailure = { onlyOnFailure: true };
+
+  test('keeps the comment off a run whose only failures are quarantined', () => {
+    expect(isQuietRun(onlyOnFailure, summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2 }))).toBe(true);
+  });
+
+  test('posts it when the project counts quarantined failures', () => {
+    const run = summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2, quarantineFailsStatus: true });
+    expect(isQuietRun(onlyOnFailure, run)).toBe(false);
+  });
+
+  test('posts it when a test outside quarantine failed too', () => {
+    expect(isQuietRun(onlyOnFailure, summary({ failedTests: 3, passedTests: 117, quarantinedFailures: 2 }))).toBe(
+      false,
+    );
+  });
+
+  test('posts every run when only-on-failure is off', () => {
+    expect(isQuietRun({ onlyOnFailure: false }, summary())).toBe(false);
+  });
+});
+
+describe('buildGateStatus', () => {
+  const url = 'https://piwi.example.com/test-runs/42';
+
+  test('is a success when the policy passed', () => {
+    expect(buildGateStatus({ verdict: 'passed', violations: [] }, url, 'piwi/tests/gate')).toEqual({
+      state: 'success',
+      description: 'Gate policy satisfied',
+      targetUrl: url,
+      context: 'piwi/tests/gate',
+    });
+  });
+
+  test('is a failure naming the first violation and how many there are', () => {
+    const status = buildGateStatus(
+      { verdict: 'failed', violations: [{ message: '2 failed (limit 0)' }, { message: '1 new cluster' }] },
+      url,
+      'piwi/tests/gate',
+    );
+    expect(status).toMatchObject({ state: 'failure', description: '2 violations: 2 failed (limit 0)' });
+  });
+
+  test('caps the description at what GitHub accepts', () => {
+    const status = buildGateStatus({ verdict: 'failed', violations: [{ message: 'x'.repeat(500) }] }, url, 'g');
     expect(status.description.length).toBeLessThanOrEqual(140);
   });
 });
@@ -315,5 +431,196 @@ describe('buildPrComment — failure headline', () => {
     expect(escaped).toContain('**Expected \\`a\\_b\\`, got \\*c\\* — toBe**');
     const plain = buildPrComment(summary({ failedTests: 1, newRegressions: [entry({ headline: null })] }));
     expect(plain).not.toContain('**Expected');
+  });
+});
+
+describe('change coverage section', () => {
+  function coverage(overrides: Partial<PrChangeCoverage> = {}): PrChangeCoverage {
+    return {
+      totalFiles: 7,
+      uncoveredFiles: 2,
+      reachedFiles: 5,
+      ticketCount: 1,
+      windowRuns: 30,
+      baseBranch: 'main',
+      tickets: [
+        {
+          ticket: 'PROJ-418',
+          files: [
+            {
+              filePath: 'server/api/orders/[id].patch.ts',
+              additions: 41,
+              deletions: 3,
+              reachedInRun: false,
+              reachedCountHistory: 0,
+              draftTitle: 'a scenario that exercises [id].patch.ts',
+            },
+            {
+              filePath: 'components/OrderRow.vue',
+              additions: 8,
+              deletions: 2,
+              reachedInRun: true,
+              reachedCountHistory: 4,
+            },
+          ],
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test('lists uncovered files per ticket with observed-reach wording', () => {
+    const section = renderChangeCoverage(coverage());
+    expect(section).toContain('🟣 Uncovered changes · 2 of 7 files · 1 ticket');
+    expect(section).toContain('Observed reach, not instrumented coverage');
+    expect(section).toContain('**PROJ-418**');
+    expect(section).toContain('`server/api/orders/[id].patch.ts` · changed (+41 −3) · 0 tests in 30 runs');
+    // A reached file is not listed as uncovered.
+    expect(section).not.toContain('OrderRow.vue');
+    expect(section).toContain('warn');
+  });
+
+  test('reports a clean diff without listing files', () => {
+    const section = renderChangeCoverage(coverage({ uncoveredFiles: 0, reachedFiles: 7, tickets: [] }));
+    expect(section).toContain('All 7 changed files have observed reach');
+  });
+
+  test('a backtick in a file path cannot break out of the code span', () => {
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 1,
+        uncoveredFiles: 1,
+        reachedFiles: 0,
+        ticketCount: 0,
+        tickets: [
+          {
+            ticket: null,
+            files: [
+              {
+                filePath: 'src/`rm -rf`/x.ts',
+                additions: 1,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 0,
+              },
+            ],
+          },
+        ],
+      }),
+    )!;
+    // The path is fenced by a two-backtick run and padded, so the inner single
+    // backticks render literally instead of closing the span and injecting markdown.
+    expect(section).toContain('`` src/`rm -rf`/x.ts ``');
+  });
+
+  test('notes when the diff file list was truncated', () => {
+    const section = renderChangeCoverage(coverage({ filesTruncated: true }))!;
+    expect(section).toContain('more files changed than are counted here');
+  });
+
+  test('caps the uncovered list across ticket groups and reports the remainder', () => {
+    const files = Array.from({ length: 40 }, (_, i) => ({
+      filePath: `src/file-${i}.ts`,
+      additions: 1,
+      deletions: 0,
+      reachedInRun: false,
+      reachedCountHistory: 0,
+    }));
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 40,
+        uncoveredFiles: 40,
+        reachedFiles: 0,
+        ticketCount: 1,
+        tickets: [{ ticket: 'PROJ-1', files }],
+      }),
+    )!;
+    const listed = (section.match(/ · changed \(\+/g) ?? []).length;
+    expect(listed).toBe(10);
+    expect(section).toContain('…and 30 more');
+  });
+
+  test('separates a file reached only in history from the uncovered list', () => {
+    const section = renderChangeCoverage(
+      coverage({
+        totalFiles: 2,
+        uncoveredFiles: 1,
+        reachedFiles: 1,
+        ticketCount: 1,
+        tickets: [
+          {
+            ticket: 'PROJ-1',
+            files: [
+              {
+                filePath: 'src/new.ts',
+                additions: 5,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 0,
+                draftTitle: 'exercise new.ts',
+              },
+              {
+                filePath: 'src/old.ts',
+                additions: 2,
+                deletions: 0,
+                reachedInRun: false,
+                reachedCountHistory: 3,
+              },
+            ],
+          },
+        ],
+      }),
+    )!;
+    expect(section).toContain('`src/new.ts`');
+    // Reached only in history — not in the uncovered list, but its own line.
+    expect(section).not.toContain('`src/old.ts`');
+    expect(section).toContain('1 file reached only in the last 30 runs, not this run.');
+  });
+
+  test('embeds into the comment and drives an informational commit status', () => {
+    const body = buildPrComment(summary({ changeCoverage: coverage() }));
+    expect(body).toContain('Uncovered changes');
+
+    const status = buildChangeCoverageStatus(
+      coverage(),
+      'https://piwi.example.com/test-runs/42',
+      'piwi/tests/change-coverage',
+    );
+    expect(status.state).toBe('success');
+    expect(status.description).toContain('2 of 7');
+    expect(status.context).toBe('piwi/tests/change-coverage');
+  });
+});
+
+describe('new leaks', () => {
+  test('lists each leak the base branch never showed, with the line that opened it', () => {
+    const body = buildPrComment(
+      summary({
+        newLeaks: {
+          baseBranch: 'main',
+          leaks: [
+            {
+              verdict: 'leaked',
+              kind: 'context',
+              where: 'tests/cart.spec.ts:12',
+              site: 'tests/cart.spec.ts:12',
+              scope: 'test',
+              tests: 4,
+              count: 4,
+              heldMs: 41_200,
+              untilWorkerEnd: true,
+            },
+          ],
+        },
+      }),
+    );
+    expect(body).toContain('#### 🟠 Left open by this change (1)\n\nNever seen on `main`.');
+    expect(body).toContain(
+      '- **Leaked context** · `tests/cart.spec.ts:12` · 4 contexts · 4 tests · open until the worker shut down (41.2 s past its test)',
+    );
+  });
+
+  test('adds nothing when the branch introduced no leak', () => {
+    expect(buildPrComment(summary({ newLeaks: { baseBranch: 'main', leaks: [] } }))).not.toContain('Left open');
   });
 });

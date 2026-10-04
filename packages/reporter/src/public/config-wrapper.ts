@@ -2,6 +2,8 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { applyOptionsToEnv, readBool, PIWI_ENV_KEYS, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
+import { isProbeMode } from '../internal/probe/mode.js';
+import { isFlakeMode, labModeConflict } from '../internal/flake/mode.js';
 import type { PiwiDashboardOptions } from './options.js';
 
 const PIWI_MODULE = '@piwitests/reporter';
@@ -12,7 +14,7 @@ const PIWI_MODULE = '@piwitests/reporter';
  * screenshot are what the dashboard derives the DOM snapshot, full stack, full
  * network and visual diff from without the capture fixtures.
  */
-export const CAPTURE_DEFAULTS = {
+const CAPTURE_DEFAULTS = {
   screenshot: 'only-on-failure',
   trace: 'retain-on-failure',
 } as const;
@@ -154,9 +156,8 @@ function resolveSetupModule(): string {
  * executed after it.
  *
  * Playwright options required in `globalSetup` are forwarded via `PIWI_*`
- * environment variables (see `applyOptionsToEnv` in `config.ts` for the
- * supported set — `serverUrl`, `projectName`, `verbose`, `apiKey`,
- * `username`, `password`, `environment`, `label`, `runLabel`).
+ * environment variables (see `applyOptionsToEnv` in `internal/config/env.ts`
+ * for the supported set).
  *
  * The top-level `use` block's `screenshot` and `trace` are defaulted to
  * `'only-on-failure'` / `'retain-on-failure'` when unset so failure evidence is
@@ -186,6 +187,16 @@ export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOption
   const forwarded: Record<string, unknown> = {};
   const failOnFlaky = piwiOptions?.failOnFlakyTests ?? readBool(process.env[PIWI_ENV_KEYS.failOnFlakyTests]);
   if (failOnFlaky === true) forwarded.failOnFlakyTests = true;
+
+  // A probe run replays each passing test once to see whether it notices an
+  // injected fault. A retry would re-run the test after it "noticed" (failed),
+  // muddying the outcome and doubling the run, so retries are forced off.
+  // A flake-lab arm counts failures per attempt against a control; a retry
+  // would hide the failure it is there to count, so retries are off there too.
+  // A run never mixes the two modes.
+  const conflict = labModeConflict();
+  if (conflict) throw new Error(conflict);
+  if (isProbeMode() || isFlakeMode()) forwarded.retries = 0;
 
   // Default the Playwright capture options that unlock trace-derived evidence
   // without the fixtures. `use` is only overridden when a default was actually

@@ -1,0 +1,202 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import type { Page } from '@playwright/test';
+import { test, expect, openOptions, optionsReady } from './fixtures.js';
+import { localStorageText, storedSecret } from './secrets.js';
+
+/**
+ * Pairing with the desktop app from the settings: Pair asks the app, whose
+ * window shows the same code and an Allow button; the next poll after Allow
+ * carries the app's token, which the settings keep once it works. A local
+ * server stands in for the desktop app, its window answering through `answer`.
+ */
+const TOKEN = 'pd_desktop';
+const CODE = 'BCDF-GHJK';
+const PAIRING = '0123456789abcdef';
+const SECRET = 'the-secret';
+
+let server: Server;
+let desktop: string;
+/** What the window answers: `null` while it waits. */
+let answer: 'allow' | 'deny' | null = null;
+let starts: Array<{ origin: string | undefined; contentType: string; body: string }> = [];
+let tokenHandedOut = 0;
+
+test.beforeAll(async () => {
+  server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'OPTIONS') return res.end();
+      const json = (status: number, body: unknown) => {
+        res.statusCode = status;
+        res.end(JSON.stringify(body));
+      };
+      if (req.method === 'POST' && req.url === '/api/desktop/picker-pairings') {
+        starts.push({
+          origin: req.headers.origin,
+          contentType: req.headers['content-type'] ?? '',
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+        return json(201, { id: PAIRING, secret: SECRET, code: CODE, interval: 1, expiresIn: 60, windowOpen: true });
+      }
+      if (req.method === 'GET' && req.url === `/api/desktop/picker-pairings/${PAIRING}`) {
+        if (req.headers['x-pairing-secret'] !== SECRET) return json(404, {});
+        if (answer === 'deny') return json(200, { status: 'denied' });
+        if (answer === 'allow') {
+          tokenHandedOut++;
+          return json(200, tokenHandedOut === 1 ? { status: 'allowed', token: TOKEN } : { status: 'claimed' });
+        }
+        return json(200, { status: 'waiting' });
+      }
+      if (req.method === 'GET' && req.url === '/api/desktop/reporter-config') {
+        return req.headers['x-piwi-token'] === TOKEN ? json(200, { url: desktop, token: TOKEN }) : json(401, {});
+      }
+      return json(404, {});
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  desktop = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+});
+
+test.afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+test.beforeEach(() => {
+  answer = null;
+  starts = [];
+  tokenHandedOut = 0;
+});
+
+/** Answers the settings page's host-permission requests as granted: the prompt cannot be clicked from a test. */
+async function openSettings(page: Page, extensionId: string): Promise<void> {
+  await openOptions(page, extensionId);
+  await page.evaluate(() => {
+    chrome.permissions.request = (async () => true) as typeof chrome.permissions.request;
+    chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
+  });
+}
+
+/** The pairing kept: in the extension's IndexedDB, never where a content script reads. */
+async function storedDesktop(page: Page): Promise<unknown> {
+  expect(await localStorageText(page)).not.toContain(TOKEN);
+  return storedSecret(page, 'desktop');
+}
+
+test.describe('Pair with the desktop app', () => {
+  test('Pair shows the code the app’s window shows, and Allow there pairs it', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const card = page.locator('#desktop-card');
+    await expect(card.locator('#desktop-pill')).toHaveText('Not paired');
+    await expect(page.getByLabel('Address of the desktop app')).toHaveValue('http://127.0.0.1:3000');
+
+    await page.getByLabel('Address of the desktop app').fill(`${desktop}/setup`);
+    await card.getByRole('button', { name: 'Pair', exact: true }).click();
+    await expect(card.locator('#desktop-pair-panel code')).toHaveText(CODE);
+    // Asked as an extension, with JSON naming the browser.
+    expect(starts).toHaveLength(1);
+    expect(starts[0]!.origin).toBe(`chrome-extension://${extensionId}`);
+    expect(starts[0]!.contentType).toBe('application/json');
+    expect(JSON.parse(starts[0]!.body)).toMatchObject({ browser: 'Chrome' });
+    expect(await storedDesktop(page)).toBeNull();
+
+    answer = 'allow';
+    await expect(card.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
+    await expect(card.locator('#desktop-pair-panel')).toBeHidden();
+    await expect(card.locator('#desktop-pill')).toHaveText('Paired');
+    expect(await storedDesktop(page)).toEqual({ url: desktop, token: TOKEN });
+    expect(tokenHandedOut).toBe(1);
+
+    // Opening the settings again says so; Unpair forgets it.
+    await page.reload();
+    await optionsReady(page);
+    await expect(card.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
+    await page.evaluate(() => {
+      chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
+    });
+    await card.getByRole('button', { name: 'Unpair' }).click();
+    await expect(card.locator('#desktop-status')).toHaveText('The desktop app is no longer paired.');
+    await expect(card.locator('#desktop-pill')).toHaveText('Not paired');
+    await expect(card.getByRole('button', { name: 'Unpair' })).toBeHidden();
+    expect(await storedDesktop(page)).toBeNull();
+  });
+
+  test('a double click on Pair asks the app once', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await page.getByLabel('Address of the desktop app').fill(desktop);
+    const pair = page.locator('#desktop-card').getByRole('button', { name: 'Pair', exact: true });
+    await pair.dblclick();
+    await expect(page.locator('#desktop-pair-panel code')).toHaveText(CODE);
+    // Long enough for a second pairing to have asked the app too.
+    await page.waitForTimeout(500);
+    expect(starts).toHaveLength(1);
+    await expect(pair).toBeDisabled();
+    answer = 'allow';
+    await expect(page.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
+    await expect(pair).toBeEnabled();
+    expect(tokenHandedOut).toBe(1);
+  });
+
+  test('Deny in the app’s window pairs nothing, and says so', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await page.getByLabel('Address of the desktop app').fill(desktop);
+    await page.locator('#desktop-card').getByRole('button', { name: 'Pair', exact: true }).click();
+    await expect(page.locator('#desktop-pair-panel code')).toHaveText(CODE);
+    answer = 'deny';
+    await expect(page.locator('#desktop-status')).toHaveText('Pairing was denied in the desktop app.');
+    expect(await storedDesktop(page)).toBeNull();
+  });
+
+  test('an address where nothing answers, or not the desktop app, is said plainly', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const pair = page.locator('#desktop-card').getByRole('button', { name: 'Pair', exact: true });
+
+    await page.getByLabel('Address of the desktop app').fill('https://desktop.example');
+    await pair.click();
+    await expect(page.locator('#desktop-status')).toHaveText(
+      'Enter the desktop app’s own address, such as http://127.0.0.1:3000.',
+    );
+
+    // A closed port.
+    const closed = createServer();
+    await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
+    const gone = `http://127.0.0.1:${(closed.address() as AddressInfo).port}`;
+    await new Promise<void>((resolve) => closed.close(() => resolve()));
+    await page.getByLabel('Address of the desktop app').fill(gone);
+    await pair.click();
+    await expect(page.locator('#desktop-status')).toHaveText(
+      `Nothing answers at ${gone}. Is the desktop app running? Its Setup page shows its address.`,
+    );
+  });
+
+  test('Pair by hand keeps the address and the token once the app accepts them', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await page.getByLabel('Address of the desktop app').fill(desktop);
+    await page.getByText('Pair by hand').click();
+    await page.getByRole('button', { name: 'Save and test' }).last().click();
+    await expect(page.locator('#desktop-status')).toHaveText('Paste the token from the app’s Setup page first.');
+
+    await page.getByLabel('Token').fill('pd_wrong');
+    await page.locator('#desktop-save').click();
+    await expect(page.locator('#desktop-status')).not.toHaveText(/Paired/);
+    expect(await storedDesktop(page)).toBeNull();
+
+    await page.getByLabel('Token').fill(TOKEN);
+    await page.locator('#desktop-save').click();
+    await expect(page.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
+    expect(await storedDesktop(page)).toEqual({ url: desktop, token: TOKEN });
+  });
+});

@@ -1,0 +1,144 @@
+/**
+ * Error signatures: raw Playwright error text reduced to a category and a
+ * normalized first line, with volatile tokens (timeouts, ids, received and
+ * expected values, URLs, emails, hashes, dynamic locator options) masked. Two
+ * failures with the same root cause share a signature. The dashboard hashes a
+ * signature into a failure-cluster fingerprint; flake mode compares signatures
+ * to decide whether a lab failure is the one seen in history.
+ */
+import { extractMessageHead, extractSelector, extractTopFrameFile, stripAnsi } from './error-parse';
+
+export type ErrorType = 'timeout' | 'assertion' | 'strict-mode' | 'navigation' | 'crash' | 'unknown';
+
+export interface ErrorSignature {
+  /** Heuristic category derived from the error text */
+  errorType: ErrorType;
+  /** Normalized first error line — the human-readable cluster name */
+  signature: string;
+  /** Normalized message head (up to 5 lines, volatile tokens and locator options masked) — the main fingerprint input */
+  normalizedMessage: string;
+  /** Playwright locator extracted from the error, if any (unmasked, for display) */
+  selector: string | null;
+  /**
+   * First stack frame outside node_modules (file path only, no line number).
+   * Kept for display and secondary signals only, not part of the fingerprint,
+   * so the same root cause groups across different spec files.
+   */
+  topFrameFile: string | null;
+}
+
+const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+// Long pure-hex runs (hashes) and shorter mixed hex+digit tokens (git short SHAs, random ids)
+const LONG_HEX_RE = /\b[0-9a-f]{8,}\b/gi;
+const SHORT_HEX_RE = /\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{6,7}\b/gi;
+const URL_RE = /\bhttps?:\/\/[^\s'"`)]+/gi;
+const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gi;
+// Dynamic values inside locator option objects: { name: '…' }, { hasText: '…' }, etc.
+// The primary positional arg (testid/text/role) is left intact so
+// getByTestId('login-button') and getByTestId('logout-button') stay distinct.
+const SELECTOR_OPTION_KEY_RE = /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])/gi;
+
+const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
+
+/**
+ * For each position of `text`, the index of the quote that closes a quoted value
+ * starting there, or -1: the answer of `(?:\\.|(?!q)[\s\S])*?q`, computed in
+ * one backward pass instead of by backtracking, which is exponential on a run of
+ * backslash pairs with no closing quote. At each position the lazy regex ends on
+ * the quote, else tries an escape pair (a backslash and any character but a line
+ * terminator), else the character alone; each position has one answer.
+ */
+function closingQuoteIndex(text: string, quote: string): Int32Array {
+  const close = new Int32Array(text.length + 1).fill(-1);
+  for (let p = text.length - 1; p >= 0; p--) {
+    const ch = text[p]!;
+    if (ch === quote) {
+      close[p] = p;
+      continue;
+    }
+    const escaped = ch === '\\' && p + 1 < text.length && !LINE_TERMINATORS.has(text[p + 1]!) ? close[p + 2]! : -1;
+    close[p] = escaped !== -1 ? escaped : close[p + 1]!;
+  }
+  return close;
+}
+
+/** Blank out the dynamic option values (row names, hasText, …) of every locator expression in `text`. */
+function maskSelectorOptions(text: string): string {
+  const closers = new Map<string, Int32Array>();
+  let out = '';
+  let copied = 0;
+  SELECTOR_OPTION_KEY_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SELECTOR_OPTION_KEY_RE.exec(text))) {
+    const quote = match[2]!;
+    let close = closers.get(quote);
+    if (!close) closers.set(quote, (close = closingQuoteIndex(text, quote)));
+    const end = close[SELECTOR_OPTION_KEY_RE.lastIndex]!;
+    if (end === -1) {
+      SELECTOR_OPTION_KEY_RE.lastIndex = match.index + 1;
+      continue;
+    }
+    out += `${text.slice(copied, match.index)}${match[1]}: <STR>`;
+    copied = end + 1;
+    SELECTOR_OPTION_KEY_RE.lastIndex = copied;
+  }
+  return out + text.slice(copied);
+}
+
+function classifyError(text: string): ErrorType {
+  // Order matters: an expect() that timed out is still an assertion failure
+  if (/strict mode violation/i.test(text)) return 'strict-mode';
+  if (
+    /\bexpect\(|\bexpect\.|Expected (?:string|substring|pattern|value)|\.toHave|\.toBe|\.toContain|\.toEqual/.test(text)
+  )
+    return 'assertion';
+  if (/Target page, context or browser has been closed|Target closed|browser has been closed|Page crashed/i.test(text))
+    return 'crash';
+  if (/net::ERR_|NS_ERROR_|Navigation failed/i.test(text)) return 'navigation';
+  if (/Timeout \d+m?s exceeded|TimeoutError|Timed out \d+m?s/i.test(text)) return 'timeout';
+  return 'unknown';
+}
+
+/**
+ * Mask tokens that vary between occurrences of the same root cause:
+ * received/expected values in assertions, URLs, emails, UUIDs, hashes, and
+ * standalone numbers (timeouts, ports, ids, durations). Order matters —
+ * structured tokens are masked before the catch-all number pass so their digits
+ * don't leak through.
+ *
+ * A digit run is only masked when it is NOT glued to a preceding letter, so
+ * numbers-with-units (`30000ms`) and delimited indices (`row-5`) collapse, while
+ * digits that are part of an identifier/parameter name (`p1`, `field2`, `utf8`)
+ * are preserved — those discriminate genuinely different failures. (Capture-group
+ * form rather than a lookbehind, for Safari < 16.4 compatibility in demo mode.)
+ */
+export function maskVolatile(text: string): string {
+  return text
+    .replace(/^(\s*(?:Received|Expected)[^:\n]*:).*$/gm, '$1 <VALUE>')
+    .replace(URL_RE, '<URL>')
+    .replace(EMAIL_RE, '<EMAIL>')
+    .replace(UUID_RE, '<UUID>')
+    .replace(LONG_HEX_RE, '<HASH>')
+    .replace(SHORT_HEX_RE, '<HASH>')
+    .replace(/([A-Za-z])?(\d+)/g, (whole, letter) => (letter ? whole : '<N>'));
+}
+
+/**
+ * Normalize a locator for the fingerprint: blank out dynamic option values
+ * (row names, hasText, …) that carry per-row data, then apply the standard
+ * volatile masking. The primary positional target is preserved.
+ */
+export function maskSelector(selector: string): string {
+  return maskVolatile(maskSelectorOptions(selector));
+}
+
+/** Reduce raw error text to its {@link ErrorSignature}. */
+export function extractErrorSignature(rawError: string): ErrorSignature {
+  const text = stripAnsi(rawError);
+  const errorType = classifyError(text);
+  const normalizedMessage = maskVolatile(maskSelectorOptions(extractMessageHead(text)));
+  const selector = extractSelector(text);
+  const topFrameFile = extractTopFrameFile(text);
+  const signature = (normalizedMessage.split('\n')[0] || '').slice(0, 200) || 'Unknown error';
+  return { errorType, signature, normalizedMessage, selector, topFrameFile };
+}

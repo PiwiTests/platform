@@ -1,11 +1,23 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import type {
+  ConnectionCheckResult,
+  CreateIssueResponse,
   ConnectionInput,
   ConnectionSummary,
   ConnectionTestResult,
   ExistingIssueCandidate,
   IssueDraft,
+  TrackerSummary,
 } from '#shared/integrations/types';
+import { nonSecretCredentials } from '#shared/integrations/registry';
+import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
+import {
+  missingFieldsMessage,
+  missingRequiredFields,
+  normalizeFieldValues,
+  type TrackerField,
+} from '#shared/integrations/fields';
+import type { TransitionSample } from '#shared/integrations/transitions';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
@@ -30,13 +42,14 @@ const DEMO_CONNECTION: ConnectionSummary = {
   lastError: null,
   managedBy: 'db',
   hasCredentials: true,
+  credentialValues: { email: 'demo@example.com' },
   hasWebhookToken: false,
   createdAt: DEMO_TIME,
   updatedAt: DEMO_TIME,
 };
 
-export function listDemoConnections(): { connections: ConnectionSummary[] } {
-  return { connections: [DEMO_CONNECTION] };
+export function listDemoConnections(): { connections: ConnectionSummary[]; canStoreSecrets: boolean } {
+  return { connections: [DEMO_CONNECTION], canStoreSecrets: true };
 }
 
 export function getDemoConnection(id: number): { connection: ConnectionSummary } | null {
@@ -54,6 +67,7 @@ export function createDemoConnection(body: ConnectionInput): { connection: Conne
       config: body.config ?? { flavor: 'cloud' },
       status: 'unverified',
       hasCredentials: !!body.credentials && Object.keys(body.credentials).length > 0,
+      credentialValues: nonSecretCredentials(body.provider, body.credentials),
     },
   };
 }
@@ -65,12 +79,37 @@ export function updateDemoConnection(id: number, body: Partial<ConnectionInput>)
       id,
       name: body.name ?? DEMO_CONNECTION.name,
       baseUrl: body.baseUrl ?? DEMO_CONNECTION.baseUrl,
+      // Mirror the server's merge: submitted non-secret fields override the stored ones.
+      credentialValues: { ...DEMO_CONNECTION.credentialValues, ...nonSecretCredentials('jira', body.credentials) },
     },
   };
 }
 
 export function testDemoConnection(): ConnectionTestResult {
-  return { ok: true, account: { id: 'demo-account', displayName: 'Demo User' } };
+  return { ok: true, account: { id: 'demo-account', displayName: 'Demo User' }, tokenKind: 'classic' };
+}
+
+/**
+ * The pre-save check in the demo: the address is read the way the server reads
+ * it, but the demo runs in the browser and never calls out, so the site is
+ * reported unreachable. Null when the address is not a URL.
+ */
+export function checkDemoConnection(body: { baseUrl?: string }): ConnectionCheckResult | null {
+  const site = normalizeJiraSiteUrl(body.baseUrl ?? '');
+  if (!site) return null;
+  return {
+    baseUrl: site.url,
+    site: {
+      ok: false,
+      reachable: false,
+      deploymentType: null,
+      title: null,
+      reportedUrl: null,
+      cloudId: null,
+      error: 'The demo runs in your browser and does not contact Jira.',
+      hint: null,
+    },
+  };
 }
 
 // ── Create-issue flow (in-browser, never calls out) ──────────────────────────
@@ -78,8 +117,16 @@ export function testDemoConnection(): ConnectionTestResult {
 const DEMO_PROJECT_KEY = 'DEMO';
 const DEMO_ISSUE_TYPE = 'Bug';
 
-export function demoTrackerStatus(): { trackers: { id: number; provider: 'jira'; name: string }[] } {
-  return { trackers: [{ id: DEMO_CONNECTION.id, provider: 'jira', name: DEMO_CONNECTION.name }] };
+/** The canned connection as the tracker pickers list it. */
+const DEMO_TRACKER: TrackerSummary = {
+  id: DEMO_CONNECTION.id,
+  provider: 'jira',
+  name: DEMO_CONNECTION.name,
+  baseUrl: DEMO_CONNECTION.baseUrl,
+};
+
+export function demoTrackerStatus(): { trackers: TrackerSummary[] } {
+  return { trackers: [DEMO_TRACKER] };
 }
 
 /** The cluster an entity belongs to (itself for a cluster, its cluster for an execution). */
@@ -133,12 +180,13 @@ export async function demoIssueDraft(
     clusterId,
     title: built.title,
     connectionId: DEMO_CONNECTION.id,
-    connections: [{ id: DEMO_CONNECTION.id, provider: 'jira', name: DEMO_CONNECTION.name }],
+    connections: [DEMO_TRACKER],
     projectKey: DEMO_PROJECT_KEY,
     issueType: DEMO_ISSUE_TYPE,
     labels: built.labels,
     assignee: null,
     locale,
+    fieldValues: getDemoProjectIntegration().fieldDefaults,
     include: { includeDiagnosis: true, includePatch: true, includeScreenshot: false, includeShareLink: false },
     markdown: renderMarkdown(built.document),
     document: built.document,
@@ -146,13 +194,29 @@ export async function demoIssueDraft(
   };
 }
 
-/** File a DEMO-<n> issue and write the known-issue link into the in-browser DB. */
+/**
+ * File a DEMO-<n> issue and write the known-issue link into the in-browser DB —
+ * or, like the server, refuse before filing when the issue type's required
+ * fields are still empty.
+ */
 export async function demoCreateIssue(
   db: DrizzleDB,
   entityType: 'failure_cluster' | 'test_runs_case',
   entityId: number,
   title?: string | null,
-): Promise<{ actionId: number; status: 'done'; key: string; url: string }> {
+  request: { issueType?: string; fields?: unknown } = {},
+): Promise<CreateIssueResponse> {
+  const values = { ...getDemoProjectIntegration().fieldDefaults, ...normalizeFieldValues(request.fields) };
+  const missing = missingRequiredFields(demoCreateFields(request.issueType ?? DEMO_ISSUE_TYPE).fields, values);
+  if (missing.length) {
+    return {
+      actionId: null,
+      status: 'failed',
+      error: missingFieldsMessage(missing),
+      missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+    };
+  }
+
   const clusterId = (await resolveClusterId(db, entityType, entityId)) ?? entityId;
   const built =
     entityType === 'failure_cluster'
@@ -197,6 +261,135 @@ export function demoConnectionIssueTypes(): { issueTypes: { id: string; name: st
     issueTypes: [
       { id: '1', name: 'Bug' },
       { id: '2', name: 'Task' },
+    ],
+  };
+}
+
+/**
+ * The demo project's create screen: a Bug requires a Severity (a pick-list Jira
+ * would list), components are optional, and Jira defaults the priority — enough
+ * to show the required-field flow without a Jira.
+ */
+const DEMO_BUG_FIELDS: TrackerField[] = [
+  {
+    id: 'project',
+    name: 'Project',
+    required: true,
+    hasDefault: false,
+    kind: 'raw',
+    options: null,
+    typeName: 'project',
+  },
+  {
+    id: 'issuetype',
+    name: 'Issue type',
+    required: true,
+    hasDefault: false,
+    kind: 'raw',
+    options: null,
+    typeName: 'issuetype',
+  },
+  {
+    id: 'summary',
+    name: 'Summary',
+    required: true,
+    hasDefault: false,
+    kind: 'string',
+    options: null,
+    typeName: 'summary',
+  },
+  {
+    id: 'description',
+    name: 'Description',
+    required: false,
+    hasDefault: false,
+    kind: 'text',
+    options: null,
+    typeName: 'description',
+  },
+  {
+    id: 'customfield_10050',
+    name: 'Severity',
+    required: true,
+    hasDefault: false,
+    kind: 'option',
+    options: [
+      { id: '10100', label: 'Critical' },
+      { id: '10101', label: 'Major' },
+      { id: '10102', label: 'Minor' },
+    ],
+    typeName: 'select',
+  },
+  {
+    id: 'components',
+    name: 'Components',
+    required: false,
+    hasDefault: false,
+    kind: 'option-array',
+    options: [
+      { id: '10200', label: 'Checkout' },
+      { id: '10201', label: 'Payments' },
+      { id: '10202', label: 'Web' },
+    ],
+    typeName: 'components',
+  },
+  {
+    id: 'priority',
+    name: 'Priority',
+    required: false,
+    hasDefault: true,
+    kind: 'option',
+    options: [
+      { id: '2', label: 'High' },
+      { id: '3', label: 'Medium' },
+      { id: '4', label: 'Low' },
+    ],
+    typeName: 'priority',
+  },
+];
+
+/** The create screen's fields for a demo issue type (by id or name): the Bug asks for a Severity. */
+export function demoCreateFields(issueType: string): { fields: TrackerField[] } {
+  const isBug = issueType === '1' || issueType.toLowerCase() === DEMO_ISSUE_TYPE.toLowerCase();
+  return { fields: isBug ? DEMO_BUG_FIELDS : DEMO_BUG_FIELDS.filter((f) => f.id !== 'customfield_10050') };
+}
+
+/**
+ * The transitions a demo issue offers: an open one moves to Done through a
+ * screen that asks for a Resolution, a done one reopens with no screen.
+ */
+export function demoTransitionSample(from: 'open' | 'done'): TransitionSample {
+  if (from === 'done') {
+    return {
+      issue: { key: 'DEMO-2', status: 'Done' },
+      transitions: [{ id: '11', name: 'Reopen', toStatus: 'To Do', toStatusCategory: 'new', fields: [] }],
+    };
+  }
+  return {
+    issue: { key: 'DEMO-1', status: 'To Do' },
+    transitions: [
+      { id: '21', name: 'Start progress', toStatus: 'In Progress', toStatusCategory: 'indeterminate', fields: [] },
+      {
+        id: '31',
+        name: 'Done',
+        toStatus: 'Done',
+        toStatusCategory: 'done',
+        fields: [
+          {
+            id: 'resolution',
+            name: 'Resolution',
+            required: true,
+            hasDefault: false,
+            kind: 'option',
+            options: [
+              { id: '10000', label: 'Done' },
+              { id: '10001', label: "Won't do" },
+              { id: '10002', label: 'Duplicate' },
+            ],
+            typeName: 'resolution',
+          },
+        ],
+      },
     ],
   };
 }

@@ -60,11 +60,16 @@ interface HttpRequestOptions {
  * the single `form-data` runtime dependency — no HTTP client library.
  */
 export class HttpClient {
+  /** Requests in flight, so `close` can abort them. */
+  private readonly inFlight = new Set<http.ClientRequest>();
+  /** Set by `close`: every later request fails with this reason. */
+  private closedReason: string | null = null;
+
   /**
    * @param serverUrl Base URL of the Piwi Dashboard server (e.g. `http://localhost:3000`).
    * @param logger    Prefixed logger for verbose diagnostics.
-   * @param timeout   Socket inactivity timeout in ms (default 30s). A hung
-   *                  server now fails fast instead of stalling the reporter.
+   * @param timeout   Socket inactivity timeout in ms (default 30s), so a hung
+   *                  server fails fast rather than stalling the reporter.
    */
   constructor(
     private readonly serverUrl: string,
@@ -82,7 +87,7 @@ export class HttpClient {
    * endpoint exposes the key and payloads on the wire. Loopback (localhost /
    * 127.0.0.1 / ::1) is exempt: that traffic never leaves the machine. This
    * warns rather than refuses so internal HTTP deployments (e.g. behind a VPN)
-   * still work, but the exposure is no longer silent.
+   * work, while the exposure is still reported.
    */
   private warnIfInsecureTransport(): void {
     let url: URL;
@@ -104,6 +109,18 @@ export class HttpClient {
   /** Base URL of the Piwi Dashboard server this client talks to (used to print run links). */
   get baseUrl(): string {
     return this.serverUrl;
+  }
+
+  /** Whether `close` was called. */
+  get closed(): boolean {
+    return this.closedReason !== null;
+  }
+
+  /** Abort every request in flight and fail every later one with `reason`. */
+  close(reason: string): void {
+    this.closedReason = reason;
+    for (const req of this.inFlight) req.destroy(new Error(reason));
+    this.inFlight.clear();
   }
 
   /**
@@ -192,6 +209,28 @@ export class HttpClient {
     }
   }
 
+  /** Send a JSON PUT request. Used for the declared-surface manifest upload. */
+  async putJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
+    const body = JSON.stringify(payload);
+    const res = await this.request('PUT', pathname, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      body,
+      auth,
+    });
+    if (res.status < 200 || res.status >= 300) {
+      this.logger.debugError(`Response: ${res.text}`);
+      throw new HttpError(res.status);
+    }
+    try {
+      return JSON.parse(res.text);
+    } catch {
+      return {};
+    }
+  }
+
   /** Send a multipart form-data POST request. Used for report and trace uploads. */
   async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
     const headers = form.getHeaders() as Record<string, string>;
@@ -214,6 +253,10 @@ export class HttpClient {
   /** Unified request core: transport, headers, auth, response accumulation, timeout. */
   private request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
+      if (this.closedReason !== null) {
+        reject(new Error(this.closedReason));
+        return;
+      }
       const url = new URL(pathname, this.serverUrl);
       const transport = url.protocol === 'https:' ? https : http;
       const headers: Record<string, string | number> = { ...opts.headers };
@@ -246,12 +289,16 @@ export class HttpClient {
         },
       );
 
+      this.inFlight.add(req);
+      req.on('close', () => this.inFlight.delete(req));
       req.on('error', reject);
       req.setTimeout(this.timeout, () => {
         req.destroy(new Error(`Request to ${pathname} timed out after ${this.timeout}ms`));
       });
 
       if (opts.form) {
+        // A file in the form that cannot be read fails the request.
+        opts.form.on('error', (error) => req.destroy(error));
         opts.form.pipe(req);
       } else if (opts.body !== undefined) {
         req.write(opts.body);

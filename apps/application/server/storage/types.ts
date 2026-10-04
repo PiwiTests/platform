@@ -54,11 +54,21 @@ export interface StorageAdapter {
   getFullPath(path: string): string;
 }
 
-export interface S3Config {
+interface S3BaseConfig {
   bucket: string;
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
   endpoint?: string; // Optional custom endpoint for S3-compatible services
   forcePathStyle?: boolean; // Force path-style URLs (required for MinIO and most S3-compatible services)
 }
+
+export type S3Config = S3BaseConfig &
+  (
+    | {
+        accessKeyId: string;
+        secretAccessKey: string;
+      }
+    | {
+        accessKeyId?: undefined;
+        secretAccessKey?: undefined;
+      }
+  );

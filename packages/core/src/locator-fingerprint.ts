@@ -54,7 +54,7 @@ const MATCH_SIMILARITY = 0.2;
  * `getByText` alternative for these roles, whose visible text content is exactly
  * what `getByText` matches.
  */
-export const TEXT_CONTENT_ROLES = new Set([
+const TEXT_CONTENT_ROLES = new Set([
   'button',
   'link',
   'heading',
@@ -373,7 +373,7 @@ function tokenize(text: string): Set<string> {
  * from the failing page but nothing confident replaced it, so the stored
  * name-derived alternatives are almost certainly broken too.
  */
-export type ElementMatchStatus = 'no-fingerprint' | 'no-aria' | 'no-candidates' | 'unchanged' | 'matched' | 'no-match';
+type ElementMatchStatus = 'no-fingerprint' | 'no-aria' | 'no-candidates' | 'unchanged' | 'matched' | 'no-match';
 
 export interface ElementMatchOutcome {
   status: ElementMatchStatus;
@@ -403,15 +403,4 @@ export function elementMatchOutcome(
   const fresh = match ? freshLocatorsFromCandidate(match.candidate) : [];
   if (fresh.length > 0) return { status: 'matched', fresh };
   return { status: 'no-match', fresh: null };
-}
-
-/**
- * Legacy boolean-shaped wrapper over {@link elementMatchOutcome}: fresh
- * locators when the element was confidently re-found, null otherwise.
- */
-export function elementMatchAlternatives(
-  fp: ElementFingerprint,
-  ariaSnapshot: string | null | undefined,
-): RankedLocator[] | null {
-  return elementMatchOutcome(fp, ariaSnapshot).fresh;
 }

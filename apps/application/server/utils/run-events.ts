@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
  * In-memory pub/sub for live test run streaming.
@@ -29,10 +30,37 @@ export interface RunEvent {
 }
 
 export interface GlobalRunEvent {
-  type: 'run-started' | 'run-initializing' | 'run-finalizing' | 'run-finished' | 'run-submitted' | 'run-cancelled';
+  /**
+   * `rollup-updated` follows `run-finished` and `run-submitted` once the run's daily rollup is
+   * written: analytics read the rollups, so they refresh on it, never on the run events before it.
+   */
+  type:
+    | 'run-started'
+    | 'run-initializing'
+    | 'run-finalizing'
+    | 'run-finished'
+    | 'run-submitted'
+    | 'run-cancelled'
+    | 'rollup-updated';
   runId: number;
   projectId: number;
   status?: string;
+}
+
+/**
+ * A live progress tally for one run, broadcast globally so an app-wide consumer
+ * (the desktop shell's OS progress) can track every in-flight run's counts
+ * without opening a per-run stream. Kept on its own channel so the existing
+ * global lifecycle stream (`/api/stream`) is unaffected.
+ */
+export interface RunProgressBroadcast {
+  runId: number;
+  projectId: number;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  didNotRunTests: number;
 }
 
 export interface RunState {
@@ -45,14 +73,21 @@ class RunEventBus {
   private emitter = new EventEmitter();
   private globalEmitter = new EventEmitter();
   private sequences = new Map<number, number>();
-  /** Stores pending final status for runs in `finalizing` state, keyed by run ID */
-  private finalStatuses = new Map<number, string>();
   /**
    * In-memory cache of active run state (token + projectId) so the events
    * endpoint can skip a DB round-trip on every incoming batch.
    * Populated by start/begin endpoints; cleared when the run finishes.
    */
   private runStates = new Map<number, RunState>();
+  /**
+   * The begin payloads of test cases that have started but not yet completed,
+   * keyed by run ID then by a stable case key. Only completed cases get a DB
+   * row, so a client that connects or refreshes mid-run has nothing to show a
+   * running case from; the stream catch-up replays these as `test-begin`
+   * events. A case is dropped when it completes; the whole run's set goes on
+   * cleanup.
+   */
+  private runningCases = new Map<number, Map<string, Record<string, unknown>>>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -89,24 +124,6 @@ class RunEventBus {
     };
   }
 
-  /**
-   * Store a final status for a run entering the `finalizing` state.
-   * The upload endpoint will consume this to transition to the actual final status.
-   */
-  setFinalStatus(runId: number, status: string): void {
-    this.finalStatuses.set(runId, status);
-  }
-
-  /**
-   * Read and remove the stored final status for a run.
-   * Returns undefined if no status was stored (e.g., the run wasn't finalizing).
-   */
-  consumeFinalStatus(runId: number): string | undefined {
-    const status = this.finalStatuses.get(runId);
-    this.finalStatuses.delete(runId);
-    return status;
-  }
-
   /** Cache the stream token and projectId for an active run. */
   cacheRunState(runId: number, state: RunState): void {
     this.runStates.set(runId, state);
@@ -122,27 +139,48 @@ class RunEventBus {
     this.runStates.delete(runId);
   }
 
-  /** Register a per-shard stream token for an active run. */
+  /** Register a per-shard stream token for an active run (kept as its digest, like the stored copy). */
   addShardToken(runId: number, token: string): void {
     const state = this.runStates.get(runId);
     if (state) {
       if (!state.shardTokens) state.shardTokens = new Set();
-      state.shardTokens.add(token);
+      state.shardTokens.add(shardTokenDigest(token));
     }
   }
 
   /** Check whether a token is a valid per-shard stream token. */
   isValidShardToken(runId: number, token: string): boolean {
-    const state = this.runStates.get(runId);
-    return state?.shardTokens?.has(token) ?? false;
+    return matchesShardToken(this.runStates.get(runId)?.shardTokens, token);
   }
 
   /** Remove a per-shard stream token when its shard has finished. */
   removeShardToken(runId: number, token: string): void {
     const state = this.runStates.get(runId);
+    state?.shardTokens?.delete(shardTokenDigest(token));
     state?.shardTokens?.delete(token);
     // Clean up the set if it's now empty
     if (state?.shardTokens?.size === 0) state.shardTokens = undefined;
+  }
+
+  /** Remember a case that has begun so the stream catch-up can replay it. */
+  recordRunningCase(runId: number, key: string, data: Record<string, unknown>): void {
+    let cases = this.runningCases.get(runId);
+    if (!cases) {
+      cases = new Map();
+      this.runningCases.set(runId, cases);
+    }
+    cases.set(key, data);
+  }
+
+  /** Drop a running case once it completes. */
+  clearRunningCase(runId: number, key: string): void {
+    this.runningCases.get(runId)?.delete(key);
+  }
+
+  /** The begin payloads of every case still running for a run. */
+  getRunningCases(runId: number): Record<string, unknown>[] {
+    const cases = this.runningCases.get(runId);
+    return cases ? [...cases.values()] : [];
   }
 
   /**
@@ -150,8 +188,8 @@ class RunEventBus {
    */
   cleanup(runId: number): void {
     this.sequences.delete(runId);
-    this.finalStatuses.delete(runId);
     this.runStates.delete(runId);
+    this.runningCases.delete(runId);
   }
 
   /**
@@ -169,6 +207,24 @@ class RunEventBus {
     this.globalEmitter.on('global', listener);
     return () => {
       this.globalEmitter.off('global', listener);
+    };
+  }
+
+  /**
+   * Broadcast a run's live progress tally to app-wide subscribers. On its own
+   * channel so it never reaches the lifecycle stream's subscribers.
+   */
+  publishRunProgress(progress: RunProgressBroadcast): void {
+    this.globalEmitter.emit('run-progress', progress);
+  }
+
+  /**
+   * Subscribe to global run-progress tallies. Returns an unsubscribe function.
+   */
+  subscribeRunProgress(listener: (progress: RunProgressBroadcast) => void): () => void {
+    this.globalEmitter.on('run-progress', listener);
+    return () => {
+      this.globalEmitter.off('run-progress', listener);
     };
   }
 

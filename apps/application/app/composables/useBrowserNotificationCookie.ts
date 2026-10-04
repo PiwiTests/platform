@@ -3,7 +3,7 @@ import type { NotificationEvent } from '#shared/notification-events';
 
 const COOKIE_KEY = 'piwi-browser-notify';
 
-export interface ProjectNotifyConfig {
+interface ProjectNotifyConfig {
   events: NotificationEvent[];
 }
 

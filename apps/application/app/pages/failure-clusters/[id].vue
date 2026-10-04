@@ -6,6 +6,7 @@ import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import type { ComponentPublicInstance } from 'vue';
 import type { FailureClusterDetail, TraceInfo } from '~~/types/api';
 import type { FixPlan } from '#shared/fix-plan.types';
+import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
 import type { RerunInfo } from '~/composables/useCiRerun';
@@ -15,6 +16,7 @@ import { buildRetryCommand } from '~/utils/retry-command';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-time';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
@@ -78,27 +80,29 @@ const selectedExecId = computed(() =>
 );
 const isLatestOccurrence = computed(() => selectedExecId.value === latestExecId.value);
 
+// Server-rendered fetches carry the viewer's session.
+const requestFetch = useRequestFetch();
 const { data: execution } = await useAsyncData<Record<string, unknown> | null>(
-  'cluster-selected-exec',
+  `cluster-selected-exec-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<Record<string, unknown>>(`/api/test-run-cases/${selectedExecId.value}`)
+      ? requestFetch<Record<string, unknown>>(`/api/test-run-cases/${selectedExecId.value}`)
       : Promise.resolve(null),
   { watch: [selectedExecId] },
 );
 const { data: execTraces } = await useAsyncData<TraceInfo[]>(
-  'cluster-selected-traces',
+  `cluster-selected-traces-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<{ items: TraceInfo[] }>(`/api/test-run-cases/${selectedExecId.value}/traces`).then((r) => r.items)
+      ? requestFetch<{ items: TraceInfo[] }>(`/api/test-run-cases/${selectedExecId.value}/traces`).then((r) => r.items)
       : Promise.resolve([]),
   { default: (): TraceInfo[] => [], watch: [selectedExecId] },
 );
 const { data: cluesData } = await useAsyncData<FailureCluesResult>(
-  'cluster-selected-clues',
+  `cluster-selected-clues-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<FailureCluesResult>(`/api/test-run-cases/${selectedExecId.value}/clues`)
+      ? requestFetch<FailureCluesResult>(`/api/test-run-cases/${selectedExecId.value}/clues`)
       : Promise.resolve({ clues: [], story: null, failureAt: null }),
   { default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }), watch: [selectedExecId] },
 );
@@ -156,9 +160,16 @@ const headlineProvenance = computed(() => {
 // carries a value the name lacks (an expected/received pair, a timeout, a count).
 const headlineText = computed(() => clusterVerdict.value?.parts.map((p) => p.text).join('') ?? '');
 const showSecondHeadline = computed(() => headlineAddsValue(clusterName.value, headlineText.value));
+// Where that second line comes from, on hover.
+const headlineTitle = computed(() => (headlineProvenance.value ? `From the ${headlineProvenance.value}` : undefined));
+
+// The name as prose and the locators written into it, each rendered as code.
+const clusterNameParts = computed(() => splitLocatorParts(clusterName.value));
 
 // ── Cluster state, occurrences and the next step (served on the endpoint) ────
 const clusterState = computed(() => cluster.value?.clusterState ?? null);
+// The situation block's edge, in the color the state line's dot carries.
+const stateEdge = computed(() => clusterStateColor(clusterState.value?.kind).edge);
 const occurrenceSeries = computed(() => cluster.value?.occurrenceSeries ?? []);
 const nextStep = computed(() => cluster.value?.nextStep ?? null);
 
@@ -271,13 +282,45 @@ function refresh() {
 const hasLocatorPanel = computed(() =>
   Boolean(clusterVerdict.value?.isLocatorResolutionFailure && affectedCases.value[0]?.recentTestRunsCaseId),
 );
+
+// Hoist the healing fetch (shared with the panel by key) so the Locator fix
+// section appears only when there is something to show, and never when healing
+// is hidden for this project.
+const locatorCaseId = affectedCases.value[0]?.recentTestRunsCaseId ?? null;
+const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
+  () => `/api/test-run-cases/${locatorCaseId}/locator-healing`,
+  { lazy: true, immediate: Boolean(locatorCaseId) && hasLocatorPanel.value, key: `locator-healing-${locatorCaseId}` },
+);
+const clusterLocatorHasData = computed(() => {
+  const h = clusterLocatorHealing.value;
+  return (
+    !!h &&
+    h.source !== 'none' &&
+    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
+  );
+});
+const {
+  state: clusterCapState,
+  isHidden: clusterCapHidden,
+  canDecide: canDecideClusterCap,
+  decide: decideClusterProjectCap,
+} = await useProjectCapabilities(cluster.value?.project?.id ?? 0);
+const { decide: decideClusterInstanceCap } = await useInstanceCapabilities();
+
+async function declineClusterFixtures(level: 'project' | 'instance') {
+  if (level === 'project') await decideClusterProjectCap('fixtures', 'declined');
+  else await decideClusterInstanceCap('fixtures', 'declined');
+}
+const showLocatorFix = computed(
+  () => hasLocatorPanel.value && clusterLocatorHasData.value && !clusterCapHidden('locator-healing'),
+);
 const showVerify = computed(() => Boolean(fixPlan.value?.verify?.command));
 const showReproduce = computed(() => Boolean(fixPlan.value?.reproduce?.steps?.length));
 const fixedBefore = computed(() => fixPlan.value?.fixedBefore ?? []);
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = ['diagnosis'];
   if (fixedBefore.value.length) s.push('fixed-before');
-  if (hasLocatorPanel.value) s.push('locator-fix');
+  if (showLocatorFix.value) s.push('locator-fix');
   if (showVerify.value) s.push('verify');
   if (showReproduce.value) s.push('reproduce');
   if (fixPlan.value) s.push('fix-plan');
@@ -477,7 +520,7 @@ const breadcrumbItems = computed(() => [
     <template #body>
       <div v-if="cluster" class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: identity, name, most likely, occurrences, what changed, state, next ── -->
-        <SituationBlock help="cluster.state">
+        <SituationBlock help="cluster.state" :edge="stateEdge">
           <!-- Line 1: identity kicker — cluster #, error type, project, owner, known issue -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -499,7 +542,7 @@ const breadcrumbItems = computed(() => [
               <span v-if="knownIssue" aria-hidden="true">·</span>
               <a
                 v-if="knownIssue"
-                :href="knownIssue.url"
+                :href="safeHttpUrl(knownIssue.url) ?? undefined"
                 target="_blank"
                 rel="noopener noreferrer"
                 :class="SENTENCE_LINK_CLASS"
@@ -510,7 +553,7 @@ const breadcrumbItems = computed(() => [
             </div>
           </template>
 
-          <!-- Actions: the More menu the header used to carry -->
+          <!-- Actions: the More menu -->
           <template #actions>
             <UDropdownMenu :items="moreMenuItems">
               <UButton
@@ -527,15 +570,18 @@ const breadcrumbItems = computed(() => [
           <!-- Line 2: the cluster name as the h1; the latest headline as a second line only when it adds value -->
           <template #headline>
             <h1 class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words">
-              {{ clusterName }}
+              <template v-for="(part, i) in clusterNameParts" :key="i">
+                <LocatorCode v-if="part.kind === 'locator'" :locator="part.text" chip class="text-[0.92em]" />
+                <template v-else>{{ part.text }}</template>
+              </template>
             </h1>
             <p
               v-if="clusterVerdict && showSecondHeadline"
               data-shot="failure-headline"
-              class="text-sm text-muted mt-1 flex flex-wrap items-baseline gap-x-2"
+              class="text-sm text-muted mt-1"
+              :title="headlineTitle"
             >
-              <span class="min-w-0"><FailureHeadline :parts="clusterVerdict.parts" plain /></span>
-              <span v-if="headlineProvenance" class="text-xs shrink-0">{{ headlineProvenance }}</span>
+              <FailureHeadline :parts="clusterVerdict.parts" chip />
             </p>
           </template>
 
@@ -584,7 +630,6 @@ const breadcrumbItems = computed(() => [
               :can-write="canWrite"
               :signature-line="signatureLine"
               @refresh="refresh"
-              @copy="copyCluster"
             />
           </template>
         </SituationBlock>
@@ -617,9 +662,18 @@ const breadcrumbItems = computed(() => [
             :traces="execTraces ?? []"
             :has-trace="hasTrace"
             :default-hint="defaultHint"
+            :fixtures-state="clusterCapState('fixtures')"
+            :can-decide-fixtures="canDecideClusterCap"
             help="case.evidence"
+            @decline-fixtures="declineClusterFixtures"
           />
         </div>
+
+        <!-- ── Occurrences over time, with the fix and a regression marked ── -->
+        <ClusterOccurrenceTrend :cluster-id="cluster.id" />
+
+        <!-- ── Fix attempts and what agents wrote to this cluster ──────── -->
+        <ClusterActivity :cluster-id="cluster.id" />
 
         <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div class="scroll-mt-4">
@@ -664,7 +718,6 @@ const breadcrumbItems = computed(() => [
             <template #locator-fix>
               <LocatorHealingPanel
                 ref="clusterLocatorPanel"
-                :run-id="cluster.lastSeenRunId"
                 :test-runs-case-id="affectedCases[0]!.recentTestRunsCaseId"
                 :affected-count="affectedCases.length"
                 :chrome="false"

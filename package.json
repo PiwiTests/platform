@@ -1,19 +1,23 @@
 {
   "name": "platform",
-  "version": "0.32.0",
   "private": true,
+  "version": "0.45.0",
+  "type": "module",
   "workspaces": [
     "packages/core",
     "packages/picker-dom",
     "packages/server",
     "packages/reporter",
+    "packages/editor",
     "apps/application",
     "apps/extension",
+    "apps/vscode",
     "integrations/nitro"
   ],
   "type": "module",
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "knip": "knip"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
@@ -21,6 +25,7 @@
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "husky": "^9.0.0",
+    "knip": "^5.88.1",
     "oxfmt": "^0.59.0",
     "oxlint": "^1.74.0",
     "typescript": "^6.0.3",

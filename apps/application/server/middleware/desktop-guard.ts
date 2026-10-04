@@ -8,12 +8,14 @@
 //     exactly like the auth session cookie),
 //   - an `Authorization: Bearer <token>` header (used by the Playwright reporter
 //     via its `apiKey` option — the token is `pd_`-prefixed so the reporter's
-//     existing API-key path sends it as a bearer), or
+//     existing API-key path sends it as a bearer),
+//   - an `X-API-Key` header (used by the `piwi` commands, `piwi flake` among
+//     them), or
 //   - an `x-piwi-token` header.
 // Combined with the loopback-only bind, this keeps the bundled server reachable
 // only by the app itself and by tools the user has given the token to — not by
 // other local processes or web pages open in the user's browser.
-import { timingSafeEqualStr } from '../utils/timing-safe';
+import { isOpenDesktopRoute, presentsDesktopToken } from '../utils/desktop-access';
 
 export default defineEventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
@@ -21,14 +23,10 @@ export default defineEventHandler((event) => {
 
   const path = event.path || '';
   if (!path.startsWith('/api/') && !path.startsWith('/mcp')) return;
-  // The readiness probe carries no token (the shell polls it before the window
-  // has a cookie) and exposes nothing sensitive — leave it open.
-  if (path === '/api/health') return;
+  // The readiness probe, and Piwi Picker's pairing start and poll: see isOpenDesktopRoute.
+  if (isOpenDesktopRoute(event.method, path)) return;
 
-  const authz = getRequestHeader(event, 'authorization');
-  const bearer = authz && authz.startsWith('Bearer ') ? authz.slice('Bearer '.length) : undefined;
-  const presented = getCookie(event, 'piwi_token') || getRequestHeader(event, 'x-piwi-token') || bearer;
-  if (presented && timingSafeEqualStr(presented, token)) return;
+  if (presentsDesktopToken(event, token)) return;
 
   throw apiError({ statusCode: 401, statusMessage: 'Desktop access token required' });
 });

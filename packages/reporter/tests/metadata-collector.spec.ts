@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { FullConfig } from '@playwright/test/reporter';
 import {
   MetadataCollector,
+  detectCi,
+  resolveRunOrigin,
   resolveScmBaseBranch,
   resolveScmBranch,
   resolveScmPrNumber,
@@ -42,7 +44,13 @@ const CI_ENV_KEYS = [
   'SYSTEM_TEAMFOUNDATIONSERVERURI',
   'SYSTEM_TEAMPROJECT',
   'AGENT_JOBNAME',
+  'BITBUCKET_BUILD_NUMBER',
+  'BITBUCKET_PIPELINE_UUID',
+  'BITBUCKET_STEP_UUID',
+  'BITBUCKET_REPO_FULL_NAME',
   'CI',
+  'PIWI_ORIGIN',
+  'PIWI_ORIGIN_REF',
 ];
 
 const SAVED_CI_ENV: Record<string, string | undefined> = {};
@@ -59,7 +67,7 @@ function fakeSuiteChain(opts: { parallelMode?: string; annotations?: any[]; titl
     title,
     parent,
     _parallelMode: mode,
-    _annotations: annotations,
+    _staticAnnotations: annotations,
   });
   const root = make('', undefined, undefined, undefined);
   root.type = 'project'; // root is not a describe
@@ -87,10 +95,24 @@ describe('MetadataCollector.getSuiteInfo', () => {
     expect(info.suiteConfig[1].mode).toBe('parallel');
   });
 
+  it('keeps the type and description of a describe annotation and drops its location', () => {
+    const mc = new MetadataCollector();
+    const location = { file: '/repo/tests/a.spec.ts', line: 2, column: 6 };
+    const { inner } = fakeSuiteChain({
+      annotations: [
+        { type: 'issue', description: 'PAY-1', location },
+        { type: 'skip', location },
+      ],
+      titles: ['Outer', 'Inner'],
+    });
+    const info = mc.getSuiteInfo({ parent: inner } as any);
+    expect(info.suiteConfig[0].annotations).toEqual([{ type: 'issue', description: 'PAY-1' }, { type: 'skip' }]);
+  });
+
   it('defaults unknown mode to "default"', () => {
     const mc = new MetadataCollector();
     const { outer } = fakeSuiteChain({ parallelMode: undefined, titles: ['Solo'] });
-    const inner = { type: 'describe', title: 'Inner', parent: outer, _parallelMode: undefined, _annotations: [] };
+    const inner = { type: 'describe', title: 'Inner', parent: outer, _parallelMode: undefined, _staticAnnotations: [] };
     const test = { parent: inner } as any;
     const info = mc.getSuiteInfo(test);
     expect(info.suiteConfig[info.suiteConfig.length - 1].mode).toBe('default');
@@ -99,8 +121,8 @@ describe('MetadataCollector.getSuiteInfo', () => {
   it('skips suites with empty titles', () => {
     const mc = new MetadataCollector();
     const root = { type: 'project', title: '', parent: undefined };
-    const empty = { type: 'describe', title: '', parent: root, _parallelMode: 'parallel', _annotations: [] };
-    const named = { type: 'describe', title: 'Named', parent: empty, _parallelMode: 'serial', _annotations: [] };
+    const empty = { type: 'describe', title: '', parent: root, _parallelMode: 'parallel', _staticAnnotations: [] };
+    const named = { type: 'describe', title: 'Named', parent: empty, _parallelMode: 'serial', _staticAnnotations: [] };
     const test = { parent: named } as any;
     const info = mc.getSuiteInfo(test);
     expect(info.suitePath).toEqual(['Named']);
@@ -210,6 +232,18 @@ describe('MetadataCollector.collect — CI provider detection', () => {
     expect(collectCi()?.provider).toBe('Azure Pipelines');
   });
 
+  it('detects Bitbucket Pipelines with its build number and a link to the build', () => {
+    process.env.CI = 'true';
+    process.env.BITBUCKET_BUILD_NUMBER = '87';
+    process.env.BITBUCKET_REPO_FULL_NAME = 'acme/widgets';
+    process.env.BITBUCKET_PIPELINE_UUID = '{1234}';
+    const ci = collectCi();
+    expect(ci?.provider).toBe('Bitbucket Pipelines');
+    expect(ci?.buildNumber).toBe('87');
+    expect(ci?.pipelineId).toBe('{1234}');
+    expect(ci?.buildUrl).toBe('https://bitbucket.org/acme/widgets/pipelines/results/87');
+  });
+
   it('falls back to "Unknown CI" when only the generic CI var is set', () => {
     process.env.CI = 'true';
     const ci = collectCi();
@@ -229,6 +263,48 @@ describe('MetadataCollector.collect — CI provider detection', () => {
     const mc = new MetadataCollector();
     const metadata = mc.collect(fakeConfig(), undefined as any, { collectCiInfo: false });
     expect(metadata.ci).toBeUndefined();
+  });
+});
+
+describe('the run origin', () => {
+  it('is local outside CI, with nothing set', () => {
+    expect(resolveRunOrigin({})).toEqual({ kind: 'local' });
+    expect(detectCi({ CI: 'false' })).toBe(false);
+  });
+
+  it('is ci when a CI provider is detected', () => {
+    expect(resolveRunOrigin({ GITHUB_ACTIONS: 'true' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ BITBUCKET_BUILD_NUMBER: '3' })).toEqual({ kind: 'ci' });
+    expect(resolveRunOrigin({ CI: 'true' })).toEqual({ kind: 'ci' });
+  });
+
+  it('is what PIWI_ORIGIN names, with its ref, in CI or not', () => {
+    expect(resolveRunOrigin({ PIWI_ORIGIN: 'bisect', PIWI_ORIGIN_REF: '214' })).toEqual({ kind: 'bisect', ref: '214' });
+    expect(resolveRunOrigin({ GITLAB_CI: 'true', PIWI_ORIGIN: 'ci-rerun', PIWI_ORIGIN_REF: 'a1b2' })).toEqual({
+      kind: 'ci-rerun',
+      ref: 'a1b2',
+    });
+  });
+
+  it('ignores an unknown PIWI_ORIGIN with a warning, and a ref it cannot store', () => {
+    const warnings: string[] = [];
+    expect(resolveRunOrigin({ CI: 'true', PIWI_ORIGIN: 'nightly' }, (m) => warnings.push(m))).toEqual({ kind: 'ci' });
+    expect(warnings[0]).toContain('nightly');
+    expect(resolveRunOrigin({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: 'a b' })).toEqual({ kind: 'editor' });
+  });
+
+  it('is stamped on every run, whatever the collectors', () => {
+    const saved = { origin: process.env.PIWI_ORIGIN, ref: process.env.PIWI_ORIGIN_REF };
+    process.env.PIWI_ORIGIN = 'desktop';
+    delete process.env.PIWI_ORIGIN_REF;
+    try {
+      const metadata = new MetadataCollector().collect(fakeConfig(), undefined as any, { collectCiInfo: false });
+      expect(metadata.piwiOrigin).toEqual({ kind: 'desktop' });
+    } finally {
+      if (saved.origin === undefined) delete process.env.PIWI_ORIGIN;
+      else process.env.PIWI_ORIGIN = saved.origin;
+      if (saved.ref !== undefined) process.env.PIWI_ORIGIN_REF = saved.ref;
+    }
   });
 });
 
@@ -402,6 +478,19 @@ describe('MetadataCollector.collect — passthrough options and config metadata'
     const metadata = mc.collect(config, undefined as any, {});
     expect(metadata.htmlReport).toMatchObject({ workers: 4, timeout: 60_000, fullyParallel: true });
     expect((metadata.htmlReport as any).projects[0]).toMatchObject({ name: 'chromium', testDir: 'tests' });
+  });
+
+  it('records each project\'s baseURL and testIdAttribute', () => {
+    const mc = new MetadataCollector();
+    const config = {
+      projects: [
+        { name: 'web', testDir: 'tests', use: { baseURL: 'https://shop.test', testIdAttribute: 'data-qa' } },
+        { name: 'api', testDir: 'tests', use: {} },
+      ],
+    } as unknown as FullConfig;
+    const projects = (mc.collect(config, undefined as any, {}).htmlReport as any).projects;
+    expect(projects[0].use).toMatchObject({ baseURL: 'https://shop.test', testIdAttribute: 'data-qa' });
+    expect(projects[1].use.testIdAttribute).toBeUndefined();
   });
 
   it('copies config.metadata through as playwrightConfig', () => {

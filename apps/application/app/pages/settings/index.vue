@@ -3,12 +3,10 @@
  * `/settings` has no content of its own — it redirects to the first settings
  * page the current user can actually see.
  *
- * It used to render a "General settings" card whose entire body told you to
- * click something in the sidebar, which made the first click into Settings a
- * dead end. The target is computed from the same nav registry rather than
- * hardcoded, because "the first page" differs by role and build: a web instance
- * lands on Account (admin or not), while the desktop build — single-user, auth
- * off, account pages hidden — lands on Notifications.
+ * The target is computed from the same nav registry rather than hardcoded,
+ * because "the first page" differs by role and build: a web instance lands on
+ * Account (admin or not), while the desktop build — single-user, auth off,
+ * account pages hidden — lands on Notifications.
  *
  * The redirect is issued synchronously in setup so it also happens during SSR
  * (a real redirect response rather than a flash of this page). `useSettingsNav`
@@ -16,7 +14,7 @@
  * here needs no await. The template is only what a client sees in the gap
  * before navigation commits.
  */
-const navItems = useSettingsNav();
+const navItems = await useSettingsNav();
 
 // `replace` so Back returns to wherever the user came from rather than bouncing
 // them through this redirect again.

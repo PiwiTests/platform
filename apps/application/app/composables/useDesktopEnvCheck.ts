@@ -5,7 +5,7 @@
  * "run your package manager's install first" case before anything spawns.
  */
 
-export interface DesktopLocalEnv {
+interface DesktopLocalEnv {
   folder: string;
   exists: boolean;
   playwrightCli: string | null;

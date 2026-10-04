@@ -1,11 +1,12 @@
 {
   "name": "@piwitests/extension",
-  "version": "0.32.0",
+  "version": "0.45.0",
   "description": "Piwi Picker — a browser extension for ranked, stable Playwright locators, picked from the live page",
   "private": true,
   "type": "module",
   "scripts": {
     "extension:build": "node scripts/build.mjs",
+    "extension:build:release": "node scripts/build.mjs --release",
     "extension:dev": "node scripts/dev.mjs",
     "extension:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",
     "extension:lint": "oxlint --config oxlint.config.mts .",
@@ -15,7 +16,8 @@
     "extension:test": "vitest run",
     "extension:test:watch": "vitest",
     "extension:test:e2e": "npm run extension:build && playwright test --config=tests/e2e/playwright.config.ts",
-    "extension:zip": "npm run extension:build && node scripts/zip.mjs",
+    "extension:lab": "node tests/lab/run.mjs",
+    "extension:zip": "npm run extension:build:release && node scripts/zip.mjs",
     "test": "npm run extension:test"
   },
   "dependencies": {

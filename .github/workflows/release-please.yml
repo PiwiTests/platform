@@ -12,14 +12,15 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: googleapis/release-please-action@v5
         with:
           # A tag/commit/PR made with the default GITHUB_TOKEN does not trigger
           # other workflows (GitHub's anti-recursion protection) — the release
-          # tag this step creates would silently never fire publish.yml /
-          # publish-instrumentation.yml / publish-nuget.yml. A PAT or GitHub App
-          # token isn't subject to that restriction. See CONTRIBUTING.md.
+          # tag this step creates would silently never fire release.yml. A PAT
+          # or GitHub App token isn't subject to that restriction. See
+          # CONTRIBUTING.md.
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

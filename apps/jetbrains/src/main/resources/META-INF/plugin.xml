@@ -1,0 +1,121 @@
+<!-- Installed, updated and removed with a restart: the IDE never unloads it in place, with its service running. -->
+<idea-plugin require-restart="true">
+    <id>dev.piwitests.piwi</id>
+    <name>Piwi</name>
+    <vendor url="https://piwitests.dev">Piwi</vendor>
+    <description><![CDATA[
+    Your Playwright suite's history in the IDE, from a <a href="https://piwitests.dev">Piwi</a> instance:
+    <ul>
+      <li>the failures of the latest CI run on the checked-out branch, at their failing lines, with the
+          recommended locator heal as a quick fix, the trace and the screenshot one action away;</li>
+      <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
+          line and each application file;</li>
+      <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
+      <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant;</li>
+      <li>tests recorded in a browser your project's own Playwright opens, written at the caret as you click and type,
+          with calls to your page objects and helpers when connected, and removed in one undo;</li>
+      <li>locators and recorded flows sent from the Piwi Picker browser extension, inserted at the caret;</li>
+      <li>the source paths clicked in the dashboard, opened at their line in the project that holds them.</li>
+    </ul>
+    It reads the connection the Piwi reporter uses (the environment, the workspace <code>.env</code>, the Piwi desktop
+    app); otherwise connect under <b>Settings → Tools → Piwi</b>, signing in with the browser. The Piwi desktop app sits
+    beside a shared instance: <b>Connect</b> switches between them, keeping both.
+    Works in WebStorm, IntelliJ IDEA Ultimate, Rider and the other IDEs with the LSP API and JavaScript support.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.ultimate</depends>
+    <depends>JavaScript</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="dev.piwitests.jetbrains.PiwiStartupActivity"/>
+        <platform.lsp.serverSupportProvider implementation="dev.piwitests.jetbrains.PiwiLspServerSupportProvider"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="dev.piwitests.jetbrains.PiwiCodeVisionProvider"/>
+        <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiTestAnnotator"/>
+        <externalAnnotator language="JavaScript" implementationClass="dev.piwitests.jetbrains.PiwiRecordingAnnotator"/>
+        <intentionAction>
+            <language>JavaScript</language>
+            <className>dev.piwitests.jetbrains.RecordHereIntention</className>
+            <category>Piwi</category>
+        </intentionAction>
+        <editorNotificationProvider implementation="dev.piwitests.jetbrains.PiwiRecordingNotificationProvider"/>
+        <colorSettingsPage implementation="dev.piwitests.jetbrains.PiwiColorSettingsPage"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/PiwiDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/PiwiDarcula.xml"/>
+        <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
+        <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg"
+                    factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
+        <projectConfigurable parentId="tools" id="dev.piwitests.piwi" displayName="Piwi"
+                             instance="dev.piwitests.jetbrains.PiwiConfigurable"/>
+        <notificationGroup id="Piwi" displayType="BALLOON"/>
+        <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiSendHandler"/>
+        <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiOpenHandler"/>
+    </extensions>
+
+    <actions>
+        <group id="Piwi.Actions" text="Piwi" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Piwi.Connect" class="dev.piwitests.jetbrains.ConnectAction" text="Connect…"
+                    icon="AllIcons.General.User"
+                    description="Choose the Piwi desktop app or an instance, sign in or paste an API key, and pick the project"/>
+            <action id="Piwi.Disconnect" class="dev.piwitests.jetbrains.DisconnectAction" text="Disconnect"
+                    description="Forget this project's Piwi instance, project, the API key saved for it and the choice of the desktop app"/>
+            <action id="Piwi.Refresh" class="dev.piwitests.jetbrains.RefreshAction" text="Refresh"
+                    icon="AllIcons.Actions.Refresh"
+                    description="Fetch the indexes and the latest run again"/>
+            <action id="Piwi.RunTestsForFile" class="dev.piwitests.jetbrains.RunTestsForFileAction"
+                    text="Run the Tests That Reach This File" description="Run them in the Run tool window">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            </action>
+            <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
+                    description="Run one of the project's saved selections"/>
+            <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
+                    icon="AllIcons.General.Web"
+                    text="Open in Dashboard" description="Open this file's test, or the latest run"/>
+            <action id="Piwi.PairPicker" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
+                    description="Copy the address Piwi Picker sends locators and recorded steps to"/>
+            <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
+                    text="Copy the MCP Server Configuration"
+                    description="An mcpServers entry for the AI Assistant's MCP settings"/>
+            <separator/>
+            <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
+                    icon="AllIcons.Ide.Macro.Recording_1"
+                    description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Record Here"/>
+            </action>
+            <action id="Piwi.RecordNewFile" class="dev.piwitests.jetbrains.RecordNewFileAction"
+                    text="Record a New Test File…" icon="AllIcons.Ide.Macro.Recording_1"
+                    description="Create a spec file, then write what you do in a browser the project's Playwright opens into it">
+                <add-to-group group-id="NewGroup" anchor="last"/>
+            </action>
+            <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop Recording"
+                    icon="AllIcons.Actions.Suspend"
+                    description="Close the recording's browser; the recorded lines stay, one undo away">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Stop Recording"/>
+            </action>
+            <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause Recording"
+                    icon="AllIcons.Actions.Pause"
+                    description="Stop writing what is done in the browser until Resume">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Pause Recording"/>
+            </action>
+            <action id="Piwi.ResumeRecording" class="dev.piwitests.jetbrains.ResumeRecordingAction" text="Resume Recording"
+                    icon="AllIcons.Actions.Resume"
+                    description="Write what is done in the browser again, over the recorded lines">
+                <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+                <override-text place="EditorPopup" text="Piwi: Resume Recording"/>
+            </action>
+            <separator/>
+            <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
+                    icon="AllIcons.General.Settings"
+                    description="The Piwi instance and project of this project: Settings → Tools → Piwi"/>
+        </group>
+        <action id="Piwi.RecordHereGenerate" class="dev.piwitests.jetbrains.RecordHereGenerateAction" text="Piwi: Record Here…"
+                icon="AllIcons.Ide.Macro.Recording_1"
+                description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
+            <add-to-group group-id="GenerateGroup" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

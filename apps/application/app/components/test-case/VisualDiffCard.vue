@@ -10,7 +10,6 @@ import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
 const props = defineProps<{
-  runId: number;
   testRunsCaseId: number;
   /** When set, the card folds to a header with a peek (persisted per user). */
   storageKey?: string;

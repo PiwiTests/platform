@@ -1,12 +1,35 @@
 import { describe, test, expect } from 'vitest';
 import { formatFailingActionSection, parseTraceEvents } from '../../server/utils/trace-parser';
-import type { ParsedTraceData, TraceAction } from '../../server/utils/trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceAction } from '../../server/utils/trace-events';
 import { buildZip } from '../../server/utils/trace-zip';
+import {
+  caughtProbeTimeoutTrace,
+  caughtProbeTrace,
+  sameMessageProbeTrace,
+  teardownAfterBodyTrace,
+  type TraceFixture,
+} from './fixtures/caught-error-traces';
 
 /** Build a slim trace ZIP containing a `trace.trace` file made of the given JSONL lines. */
 function buildTraceZip(events: unknown[], extraLines: string[] = []): Buffer {
   const lines = [...events.map((e) => JSON.stringify(e)), ...extraLines];
   return buildZip([{ name: 'trace.trace', data: Buffer.from(lines.join('\n'), 'utf8') }]);
+}
+
+/** Build a trace ZIP holding a fixture's runner and page event files, without the events `drop` names. */
+function buildFixtureZip(fixture: TraceFixture, drop: string[] = []): Buffer {
+  return buildZip(
+    Object.entries(fixture).map(([name, events]) => ({
+      name,
+      data: Buffer.from(
+        events
+          .filter((e) => !drop.includes(String(e.type)))
+          .map((e) => JSON.stringify(e))
+          .join('\n'),
+        'utf8',
+      ),
+    })),
+  );
 }
 
 // Large limits so nothing truncates in these tests.
@@ -56,10 +79,10 @@ describe('formatFailingActionSection — timeout-fallback duration', () => {
     // N = traceEndTime - startTime = 3500.
     expect(out).toContain('- Duration: ran ≥ 3500ms before the test was killed');
 
-    // Guard against the old Date.now()-based, seconds-vs-ms bug.
+    // The duration comes from trace times, never from Date.now().
     expect(out).not.toContain('timed out after');
     expect(out).not.toContain('ms+');
-    // No wall-clock leakage: the buggy code produced a ~1.7e9 second value.
+    // No wall-clock leakage: a Date.now()-based value would be ~1.7e9 seconds.
     expect(out).not.toMatch(/Duration: timed out/);
     expect(out).not.toMatch(/ran ≥ \d{7,}ms/);
   });
@@ -379,9 +402,10 @@ describe('parseTraceEvents — modern before/after event pairs', () => {
     ]);
     const data = await parseTraceEvents(zip);
     expect(data!.timeoutFallback).toBe(false);
-    expect(data!.failingAction?.callId).toBe('c2');
-    expect(data!.failingAction?.error?.message).toBe('Timeout 1500ms exceeded.');
+    expect(data!.actions[1]!.error?.message).toBe('Timeout 1500ms exceeded.');
     expect(data!.actions[2]!.error?.message).toBe('nested boom');
+    // No test-level error names the fatal one: the test went on after c2, so c3 failed it.
+    expect(data!.failingAction?.callId).toBe('c3');
   });
 
   test('appends standalone log events to the open action and keeps the timeout fallback working', async () => {
@@ -487,5 +511,58 @@ describe('parseTraceEvents — 1.63 aria/screen snapshot events', () => {
     const data = await parseTraceEvents(zip);
     expect(data!.actions[0]!.ariaSnapshotBefore).toBeUndefined();
     expect(data!.actions[0]!.screenshotAfter).toBeUndefined();
+  });
+});
+
+describe('parseTraceEvents — a run with several errored actions', () => {
+  test('picks the assertion that failed the test, not the probe the test caught before it', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(caughtProbeTrace)))!;
+    expect(data.failingAction).toMatchObject({ callId: 'expect@48', apiName: 'Test.expect' });
+    expect(data.failingAction?.error?.message).toBe('Error: expect(locator).toBeEnabled() failed');
+    expect(data.timeoutFallback).toBe(false);
+  });
+
+  test('tells caught probes that read the same error apart by where the test error was thrown', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(sameMessageProbeTrace)))!;
+    expect(data.failingAction?.callId).toBe('expect@48');
+    expect(data.failingAction?.location).toMatchObject({ line: 39, column: 65 });
+  });
+
+  test('stays on the test body when the teardown fails after it', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(teardownAfterBodyTrace)))!;
+    expect(data.failingAction?.callId).toBe('expect@45');
+    expect(data.failingAction?.location).toMatchObject({ line: 56, column: 62 });
+  });
+
+  test('is the action the test timeout interrupted', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(caughtProbeTimeoutTrace)))!;
+    expect(data.failingAction).toMatchObject({ callId: 'pw:api@46', apiName: 'Test.pw:api' });
+  });
+
+  test('without test-level error events, is the latest errored runner action', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(caughtProbeTrace, ['error'])))!;
+    expect(data.failingAction?.callId).toBe('expect@48');
+  });
+
+  test('pairs the runner action with the page call it drove', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(caughtProbeTrace)))!;
+    expect(pageActionOf(data, data.failingAction)).toMatchObject({ callId: 'call@17', apiName: 'Frame.expect' });
+    expect(pageActionOf(data, pageActionOf(data, data.failingAction))).toBeNull();
+    const teardown = (await parseTraceEvents(buildFixtureZip(teardownAfterBodyTrace)))!;
+    expect(pageActionOf(teardown, teardown.failingAction)?.callId).toBe('call@13');
+  });
+
+  test('the AI section ends on the failing assertion and marks the caught probe', async () => {
+    const data = (await parseTraceEvents(buildFixtureZip(caughtProbeTrace)))!;
+    const out = formatFailingActionSection(data, MAX_TRACE_ACTIONS, TRACE_DOM_CHARS)!;
+    expect(out).toContain('- Error: Error: expect(locator).toBeEnabled() failed');
+    const leading = out.split('### Actions Leading to Failure\n')[1]!.split('\n\n')[0]!.split('\n');
+    expect(leading.slice(-5)).toEqual([
+      '- Test.pw:api',
+      '- Test.expect (error caught, the test continued)',
+      '- Test.pw:api',
+      '- Test.test.step',
+      '- Test.expect ← FAILED',
+    ]);
   });
 });

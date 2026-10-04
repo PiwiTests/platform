@@ -1,10 +1,6 @@
 /**
  * The one syntax-highlighting setup, shared by the dashboard components and
- * the offline export.
- *
- * Registering languages in each consumer meant the sets drifted — `yaml` was
- * passed by ARIA-snapshot call sites but registered nowhere, so those blocks
- * fell through to auto-detection. Add a language here and every surface gets it.
+ * the offline export. Add a language here and every surface gets it.
  */
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
@@ -69,6 +65,152 @@ export function highlightCode(code: string, lang?: string | null): HighlightResu
 
 function escapeForPre(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+const EXTENSION_LANGUAGES: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'typescript',
+  mts: 'typescript',
+  cts: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  json: 'json',
+  yml: 'yaml',
+  yaml: 'yaml',
+  css: 'css',
+  html: 'xml',
+  htm: 'xml',
+  xml: 'xml',
+  svg: 'xml',
+  vue: 'xml',
+  py: 'python',
+  sh: 'bash',
+  bash: 'bash',
+  ps1: 'powershell',
+  diff: 'diff',
+  patch: 'diff',
+};
+
+/**
+ * The registered language for a source path (`tests/a.spec.ts`, also with a
+ * `:line` or `:line:col` suffix), or null when its extension has none.
+ */
+export function languageForPath(path: string | null | undefined): string | null {
+  const match = /\.([a-z0-9]+)(?::\d+)*$/i.exec(path ?? '');
+  return (match && EXTENSION_LANGUAGES[match[1]!.toLowerCase()]) ?? null;
+}
+
+const BLOCK_COMMENT_LANGUAGES = new Set(['typescript', 'ts', 'javascript', 'js', 'css']);
+
+/**
+ * Whether an excerpt opens inside a block comment: its first line continues a
+ * comment (it starts with `*`) and a line closing a comment comes before any
+ * line opening one.
+ */
+function opensInsideBlockComment(lines: string[]): boolean {
+  const first = lines.find((line) => line.trim() !== '')?.trim() ?? '';
+  if (!first.startsWith('*')) return false;
+  for (const line of lines) {
+    if (line.includes('/*')) return false;
+    if (line.includes('*/')) return true;
+  }
+  return false;
+}
+
+/**
+ * Highlight consecutive source lines as one block and return each line's HTML.
+ * A span crossing a line break is closed at the end of the line and reopened on
+ * the next, so every entry is balanced markup and a multi-line construct (a
+ * block comment, a template literal) keeps its color on every line. An excerpt
+ * that starts inside a block comment is read as one. An unknown language gives
+ * escaped plain lines: a few lines are too little to auto-detect from.
+ */
+export function highlightLines(lines: string[], lang?: string | null): string[] {
+  if (lines.length === 0) return [];
+  if (!lang || !isKnownLanguage(lang)) return lines.map(escapeForPre);
+  const lead = BLOCK_COMMENT_LANGUAGES.has(lang) && opensInsideBlockComment(lines) ? ['/*'] : [];
+  const { html } = highlightCode([...lead, ...lines].join('\n'), lang);
+  return splitHtmlLines(html).slice(lead.length);
+}
+
+/** {@link highlightLines} as token spans, one list per line — the form the PDF export draws. */
+export function highlightLinesToSpans(lines: string[], lang?: string | null): HighlightSpan[][] {
+  return highlightLines(lines, lang).map(spansFromHtml);
+}
+
+function splitHtmlLines(html: string): string[] {
+  const lines: string[] = [];
+  const open: string[] = [];
+  let line = '';
+  for (const match of html.matchAll(SPAN_TOKEN)) {
+    if (match[1] !== undefined) {
+      open.push(match[0]);
+      line += match[0];
+    } else if (match[2] !== undefined) {
+      const [head, ...rest] = match[2].split('\n');
+      line += head;
+      for (const part of rest) {
+        lines.push(line + '</span>'.repeat(open.length));
+        line = open.join('') + part;
+      }
+    } else {
+      open.pop();
+      line += match[0];
+    }
+  }
+  lines.push(line);
+  return lines;
+}
+
+/** A row of a unified diff, typed as `parsePatchLines` types it. */
+export interface DiffRow {
+  type: 'add' | 'remove' | 'hunk' | 'context';
+  text: string;
+}
+
+/**
+ * Highlight the source inside a unified diff. Returns one entry per row: the
+ * HTML of the code after the row's `+`, `-` or space prefix, or null for a row
+ * that is not code (a hunk or file header) and for every row when the language
+ * is unknown. Within a hunk the old side (context and removed lines) and the
+ * new side (context and added lines) are highlighted as separate blocks, so
+ * neither reads a half-edited line.
+ */
+export function highlightDiffRows(rows: DiffRow[], lang?: string | null): (string | null)[] {
+  const out: (string | null)[] = rows.map(() => null);
+  if (!lang || !isKnownLanguage(lang)) return out;
+
+  let oldSide: number[] = [];
+  let newSide: number[] = [];
+  const paint = (indexes: number[]) => {
+    const html = highlightLines(
+      indexes.map((i) => rows[i]!.text.slice(1)),
+      lang,
+    );
+    indexes.forEach((rowIndex, k) => {
+      out[rowIndex] = html[k] ?? '';
+    });
+  };
+  const flush = () => {
+    paint(oldSide);
+    paint(newSide);
+    oldSide = [];
+    newSide = [];
+  };
+
+  rows.forEach((row, i) => {
+    const isCode = row.type === 'add' || row.type === 'remove' || (row.type === 'context' && /^( |$)/.test(row.text));
+    if (!isCode) {
+      flush();
+      return;
+    }
+    if (row.type !== 'add') oldSide.push(i);
+    if (row.type !== 'remove') newSide.push(i);
+  });
+  flush();
+  return out;
 }
 
 /** A run of source text sharing one highlight.js scope, or none for plain text. */

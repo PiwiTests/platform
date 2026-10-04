@@ -43,21 +43,6 @@ function repositoryUrlFromLink(url: string, provider: LinkProvider): string | nu
   }
 }
 
-const RICH_PROVIDERS: ReadonlySet<LinkProvider> = new Set([
-  'jira',
-  'confluence',
-  'github-issue',
-  'github-pr',
-  'gitlab-issue',
-  'gitlab-mr',
-  'bitbucket',
-]);
-
-/** Returns true if the provider supports rich (API-based) unfurl. */
-export function supportsRichUnfurl(provider: LinkProvider): boolean {
-  return RICH_PROVIDERS.has(provider);
-}
-
 /**
  * Construct a provider from a URL and pre-resolved config/token.
  * For SCM providers (GitHub/GitLab/Bitbucket) that work with public APIs,
@@ -72,9 +57,6 @@ export function unfurlProviderForProvider(
   switch (provider) {
     case 'jira':
       return atlassianConfig ? new JiraUnfurlProvider(atlassianConfig) : null;
-    case 'confluence':
-      // Unreachable until a Confluence connection exists; the class stays for then.
-      return null;
     default: {
       if (!SCM_PROVIDERS.has(provider) || !url) return null;
       const repositoryUrl = repositoryUrlFromLink(url, provider);
@@ -121,30 +103,6 @@ export async function unfurlUrl(url: string, db?: DbClient): Promise<UnfurlResul
       if (result.title || result.statusText) {
         return result;
       }
-    }
-  }
-
-  const generic = new GenericUnfurlProvider();
-  return generic.unfurl(url, null);
-}
-
-/**
- * Unfurl with an explicit provider (for callers that already know the provider).
- * Falls back to generic OpenGraph if the rich provider is unavailable.
- */
-export async function unfurlUrlWithProvider(
-  url: string,
-  providerType: LinkProvider,
-  db: DbClient,
-): Promise<UnfurlResult> {
-  const config = providerType === 'jira' ? await resolveJiraUnfurlConfig(db, url) : null;
-  const token = await loadScmToken(db);
-  const provider = unfurlProviderForProvider(providerType, url, config, token);
-  if (provider) {
-    const key = extractKey(url, providerType);
-    const result = await provider.unfurl(url, key);
-    if (result.title || result.statusText) {
-      return result;
     }
   }
 

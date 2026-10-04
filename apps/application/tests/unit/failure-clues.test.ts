@@ -202,6 +202,31 @@ describe('failed-request-before-failure', () => {
     });
     expect(rules(input)).not.toContain('failed-request-before-failure');
   });
+
+  test('a request that failed without a response names the error the browser reported', () => {
+    const input = baseInput({
+      networkRequests: [
+        {
+          method: 'GET',
+          url: '/api/quote',
+          status: 0,
+          duration: 1_500,
+          startTime: T0 + 2_000,
+          failure: 'net::ERR_CONNECTION_RESET',
+        },
+      ],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'failed-request-before-failure');
+    expect(clue!.title).toBe('GET /api/quote failed with net::ERR_CONNECTION_RESET');
+  });
+
+  test('a request with no response and no recorded error reads as aborted', () => {
+    const input = baseInput({
+      networkRequests: [{ method: 'GET', url: '/api/quote', status: 0, duration: 1_500, startTime: T0 + 2_000 }],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'failed-request-before-failure');
+    expect(clue!.title).toBe('GET /api/quote was aborted');
+  });
 });
 
 describe('slow-request-overlapping-failure', () => {
@@ -423,6 +448,34 @@ describe('wrong-page', () => {
 
   test('negative: the page stayed on the navigated route', () => {
     const input = baseInput({ appState: { url: 'https://app.test/checkout' } });
+    expect(rules(input)).not.toContain('wrong-page');
+  });
+
+  test('negative: a click after the last navigation moved the page on', () => {
+    const timeline = buildFailureTimeline(
+      timelineInput({
+        steps: [
+          { title: 'Navigate', category: 'navigation', params: { url: '/login' }, duration: 500, startTime: T0 },
+          { title: 'Click', category: 'action', duration: 300, startTime: T0 + 600 },
+          { title: 'Fill', category: 'input', duration: 2_000, startTime: T0 + 1_000, error: 'Timeout' },
+        ],
+      }),
+    );
+    const input = baseInput({ timeline, appState: { url: 'https://app.test/checkout' } });
+    expect(rules(input)).not.toContain('wrong-page');
+  });
+
+  test('negative: an API request is not a navigation', () => {
+    const timeline = buildFailureTimeline(
+      timelineInput({
+        steps: [
+          { title: 'Navigate', category: 'navigation', params: { url: '/account' }, duration: 500, startTime: T0 },
+          { title: 'POST', category: 'api', params: { url: '/api/seed' }, duration: 30, startTime: T0 + 600 },
+          { title: 'Expect "toBe"', category: 'assertion', duration: 2, startTime: T0 + 700, error: 'boom' },
+        ],
+      }),
+    );
+    const input = baseInput({ timeline, appState: { url: 'https://app.test/account' } });
     expect(rules(input)).not.toContain('wrong-page');
   });
 });
@@ -866,5 +919,127 @@ describe('the story pass', () => {
       baseInput({ environmentDiff: { status: 'ok', entries: [{ key: 'viewport' }] } }),
     );
     expect(story).toBeNull();
+  });
+});
+
+describe('known-flake-suspect', () => {
+  const slowCart = {
+    kind: 'slow-route' as const,
+    label: 'GET /api/cart slower (≥1.6 s)',
+    counts: { failuresWith: 7, failures: 8, passesWith: 3, passes: 44 },
+    route: 'GET /api/cart',
+    thresholdMs: 1_600,
+    executionIds: [10, 11],
+  };
+
+  test('positive: this failure shows the route the history ranks as a suspect', () => {
+    const input = baseInput({
+      networkRequests: [
+        { method: 'GET', url: 'https://shop.test/api/user', status: 200, duration: 90, startTime: T0 + 100 },
+        { method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 2_100, startTime: T0 + 200 },
+      ],
+      flakeSuspects: [slowCart],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.strength).toBe('weak');
+    expect(clue.title).toBe('A known flake suspect: GET /api/cart slower (≥1.6 s)');
+    expect(clue.detail).toBe(
+      "GET /api/cart took 2.1 s; it is slow (1.6 s or more) in 7 of this test's 8 failures and 3 of its 44 passes.",
+    );
+    expect(clue.citations).toEqual([{ section: 'networkRequests', index: 1 }]);
+  });
+
+  test('a neighbor suspect names the other test', () => {
+    const input = baseInput({
+      flakeSuspects: [
+        {
+          kind: 'alongside',
+          label: 'resets catalog alongside',
+          counts: { failuresWith: 5, failures: 8, passesWith: 4, passes: 44 },
+          title: 'resets catalog',
+          executionIds: [10],
+        },
+      ],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.detail).toBe(
+      '"resets catalog" was running at the same time; it runs alongside in 5 of this test\'s 8 failures and 4 of its 44 passes.',
+    );
+    expect(clue.citations).toEqual([{ section: 'recurrenceFlakiness' }]);
+  });
+
+  test('strong: a lab run reproduced the suspect', () => {
+    const input = baseInput({
+      networkRequests: [
+        { method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 2_100, startTime: T0 + 200 },
+      ],
+      flakeSuspects: [
+        {
+          ...slowCart,
+          reproduced: {
+            label: 'delay GET /api/cart 1.8 s',
+            matchingFailures: 3,
+            runs: 4,
+            controlMatchingFailures: 0,
+            controlRuns: 10,
+            pValue: 0.011,
+          },
+        },
+      ],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.strength).toBe('strong');
+    expect(clue.title).toBe('A reproduced flake cause: GET /api/cart slower (≥1.6 s)');
+    expect(clue.detail).toBe(
+      "GET /api/cart took 2.1 s; it is slow (1.6 s or more) in 7 of this test's 8 failures and 3 of its 44 passes; a lab run reproduced it: 3 of 4 under delay GET /api/cart 1.8 s, against 0 of 10 without, p = 0.011.",
+    );
+  });
+
+  test('several suspects: the reproduced one is named over higher-ranked untested ones', () => {
+    const load = {
+      kind: 'load' as const,
+      label: '3 or more other tests running at once',
+      counts: { failuresWith: 8, failures: 8, passesWith: 10, passes: 44 },
+      executionIds: [10],
+    };
+    const neighbor = {
+      kind: 'alongside' as const,
+      label: 'resets catalog alongside',
+      counts: { failuresWith: 6, failures: 8, passesWith: 4, passes: 44 },
+      title: 'resets catalog',
+      executionIds: [10],
+    };
+    const reproduced = {
+      label: 'delay GET /api/cart 1.8 s',
+      matchingFailures: 3,
+      runs: 4,
+      controlMatchingFailures: 0,
+      controlRuns: 10,
+      pValue: 0.011,
+    };
+    const input = baseInput({
+      networkRequests: [
+        { method: 'GET', url: 'https://shop.test/api/cart', status: 200, duration: 2_100, startTime: T0 + 200 },
+      ],
+      flakeSuspects: [load, neighbor, { ...slowCart, reproduced }],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'known-flake-suspect')!;
+    expect(clue.strength).toBe('strong');
+    expect(clue.title).toBe('A reproduced flake cause: GET /api/cart slower (≥1.6 s)');
+
+    // Without a reproduced one, the highest-ranked suspect this failure shows is named.
+    const untested = baseInput({ flakeSuspects: [{ ...load, executionIds: [99] }, neighbor, slowCart] });
+    expect(runClues(untested).find((c) => c.rule === 'known-flake-suspect')!.title).toBe(
+      'A known flake suspect: resets catalog alongside',
+    );
+  });
+
+  test('negative: the suspect is not shown by this execution', () => {
+    const input = baseInput({ flakeSuspects: [{ ...slowCart, executionIds: [11, 12] }] });
+    expect(rules(input)).not.toContain('known-flake-suspect');
+  });
+
+  test('negative: a test with no suspects', () => {
+    expect(rules(baseInput({ flakeSuspects: [] }))).not.toContain('known-flake-suspect');
   });
 });

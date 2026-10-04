@@ -1,5 +1,6 @@
 ---
-title: Triage a run that went mostly red
+title: Triage a run gone red
+description: "When most of a Playwright run goes red, it is usually two or three causes, not forty bugs. Collapse the failures into clusters, rule out the environment, triage each cause once, then confirm the fix."
 lang: en-US
 ---
 
@@ -15,51 +16,43 @@ Failures sharing an **error fingerprint** are grouped automatically, so the run 
 *"40 failures, 3 root causes"* before you open anything.
 
 <figure>
-  <img src="/screenshots/failure-clusters.png" alt="Failure clusters tab grouping failures by normalized error signature">
-  <figcaption>The Failure clusters tab — one row per root cause, with error type, occurrence count, and triage status.</figcaption>
+  <img src="/screenshots/failure-clusters.png" alt="A red run's Tests tab grouped by cluster: one group per root cause with its test count, triage status and an Open cluster link, and the passing tests folded away">
+  <figcaption>A red run's <strong>Tests</strong> tab opens grouped by <strong>Cluster</strong> — one group per root cause, with its triage status and a link to the cluster page.</figcaption>
 </figure>
 
-Fingerprinting masks the volatile parts of an error (timeouts and other numbers, UUIDs, URLs, the
-expected and received values of an assertion) so the same underlying failure groups across tests, spec
-files, and runs. It's always on and needs no configuration.
+The grouping is always on and needs no configuration; [How failures are
+grouped](/features/failure-clusters#how-failures-are-grouped) explains what the fingerprint masks.
 
 ## 2. Rule out the boring causes first
 
-Before treating any cluster as a product bug, check the two heuristics on the run's failure groups:
+Before treating any cluster as a product bug, check the two flags on the run's failure groups. They come
+from `get_failure_groups` over MCP or from the REST API; the dashboard doesn't show them.
 
-- **Worker correlation** — if a cluster's failures are concentrated on one worker, you're looking at a
-  misbehaving worker, not forty broken tests.
-- **Flaky share** — a cluster made up largely of known-flaky tests is noise riding on a bad run.
+- **Worker correlated** — two or more of the cluster's failures, all on one worker, in a run that used
+  several: you're looking at a misbehaving worker, not forty broken tests.
+- **Flaky** — a test in the cluster passed on retry in this run: part of the cluster is noise riding on a
+  bad run.
 
 An environment that never came up has a signature of its own: everything fails, fast, on a navigation
 or connection error. That's one cluster, one fix, and no test code involved.
 
 ## 3. Triage each cluster once
 
-A cluster page puts the whole investigation on one screen: the signature and resolution at the top, a
-**Triage** rail on the right that sets one status — open, resolved, or ignored — plus a note for the
-entire group, and collapsible evidence sections down the left. Forty tests, three decisions.
-
-<figure>
-  <img src="/screenshots/failure-cluster-triage.png" alt="A failure cluster page: signature, occurrence and affected-test counts, a resolution card marked Regressed, the triage rail with open/resolved/ignored and a note, and collapsed evidence sections for error message, alternative locators, environment diff, visual diff, DOM snapshot, test evidence and what changed">
-  <figcaption>One cluster, one screen — occurrences and affected tests up top, the resolution history beside them, triage in the right rail, and every piece of evidence one click away on the left.</figcaption>
-</figure>
+A cluster page puts the whole investigation on one screen: the situation block across every test that
+shares the failure, the occurrence sparkline, what changed since the last passing run, and a
+[state line](/features/failure-clusters#the-state-line) with **Triage** beside it, which sets one status (open,
+resolved or ignored), a note and an assignee for the entire group. The affected tests and their evidence
+follow. Forty tests, three decisions.
 
 Clusters stay open across runs, so the next red build attaches to the same row rather than starting the
 conversation over.
 
 ## 4. Confirm the fix actually landed
 
-When a later run executes every test a cluster covers and they all pass, Piwi records the fix — the run,
-the commit, and how long the cluster was open — with three separate verdicts, because they aren't the
-same claim. The run doesn't have to be a full one: re-running just the affected tests and seeing them all
-pass closes the cluster too.
-
-| Verdict | Means |
-|---|---|
-| **Stopped failing** | The tests pass again. A flaky test can manage this by accident. |
-| **Diagnosis verified** | Commits since the last failing run touched a file the [suggested patch](/features/ai-diagnosis#what-a-diagnosis-contains) named. |
-| **Regressed** | A fix was recorded and the cluster is failing again. |
+When a later run executes every test a cluster covers and they all pass, Piwi records the fix. The run doesn't have
+to be a full one: re-running just the affected tests and seeing them all pass records the fix too. The three
+verdicts, *stopped failing*, *diagnosis verified* and *regressed*, are explained on [Did the fix
+work?](/features/failure-clusters#did-the-fix-work).
 
 ## Optional: let a model do the first pass
 
@@ -83,10 +76,10 @@ your own channel — see the [API docs](https://piwitests.dev/demo/docs).
 
 **Before anyone opens anything.** Subscribe to the `cluster.new` [notification](/features/notifications) event
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,
-and the payload carries a sample error excerpt and the affected cases.
+and the payload carries a sample error excerpt and how many tests it affects.
 
-## See also
-
-- [AI diagnosis & failure clustering](/features/ai-diagnosis) — how fingerprints and semantic merging work
+## Related
+- [Failure clusters & the inbox](/features/failure-clusters): how failures are grouped, and whether the fix worked
+- [AI diagnosis](/features/ai-diagnosis): semantic merging and the explanation of a cluster
 - [Regression or flake?](./regression-or-flaky) — when it's one test rather than forty
 - [Core concepts](/guide/concepts) — *cluster*, *fingerprint*, *baseline*

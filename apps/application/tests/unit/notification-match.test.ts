@@ -2,12 +2,15 @@ import { describe, test, expect } from 'vitest';
 import {
   buildNotificationDedupeKey,
   passesSubscriptionFilters,
+  matchesNamePattern,
+  describeSubscriptionFilters,
   computePerfBaseline,
   notificationTargetPath,
   PERF_BASELINE_MIN_RUNS,
   type RunFinishedPayload,
   type ClusterNewPayload,
   type DiagnosisCompletedPayload,
+  type AutoHealPrOpenedPayload,
 } from '#shared/notification-events';
 
 const runPayload: RunFinishedPayload = {
@@ -71,10 +74,72 @@ describe('passesSubscriptionFilters', () => {
     expect(passesSubscriptionFilters(undefined, 'run.failed', runPayload)).toBe(true);
   });
 
-  test('branch filter applies to run events only', () => {
+  test('branch filter keeps runs on a listed branch', () => {
     const payload = { ...runPayload, branch: 'feature-x' };
     expect(passesSubscriptionFilters({ branches: ['main'] }, 'run.failed', payload)).toBe(false);
-    expect(passesSubscriptionFilters({ branches: ['feature-x'] }, 'run.failed', payload)).toBe(true);
+    expect(passesSubscriptionFilters({ branches: ['main', 'feature-x'] }, 'run.failed', payload)).toBe(true);
+  });
+
+  test('branch filter takes * patterns', () => {
+    const release = { ...runPayload, branch: 'release/2.4' };
+    expect(passesSubscriptionFilters({ branches: ['release/*'] }, 'run.failed', release)).toBe(true);
+    expect(passesSubscriptionFilters({ branches: ['hotfix/*'] }, 'run.failed', release)).toBe(false);
+  });
+
+  test('environment filter keeps runs in a listed environment', () => {
+    const staging = { ...runPayload, environment: 'staging' };
+    expect(passesSubscriptionFilters({ environments: ['staging', 'production'] }, 'run.failed', staging)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['production'] }, 'run.failed', staging)).toBe(false);
+    expect(passesSubscriptionFilters({ environments: ['stag*'] }, 'run.failed', staging)).toBe(true);
+  });
+
+  test('branch and environment filters must both match', () => {
+    const filters = { branches: ['main'], environments: ['staging'] };
+    expect(
+      passesSubscriptionFilters(filters, 'run.failed', { ...runPayload, branch: 'main', environment: 'staging' }),
+    ).toBe(true);
+    expect(passesSubscriptionFilters(filters, 'run.failed', { ...runPayload, branch: 'main', environment: 'qa' })).toBe(
+      false,
+    );
+  });
+
+  test('a run that reported no branch or environment is on none of the listed ones', () => {
+    expect(passesSubscriptionFilters({ branches: ['main'] }, 'run.failed', runPayload)).toBe(false);
+    expect(passesSubscriptionFilters({ environments: ['staging'] }, 'run.failed', runPayload)).toBe(false);
+  });
+
+  test('branch and environment filters apply to every run-scoped event', () => {
+    const filters = { branches: ['main'], environments: ['staging'] };
+    const scope = { branch: 'feature-x', environment: 'staging' };
+    expect(passesSubscriptionFilters(filters, 'flakiness.spike', { ...runPayload, ...scope })).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'perf.regression', { ...runPayload, ...scope })).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'cluster.new', { ...clusterPayload(11), ...scope })).toBe(false);
+    expect(
+      passesSubscriptionFilters(filters, 'cluster.new', {
+        ...clusterPayload(11),
+        branch: 'main',
+        environment: 'staging',
+      }),
+    ).toBe(true);
+    expect(
+      passesSubscriptionFilters(filters, 'bug.looks_fixed', { projectId: 2, projectName: 'p', runId: 7, tests: [] }),
+    ).toBe(false);
+  });
+
+  test('diagnosis and auto-heal events pass branch and environment filters', () => {
+    const filters = { branches: ['main'], environments: ['staging'] };
+    const diagnosis: DiagnosisCompletedPayload = { clusterId: 5, projectId: 2 };
+    const pr: AutoHealPrOpenedPayload = {
+      projectId: 2,
+      projectName: 'p',
+      runId: 7,
+      prNumber: 3,
+      prUrl: 'https://example.com/pr/3',
+      branch: 'piwi/heal-7',
+      editCount: 1,
+    };
+    expect(passesSubscriptionFilters(filters, 'diagnosis.completed', diagnosis)).toBe(true);
+    expect(passesSubscriptionFilters(filters, 'auto_heal.pr_opened', pr)).toBe(true);
   });
 
   test('defaultBranchOnly drops non-default-branch runs', () => {
@@ -91,6 +156,26 @@ describe('passesSubscriptionFilters', () => {
     ).toBe(true);
   });
 
+  test('owner filter applies to the non-run events that carry owners', () => {
+    const filters = { owners: ['team-a'] };
+    const otherTeam = { ...runPayload, owners: ['team-b'] };
+    expect(passesSubscriptionFilters(filters, 'flakiness.spike', otherTeam)).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'perf.regression', { ...otherTeam, regressionPct: 40 })).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'flakiness.spike', { ...runPayload, owners: ['team-a'] })).toBe(true);
+
+    const cluster = {
+      clusterId: 4,
+      projectId: 1,
+      projectName: 'web',
+      signature: 'Timeout',
+      runId: 7,
+      branch: 'main',
+    };
+    expect(passesSubscriptionFilters(filters, 'cluster.new', cluster)).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'cluster.new', { ...cluster, owners: ['team-b'] })).toBe(false);
+    expect(passesSubscriptionFilters(filters, 'cluster.new', { ...cluster, owners: ['team-a'] })).toBe(true);
+  });
+
   test('flakinessThreshold gates flakiness.spike on the rate', () => {
     expect(passesSubscriptionFilters({ flakinessThreshold: 0.2 }, 'flakiness.spike', runPayload)).toBe(false);
     expect(passesSubscriptionFilters({ flakinessThreshold: 0.05 }, 'flakiness.spike', runPayload)).toBe(true);
@@ -100,6 +185,42 @@ describe('passesSubscriptionFilters', () => {
     const regressed = { ...runPayload, regressionPct: 30 };
     expect(passesSubscriptionFilters({ perfRegressionPct: 50 }, 'perf.regression', regressed)).toBe(false);
     expect(passesSubscriptionFilters({ perfRegressionPct: 25 }, 'perf.regression', regressed)).toBe(true);
+  });
+});
+
+describe('matchesNamePattern', () => {
+  test('a name without * matches exactly', () => {
+    expect(matchesNamePattern('main', ['main'])).toBe(true);
+    expect(matchesNamePattern('main-2', ['main'])).toBe(false);
+  });
+
+  test('* matches any characters, slashes included', () => {
+    expect(matchesNamePattern('release/2.4/rc', ['release/*'])).toBe(true);
+    expect(matchesNamePattern('feat-login-ui', ['feat-*-ui'])).toBe(true);
+    expect(matchesNamePattern('anything', ['*'])).toBe(true);
+  });
+
+  test('other characters are literal', () => {
+    expect(matchesNamePattern('release-2x4', ['release-2.4*'])).toBe(false);
+    expect(matchesNamePattern('release-2.4.1', ['release-2.4*'])).toBe(true);
+    expect(matchesNamePattern('env(a)', ['env(*)'])).toBe(true);
+  });
+});
+
+describe('describeSubscriptionFilters', () => {
+  test('names each filter that is set', () => {
+    expect(
+      describeSubscriptionFilters({
+        branches: ['main', 'release/*'],
+        environments: ['staging'],
+        flakinessThreshold: 0.2,
+      }),
+    ).toEqual(['Branch: main, release/*', 'Environment: staging', 'Flakiness ≥ 20%']);
+  });
+
+  test('is empty without filters', () => {
+    expect(describeSubscriptionFilters(null)).toEqual([]);
+    expect(describeSubscriptionFilters({ branches: [] })).toEqual([]);
   });
 });
 

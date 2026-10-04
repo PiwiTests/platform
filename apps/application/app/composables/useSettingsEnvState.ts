@@ -18,8 +18,8 @@ interface WastedSettings {
  * Reuses the existing `GET /api/settings/*` endpoints — no new server API. The
  * AI page is env-managed when its provider is env-pinned (`AiSettings.envManaged`);
  * SMTP is always env-only (read-only display); the Performance page when its
- * wasted-wait patterns come from env. Pages with no env-overridable fields
- * (account, users, tags) are never env-managed. Storage backend is env-only by
+ * wasted-wait patterns or its cost of a CI minute come from env. Pages with no env-overridable fields
+ * (account, users, permissions, tags) are never env-managed. Storage backend is env-only by
  * design but no endpoint
  * reports it today, so it is treated as "overridable but not necessarily locked"
  * (the page shows the env-var reference card regardless).
@@ -30,7 +30,9 @@ interface WastedSettings {
 export function useSettingsEnvState() {
   const envManaged = ref<Record<SettingsPageId, boolean>>({
     account: false,
+    localization: false,
     users: false,
+    permissions: false,
     notifications: false,
     tags: false,
     storage: false,
@@ -57,9 +59,18 @@ export function useSettingsEnvState() {
     tasks.push(
       $fetch<WastedSettings>('/api/settings/wasted-waits')
         .then((s) => {
-          // Performance groups wasted-time + timeout-hygiene; wasted-wait patterns
-          // are the only env-pinnable field, so they drive the page's lock badge.
-          envManaged.value.performance = Boolean(s.envManaged);
+          // Performance groups wasted-time, timeout hygiene and the CI cost; the
+          // wasted-wait patterns and the cost are its env-pinnable fields.
+          if (s.envManaged) envManaged.value.performance = true;
+        })
+        .catch(() => {}),
+    );
+
+    tasks.push(
+      $fetch<{ envManaged: boolean }>('/api/settings/ci-cost')
+        .then((s) => {
+          // The cost of a CI minute is the Performance page's other env-pinnable field.
+          if (s.envManaged) envManaged.value.performance = true;
         })
         .catch(() => {}),
     );
@@ -78,6 +89,16 @@ export function useSettingsEnvState() {
         .then((s) => {
           // Integrations is env-managed when a connection comes from the environment.
           envManaged.value.integrations = (s.connections ?? []).some((c) => c.managedBy === 'env');
+        })
+        .catch(() => {}),
+    );
+
+    tasks.push(
+      $fetch<{ localeEnvManaged: boolean; timeZoneEnvManaged: boolean }>('/api/settings/locale')
+        .then((s) => {
+          // Localization is env-managed when either the locale or the time zone
+          // is pinned by an env var.
+          envManaged.value.localization = Boolean(s.localeEnvManaged || s.timeZoneEnvManaged);
         })
         .catch(() => {}),
     );

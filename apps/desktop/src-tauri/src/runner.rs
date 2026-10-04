@@ -54,15 +54,23 @@ const ALLOWED_FLAGS: [&str; 12] = [
     "--last-failed",
 ];
 
-/// A long-running reproduce/bisect job: its stop flag, the pid of the child
-/// currently spawned (install / browser / test — tree-killed on stop), and how
-/// to tear the throwaway worktree down. The job owns the worktree for its life.
-/// A pid rather than a handle so the same stop path kills a Tauri sidecar child
-/// and a plain `npm`/`git` child alike, together with the process tree each
-/// spawned.
+/// The child a reproduce/bisect job is running right now. A pid rather than a
+/// handle so the same stop path reaches a Tauri sidecar child and a plain
+/// `npm`/`git` child alike, together with the process tree each spawned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JobChild {
+    pub pid: u32,
+    /// A Node process (the test, or a browser install) that winds down on
+    /// Ctrl+C; a git or package-manager step is killed at once.
+    pub interruptible: bool,
+}
+
+/// A long-running reproduce/bisect job: its stop flag, the child currently
+/// spawned (checkout / install / browser / test), and how to tear the
+/// throwaway worktree down. The job owns the worktree for its life.
 pub struct Job {
     pub stop: Arc<AtomicBool>,
-    pub pid: Arc<Mutex<Option<u32>>>,
+    pub child: Arc<Mutex<Option<JobChild>>>,
     pub cleanup: crate::worktree::Cleanup,
     pub cleaned: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -74,6 +82,8 @@ pub struct Job {
 pub struct LocalRuns {
     next_id: AtomicU32,
     children: Mutex<HashMap<u32, CommandChild>>,
+    /// Plain runs already asked to stop gracefully — a second stop kills them.
+    stopping: Mutex<HashSet<u32>>,
     jobs: Mutex<HashMap<u32, Job>>,
 }
 
@@ -99,11 +109,46 @@ impl LocalRuns {
         self.jobs.lock().unwrap().remove(&id);
     }
 
-    /// Record (or clear) the pid of the child currently running for a job, so a
-    /// stop or app-quit tree-kills exactly what is live.
-    pub(crate) fn set_job_pid(&self, id: u32, pid: Option<u32>) {
+    /// Record (or clear) the child currently running for a job, so a stop or
+    /// app-quit reaches exactly what is live.
+    pub(crate) fn set_job_child(&self, id: u32, child: Option<JobChild>) {
         if let Some(job) = self.jobs.lock().unwrap().get(&id) {
-            *job.pid.lock().unwrap() = pid;
+            *job.child.lock().unwrap() = child;
+        }
+    }
+
+    /// Track a spawned run's process so it can be stopped like any local run.
+    pub(crate) fn track_child(&self, id: u32, child: CommandChild) {
+        self.children.lock().unwrap().insert(id, child);
+    }
+
+    /// Forget a run spawned outside this module once its process has exited.
+    pub(crate) fn forget_child(&self, id: u32) {
+        self.drop_child(id);
+    }
+
+    /// Forget a plain run once its process has exited.
+    fn drop_child(&self, id: u32) {
+        self.children.lock().unwrap().remove(&id);
+        self.stopping.lock().unwrap().remove(&id);
+    }
+
+    /// Kill a plain run's process tree now, if it is still running.
+    fn kill_child(&self, id: u32) {
+        let child = self.children.lock().unwrap().remove(&id);
+        self.stopping.lock().unwrap().remove(&id);
+        if let Some(child) = child {
+            crate::worktree::kill_child_tree(child.pid());
+            let _ = child.kill();
+        }
+    }
+
+    /// Kill a job's current child tree now, if it is still the one running.
+    fn kill_job_child(&self, id: u32, pid: u32) {
+        if let Some(job) = self.jobs.lock().unwrap().get(&id) {
+            if job.child.lock().unwrap().is_some_and(|c| c.pid == pid) {
+                crate::worktree::kill_child_tree(pid);
+            }
         }
     }
 
@@ -114,18 +159,20 @@ impl LocalRuns {
         for (_, child) in self.children.lock().unwrap().drain() {
             let _ = child.kill();
         }
+        self.stopping.lock().unwrap().clear();
         for (_, job) in self.jobs.lock().unwrap().drain() {
             job.stop.store(true, Ordering::SeqCst);
-            if let Some(pid) = *job.pid.lock().unwrap() {
-                crate::worktree::kill_child_tree(pid);
+            if let Some(child) = *job.child.lock().unwrap() {
+                crate::worktree::kill_child_tree(child.pid);
             }
             crate::worktree::perform_cleanup(&job.cleanup, &job.cleaned);
         }
     }
 }
 
-/// A project's linked folder plus the optional start command the shell runs
-/// before a reproduce/bisect step when the Playwright config has no `webServer`.
+/// A project's linked folder plus an optional start command (and readiness URL)
+/// for reproduce/bisect steps when the Playwright config has no `webServer`.
+/// The command is stored only: no reproduce, bisect or lab driver runs it.
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LinkRecord {
@@ -171,7 +218,10 @@ pub(crate) fn read_links(app: &AppHandle) -> HashMap<String, LinkRecord> {
 fn write_links(app: &AppHandle, links: &HashMap<String, LinkRecord>) -> Result<(), String> {
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
     store.set(PROJECT_LINKS_KEY, json!(links));
-    store.save().map_err(|e| e.to_string())
+    store.save().map_err(|e| e.to_string())?;
+    // Editors read the links from the discovery file to pick their project.
+    crate::refresh_discovery_file(app);
+    Ok(())
 }
 
 /// The linked folder for a project, when one is set and still on disk. Used by
@@ -290,11 +340,9 @@ pub fn desktop_set_project_link(
     write_links(&app, &links)
 }
 
-/// Store (or clear) the start command the shell runs before each reproduce/bisect
-/// step when the Playwright config has no `webServer`, and the URL it polls until
-/// the app answers. Requires a linked folder; the command is executed only from
-/// here, never passed in at run time, so the stored text is the single source of
-/// truth for what runs.
+/// Store (or clear) the start command for reproduce/bisect steps when the
+/// Playwright config has no `webServer`, and the URL to poll until the app
+/// answers. Requires a linked folder. Stored only: no driver reads either value.
 #[tauri::command]
 pub fn desktop_set_project_start_command(
     app: AppHandle,
@@ -451,7 +499,8 @@ pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
 
 /// A `piwi:local-run` event. `kind` selects which of the optional fields carries
 /// the payload: `stdout`/`stderr`/`error` use `line`, `exit` uses `code`, `phase`
-/// uses `phase` (a reproduce/bisect step header), and `bisect` uses `bisect`.
+/// uses `phase` (a reproduce/bisect step header), `bisect` uses `bisect`, and
+/// `repro` uses `repro` (what a repro spec recorded about its run).
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct RunEventPayload {
     pub id: u32,
@@ -464,6 +513,12 @@ pub(crate) struct RunEventPayload {
     pub phase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bisect: Option<crate::worktree::BisectEvent>,
+    /// For `repro`: the spec's recorded outcome, `null` when it recorded none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repro: Option<serde_json::Value>,
+    /// For `lab`: the report `piwi flake --json` printed, `null` when it printed none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lab: Option<serde_json::Value>,
 }
 
 impl RunEventPayload {
@@ -475,6 +530,8 @@ impl RunEventPayload {
             code: None,
             phase: None,
             bisect: None,
+            repro: None,
+            lab: None,
         }
     }
     pub(crate) fn exit(id: u32, code: Option<i32>) -> Self {
@@ -485,6 +542,8 @@ impl RunEventPayload {
             code,
             phase: None,
             bisect: None,
+            repro: None,
+            lab: None,
         }
     }
     pub(crate) fn phase(id: u32, phase: &str) -> Self {
@@ -495,6 +554,8 @@ impl RunEventPayload {
             code: None,
             phase: Some(phase.to_string()),
             bisect: None,
+            repro: None,
+            lab: None,
         }
     }
     pub(crate) fn bisect(id: u32, event: crate::worktree::BisectEvent) -> Self {
@@ -505,6 +566,32 @@ impl RunEventPayload {
             code: None,
             phase: None,
             bisect: Some(event),
+            repro: None,
+            lab: None,
+        }
+    }
+    pub(crate) fn repro(id: u32, recorded: Option<serde_json::Value>) -> Self {
+        Self {
+            id,
+            kind: "repro",
+            line: None,
+            code: None,
+            phase: None,
+            bisect: None,
+            repro: Some(recorded.unwrap_or(serde_json::Value::Null)),
+            lab: None,
+        }
+    }
+    pub(crate) fn lab(id: u32, report: Option<serde_json::Value>) -> Self {
+        Self {
+            id,
+            kind: "lab",
+            line: None,
+            code: None,
+            phase: None,
+            bisect: None,
+            repro: None,
+            lab: Some(report.unwrap_or(serde_json::Value::Null)),
         }
     }
 }
@@ -523,8 +610,13 @@ pub async fn desktop_run_local_tests(
     project_id: String,
     args: Vec<String>,
     cwd: Option<String>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
+    let origin = crate::worktree::origin_env(
+        "desktop",
+        crate::worktree::origin_reference(None, origin_ref)?.as_deref(),
+    );
 
     let folder = match cwd {
         Some(dir) => crate::worktree::validate_worktree_cwd(&app, &dir)?,
@@ -554,7 +646,8 @@ pub async fn desktop_run_local_tests(
         .current_dir(folder)
         // Plain text for the in-app output pane.
         .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0");
+        .env("FORCE_COLOR", "0")
+        .envs(origin);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
@@ -579,7 +672,7 @@ pub async fn desktop_run_local_tests(
                 CommandEvent::Error(err) => RunEventPayload::line(id, "error", err),
                 CommandEvent::Terminated(status) => {
                     if let Some(runs) = emit_app.try_state::<LocalRuns>() {
-                        runs.children.lock().unwrap().remove(&id);
+                        runs.drop_child(id);
                     }
                     RunEventPayload::exit(id, status.code)
                 }
@@ -592,26 +685,59 @@ pub async fn desktop_run_local_tests(
     Ok(id)
 }
 
-/// Stop a running local process. For a plain test run this kills the process;
-/// for a reproduce/bisect job it raises the job's stop flag and kills the child
-/// currently running (with its process tree — the test may have spawned browsers
-/// or a webServer), and the job's own driver then resets any bisect and removes
-/// the worktree. A run that already exited is a no-op.
+/// Stop a running local process as Ctrl+C would in a terminal (see
+/// `interrupt.rs`): Playwright stops its workers and the reporter still sends
+/// the run's end. A process still running `STOP_GRACE` later — or asked to stop
+/// a second time, or one that cannot be interrupted — is killed with its process
+/// tree (the test may have spawned browsers or a webServer).
+///
+/// For a reproduce/bisect job the stop flag is raised first, so its driver
+/// starts no further step once the current child exits, then resets any bisect
+/// and removes the worktree. A run that already exited is a no-op.
 #[tauri::command]
-pub fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
+pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
     let state = app.state::<LocalRuns>();
-    if let Some(job) = state.jobs.lock().unwrap().get(&run_id) {
-        job.stop.store(true, Ordering::SeqCst);
-        if let Some(pid) = *job.pid.lock().unwrap() {
-            crate::worktree::kill_child_tree(pid);
+    let job = state.jobs.lock().unwrap().get(&run_id).map(|job| {
+        (
+            job.stop.swap(true, Ordering::SeqCst),
+            *job.child.lock().unwrap(),
+        )
+    });
+    if let Some((already_stopping, child)) = job {
+        let Some(child) = child else {
+            return Ok(());
+        };
+        if already_stopping || !child.interruptible || !crate::interrupt::interrupt(child.pid) {
+            state.kill_job_child(run_id, child.pid);
+        } else {
+            after_grace(&app, move |runs| runs.kill_job_child(run_id, child.pid));
         }
         return Ok(());
     }
-    let child = state.children.lock().unwrap().remove(&run_id);
-    match child {
-        Some(c) => c.kill().map_err(|e| e.to_string()),
-        None => Ok(()),
+
+    let pid = state.children.lock().unwrap().get(&run_id).map(|c| c.pid());
+    let Some(pid) = pid else {
+        return Ok(());
+    };
+    let already_stopping = !state.stopping.lock().unwrap().insert(run_id);
+    if already_stopping || !crate::interrupt::interrupt(pid) {
+        state.kill_child(run_id);
+    } else {
+        after_grace(&app, move |runs| runs.kill_child(run_id));
     }
+    Ok(())
+}
+
+/// Run `force` once `STOP_GRACE` has passed — on a plain thread, since the wait
+/// must not hold up the async runtime.
+fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(crate::interrupt::STOP_GRACE);
+        if let Some(runs) = app.try_state::<LocalRuns>() {
+            force(&runs);
+        }
+    });
 }
 
 #[cfg(test)]

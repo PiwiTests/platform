@@ -13,13 +13,53 @@ import type {
   TrackerUser,
 } from '../types';
 import { statusColorForCategory, toStatusCategory } from '../types';
+import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
+import type { TrackerField } from '#shared/integrations/fields';
+import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
+import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
+
+/** Create metadata is paged; a screen past this many fields is read no further. */
+const CREATE_META_PAGE_SIZE = 100;
+const CREATE_META_MAX_PAGES = 10;
+
+/**
+ * Cloud ids resolved for scoped-token credentials, so only the first request for
+ * a given credential pays the detection cost. Keyed by site URL plus a hash of the
+ * credential: a classic token never triggers detection, so it is never routed
+ * through the gateway, even against a site a scoped token also reaches.
+ */
+const scopedCloudIds = new Map<string, string>();
+
+/**
+ * A Jira Cloud site's tenant (cloud) id, read from the public `_edge/tenant_info`
+ * endpoint. Returns null for a self-hosted host or any failure, so the caller
+ * stays on the site URL.
+ */
+async function resolveCloudId(siteBaseUrl: string, timeoutMs: number): Promise<string | null> {
+  try {
+    const response = await fetch(`${siteBaseUrl}/_edge/tenant_info`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { cloudId?: string };
+    return typeof data.cloudId === 'string' && data.cloudId.length > 0 ? data.cloudId : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface JiraClientConfig {
   baseUrl: string;
   email: string;
   apiToken: string;
+  /**
+   * Set when the connection is known to use a scoped token: REST calls then route
+   * through the api.atlassian.com gateway instead of the site URL. Left unset for a
+   * classic token, and auto-detected on the first 401 otherwise.
+   */
+  cloudId?: string | null;
+  /** Request timeout in ms; unfurl passes a shorter budget than the default. */
+  timeoutMs?: number;
 }
 
 interface JiraStatus {
@@ -50,10 +90,71 @@ export class JiraError extends Error {
     message: string,
     /** Seconds Jira asked us to wait, carried from a 429 `Retry-After`. */
     readonly retryAfterSeconds?: number,
+    /** Jira's per-field refusals (`customfield_10042` → "Team is required."), from a 400. */
+    readonly fieldErrors?: Record<string, string>,
   ) {
     super(message);
     this.name = 'JiraError';
   }
+}
+
+/** The longest Jira explanation carried into an error message. */
+const JIRA_ERROR_DETAIL_MAX = 500;
+
+/**
+ * Jira's own explanation from an error body: the `errorMessages` list, the
+ * per-field `errors` map (`customfield_10042: Team is required.`) and the
+ * gateway's `message`, plus that per-field map on its own. The detail is null
+ * when the body is empty or not JSON (an HTML error page), so the caller falls
+ * back to the bare status line.
+ */
+async function jiraErrorDetail(
+  response: Response,
+): Promise<{ detail: string | null; fieldErrors: Record<string, string> | undefined }> {
+  let body: { errorMessages?: unknown; errors?: unknown; message?: unknown };
+  try {
+    body = JSON.parse(await response.text());
+  } catch {
+    return { detail: null, fieldErrors: undefined };
+  }
+  if (!body || typeof body !== 'object') return { detail: null, fieldErrors: undefined };
+  const parts: string[] = [];
+  const fieldErrors: Record<string, string> = {};
+  if (Array.isArray(body.errorMessages)) {
+    for (const message of body.errorMessages) if (typeof message === 'string' && message) parts.push(message);
+  }
+  if (body.errors && typeof body.errors === 'object') {
+    for (const [field, message] of Object.entries(body.errors)) {
+      if (typeof message === 'string' && message) {
+        parts.push(`${field}: ${message}`);
+        fieldErrors[field] = message;
+      }
+    }
+  }
+  if (typeof body.message === 'string' && body.message) parts.push(body.message);
+  const errors = Object.keys(fieldErrors).length ? fieldErrors : undefined;
+  if (!parts.length) return { detail: null, fieldErrors: errors };
+  const detail = parts.join('; ');
+  return {
+    detail: detail.length > JIRA_ERROR_DETAIL_MAX ? `${detail.slice(0, JIRA_ERROR_DETAIL_MAX)}…` : detail,
+    fieldErrors: errors,
+  };
+}
+
+/** The `JiraError` for a failed response: its status line plus Jira's explanation. */
+async function toJiraError(response: Response, what: string): Promise<JiraError> {
+  if (response.status === 429) {
+    const header = response.headers.get('retry-after');
+    const retryAfter = header != null ? Number(header) : NaN;
+    return new JiraError(
+      429,
+      'Jira rate limited the request (429)',
+      Number.isFinite(retryAfter) ? retryAfter : undefined,
+    );
+  }
+  const { detail, fieldErrors } = await jiraErrorDetail(response);
+  const statusLine = `${what} (${response.status} ${response.statusText})`;
+  return new JiraError(response.status, detail ? `${statusLine}: ${detail}` : statusLine, undefined, fieldErrors);
 }
 
 /**
@@ -64,21 +165,67 @@ export class JiraError extends Error {
 export class JiraClient implements IssueTracker {
   readonly provider = 'jira' as const;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
+  /** Set once REST calls are known to need the gateway (a scoped token). */
+  private cloudId: string | null;
 
   constructor(private readonly config: JiraClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
+    this.timeoutMs = config.timeoutMs ?? JIRA_TIMEOUT_MS;
+    this.cloudId = config.cloudId ?? scopedCloudIds.get(this.credentialKey()) ?? null;
   }
 
-  static fromCredentials(baseUrl: string, credentials: TrackerCredentials): JiraClient {
-    return new JiraClient({ baseUrl, email: credentials.email, apiToken: credentials.apiToken });
+  static fromCredentials(baseUrl: string, credentials: TrackerCredentials, cloudId?: string | null): JiraClient {
+    return new JiraClient({
+      baseUrl,
+      email: credentials.email,
+      apiToken: credentials.apiToken,
+      cloudId: cloudId ?? null,
+    });
   }
 
   private authHeader(): string {
     return `Basic ${Buffer.from(`${this.config.email}:${this.config.apiToken}`).toString('base64')}`;
   }
 
+  /** A cache key tying a resolved cloud id to this exact credential and site. */
+  private credentialKey(): string {
+    const hash = createHash('sha256').update(`${this.config.email}\n${this.config.apiToken}`).digest('hex');
+    return `${this.baseUrl}\n${hash}`;
+  }
+
+  /** The REST base: the gateway once a scoped token is detected, else the site URL. */
+  private apiBase(): string {
+    return this.cloudId ? `${ATLASSIAN_API_GATEWAY}/${this.cloudId}` : this.baseUrl;
+  }
+
+  /**
+   * Fetch a REST path, building the request fresh for each attempt. A scoped
+   * ("granular") API token is refused on the site URL with a 401 and works only
+   * through the api.atlassian.com gateway, so on that first 401 we resolve the
+   * site's cloud id and retry there once; a classic token never takes this path.
+   */
+  private async apiFetch(path: string, build: () => RequestInit): Promise<Response> {
+    let response = await fetch(`${this.apiBase()}${path}`, build());
+    if (response.status === 401 && !this.cloudId) {
+      const key = this.credentialKey();
+      const cloudId = scopedCloudIds.get(key) ?? (await resolveCloudId(this.baseUrl, this.timeoutMs));
+      if (cloudId) {
+        this.cloudId = cloudId;
+        scopedCloudIds.set(key, cloudId);
+        response = await fetch(`${this.apiBase()}${path}`, build());
+      }
+    }
+    return response;
+  }
+
+  /** Provider config discovered while making calls (a resolved scoped-token cloud id). */
+  detectedConfig(): Record<string, unknown> | null {
+    return this.cloudId ? { cloudId: this.cloudId } : null;
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
+    const response = await this.apiFetch(path, () => ({
       ...init,
       headers: {
         Authorization: this.authHeader(),
@@ -86,20 +233,9 @@ export class JiraClient implements IssueTracker {
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
         ...init?.headers,
       },
-      signal: AbortSignal.timeout(JIRA_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      if (response.status === 429) {
-        const header = response.headers.get('retry-after');
-        const retryAfter = header != null ? Number(header) : NaN;
-        throw new JiraError(
-          429,
-          'Jira rate limited the request (429)',
-          Number.isFinite(retryAfter) ? retryAfter : undefined,
-        );
-      }
-      throw new JiraError(response.status, `Jira request failed (${response.status} ${response.statusText})`);
-    }
+      signal: AbortSignal.timeout(this.timeoutMs),
+    }));
+    if (!response.ok) throw await toJiraError(response, 'Jira request failed');
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
@@ -156,6 +292,36 @@ export class JiraClient implements IssueTracker {
     return (data.issueTypes ?? []).map((t) => ({ id: t.id ?? '', name: t.name ?? '' }));
   }
 
+  /**
+   * The fields of a project's create screen for an issue type, from Jira's create
+   * metadata, paged through. An issue type given by name is looked up by id first,
+   * since the metadata is keyed by id.
+   */
+  async listCreateFields(projectKey: string, issueType: string): Promise<TrackerField[]> {
+    const typeId = /^\d+$/.test(issueType)
+      ? issueType
+      : (await this.listIssueTypes(projectKey)).find((t) => t.name.toLowerCase() === issueType.toLowerCase())?.id;
+    if (!typeId) throw new JiraError(404, `Issue type '${issueType}' is not in project ${projectKey}`);
+    const base = `/rest/api/3/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes/${encodeURIComponent(typeId)}`;
+    const fields: TrackerField[] = [];
+    let startAt = 0;
+    for (let page = 0; page < CREATE_META_MAX_PAGES; page++) {
+      const data = await this.request<{
+        fields?: JiraCreateMetaField[];
+        values?: JiraCreateMetaField[];
+        total?: number;
+      }>(`${base}?startAt=${startAt}&maxResults=${CREATE_META_PAGE_SIZE}`);
+      const items = data.fields ?? data.values ?? [];
+      for (const raw of items) {
+        const field = jiraFieldToTrackerField(raw);
+        if (field) fields.push(field);
+      }
+      startAt += items.length;
+      if (items.length === 0 || typeof data.total !== 'number' || startAt >= data.total) break;
+    }
+    return fields;
+  }
+
   async searchAssignable(projectKey: string, query: string): Promise<TrackerUser[]> {
     const params = new URLSearchParams({ project: projectKey, query, maxResults: '20' });
     const data = await this.request<JiraUser[]>(`/rest/api/3/user/assignable/search?${params.toString()}`);
@@ -165,20 +331,32 @@ export class JiraClient implements IssueTracker {
   }
 
   async listTransitions(key: string): Promise<TrackerTransition[]> {
-    const data = await this.request<{ transitions?: { id?: string; name?: string; to?: { name?: string } }[] }>(
-      `/rest/api/3/issue/${encodeURIComponent(key)}/transitions`,
-    );
+    const data = await this.request<{
+      transitions?: {
+        id?: string;
+        name?: string;
+        to?: { name?: string; statusCategory?: { key?: string } };
+        fields?: Record<string, Omit<JiraCreateMetaField, 'fieldId'>>;
+      }[];
+    }>(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions?expand=transitions.fields`);
     return (data.transitions ?? []).map((t) => ({
       id: t.id ?? '',
       name: t.name ?? '',
       toStatus: t.to?.name ?? null,
+      toStatusCategory: toStatusCategory(t.to?.statusCategory?.key),
+      // A transition screen's fields come keyed by field id.
+      fields: Object.entries(t.fields ?? {})
+        .map(([fieldId, meta]) => jiraFieldToTrackerField({ ...meta, fieldId }))
+        .filter((f): f is TrackerField => f !== null),
     }));
   }
 
-  async transition(key: string, transitionId: string): Promise<void> {
+  async transition(key: string, transitionId: string, fields?: Record<string, unknown>): Promise<void> {
+    const body: { transition: { id: string }; fields?: Record<string, unknown> } = { transition: { id: transitionId } };
+    if (fields && Object.keys(fields).length) body.fields = fields;
     await this.request<void>(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
       method: 'POST',
-      body: JSON.stringify({ transition: { id: transitionId } }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -199,7 +377,9 @@ export class JiraClient implements IssueTracker {
     // Jira-side names (issue type, priority) are localized per site, so address
     // them by id when we have one; a bare numeric string is an id, else a name.
     const issuetype = /^\d+$/.test(input.issueType) ? { id: input.issueType } : { name: input.issueType };
+    // Extra field values go first, so Piwi's own fields always win over them.
     const fields: Record<string, unknown> = {
+      ...(input.fields ?? {}),
       project: { key: input.projectKey },
       issuetype,
       summary: input.title,
@@ -240,30 +420,23 @@ export class JiraClient implements IssueTracker {
     if (file.bytes.byteLength > DEFAULT_EXPORT_MAX_INLINE_BYTES) {
       throw new JiraError(413, `attachment '${file.name}' exceeds the ${DEFAULT_EXPORT_MAX_INLINE_BYTES}-byte cap`);
     }
-    const form = new FormData();
-    form.append('file', new Blob([file.bytes as unknown as BlobPart], { type: file.mime }), file.name);
-    const response = await fetch(`${this.baseUrl}/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, {
-      method: 'POST',
-      headers: {
-        Authorization: this.authHeader(),
-        Accept: 'application/json',
-        'X-Atlassian-Token': 'no-check',
-      },
-      body: form,
-      signal: AbortSignal.timeout(JIRA_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      if (response.status === 429) {
-        const header = response.headers.get('retry-after');
-        const retryAfter = header != null ? Number(header) : NaN;
-        throw new JiraError(
-          429,
-          'Jira rate limited the request (429)',
-          Number.isFinite(retryAfter) ? retryAfter : undefined,
-        );
-      }
-      throw new JiraError(response.status, `Jira attachment failed (${response.status} ${response.statusText})`);
-    }
+    // Rebuilt per attempt: the 401 gateway retry in apiFetch resends the body.
+    const build = (): RequestInit => {
+      const form = new FormData();
+      form.append('file', new Blob([file.bytes as unknown as BlobPart], { type: file.mime }), file.name);
+      return {
+        method: 'POST',
+        headers: {
+          Authorization: this.authHeader(),
+          Accept: 'application/json',
+          'X-Atlassian-Token': 'no-check',
+        },
+        body: form,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      };
+    };
+    const response = await this.apiFetch(`/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, build);
+    if (!response.ok) throw await toJiraError(response, 'Jira attachment failed');
   }
 
   issueUrl(key: string): string {

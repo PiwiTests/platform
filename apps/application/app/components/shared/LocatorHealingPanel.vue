@@ -14,7 +14,6 @@ import CollapsibleSectionCard from './CollapsibleSectionCard.vue';
 import SnapshotLocatorPicker from './SnapshotLocatorPicker.vue';
 
 const props = defineProps<{
-  runId: number;
   testRunsCaseId: number;
   /** When set, the panel folds to a header with a peek (persisted per user). */
   storageKey?: string;
@@ -85,7 +84,7 @@ const cardBind = computed(() => (props.chrome !== false && props.storageKey ? { 
 
 interface HealActionChip {
   id: number;
-  status: 'pending' | 'opened' | 'failed' | 'skipped';
+  status: 'pending' | 'processing' | 'opened' | 'failed' | 'skipped';
   prNumber: number | null;
   prUrl: string | null;
   branch: string;
@@ -97,7 +96,9 @@ const {
   error,
 } = useFetch<LocatorHealingResult & { healAction?: HealActionChip | null }>(
   () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
-  { lazy: true },
+  // A stable key lets the host page share this one fetch when it hoists the
+  // same request to decide whether the Toolbox section has anything to show.
+  { lazy: true, key: `locator-healing-${props.testRunsCaseId}` },
 );
 
 const hasData = computed(
@@ -105,6 +106,7 @@ const hasData = computed(
     !!healing.value &&
     healing.value.source !== 'none' &&
     !!(
+      healing.value.fromDiffRename?.length ||
       healing.value.fromElementMatch?.length ||
       healing.value.fromPriorSuccess?.length ||
       healing.value.fromAriaSnapshot?.length
@@ -113,7 +115,13 @@ const hasData = computed(
 
 const alternatives = computed<RankedLocator[]>(() => {
   if (!healing.value) return [];
-  return healing.value.fromElementMatch ?? healing.value.fromPriorSuccess ?? healing.value.fromAriaSnapshot ?? [];
+  return (
+    healing.value.fromDiffRename ??
+    healing.value.fromElementMatch ??
+    healing.value.fromPriorSuccess ??
+    healing.value.fromAriaSnapshot ??
+    []
+  );
 });
 
 // A locator a human confirmed with the failure-time picker — surfaced as a
@@ -152,6 +160,13 @@ const sourceNote = computed(() => {
   const stale = healing.value?.priorNameMayBeStale;
   const note = (() => {
     switch (healing.value?.source) {
+      case 'diff-rename': {
+        const d = healing.value.diffRename;
+        const where = d ? `${d.file.split('/').pop()}:${d.line}` : 'this change';
+        return d
+          ? `“${d.before}” became “${d.after}” in ${where} — the same locator with the new text`
+          : 'This change renamed the text the locator finds its element by';
+      }
       case 'prior-run':
         return stale
           ? 'Pre-captured from the last passing run — the element looks changed since'
@@ -179,6 +194,7 @@ const sourceNote = computed(() => {
 const sourceClass = computed(() => {
   if (healing.value?.priorNameMayBeStale) return 'text-warning-600 dark:text-warning-400';
   switch (healing.value?.source) {
+    case 'diff-rename':
     case 'prior-run':
     case 'fingerprint':
     case 'cross-test':
@@ -282,6 +298,8 @@ const appliesToNote = computed(() =>
 const recommendationSourceLabel = computed(() => {
   if (recommended.value?.pickedByUser) return 'your confirmed pick';
   switch (healing.value?.source) {
+    case 'diff-rename':
+      return 'from the rename in this change';
     case 'prior-run':
       return 'from the last passing run';
     case 'fingerprint':
@@ -554,7 +572,7 @@ defineExpose({
 
       <!-- Ready-to-apply one-line edit, when the failing source line is known -->
       <div v-if="suggestedEdit" class="rounded border border-default overflow-hidden bg-default">
-        <DiffPatch :patch="suggestedEdit.patch" />
+        <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />
       </div>
       <template v-else>
         <LocatorCode :locator="recommended.locator" truncate class="text-sm" />
@@ -802,11 +820,9 @@ defineExpose({
   <SnapshotLocatorPicker
     v-if="healing?.failingLocator"
     v-model:open="pickerOpen"
-    :run-id="runId"
     :test-runs-case-id="testRunsCaseId"
     :failing-locator="healing.failingLocator"
     :healing="healing"
     @confirmed="refreshHealing"
-    @close="pickerOpen = false"
   />
 </template>

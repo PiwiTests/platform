@@ -3,11 +3,11 @@ import {
   SETTINGS_PAGES,
   SETTINGS_GROUPS,
   buildSettingsNavSections,
+  canOpenSettingsPath,
   getSettingsPage,
-  pageEnvVars,
-  pageIsOverridable,
   type SettingsNavContext,
 } from '../../app/utils/settings-metadata';
+import { Role } from '#shared/types';
 
 /** Flatten sections to the `to` paths, for terse assertions. */
 function paths(ctx: SettingsNavContext): string[] {
@@ -46,12 +46,6 @@ describe('settings registry integrity', () => {
     }
     // @ts-expect-error — deliberately outside the union
     expect(() => getSettingsPage('nope')).toThrow(/Unknown settings page/);
-  });
-
-  test('a page is env-overridable exactly when one of its fields is', () => {
-    for (const page of SETTINGS_PAGES) {
-      expect(pageIsOverridable(page)).toBe(pageEnvVars(page).length > 0);
-    }
   });
 });
 
@@ -114,5 +108,68 @@ describe('buildSettingsNavSections', () => {
         .flat()
         .every((i) => i.badge === undefined),
     ).toBe(true);
+  });
+
+  test('a declined capability drops its settings page', () => {
+    const visible = paths({ ...WEB_ADMIN, declinedCapabilities: new Set(['notifications']) });
+    expect(visible).not.toContain('/settings/notifications');
+    // Pages without a capability, and undeclined ones, are untouched.
+    expect(visible).toContain('/settings/ai');
+    expect(visible).toContain('/settings/storage');
+  });
+
+  test('declining several capabilities drops each of their pages', () => {
+    const declined = new Set(['ai', 'tags', 'integrations', 'pr-feedback', 'auto-heal'] as const);
+    const visible = paths({ ...WEB_ADMIN, declinedCapabilities: declined });
+    for (const to of [
+      '/settings/ai',
+      '/settings/tags',
+      '/settings/integrations',
+      '/settings/pr-feedback',
+      '/settings/auto-heal',
+    ]) {
+      expect(visible).not.toContain(to);
+    }
+    // Storage carries no capability, so it survives.
+    expect(visible).toContain('/settings/storage');
+  });
+
+  test('an empty declined set changes nothing', () => {
+    expect(paths({ ...WEB_ADMIN, declinedCapabilities: new Set() }).sort()).toEqual(paths(WEB_ADMIN).sort());
+  });
+});
+
+describe('canOpenSettingsPath', () => {
+  const restricted = SETTINGS_PAGES.filter((page) => page.roles);
+  const open = SETTINGS_PAGES.filter((page) => !page.roles);
+
+  test('the registry has both restricted and open pages to guard', () => {
+    expect(restricted.length).toBeGreaterThan(0);
+    expect(open.length).toBeGreaterThan(0);
+  });
+
+  test('refuses every role-restricted page to a plain user or reporter', () => {
+    for (const page of restricted) {
+      expect(canOpenSettingsPath(page.to, Role.USER)).toBe(false);
+      expect(canOpenSettingsPath(page.to, Role.REPORTER)).toBe(false);
+      expect(canOpenSettingsPath(page.to, undefined)).toBe(false);
+    }
+  });
+
+  test('lets an administrator open every settings page', () => {
+    for (const page of SETTINGS_PAGES) expect(canOpenSettingsPath(page.to, Role.ADMINISTRATOR)).toBe(true);
+  });
+
+  test('lets any role open the unrestricted pages (account, notifications…)', () => {
+    for (const page of open) expect(canOpenSettingsPath(page.to, Role.USER)).toBe(true);
+  });
+
+  test('ignores a trailing slash', () => {
+    expect(canOpenSettingsPath('/settings/users/', Role.USER)).toBe(false);
+  });
+
+  test('allows paths that are not a settings page', () => {
+    expect(canOpenSettingsPath('/settings', Role.USER)).toBe(true);
+    expect(canOpenSettingsPath('/projects/1', Role.USER)).toBe(true);
   });
 });

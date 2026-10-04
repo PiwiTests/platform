@@ -4,61 +4,46 @@
  *
  * The page is a build artifact (gitignored): `docs:dev` and `docs:build` run
  * this first, so it can never drift from the changelog. It lists the *feature*
- * entries (release-please's `### Features`) grouped by minor version, newest
- * first, with commit links stripped — the answer to "what changed since I last
+ * entries of every release (raw release-please sections and polished notes
+ * alike, read by `apps/application/shared/changelog.ts`) grouped by minor
+ * version, newest first, with commit links stripped — the answer to "what changed since I last
  * upgraded". Bug fixes and the full history stay in CHANGELOG.md, linked at the
  * top. To change the page, cut a release; do not edit it here.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { createJiti } from 'jiti';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // here = apps/docs/scripts → up three to the monorepo root, where CHANGELOG.md lives.
 const monorepoRoot = join(here, '..', '..', '..');
-const changelog = readFileSync(join(monorepoRoot, 'CHANGELOG.md'), 'utf8');
+const jiti = createJiti(import.meta.url);
 
-const RELEASE = /^## \[(\d+)\.(\d+)\.(\d+)\][^\n]*?\((\d{4}-\d{2}-\d{2})\)/;
-const SECTION = /^### (.+)/;
-const BULLET = /^\* (.+)/;
-// Trailing release-please commit link(s): ` ([abc1234](https://…/commit/…))`.
-const COMMIT_LINK = /\s*\(\[[0-9a-f]{7,}\]\([^)]*\)\)/g;
+// The same parser the MCP get_release_notes tool reads the changelog with, so
+// raw release-please sections and hand-polished ones (`-` bullets under `####`
+// groups) are both read, and repeated entries collapse.
+const { parseChangelog } = await jiti.import(join(monorepoRoot, 'apps/application/shared/changelog.ts'));
+const releases = parseChangelog(readFileSync(join(monorepoRoot, 'CHANGELOG.md'), 'utf8'));
 
 /** One entry per minor version (X.Y), newest first, with its feature list. */
 const minors = new Map();
-const keyOf = (major, minor) => `${major}.${minor}`;
 
-let current = null; // { key, sortKey } for the release being read
-let inFeatures = false;
-
-for (const line of changelog.split('\n')) {
-  const release = RELEASE.exec(line);
-  if (release) {
-    const [, major, minor, patch, date] = release;
-    const key = keyOf(major, minor);
-    if (!minors.has(key)) {
-      minors.set(key, { major: +major, minor: +minor, date, features: [], seen: new Set() });
-    }
-    const entry = minors.get(key);
-    // The minor's own date is its .0 release; a changelog is newest-first, so
-    // prefer the .0 date when we reach it and otherwise keep the earliest seen.
-    if (patch === '0' || date < entry.date) entry.date = date;
-    current = entry;
-    inFeatures = false;
-    continue;
-  }
-  const section = SECTION.exec(line);
-  if (section) {
-    inFeatures = section[1].trim() === 'Features';
-    continue;
-  }
-  if (!current || !inFeatures) continue;
-  const bullet = BULLET.exec(line);
-  if (!bullet) continue;
-  const subject = bullet[1].replace(COMMIT_LINK, '').trim();
-  if (subject && !current.seen.has(subject)) {
-    current.seen.add(subject);
-    current.features.push(subject);
+for (const release of releases) {
+  const [major, minor, patch] = release.to.split('.').map(Number);
+  // A backfilled entry spanning several minors ("0.1.0 – 0.2.1") keeps its own span as the label.
+  const firstMinor = release.from.split('.').slice(0, 2).join('.');
+  const key = firstMinor === `${major}.${minor}` ? `${major}.${minor}` : `${firstMinor} – ${major}.${minor}`;
+  if (!minors.has(key)) minors.set(key, { label: key, major, minor, date: null, features: [], seen: new Set() });
+  const entry = minors.get(key);
+  // The minor's date is its .0 release; a grouped entry dates from its first day.
+  const date = release.date?.split(' – ')[0] ?? null;
+  if (date && (patch === 0 || !entry.date || date < entry.date)) entry.date = date;
+  for (const feature of release.entries.features) {
+    const key = feature.toLowerCase();
+    if (entry.seen.has(key)) continue;
+    entry.seen.add(key);
+    entry.features.push(feature);
   }
 }
 
@@ -67,11 +52,12 @@ const ordered = [...minors.values()]
   .sort((a, b) => b.major - a.major || b.minor - a.minor);
 
 const sections = ordered
-  .map((m) => [`## ${m.major}.${m.minor} — ${m.date}`, '', ...m.features.map((f) => `- ${f}`), ''].join('\n'))
+  .map((m) => [`## ${m.label}${m.date ? ` — ${m.date}` : ''}`, '', ...m.features.map((f) => `- ${f}`), ''].join('\n'))
   .join('\n');
 
 const page = `---
 title: What's new
+description: The features each Piwi release added, grouped by minor version and newest first, generated from the changelog.
 lang: en-US
 editLink: false
 ---

@@ -1,0 +1,1 @@
+ALTER TABLE "project_url_patterns" ADD COLUMN "path_prefix" text;

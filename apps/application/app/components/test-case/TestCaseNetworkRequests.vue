@@ -90,7 +90,7 @@ const peek = computed(() => {
   const n = props.requests.length;
   if (n === 0) return 'Full network activity from the trace';
   const first = props.requests[0]!;
-  return `${n} request${n === 1 ? '' : 's'} · ${first.method} ${toPath(first.url)} → ${first.status}`;
+  return `${n} request${n === 1 ? '' : 's'} · ${first.method} ${toPath(first.url)} → ${first.failure || first.status}`;
 });
 
 /** Per-request expansion state (keyed by stable index). */
@@ -227,7 +227,7 @@ const decorated = computed<DecoratedRequest[]>(() => {
       serverMs: rootSpan ? rootSpan.durMs : null,
       errorLogCount,
       warnLogCount,
-      failed: req.status >= 400,
+      failed: req.status >= 400 || !!req.failure,
       hasDetail: logs.length > 0 || spans.length > 0,
       path: toPath(req.url),
     };
@@ -272,11 +272,9 @@ const filterItems = computed(() => [
   { label: `With logs (${totals.value.withLogs})`, value: 'logs' as const, disabled: totals.value.withLogs === 0 },
 ]);
 
-const hasBackendLogs = computed(() => totals.value.withLogs > 0);
-
 /** Accent border for a request row based on the worst signal it carries. */
 function rowAccent(r: DecoratedRequest): string {
-  if (r.errorLogCount > 0 || r.status >= 500) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
+  if (r.errorLogCount > 0 || r.status >= 500 || r.failure) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
   if (r.failed || r.warnLogCount > 0) return 'border-l-2 border-l-amber-400 dark:border-l-amber-600';
   return 'border-l-2 border-l-transparent';
 }
@@ -361,11 +359,33 @@ function rowAccent(r: DecoratedRequest): string {
           <UBadge :color="httpMethodColor(req.method)" variant="soft" size="xs" class="font-mono shrink-0">
             {{ req.method }}
           </UBadge>
-          <UBadge :color="httpStatusColor(req.status)" variant="soft" size="xs" class="font-mono shrink-0 tabular-nums">
+          <UBadge
+            v-if="req.failure"
+            color="error"
+            variant="soft"
+            size="xs"
+            class="shrink-0"
+            :title="`No response: ${req.failure}`"
+          >
+            failed
+          </UBadge>
+          <UBadge
+            v-else
+            :color="httpStatusColor(req.status)"
+            variant="soft"
+            size="xs"
+            class="font-mono shrink-0 tabular-nums"
+          >
             {{ req.status || '—' }}
           </UBadge>
 
           <code class="truncate text-xs flex-1 min-w-0" :title="req.url">{{ req.path }}</code>
+          <code
+            v-if="req.failure"
+            class="truncate text-xs text-red-600 dark:text-red-400 min-w-0 max-w-[45%]"
+            :title="req.failure"
+            >{{ req.failure }}</code
+          >
 
           <span
             v-if="req.contentType"
@@ -495,16 +515,6 @@ function rowAccent(r: DecoratedRequest): string {
         </div>
       </div>
     </div>
-
-    <p
-      v-if="view === 'captured' && !hasBackendLogs"
-      class="mt-3 flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500"
-    >
-      <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
-      No backend server logs captured — install
-      <DocLink to="guide/backend-logs" no-icon class="underline">a Piwi backend integration</DocLink>
-      to see server-side warnings and errors under each request.
-    </p>
 
     <p v-if="!hasTrace" class="mt-3 flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
       <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />

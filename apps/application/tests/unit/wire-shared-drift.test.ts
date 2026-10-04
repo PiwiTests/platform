@@ -38,6 +38,9 @@ const testCasePayloadFixture = {
   networkRequests: null,
   webVitals: null,
   pageState: { url: 'https://app.example.com/checkout', localStorage: [{ key: 'cart', length: 42 }] },
+  pageInventory: [
+    { url: 'https://app.example.com/checkout', controls: [{ role: 'button', name: 'Place order' }], links: [] },
+  ],
   aiUsage: null,
   consoleLogs: null,
   dialogs: null,
@@ -57,6 +60,7 @@ const testCasePayloadFixture = {
   testSourceFrames: [{ file: 'a.spec.ts', line: 1, snippet: '> 1 | test' }],
   didNotRunReason: null,
   blockedBy: null,
+  resources: null,
 } satisfies TestCasePayload;
 
 const streamEventPayloadFixture = {
@@ -82,6 +86,9 @@ const streamEventPayloadFixture = {
   networkRequests: null,
   webVitals: null,
   pageState: { url: 'https://app.example.com/checkout', localStorage: [{ key: 'cart', length: 42 }] },
+  pageInventory: [
+    { url: 'https://app.example.com/checkout', controls: [{ role: 'button', name: 'Place order' }], links: [] },
+  ],
   aiUsage: null,
   consoleLogs: null,
   dialogs: null,
@@ -98,6 +105,7 @@ const streamEventPayloadFixture = {
   testSourceFrames: [{ file: 'a.spec.ts', line: 1, snippet: '> 1 | test' }],
   didNotRunReason: null,
   blockedBy: null,
+  resources: null,
 } satisfies StreamEventPayload;
 
 const wireTestCaseFixture = {
@@ -121,6 +129,9 @@ const wireTestCaseFixture = {
   networkRequests: null,
   webVitals: null,
   pageState: { url: 'https://app.example.com/checkout', localStorage: [{ key: 'cart', length: 42 }] },
+  pageInventory: [
+    { url: 'https://app.example.com/checkout', controls: [{ role: 'button', name: 'Place order' }], links: [] },
+  ],
   aiUsage: null,
   consoleLogs: null,
   dialogs: null,
@@ -139,6 +150,7 @@ const wireTestCaseFixture = {
   locatorSnapshots: null,
   didNotRunReason: null,
   blockedBy: null,
+  resources: null,
 } satisfies WireTestCase;
 
 describe('wire ↔ shared per-case contract drift guard', () => {

@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import {
-  INTEGRATION_PROVIDER_LIST,
-  type CredentialField,
-  type IntegrationProviderName,
-} from '#shared/integrations/registry';
+import { INTEGRATION_PROVIDER_LIST, type IntegrationProviderName } from '#shared/integrations/registry';
 import type { ConnectionSummary, ConnectionTestResult } from '#shared/integrations/types';
+import { ATLASSIAN_API_TOKENS_URL, jiraWebhooksAdminUrl, tokenExpiry } from '#shared/integrations/jira-setup';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import { looksPrivateHost } from '#shared/utils/private-host';
 
 const toast = useToast();
-const { data, refresh } = await useFetch<{ connections: ConnectionSummary[] }>('/api/integrations/connections', {
-  default: () => ({ connections: [] as ConnectionSummary[] }),
-});
+const { app: appConfig } = useRuntimeConfig();
+const { data, refresh } = await useFetch<{ connections: ConnectionSummary[]; canStoreSecrets: boolean }>(
+  '/api/integrations/connections',
+  { default: () => ({ connections: [] as ConnectionSummary[], canStoreSecrets: true }) },
+);
 
 const connections = computed(() => data.value?.connections ?? []);
+const canStoreSecrets = computed(() => data.value?.canStoreSecrets ?? true);
 function connectionsFor(provider: IntegrationProviderName): ConnectionSummary[] {
   return connections.value.filter((c) => c.provider === provider);
 }
@@ -33,94 +34,47 @@ function statusLabel(status: ConnectionSummary['status']): string {
   return 'Unverified';
 }
 
+/** How the connection's token authenticates, once a test or the form found out. */
+function tokenKindLine(conn: ConnectionSummary): string | null {
+  const tested = testResults[conn.id];
+  const stored = conn.config?.tokenKind ?? (conn.config?.cloudId ? 'scoped' : null);
+  const kind = tested?.ok ? tested.tokenKind : stored;
+  if (kind === 'scoped') return 'Scoped token, called through api.atlassian.com';
+  if (kind === 'classic') return 'Classic token';
+  return null;
+}
+
+/** The token-expiry reminder for a connection, when an expiry date was recorded. */
+function expiryLine(conn: ConnectionSummary): { text: string; warn: boolean } | null {
+  const expiry = tokenExpiry(conn.config?.tokenExpiresOn);
+  if (!expiry) return null;
+  if (expiry.state === 'expired') return { text: 'The API token has expired.', warn: true };
+  const days = `${expiry.daysLeft} day${expiry.daysLeft === 1 ? '' : 's'}`;
+  return { text: `The API token expires in ${days}.`, warn: expiry.state === 'soon' };
+}
+
 // ── Connect / edit form ────────────────────────────────────────────────────
-interface FormState {
-  provider: IntegrationProviderName | null;
-  editingId: number | null;
-  name: string;
-  baseUrl: string;
-  credentials: Record<string, string>;
-  /** The connection's existing non-secret config, preserved across an edit. */
-  config: Record<string, unknown>;
-  /** Default ticket language for issues filed against this connection. */
-  locale: 'en' | 'fr';
-}
-const form = reactive<FormState>({
-  provider: null,
-  editingId: null,
-  name: '',
-  baseUrl: '',
-  credentials: {},
-  config: {},
-  locale: 'en',
-});
-const saving = ref(false);
-
-const LOCALE_ITEMS = [
-  { label: 'English', value: 'en' },
-  { label: 'Français', value: 'fr' },
-];
-
-function providerMeta(provider: IntegrationProviderName) {
-  return INTEGRATION_PROVIDER_LIST.find((p) => p.name === provider)!;
-}
-
-function credentialFieldsFor(provider: IntegrationProviderName): readonly CredentialField[] {
-  return providerMeta(provider).credentialFields;
-}
+const formProvider = ref<IntegrationProviderName | null>(null);
+const editingConnection = ref<ConnectionSummary | null>(null);
 
 function openCreate(provider: IntegrationProviderName) {
-  form.provider = provider;
-  form.editingId = null;
-  form.name = '';
-  form.baseUrl = '';
-  form.credentials = {};
-  form.config = {};
-  form.locale = 'en';
+  formProvider.value = provider;
+  editingConnection.value = null;
 }
 
 function openEdit(conn: ConnectionSummary) {
-  form.provider = conn.provider;
-  form.editingId = conn.id;
-  form.name = conn.name;
-  form.baseUrl = conn.baseUrl;
-  form.credentials = {};
-  form.config = { ...((conn.config as Record<string, unknown> | null) ?? {}) };
-  form.locale = (conn.config as { locale?: string } | null)?.locale === 'fr' ? 'fr' : 'en';
+  formProvider.value = conn.provider;
+  editingConnection.value = conn;
 }
 
-function cancel() {
-  form.provider = null;
-  form.editingId = null;
+function closeForm() {
+  formProvider.value = null;
+  editingConnection.value = null;
 }
 
-const isEditing = computed(() => form.editingId !== null);
-
-async function submit() {
-  if (!form.provider) return;
-  saving.value = true;
-  try {
-    const body = {
-      provider: form.provider,
-      name: form.name,
-      baseUrl: form.baseUrl,
-      credentials: form.credentials,
-      config: { ...form.config, locale: form.locale },
-    };
-    if (form.editingId !== null) {
-      await $fetch(`/api/integrations/connections/${form.editingId}`, { method: 'PATCH', body });
-      toast.add({ title: 'Connection updated', color: 'success' });
-    } else {
-      await $fetch('/api/integrations/connections', { method: 'POST', body });
-      toast.add({ title: 'Connection added', color: 'success' });
-    }
-    cancel();
-    await refresh();
-  } catch (err) {
-    toast.add({ title: 'Save failed', description: errorMessage(err), color: 'error' });
-  } finally {
-    saving.value = false;
-  }
+async function onSaved() {
+  closeForm();
+  await refresh();
 }
 
 // ── Test / delete ──────────────────────────────────────────────────────────
@@ -151,13 +105,29 @@ async function generateWebhook(conn: ConnectionSummary) {
       `/api/integrations/connections/${conn.id}/webhook-token`,
       { method: 'POST' },
     );
-    webhookUrls[conn.id] = url;
+    webhookUrls[conn.id] = absoluteUrl(url);
     await refresh();
     toast.add({ title: 'Webhook enabled', description: 'Copy the URL now — it is shown once.', color: 'success' });
   } catch (err) {
     toast.add({ title: 'Could not enable the webhook', description: errorMessage(err), color: 'error' });
   } finally {
     webhooking.value = null;
+  }
+}
+
+/** The server answers with a path when `PIWI_SITE_URL` is unset; Jira needs the full address. */
+function absoluteUrl(url: string): string {
+  if (!url.startsWith('/')) return url;
+  const base = appConfig.baseURL.replace(/\/+$/, '');
+  return `${window.location.origin}${base}${url}`;
+}
+
+/** Whether Atlassian Cloud could reach a URL: not a loopback, private or local-only host. */
+function reachableFromCloud(url: string): boolean {
+  try {
+    return !looksPrivateHost(new URL(url).hostname);
+  } catch {
+    return false;
   }
 }
 
@@ -185,170 +155,170 @@ function errorMessage(err: unknown): string {
 </script>
 
 <template>
-  <div class="space-y-6" data-shot="integrations-settings">
-    <SectionCard
-      v-for="provider in INTEGRATION_PROVIDER_LIST"
-      :key="provider.name"
-      :icon="provider.icon"
-      :title="provider.label"
-      help="settings.integrations"
-    >
-      <template #subtitle>
-        Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the connection.
-      </template>
+  <CapabilityDeclinedGuard capability="integrations" label="Integrations">
+    <div class="space-y-6" data-shot="integrations-settings">
+      <SectionCard
+        v-for="provider in INTEGRATION_PROVIDER_LIST"
+        :key="provider.name"
+        :icon="provider.icon"
+        :title="provider.label"
+        help="settings.integrations"
+      >
+        <template #subtitle>
+          Connect {{ provider.label }} so pinned links unfurl with a title and status, and refresh through the
+          connection.
+        </template>
 
-      <div class="space-y-4">
-        <!-- Existing connections -->
-        <EmptyState
-          v-if="connectionsFor(provider.name).length === 0 && form.provider !== provider.name"
-          icon="i-lucide-plug-zap"
-          :text="`No ${provider.label} connection yet.`"
-        />
-
-        <ul v-else class="space-y-3">
-          <li
-            v-for="conn in connectionsFor(provider.name)"
-            :key="conn.id"
-            class="rounded-lg border border-default p-3 sm:p-4 space-y-3"
-          >
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="text-sm font-medium text-highlighted">{{ conn.name }}</span>
-              <UBadge :color="statusColor(conn.status)" variant="subtle" size="sm">{{
-                statusLabel(conn.status)
-              }}</UBadge>
-              <EnvManagedBadge v-if="conn.managedBy === 'env'" :env-vars="ENV_VARS_BY_PROVIDER[provider.name]" />
-            </div>
-            <p class="text-xs text-muted font-mono break-all">{{ conn.baseUrl }}</p>
-
-            <ErrorText v-if="conn.status === 'failed' && conn.lastError" :text="conn.lastError" />
-            <p v-if="testResults[conn.id]?.ok" class="text-xs text-muted">
-              Resolved account: {{ testResults[conn.id]?.account?.displayName }}
-            </p>
-            <ErrorText
-              v-else-if="testResults[conn.id] && !testResults[conn.id]?.ok"
-              :text="testResults[conn.id]?.error ?? 'Test failed'"
-            />
-
-            <div class="flex flex-wrap items-center gap-2">
-              <UButton
-                color="neutral"
-                variant="outline"
-                size="sm"
-                icon="i-lucide-plug"
-                :loading="testing === conn.id"
-                label="Test connection"
-                @click="testConnection(conn)"
-              />
-              <template v-if="conn.managedBy === 'db'">
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-pencil"
-                  label="Edit"
-                  @click="openEdit(conn)"
-                />
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-trash-2"
-                  label="Remove"
-                  :loading="deleting === conn.id"
-                  @click="removeConnection(conn)"
-                />
-              </template>
-              <UButton
-                v-if="provider.name === 'jira'"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                icon="i-lucide-webhook"
-                :label="conn.hasWebhookToken ? 'Regenerate webhook' : 'Enable webhook'"
-                :loading="webhooking === conn.id"
-                @click="generateWebhook(conn)"
-              />
-            </div>
-
-            <!-- The webhook URL, shown once after generating. -->
-            <div v-if="webhookUrls[conn.id]" class="rounded-lg border border-default p-2 space-y-1 text-xs">
-              <p class="text-muted">
-                Register this URL in Jira for <span class="font-medium">issue updated</span> events (shown once):
-              </p>
-              <CodeBlock :code="webhookUrls[conn.id]!" language="text" />
-            </div>
-
-            <IntegrationActivityList :connection-id="conn.id" />
-          </li>
-        </ul>
-
-        <!-- Connect / edit form -->
-        <form
-          v-if="form.provider === provider.name"
-          class="rounded-lg border border-default p-3 sm:p-4 space-y-4"
-          @submit.prevent="submit"
-        >
-          <p class="text-sm font-medium text-highlighted">
-            {{ isEditing ? 'Edit connection' : `Connect ${provider.label}` }}
-            <HelpHint topic="settings.integrations.connection" />
-          </p>
-
-          <UFormField label="Name" description="A label for this connection.">
-            <UInput v-model="form.name" placeholder="Team Jira" class="w-full max-w-md" />
-          </UFormField>
-
-          <UFormField label="Base URL" description="The system’s address, e.g. https://your-team.atlassian.net.">
-            <UInput v-model="form.baseUrl" placeholder="https://your-team.atlassian.net" class="w-full max-w-md" />
-          </UFormField>
-
-          <UFormField
-            v-for="field in credentialFieldsFor(provider.name)"
-            :key="field.key"
-            :label="field.label"
-            :description="field.help"
-          >
-            <UInput
-              v-model="form.credentials[field.key]"
-              :type="field.type === 'password' ? 'password' : 'text'"
-              :placeholder="isEditing && field.secret ? 'Leave blank to keep the stored value' : field.placeholder"
-              class="w-full max-w-md"
-            />
-          </UFormField>
-
-          <UFormField
-            v-if="provider.kind === 'tracker'"
-            label="Default language"
-            description="The language issues are written in, unless a project overrides it."
-          >
-            <USelect v-model="form.locale" :items="LOCALE_ITEMS" value-key="value" class="w-full max-w-md" />
-          </UFormField>
-
-          <div class="flex items-center gap-2">
-            <UButton type="submit" color="primary" :loading="saving" icon="i-lucide-save">
-              {{ isEditing ? 'Save' : 'Connect' }}
-            </UButton>
-            <UButton type="button" color="neutral" variant="ghost" label="Cancel" @click="cancel" />
-          </div>
-        </form>
-
-        <div v-else-if="form.provider === null">
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            icon="i-lucide-plus"
-            :label="`Connect ${provider.label}`"
-            @click="openCreate(provider.name)"
+        <div class="space-y-4">
+          <!-- Existing connections -->
+          <EmptyState
+            v-if="connectionsFor(provider.name).length === 0 && formProvider !== provider.name"
+            icon="i-lucide-plug-zap"
+            :text="`No ${provider.label} connection yet.`"
           />
-        </div>
-      </div>
 
-      <template #footer>
-        <p class="text-xs text-muted">
-          A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host works.
-          <HelpHint topic="settings.integrations.private-host" />
-        </p>
-      </template>
-    </SectionCard>
-  </div>
+          <ul v-else class="space-y-3">
+            <li
+              v-for="conn in connectionsFor(provider.name)"
+              :key="conn.id"
+              class="rounded-lg border border-default p-3 sm:p-4 space-y-3"
+            >
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="text-sm font-medium text-highlighted">{{ conn.name }}</span>
+                <UBadge :color="statusColor(conn.status)" variant="subtle" size="sm">{{
+                  statusLabel(conn.status)
+                }}</UBadge>
+                <EnvManagedBadge v-if="conn.managedBy === 'env'" :env-vars="ENV_VARS_BY_PROVIDER[provider.name]" />
+              </div>
+              <p class="text-xs text-muted font-mono break-all">
+                <OutboundLink :href="conn.baseUrl">{{ conn.baseUrl }}</OutboundLink>
+              </p>
+              <p v-if="conn.credentialValues.email || tokenKindLine(conn)" class="text-xs text-muted break-all">
+                {{ [conn.credentialValues.email, tokenKindLine(conn)].filter(Boolean).join(' · ') }}
+              </p>
+              <p
+                v-if="expiryLine(conn)"
+                class="text-xs"
+                :class="expiryLine(conn)!.warn ? 'text-warning' : 'text-muted'"
+                data-testid="token-expiry"
+              >
+                {{ expiryLine(conn)!.text }}
+                <OutboundLink v-if="expiryLine(conn)!.warn" :href="ATLASSIAN_API_TOKENS_URL"
+                  >Create a new one</OutboundLink
+                >
+              </p>
+
+              <ErrorText
+                v-if="conn.status === 'failed' && conn.lastError && !testResults[conn.id]"
+                :text="conn.lastError"
+              />
+              <CheckResultLine
+                v-if="testResults[conn.id]?.ok"
+                state="ok"
+                :text="`Signed in as ${testResults[conn.id]?.account?.displayName || 'the account'}.`"
+              />
+              <CheckResultLine
+                v-else-if="testResults[conn.id]"
+                state="error"
+                :text="testResults[conn.id]?.error ?? 'Test failed'"
+                :hint="testResults[conn.id]?.hint"
+              />
+
+              <div class="flex flex-wrap items-center gap-2">
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  icon="i-lucide-plug"
+                  :loading="testing === conn.id"
+                  label="Test connection"
+                  @click="testConnection(conn)"
+                />
+                <template v-if="conn.managedBy === 'db'">
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    icon="i-lucide-pencil"
+                    label="Edit"
+                    @click="openEdit(conn)"
+                  />
+                  <UButton
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    icon="i-lucide-trash-2"
+                    label="Remove"
+                    :loading="deleting === conn.id"
+                    @click="removeConnection(conn)"
+                  />
+                </template>
+                <UButton
+                  v-if="provider.name === 'jira'"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-webhook"
+                  :label="conn.hasWebhookToken ? 'Regenerate webhook' : 'Enable webhook'"
+                  :loading="webhooking === conn.id"
+                  @click="generateWebhook(conn)"
+                />
+              </div>
+
+              <!-- The webhook URL, shown once after generating. -->
+              <div v-if="webhookUrls[conn.id]" class="rounded-lg border border-default p-3 space-y-2">
+                <p class="text-sm text-highlighted">Copy this URL now: it is shown once.</p>
+                <CodeBlock :code="webhookUrls[conn.id]!" lang="text" />
+                <CheckResultLine
+                  v-if="!reachableFromCloud(webhookUrls[conn.id]!)"
+                  state="warning"
+                  text="Atlassian Cloud cannot reach this address."
+                  hint="Set PIWI_SITE_URL to the address Piwi is reachable at from the internet, or rely on the status sync, which needs no webhook."
+                />
+                <ol class="list-decimal space-y-1 ps-5 text-sm text-highlighted leading-relaxed">
+                  <li>
+                    Open <OutboundLink :href="jiraWebhooksAdminUrl(conn.baseUrl)">Jira’s webhooks page</OutboundLink> (a
+                    Jira administrator) and choose <span class="font-semibold">Create a webhook</span>.
+                  </li>
+                  <li>Paste the URL, and tick <span class="font-semibold">Issue → updated</span>.</li>
+                  <li>Optionally, limit it with a JQL filter to the projects Piwi files into.</li>
+                </ol>
+              </div>
+
+              <IntegrationActivityList :connection-id="conn.id" />
+            </li>
+          </ul>
+
+          <!-- Connect / edit form -->
+          <JiraConnectionForm
+            v-if="formProvider === provider.name && provider.name === 'jira'"
+            :key="editingConnection?.id ?? 'new'"
+            :connection="editingConnection"
+            :can-store-secrets="canStoreSecrets"
+            @saved="onSaved"
+            @cancel="closeForm"
+          />
+
+          <div v-else-if="formProvider === null">
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-plus"
+              :label="`Connect ${provider.label}`"
+              @click="openCreate(provider.name)"
+            />
+          </div>
+        </div>
+
+        <template #footer>
+          <p class="text-xs text-muted">
+            A connection base URL is administrator-supplied and trusted, so a self-hosted tracker on a private host
+            works.
+            <HelpHint topic="settings.integrations.private-host" />
+          </p>
+        </template>
+      </SectionCard>
+    </div>
+  </CapabilityDeclinedGuard>
 </template>

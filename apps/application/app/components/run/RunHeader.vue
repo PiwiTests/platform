@@ -1,16 +1,29 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo } from '~~/types/api';
 import type { RetryMode } from '~/utils/retry-command';
+import { highlightCode } from '#shared/highlight';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import { readIncidentReview, readRunIncident } from '#shared/run-incident';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
- * Run #N, the label editor and the marker chip on the first line with the
+ * Run #N, the label editor, the kept mark and the marker chip on the first line with the
  * primary action, one facts line with a Details popover for the rest, and one
  * count bar whose segments filter the Tests tab.
  */
 const props = defineProps<{
   testRun: TestRunDetails;
-  displayProgress: { totalTests: number; passedTests: number; failedTests: number; skippedTests: number } | null;
+  displayProgress: {
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    skippedTests: number;
+    /** `test.fixme()` skips — a subset of `skippedTests`. */
+    fixmeTests?: number;
+    didNotRunTests?: number;
+    flakyTests?: number;
+  } | null;
   allReports: ReportInfo[];
   totalWastedTime?: number;
   /** The active status filters, shared with the Tests tab chips and the count bar. */
@@ -32,13 +45,32 @@ const ci = computed(() => props.testRun?.metadata?.ci);
 const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
+const incident = computed(() => readRunIncident(props.testRun?.metadata));
+const incidentReview = computed(() => readIncidentReview(props.testRun?.metadata));
+const incidentBadges = computed(() =>
+  incident.value
+    ? [{ label: 'Incident', color: 'warning' as const, title: 'An environment incident: this run is not counted' }]
+    : [],
+);
+const customDataHtml = computed(() =>
+  customData.value ? highlightCode(JSON.stringify(customData.value, null, 2), 'json').html : '',
+);
+
+// What ingest left out or rebuilt, one sentence each; empty for a run stored whole.
+const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.testRun?.metadata)));
 
 const showStorage = computed(() => !!(storageStats.value?.totalFiles || props.finalizing));
 
 const passed = computed(() => props.displayProgress?.passedTests ?? props.testRun?.passedTests ?? 0);
 const failed = computed(() => props.displayProgress?.failedTests ?? props.testRun?.failedTests ?? 0);
 const skipped = computed(() => props.displayProgress?.skippedTests ?? props.testRun?.skippedTests ?? 0);
+const fixme = computed(() => props.displayProgress?.fixmeTests ?? 0);
 const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?.totalTests ?? 0);
+// Flaky and didn't-run track the live progress too (both are 0 on the persisted
+// row until the run finishes), so the bar shows passed-on-retry and didn't-run
+// segments while the run is still going instead of only at the end.
+const flaky = computed(() => props.displayProgress?.flakyTests ?? props.testRun?.flakyTests ?? 0);
+const didNotRun = computed(() => props.displayProgress?.didNotRunTests ?? props.testRun?.didNotRunTests ?? 0);
 
 // The first uploaded report is the run's headline artifact.
 const primaryReport = computed(() => props.allReports[0] ?? null);
@@ -109,7 +141,12 @@ function onLabelKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <DetailHeader :status="testRun?.status ?? ''" :title="`Run #${testRun?.id}`">
+  <DetailHeader
+    :status="testRun?.status ?? ''"
+    :title="`Run #${testRun?.id}`"
+    :badges="incidentBadges"
+    data-shot="run-header"
+  >
     <template #badges-extra>
       <!-- The label editor sits right after the title. -->
       <template v-if="editingLabel">
@@ -143,6 +180,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           + label
         </button>
       </template>
+
+      <UTooltip v-if="testRun?.keptAt" :text="describeKeep(testRun)">
+        <span class="shrink-0 inline-flex items-center gap-1 text-xs text-muted" data-shot="run-kept">
+          <UIcon name="i-lucide-lock" class="size-3.5" />
+          Kept
+        </span>
+      </UTooltip>
 
       <UTooltip v-if="testRun?.precedingMarker" :text="`This run started after: ${testRun.precedingMarker.label}`">
         <NuxtLink :to="`/projects/${testRun.projectId}?tab=timeline`" class="shrink-0 inline-flex items-center gap-1">
@@ -231,11 +275,21 @@ function onLabelKeydown(e: KeyboardEvent) {
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />
       </template>
+      <template v-if="ingestNotes.length">
+        <span class="text-dimmed">·</span>
+        <span :title="ingestNotes.join('\n')" data-shot="run-ingest-fact">{{
+          ingestNotes.length === 1 ? '1 ingest note' : `${ingestNotes.length} ingest notes`
+        }}</span>
+      </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
-        <a v-if="ci?.buildUrl" :href="ci.buildUrl" target="_blank" class="text-primary hover:underline">{{
-          ci?.buildNumber ? `Build #${ci.buildNumber}` : 'View build'
-        }}</a>
+        <a
+          v-if="safeHttpUrl(ci?.buildUrl)"
+          :href="safeHttpUrl(ci?.buildUrl) ?? undefined"
+          target="_blank"
+          class="text-primary hover:underline"
+          >{{ ci?.buildNumber ? `Build #${ci.buildNumber}` : 'View build' }}</a
+        >
         <span v-else>Build #{{ ci.buildNumber }}</span>
       </template>
     </template>
@@ -266,6 +320,26 @@ function onLabelKeydown(e: KeyboardEvent) {
           <DurationValue :ms="totalWastedTime" class="font-medium text-amber-600 dark:text-amber-400" />
         </span>
       </div>
+      <div class="flex items-start gap-1.5">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1">Retention <HelpHint topic="run.keep" /></span>
+        <span v-if="testRun?.keptAt">
+          {{ describeKeep(testRun) }}
+          <ClientOnly>
+            <span class="text-muted" :title="prettyDateFormat(testRun.keptAt)">
+              · {{ formatRelativeTime(testRun.keptAt) }}</span
+            >
+          </ClientOnly>
+        </span>
+        <span v-else>Not kept — retention deletes it once it is old enough</span>
+      </div>
+      <div v-if="ingestNotes.length" class="flex items-start gap-1.5" data-shot="run-ingest-health">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Ingest <HelpHint topic="run.ingestHealth"
+        /></span>
+        <ul class="space-y-1">
+          <li v-for="note in ingestNotes" :key="note">{{ note }}</li>
+        </ul>
+      </div>
       <div v-if="showStorage" class="flex items-center gap-1.5">
         <span class="text-muted">Storage</span>
         <RunStorageChip :storage-stats="storageStats" :reports="allReports" :finalizing="finalizing" />
@@ -285,21 +359,40 @@ function onLabelKeydown(e: KeyboardEvent) {
           @updated="emit('label-updated')"
         />
       </div>
+      <RunIncidentLine
+        v-if="testRun?.id && !incident"
+        variant="action"
+        :run-id="testRun.id"
+        :incident="null"
+        :review="incidentReview"
+        @changed="emit('label-updated')"
+      />
       <div v-if="customData">
         <span class="text-muted">Custom data</span>
         <pre
           class="mt-1 bg-zinc-50 dark:bg-zinc-900 p-2 rounded text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto"
-          >{{ JSON.stringify(customData, null, 2) }}</pre>
+        ><code v-html="customDataHtml" /></pre>
       </div>
+    </template>
+
+    <template v-if="incident" #below>
+      <RunIncidentLine
+        variant="line"
+        :run-id="testRun.id"
+        :incident="incident"
+        :review="incidentReview"
+        @changed="emit('label-updated')"
+      />
     </template>
 
     <template #count-bar>
       <RunCountBar
         :passed="passed"
         :failed="failed"
-        :flaky="testRun?.flakyTests ?? 0"
+        :flaky="flaky"
         :skipped="skipped"
-        :did-not-run="testRun?.didNotRunTests ?? 0"
+        :fixme="fixme"
+        :did-not-run="didNotRun"
         :total="total"
         :active-statuses="activeStatuses"
         @toggle-status="emit('toggle-status', $event)"

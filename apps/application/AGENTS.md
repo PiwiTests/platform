@@ -32,6 +32,35 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   **both** `schema.sqlite.ts` and `schema.pg.ts`, then `npm run db:generate && npm run db:generate:pg`.
 - ⚠ **Never hand-write a migration file or edit `_journal.json`** — always generate. A hand-made migration is silently
   skipped by the migrator.
+- **Migrations across a merge of the base branch** — a local database that ran a branch's migrations keeps their
+  records, so what a merge does to them decides whether that database still starts:
+  - **The base branch added no migration: keep the branch's migrations as they are.** Regenerating gives them new names
+    and dates, and every database that ran the old ones then holds records this build does not know.
+  - **The base branch added migrations** (a conflict in `_journal.json` or a `meta/NNNN_snapshot.json`, or two files
+    with the same number): the branch's must be dated after them. From `apps/application/`, in **both** folders:
+
+    ```bash
+    git diff --relative --name-only --diff-filter=A origin/main... -- server/database/migrations server/database/migrations-pg
+    git rm <each file listed>        # the branch's own .sql files and snapshots
+    git checkout origin/main -- server/database/migrations server/database/migrations-pg
+    npm run db:generate && npm run db:generate:pg
+    ```
+
+    drizzle-kit only regenerates schema changes: recreate each custom migration (a data backfill) with
+    `npm run db:generate -- --custom --name=<name>` and `npm run db:generate:pg -- --custom --name=<name>`, then paste
+    its SQL back.
+
+  - **Never resolve a `_journal.json` or snapshot conflict by hand** — keeping both sides' entries, renumbering `idx`,
+    reordering them. The migrator applies by date: an entry dated before one a database already ran is never run there.
+  - **Never change a committed migration**, not even to fold the base branch's migration into it under the same name or
+    date: a database that already ran it never runs the added statements. A new schema change is a new migration.
+  - Check with `npx vitest run tests/unit/migration-history.test.ts`: it fails on a journal whose dates do not strictly
+    increase, and on a fresh SQLite database that no longer matches the latest snapshot.
+- Startup migrates through `applyMigrations` (`server/database/migration-history.ts`), which compares
+  `__drizzle_migrations` with the journal first. A matching history goes through the Drizzle migrator; a diverged one
+  (rows from another branch, a migration dated before the latest applied one, a file changed after it ran) is
+  repaired in one transaction and checked against the latest `meta/NNNN_snapshot.json`. The snapshot is the reference,
+  so a fresh database must match it — a unit test checks this for SQLite.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).
@@ -69,6 +98,10 @@ export default eventHandler(async (event) => {
 - `requireAuth(event, roles)` still exists as an **explicit override** for handlers computing their own authorization
   (e.g. `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
 - Streaming endpoints (`start`, `events`, `finish`, `case-files`) use **stream-token** auth instead of `requireAuth`.
+- **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
+  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
+  `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin
+  pages or Piwi Picker's background worker; everything else (reporter, CLI, MCP, IDE clients) sends no browser metadata.
 
 ### Project-level permissions
 
@@ -184,6 +217,9 @@ Settings pages are driven by the `SETTINGS_PAGES` registry in `app/utils/setting
 - Sticky headers: the `sticky` prop + a `max-h-*` class on the table root. Do **not** wrap tables in `overflow-y-auto`.
 - Row highlighting: `:meta="{ class: { tr: '…' } }"` — **not** `:row-attrs`, which Nuxt UI v4 dropped.
 - Actions column: `{ id: 'actions', header: 'Actions' }` plus right-aligned `#actions-header` / `#actions-cell` slots.
+- **Never `header: ''`.** An empty-string header hydrates as a mismatch (tanstack's `FlexRender` renders a bare `''`
+  that Vue cannot place). A column without a visible title gets a real label and renders it through its header slot:
+  `header: 'Actions'` plus `<template #actions-header><span class="sr-only">Actions</span></template>`.
 - A table with ≥5 columns needs the mobile treatment from the responsive rule above.
 
 ### Typography and emphasis (MUST follow)
@@ -193,14 +229,16 @@ rules apply to every block a page opens on and to any card that states facts (th
 summaries, list rows). Dense tables and code views are exempt only where a rule says so.
 
 - **Four text styles per block, no more**: a heading (`text-lg sm:text-xl font-semibold text-highlighted`, at most
-  one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-xs font-medium
-text-muted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
-  commit — is the body or meta style in `font-mono`, inheriting the color. Nothing else in the block: no
-  `text-toned`/`text-dimmed` mixed with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a
-  sentence.
+  one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-sm font-semibold
+text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
+  commit — is the body or meta style in `font-mono`. Nothing else in the block: no `text-toned`/`text-dimmed` mixed
+  with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
 - **Structure with layout, not with styling.** A block with several kinds of lines gets one label column
-  (`SituationBlock` renders a `<dl>` with a 6.5 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
+  (`SituationBlock` renders a `<dl>` with an 8 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
   reader scans labels, not formatting. A badge, a color or a bold span is never what tells two lines apart.
+- **The situation block's left edge carries the page's status color** (`SituationBlock :edge`): the execution's
+  outcome color, the cluster state's dot color. It is the status, not an accent, and nothing else in the block
+  repeats it.
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated
   element the reader is meant to click. Every other button is `color="neutral"` — `variant="outline"` for a secondary
   action, `variant="ghost"` for a disclosure or a menu trigger. No `warning`, `success` or `soft` buttons for ordinary
@@ -212,11 +250,29 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   never a chip. Two red chips on one screen is a bug.
 - **Icons only where they carry meaning the text does not**: a status dot, a chevron on a disclosure or a menu, the
   check on a copied button. No icon in front of a label, a heading or a fact.
-- **A locator inside a heading or a sentence is plain mono** (`<LocatorCode plain>`, `<FailureHeadline plain>`).
-  Syntax highlighting belongs in code views — clue rows, the toolbox, the picker — where it competes with nothing.
+- **Code inside a heading or a sentence of the situation block sits in a chip**: a locator is syntax-highlighted in
+  it (`<LocatorCode chip>`, `<FailureHeadline chip>`), a commit keeps the sentence's color (`CODE_CHIP_CLASS`).
+  Elsewhere in prose a locator stays plain mono (`<LocatorCode plain>`).
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
-- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block. Keep it at
-  or under 15 on the execution page and 12 on the cluster page; a change that raises it needs a reason in the PR.
+- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block, a code chip
+  counting once whatever its token colors. Keep it at or under 15 on the execution page and 12 on the cluster page; a
+  change that raises it needs a reason in the PR.
+
+### Test outcome colors (MUST follow)
+
+Passed, failed, flaky, skipped, didn't run and running each have **one** color, everywhere: the `--color-status-*`
+tokens in `app/assets/css/main.css` (emerald, rose, purple, zinc, amber, blue). Timed-out and interrupted count as
+failed; a pass that needed a retry counts as flaky. Skipped has a second grey, `fixme`, for a `test.fixme()` skip
+(`isFixmeSkip` / `fixmeSkipPredicate` in `shared/utils/skip-kind.ts`): a subset of skipped, carved out of the skipped
+segment the way flaky is carved out of passed. Never hardcode a status color in a bar, chart, legend, dot, history
+cell, timeline bar or filter chip: use `STATUS_PALETTE` / `statusPalette(status, retries?)` from
+`app/utils/status-palette.ts` (`bg-status-*` classes for HTML, `var(--color-status-*)` in SVG `style`), the shared
+`StatusFilterChip`, and `getStatusColor` for badges (`flaky` is a registered Nuxt UI color). A new outcome view that
+needs another shade adds it to the palette entry, not to the component.
+
+Pass rates follow the same rule with one scale: `app/utils/pass-rate.ts` (`passRateTone`, `passRateTextClass`,
+`PASS_RATE_TONES`, and `passRateStep` for heatmap-style cells) — good at 90% or more, fair from 50%, poor below, in
+emerald / amber / rose. Never write a pass-rate threshold or color at a call site.
 
 ### Other UI rules
 
@@ -224,21 +280,51 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
-  `prettyDateFormat` in `ClientOnly`.
+  `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale
+  (`toLocaleString()`, `viewerLocale()`): the server formats it in its own.
+- **A `useFetch({ server: false })` loading state reads `status`, not `pending`**: the server renders it `idle`, and
+  the client starts the fetch before it hydrates, so gate the spinner on
+  `status.value === 'idle' || status.value === 'pending'` (see `pages/projects/[id]/locators.vue`) — gating on
+  `pending` renders the empty state on the server and the spinner in the browser.
+- **Date/time formatting is locale-aware — never hardcode a format.** `prettyDateFormat` and `formatRelativeTime` read
+  the viewer's effective locale and time zone from the active prefs holder (`app/utils/locale-format.ts`), set by
+  `app/plugins/locale.client.ts` from three layers: the per-browser override (Settings → Localization), then
+  `PIWI_LOCALE` / `PIWI_TIME_ZONE`, then the stored instance default, then the built-in `en-US`. Call sites need no
+  change — use `ClientDate` / `prettyDateFormat` / `formatRelativeTime` and they localize automatically. The pure
+  formatter and the resolution/validation helpers live in `#shared/i18n/locale-format`; format via `Intl`
+  (`formatAbsolute`), never a hand-written `M/d/yyyy`. `en-US` output is byte-identical to the historical format, so it
+  is the safe default for screenshots and tests.
 - **Page-level tab strips MUST match the Settings header**: `UDashboardToolbar` + `UNavigationMenu` with
   `highlight` (`settings.vue` is the reference). `DetailPageLayout` already renders it — pages using
   `DetailPageLayout` never touch the strip themselves, and no other page-level strip (UTabs pill, hand-rolled
   tablist) may be introduced. Content-level tab switches inside a card (e.g. an mcp code-client picker) are
   free to differ. The strip is a navigation menu, not an ARIA tablist: panels carry **no** `tabpanel` role,
   the active item carries `aria-current`, and inline `HelpHint`s render beside the strip for the active tab
-  (never inside a navigation trigger's label — that nests buttons).
+  (never inside a navigation trigger's label — that nests buttons). The strip carries
+  `:ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"` so it scrolls as one row when the
+  tabs overflow instead of shrinking every label to an ellipsis, and **below `sm` it is replaced by a
+  full-width `USelect`** (the strip is `hidden sm:flex`) — the horizontal row collapses to unreadable icons
+  on a phone. `DetailPageLayout` does both already; a route-driven strip like `settings.vue` binds the select
+  to the current route (grouped by the same sections, one `{ type: 'label' }` row per group).
+- **Spreadsheet exports people click are Excel (.xlsx), never CSV**: build them with `renderXlsx` /
+  `plainXlsxTable` from `#shared/reports/render-xlsx` (numbers and dates as typed cells, text never a formula,
+  bold frozen header) and save them with `useDesktopDownload().saveBlob`, since a download link does nothing in
+  the desktop shell. CSV stays only for machine consumers (the API `format=csv`, `/api/rollups`, the CLI).
+  Page code imports the renderer lazily (`await import(...)`).
+- **Test lists search and order one way.** A list of tests searches with `TestSearchInput` and the language in
+  `#shared/test-search` (in memory with `compileTestSearch`, in SQL with `testSearchConditions` from
+  `#shared/utils/test-search-sql`), marks matches with `SearchHighlight`, and orders and groups its rows with
+  `app/utils/test-list-order.ts` (run order, file order, File + Describe). Never add a second search syntax, a separate
+  tag / lock / browser filter control next to it, or another describe-tree builder. A new qualifier is an entry in
+  `TEST_SEARCH_FIELD_DEFS` plus its row in `apps/docs/reference/test-search.md` (the drift test checks the page).
 - Add a `title` attribute to any control whose purpose is not obvious from its label.
 - **Clickable source paths**: render any repo-relative path or `file:line[:col]` with `OpenInIdeLink`, never a bare
   `<span>`/`<code>`. Pass `filePath` (+ `line`/`column`) or `location`, and thread `projectKey` (the Piwi project **id**)
   and `projectName` when in scope so per-project workspace overrides resolve. IDE preferences are a **per-browser client
   preference** (`useOpenInIde`, `piwi-ide-prefs`) — deliberately not in `SETTINGS_PAGES` and with no `PIWI_*` var, since
-  the source lives on the user's machine. Only the JetBrains local-server method is detectable; `vscode://` /
-  `jetbrains://` launches are fire-and-forget, so never report a confirmed "opened".
+  the source lives on the user's machine. Only the Piwi JetBrains plugin (`/api/piwi/open`, `PiwiOpenHandler.kt` in
+  `apps/jetbrains`) confirms a file opened. The IDE Remote Control probe only shows an IDE is listening, and
+  `vscode://` / `jetbrains://` launches are fire-and-forget, so never report a confirmed "opened" for those.
 - **Data fetching in tab children**: for self-contained components rendered conditionally, use `watch` + `$fetch` with
   reactive triggers rather than `useFetch({ lazy: true })`, which may not fire before mount. Use `v-if` on tab-switched
   components for clean mount/unmount. Pass props from the page only for data already fetched at page level.
@@ -284,6 +370,13 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 - **API endpoint** — a file under `server/api/` using `eventHandler()` + `getDatabase()`, with a `defineRouteMeta`
   `openAPI` block (including `x-required-roles`) and the right access helper from the authorization rules above.
+  **No address the browser requests may contain `analytics`** (a route path, a query key or value): uBlock Origin and
+  other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
+  `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks it.
+- **Calling an endpoint from the app** — `$fetch` and `useFetch` carry no typed route map (a `types:extend` hook in
+  `nuxt.config.ts` empties Nitro's `InternalApi`), so every call site names its response type:
+  `$fetch<ApiResponse<typeof import('~~/server/api/…').default>>(…)` with `ApiResponse` from `types/api.ts`, or a
+  type of that file or of the shared handler. A call without one is `unknown`, never inferred.
 - **Page** — a Vue file in `app/pages/` built on `<UDashboardPanel>`; register it in the nav links array in
   `app/layouts/default.vue` if it belongs in the sidebar.
 - **Component** — a Vue file in the matching `app/components/` subfolder. Auto-import has no folder prefix, so the name
@@ -299,15 +392,17 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 Where to add things in subsystems whose wiring spans several files:
 
-| Change                        | Touch                                                                                                                                                                                                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `server/utils/flaky-classify.ts`; `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                            |
-| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                         |
-| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), called from `finish.post.ts`; surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                                           |
-| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                 |
-| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                        |
-| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport` |
-| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                |
+| Change                        | Touch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `shared/flaky-classify.ts`; persistence and triggers in `shared/handlers/flaky-classify.ts` (`classifyRunFlakyTests`, called from `runFinalizeSideEffects`; `withFlakyRootCauses`, called by the flaky-tests read on the server and in the demo); `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                                                                                                                                                                                                                       |
+| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Finish-time side effects      | Every complete-run ingest path (`finish`, `upload` new-and-attach, `submit`) routes finalization through the one probe-aware `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): the environment-incident check first (`recordRunHealth`, `shared/handlers/run-health.ts`; a flagged run sends one `environment.incident` in place of the verdicts), then regression signals, auto markers, flaky root causes, AI diagnosis, notifications, PR feedback, auto-heal. A `finalizing` run reaches it through `settleFinalizingRun` (`server/utils/finalizing-runs.ts`), from its report upload or the stale-run sweep. A probe-stamped run stays silent everywhere |
+| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Quality report language       | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
 
 ## Subsystem invariants
 
@@ -322,6 +417,12 @@ from `createScmProvider` / `scmProviderForUrl` (or the pure link helpers from `#
 `ScmProviderName` union from `#shared/scm-urls`; never re-declare `'github' | 'gitlab' | 'bitbucket'`.
 `tests/unit/scm-single-source.test.ts` scans `server`, `shared`, `app` and `types` for provider host literals and the
 union outside an explicit allow-list, so a new home for either is a visible diff to that list.
+
+On the desktop app with no SCM token, `createScmProvider` returns a `LocalGitProvider` (`server/utils/scm/local-git.ts`)
+for a project linked to a clone of the repository: it reads history with git in that folder and wraps the host's own
+provider for the rest. A method added to `ScmProvider` must be added there too — a read tries git first and falls back
+to the host, anything else is passed to the host. The base class's no-op defaults compile without it, and would
+silently turn the feature off on the desktop app.
 
 ### Failure clustering & fingerprints
 
@@ -382,18 +483,78 @@ Rules when touching it:
   project member may save one, so the endpoint deliberately carries no role list.
 - Re-run `npm run app:seed:demo` after changing the captured or stored shape.
 
+### Workers timeline rendering
+
+A run's timeline draws one SVG shape per test, hook section and gap — thousands on a large run — and a zoom
+re-positions each drawn one. Keep every interaction proportional to what changed:
+
+- Hover state lives in one reactive object that only `TimelineTooltip` and `TimelineFocus` read; `WorkersTimeline`'s
+  template passes the object, never its fields, so hovering never re-renders the bars.
+- Dim the other bars with `TimelineFocus` (one wash plus a copy of the hovered bar), never with per-bar classes,
+  styles or a `:has(:hover)` rule, which restyle every shape on each hover.
+- Bar props stay referentially stable when nothing changed (`NO_LOCK_COLORS`, `NO_HOOKS`, `timelineStatusFill`); a
+  fresh `[]` or `{}` per render re-renders every bar.
+- A test's hook sections are drawn by the test's own `TimelineBar`, not as bars of their own; only bars inside the
+  viewport's `renderRange` are drawn.
+- The resource tracks (`TimelineResourceBand`) and the strips under each worker (`TimelineWorkerStrips`) build each
+  path once in milliseconds and take the zoom from their group's `scale()` transform, so a zoom never rebuilds them.
+  Their hover lives in its own reactive object, read only by `TimelineResourceTooltip` and `TimelineResourceCursor`.
+  Where every lane, band and strip sits comes from one `layOutTimelineRows` (`app/utils/resource-tracks.ts`), which
+  the viewport reads through `laneOffset`; anything new drawn between the lanes is added there, never offset by hand.
+
 ### Sharding
 
-- **runLabel** is detected from CI env vars by `MetadataCollector.detectCiRunLabel()` (reporter) and `detectCiRunLabel()`
-  (helpers); users override via `PiwiDashboardOptions.runLabel`; `createGlobalSetup` applies it too.
+- **runLabel** comes from `resolveRunLabel` (`packages/reporter/src/internal/support/ci.ts`), used by the reporter and
+  `createGlobalSetup` alike: `PiwiDashboardOptions.runLabel` as is, else the CI pipeline id from env vars (GitHub adds
+  the run attempt), plus the CI job id for a run that is not sharded, so parallel jobs of a pipeline stay apart.
 - When `runLabel` is set, `computeInstanceId(projectName, runLabel)` replaces the `hostname|projectName` key so all
   shards share one instanceId.
-- Each shard gets its own stream token, stored in `RunEventBus.runStates[id].shardTokens`. **Any new streaming endpoint
-  MUST validate shard tokens alongside the primary one** — check `cachedState.shardTokens?.has(body.streamToken)` as a
-  fallback, via `validateAndReviveRun()` with the `isShardToken` callback.
+- A shard's identity is Playwright's `config.shard`, or the `i/n` in `PIWI_SHARD` that `piwi run --shard` sets because it
+  narrows the tests itself and gives Playwright no `--shard`; the reporter reads both through `resolveShardInfo`
+  (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A run with no shard
+  identity starts non-sharded and cancels every running run of its `instanceId`.
+- Each shard gets its own stream token, kept as its digest (`shardTokenDigest`) in `RunEventBus.runStates[id].shardTokens`
+  and in the run's `metadata.shardTokens`, which project members can read. **Any new streaming endpoint MUST validate
+  shard tokens alongside the primary one** — check `matchesShardToken(cachedState.shardTokens, body.streamToken)` as a
+  fallback, via `validateAndReviveRun()` with the `isShardToken` callback; never compare against the set directly.
+- **A run's shard tokens are merged, never replaced** — in the cache or in `metadata`. Every shard's setup token stays
+  valid until that shard calls `/begin`, which swaps it for the shard's stream token; read the set with
+  `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.
 - Server-side merge: `/start`, `/setup` and `/submit` reuse an existing run when `shardTotal > 1` and an active run with
-  the same `instanceId` exists; `/finish` accumulates counters with SQL `+` and only sets the final status when
-  `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
+  the same `instanceId` exists, and `/begin` on a run another shard already began joins it (a stream token of its own,
+  its planned tests added to `totalTests`); `/finish` accumulates counters with SQL `+` and only sets the final status
+  when `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
+
+### Trace storage compression
+
+Trace evidence is compressed at rest, transparently. Two rules keep it that way:
+
+- The shared resource pool (`project-<id>/trace-resources/`) stores text resources gzip-wrapped in a
+  self-describing container (see `server/utils/resource-compression.ts`). **Every read of a pool resource
+  MUST pass the bytes through `decodeResource`** — reconstruction, evidence, DOM-snapshot inlining all
+  do. Add a new pool reader and you add a `decodeResource` call, or you serve compressed bytes as if they
+  were raw. `compressResource` is the only writer; `trace_resources.size` is the on-disk (post-compression)
+  byte count. There is no encoding column — the container's magic prefix is the source of truth, so a
+  resource that is itself gzip (Playwright can store one) is never double-decoded.
+- The persisted slim events blob is built with `buildZip(entries, { compress: true })`; reconstruction
+  rebuilds the served ZIP stored (uncompressed) for speed. `buildZip` defaults to stored — pass
+  `{ compress: true }` only for the write-once-keep path, never for archives rebuilt on every open.
+
+### Trace resource refcounting
+
+Shared pool resources are reference-counted through `trace_blob_resources` (blob ↔ resource), so a partial
+delete frees a resource the moment no surviving blob references it (`gcTraceBlobs`), not only when the
+project loses its last blob. Two invariants keep it correct:
+
+- **Any blob write MUST record its resource links and then set `trace_blobs.resources_indexed = true`, in
+  that order.** `upsertTraceBlob` does this via `linkBlobResources`; the flag flips only after the links
+  exist, so a half-written blob is never trusted. A new blob-writing path must do the same, or resources it
+  needs can be reclaimed out from under it.
+- **Per-resource GC only runs for a project whose blobs are all indexed.** Deletes on a project with any
+  `resources_indexed = false` blob fall back to the whole-project rule (resources go only when the last blob
+  does), because such a blob's links may be missing. `backfillTraceBlobResources` (kicked off at startup
+  from `initDatabase`, non-blocking) indexes pre-existing blobs from their manifests; the nightly
+  `reclaimOrphanTraceResources` sweeps resources nothing references any more, same gate.
 
 ## Adding a field to test run data
 
@@ -430,6 +591,12 @@ share `app/demo/db.client.ts`.
   deterministic (seeded PRNG), so two runs with no source changes are byte-identical. After editing
   `scripts/generate-demo-seed.mjs` or `shared/demo/failure-stories.mjs`, re-seed and commit the generator plus the
   updated `seed.version.json`; never stage `seed.sql`.
+- **No dynamic `import()` in code the service worker bundles** (`shared/`, `server/utils/`, `app/demo/`): the
+  worker is a classic script and Vite's preload wrapper for a dynamic import uses `import.meta.url`, a syntax
+  error there that stops the worker from installing. Import statically; `app:check:demo:runtime` catches it.
+- The first render waits on the in-browser database, so until then the static shell shows
+  `app/demo/loading-template.html` (Nuxt's `spaLoadingTemplate`, removed on `app:suspense:resolve`). It is also what
+  crawlers index: keep the demo's heading and description in it, and its status text inside `data-nosnippet`.
 - Staleness detection injects `demoDataVersion` into `runtimeConfig.public`; the layout compares it to the IndexedDB
   copy and offers a "New demo data available" reset.
 - The run simulator (`DemoSimulator.vue` + `app/demo/simulator.ts`) replays the reporter's streaming protocol against
@@ -453,6 +620,11 @@ fallback. Demo AI diagnosis is **data-grounded, not canned prose** — rebuilt f
 stats, with suggested patches genuinely `validatePatch`-checked. Demo-only AI/SCM code stays out of `shared/handlers/`
 so the canned SCM never enters the server bundle; the one shared piece is the version-snapshot row shape
 (`shared/handlers/diagnosis-versions.ts`). `tests/unit/demo-seed-consistency.test.ts` guards the whole chain.
+
+**The docs link concrete demo screens through `shared/demo/demo-examples.mjs`**, and the same test checks each
+example's `expect` against the generated seed (the entity its route opens, and the state its sentence promises). A
+seed change that moves or changes one fails there, naming the example: update the entry (route, `expect`, `shows`)
+in the same change, never the check.
 
 ## MCP tool conventions (MUST follow)
 
@@ -481,6 +653,12 @@ chars via `trunc(msg, 400)`.
 a `pageSize + 1` fetch. **`getCursor` must read the POST-map field name** (`r.executionId`, not the pre-map `r.caseId`)
 — reading a renamed field yields an `"undefined"` cursor that crashes the next page. In-memory-filtered list paths must
 apply the cursor in memory on the same axis as the emitted cursor, or paging loops on page one.
+
+**Tools about Piwi itself** — `describe_piwi` and `get_release_notes` (`server/utils/mcp/about-piwi.ts`) answer from
+the docs pages and `CHANGELOG.md` bundled as Nitro server assets (`nitro.serverAssets` in `nuxt.config.ts`; the
+Dockerfile copies both in) and from the registries the docs site renders — never from prose written for the tool,
+so they cannot say anything the docs do not. How this instance is configured (storage, retention, capability
+states) is deployment shape, shown to administrators only, like the Setup page.
 
 ## Running the app locally to verify a change
 
@@ -517,7 +695,9 @@ app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--ur
   (`reuseExistingServer: !process.env.CI`), and Nuxt's HMR picks up your edits, so you iterate without re-booting
   a server per test run. Watch `dev-server.log` for compile errors (a template error shows up there, not in the
   browser); restart only when the server crashes or you touch `nuxt.config`/server plugins. The feature-screenshot
-  harness reuses the same server (`--url`).
+  harness reuses the same server (`--url`). A cold server compiles each page on its first visit, which can take 20 s:
+  a spec's first test timing out on a page that renders is that compile, so rerun it against the warm server before
+  reading it as a regression.
 
 - **Do NOT use `PIWI_DEMO_MODE=true` for the dev server.** Demo mode builds the static SPA; it is not a `nuxt dev` flag.
   To verify a change _in the demo_, build it and drive the build:
@@ -529,9 +709,9 @@ app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--ur
   download URL. The demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` escapes the scope and 404s against the static host. `fileApiUrl` and `getTraceViewerUrl` exist for exactly
   this reason.
-- **Test cases live under runs #21+.** Runs #1–20 have 0 cases (their rows target a migration-only table the dev schema
-  drops). Query a real id: `node scripts/db-query.mjs "SELECT id FROM test_runs_cases ORDER BY id DESC LIMIT 5"`.
-  Clusters with data: #3, #4, #5, #7, #8; project #2 (`api-integration`) owns clusters 3 and 4.
+- **Every seeded run carries its cases**, and every one of the ten clusters has failing executions; project #2
+  (`api-integration`) owns clusters 3 and 4. Run and execution ids are stable for a given seed, but query a real one
+  rather than guessing: `node scripts/db-query.mjs "SELECT id FROM test_runs_cases ORDER BY id DESC LIMIT 5"`.
 - **Brand icons** (`i-simple-icons-*`) resolve from the iconify CDN at runtime; with no outbound network they render
   blank. Only the `lucide` collection is bundled locally. Environment limitation, not a bug.
 

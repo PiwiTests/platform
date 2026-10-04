@@ -4,19 +4,28 @@ import { getProviderIcon } from '#shared/link-detect';
 import { isCurrentlySnoozed } from '#shared/inbox-queues';
 import type { TableColumn } from '@nuxt/ui';
 import type { ProjectFailureCluster } from '~~/types/api';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   projectId: string | number;
+  /** The status the list opens on (a drill-down from Analytics); every status when unset. */
+  initialStatus?: 'open' | 'resolved' | 'ignored';
 }>();
 
 const emit = defineEmits<{ count: [total: number] }>();
 
 // 'all' is a real select value so the control shows its current choice; the API
 // takes no status param for it.
-const statusFilter = ref<'all' | 'open' | 'resolved' | 'ignored'>('all');
+const statusFilter = ref<'all' | 'open' | 'resolved' | 'ignored'>(props.initialStatus ?? 'all');
+watch(
+  () => props.initialStatus,
+  (status) => {
+    if (status) statusFilter.value = status;
+  },
+);
 const {
   data: clusters,
-  pending: loading,
+  status: clustersStatus,
   refresh,
 } = await useFetch(
   () => {
@@ -32,6 +41,9 @@ const {
     transform: (r: { items: ProjectFailureCluster[] }) => r.items,
   },
 );
+
+// The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => clustersStatus.value === 'idle' || clustersStatus.value === 'pending');
 
 // Only the unfiltered list stands for the project's cluster count.
 watch(clusters, (list) => {
@@ -220,7 +232,7 @@ const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
               />
               <a
                 v-if="row.original.issueLink"
-                :href="row.original.issueLink.url"
+                :href="safeHttpUrl(row.original.issueLink.url) ?? undefined"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="shrink-0"

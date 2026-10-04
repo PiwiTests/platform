@@ -11,6 +11,7 @@
  */
 
 import { test, expect } from './fixtures';
+import { readSseUntil } from './utils/sse';
 
 // All tests share a single auth-enabled server — must run serially.
 test.describe.configure({ mode: 'serial' });
@@ -468,6 +469,72 @@ test.describe.serial('Global channels & subscriptions', () => {
   });
 });
 
+// ── Browser stream filters ─────────────────────────────────────────────────────
+
+test.describe.serial('Browser stream filters', () => {
+  test("a browser subscription's environment filter holds back other environments' runs", async () => {
+    skip();
+    const channelRes = await api(
+      'POST',
+      '/api/channels',
+      { name: 'Staging tabs', type: 'browser', config: {} },
+      adminCookie,
+    );
+    const { channel } = (await channelRes.json()) as { channel: { id: number } };
+    const subRes = await api(
+      'POST',
+      '/api/subscriptions',
+      { channelId: channel.id, projectId, events: ['run.finished'], filters: { environments: ['staging'] } },
+      adminCookie,
+    );
+    expect(subRes.ok).toBe(true);
+
+    const controller = new AbortController();
+    try {
+      const stream = await fetch(`${BASE}/api/notifications/stream`, {
+        headers: { Cookie: adminCookie },
+        signal: controller.signal,
+      });
+      expect(stream.ok).toBe(true);
+
+      for (const environment of ['qa', 'staging']) {
+        const run = await api(
+          'POST',
+          '/api/test-runs/submit',
+          {
+            projectName: 'notif-test-project',
+            environment,
+            status: 'passed',
+            startTime: new Date().toISOString(),
+            duration: 1000,
+            totalTests: 0,
+            passedTests: 0,
+            failedTests: 0,
+            skippedTests: 0,
+            testCases: [],
+          },
+          adminCookie,
+        );
+        expect(run.ok).toBe(true);
+      }
+
+      const reader = stream.body!.getReader();
+      const events = await readSseUntil(
+        reader,
+        (es) => es.some((e) => e.type === 'run.finished' && e.environment === 'staging'),
+        15000,
+      );
+      reader.releaseLock();
+
+      const finished = events.filter((e) => e.type === 'run.finished' && e.projectId === projectId);
+      expect(finished.map((e) => e.environment)).toEqual(['staging']);
+    } finally {
+      controller.abort();
+      await api('DELETE', `/api/channels/${channel.id}`, undefined, adminCookie);
+    }
+  });
+});
+
 // ── Subscribe Bell UI ──────────────────────────────────────────────────────────
 
 test.describe.serial('Subscribe Bell UI', () => {
@@ -504,7 +571,7 @@ test.describe.serial('Subscribe Bell UI', () => {
     // wait for the redirect to settle before asserting.
     test.slow();
     await page.goto(`${BASE}/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
-    await page.waitForURL('**/login', { timeout: 30000 });
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 30000 });
     await expect(page.getByTitle('Notification subscriptions for this project')).not.toBeVisible();
   });
 
@@ -564,6 +631,28 @@ test.describe.serial('Subscribe Bell UI', () => {
     const res = await api('GET', `/api/subscriptions?projectId=${projectId}`, undefined, adminCookie);
     const data = (await res.json()) as { items: unknown[] };
     expect(data.items).toHaveLength(0);
+  });
+
+  test('subscribe via bell with a branch filter stores it and shows it on the row', async ({ page }) => {
+    skip();
+    await loginBrowser(page);
+    await page.goto(`${BASE}/projects/${projectId}`);
+
+    const addButton = page.getByRole('button', { name: 'Add' });
+    await openBell(page, addButton);
+    await addButton.click();
+    await page.getByTestId('subscription-branches').fill('release/*');
+    await page.getByRole('option').filter({ hasText: 'release/*' }).click();
+    await page.getByRole('button', { name: 'Subscribe' }).click();
+    await expect(page.getByText('Subscribed', { exact: true })).toBeVisible({ timeout: 10000 });
+
+    const res = await api('GET', `/api/subscriptions?projectId=${projectId}`, undefined, adminCookie);
+    const data = (await res.json()) as { items: Array<{ id: number; filters: { branches?: string[] } | null }> };
+    const created = data.items.find((s) => s.filters?.branches?.includes('release/*'));
+    expect(created?.filters).toEqual({ branches: ['release/*'] });
+    await expect(page.getByTestId('subscription-filters')).toHaveText('Branch: release/*');
+
+    await api('DELETE', `/api/subscriptions/${created!.id}`, undefined, adminCookie);
   });
 
   test('notifications settings page shows SMTP unconfigured state', async ({ page }) => {

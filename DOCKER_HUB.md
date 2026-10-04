@@ -1,6 +1,6 @@
 # Piwi Dashboard
 
-**Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, MIT, zero telemetry.
+**Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them — then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.
 
 📖 [Full documentation](https://piwitests.dev) · 🎮 [Live demo](https://piwitests.dev/demo/) · 💬 [GitHub](https://github.com/PiwiTests/platform)
 
@@ -12,7 +12,7 @@
 
 ```bash
 # Linux / macOS
-mkdir -p .data && chown -R 1001:1001 .data # the container runs as non-root UID 1001
+mkdir -p .data && sudo chown -R 1001:1001 .data # the container runs as non-root UID 1001
 docker run -d --name piwi-dashboard -p 3000:3000 -v $(pwd)/.data:/app/.data phenx/piwitests-server:latest
 ```
 
@@ -36,10 +36,10 @@ Then point the [Playwright reporter](https://piwitests.dev/guide/reporter) at it
 | Base image | `node:24-alpine`                   |
 | Platforms  | `linux/amd64`, `linux/arm64`       |
 | Image size | ~400 MB                            |
-| Run as     | Non-root (`nodejs`, UID/GID 1001)  |
+| Run as     | Non-root (`nodejs`, UID 1001)      |
 | Data       | `/app/.data` — mount a volume here |
 
-`/app/.data` holds `piwi.db` (the SQLite database, skipped when `PIWI_DATABASE_URL` is set) and `storage/` (HTML reports and trace files, skipped when S3 is configured). Mount it, or the container loses everything on restart.
+`/app/.data` holds `piwi.db` (the SQLite database, skipped when `PIWI_DATABASE_URL` is set) and `storage/` (HTML reports and trace files, skipped when S3 is configured). Mount it, or everything is lost when the container is re-created (on an upgrade, for example).
 
 ### Tags
 
@@ -66,14 +66,14 @@ The three worth knowing before you expose the container to a network:
 |----------|-----|
 | `PIWI_AUTH_ENABLED` | Authentication is **off by default**. Set to `true` for anything beyond localhost — see [Authentication](https://piwitests.dev/operate/authentication). |
 | `PIWI_AUTH_SECRET` | Signs session cookies. Required when auth is enabled. |
-| `PIWI_SECRET_KEY` | Encrypts secrets stored in the database (AI keys, SCM tokens). Recommended in every deployment. |
+| `PIWI_SECRET_KEY` | Encrypts secrets stored in the database (AI keys, SCM tokens). Unset, saving any of them fails — set it in every deployment. |
 
 Generate a value for the latter two with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
 
-Beyond those: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3` plus the `PIWI_S3_*` variables switch artifact storage to any S3-compatible service, and `PIWI_RETENTION_DAYS` turns on nightly pruning of old runs. Compose, Kubernetes, PostgreSQL, S3/MinIO, reverse-proxy, backups and troubleshooting are all in the [deployment guide](https://piwitests.dev/operate/deployment).
+Beyond those: `PIWI_DATABASE_URL` switches to PostgreSQL, `PIWI_STORAGE_TYPE=s3` plus the `PIWI_S3_*` variables switch artifact storage to any S3-compatible service, and `PIWI_RETENTION_DAYS` turns on nightly pruning of old runs. Compose, Kubernetes, PostgreSQL, reverse-proxy and troubleshooting are in the [deployment guide](https://piwitests.dev/operate/deployment); S3-compatible storage is in [Storage](https://piwitests.dev/operate/storage) and backups in [Backup & restore](https://piwitests.dev/operate/backup-restore).
 
 ---
 
 ## License
 
-MIT — [source code on GitHub](https://github.com/PiwiTests/platform)
+FSL-1.1-MIT (fair source): free to use, self-host and modify, at work too; each release becomes MIT two years after it is published. See [License](https://piwitests.dev/guide/license) · [source code on GitHub](https://github.com/PiwiTests/platform)

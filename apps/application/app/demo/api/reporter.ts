@@ -20,19 +20,31 @@ import {
   testSuites,
   networkRequests,
 } from '~~/server/database/schema.sqlite';
-import { parseLocation } from '~~/server/utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { mapCompleteEventToRunCase } from '~~/server/utils/map-complete-event';
+import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
+import { matchInsertedRunCases } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
+import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
+import { carryIngestHealth } from '#shared/ingest-health';
+import { recordIngestHealth, storedDrops, type ExecutionDrops } from '~~/server/utils/ingest-health';
+import { upsertLocatorUsages, type LocatorUsageCase } from '~~/server/utils/locator-usages';
+import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
+import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
+import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
   capArray,
   capSteps,
+  countDroppedSteps,
+  countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
   capSourceFrames,
@@ -46,9 +58,13 @@ import {
 } from '~~/server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
+import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-classify';
 import { durationStats } from '#shared/utils/stats';
-import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
+import { recordRunHealth } from '#shared/handlers/run-health';
+import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
+import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
 import {
   normalizeTestLocks,
@@ -59,11 +75,13 @@ import {
 } from '@piwitests/core/test-meta';
 import {
   cancelInstanceRuns as sharedCancelInstanceRuns,
-  getOrCreateFailureClusters,
+  assignFailureClusters,
   type PendingCluster,
 } from '#shared/handlers/failure-cluster-ops';
 import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '#shared/types';
 import { demoHttpError } from './http-error';
+import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -78,9 +96,9 @@ function randomToken(): string {
 
 /**
  * Validate a run's stream token for events/heartbeat/finish, mirroring the
- * server's `validateAndReviveRun`: an `interrupted` run (stream token cleared
- * by stale-run cleanup) is revived to `running` by accepting the reporter's
- * existing token; anything else must be running with a matching token.
+ * server's `validateAndReviveRun`: an `interrupted` run keeps its stream token,
+ * and a request carrying it (or a shard token) revives the run to `running`;
+ * anything else must be running with a matching token.
  */
 async function validateAndReviveDemoRun(
   db: DemoDb,
@@ -88,25 +106,20 @@ async function validateAndReviveDemoRun(
   bodyStreamToken: string | null | undefined,
   isValidShardToken: boolean,
 ): Promise<void> {
-  const isInterrupted = testRun.status === 'interrupted' && !testRun.streamToken;
+  const isInterrupted = testRun.status === 'interrupted';
 
   if (testRun.status !== 'running' && !isInterrupted) {
     throw demoHttpError(409, 'Test run is not in running state');
   }
-
-  if (isInterrupted) {
-    if (!bodyStreamToken) {
-      throw demoHttpError(403, 'Missing stream token');
-    }
-    await db
-      .update(testRuns)
-      .set({ status: 'running', streamToken: bodyStreamToken, updatedAt: new Date() })
-      .where(eq(testRuns.id, testRun.id));
-    testRun.status = 'running';
-    testRun.streamToken = bodyStreamToken;
-  } else if (testRun.streamToken !== bodyStreamToken) {
-    if (isValidShardToken && bodyStreamToken) return;
+  if (!bodyStreamToken) {
+    throw demoHttpError(403, 'Missing stream token');
+  }
+  if (testRun.streamToken !== bodyStreamToken && !isValidShardToken) {
     throw demoHttpError(403, 'Invalid stream token');
+  }
+  if (isInterrupted) {
+    await db.update(testRuns).set({ status: 'running', updatedAt: new Date() }).where(eq(testRuns.id, testRun.id));
+    testRun.status = 'running';
   }
 }
 
@@ -212,7 +225,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          eq(testRuns.status, 'initializing'),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -222,6 +235,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
+      await applyReporterKeep(db, existingShardedRun.id, body.keep);
       return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
     }
 
@@ -257,6 +271,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
 
     const testRun = testRunResult[0];
     if (!testRun) throw new Error('Failed to create test run');
+    await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
     return { success: true, runId: testRun.id, projectId: project.id, setupToken };
   }
@@ -293,6 +308,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   if (!testRun) {
     throw new Error('Failed to create test run');
   }
+  await applyReporterKeep(db, testRun.id, body.keep);
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
@@ -324,8 +340,13 @@ export async function apiBeginTestRun(
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
   // Parallel worker processes race to /begin on the same run; a running run is
-  // tolerated and handed back its existing stream token (server behavior).
-  if (!isSharded && testRun.status !== 'initializing' && testRun.status !== 'running') {
+  // tolerated and handed back its existing stream token (server behavior). A
+  // sharded run also takes a shard after the stale-run sweep marked it interrupted.
+  const canBegin =
+    testRun.status === 'initializing' ||
+    testRun.status === 'running' ||
+    (isSharded && testRun.status === 'interrupted');
+  if (!canBegin) {
     throw demoHttpError(409, 'Test run cannot be transitioned to running state');
   }
 
@@ -335,10 +356,20 @@ export async function apiBeginTestRun(
   if (testRun.streamToken !== body.setupToken && !isValidShardSetupToken) {
     throw demoHttpError(403, 'Invalid setup token');
   }
+  // A setup token opens one /begin.
+  shardTokenSet?.delete(body.setupToken);
 
   const streamToken = randomToken();
 
   if (testRun.status === 'initializing') {
+    if (isSharded) {
+      // A shard's stream token is one of the run's shard tokens, so two shards
+      // that begin at once both keep theirs (server behavior).
+      const tokens = demoShardTokens.get(id) ?? new Set();
+      tokens.add(streamToken);
+      demoShardTokens.set(id, tokens);
+    }
+
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
     await db
@@ -348,7 +379,10 @@ export async function apiBeginTestRun(
         streamToken,
         totalTests: body.totalTests || 0,
         branch: resolveRunBranch(body.metadata || testRun.metadata),
-        metadata: sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+        metadata: carryIngestHealth(
+          sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+          testRun.metadata,
+        ),
         playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
@@ -360,11 +394,18 @@ export async function apiBeginTestRun(
   } else if (isSharded) {
     // Subsequent shard in a sharded run: register the per-shard stream token
     // in memory and in the run's stored metadata (so a service-worker restart
-    // mid-run keeps accepting the shard's events).
+    // mid-run keeps accepting the shard's events), and add the shard's slice
+    // of the planned suite to the run's total.
     const tokens = demoShardTokens.get(id) ?? new Set();
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
+    if (body.totalTests) {
+      await db
+        .update(testRuns)
+        .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
+        .where(eq(testRuns.id, id));
+    }
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
@@ -408,6 +449,12 @@ export interface RunCaseInput {
   networkRequests?: unknown;
   webVitals?: unknown;
   pageState?: unknown;
+  /** The page each locator call ran on (capture fixtures). */
+  locatorPages?: unknown;
+  /** The source files the test executed (code reach). */
+  codeReach?: unknown;
+  /** What the execution cost its worker and browsers (`piwi-resources`). */
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -419,6 +466,7 @@ export interface RunCaseInput {
   browser?: unknown;
   locatorSnapshots?: unknown;
   didNotRunReason?: string | null;
+  expectedStatus?: string | null;
   blockedBy?: string | null;
 }
 
@@ -559,6 +607,7 @@ export async function persistRunCases(
   testRunId: number,
   cases: RunCaseInput[],
   deduplicate?: boolean,
+  options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
@@ -595,12 +644,19 @@ export async function persistRunCases(
   const rowInputIndices: number[] = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
+  const rowDrops: ExecutionDrops[] = [];
   const pendingClusters = new Map<string, PendingCluster>();
   const perCaseLocators: Array<{
     caseId: number;
     snapshots: LocatorSnapshot[] | null | undefined;
     purge?: boolean;
   }> = [];
+  const perCaseUsages: LocatorUsageCase[] = [];
+  // The page each locator call ran on, per row: stored through case_payloads,
+  // like the server, so a rebuild of the index keeps them.
+  const rowLocatorPages: Array<string | null> = [];
+  const rowCodeReach: Array<string | null> = [];
+  const perCaseReach: CodeReachCase[] = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
 
   for (let i = 0; i < cases.length; i++) {
@@ -641,7 +697,13 @@ export async function persistRunCases(
     }
 
     let fingerprint: ErrorFingerprint | null = null;
-    if (c.error && c.status !== 'passed' && c.status !== 'skipped') {
+    const expectedStatus = resolveExpectedStatus(c.expectedStatus, c.testAnnotations);
+    if (
+      c.error &&
+      c.status !== 'passed' &&
+      c.status !== 'skipped' &&
+      !isExpectedFailurePassed(c.status, expectedStatus)
+    ) {
       fingerprint = await computeErrorFingerprint(c.error);
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
@@ -656,6 +718,26 @@ export async function persistRunCases(
       }
     }
     rowFingerprints.push(fingerprint);
+
+    const cappedSteps = capSteps(c.steps, DEFAULT_INGEST_LIMITS);
+    rowDrops.push({
+      steps: countDroppedSteps(c.steps, DEFAULT_INGEST_LIMITS),
+      consoleEntries: countDroppedConsoleEntries(c.consoleLogs, DEFAULT_INGEST_LIMITS),
+    });
+    const locatorPages = sanitizeLocatorPages(c.locatorPages);
+    rowLocatorPages.push(locatorPages ? JSON.stringify(locatorPages) : null);
+    const reached = sanitizeCodeReach(c.codeReach);
+    rowCodeReach.push(reached ? JSON.stringify(reached) : null);
+    if (reached) perCaseReach.push({ testCaseId: shared.id, runId: testRunId, files: reached });
+    perCaseUsages.push({
+      caseId: shared.id,
+      browserName: resolveBrowserName(c.browser),
+      steps: cappedSteps,
+      locatorPages,
+      filePath: c.filePath,
+      runId: testRunId,
+      complete: c.status === 'passed' && Array.isArray(c.steps) && c.steps.length <= DEFAULT_INGEST_LIMITS.steps,
+    });
 
     if (Array.isArray(c.locatorSnapshots) && c.locatorSnapshots.length)
       perCaseLocators.push({
@@ -674,7 +756,7 @@ export async function persistRunCases(
       attempts: capArray(c.attempts, 30),
       line: c.line,
       column: c.column,
-      steps: capSteps(c.steps, DEFAULT_INGEST_LIMITS),
+      steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
       slowestStep: c.slowestStep ?? null,
       slowestStepDuration: c.slowestStepDuration ?? null,
@@ -701,11 +783,14 @@ export async function persistRunCases(
       browserName: resolveBrowserName(c.browser),
       timeout: c.timeout ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
+      resources: sanitizeExecutionResources(c.resources),
       workerIndex: c.workerIndex ?? null,
       shardIndex: c.shardIndex ?? null,
       startedAt: c.startedAt ?? null,
       didNotRunReason: c.didNotRunReason ?? null,
+      expectedStatus,
       blockedBy: c.blockedBy ?? null,
+      ...(options.datedFrom ? { createdAt: executionCreatedAt(c.startedAt, options.datedFrom) } : {}),
     });
     rowInputIndices.push(i);
 
@@ -715,48 +800,55 @@ export async function persistRunCases(
 
   if (runCasesRows.length === 0) return [];
 
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
+  const pagePayloadIds = await upsertCasePayloads(db, projectId, [...rowLocatorPages, ...rowCodeReach]);
   runCasesRows.forEach((row, i) => {
-    const fingerprint = rowFingerprints[i];
-    if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
+    const content = rowLocatorPages[i];
+    row.locatorPagesPayloadId = content ? (pagePayloadIds.get(content) ?? null) : null;
+    const reach = rowCodeReach[i];
+    row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
+  });
+
+  await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
+    wakeSnoozed: !options.keepSnoozed,
   });
 
   // ON CONFLICT DO NOTHING + the (run, case, retries, browser) unique index keep
   // this idempotent across batch retries and same-test-different-browser rows.
-  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
-    id: testRunsCases.id,
-    status: testRunsCases.status,
-    testCaseId: testRunsCases.testCaseId,
-    retries: testRunsCases.retries,
-    browserName: testRunsCases.browserName,
-  });
+  const insertedCases = matchInsertedRunCases(
+    runCasesRows,
+    await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+      id: testRunsCases.id,
+      status: testRunsCases.status,
+      testCaseId: testRunsCases.testCaseId,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+    }),
+  );
 
-  // The unique (run, case, retries, browser) index makes this tuple unique
-  // within a batch, so each inserted row maps back to exactly one input entry
-  // even when deduplication skipped duplicates in between.
-  const tupleToInputIndex = new Map<string, number>();
-  runCasesRows.forEach((row, k) => {
-    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
-    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
-  });
-
-  const result = insertedCases.map((r) => {
-    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
-    return {
-      id: r.id,
-      status: r.status,
-      testCaseId: r.testCaseId,
-      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
-    };
-  });
+  const result = insertedCases.map((r) => ({
+    id: r.id,
+    status: r.status,
+    testCaseId: r.testCaseId,
+    inputIndex: rowInputIndices[r.rowIndex]!,
+  }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {
     await db.insert(networkRequests).values(nrValues);
   }
 
-  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
-  await syncTestCaseMetadata(db, caseMetaSnapshots);
+  if (!options.keepTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
+  await upsertLocatorUsages(db, projectId, perCaseUsages).catch(() => {});
+  await upsertCodeReach(db, projectId, perCaseReach).catch(() => {});
+  if (!options.keepTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
+  await recordIngestHealth(
+    db,
+    testRunId,
+    storedDrops(
+      rowDrops,
+      insertedCases.map((r) => r.rowIndex),
+    ),
+  );
 
   return result;
 }
@@ -780,9 +872,8 @@ export async function apiPostRunEvents(
   const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
-  const stepBeginEvents = validEvents.filter((tc) => tc.type === 'step-begin');
-  const stepEndEvents = validEvents.filter((tc) => tc.type === 'step-end');
   const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
+  const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
@@ -802,75 +893,14 @@ export async function apiPostRunEvents(
     });
   }
 
-  // Test-attached steps stream as step-begin/step-end so the run page can show
-  // what each worker is doing; suite-level hooks keep the timeline shape. Mirrors
-  // the server's events handler (server/api/test-runs/[id]/events.post.ts).
-  for (const tc of stepBeginEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-begin',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-begin',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
-  }
-
-  for (const tc of stepEndEvents) {
-    if (tc.parentTitle != null) {
-      publishDemoRunEvent(id, {
-        type: 'step-end',
-        data: {
-          title: tc.title,
-          subtitle: tc.subtitle ?? null,
-          parentTitle: tc.parentTitle,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    } else {
-      publishDemoRunEvent(id, {
-        type: 'test-completed',
-        data: {
-          title: tc.title,
-          filePath: 'hooks',
-          parentTitle: null,
-          stepCategory: tc.stepCategory ?? null,
-          status: tc.status,
-          duration: tc.duration,
-          location: tc.location,
-          workerIndex: tc.workerIndex ?? null,
-          startedAt: tc.startedAt ?? null,
-        },
-      });
-    }
+  // Step events publish in batch order through the helper the server's events
+  // handler (server/api/test-runs/[id]/events.post.ts) uses.
+  for (const stepEvent of stepRunEvents) {
+    publishDemoRunEvent(id, stepEvent);
   }
 
   if (completeEvents.length === 0) {
-    return { success: true, processed: beginEvents.length + stepBeginEvents.length + stepEndEvents.length };
+    return { success: true, processed: beginEvents.length + stepRunEvents.length };
   }
 
   const parsedEvents = completeEvents.map((tc) => {
@@ -887,7 +917,6 @@ export async function apiPostRunEvents(
 
   const insertedRunCases = await persistRunCases(db, testRun.projectId, id, cases, true);
 
-  const insertedCount = insertedRunCases.length;
   // Derive status counts from the actually inserted rows (the unique index can
   // skip duplicates), matching the server's events handler.
   const insertedStatusCounts = insertedRunCases.reduce(
@@ -898,11 +927,13 @@ export async function apiPostRunEvents(
     {} as Record<string, number>,
   );
 
+  // `totalTests` is the planned suite size set at /start, so it is left as-is
+  // here — incrementing per row would count retry attempts as extra tests
+  // (mirrors the server's events handler).
   const updatedRuns = await db
     .update(testRuns)
     .set({
       updatedAt: new Date(),
-      totalTests: sql`${testRuns.totalTests} + ${insertedCount}`,
       passedTests: sql`${testRuns.passedTests} + ${insertedStatusCounts['passed'] || 0}`,
       failedTests: sql`${testRuns.failedTests} + ${countFailedFromTally(insertedStatusCounts)}`,
       skippedTests: sql`${testRuns.skippedTests} + ${insertedStatusCounts['skipped'] || 0}`,
@@ -938,6 +969,9 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
+        // Mirrors the server: the attempt number lets the live page mark a
+        // passed-on-retry (flaky) test as passing rather than failing.
+        retries: (tc as { retries?: number | null }).retries ?? null,
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
       },
@@ -987,8 +1021,12 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const shardTokenSet = demoShardTokens.get(id) ?? readShardTokensFromMeta(testRun.metadata);
   const isValidShardToken = streamToken ? shardTokenSet?.has(streamToken) : false;
   await validateAndReviveDemoRun(db, testRun, streamToken, !!isValidShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
+  // This reporter's resource report, in its own row next to the other shards'.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
@@ -1006,7 +1044,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       .set({
         updatedAt: new Date(),
         status: 'running',
-        totalTests: sql`${testRuns.totalTests} + ${body.totalTests ?? 0}`,
+        // `totalTests` is the planned total set at /begin; the per-status
+        // counters track live progress and are recomputed distinctly once all
+        // shards finish.
         passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
         failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
         skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
@@ -1015,6 +1055,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
         metadata: { ...currentMeta, shardDurations: allDurations },
+        // The first shard to report a branch names the run's branch.
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
@@ -1038,7 +1080,20 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       updatedRun.shardTotal != null &&
       updatedRun.shardsFinished >= updatedRun.shardTotal
     ) {
-      finalStatus = (updatedRun.failedTests ?? 0) > 0 ? 'failed' : 'passed';
+      // Recompute distinct-test counters from the persisted rows (the per-shard
+      // events counted attempts), so a flaky-only sharded run reads as passed —
+      // mirrors the server's finish handler.
+      const attemptRows = await db
+        .select({
+          testCaseId: testRunsCases.testCaseId,
+          browserName: testRunsCases.browserName,
+          retries: testRunsCases.retries,
+          status: testRunsCases.status,
+        })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.testRunId, id));
+      const counts = distinctRunCountsFromAttempts(attemptRows);
+      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
       let avgTestDuration: number | null = null;
       let p90TestDuration: number | null = null;
@@ -1058,6 +1113,12 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         .set({
           status: finalStatus,
           streamToken: null,
+          totalTests: counts.totalTests,
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
@@ -1070,18 +1131,22 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         data: {
           status: finalStatus,
           duration: updatedRun.duration,
-          totalTests: updatedRun.totalTests,
-          passedTests: updatedRun.passedTests,
-          failedTests: updatedRun.failedTests,
-          skippedTests: updatedRun.skippedTests,
-          didNotRunTests: updatedRun.didNotRunTests,
-          flakyTests: updatedRun.flakyTests,
+          totalTests: counts.totalTests,
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
         },
       });
 
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
 
+      await recordRunHealth(db, id).catch(() => {});
       await syncAutoMarkersForRun(db, id).catch(() => {});
+      await recordRunResourceFindings(db, id).catch(() => {});
+      await upsertDailyRollup(db, id).catch(() => {});
+      publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
       publishDemoRunEvent(id, {
         type: 'run-progress',
@@ -1137,7 +1202,10 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      ...(body.metadata && {
+        metadata: carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        branch: resolveRunBranch(body.metadata),
+      }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
@@ -1163,7 +1231,11 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
+  await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
+  await recordRunResourceFindings(db, id).catch(() => {});
+  await upsertDailyRollup(db, id).catch(() => {});
+  publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
   return { success: true, runId: id, status };
 }

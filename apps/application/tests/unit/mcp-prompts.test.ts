@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { buildSetupPiwiMessages, isKnownPrompt } from '../../server/utils/mcp/prompts';
-import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  buildSetupPiwiMessages,
+  buildSkillPromptMessages,
+  isKnownPrompt,
+  splitSkill,
+} from '../../server/utils/mcp/prompts';
+import { MCP_PROMPT_DEFS, SKILL_PROMPTS } from '#shared/mcp-prompts';
 
 describe('isKnownPrompt', () => {
   it('recognizes every declared prompt and rejects others', () => {
@@ -67,5 +75,51 @@ describe('buildSetupPiwiMessages', () => {
     const text = buildSetupPiwiMessages(base).messages[0].content.text;
     expect(text).toContain('npx playwright test');
     expect(text).toContain('PIWI_OUTPUT_FILE=piwi-run.json');
+  });
+});
+
+describe('workflow skills served as prompts', () => {
+  const skillsDir = fileURLToPath(new URL('../../../../packages/reporter/templates/skills', import.meta.url));
+  const skillPrompts = MCP_PROMPT_DEFS.filter((def) => 'skill' in def);
+
+  it('serves the six workflow skills, each named after its skill', () => {
+    expect(skillPrompts.map((def) => def.name)).toEqual([
+      'investigate_failure',
+      'apply_locator_healing',
+      'stabilize_flaky_tests',
+      'run_the_right_tests',
+      'write_the_missing_test',
+      'fix_a_reported_bug',
+    ]);
+    for (const def of skillPrompts) {
+      expect(SKILL_PROMPTS.get(def.name)).toBe(def.name.replace(/_/g, '-'));
+      expect(def.arguments.map((a) => a.name)).toEqual(['focus']);
+    }
+  });
+
+  it("describes each prompt with its skill's own description", () => {
+    for (const def of skillPrompts) {
+      const markdown = readFileSync(join(skillsDir, SKILL_PROMPTS.get(def.name)!, 'SKILL.md'), 'utf-8');
+      expect(splitSkill(markdown).description, def.name).toBe(def.description);
+    }
+  });
+
+  it('builds the prompt from the skill body, with the version and the focus', () => {
+    const markdown = readFileSync(join(skillsDir, 'investigate-failure', 'SKILL.md'), 'utf-8');
+    const result = buildSkillPromptMessages({
+      skill: 'investigate-failure',
+      markdown,
+      version: '0.46.0',
+      focus: 'cluster 214',
+    });
+    const text = result.messages[0].content.text;
+    expect(
+      text.startsWith('Follow the Piwi workflow below (the `investigate-failure` skill, as shipped with Piwi 0.46.0)'),
+    ).toBe(true);
+    expect(text).toContain('Work on: cluster 214');
+    expect(text).toContain('# Investigate a Piwi failure');
+    expect(text).toContain('report_fix_attempt');
+    expect(text).not.toContain('description:');
+    expect(result.description).toBe(splitSkill(markdown).description);
   });
 });

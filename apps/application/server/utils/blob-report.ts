@@ -15,7 +15,12 @@
  * a reported one wherever the data exists.
  */
 
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '#shared/step-analysis';
+import {
+  collectStepMetrics,
+  extractTestStepEvents,
+  extractWaitEvents,
+  type TestErrorLike,
+} from '#shared/step-analysis';
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
@@ -76,7 +81,39 @@ export interface ParsedBlobReport {
   shard: { current: number; total: number } | null;
   /** Playwright project (browser) names present in the archive. */
   projectNames: string[];
+  /** The commit and branch Playwright's git info recorded in the config metadata, when it did. */
+  scm: BlobScm | null;
   cases: ImportedRunCase[];
+}
+
+/** The source revision a blob report ran against. */
+export interface BlobScm {
+  commit: string | null;
+  branch: string | null;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * The commit and branch in a blob report's `config.metadata`: Playwright's git
+ * info (`captureGitInfo`) writes `ci` (the CI provider's view: the pull
+ * request's head branch) and `gitCommit` (the checkout's), and older versions
+ * a flat `revision.id`. The CI provider's branch wins, since a CI checkout is
+ * usually a detached HEAD.
+ */
+export function readBlobScm(metadata: unknown): BlobScm | null {
+  const meta = record(metadata);
+  const ci = record(meta.ci);
+  const gitCommit = record(meta.gitCommit);
+  const commit = nonEmptyString(ci.commitHash) ?? nonEmptyString(gitCommit.hash) ?? nonEmptyString(meta['revision.id']);
+  const branch = nonEmptyString(ci.branch) ?? nonEmptyString(gitCommit.branch);
+  return commit || branch ? { commit, branch } : null;
 }
 
 /** A step being assembled from its `onStepBegin` / `onStepEnd` pair. */
@@ -88,7 +125,7 @@ interface StepNode {
   startTime: number;
   duration: number;
   location?: { file: string; line: number; column: number };
-  error?: { message?: string };
+  error?: { message?: string; location?: { file: string; line: number; column: number } };
   steps: StepNode[];
 }
 
@@ -271,13 +308,40 @@ function applyStepBegin(acc: ResultAccumulator, step: Record<string, unknown>, r
   else acc.rootSteps.push(node);
 }
 
-function applyStepEnd(acc: ResultAccumulator, step: Record<string, unknown>): void {
+function applyStepEnd(acc: ResultAccumulator, step: Record<string, unknown>, resolver: PathResolver): void {
   const id = typeof step.id === 'string' ? step.id : null;
   const node = id ? acc.stepsById.get(id) : undefined;
   if (!node) return;
   if (typeof step.duration === 'number') node.duration = step.duration;
   const error = step.error as Record<string, unknown> | undefined;
-  if (typeof error?.message === 'string') node.error = { message: error.message };
+  if (typeof error?.message === 'string') {
+    node.error = { message: error.message };
+    const location = errorLocation(error, resolver);
+    if (location) node.error.location = location;
+  }
+}
+
+/** Where a recorded error was thrown, its path resolved the way the error text's frame is. */
+function errorLocation(
+  error: Record<string, unknown> | undefined,
+  resolver: PathResolver,
+): { file: string; line: number; column: number } | undefined {
+  const location = error?.location as Record<string, unknown> | undefined;
+  if (typeof location?.file !== 'string') return undefined;
+  return {
+    file: resolver.fromAbsolute(location.file),
+    line: typeof location.line === 'number' ? location.line : 0,
+    column: typeof location.column === 'number' ? location.column : 0,
+  };
+}
+
+/** A result's errors, their locations resolved like the steps' own errors. */
+function resultErrors(errors: unknown, resolver: PathResolver): TestErrorLike[] {
+  if (!Array.isArray(errors)) return [];
+  return (errors as Array<Record<string, unknown>>).map((error) => ({
+    message: typeof error?.message === 'string' ? error.message : undefined,
+    location: errorLocation(error, resolver),
+  }));
 }
 
 /** Split an execution's attachments into traces and everything else. */
@@ -302,14 +366,8 @@ function buildErrorText(errors: unknown, resolver: PathResolver): string | null 
   const text = joinErrorMessages(errors as Array<{ message?: string }>);
   if (!text) return null;
 
-  const location = (errors[0] as Record<string, unknown> | undefined)?.location as Record<string, unknown> | undefined;
-  if (typeof location?.file !== 'string') return text;
-
-  return appendErrorLocation(text, {
-    file: resolver.fromAbsolute(location.file),
-    line: typeof location.line === 'number' ? location.line : 0,
-    column: typeof location.column === 'number' ? location.column : 0,
-  });
+  const location = errorLocation(errors[0] as Record<string, unknown> | undefined, resolver);
+  return location ? appendErrorLocation(text, location) : text;
 }
 
 /**
@@ -380,7 +438,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       const step = params.step as Record<string, unknown> | undefined;
       if (!acc || !step) continue;
       if (method === 'onStepBegin') applyStepBegin(acc, step, resolver);
-      else applyStepEnd(acc, step);
+      else applyStepEnd(acc, step, resolver);
       // A step's own attachments ride its end event in newer archives.
       if (method === 'onStepEnd') applyAttachments(acc, step.attachments);
       continue;
@@ -408,7 +466,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       const rawStatus = String(result.status ?? 'failed');
       const status = classifyStatus(rawStatus, annotations);
 
-      const metrics = collectStepMetrics(acc?.rootSteps ?? []);
+      const metrics = collectStepMetrics(acc?.rootSteps ?? [], resultErrors(result.errors, resolver));
       const stepEvents = [
         ...extractTestStepEvents(acc?.rootSteps ?? [], new Date(acc?.startedAt ?? 0)),
         ...extractWaitEvents(acc?.rootSteps ?? []),
@@ -428,6 +486,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           // A `test.fail()` test that passed is now `failed` with no recorded
           // error; Playwright reports the same line, so synthesize it.
           error: expectedFailureError(rawStatus, annotations) ?? buildErrorText(result.errors, resolver),
+          expectedStatus: typeof test.expectedStatus === 'string' ? test.expectedStatus : null,
           retries: acc?.retry ?? 0,
           line: plan?.line ?? null,
           column: plan?.column ?? null,
@@ -531,6 +590,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     flakyTests,
     shard,
     projectNames,
+    scm: readBlobScm(config.metadata),
     cases,
   };
 }

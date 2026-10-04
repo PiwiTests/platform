@@ -222,4 +222,75 @@ describe('formatGateResult', () => {
     expect(output).toContain('2 failing tests (limit 0)');
     expect(output).toContain('1 new failure cluster');
   });
+
+  test('renders warnings without failing the verdict', () => {
+    const result = {
+      ...evaluateGatePolicy(facts(), { maxFailed: 0 }),
+      warnings: ['3 uncovered changed files (threshold 1) — observed reach, warn-only.'],
+    };
+    const output = formatGateResult(result);
+    expect(output).toContain('✔ Piwi gate passed');
+    expect(output).toContain('⚠ 3 uncovered changed files (threshold 1)');
+    // The warning line sits before the run URL, and the run still passes.
+    expect(result.passed).toBe(true);
+    expect(output.trimEnd().endsWith('https://piwi.example.com/test-runs/42')).toBe(true);
+  });
+});
+
+describe('leak rules', () => {
+  const leak = (site: string, tests = 1) => ({ where: site, site, tests });
+  const resources = (leaks: ReturnType<typeof leak>[], newLeaks: ReturnType<typeof leak>[]) => ({
+    reported: true,
+    leaks,
+    newLeaks,
+    baseBranch: 'main',
+  });
+
+  test('count the leaks, and the ones the base branch never showed, each against its limit', () => {
+    const run = facts({
+      resources: resources([leak('tests/a.spec.ts:3'), leak('tests/b.spec.ts:9', 4)], [leak('tests/b.spec.ts:9', 4)]),
+    });
+    expect(evaluateGatePolicy(run, { maxLeaks: 2, maxNewLeaks: 1 }).passed).toBe(true);
+
+    const result = evaluateGatePolicy(run, { maxLeaks: 1, maxNewLeaks: 0 });
+    expect(result.violations.map((v) => v.rule)).toEqual(['max-leaks', 'max-new-leaks']);
+    expect(result.violations[1]!.message).toBe('1 new leak, never seen on main (limit 0): tests/b.spec.ts:9');
+    expect(formatGateResult(result)).toContain('  2 leaks, 1 new');
+  });
+
+  test('a run that sent no resource report fails a leak rule rather than passing on silence', () => {
+    const run = facts({ resources: { reported: false, leaks: [], newLeaks: [], baseBranch: null } });
+    expect(evaluateGatePolicy(run, { maxLeaks: 5 }).violations.map((v) => v.rule)).toEqual(['no-resource-report']);
+    expect(isEmptyPolicy({ maxNewLeaks: 0 })).toBe(false);
+  });
+});
+
+describe('an environment incident', () => {
+  const incident = {
+    rule: 'host-unreachable',
+    reason: '41 of 44 tests failed, 39 of them navigating or connecting to staging.example.test (connection refused).',
+    host: 'staging.example.test',
+  };
+
+  test('is inconclusive, distinct from a pass and a fail, whatever the policy says', () => {
+    const result = evaluateGatePolicy(facts({ failedTests: 41, newClusters: 1, incident }), {
+      maxFailed: 0,
+      failOnNewCluster: true,
+    });
+    expect(result.verdict).toBe('inconclusive');
+    expect(result.passed).toBe(false);
+    expect(result.violations).toEqual([]);
+  });
+
+  test('a run that is not one keeps its verdict', () => {
+    expect(evaluateGatePolicy(facts(), { maxFailed: 0 }).verdict).toBe('passed');
+    expect(evaluateGatePolicy(facts({ failedTests: 2 }), { maxFailed: 0 }).verdict).toBe('failed');
+  });
+
+  test('the summary says why', () => {
+    const output = formatGateResult(evaluateGatePolicy(facts({ failedTests: 41, incident }), { maxFailed: 0 }));
+    expect(output).toContain('? Piwi gate inconclusive — checkout run #42');
+    expect(output).toContain('The run is an environment incident: 41 of 44 tests failed');
+    expect(output).not.toContain('✖');
+  });
 });

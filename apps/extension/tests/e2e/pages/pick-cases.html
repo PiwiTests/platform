@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pick cases</title>
+    <style>
+      /* As the dashboard's badges and key hints: not inline, so Playwright puts a space before them. */
+      .badge,
+      kbd {
+        display: inline-flex;
+        margin-left: 4px;
+      }
+      body {
+        margin-top: 140px;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+      nav,
+      main {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Each case's element carries data-case; the ranking never reads it. -->
+    <header aria-label="Site header" data-case="banner"><strong>Piwi</strong> results</header>
+    <nav aria-label="Sidebar">
+      <a href="#runs">Runs</a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <main>
+      <div role="tablist" aria-label="Views">
+        <button role="tab" aria-selected="true" data-case="tab">Regressions<span class="badge">5</span></button>
+        <button role="tab" aria-selected="false">Flaky<span class="badge">2</span></button>
+      </div>
+      <button type="button" data-case="search">
+        Search…<span><kbd>Ctrl</kbd><kbd>k</kbd></span>
+      </button>
+      <div>
+        <button type="button" data-case="failed">Failed</button>
+        <button type="button">3 failed</button>
+      </div>
+      <a href="#runs" data-case="link">Runs</a>
+      <div>
+        <button type="button" aria-label="Show popup" data-case="popup">Details</button>
+        <button type="button" aria-label="Show popup">History</button>
+      </div>
+      <!-- Roles no tag map gives: a column header, and a search field with suggestions. -->
+      <table>
+        <thead>
+          <tr>
+            <th data-case="th">Price</th>
+            <th>Quantity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>12 €</td>
+            <td>2</td>
+          </tr>
+        </tbody>
+      </table>
+      <input type="search" list="run-names" aria-label="Find a run" data-case="combobox" />
+      <datalist id="run-names"><option value="Nightly"></option></datalist>
+    </main>
+  </body>
+</html>

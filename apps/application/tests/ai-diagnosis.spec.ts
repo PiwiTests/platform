@@ -697,7 +697,9 @@ test.describe.serial('AI diagnosis — streaming success path', () => {
     }
     reader.releaseLock();
 
-    // At least one "thinking" chunk arrived before the final result.
+    // The diagnosis stage is announced before its first "thinking" chunk arrives.
+    expect(text).toContain('event: stage\ndata: {"stage":"diagnosis"}');
+    expect(text.indexOf('event: stage')).toBeLessThan(text.indexOf('event: thinking'));
     expect(text).toContain('event: thinking');
 
     const resultIdx = text.indexOf('event: result');

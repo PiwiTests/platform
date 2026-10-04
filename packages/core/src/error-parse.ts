@@ -17,6 +17,7 @@
  */
 
 /** The locator-builder methods whose innermost call identifies the resolved element. */
+import { scanLocatorChain } from './locator-chain';
 import { LOCATOR_BUILDER_METHODS } from './locator-methods';
 
 export type ParsedErrorKind =
@@ -96,6 +97,8 @@ export interface ParsedPlaywrightError {
   lastStateLine: string | null;
   /** The lines before the call log and the stack, at most five. */
   messageHead: string;
+  /** The message an `expect(value, message)` call puts above Playwright's own matcher line. */
+  customMessage: string | null;
   /** First stack frame outside `node_modules`, as `file:line`. */
   topFrame: string | null;
   /** True when the navigation signals (a navigation action or a network error code) are present. */
@@ -196,10 +199,44 @@ export function extractLeafSelector(text: string): string | null {
   const nl = text.indexOf('\n', first.index);
   const region = text.slice(first.index, nl === -1 ? undefined : nl);
 
+  const scanned = readChain(region);
+  if (scanned) {
+    for (let k = scanned.chain.calls.length - 1; k >= 0; k--) {
+      if (LEAF_METHODS.has(scanned.chain.calls[k]!.method)) {
+        return region.slice(scanned.spans[k]!.start, scanned.spans[k]!.end);
+      }
+    }
+    return null;
+  }
+  return lenientLeaf(region);
+}
+
+const LEAF_METHODS: ReadonlySet<string> = new Set(LOCATOR_BUILDER_METHODS);
+
+/** Index just past the string literal opening at `i`, or the end of `text` when it is cut short. */
+function skipQuoted(text: string, i: number): number {
+  const quote = text[i];
+  for (let j = i + 1; j < text.length; j++) {
+    if (text[j] === '\\') j++;
+    else if (text[j] === quote) return j + 1;
+  }
+  return text.length;
+}
+
+/**
+ * The leaf of a chain the parser can't read — cut short in the error text. The
+ * last top-level builder call, found by counting parentheses outside string
+ * literals, up to its closing parenthesis or a stable 80-character prefix.
+ */
+function lenientLeaf(region: string): string | null {
   let depth = 0;
   let leafStart = -1;
   for (let i = 0; i < region.length; i++) {
-    const ch = region[i];
+    const ch = region[i]!;
+    if (ch === "'" || ch === '"' || ch === '`') {
+      i = skipQuoted(region, i) - 1;
+      continue;
+    }
     if (ch === '(') {
       depth++;
       continue;
@@ -222,8 +259,10 @@ export function extractLeafSelector(text: string): string | null {
 
   depth = 0;
   for (let i = leafStart; i < region.length; i++) {
-    const ch = region[i];
-    if (ch === '(') {
+    const ch = region[i]!;
+    if (ch === "'" || ch === '"' || ch === '`') {
+      i = skipQuoted(region, i) - 1;
+    } else if (ch === '(') {
       depth++;
     } else if (ch === ')') {
       depth--;
@@ -245,11 +284,18 @@ export function extractLocatorChain(text: string): string | null {
   const nl = text.indexOf('\n', first.index);
   const region = text.slice(first.index, nl === -1 ? undefined : nl);
 
+  const scanned = readChain(region);
+  if (scanned) return region.slice(0, scanned.end);
+
+  // Text the parser can't read (cut short): balanced calls outside string
+  // literals, continuing only through chained locator links.
   let depth = 0;
   let end = -1;
   for (let i = 0; i < region.length; i++) {
-    const ch = region[i];
-    if (ch === '(') {
+    const ch = region[i]!;
+    if (ch === "'" || ch === '"' || ch === '`') {
+      i = skipQuoted(region, i) - 1;
+    } else if (ch === '(') {
       depth++;
     } else if (ch === ')') {
       if (depth > 0) depth--;
@@ -266,16 +312,35 @@ export function extractLocatorChain(text: string): string | null {
   return region.slice(0, end);
 }
 
-/** The first stack frame outside node_modules and Node internals. */
-export function extractTopFrame(text: string): { file: string; line: number; column: number } | null {
+/**
+ * The chain at the start of `region`, read with the shared parser — null when
+ * it doesn't parse, or when it stops right before another chain link (one cut
+ * short in the error text, or one the parser doesn't know): the caller then
+ * reads the region leniently.
+ */
+function readChain(region: string): ReturnType<typeof scanLocatorChain> {
+  const scanned = scanLocatorChain(region);
+  if (!scanned) return null;
+  const link = /^\s*\.\s*(\w+)\(/.exec(region.slice(scanned.end));
+  return link && CHAIN_LINK_METHODS.has(link[1]!) ? null : scanned;
+}
+
+/** The stack frames outside node_modules and Node internals, innermost first. */
+export function extractStackFrames(text: string): Array<{ file: string; line: number; column: number }> {
   const frameRe = /^\s+at (?:.*? \()?([^()\s][^()]*?):(\d+):(\d+)\)?\s*$/gm;
+  const frames: Array<{ file: string; line: number; column: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = frameRe.exec(text)) !== null) {
     const file = m[1]!.replace(/\\/g, '/');
     if (file.includes('node_modules') || file.startsWith('node:')) continue;
-    return { file, line: Number(m[2]), column: Number(m[3]) };
+    frames.push({ file, line: Number(m[2]), column: Number(m[3]) });
   }
-  return null;
+  return frames;
+}
+
+/** The first stack frame outside node_modules and Node internals. */
+export function extractTopFrame(text: string): { file: string; line: number; column: number } | null {
+  return extractStackFrames(text)[0] ?? null;
 }
 
 /** First stack frame outside node_modules and Node internals, file path only. */
@@ -315,8 +380,8 @@ interface CallLogRead {
   matcher: string | null;
 }
 
-/** Drop the JS stack frames so a helper named `goto` in a path never reads as a navigation. */
-function withoutStackFrames(text: string): string {
+/** The text without its JS stack frames (so a helper named `goto` in a path never reads as a navigation). */
+export function withoutStackFrames(text: string): string {
   return text
     .split('\n')
     .filter((line) => !/^\s+at /.test(line))
@@ -481,6 +546,25 @@ export interface ParseErrorContext {
   stepParams?: Record<string, string | number | boolean> | null;
 }
 
+/** A line Playwright itself writes at the top of an assertion error. */
+const MATCHER_LINE_RE = /^(?:expect[.(]|Timed out\b|Expected\b|Received\b|Locator\b)/;
+
+/**
+ * The custom message of `expect(value, 'message')`: Playwright prints it as the
+ * error's first line, above its own `expect(…)` matcher line. Null when the
+ * first line is Playwright's own.
+ */
+function readCustomMessage(messageHead: string): string | null {
+  const lines = messageHead
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+  const first = lines[0]!.replace(/^Error:\s*/, '');
+  if (!first || MATCHER_LINE_RE.test(first)) return null;
+  return /^(?:expect[.(]|Timed out\b)/.test(lines[1]!) ? first : null;
+}
+
 /**
  * Parse a raw Playwright error (ANSI codes allowed) into its structured facts.
  * Never throws; empty input yields an `unknown` record.
@@ -583,6 +667,7 @@ export function parsePlaywrightError(
     lastCallLogLine: callLog.lastLine,
     lastStateLine: callLog.stateLine,
     messageHead,
+    customMessage: isAssertion ? readCustomMessage(messageHead) : null,
     topFrame: frame ? `${frame.file}:${frame.line}` : null,
     isNavigationFailure,
     isLocatorResolutionFailure,

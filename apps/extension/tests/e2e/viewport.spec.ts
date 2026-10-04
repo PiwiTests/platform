@@ -1,0 +1,139 @@
+import { test, expect } from './fixtures.js';
+import { openDevtoolsPage } from './devtools-stub.js';
+
+const ORIGIN = 'http://piwi-viewport.test';
+
+test.describe('Open this page at a viewport', () => {
+  test('opens a window whose viewport, not its frame, has the size asked for', async ({ context, extensionId }) => {
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><p>Shop</p>' }),
+    );
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    const opened = context.waitForEvent('page');
+    const reply = await popup.evaluate(
+      (url) => chrome.runtime.sendMessage({ type: 'piwi-open-viewport', url, width: 800, height: 500 }),
+      `${ORIGIN}/cart`,
+    );
+    // Sizes the headless browser's 1280×720 screen can hold: it keeps a window at least 500 pixels wide.
+    expect(reply).toEqual({ ok: true, width: 800, height: 500 });
+    await opened;
+    // Measured by the browser, not by the page: Playwright emulates its own viewport in the pages it drives.
+    const tab = await popup.evaluate(async () => {
+      const windows = await chrome.windows.getAll({ populate: true });
+      const newest = windows.sort((a, b) => b.id! - a.id!)[0]!;
+      return [newest.tabs?.[0]?.width, newest.tabs?.[0]?.height];
+    });
+    expect(tab).toEqual([800, 500]);
+
+    const refused = await popup.evaluate(() =>
+      chrome.runtime.sendMessage({ type: 'piwi-open-viewport', url: 'chrome://settings', width: 390, height: 664 }),
+    );
+    expect(refused).toMatchObject({ ok: false });
+  });
+
+  test('sets the viewport of the tab itself through the debugging protocol, and puts it back', async ({
+    context,
+    extensionId,
+  }) => {
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><p>Shop</p>' }),
+    );
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    const shop = await context.newPage();
+    await shop.goto(`${ORIGIN}/cart`);
+    // The tab opened last, which the extension sees without access to the site's addresses.
+    const tabId = await popup.evaluate(async () => {
+      const tabs = await chrome.tabs.query({});
+      return tabs.sort((a, b) => b.id! - a.id!)[0]!.id!;
+    });
+    const attached = () =>
+      popup.evaluate(async (id) => {
+        try {
+          await chrome.debugger.sendCommand({ tabId: id }, 'Runtime.evaluate', { expression: '1' });
+          return true;
+        } catch {
+          return false;
+        }
+      }, tabId);
+
+    const reply = await popup.evaluate(
+      (id) => chrome.runtime.sendMessage({ type: 'piwi-set-tab-viewport', tabId: id, width: 390, height: 664 }),
+      tabId,
+    );
+    expect(reply).toEqual({ ok: true });
+    await expect.poll(() => shop.evaluate(() => [innerWidth, innerHeight])).toEqual([390, 664]);
+    expect(await attached()).toBe(true);
+    expect(
+      await popup.evaluate(async () => (await chrome.storage.session.get('piwiTabViewport')).piwiTabViewport),
+    ).toEqual({ [tabId]: { tabId, width: 390, height: 664 } });
+
+    await popup.evaluate((id) => chrome.runtime.sendMessage({ type: 'piwi-clear-tab-viewport', tabId: id }), tabId);
+    expect(await attached()).toBe(false);
+    expect(
+      await popup.evaluate(async () => (await chrome.storage.session.get('piwiTabViewport')).piwiTabViewport),
+    ).toBeUndefined();
+  });
+
+  test('offers the viewports of the project’s Playwright projects, or a size typed by hand, in the Piwi panel', async ({
+    context,
+    extensionId,
+  }) => {
+    const inspected = await context.newPage();
+    await inspected.goto('about:blank');
+    const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', inspected);
+    const toggle = panel.getByRole('button', { name: 'Viewport' });
+    const viewport = panel.getByRole('combobox', { name: 'Open this page at a viewport' });
+    await expect(viewport).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(viewport.locator('option')).toHaveText(['Size typed by hand']);
+    await expect(panel.getByRole('spinbutton', { name: 'Width' })).toBeVisible();
+
+    await panel.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: 'https://piwi.test',
+          apiKey: '',
+          projectMappings: [{ urlPattern: '**', projectId: 1, projectLabel: 'Shop' }],
+        },
+        piwiLocatorIndexCache: {
+          '1': {
+            fetchedAt: Date.now(),
+            index: {
+              projectId: 1,
+              projectName: 'Shop',
+              branch: null,
+              defaultBranch: 'main',
+              branches: [],
+              builtAt: null,
+              generatedAt: new Date().toISOString(),
+              testIdAttributes: null,
+              viewports: [
+                { project: 'chromium', width: 1280, height: 720 },
+                { project: 'Mobile Safari', width: 390, height: 664 },
+              ],
+              tests: [],
+              locators: [],
+              truncated: false,
+            },
+          },
+        },
+      }),
+    );
+    // The project the popup's Active project select chose: the inspected page, about:blank, has no address to match.
+    await panel.evaluate(() =>
+      chrome.storage.session.set({ piwiActiveProjectOverride: { projectId: 1, projectLabel: 'Shop' } }),
+    );
+    await panel.reload();
+    await toggle.click();
+    await expect(viewport.locator('option')).toHaveText([
+      'chromium (1,280×720)',
+      'Mobile Safari (390×664)',
+      'Size typed by hand',
+    ]);
+    await expect(panel.getByRole('spinbutton', { name: 'Width' })).toBeHidden();
+    await expect(panel.getByText('Viewport only: no touch, pixel ratio or user agent.')).toBeVisible();
+  });
+});

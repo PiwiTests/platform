@@ -8,7 +8,7 @@
  * same code over the committed demo trace — only ZIP inflation and resource
  * reads differ per runtime (see `TraceResourceReader`).
  */
-import type { ParsedTraceData, TraceAction } from './trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceAction } from './trace-events';
 import { maskSensitiveText } from './dom-snapshot-render';
 import { diffAriaSnapshots } from '#shared/page-diff';
 import type {
@@ -20,6 +20,7 @@ import type {
   TraceSnapshotStep,
   TraceStackFrame,
 } from '../../types/api';
+import { safeStorageSegment } from './sanitize-filename';
 
 /** Reads one `resources/{name}` file of the trace — from the shared pool on the server, from the ZIP itself in the demo. */
 export type TraceResourceReader = (name: string) => Promise<Uint8Array | null>;
@@ -250,11 +251,20 @@ export function buildActionCallsites(
   return result;
 }
 
-/** The failing action's stack, else the nearest preceding action that has one. */
+/**
+ * The failing action's stack, else the stack of the page-side action it drove
+ * (a runner action records none), else the nearest preceding action that has one.
+ */
 function pickStackAction(
   parsed: ParsedTraceData,
   stacks: TraceStacksIndex,
 ): { action: TraceAction | null; frames: RawStackFrame[] | null } {
+  const failing = parsed.failingAction;
+  const ownFrames = failing ? stacks.byCallId.get(failing.callId) : undefined;
+  if (failing && ownFrames?.length) return { action: failing, frames: ownFrames };
+  const pageAction = pageActionOf(parsed, failing);
+  const pageFrames = pageAction ? stacks.byCallId.get(pageAction.callId) : undefined;
+  if (pageAction && pageFrames?.length) return { action: pageAction, frames: pageFrames };
   const fromIndex = parsed.failingActionIndex >= 0 ? parsed.failingActionIndex : parsed.actions.length - 1;
   for (let i = fromIndex; i >= 0; i--) {
     const action = parsed.actions[i];
@@ -298,14 +308,14 @@ export interface TraceResourceSnapshot {
     url?: string;
     headers?: HarHeader[];
     bodySize?: number;
-    postData?: { mimeType?: string; text?: string; _sha1?: string };
+    postData?: { mimeType?: string; text?: string; _sha1?: string; _file?: string };
   };
   response?: {
     status?: number;
     statusText?: string;
     headers?: HarHeader[];
     bodySize?: number;
-    content?: { size?: number; mimeType?: string; _sha1?: string };
+    content?: { size?: number; mimeType?: string; _sha1?: string; _file?: string };
     _transferSize?: number;
     _failureText?: string;
   };
@@ -336,6 +346,21 @@ export function parseNetworkTexts(texts: string[]): TraceResourceSnapshot[] {
     }
   }
   return snapshots;
+}
+
+/**
+ * The stored resource name a network body carrier (`response.content` or
+ * `request.postData`) points at, or null when it holds none. Older v8 traces
+ * carry the bare content hash as `_sha1`; v9 traces (Playwright 1.63+) renamed
+ * it to `_file` and prefix it with `resources/`. Stripping that prefix yields
+ * the same bare name both readers key on (`project-<id>/trace-resources/<name>`
+ * in the server pool, `resources/<name>` in the demo ZIP), so this normalizes
+ * both spellings, exactly like `trace-events.ts` does for DOM-snapshot assets.
+ */
+function resourceBodyName(carrier: { _sha1?: string; _file?: string } | undefined): string | null {
+  if (carrier?._sha1) return safeStorageSegment(carrier._sha1);
+  if (carrier?._file) return safeStorageSegment(carrier._file.replace(/^resources\//, ''));
+  return null;
 }
 
 /**
@@ -451,7 +476,7 @@ export function buildTraceNetwork(
       absStart <= (windowEndAbs ?? Number.POSITIVE_INFINITY) &&
       absStart + duration >= windowStartAbs;
 
-    const bodySha1 = content._sha1 ?? null;
+    const bodySha1 = resourceBodyName(content);
     const postDataText = request.postData?.text;
 
     return {
@@ -515,10 +540,10 @@ export function inferResourceType(mimeType: string | undefined): string | undefi
 }
 
 /**
- * Match a client-requested body id against the trace's own `_sha1` set —
- * request bodies can only address resources this trace's network stream
- * references, with or without the stored extension. Returns the stored
- * resource name plus its mimeType, or null.
+ * Match a client-requested body id against the resource names the trace's own
+ * network stream references (`_sha1` in v8 traces, `_file` in v9) — request
+ * bodies can only address resources this trace carries, with or without the
+ * stored extension. Returns the stored resource name plus its mimeType, or null.
  */
 export function matchNetworkBodySha1(
   snapshots: TraceResourceSnapshot[],
@@ -526,12 +551,12 @@ export function matchNetworkBodySha1(
 ): { name: string; mimeType?: string } | null {
   for (const snapshot of snapshots) {
     for (const carrier of [snapshot.response?.content, snapshot.request?.postData] as Array<
-      { _sha1?: string; mimeType?: string } | undefined
+      { _sha1?: string; _file?: string; mimeType?: string } | undefined
     >) {
-      const sha1 = carrier?._sha1;
-      if (!sha1) continue;
-      if (sha1 === requested || sha1.split('.')[0] === requested.split('.')[0]) {
-        return { name: sha1, mimeType: carrier?.mimeType };
+      const name = resourceBodyName(carrier);
+      if (!name) continue;
+      if (name === requested || name.split('.')[0] === requested.split('.')[0]) {
+        return { name, mimeType: carrier?.mimeType };
       }
     }
   }
@@ -558,15 +583,18 @@ export function resolveSnapshotFile(
 
 /**
  * The snapshotted action the failure belongs to: the failing action itself when
- * it carries a snapshot, otherwise the last snapshotted action (an assertion
+ * it carries a snapshot, else the page-side action it drove (an assertion
  * failure keys the error to a runner step that carries none, while the page
- * interactions that led there do). Its callId marks the failing step.
+ * call inside it does), otherwise the last snapshotted action. Its callId
+ * marks the failing step.
  */
 function failureSnapshotCallId(parsed: ParsedTraceData): string | null {
   const snapshotted = parsed.actions.filter(actionHasSnapshot);
   if (snapshotted.length === 0) return null;
   const failing = parsed.failingAction;
   if (failing && snapshotted.some((a) => a.callId === failing.callId)) return failing.callId;
+  const pageAction = pageActionOf(parsed, failing);
+  if (pageAction && actionHasSnapshot(pageAction)) return pageAction.callId;
   return snapshotted[snapshotted.length - 1]!.callId;
 }
 

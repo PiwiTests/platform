@@ -11,6 +11,13 @@ import { allDemoSourceFiles } from '~~/app/demo/demo-scm';
 import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#shared/demo/failure-stories.mjs';
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
 import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
+import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
+import { flakeLabTestState } from '#shared/flake-lab';
+import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
+import type { WireResourceFinding } from '#shared/types';
+import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
+import { runBaseUrls } from '#shared/graph';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -20,6 +27,9 @@ interface Row {
 }
 
 let db: import('sql.js').Database;
+// The seed's newest generation-time timestamp (seconds), which the load-time
+// rebase maps to "now". Read back from the rebase statement itself.
+let anchorSec: number;
 
 function q(sql: string): Row[] {
   const res = db.exec(sql);
@@ -50,6 +60,7 @@ function tempOutDir(): string {
 
 beforeAll(async () => {
   const seedSql = regenerate(tempOutDir());
+  anchorSec = Number(/AS INTEGER\) - (\d+)\) AS delta_sec/.exec(seedSql)![1]);
 
   const initSqlJs = (await import('sql.js')).default;
   const SQL = await initSqlJs();
@@ -80,11 +91,13 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
   const corpus = [
     ...FAILURE_STORIES.flatMap((s) => s.failingCases.map((fc) => fc.error)),
     // Adversarial cases beyond the seeded stories.
-    '[31mError: expect(locator).toBeVisible() failed[39m',
+    '\x1b[31mError: expect(locator).toBeVisible() failed\x1b[39m',
     "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })\n    at tests/x.spec.ts:1:1",
     'Error: expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500\n    at tests/x.spec.ts:2:2',
     'Error: page.click: Target page, context or browser has been closed',
     "Error: strict mode violation: getByRole('button') resolved to 2 elements",
+    "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })",
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Bob' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n  - waiting for getByRole('row', { name: 'Bob' })\n    at tests/x.spec.ts:3:3",
     'Some completely unstructured error with no recognizable shape at all',
   ];
 
@@ -484,7 +497,7 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
   });
 });
 
-describe('step timing survives the load-time rebase', () => {
+describe('evidence timing survives the load-time rebase', () => {
   interface StepRow {
     id: number;
     started_at: number;
@@ -542,6 +555,74 @@ describe('step timing survives the load-time rebase', () => {
     }
     expect(maxFraction).toBeGreaterThan(0.5);
   });
+
+  // The failure timeline takes its origin from the earliest timestamp of any
+  // lane, so a dialog left on generation time drags the origin ~months back and
+  // squashes every other item against the right edge.
+  test('every seeded dialog closes within its execution window', () => {
+    const rows = q(`
+      select id, started_at, duration, dialogs from test_runs_cases
+      where dialogs is not null and json_valid(dialogs) and json_array_length(dialogs) > 0
+    `);
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const r of rows) {
+      const start = Number(r.started_at);
+      const end = start + Number(r.duration);
+      for (const d of JSON.parse(String(r.dialogs)) as Array<{ closedAt?: number }>) {
+        expect(typeof d.closedAt, `trc ${r.id}: dialog without closedAt`).toBe('number');
+        expect(d.closedAt!, `trc ${r.id}: dialog closedAt before window`).toBeGreaterThanOrEqual(start);
+        expect(d.closedAt!, `trc ${r.id}: dialog closedAt past window`).toBeLessThanOrEqual(end);
+      }
+    }
+  });
+
+  // Catches a timestamp column (or JSON field) added to the generator without a
+  // matching rebase statement: after the rebase every timestamp sits near load
+  // time, so a value still inside the generation era was never shifted.
+  test('no generation-time timestamp survives the rebase', () => {
+    const minSec = anchorSec - 2 * 365 * 86_400;
+    const isGenerationEra = (n: number) =>
+      (n >= minSec && n <= anchorSec) || (n >= minSec * 1000 && n <= anchorSec * 1000 + 999);
+    const tables = q(`select name from sqlite_master where type = 'table' and name not like 'sqlite_%'`).map((r) =>
+      String(r.name),
+    );
+    const stale = new Map<string, string>();
+    for (const table of tables) {
+      for (const row of q(`select * from "${table}"`)) {
+        for (const [column, value] of Object.entries(row)) {
+          // Integer columns, and digit runs embedded in JSON/text (bounded so a
+          // hex SHA or an identifier never contributes a false match).
+          const candidates =
+            typeof value === 'number'
+              ? [value]
+              : typeof value === 'string'
+                ? (value.match(/(?<![\w.])\d{10}(?:\d{3})?(?![\w.])/g) ?? []).map(Number)
+                : [];
+          const hit = candidates.find(isGenerationEra);
+          if (hit !== undefined && !stale.has(`${table}.${column}`)) stale.set(`${table}.${column}`, String(hit));
+        }
+      }
+    }
+    expect(Object.fromEntries(stale)).toEqual({});
+  });
+
+  test('every backend log entry sits within its request span', () => {
+    const rows = q(`
+      select id, start_time, duration, server_logs from network_requests
+      where server_logs is not null and json_valid(server_logs) and json_array_length(server_logs) > 0
+    `);
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const r of rows) {
+      const start = Number(r.start_time);
+      const end = start + Number(r.duration);
+      for (const log of JSON.parse(String(r.server_logs)) as Array<{ timestamp: number }>) {
+        expect(log.timestamp, `request ${r.id}: backend log before request`).toBeGreaterThanOrEqual(start);
+        expect(log.timestamp, `request ${r.id}: backend log after response`).toBeLessThanOrEqual(end);
+      }
+    }
+  });
 });
 
 describe('simulator ↔ seed fingerprint parity', () => {
@@ -565,5 +646,275 @@ describe('simulator ↔ seed fingerprint parity', () => {
 
     const renamedFp = await computeErrorFingerprint(SIMULATOR_ERRORS.emailLabelRenamed);
     expect(renamedFp.fingerprint).toBe(cluster2);
+  });
+});
+
+/** Finished flake-lab experiments, newest first, in the shape the verified-fix rule reads. */
+function seededExperiments(testCaseId?: number) {
+  return q(`
+    select id, test_case_id, kind, verdict, commit_sha, finished_at from flake_experiments
+    where finished_at is not null ${testCaseId == null ? '' : `and test_case_id = ${testCaseId}`}
+    order by finished_at desc, id desc
+  `).map((r) => ({
+    id: Number(r.id),
+    testCaseId: Number(r.test_case_id),
+    kind: String(r.kind),
+    verdict: (r.verdict as string | null) ?? null,
+    commit: (r.commit_sha as string | null) ?? null,
+    finishedAt: new Date(Number(r.finished_at)),
+  }));
+}
+
+/** A test's executions, in the shape the retry-pass rule reads. */
+function seededExecutions(testCaseId: number) {
+  return q(`
+    select trc.test_run_id, trc.status, trc.browser_name, tr.start_time
+    from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
+    where trc.test_case_id = ${testCaseId}
+  `).map((r) => ({
+    testCaseId,
+    runId: Number(r.test_run_id),
+    runStartedAt: new Date(Number(r.start_time) * 1000),
+    browserKey: String(r.browser_name ?? ''),
+    status: String(r.status),
+  }));
+}
+
+describe('flake lab experiments', () => {
+  test('every experiment has finished by load time, with its arms', () => {
+    const rows = q(`
+      select e.id, e.finished_at, (select count(*) from flake_arms a where a.experiment_id = e.id) as arms
+      from flake_experiments e
+    `);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(Number(r.finished_at), `experiment ${r.id} finishes in the future`).toBeLessThanOrEqual(Date.now());
+      expect(Number(r.arms), `experiment ${r.id} has a control and an arm`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  // The Flaky view lists a test under Verified fixed only while no run started
+  // after its verify experiment retry-passed; the demo keeps one such test.
+  test('a verified fix holds: the test retry-passed before it, and never after', () => {
+    const marks = markingExperiments(seededExperiments());
+    expect(marks.size).toBeGreaterThan(0);
+
+    for (const [testCaseId, mark] of marks) {
+      const executions = seededExecutions(testCaseId);
+      expect(firstRetryPassAfter(executions, new Date(0)), `test ${testCaseId} never retry-passed`).not.toBeNull();
+      expect(firstRetryPassAfter(executions, mark.finishedAt), `test ${testCaseId} flaked after its fix`).toBeNull();
+    }
+  });
+});
+
+// Every docs page's demo example opens the entity it names, in the state its
+// sentence promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
+describe('demo examples hold in the seed', () => {
+  const EXPECT_KEYS = new Set([
+    'testCase',
+    'project',
+    'cluster',
+    'run',
+    'diagnosis',
+    'fixLanded',
+    'lab',
+    'resources',
+    'incident',
+  ]);
+  const ROUTE_ENTITIES = [
+    { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
+    { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
+    { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
+    { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
+  ] as const;
+
+  test('ids are unique', () => {
+    const ids = DEMO_EXAMPLES.map((e) => e.id);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+
+  test.each(DEMO_EXAMPLES.map((e) => [e.id, e] as const))('%s', (id, example) => {
+    const want = example.expect;
+    expect(
+      Object.keys(want).filter((k) => !EXPECT_KEYS.has(k)),
+      `${id}: expect keys outside the vocabulary`,
+    ).toEqual([]);
+
+    const opened = ROUTE_ENTITIES.map((r) => ({ key: r.key, match: r.pattern.exec(example.route) })).find(
+      (r) => r.match,
+    );
+    expect(opened, `${id}: route ${example.route} opens a test case, a project, a cluster or a run`).toBeTruthy();
+    expect(want[opened!.key]?.id, `${id}: the route opens the ${opened!.key} it expects`).toBe(
+      Number(opened!.match![1]),
+    );
+
+    if (want.testCase) {
+      const [row] = q(`select title from test_cases where id = ${want.testCase.id}`);
+      expect(row?.title, `${id}: test case ${want.testCase.id}`).toBe(want.testCase.title);
+    }
+    if (want.project) {
+      const [row] = q(`select name from projects where id = ${want.project.id}`);
+      expect(row?.name, `${id}: project ${want.project.id}`).toBe(want.project.name);
+    }
+    if (want.run) {
+      const [row] = q(
+        `select p.name from test_runs r join projects p on p.id = r.project_id where r.id = ${want.run.id}`,
+      );
+      expect(row?.name, `${id}: run ${want.run.id}'s project`).toBe(want.run.project);
+    }
+    if (want.resources) {
+      expect(want.run, `${id}: resources needs a run`).toBeTruthy();
+      const parts = q(`select report from test_run_resource_reports where run_id = ${want.run!.id}`).map(
+        (row) => JSON.parse(String(row.report)) as { counts: { leaked: number } },
+      );
+      const leaks = parts.reduce((sum, part) => sum + part.counts.leaked, 0);
+      expect(leaks, `${id}: the run's report names a leak`).toBeGreaterThan(0);
+    }
+    if (want.incident) {
+      expect(want.run, `${id}: incident needs a run`).toBeTruthy();
+      const [row] = q(
+        `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
+      );
+      expect(row?.rule, `${id}: the run is flagged as an incident`).toBeTruthy();
+    }
+    if (want.cluster) {
+      expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(
+        1,
+      );
+      const story = FAILURE_STORIES.find((s) => s.clusterId === want.cluster!.id);
+      expect(story?.key, `${id}: cluster ${want.cluster.id}'s story`).toBe(want.cluster.story);
+    }
+    if (want.diagnosis) {
+      expect(want.cluster, `${id}: diagnosis needs a cluster`).toBeTruthy();
+      const [{ stored, withPatch }] = q(`
+        select count(*) as stored,
+          sum(case when status = 'completed' and json_extract(details, '$.suggestedFix.patch') is not null then 1 else 0 end) as withPatch
+        from failure_diagnoses where cluster_id = ${want.cluster!.id}
+      `) as Array<{ stored: number; withPatch: number | null }>;
+      if (want.diagnosis === 'with-patch')
+        expect(Number(withPatch), `${id}: a stored diagnosis with a patch`).toBeGreaterThan(0);
+      else expect(Number(stored), `${id}: no stored diagnosis`).toBe(0);
+    }
+    if (want.fixLanded) {
+      expect(want.cluster, `${id}: fixLanded needs a cluster`).toBeTruthy();
+      const [row] = q(`select fix_landed_at from failure_clusters where id = ${want.cluster!.id}`);
+      expect(row?.fix_landed_at, `${id}: the fix landed`).not.toBeNull();
+    }
+    if (want.lab) {
+      expect(want.testCase, `${id}: lab needs a test case`).toBeTruthy();
+      const testCaseId = want.testCase!.id;
+      const experiments = seededExperiments(testCaseId);
+      const mark = markingExperiments(experiments).get(testCaseId);
+      const fix = mark
+        ? { flakedAgainAt: firstRetryPassAfter(seededExecutions(testCaseId), mark.finishedAt) ? 'yes' : null }
+        : null;
+      expect(flakeLabTestState(experiments, fix), `${id}: the test's lab state`).toBe(want.lab);
+    }
+  });
+});
+
+// The seeded resource findings are what recordRunResourceFindings would write
+// from the seeded reports: one per identity, with the runs that showed it.
+describe('resource findings match the seeded reports', () => {
+  test('each finding is the identity of the findings its runs reported, and counts those runs', () => {
+    const runs = q(`select run_id, report from test_run_resource_reports`) as Array<{ run_id: number; report: string }>;
+    expect(runs.length).toBeGreaterThan(0);
+    const runsByFingerprint = new Map<string, number[]>();
+    for (const run of runs.map((row) => ({
+      id: row.run_id,
+      report: JSON.parse(row.report) as { findings: WireResourceFinding[] },
+    }))) {
+      for (const finding of run.report.findings) {
+        const fingerprint = resourceFingerprint(finding);
+        runsByFingerprint.set(fingerprint, [...(runsByFingerprint.get(fingerprint) ?? []), run.id]);
+      }
+    }
+    const findings = q(
+      `select id, fingerprint, occurrences, first_seen_run_id, last_seen_run_id from resource_findings`,
+    ) as Array<{
+      id: number;
+      fingerprint: string;
+      occurrences: number;
+      first_seen_run_id: number;
+      last_seen_run_id: number;
+    }>;
+    expect(findings.map((f) => f.fingerprint).sort()).toEqual([...runsByFingerprint.keys()].sort());
+    for (const finding of findings) {
+      const runIds = runsByFingerprint.get(finding.fingerprint)!;
+      expect(finding.occurrences, finding.fingerprint).toBe(runIds.length);
+      expect(finding.first_seen_run_id, finding.fingerprint).toBe(Math.max(...runIds));
+      expect(finding.last_seen_run_id, finding.fingerprint).toBe(Math.min(...runIds));
+      const occurrences = q(`select run_id from resource_occurrences where finding_id = ${finding.id}`) as Array<{
+        run_id: number;
+      }>;
+      expect(occurrences.map((o) => o.run_id).sort(), finding.fingerprint).toEqual([...runIds].sort());
+    }
+  });
+});
+
+describe('environment incidents', () => {
+  // The seeded flag is written by hand; the classifier must reach the same
+  // verdict from the seeded failures, and flag no other run.
+  // The failed requests of an execution's network capture, as the classifier reads them.
+  const failedRequestsOf = (executionId: number) =>
+    q(`select url, status, failure from network_requests where test_runs_case_id = ${executionId}
+       and (failure is not null or status in (${GATEWAY_STATUSES.join(', ')}))`).map((r) => ({
+      url: r.url as string | null,
+      status: r.status as number,
+      failure: r.failure as string | null,
+    }));
+
+  test('the classifier flags the seeded incident run, with its reason, and no other run', () => {
+    const runs = q('select id, passed_tests, failed_tests, metadata from test_runs order by id');
+    const flagged: number[] = [];
+    for (const run of runs) {
+      const rows = q(
+        `select id, test_case_id, status, error from test_runs_cases where test_run_id = ${run.id as number}`,
+      );
+      const passed = new Set(rows.filter((r) => r.status === 'passed').map((r) => r.test_case_id));
+      const failures = rows
+        .filter((r) => r.status === 'failed' && !passed.has(r.test_case_id))
+        .map((r) => ({ error: r.error as string, failedRequests: failedRequestsOf(r.id as number) }));
+      const metadata = JSON.parse((run.metadata as string) ?? 'null');
+      const verdict = classifyRunHealth({
+        runId: run.id as number,
+        executedTests: (run.passed_tests as number) + (run.failed_tests as number),
+        failedTests: run.failed_tests as number,
+        failures,
+        baseUrls: runBaseUrls(metadata),
+      });
+      if (verdict) {
+        flagged.push(run.id as number);
+        expect(metadata?.incident, `run ${run.id as number} carries the flag`).toMatchObject({
+          rule: verdict.rule,
+          reason: verdict.reason,
+          host: verdict.host,
+        });
+      } else {
+        expect(metadata?.incident, `run ${run.id as number} carries no flag`).toBeUndefined();
+      }
+    }
+    expect(flagged).toHaveLength(1);
+    const markers = q(`select run_id from markers where category = 'incident' and run_id is not null`);
+    expect(markers.map((m) => m.run_id)).toEqual(flagged);
+  });
+
+  test("the incident run's network capture holds each failing test's refused navigation", () => {
+    const rows = q(`
+      select trc.id from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
+      where json_extract(r.metadata, '$.incident') is not null and trc.status = 'failed'`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(failedRequestsOf(row.id as number), `trc ${row.id as number}`).toEqual([
+        expect.objectContaining({ status: 0, failure: 'net::ERR_CONNECTION_REFUSED' }),
+      ]);
+    }
+  });
+
+  test('the incident run gets no regression signal', () => {
+    const rows = q(`
+      select count(*) as n from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
+      where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
+    expect(rows[0]!.n).toBe(0);
   });
 });

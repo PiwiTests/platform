@@ -9,7 +9,7 @@
  * without a database; the async wrapper only fetches the project list.
  */
 import { getProjectMenu } from '#shared/handlers/projects';
-import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
+import { MCP_PROMPT_DEFS, SKILL_PROMPTS } from '#shared/mcp-prompts';
 import type { McpPromptName } from '#shared/mcp-prompts';
 import type { McpContext } from './tools';
 import type { DbClient } from '../../database';
@@ -62,7 +62,7 @@ function authGuidance(authEnabled: boolean): string {
   if (authEnabled) {
     return (
       'This dashboard **requires authentication**, so reporting needs an API key. Create one in the ' +
-      'dashboard UI (Settings → Users → API keys; keys start with `pd_`), add it to `.env` as ' +
+      'dashboard UI (Settings → Account → API keys; keys start with `pd_`), add it to `.env` as ' +
       '`PIWI_API_KEY=pd_...`, and keep `.env` out of git. In CI, pass it as the `PIWI_API_KEY` secret. ' +
       'Never hardcode the key in `playwright.config`.'
     );
@@ -126,6 +126,54 @@ export interface ResolvePromptArgs {
   baseUrl: string;
   authEnabled: boolean;
   args: Record<string, string>;
+  /** The version of this server, which the bundled skills ship with. */
+  version: string;
+}
+
+/** Server-asset mount of the workflow skills (nuxt.config.ts). */
+const SKILLS_STORAGE = 'assets:piwi-skills';
+
+/** A skill's front matter and Markdown body. */
+export function splitSkill(markdown: string): { description: string | null; body: string } {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(markdown);
+  if (!match) return { description: null, body: markdown.trim() };
+  const line = match[1]!.split(/\r?\n/).find((l) => l.startsWith('description:'));
+  return {
+    description: line ? line.slice('description:'.length).trim() : null,
+    body: markdown.slice(match[0].length).trim(),
+  };
+}
+
+/** Build a workflow prompt from its skill's `SKILL.md`. Pure. */
+export function buildSkillPromptMessages(input: {
+  skill: string;
+  markdown: string;
+  version: string;
+  focus?: string | null;
+}): PromptResult {
+  const { description, body } = splitSkill(input.markdown);
+  const focus = input.focus?.trim();
+  const text = [
+    `Follow the Piwi workflow below (the \`${input.skill}\` skill, as shipped with Piwi ${input.version}), using this server's Piwi MCP tools.`,
+    ...(focus ? ['', `Work on: ${focus}`] : []),
+    '',
+    body,
+  ].join('\n');
+  return {
+    description: description ?? `The ${input.skill} workflow`,
+    messages: [{ role: 'user', content: { type: 'text', text } }],
+  };
+}
+
+/** A skill's bundled `SKILL.md`, or null when this build carries none. */
+export async function bundledSkill(skill: string): Promise<string | null> {
+  try {
+    const raw = await useStorage(SKILLS_STORAGE).getItemRaw(`${skill}:SKILL.md`);
+    if (typeof raw === 'string') return raw;
+    return raw instanceof Uint8Array ? new TextDecoder().decode(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Resolve a prompt by name into its messages, or null when the name is unknown. */
@@ -138,6 +186,16 @@ export async function getPrompt(name: string, opts: ResolvePromptArgs): Promise<
       projectName: opts.args.projectName ?? null,
       existingProjects: menu.map((m) => m.name),
     });
+  }
+  const skill = SKILL_PROMPTS.get(name);
+  if (skill) {
+    const markdown = await bundledSkill(skill);
+    if (!markdown) {
+      throw new Error(
+        `This server was built without its workflow skills; install them with: npx @piwitests/reporter skills add ${skill}`,
+      );
+    }
+    return buildSkillPromptMessages({ skill, markdown, version: opts.version, focus: opts.args.focus ?? null });
   }
   return null;
 }

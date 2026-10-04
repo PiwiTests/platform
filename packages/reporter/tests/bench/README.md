@@ -21,10 +21,12 @@ the cost of that layer alone:
 | `baseline` | plain `@playwright/test`, no Piwi fixtures registered |
 | `fixtures` | console/network listeners, web vitals, the teardown flush |
 | `page-state` | the end-of-test page/storage/cookie read |
-| `full` | locator healing capture — the shipped default |
+| `full` | locator healing capture |
+| `resources` | the resource ledger and the per-test worker reads (`PIWI_CAPTURE_RESOURCES`) — the shipped default |
+| `code-reach` | Chromium JavaScript coverage for code reach (`PIWI_CAPTURE_CODE_REACH`), opt-in |
 
 Variants are selected through the same `PIWI_*` env vars users set (`PIWI_CAPTURE_LOCATORS`,
-`PIWI_CAPTURE_PAGE_STATE`), and the spec imports `dist/` — the built package is what users install, so that is what
+`PIWI_CAPTURE_PAGE_STATE`, `PIWI_CAPTURE_RESOURCES`), and the spec imports `dist/` — the built package is what users install, so that is what
 gets benchmarked. Run `npm run reporter:build` first (`reporter:bench` does it for you).
 
 Every variant runs once per round and the rounds repeat, so a machine that drifts drifts across all variants rather
@@ -93,6 +95,15 @@ End-to-end, 12 tests × (10 actions + 10 assertions) on a 200-row page, median p
 
 Everything except locator healing sits within run-to-run noise. Locator healing dominates, and its cost scales with
 page weight: on the same workload the locator layer runs roughly 2× cheaper at 50 rows and 2–3× dearer at 800.
+
+The resource ledger and the per-test worker reads (`resources`), on the same workload with Playwright 1.63, measured
++15 ms and +0 ms per test over `full` in two runs of four rounds (1,146 → 1,160 ms and 1,206 → 1,206 ms): within the
+noise. Timed directly, a worker's reads take about 2 ms at each test's end, and a page that outlives its test about
+2 ms more per test over CDP.
+
+Code reach, measured separately on the same workload, adds 122 ms per test over `full` (887 → 1,009 ms). The page runs
+little JavaScript, so that is its floor: coverage slows script execution, and on Piwi's own Nuxt dev server (about 940
+scripts per page) it added 1.8 s to a 10 s test.
 
 The pieces of one capture, timed directly against a single page (medians over tens of alternating samples, which is
 how to measure anything this small — see above):

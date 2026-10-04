@@ -8,9 +8,16 @@
  * others from wherever they look — can pick them up. The files are agent-
  * agnostic Markdown; only the destination directory is tool-specific, so
  * `--dir` points the install wherever a given agent reads from.
+ *
+ * An installed skill carries two stamps in its front matter
+ * (`@piwitests/core/skill-stamp`): the package version it came from and a hash
+ * of the file as written. A later `add` replaces an untouched skill from an
+ * older release (outdated) and keeps one a person changed (edited) unless
+ * `--force`.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { classifyInstalledSkill, readSkillStamp, stampSkill } from '@piwitests/core/skill-stamp';
 import type { StepResult } from './report.js';
 
 /** The setup skill drives this very command; the rest act on a run's results. */
@@ -20,6 +27,8 @@ export const WORKFLOW_SKILLS = [
   'apply-locator-healing',
   'stabilize-flaky-tests',
   'run-the-right-tests',
+  'write-the-missing-test',
+  'fix-a-reported-bug',
 ] as const;
 export const ALL_SKILLS = [SETUP_SKILL, ...WORKFLOW_SKILLS] as const;
 
@@ -60,6 +69,18 @@ function readFrontMatter(markdown: string): { name?: string; description?: strin
   return out;
 }
 
+/** The version of the package the templates ship in, read from its `package.json`. */
+export function readTemplatesVersion(templatesDir: string): string {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(templatesDir, '..', 'package.json'), 'utf-8')) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 function templatePath(templatesDir: string, slug: string): string {
   return path.join(templatesDir, 'skills', slug, 'SKILL.md');
 }
@@ -87,6 +108,8 @@ export interface InstallSkillsOptions {
   force: boolean;
   /** Compute results without writing anything. */
   dryRun: boolean;
+  /** The version to stamp; the package's own by default. */
+  version?: string;
 }
 
 /** Write each requested skill as `<skillsDir>/<slug>/SKILL.md`. Idempotent. */
@@ -103,24 +126,41 @@ export function installSkills(opts: InstallSkillsOptions): StepResult[] {
       continue;
     }
 
-    const contents = fs.readFileSync(source, 'utf-8');
+    const version = opts.version ?? readTemplatesVersion(opts.templatesDir);
+    const contents = stampSkill(fs.readFileSync(source, 'utf-8'), version);
     const exists = fs.existsSync(dest);
-    if (exists && !opts.force) {
-      const identical = fs.readFileSync(dest, 'utf-8') === contents;
-      results.push({
-        step,
-        file: relDest,
-        status: identical ? 'already' : 'skipped',
-        detail: identical ? 'skill already installed' : 'skill exists and differs — pass --force to overwrite',
-      });
-      continue;
+    let detail = 'installed skill';
+    if (exists) {
+      const installed = fs.readFileSync(dest, 'utf-8');
+      const state = classifyInstalledSkill(installed, contents);
+      const from = readSkillStamp(installed).version;
+      if (state === 'current') {
+        results.push({ step, file: relDest, status: 'already', detail: `skill already installed (${version})` });
+        continue;
+      }
+      if (state === 'outdated') {
+        detail = `outdated (${from ?? 'unknown version'}) — updated to ${version}`;
+      } else if (!opts.force) {
+        results.push({
+          step,
+          file: relDest,
+          status: 'skipped',
+          detail:
+            state === 'edited'
+              ? `edited since ${from ?? 'it was'} installed — pass --force to replace it with ${version}`
+              : `skill exists and differs — pass --force to replace it with ${version}`,
+        });
+        continue;
+      } else {
+        detail = state === 'edited' ? `edited — replaced with ${version}` : `replaced with ${version}`;
+      }
     }
 
     if (!opts.dryRun) {
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, contents);
     }
-    results.push({ step, file: relDest, status: exists ? 'updated' : 'created', detail: 'installed skill' });
+    results.push({ step, file: relDest, status: exists ? 'updated' : 'created', detail });
   }
   return results;
 }
@@ -139,7 +179,8 @@ Commands:
 Options for "add":
   --dir <path>      Directory to install into (default: ${DEFAULT_SKILLS_DIR})
   --cwd <path>      Project root to operate on (default: current directory)
-  --force           Overwrite a skill file that already exists
+  --force           Replace a skill that was edited since it was installed
+                    (an untouched skill from an older release is always updated)
   --dry-run         Report what would be written without writing
   --json            Print the results as JSON
 

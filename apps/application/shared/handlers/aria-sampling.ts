@@ -8,7 +8,9 @@
  */
 import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 import { testCases, testRunsCases } from '../../server/database/schema';
+import { isPassiveCapabilityDeclined } from './capabilities';
 import type { DrizzleDB } from './db';
+import { eligibleExecutionSql } from '../run-eligibility';
 
 /** A green sample counts as fresh for this long before another is due. */
 export const GREEN_SAMPLE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -28,14 +30,18 @@ export interface AriaSamplingResult {
 
 /**
  * The set of tests due a fresh green ARIA sample for a project. A test is
- * included when no passing execution carries an ARIA snapshot, or the most
- * recent one that does is older than {@link GREEN_SAMPLE_MAX_AGE_MS}.
+ * included when no passing execution of a run eligible for shared state carries an ARIA
+ * snapshot, or the most recent one that does is older than
+ * {@link GREEN_SAMPLE_MAX_AGE_MS}. Empty when the project or the instance
+ * declines the `green-samples` capability.
  */
 export async function getAriaSampling(
   db: DrizzleDB,
   projectId: number,
   now: number = Date.now(),
 ): Promise<AriaSamplingResult> {
+  if (await isPassiveCapabilityDeclined(db, projectId, 'green-samples')) return { tests: [] };
+
   const cases = await db
     .select({ id: testCases.id, filePath: testCases.filePath, title: testCases.title })
     .from(testCases)
@@ -45,7 +51,7 @@ export async function getAriaSampling(
   const freshest = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
-      latest: sql<number>`max(${testRunsCases.createdAt})`,
+      latest: sql<Date>`max(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -54,11 +60,12 @@ export async function getAriaSampling(
         eq(testCases.projectId, projectId),
         eq(testRunsCases.status, 'passed'),
         or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
+        eligibleExecutionSql('shared-state', testRunsCases.testRunId),
       ),
     )
     .groupBy(testRunsCases.testCaseId);
 
-  const freshById = new Map(freshest.map((row) => [row.testCaseId, Number(row.latest)]));
+  const freshById = new Map(freshest.map((row) => [row.testCaseId, row.latest.getTime()]));
   const cutoff = now - GREEN_SAMPLE_MAX_AGE_MS;
 
   const tests = cases

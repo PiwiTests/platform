@@ -1,0 +1,147 @@
+name: Release
+
+# Publishes a release from its tag: the npm packages, the container image, the NuGet packages, the desktop
+# installers, and the VS Code, JetBrains and browser extensions. Each target is a reusable workflow, so one failing
+# holds back none of the others and "Re-run failed jobs" retries only the failed ones. The npm server package and the
+# desktop installers ship one node-server build.
+#
+# - Pushed tag: release-please creates it with RELEASE_PLEASE_TOKEN (see release-please.yml); a tag pushed with the
+#   default GITHUB_TOKEN would start no workflow.
+# - Run on demand against a tag: publishes the targets ticked, for a release whose publication failed or never ran.
+# - Pull request that changes a release workflow: builds and packs every target, and publishes nothing.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/reusable-publish-*.yml'
+  workflow_dispatch:
+    inputs:
+      npm:
+        description: npm packages (reporter, server, instrumentation-nitro)
+        type: boolean
+        default: true
+      container:
+        description: Container image (GHCR and Docker Hub)
+        type: boolean
+        default: true
+      nuget:
+        description: NuGet packages
+        type: boolean
+        default: true
+      desktop:
+        description: Desktop installers
+        type: boolean
+        default: true
+      vscode:
+        description: VS Code extension
+        type: boolean
+        default: true
+      jetbrains:
+        description: JetBrains plugin
+        type: boolean
+        default: true
+      extension:
+        description: Browser extension
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Built once on Linux: the Windows Nuxt build carries a legacyExternals workaround and is not exercised in CI.
+  build-server:
+    name: Build the server bundle
+    if: github.event_name != 'workflow_dispatch' || inputs.npm || inputs.desktop
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Build the server bundle (node-server preset)
+        working-directory: apps/application
+        run: npm run app:build
+        env:
+          NITRO_PRESET: node-server
+          PIWI_BUILD_SHA: ${{ github.sha }}
+
+      - name: Upload the server bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-output
+          path: apps/application/.output
+          # `.output` is dot-prefixed, so without this the upload silently skips it.
+          include-hidden-files: true
+          if-no-files-found: error
+          # Long enough for "Re-run failed jobs" the next days.
+          retention-days: 3
+
+  npm:
+    name: npm
+    needs: build-server
+    if: github.event_name != 'workflow_dispatch' || inputs.npm
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-publish-npm.yml
+    with:
+      server-artifact: app-output
+    secrets: inherit
+
+  container:
+    name: Container image
+    if: github.event_name != 'workflow_dispatch' || inputs.container
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-publish-container.yml
+    secrets: inherit
+
+  nuget:
+    name: NuGet
+    if: github.event_name != 'workflow_dispatch' || inputs.nuget
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-publish-nuget.yml
+    secrets: inherit
+
+  desktop:
+    name: Desktop installers
+    needs: build-server
+    if: github.event_name != 'workflow_dispatch' || inputs.desktop
+    permissions:
+      # Uploads the installers to the release.
+      contents: write
+    uses: ./.github/workflows/reusable-publish-desktop.yml
+    with:
+      server-artifact: app-output
+    secrets: inherit
+
+  vscode:
+    name: VS Code extension
+    if: github.event_name != 'workflow_dispatch' || inputs.vscode
+    uses: ./.github/workflows/reusable-publish-vscode.yml
+    secrets: inherit
+
+  jetbrains:
+    name: JetBrains plugin
+    if: github.event_name != 'workflow_dispatch' || inputs.jetbrains
+    uses: ./.github/workflows/reusable-publish-jetbrains.yml
+    secrets: inherit
+
+  extension:
+    name: Browser extension
+    if: github.event_name != 'workflow_dispatch' || inputs.extension
+    uses: ./.github/workflows/reusable-publish-extension.yml
+    secrets: inherit

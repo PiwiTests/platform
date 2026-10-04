@@ -10,6 +10,9 @@ export default defineAppConfig({
       success: 'emerald',
       error: 'rose',
       warning: 'amber',
+      // Test outcome palette (see `--color-status-*` in main.css): flaky is
+      // purple, apart from the amber of "didn't run" and warnings.
+      flaky: 'purple',
     },
     card: {
       slots: {

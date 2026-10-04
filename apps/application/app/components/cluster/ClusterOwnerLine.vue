@@ -6,6 +6,8 @@
  * is only derived from CODEOWNERS, a one-line hint says how to override it in the
  * spec.
  */
+import { formatTestSearchTerm } from '#shared/test-search';
+
 const props = defineProps<{
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   /** Piwi project id — the owner link filters this project's test cases. */
@@ -16,7 +18,7 @@ const { copy, copied } = useCopy();
 
 const ownerLink = computed(() =>
   props.owner && props.projectId != null
-    ? `/projects/${props.projectId}?tab=test-cases&owner=${encodeURIComponent(props.owner.name)}`
+    ? `/projects/${props.projectId}?tab=tests&q=${encodeURIComponent(formatTestSearchTerm('owner', props.owner.name))}`
     : null,
 );
 </script>

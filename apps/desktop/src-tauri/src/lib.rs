@@ -10,13 +10,19 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod ide_launcher;
 mod inspect;
+mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
+mod repro;
 mod runner;
+#[cfg(windows)]
+mod taskbar_win;
 mod updates;
 mod worktree;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,6 +32,7 @@ use serde_json::json;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::async_runtime::Receiver;
+use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WindowEvent};
 
 use tauri_plugin_autostart::MacosLauncher;
@@ -38,14 +45,23 @@ use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
-use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
-use updates::{desktop_check_update, desktop_install_update, desktop_restart_app};
+use mcp_clients::{
+    desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal, desktop_skills_read,
+    desktop_skills_write,
+};
+use updates::{
+    desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
+    desktop_set_update_notification,
+};
 use runner::{
     desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link,
     desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
     desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
 };
-use worktree::{desktop_bisect_here, desktop_reproduce_here};
+use repro::desktop_run_repro;
+use worktree::{
+    desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
+};
 
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
@@ -108,10 +124,19 @@ struct DebugMode(bool);
 #[derive(Default)]
 struct PendingOpenFiles(Mutex<Vec<String>>);
 
-/// Keep only arguments that are real `.zip` files on disk; relative paths are
+/// The files the app opens: Playwright archives (`.zip`) and Piwi Picker's
+/// bug reports (`.piwibug`). The dashboard tells them apart by their content.
+const OPENED_EXTENSIONS: [&str; 2] = [".zip", ".piwibug"];
+
+fn is_opened_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    OPENED_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Keep only arguments that are real files the app opens; relative paths are
 /// resolved against the directory the launching process ran from.
-fn collect_zip_args<'a>(args: impl Iterator<Item = &'a str>, cwd: Option<&Path>) -> Vec<String> {
-    args.filter(|a| a.to_lowercase().ends_with(".zip"))
+fn collect_open_args<'a>(args: impl Iterator<Item = &'a str>, cwd: Option<&Path>) -> Vec<String> {
+    args.filter(|a| is_opened_file(a))
         .filter_map(|a| {
             let p = PathBuf::from(a);
             let abs = if p.is_absolute() { p } else { cwd?.join(p) };
@@ -138,10 +163,71 @@ fn desktop_take_pending_open_files(app: tauri::AppHandle) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Ambient status while the window is hidden or unfocused: an unread count on
-/// the dock/taskbar icon (where the platform supports a badge) and the tray
-/// tooltip. Driven by the dashboard, which knows what fired; the shell only
-/// renders. Count 0 clears everything.
+/// Two ambient signals the dashboard drives share the tray tooltip — the unread
+/// notification count and the live progress of local test runs — so they are
+/// held in one place and composed together instead of overwriting each other.
+/// The badge (dock/taskbar) still tracks unread only; run progress goes to the
+/// taskbar/Dock progress bar and the window title (see `desktop_set_run_progress`).
+#[derive(Default)]
+struct TrayStatus(Mutex<TrayStatusInner>);
+
+#[derive(Default)]
+struct TrayStatusInner {
+    /// Unread notifications raised while the window was hidden/unfocused.
+    unread: u32,
+    /// The first line of the most recent such notification, shown with the count.
+    activity: Option<String>,
+    /// Label of the local run(s) currently in flight, e.g. "Running 7/12…".
+    progress: Option<String>,
+}
+
+const TRAY_TOOLTIP_IDLE: &str = "Piwi Dashboard (click to open)";
+/// The window's resting title (matches `tauri.conf.json`); run progress prefixes
+/// it while a run is active and it is restored when the run ends.
+const MAIN_WINDOW_TITLE: &str = "Piwi Dashboard";
+
+/// Compose the tray tooltip from the ambient signals. An active run leads; the
+/// unread count follows; the free-form notification status line shows only
+/// alongside an unread count and only when no run is in flight to show instead.
+fn compose_tooltip(unread: u32, activity: Option<&str>, progress: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(p) = progress.filter(|s| !s.is_empty()) {
+        parts.push(p.to_string());
+    }
+    if unread > 0 {
+        parts.push(format!("{unread} unread"));
+        if progress.is_none() {
+            if let Some(s) = activity.filter(|s| !s.is_empty()) {
+                parts.push(s.to_string());
+            }
+        }
+    }
+    if parts.is_empty() {
+        TRAY_TOOLTIP_IDLE.to_string()
+    } else {
+        format!("Piwi Dashboard — {}", parts.join(" — "))
+    }
+}
+
+/// Re-render the tray tooltip from the current `TrayStatus`. Called on the main
+/// thread by whichever signal changed.
+fn refresh_tray_tooltip(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<TrayStatus>() else {
+        return;
+    };
+    let tooltip = {
+        let inner = state.0.lock().unwrap();
+        compose_tooltip(inner.unread, inner.activity.as_deref(), inner.progress.as_deref())
+    };
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+}
+
+/// Ambient unread status while the window is hidden or unfocused: an unread
+/// count on the dock/taskbar badge (where the platform supports one) and the
+/// tray tooltip. Driven by the dashboard, which knows what fired; the shell only
+/// renders. Count 0 clears the unread part (a run's progress, if any, stays).
 #[tauri::command]
 fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String>) {
     let handle = app.clone();
@@ -149,17 +235,136 @@ fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String
     let _ = app.run_on_main_thread(move || {
         if let Some(w) = handle.get_webview_window("main") {
             // Unsupported platforms (Windows) reject the call — that's fine,
-            // the tray tooltip below still carries the count.
+            // the tray tooltip still carries the count.
             let _ = w.set_badge_count(if count > 0 { Some(count as i64) } else { None });
         }
-        if let Some(tray) = handle.tray_by_id("main") {
-            let tooltip = match (count, status.as_deref()) {
-                (0, _) => "Piwi Dashboard (click to open)".to_string(),
-                (n, None) => format!("Piwi Dashboard — {n} unread"),
-                (n, Some(s)) => format!("Piwi Dashboard — {n} unread — {s}"),
-            };
-            let _ = tray.set_tooltip(Some(tooltip));
+        if let Some(state) = handle.try_state::<TrayStatus>() {
+            let mut inner = state.0.lock().unwrap();
+            inner.unread = count;
+            inner.activity = status.filter(|s| !s.is_empty());
         }
+        refresh_tray_tooltip(&handle);
+    });
+}
+
+/// Map the dashboard's run state to a taskbar/Dock progress-bar status. Any
+/// unrecognised value (including "none") clears the bar.
+fn progress_bar_status(state: &str) -> Option<ProgressBarStatus> {
+    match state {
+        "normal" => Some(ProgressBarStatus::Normal),
+        "indeterminate" => Some(ProgressBarStatus::Indeterminate),
+        "paused" => Some(ProgressBarStatus::Paused),
+        "error" => Some(ProgressBarStatus::Error),
+        _ => None,
+    }
+}
+
+/// The colour of the status dot drawn on the tray icon (all platforms) and the
+/// taskbar overlay icon (Windows) for a run state, or `None` when the run is
+/// idle and the app's own icon should show instead. A determinate `normal` at
+/// 100% is the finished-pass flash (green); a running `normal` is blue, or red
+/// while `failing` (a test has failed so far).
+fn status_dot_color(state: &str, fraction: Option<f64>, failing: bool) -> Option<(u8, u8, u8)> {
+    const RED: (u8, u8, u8) = (220, 38, 38); // red-600 — failed / failing
+    match state {
+        "error" => Some(RED),
+        "paused" => Some((217, 119, 6)), // amber-600 — paused / interrupted
+        "normal" | "indeterminate" if failing => Some(RED),
+        "normal" if fraction.is_some_and(|f| f >= 1.0) => Some((22, 163, 74)), // green-600 — passed
+        "normal" | "indeterminate" => Some((37, 99, 235)), // blue-600 — running
+        _ => None, // none / unknown — restore the app icon
+    }
+}
+
+/// Draw a filled, 1px anti-aliased circle in `color` on a transparent square as
+/// raw RGBA — a small status dot for the tray/overlay icon. Kept dependency-free
+/// (no image crate) since the shape is trivial; the taskbar/Dock bar and the
+/// tooltip carry the exact fraction, so the dot only needs to convey state.
+fn render_status_dot(color: (u8, u8, u8), size: u32) -> Vec<u8> {
+    let (r, g, b) = color;
+    let n = size as f32;
+    let center = n / 2.0;
+    // A small margin so the dot is not clipped at the icon's edge.
+    let radius = center - n * 0.08;
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 + 0.5 - center;
+            let dy = y as f32 + 0.5 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let alpha = if dist <= radius - 0.5 {
+                255.0
+            } else if dist >= radius + 0.5 {
+                0.0
+            } else {
+                (radius + 0.5 - dist) * 255.0
+            };
+            rgba.extend_from_slice(&[r, g, b, alpha.round().clamp(0.0, 255.0) as u8]);
+        }
+    }
+    rgba
+}
+
+/// Live progress of the local test run(s), rendered on the OS shell so a run can
+/// be watched with the window minimised or in the tray: the taskbar/Dock progress
+/// bar, the window title (which the Windows taskbar shows on hover) and the tray
+/// tooltip. Driven by the dashboard, which aggregates its active runs into one
+/// `state` (`normal`/`indeterminate`/`paused`/`error`/`none`), an optional 0–1
+/// `fraction`, a `label` and whether any of them is `failing`, which turns the
+/// status dot red. `state = "none"` clears the bar and restores the resting
+/// title; run progress leaves the tooltip while the unread count (if any) stays.
+#[tauri::command]
+fn desktop_set_run_progress(
+    app: tauri::AppHandle,
+    state: String,
+    fraction: Option<f64>,
+    label: Option<String>,
+    failing: Option<bool>,
+) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let status = progress_bar_status(&state);
+        let active = status.is_some();
+        let glyph = status_dot_color(&state, fraction, failing.unwrap_or(false));
+        if let Some(w) = handle.get_webview_window("main") {
+            // A determinate bar carries the fraction as 0–100; an indeterminate
+            // one (a countless phase such as install/checkout) carries none.
+            let progress = match &status {
+                Some(ProgressBarStatus::Indeterminate) | None => None,
+                Some(_) => fraction.map(|f| (f.clamp(0.0, 1.0) * 100.0).round() as u64),
+            };
+            let _ = w.set_progress_bar(ProgressBarState {
+                status: Some(status.unwrap_or(ProgressBarStatus::None)),
+                progress,
+            });
+            let title = match label.as_deref().filter(|s| active && !s.is_empty()) {
+                Some(l) => format!("▶ {l} · {MAIN_WINDOW_TITLE}"),
+                None => MAIN_WINDOW_TITLE.to_string(),
+            };
+            let _ = w.set_title(&title);
+            // Windows only: a small state dot in the corner of the taskbar button
+            // (the overlay-icon API is Windows-specific).
+            #[cfg(windows)]
+            {
+                let overlay =
+                    glyph.map(|c| tauri::image::Image::new_owned(render_status_dot(c, 16), 16, 16));
+                let _ = w.set_overlay_icon(overlay);
+            }
+        }
+        // Tray icon: a state dot while a run is active, the app's own icon when
+        // idle — an at-a-glance status when the window is closed to the tray.
+        if let Some(tray) = handle.tray_by_id("main") {
+            let icon = match glyph {
+                Some(c) => Some(tauri::image::Image::new_owned(render_status_dot(c, 32), 32, 32)),
+                None => handle.default_window_icon().cloned(),
+            };
+            let _ = tray.set_icon(icon);
+        }
+        if let Some(tray_state) = handle.try_state::<TrayStatus>() {
+            let mut inner = tray_state.0.lock().unwrap();
+            inner.progress = if active { label.filter(|s| !s.is_empty()) } else { None };
+        }
+        refresh_tray_tooltip(&handle);
     });
 }
 
@@ -261,16 +466,56 @@ fn load_or_create_token(app_data_dir: &PathBuf) -> String {
 /// back when 3000 is taken) and removed on quit, so the file's presence means
 /// "this app is up at this address". Mode 0600: the token is a full-access local
 /// credential, and `$HOME` itself is world-readable on most systems.
-fn write_discovery_file(home: &Path, port: u16, token: &str) -> std::io::Result<PathBuf> {
+fn write_discovery_file(
+    home: &Path,
+    port: u16,
+    token: &str,
+    links: &HashMap<String, runner::LinkRecord>,
+) -> std::io::Result<PathBuf> {
     let dir = home.join(DISCOVERY_DIR);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(DISCOVERY_FILE);
-    // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
-    // localhost resolves to ::1 first on some systems.
-    let body = json!({ "url": format!("http://127.0.0.1:{port}"), "token": token }).to_string();
-    std::fs::write(&path, body)?;
+    std::fs::write(&path, discovery_body(port, token, links).to_string())?;
     restrict_to_owner(&path);
     Ok(path)
+}
+
+/// The discovery file's content: the address and token, and the projects linked
+/// to a folder on this machine, so an editor opened on one of those folders
+/// connects to its project with no setup, and the bundled server reads a
+/// project's git history from its folder. Readers ignore fields they do not know.
+fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRecord>) -> serde_json::Value {
+    let mut projects: Vec<(i64, &str)> = links
+        .iter()
+        .filter_map(|(id, link)| id.parse::<i64>().ok().map(|id| (id, link.path.as_str())))
+        .collect();
+    projects.sort();
+    // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
+    // localhost resolves to ::1 first on some systems.
+    json!({
+        "url": format!("http://127.0.0.1:{port}"),
+        "token": token,
+        "projects": projects.iter().map(|(id, path)| json!({ "id": id, "path": path })).collect::<Vec<_>>(),
+    })
+}
+
+/// Rewrite the discovery file after a folder link changes, while this app
+/// publishes one.
+pub(crate) fn refresh_discovery_file(app: &AppHandle) {
+    let (Some(file), Some(info)) = (
+        app.try_state::<DiscoveryFile>(),
+        app.try_state::<mcp_clients::ServerInfo>(),
+    ) else {
+        return;
+    };
+    // Removed on quit: never bring it back for a server that is going away.
+    if !file.0.exists() {
+        return;
+    }
+    let body = discovery_body(info.port, &info.token, &runner::read_links(app));
+    if std::fs::write(&file.0, body.to_string()).is_ok() {
+        restrict_to_owner(&file.0);
+    }
 }
 
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
@@ -464,6 +709,72 @@ fn supervise_server(
     });
 }
 
+/// Everything leaving the app must undo: remember the window state, stop the
+/// bundled server and the local test runs, and withdraw the reporter discovery
+/// file. Runs on every quit (`RunEvent::ExitRequested`) and from the updater's
+/// pre-exit hook, since the Windows updater leaves through
+/// `std::process::exit` without that event (see updates.rs). Idempotent.
+///
+/// With `server_wait`, blocks until the server process is really gone (at most
+/// that long): a kill only starts the termination, and until it completes the
+/// files the server has loaded — the bundled native modules — stay locked.
+pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
+    // Remember whether the window was maximized so the next launch
+    // restores it (first launch, with no stored value, maximizes).
+    if let Some(w) = app_handle.get_webview_window("main") {
+        if let Ok(store) = app_handle.store(STORE_FILE) {
+            store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
+            let _ = store.save();
+        }
+    }
+    // Tell the supervisor this stop is deliberate so it doesn't restart
+    // the server we are about to kill.
+    if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
+        flag.0.store(true, Ordering::SeqCst);
+    }
+    // Best-effort: stop the bundled server so no orphan process lingers.
+    if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
+        kill_server(child, server_wait);
+    }
+    // Local test runs die with the shell — never orphan a browser fleet.
+    if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
+        runs.kill_all();
+    }
+    // Withdraw the reporter discovery file with the server it points
+    // at, so a later test run does not try a dead port.
+    if let Some(discovery) = app_handle.try_state::<DiscoveryFile>() {
+        let _ = std::fs::remove_file(&discovery.0);
+    }
+}
+
+/// Kill the server sidecar, waiting up to `wait` for it to exit. Only the
+/// Windows updater asks to wait — its installer overwrites the files next — so
+/// the wait is Windows-only.
+fn kill_server(child: CommandChild, wait: Option<Duration>) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+
+        // Opened before the kill, while the live child still pins its pid, so
+        // the handle cannot belong to a later process reusing the number.
+        let process = wait.and_then(|_| unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, child.pid()) }.ok());
+        let _ = child.kill();
+        if let (Some(process), Some(wait)) = (process, wait) {
+            let millis = u32::try_from(wait.as_millis()).unwrap_or(u32::MAX);
+            unsafe {
+                WaitForSingleObject(process, millis);
+                let _ = CloseHandle(process);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = wait;
+        let _ = child.kill();
+    }
+}
+
 // ── Desktop service settings, exposed to the in-app Settings UI over IPC ───────
 // The bundled dashboard webview drives the same "run in background" and "start on
 // login" options as the tray. window.__TAURI__ is injected into the desktop
@@ -529,6 +840,140 @@ fn desktop_open_external(app: tauri::AppHandle, url: String) -> Result<(), Strin
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+/// Argv (after the launcher command) that opens `path` at an optional
+/// line/column through an IDE's command-line launcher.
+///
+///  - VS Code family: `--goto <path>:<line>:<col>` — the flag makes the trailing
+///    `:line:col` a caret position rather than part of the file name.
+///  - JetBrains: `--line <n> --column <c> <path>` — the flags precede the path.
+///
+/// Line and column are included only when present.
+fn ide_launcher_args(
+    family: &str,
+    path: &str,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<Vec<String>, String> {
+    match family {
+        "vscode" => {
+            let mut target = path.to_string();
+            if let Some(l) = line {
+                target.push_str(&format!(":{l}"));
+                if let Some(c) = column {
+                    target.push_str(&format!(":{c}"));
+                }
+            }
+            Ok(vec!["--goto".to_string(), target])
+        }
+        "jetbrains" => {
+            let mut args: Vec<String> = Vec::new();
+            if let Some(l) = line {
+                args.push("--line".to_string());
+                args.push(l.to_string());
+                if let Some(c) = column {
+                    args.push("--column".to_string());
+                    args.push(c.to_string());
+                }
+            }
+            args.push(path.to_string());
+            Ok(args)
+        }
+        other => Err(format!("unknown IDE family: {other}")),
+    }
+}
+
+/// A launcher command the webview may spawn: a bare executable name, looked up on
+/// the PATH and in the IDEs' install folders. No path separators, whitespace or
+/// shell metacharacters, so a stray call can neither name a binary by path nor
+/// smuggle in extra arguments; any bare name found in those places passes.
+fn is_safe_launcher_command(command: &str) -> bool {
+    !command.is_empty()
+        && command.len() <= 64
+        && command
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphanumeric())
+        && command
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'+' | b'-'))
+}
+
+/// Open a source file in a local IDE by spawning its command-line launcher
+/// (`code --goto …`, `rider --line …`). The desktop shell does this natively, so
+/// it needs no `vscode://`/`jetbrains://` protocol handler, JetBrains Toolbox,
+/// open-project name to match or "allow unsigned requests", which the URL
+/// schemes depend on.
+///
+/// Resolves `true` when the launcher started, `false` when no IDE installed it
+/// where the shell looks (so the webview can fall back to a URL scheme), and
+/// errors on a bad command, a non-absolute path or a file that does not exist.
+/// The command is restricted to a bare name, found on the PATH or in the folders
+/// the IDEs install their launchers to (`ide_launcher`); the path must be an
+/// existing file.
+#[tauri::command]
+fn desktop_open_in_ide(
+    app: tauri::AppHandle,
+    command: String,
+    family: String,
+    path: String,
+    line: Option<u32>,
+    column: Option<u32>,
+) -> Result<bool, String> {
+    if !is_safe_launcher_command(&command) {
+        return Err(format!("unsupported IDE launcher command: {command}"));
+    }
+    let file = std::path::Path::new(&path);
+    if !file.is_absolute() {
+        return Err("the file path must be absolute".into());
+    }
+    if !file.is_file() {
+        return Err(format!("file not found: {path}"));
+    }
+    let args = ide_launcher_args(&family, &path, line, column)?;
+
+    // A missing launcher is reported as `false`, not raised, so the caller can
+    // still try a URL scheme. On a successful spawn the child is held on a
+    // background task until it exits: the launcher hands the file off to the
+    // running IDE and returns in well under a second, but dropping the handle
+    // immediately could cut that handoff short.
+    let roots = ide_launcher::SearchRoots::from_env(app.path().home_dir().ok());
+    let Some(launcher) =
+        ide_launcher::resolve_launcher(&roots, ide_launcher::Os::current(), &family, &command)
+    else {
+        return Ok(false);
+    };
+    match app.shell().command(launcher).args(args).spawn() {
+        Ok((mut rx, child)) => {
+            tauri::async_runtime::spawn(async move {
+                let _child = child;
+                while rx.recv().await.is_some() {}
+            });
+            Ok(true)
+        }
+        Err(_) => Ok(false),
+    }
+}
+
+/// Restore, show and focus `window`. Focusing alone does nothing on a minimized
+/// or hidden window. On Windows, `set_focus` gets past the focus-stealing
+/// prevention that refuses a background app the foreground (tao simulates a key
+/// press when `SetForegroundWindow` is refused).
+fn bring_to_front(window: &tauri::WebviewWindow) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+/// Bring the dashboard window to the front. The dashboard calls it once it has
+/// navigated to a page the user opened in the system browser (a dashboard link
+/// clicked in a terminal), so the page shows up where they are looking.
+#[tauri::command]
+fn desktop_bring_to_front(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        bring_to_front(&w);
+    }
 }
 
 /// Unique label for each runtime-created auxiliary window (Tauri requires labels
@@ -796,9 +1241,20 @@ const E2E_PLAYWRIGHT_CAPABILITY: &str = r#"{
 }"#;
 
 pub fn run() {
+    // Windows: a stop request for a local run starts a short-lived copy of this
+    // binary to deliver the Ctrl+C (see interrupt.rs). Handled first — it never
+    // opens a window or reaches the running instance.
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if args.first().map(String::as_str) == Some(interrupt::HELPER_ARG) {
+            interrupt::run_helper(args.get(1).map(String::as_str));
+        }
+    }
+
     // Claude Desktop only loads stdio MCP servers, so its one-click setup points
     // it at this same binary in bridge mode: it proxies MCP over stdin/stdout to
-    // the running app's /mcp endpoint. Handled before anything else — no window,
+    // the running app's /mcp endpoint. Handled before the app starts — no window,
     // no tray icon, no second server, and no hand-off to the running instance.
     if std::env::args().skip(1).any(|a| mcp_stdio::is_bridge_arg(&a)) {
         mcp_stdio::run_bridge();
@@ -822,10 +1278,9 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // A second launch just focuses the running window (never a 2nd
             // server) — and forwards any archives it was asked to open.
-            queue_open_files(app, collect_zip_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
+            queue_open_files(app, collect_open_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
+                bring_to_front(&w);
             }
         }))
         .plugin(tauri_plugin_shell::init())
@@ -849,9 +1304,10 @@ pub fn run() {
     let context = tauri::generate_context!();
 
     // Update support exists only in builds made with the signing key: CI then
-    // applies tauri.updater.conf.json, which is what puts an `updater` entry in
-    // the compiled config. Without it the plugin stays out entirely and the
-    // update commands report "unsupported".
+    // applies an updater overlay (tauri.updater.conf.json for .msi,
+    // tauri.updater.nsis.conf.json for the per-user .exe), which is what puts an
+    // `updater` entry in the compiled config. Without it the plugin stays out
+    // entirely and the update commands report "unsupported".
     let updater_supported = context.config().plugins.0.contains_key("updater");
     if updater_supported {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -863,7 +1319,9 @@ pub fn run() {
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_open_external,
+            desktop_open_in_ide,
             desktop_open_window,
+            desktop_bring_to_front,
             desktop_notify,
             desktop_log,
             desktop_save_download,
@@ -875,9 +1333,12 @@ pub fn run() {
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
+            desktop_run_repro,
             desktop_set_project_start_command,
             desktop_reproduce_here,
             desktop_bisect_here,
+            desktop_flake_lab_here,
+            desktop_flake_lab_job,
             desktop_check_local_specs,
             desktop_check_local_env,
             desktop_take_pending_open_files,
@@ -885,13 +1346,19 @@ pub fn run() {
             desktop_mcp_connect,
             desktop_mcp_disconnect,
             desktop_mcp_reveal,
+            desktop_skills_read,
+            desktop_skills_write,
             desktop_check_update,
             desktop_install_update,
             desktop_restart_app,
-            desktop_set_activity
+            desktop_get_update_settings,
+            desktop_set_update_notification,
+            desktop_set_activity,
+            desktop_set_run_progress
         ])
         .manage(ServerProcess::default())
         .manage(runner::LocalRuns::default())
+        .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())
         .manage(updates::UpdaterSupport(updater_supported))
@@ -933,7 +1400,7 @@ pub fn run() {
 
             // --- publish connection details for the Playwright reporter ---
             match app.path().home_dir().map_err(|e| e.to_string()).and_then(|home| {
-                write_discovery_file(&home, port, &token).map_err(|e| e.to_string())
+                write_discovery_file(&home, port, &token, &runner::read_links(app.handle())).map_err(|e| e.to_string())
             }) {
                 Ok(path) => {
                     append_log(&log_path, &format!("reporter discovery file: {}", path.display()));
@@ -1027,6 +1494,9 @@ pub fn run() {
                     &ready_log,
                     if ready { "server ready" } else { "server NOT ready within timeout" },
                 );
+                // Startup has settled: look for an update and announce one
+                // (a no-op when the build cannot update or the user opted out).
+                tauri::async_runtime::spawn(updates::notify_if_update_available(nav_handle.clone()));
                 let inner = nav_handle.clone();
                 let _ = nav_handle.run_on_main_thread(move || {
                     if let Some(w) = inner.get_webview_window("main") {
@@ -1070,9 +1540,7 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Piwi Dashboard (click to open)")
                 .menu(&menu)
-                // Left-click opens the window; right-click shows the menu. Without
-                // this a left-click did nothing, so the tray looked inert (and on
-                // Windows the icon hides in the overflow area by default).
+                // Left-click opens the window; right-click shows the menu.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -1082,16 +1550,14 @@ pub fn run() {
                     } = event
                     {
                         if let Some(w) = tray.app_handle().get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                            bring_to_front(&w);
                         }
                     }
                 })
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => {
                         if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
+                            bring_to_front(&w);
                         }
                     }
                     "open_folder" => {
@@ -1164,7 +1630,7 @@ pub fn run() {
             let launch_cwd = std::env::current_dir().ok();
             queue_open_files(
                 app.handle(),
-                collect_zip_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
+                collect_open_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
             );
 
             // e2e builds: grant the Playwright plugin's result-callback command to
@@ -1174,6 +1640,13 @@ pub fn run() {
             #[cfg(feature = "e2e-testing")]
             {
                 let _ = app.handle().add_capability(E2E_PLAYWRIGHT_CAPABILITY);
+            }
+
+            // Windows: add the Stop/Open buttons to the main window's taskbar
+            // thumbnail toolbar (no-op on other platforms).
+            #[cfg(windows)]
+            if let Some(main) = app.get_webview_window("main") {
+                taskbar_win::install(&main);
             }
 
             Ok(())
@@ -1202,34 +1675,7 @@ pub fn run() {
         .build(context)
         .expect("error while building the Piwi Dashboard app")
         .run(|app_handle, event| match event {
-            RunEvent::ExitRequested { .. } => {
-                // Remember whether the window was maximized so the next launch
-                // restores it (first launch, with no stored value, maximizes).
-                if let Some(w) = app_handle.get_webview_window("main") {
-                    if let Ok(store) = app_handle.store(STORE_FILE) {
-                        store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
-                        let _ = store.save();
-                    }
-                }
-                // Tell the supervisor this stop is deliberate so it doesn't restart
-                // the server we are about to kill.
-                if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
-                    flag.0.store(true, Ordering::SeqCst);
-                }
-                // Best-effort: stop the bundled server so no orphan process lingers.
-                if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
-                // Local test runs die with the shell — never orphan a browser fleet.
-                if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
-                    runs.kill_all();
-                }
-                // Withdraw the reporter discovery file with the server it points
-                // at, so a later test run does not try a dead port.
-                if let Some(discovery) = app_handle.try_state::<DiscoveryFile>() {
-                    let _ = std::fs::remove_file(&discovery.0);
-                }
-            }
+            RunEvent::ExitRequested { .. } => shut_down(app_handle, None),
             // macOS delivers file-association opens as an event, not argv.
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => {
@@ -1237,12 +1683,11 @@ pub fn run() {
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
                     .map(|p| p.to_string_lossy().to_string())
-                    .filter(|p| p.to_lowercase().ends_with(".zip"))
+                    .filter(|p| is_opened_file(p))
                     .collect();
                 queue_open_files(app_handle, paths);
                 if let Some(w) = app_handle.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
+                    bring_to_front(&w);
                 }
             }
             _ => {}
@@ -1251,8 +1696,112 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_log_line, debug_mode_requested, is_truthy_flag, write_new_download};
+    use super::{
+        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
+        ide_launcher_args, is_safe_launcher_command, is_truthy_flag, progress_bar_status,
+        render_status_dot, status_dot_color, write_new_download,
+    };
     use std::fs;
+    use tauri::window::ProgressBarStatus;
+
+    #[test]
+    fn discovery_lists_the_linked_projects_by_id() {
+        let mut links = std::collections::HashMap::new();
+        let link = |path: &str| crate::runner::LinkRecord { path: path.into(), ..Default::default() };
+        links.insert("12".to_string(), link("/work/shop"));
+        links.insert("3".to_string(), link("/work/admin"));
+        links.insert("not-an-id".to_string(), link("/work/other"));
+        assert_eq!(
+            discovery_body(3001, "pd_x", &links),
+            serde_json::json!({
+                "url": "http://127.0.0.1:3001",
+                "token": "pd_x",
+                "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
+            })
+        );
+    }
+
+    #[test]
+    fn tooltip_composes_run_progress_unread_and_idle() {
+        // Idle: nothing to say.
+        assert_eq!(compose_tooltip(0, None, None), "Piwi Dashboard (click to open)");
+        // Unread only, no run in flight.
+        assert_eq!(compose_tooltip(2, None, None), "Piwi Dashboard — 2 unread");
+        assert_eq!(
+            compose_tooltip(2, Some("acme-web: failure"), None),
+            "Piwi Dashboard — 2 unread — acme-web: failure"
+        );
+        // A run in flight leads and its label is what shows.
+        assert_eq!(
+            compose_tooltip(0, None, Some("Running 7/12…")),
+            "Piwi Dashboard — Running 7/12…"
+        );
+        // Both signals: the run leads, the count follows, the notification status
+        // line is dropped (the run is the more useful thing to surface).
+        assert_eq!(
+            compose_tooltip(3, Some("acme-web: failure"), Some("Running 7/12…")),
+            "Piwi Dashboard — Running 7/12… — 3 unread"
+        );
+        // Empty strings are treated as absent, not shown as blanks.
+        assert_eq!(compose_tooltip(0, Some(""), Some("")), "Piwi Dashboard (click to open)");
+    }
+
+    #[test]
+    fn progress_state_maps_to_a_bar_status_and_none_clears() {
+        assert!(matches!(progress_bar_status("normal"), Some(ProgressBarStatus::Normal)));
+        assert!(matches!(
+            progress_bar_status("indeterminate"),
+            Some(ProgressBarStatus::Indeterminate)
+        ));
+        assert!(matches!(progress_bar_status("paused"), Some(ProgressBarStatus::Paused)));
+        assert!(matches!(progress_bar_status("error"), Some(ProgressBarStatus::Error)));
+        // "none" and anything unrecognised clear the bar.
+        assert!(progress_bar_status("none").is_none());
+        assert!(progress_bar_status("").is_none());
+        assert!(progress_bar_status("bogus").is_none());
+    }
+
+    #[test]
+    fn status_dot_color_maps_states_to_colours() {
+        assert_eq!(status_dot_color("error", None, false), Some((220, 38, 38)));
+        assert_eq!(status_dot_color("paused", None, false), Some((217, 119, 6)));
+        // Running is blue; the finished-pass flash (normal at 100%) is green.
+        assert_eq!(status_dot_color("normal", Some(0.5), false), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("indeterminate", None, false), Some((37, 99, 235)));
+        assert_eq!(status_dot_color("normal", Some(1.0), false), Some((22, 163, 74)));
+        // Idle / unknown clears the dot so the app icon shows through.
+        assert_eq!(status_dot_color("none", None, false), None);
+        assert_eq!(status_dot_color("bogus", Some(1.0), false), None);
+    }
+
+    #[test]
+    fn a_run_with_failures_shows_a_red_dot_while_it_runs() {
+        let red = Some((220, 38, 38));
+        assert_eq!(status_dot_color("normal", Some(0.5), true), red);
+        assert_eq!(status_dot_color("indeterminate", None, true), red);
+        assert_eq!(status_dot_color("normal", Some(1.0), true), red);
+        // Failing never lights up an idle icon or recolours an interrupted run.
+        assert_eq!(status_dot_color("none", None, true), None);
+        assert_eq!(
+            status_dot_color("paused", Some(1.0), true),
+            Some((217, 119, 6))
+        );
+    }
+
+    #[test]
+    fn status_dot_is_opaque_at_the_centre_and_clear_at_the_corners() {
+        let size = 32u32;
+        let rgba = render_status_dot((10, 20, 30), size);
+        assert_eq!(rgba.len(), (size * size * 4) as usize);
+        let px = |x: u32, y: u32| {
+            let i = ((y * size + x) * 4) as usize;
+            (rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3])
+        };
+        // Centre: fully opaque, in the requested colour.
+        assert_eq!(px(size / 2, size / 2), (10, 20, 30, 255));
+        // Corner: fully transparent.
+        assert_eq!(px(0, 0).3, 0);
+    }
 
     #[test]
     fn truthy_flag_treats_only_off_words_and_empty_as_false() {
@@ -1290,6 +1839,68 @@ mod tests {
     }
 
     #[test]
+    fn vscode_launcher_args_put_the_position_after_the_path() {
+        assert_eq!(
+            ide_launcher_args("vscode", "/repo/a.ts", Some(12), Some(3)).unwrap(),
+            vec!["--goto".to_string(), "/repo/a.ts:12:3".to_string()]
+        );
+        // Line only, then no position at all.
+        assert_eq!(
+            ide_launcher_args("vscode", "/repo/a.ts", Some(9), None).unwrap(),
+            vec!["--goto".to_string(), "/repo/a.ts:9".to_string()]
+        );
+        assert_eq!(
+            ide_launcher_args("vscode", "/repo/a.ts", None, None).unwrap(),
+            vec!["--goto".to_string(), "/repo/a.ts".to_string()]
+        );
+    }
+
+    #[test]
+    fn jetbrains_launcher_args_put_the_flags_before_the_path() {
+        assert_eq!(
+            ide_launcher_args("jetbrains", "/repo/a.ts", Some(12), Some(3)).unwrap(),
+            vec![
+                "--line".to_string(),
+                "12".to_string(),
+                "--column".to_string(),
+                "3".to_string(),
+                "/repo/a.ts".to_string()
+            ]
+        );
+        // A column without a line is dropped — the launcher needs the line first.
+        assert_eq!(
+            ide_launcher_args("jetbrains", "/repo/a.ts", None, Some(3)).unwrap(),
+            vec!["/repo/a.ts".to_string()]
+        );
+    }
+
+    #[test]
+    fn unknown_ide_family_is_rejected() {
+        assert!(ide_launcher_args("emacs", "/repo/a.ts", None, None).is_err());
+    }
+
+    #[test]
+    fn launcher_command_allows_bare_names_and_rejects_anything_path_or_shell_like() {
+        for ok in ["code", "code-insiders", "rider", "idea", "webstorm64", "rustrover"] {
+            assert!(is_safe_launcher_command(ok), "{ok} should be allowed");
+        }
+        for bad in [
+            "",
+            " code",
+            "-rf",
+            "/usr/bin/code",
+            "code me",
+            "code;rm -rf /",
+            "code$(whoami)",
+            "code|cat",
+            "..",
+            &"c".repeat(65),
+        ] {
+            assert!(!is_safe_launcher_command(bad), "{bad:?} should be rejected");
+        }
+    }
+
+    #[test]
     fn does_not_overwrite_an_existing_download() {
         let dir = std::env::temp_dir().join(format!("piwi-dl-a-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -1323,6 +1934,31 @@ mod tests {
         let _ = write_new_download(&dir, "a.txt", b"2").unwrap();
         let p3 = write_new_download(&dir, "a.txt", b"3").unwrap();
         assert_eq!(p3.file_name().unwrap(), "a (2).txt");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn opens_archives_and_bug_reports_that_exist() {
+        let dir = std::env::temp_dir().join(format!("piwi-open-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for name in ["run.zip", "bug.PIWIBUG", "notes.txt"] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        let args = [
+            "--devtools",
+            "run.zip",
+            "bug.PIWIBUG",
+            "notes.txt",
+            "missing.piwibug",
+        ];
+        let opened = collect_open_args(args.into_iter(), Some(dir.as_path()));
+        assert_eq!(
+            opened,
+            [
+                dir.join("run.zip").to_string_lossy().to_string(),
+                dir.join("bug.PIWIBUG").to_string_lossy().to_string(),
+            ]
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

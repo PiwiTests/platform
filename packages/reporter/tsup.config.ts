@@ -15,8 +15,8 @@ export default defineConfig({
     // bundle stays free of CLI-only code.
     'src/cli/index.ts',
     // The dashboard dogfoods the reporter by deep-importing these internal
-    // capture modules from `dist/` (see application/tests/fixtures.ts), so they
-    // must keep their own emitted files at the same paths tsc produced.
+    // capture modules from `dist/` (see application/tests/fixtures.ts), so each
+    // keeps its own emitted file at `dist/internal/capture/<name>.js`.
     'src/internal/capture/locator-healing.ts',
     'src/internal/capture/capture-fixtures.ts',
     'src/internal/capture/inspect-on-failure.ts',

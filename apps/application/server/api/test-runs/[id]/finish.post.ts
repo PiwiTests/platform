@@ -1,50 +1,20 @@
 import { sql, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
-import type { DbClient } from '../../../database';
-import { testRuns, testRunsCases } from '../../../database/schema';
+import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
+import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
+import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { autoDiagnoseRun } from '../../../utils/ai-diagnosis';
-import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
-import { emitRunNotifications } from '../../../utils/notifications/run-notifications';
-import { postRunPrFeedbackInBackground } from '../../../utils/scm/pr-feedback';
-import { maybeEnqueueHealActionInBackground } from '../../../utils/heal/policy';
-import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
-import { syncAutoMarkersForRun } from '#shared/handlers/markers';
-import { FAILED_STATUS_KEYS, sumFailedAndTimedOut } from '#shared/utils/test-counts';
-
-const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
-
-/**
- * Whether any test in the run failed, judged by each test's last attempt per browser.
- * The `failedTests` counter counts attempts, so it would fail flaky-only runs.
- */
-async function hasFinalAttemptFailure(db: DbClient, runId: number): Promise<boolean> {
-  const rows = await db
-    .select({
-      testCaseId: testRunsCases.testCaseId,
-      browserName: testRunsCases.browserName,
-      retries: testRunsCases.retries,
-      status: testRunsCases.status,
-    })
-    .from(testRunsCases)
-    .where(eq(testRunsCases.testRunId, runId));
-
-  const finalAttempts = new Map<string, { retries: number; status: string }>();
-  for (const row of rows) {
-    const key = `${row.testCaseId}|${row.browserName ?? ''}`;
-    const retries = row.retries ?? 0;
-    const prev = finalAttempts.get(key);
-    if (!prev || retries > prev.retries) finalAttempts.set(key, { retries, status: row.status });
-  }
-
-  for (const attempt of finalAttempts.values()) {
-    if (FAIL_STATUSES.has(attempt.status)) return true;
-  }
-  return false;
-}
+import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
+import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
+import { keepIncidentMetadata } from '#shared/run-incident';
+import { withPendingStatus } from '../../../utils/finalizing-runs';
+import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -112,8 +82,9 @@ export default eventHandler(async (event) => {
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-  const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
+  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
+  await applyReporterKeep(db, id, body.keep);
 
   // Determine final status
   const status = body.status ?? 'failed';
@@ -135,6 +106,11 @@ export default eventHandler(async (event) => {
   const flakyTests = body.flakyTests ?? 0;
 
   const hasPendingUploads = body.hasPendingUploads === true;
+
+  // This reporter's resource report, in its own row: shards finishing at once
+  // each write theirs, and none overwrites another's.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
 
   if (isSharded) {
     // Sharded run: track shardsFinished; duration is the maximum across shards.
@@ -161,6 +137,8 @@ export default eventHandler(async (event) => {
       // Postgres, so use a CASE expression that runs on both dialects.
       duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`,
       metadata: { ...currentMeta, shardDurations: allDurations },
+      // The first shard to report a branch names the run's branch.
+      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
@@ -183,8 +161,11 @@ export default eventHandler(async (event) => {
       updatedRun.shardTotal != null &&
       updatedRun.shardsFinished >= updatedRun.shardTotal
     ) {
-      // All shards done — determine final status
-      finalStatus = (await hasFinalAttemptFailure(db, id)) ? 'failed' : 'passed';
+      // All shards done — recompute distinct-test counters from the persisted
+      // rows (the per-shard events counted attempts) and derive the final status
+      // from them, so a flaky-only sharded run reads as passed with no failures.
+      const counts = await computeRunCountsFromRows(db, id);
+      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
       if (allDurations.length > 0) {
         const aggStats = durationStats(allDurations);
@@ -205,6 +186,14 @@ export default eventHandler(async (event) => {
           status: finalStatus,
           streamToken: null,
           duration: updatedRun.duration, // keep max duration
+          // The planned total (summed across shards at /start), or the distinct
+          // rows when a shard reported no planned count.
+          totalTests: Math.max(updatedRun.totalTests ?? 0, counts.totalTests),
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
@@ -218,12 +207,12 @@ export default eventHandler(async (event) => {
         data: {
           status: finalStatus,
           duration: updatedRun.duration,
-          totalTests: updatedRun.totalTests,
-          passedTests: updatedRun.passedTests,
-          failedTests: updatedRun.failedTests,
-          skippedTests: updatedRun.skippedTests,
-          didNotRunTests: updatedRun.didNotRunTests,
-          flakyTests: updatedRun.flakyTests,
+          totalTests: Math.max(updatedRun.totalTests ?? 0, counts.totalTests),
+          passedTests: counts.passedTests,
+          failedTests: counts.failedTests,
+          skippedTests: counts.skippedTests,
+          didNotRunTests: counts.didNotRunTests,
+          flakyTests: counts.flakyTests,
         },
       });
 
@@ -234,16 +223,7 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      computeRegressionSignals(db, id).catch((e) =>
-        console.error('[regression-signals] computeRegressionSignals failed', e),
-      );
-      syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-      autoDiagnoseRun(db, testRun.projectId, id).catch((e) =>
-        console.error('[ai-diagnosis] autoDiagnoseRun failed', e),
-      );
-      emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-      postRunPrFeedbackInBackground(db, id);
-      maybeEnqueueHealActionInBackground(db, id);
+      await runFinalizeSideEffects(db, id, testRun);
 
       runEventBus.cleanup(id);
     } else {
@@ -280,12 +260,12 @@ export default eventHandler(async (event) => {
     : testRun.failedTests;
 
   if (hasPendingUploads) {
-    runEventBus.setFinalStatus(id, status);
-
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
       streamToken: null,
+      // The stale-run sweep measures the wait for the report upload from here.
+      updatedAt: new Date(),
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
@@ -294,7 +274,15 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      // The reported status waits in the metadata, where it survives a restart,
+      // until the report upload or the stale-run sweep settles the run.
+      metadata: withPendingStatus(
+        body.metadata
+          ? keepIncidentMetadata(testRun.metadata, carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata))
+          : testRun.metadata,
+        status,
+      ),
+      ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
@@ -335,7 +323,13 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      ...(body.metadata && {
+        metadata: keepIncidentMetadata(
+          testRun.metadata,
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        ),
+        branch: resolveRunBranch(body.metadata),
+      }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
@@ -362,14 +356,7 @@ export default eventHandler(async (event) => {
 
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
-    computeRegressionSignals(db, id).catch((e) =>
-      console.error('[regression-signals] computeRegressionSignals failed', e),
-    );
-    syncAutoMarkersForRun(db, id).catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e));
-    autoDiagnoseRun(db, testRun.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-    emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
-    postRunPrFeedbackInBackground(db, id);
-    maybeEnqueueHealActionInBackground(db, id);
+    await runFinalizeSideEffects(db, id, testRun);
 
     runEventBus.cleanup(id);
   }

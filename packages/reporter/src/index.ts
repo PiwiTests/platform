@@ -24,7 +24,8 @@ export { piwiFixtures, extendPiwiFixtures } from './internal/capture/capture-fix
 export { piwiAiFixtures, extendPiwiAi } from './internal/ai/ai-fixtures.js';
 
 // ── Public types ─────────────────────────────────────────────────────────────
-export type { PiwiFixtures } from './internal/capture/capture-fixtures.js';
+export type { PiwiFixtures, PiwiWorkerFixtures } from './internal/capture/capture-fixtures.js';
 export type { PiwiAi, AiMode, AiOnMiss } from './internal/ai/ai-fixtures.js';
 export type { PiwiDashboardOptions, PlaywrightTestConfig } from './public/options.js';
 export type { ResolveSelectionResult, ResolveSelectionOptions } from './public/selection.js';
+export type { PiwiConfig, PiwiCodegenConfig } from './public/piwi-config.js';

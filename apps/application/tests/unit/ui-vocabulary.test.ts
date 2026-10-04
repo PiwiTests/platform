@@ -142,6 +142,8 @@ const RULES: Rule[] = [
     id: 'executions-tab',
     hint: 'the executions list tab is "Tests"',
     re: /(?<![-\w])label\s*[:=]\s*(['"])Executions\1/,
+    // A group header's spec-health figure counts executions; only a tab is named "Tests".
+    allow: ({ rel }) => rel.endsWith('project/ProjectTestCasesTable.vue'),
   },
   {
     id: 'extract-button',

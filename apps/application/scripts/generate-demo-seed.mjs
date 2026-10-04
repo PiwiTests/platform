@@ -42,6 +42,8 @@ import {
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
+import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
+import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Overridable so concurrent callers (e.g. two unit test files regenerating in
@@ -142,6 +144,8 @@ const PROJECTS = [
     description: 'End-to-end tests for the checkout flow',
     created_at: ts('2025-03-01'),
     updated_at: ts('2025-04-25T08:30:00'),
+    // Targets the checkout suite misses, so the demo report has missed targets in its risks.
+    targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
   },
   {
     id: 2,
@@ -158,6 +162,8 @@ const PROJECTS = [
     description: 'Visual regression tests for UI components',
     created_at: ts('2025-01-10'),
     updated_at: ts('2025-04-24T16:45:00'),
+    // Targets the component suite meets.
+    targets: { testPassRate: 60, maxOpenClusterAgeDays: 400 },
   },
   {
     id: 4,
@@ -166,6 +172,11 @@ const PROJECTS = [
     description: 'Mobile Safari browser compatibility tests',
     created_at: ts('2025-04-01'),
     updated_at: ts('2025-04-20T12:00:00'),
+    // Project-level declines with no evidence behind them, so the demo shows the
+    // `declined` state: the Timeline tab offers no "Add marker" control here, and
+    // with no graph rows the Test Map decline hides the Gaps tab (server probes
+    // ride it, so they go too).
+    capabilities: { markers: 'declined', 'test-map': 'declined' },
   },
   {
     id: 5,
@@ -195,6 +206,158 @@ const PROJECT_TAGS = [
   { project_id: 5, tag_id: 3 }, // web-dashboard → critical
 ];
 
+// Where e2e-checkout's application runs, for the browser extension (millisecond timestamps).
+const URL_PATTERN_TIME = new Date('2025-04-20T09:00:00Z').getTime();
+const PROJECT_URL_PATTERNS = [
+  {
+    pattern: 'https://staging.checkout.example.com/**',
+    environment: 'staging',
+    branch: 'develop',
+    path_prefix: null,
+    test_path_prefix: null,
+  },
+  {
+    pattern: 'https://checkout.example.com/**',
+    environment: 'production',
+    branch: null,
+    path_prefix: null,
+    test_path_prefix: null,
+  },
+  // A preview deployment serving the app under /app, where the tests ran at the root.
+  {
+    pattern: 'https://preview.checkout.example.com/app/**',
+    environment: 'preview',
+    branch: null,
+    path_prefix: '/app',
+    test_path_prefix: null,
+  },
+  // A local build served at the root, where the tests ran under /shop.
+  {
+    pattern: 'http://localhost:4173/**',
+    environment: 'local',
+    branch: null,
+    path_prefix: null,
+    test_path_prefix: '/shop',
+  },
+].map((p, position) => ({
+  id: position + 1,
+  project_id: 1,
+  ...p,
+  position,
+  created_at: URL_PATTERN_TIME,
+  updated_at: URL_PATTERN_TIME,
+}));
+
+// ── Bug reports (sent from Piwi Picker's Report a bug) ─────────────────────
+// One open report on the checkout project, with the steps a tester recorded on
+// staging, the value the page showed, and the evidence they chose to send.
+const BUG_REPORT_TIME = Math.floor(new Date('2025-04-24T15:20:00Z').getTime() / 1000);
+const bugTarget = (t) => ({ tagName: 'button', role: null, accessibleName: null, testId: null, text: null, ...t });
+const BUG_REPORTS = [
+  {
+    id: 1,
+    project_id: 1,
+    title: 'Coupon not applied to the total',
+    note: null,
+    page_key: '/cart',
+    path: '/cart',
+    origin: 'https://staging.checkout.example.com',
+    status: 'open',
+    steps: {
+      v: 1,
+      title: 'Coupon not applied to the total',
+      origin: 'https://staging.checkout.example.com',
+      recordedAt: 0,
+      note: null,
+      steps: [
+        { action: 'goto', target: null, value: '/cart', redacted: false, pageUrl: '/cart', timestamp: 1 },
+        {
+          action: 'fill',
+          target: bugTarget({
+            tagName: 'input',
+            role: 'textbox',
+            accessibleName: 'Coupon',
+            alternatives: [{ locator: "getByLabel('Coupon')", method: 'getByLabel', score: 90 }],
+          }),
+          value: 'SPRING10',
+          redacted: false,
+          pageUrl: '/cart',
+          timestamp: 2,
+        },
+        {
+          action: 'click',
+          target: bugTarget({
+            role: 'button',
+            accessibleName: 'Apply coupon',
+            alternatives: [
+              { locator: "getByRole('button', { name: 'Apply coupon' })", method: 'getByRole', score: 90 },
+            ],
+          }),
+          value: null,
+          redacted: false,
+          pageUrl: '/cart',
+          timestamp: 3,
+        },
+        {
+          action: 'assert',
+          target: bugTarget({
+            tagName: 'p',
+            testId: 'cart-total',
+            text: 'Total: 40.00',
+            alternatives: [{ locator: "getByTestId('cart-total')", method: 'getByTestId', score: 95 }],
+          }),
+          value: null,
+          redacted: false,
+          pageUrl: '/cart',
+          timestamp: 4,
+          assertion: {
+            matcher: 'toHaveText',
+            expected: 'Total: 36.00',
+            actual: 'Total: 40.00',
+            negated: false,
+            note: 'The 10% coupon is accepted but the total does not change',
+          },
+        },
+      ],
+    },
+    evidence: {
+      console: [{ level: 'error', source: 'console', message: 'Coupon service failed: 500', page: '/cart', time: 4 }],
+      consoleDropped: 0,
+      requests: [{ method: 'POST', url: '/api/cart/coupon', status: 500, page: '/cart', time: 4 }],
+      requestsDropped: 0,
+      screenshots: [],
+      screenshotNote: 'none was taken',
+      outline:
+        '- main:\n  - heading "Your cart" [level=1]\n  - textbox "Coupon": SPRING10\n  - button "Apply coupon"\n  - paragraph: "Total: 40.00"',
+    },
+    context: {
+      origin: 'https://staging.checkout.example.com',
+      pageKey: '/cart',
+      path: '/cart',
+      browser: 'Chrome 141',
+      userAgent: null,
+      viewport: { width: 1440, height: 900 },
+      time: 0,
+      extensionVersion: '0.41.0',
+    },
+    language: 'en',
+    created_at: BUG_REPORT_TIME,
+    updated_at: BUG_REPORT_TIME,
+  },
+];
+const BUG_REPRODUCTIONS = [
+  {
+    id: 1,
+    bug_report_id: 1,
+    source: 'replay',
+    verdict: 'reproduced',
+    diverged_at: null,
+    origin: 'http://localhost:3000',
+    user_agent: null,
+    created_at: BUG_REPORT_TIME + 3600,
+  },
+];
+
 // ── Timeline markers (dated project events overlaid on the trend charts) ────
 // Dated within project 1's run window (newest run 2025-04-25T08:30Z, ~8h apart)
 // so they land on the charts. Timestamps are rebased to load time like the runs.
@@ -213,6 +376,26 @@ const APP_SETTINGS = [
     updated_at: ts('2025-04-20T09:00:00'),
   },
 ];
+// Runs kept forever: the v2.4.0 release run (by the release marker linked to
+// it below), one older run kept by hand, and one the reporter kept at ingest.
+function keepColumnsFor(projectId, runIndex, startTime) {
+  if (projectId === 1 && runIndex === 0) {
+    return { kept_at: startTime, kept_by: null, keep_source: 'marker', keep_reason: 'v2.4.0' };
+  }
+  if (projectId === 1 && runIndex === 17) {
+    return {
+      kept_at: startTime + 7200,
+      kept_by: null,
+      keep_source: 'user',
+      keep_reason: 'Reference run for the Q2 audit',
+    };
+  }
+  if (projectId === 2 && runIndex === 10) {
+    return { kept_at: startTime, kept_by: null, keep_source: 'reporter', keep_reason: null };
+  }
+  return { kept_at: null, kept_by: null, keep_source: null, keep_reason: null };
+}
+
 const MARKERS = [
   {
     id: 1,
@@ -350,6 +533,38 @@ function seedNormalizeUrl(url) {
 
 const TEST_RUNS = [];
 const TEST_RUNS_CASES = [];
+// Content-addressed payloads (the page each locator call ran on), one per distinct content.
+const CASE_PAYLOADS = [];
+const casePayloadIds = new Map();
+
+/**
+ * The `piwi-locator-pages` payload the capture fixtures would have recorded for
+ * a case of this project: each step with a call site and a page, on the
+ * project's origin. Null when the project's steps record none.
+ */
+function locatorPagesPayloadId(proj) {
+  if (!proj.baseUrl) return null;
+  const origin = new URL(proj.baseUrl).origin;
+  const entries = proj.stepTitles
+    .filter((st) => st.location && st.page && st.params?.locator)
+    .map((st) => ({ location: st.location, locator: st.params.locator, origin, page: st.page, arrival: !!st.arrival }));
+  if (entries.length === 0) return null;
+  const content = JSON.stringify(entries);
+  const key = `${proj.id}\x00${content}`;
+  if (!casePayloadIds.has(key)) {
+    const id = CASE_PAYLOADS.length + 1;
+    CASE_PAYLOADS.push({
+      id,
+      project_id: proj.id,
+      hash: createHash('sha256').update(content).digest('hex'),
+      content,
+      size: content.length,
+      created_at: ts('2025-04-01'),
+    });
+    casePayloadIds.set(key, id);
+  }
+  return casePayloadIds.get(key);
+}
 const NETWORK_REQUESTS = [];
 const REPORTS = [];
 const FAILURE_CLUSTERS = [];
@@ -387,6 +602,14 @@ const PROJECT_CONFIGS = {
 const BASE_START_MS = new Date('2025-04-25T08:30:00Z').getTime();
 
 const ENVIRONMENTS = ['production', 'staging', 'integration', 'development'];
+// The Playwright baseURL of e2e-checkout's runs in each environment; developers'
+// runs alternate between two local servers.
+const CHECKOUT_BASE_URLS = {
+  production: ['https://checkout.example.com'],
+  staging: ['https://staging.checkout.example.com'],
+  integration: ['https://integration.checkout.example.com'],
+  development: ['http://localhost:3000', 'http://localhost:5173'],
+};
 const RUN_GREPS = {
   1: 'checkout|cart',
   2: 'auth|orders',
@@ -406,9 +629,10 @@ const SEED_FIRST_REQUEST_OFFSET_MS = 120;
 const SEED_REQUEST_GAP_MS = 35;
 
 /**
- * Build realistic `step_events` for a seeded case: before/after hooks, the
- * context/page fixtures, framework-injected waits, and — for wait-heavy cases —
- * an explicit `Wait for timeout` sleep that counts as wasted time under the
+ * Build realistic `step_events` for a seeded case: the `Before Hooks` and
+ * `After Hooks` sections with the hooks and fixtures they ran (as the reporter
+ * records them), framework-injected waits, and — for wait-heavy cases — an
+ * explicit `Wait for timeout` sleep that counts as wasted time under the
  * default wasted-wait patterns. Segment offsets are emitted as absolute epoch ms
  * anchored to the case's start so the timeline can place each segment. Returns
  * the events plus the total wasted ms (sum of the explicit timeout sleeps).
@@ -416,17 +640,24 @@ const SEED_REQUEST_GAP_MS = 35;
 function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
   const events = [];
   let offset = 0;
-  const seg = (title, category, duration, status, loc = null) => {
-    events.push({ title, category, startedAt: caseStartMs + offset, duration, status, location: loc });
+  const seg = (title, category, duration, status, loc = null, hooks = null) => {
+    const event = { title, category, startedAt: caseStartMs + offset, duration, status, location: loc };
+    if (hooks) event.hooks = hooks;
+    events.push(event);
     offset += duration;
   };
   // Each framework segment is a fraction of the test duration, clamped so it
   // stays visible without overflowing short tests.
   const frac = (f, min, max) => Math.max(min, Math.min(max, Math.round(caseDuration * f)));
 
-  seg('Before Hooks', 'hook', frac(0.06, 60, 200), 'passed');
-  seg('fixture: context', 'fixture', frac(0.04, 40, 120), 'passed');
-  seg('fixture: page', 'fixture', frac(0.03, 30, 90), 'passed');
+  const context = frac(0.04, 40, 120);
+  const page = frac(0.03, 30, 90);
+  const beforeEach = frac(0.06, 60, 200);
+  seg('Before Hooks', 'hook', context + page + beforeEach, 'passed', null, [
+    { title: 'Fixture "context"', category: 'fixture', duration: context },
+    { title: 'Fixture "page"', category: 'fixture', duration: page },
+    { title: 'beforeEach hook', category: 'hook', duration: beforeEach },
+  ]);
   // Framework-injected navigation wait — not wasted.
   seg('Wait for load state', 'wait', frac(0.1, 80, 600), 'passed');
 
@@ -439,7 +670,14 @@ function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
   }
   // Wait for selector — framework-injected, not wasted.
   seg('Wait for selector', 'wait', frac(0.06, 40, 500), 'passed');
-  seg('After Hooks', 'hook', frac(0.05, 50, 160), 'passed');
+  // Teardown closes the test, after its body.
+  const afterHooks = frac(0.05, 50, 160);
+  const afterEach = Math.round(afterHooks * 0.6);
+  offset = Math.max(offset, caseDuration - afterHooks);
+  seg('After Hooks', 'hook', afterHooks, 'passed', null, [
+    { title: 'afterEach hook', category: 'hook', duration: afterEach },
+    { title: 'Fixture "page"', category: 'fixture', duration: afterHooks - afterEach },
+  ]);
 
   return { stepEvents: events, wastedMs };
 }
@@ -451,6 +689,7 @@ function shapeStep(src, duration, startTime) {
   // curated arguments in `params`.
   if (src.subtitle) step.subtitle = src.subtitle;
   if (src.params) step.params = src.params;
+  if (src.location) step.location = src.location;
   return step;
 }
 
@@ -488,6 +727,20 @@ function buildSteps(proj, caseDuration, caseStartMs) {
     }
   }
   return out;
+}
+
+/**
+ * Re-anchor a story's backend log entries onto the request that produced them.
+ * The stories carry one illustrative epoch clock shared by every run, so used
+ * verbatim the entries land wherever that clock sits relative to each run
+ * (minutes to days away from the request). Keep their spacing and put the first
+ * one mid-request, so the timeline's backend lane lines up with its request.
+ */
+function anchorServerLogs(logs, requestStartMs, requestDurationMs) {
+  if (!logs?.length) return null;
+  const first = Math.min(...logs.map((l) => l.timestamp));
+  const at = requestStartMs + Math.round((requestDurationMs ?? 0) / 2);
+  return logs.map((l) => ({ ...l, timestamp: at + (l.timestamp - first) }));
 }
 
 /** Themed network requests for one case (jittered durations; story overrides on failures). */
@@ -702,6 +955,8 @@ for (const proj of DEMO_PROJECTS) {
     const didNotRunTests = didNotRunCaseIds.size;
     const passedTests = caseIds.length - failedTests - didNotRunTests;
 
+    const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
+    const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
     const metadata = {
       ci: {
         provider: 'GitHub Actions',
@@ -716,6 +971,26 @@ for (const proj of DEMO_PROJECTS) {
         author: commit.author,
         commitMessage: commit.message,
       },
+      ...(baseUrls
+        ? {
+            htmlReport: {
+              projects: [
+                { name: 'chromium', use: { baseURL: baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length] } },
+              ],
+            },
+          }
+        : {}),
+      // One run that came in over the ingest caps through the batch upload,
+      // so the run page shows what ingest left out.
+      ...(proj.id === 1 && i === 3
+        ? {
+            ingestHealth: {
+              stepsDropped: 1240,
+              consoleEntriesDropped: 312,
+              submitFallback: { path: 'upload', reason: 'finish-failed' },
+            },
+          }
+        : {}),
     };
 
     TEST_RUNS.push({
@@ -732,7 +1007,7 @@ for (const proj of DEMO_PROJECTS) {
       flaky_tests: flakyTests,
       avg_test_duration: avgTestDuration,
       p90_test_duration: p90TestDuration,
-      environment: ENVIRONMENTS[i % ENVIRONMENTS.length],
+      environment,
       branch: commit.branch && commit.branch !== 'HEAD' ? commit.branch : null,
       label: proj.id === 1 && i === 0 ? 'v2.4.0 release' : null,
       metadata,
@@ -745,6 +1020,7 @@ for (const proj of DEMO_PROJECTS) {
       reporter_version: '0.7.0',
       is_full_run: i % 5 !== 4 ? 1 : 0,
       filter_details: i % 5 === 4 ? JSON.stringify({ grep: RUN_GREPS[proj.id] }) : null,
+      ...keepColumnsFor(proj.id, i, startTime),
       created_at: startTime,
       updated_at: startTime + Math.floor(duration / 1000),
     });
@@ -913,6 +1189,7 @@ for (const proj of DEMO_PROJECTS) {
         locks: JSON.stringify(demoLocks(caseDef.file, j)),
         test_meta: demoTestMeta(caseDef.file, j),
         steps,
+        locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(proj) : null,
         step_events: stepEvents,
         wasted_time_ms: wastedMs,
         slowest_step: slowestStep.title,
@@ -959,7 +1236,7 @@ for (const proj of DEMO_PROJECTS) {
             start_time: startTime,
             resource_type: req.resourceType ?? null,
             content_type: req.contentType ?? (req.resourceType === 'document' ? 'text/html' : 'application/json'),
-            server_logs: req.serverLogs ?? null,
+            server_logs: anchorServerLogs(req.serverLogs, startTime, req.duration),
             server_traces: req.serverTraces ?? null,
           });
         }
@@ -1034,13 +1311,621 @@ for (const proj of DEMO_PROJECTS) {
   }
 }
 
+// ── Intentional skips (post-processing, rng-free) ───────────────────────────
+// Two checkout tests show the two kinds of skip the status bars tell apart: the
+// CVV test is switched off with `test.fixme()` in the newest runs, and the
+// expired-card test skips itself with `test.skip(condition, reason)` on the
+// environments that have no card sandbox. Only clean passes are rewritten, so no
+// failure story, flaky retry or cascade is touched.
+{
+  const checkoutKey = (title) => caseIdByKey.get(`1\x00tests/checkout/checkout.spec.ts\x00${title}`);
+  const fixmeCaseId = checkoutKey('should show error for invalid CVV');
+  const skipCaseId = checkoutKey('should show error for expired card');
+  const FIXME_NEWEST_RUNS = 6;
+  const NO_SANDBOX_ENVIRONMENTS = new Set(['staging', 'development']);
+  const SKIP_REASON = 'Needs the card network sandbox (CARD_SANDBOX_URL)';
+
+  // Project 1 runs, newest first — the newest run has the smallest id.
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const skippedTrcIds = new Set();
+  for (const [index, run] of proj1Runs.entries()) {
+    const annotationsFor = (caseId) => {
+      if (caseId === fixmeCaseId && index < FIXME_NEWEST_RUNS) return [{ type: 'fixme' }];
+      if (caseId === skipCaseId && NO_SANDBOX_ENVIRONMENTS.has(run.environment)) {
+        return [{ type: 'skip', description: SKIP_REASON }];
+      }
+      return null;
+    };
+    for (const row of TEST_RUNS_CASES) {
+      if (row.test_run_id !== run.id) continue;
+      const annotations = annotationsFor(row.test_case_id);
+      if (!annotations || row.status !== 'passed' || row.retries !== 0) continue;
+      row.status = 'skipped';
+      row.duration = 0;
+      row.test_annotations = annotations;
+      row.attempts = JSON.stringify([{ retry: 0, status: 'skipped', duration: 0, startedAt: row.started_at }]);
+      // A skipped test ran no steps and produced no live evidence.
+      row.steps = [];
+      row.locator_pages_payload_id = null;
+      row.slowest_step = null;
+      row.slowest_step_duration = null;
+      row.step_events = null;
+      row.wasted_time_ms = 0;
+      row.web_vitals = null;
+      row.page_state = null;
+      row.ai_usage = null;
+      row.console_logs = null;
+      row.dialogs = null;
+      row.aria_snapshot = null;
+      skippedTrcIds.add(row.id);
+      run.passed_tests -= 1;
+      run.skipped_tests += 1;
+    }
+  }
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (skippedTrcIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
+}
+
+// ── Flaky attempts (rng-free helpers) ───────────────────────────────────────
+
+/** Set a seeded request's duration, and the server spans drawn from it. */
+function setRequestDuration(nr, ms) {
+  nr.duration = ms;
+  nr.server_traces = buildServerTraces({
+    method: nr.method,
+    url: nr.url,
+    status: nr.status,
+    duration: ms,
+    resourceType: nr.resource_type,
+  });
+}
+
+/**
+ * Split a flaky execution into its failed first attempt and the passing retry,
+ * the way the reporter stores attempts: the failed attempt becomes its own row,
+ * running the same steps at half the pace up to the failing assertion, and the
+ * retry starts once it is over. The failed attempt repeats the retry's
+ * `requests`; `failedMs` gives a request's duration on the failed attempt and
+ * `retryMs` on the retry (undefined keeps it). Returns the failed attempt's requests.
+ */
+function splitFlakyExecution(row, { error, requests, failedMs, retryMs }) {
+  const failedDuration = Math.round(row.duration / 2);
+  const failedRow = {
+    ...row,
+    id: trcId++,
+    status: 'failed',
+    duration: failedDuration,
+    error,
+    failure_cluster_id: null,
+    retries: 0,
+    is_new_regression: 0,
+    is_new_flaky: 0,
+    console_logs: null,
+    dialogs: null,
+    aria_snapshot: null,
+    web_vitals: null,
+    steps: row.steps.map((step, i) => ({
+      ...step,
+      startTime: row.started_at + Math.round((step.startTime - row.started_at) / 2),
+      duration: Math.round(step.duration / 2),
+      ...(i === row.steps.length - 1 ? { failed: true, error: { message: error.split('\n')[0] } } : {}),
+    })),
+    step_events:
+      row.step_events?.map((e) => ({
+        ...e,
+        startedAt: row.started_at + Math.round((e.startedAt - row.started_at) / 2),
+        duration: Math.round((e.duration ?? 0) / 2),
+      })) ?? null,
+    created_at: row.started_at,
+  };
+  TEST_RUNS_CASES.push(failedRow);
+  const shift = failedDuration + SEED_WORKER_GAP_MS;
+  row.started_at += shift;
+  row.created_at = row.started_at;
+  row.steps = row.steps.map((step) => ({ ...step, startTime: step.startTime + shift }));
+  row.step_events = row.step_events?.map((e) => ({ ...e, startedAt: e.startedAt + shift })) ?? null;
+  row.console_logs = row.console_logs?.map((e) => ({ ...e, timestamp: e.timestamp + shift })) ?? null;
+  failedRow.attempts = JSON.stringify([
+    { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
+  ]);
+  row.attempts = JSON.stringify([
+    { retry: 0, status: 'failed', duration: failedDuration, startedAt: failedRow.started_at },
+    { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at },
+  ]);
+
+  const copies = [];
+  let requestStartMs = failedRow.started_at + SEED_FIRST_REQUEST_OFFSET_MS;
+  for (const nr of requests) {
+    const copy = { ...nr, id: nrId++, test_runs_case_id: failedRow.id, start_time: requestStartMs };
+    const failed = failedMs(copy);
+    if (failed != null) setRequestDuration(copy, failed);
+    requestStartMs += (copy.duration ?? 0) + SEED_REQUEST_GAP_MS;
+    NETWORK_REQUESTS.push(copy);
+    copies.push(copy);
+    nr.start_time += shift;
+    const retry = retryMs(nr);
+    if (retry != null) setRequestDuration(nr, retry);
+  }
+  return copies;
+}
+
+// ── Flake suspect (post-processing, rng-free) ───────────────────────────────
+// The checkout project's flaky test fails when `GET /api/cart` is slow: the
+// total it asserts is read before the cart answers. Each of its flaky runs
+// gets the failed first attempt as its own execution row, the way the
+// reporter stores attempts, with the cart request slow on it; its passes keep
+// the cart fast, bar a few slow ones that passed anyway. The flake profile
+// then ranks "GET /api/cart slower" first, and the Attempts diff of each
+// flaky run links its slower-request row to that suspect.
+const FLAKE_SUSPECT_MIN_FLAKY_RUNS = 7;
+/** What the flake-lab experiment below needs from this block: the test, the cart's delay and a failure commit. */
+const FLAKE_DEMO = { caseId: null, failedCartMs: [], failureCommit: null };
+const FLAKE_SUSPECT_SLOW_PASSES = 2;
+const FLAKE_SUSPECT_ERROR =
+  'Error: expect(locator).toHaveText(expected) failed\n\n' +
+  "Locator:  getByTestId('cart-total')\n" +
+  'Expected: "$85.50"\n' +
+  'Received: "$95.00"\n' +
+  'Timeout:  5000ms\n' +
+  '    at tests/checkout/cart.spec.ts:31:5';
+{
+  const flaky = FLAKY_CASES[1];
+  const caseDef = DEMO_PROJECTS.find((p) => p.id === 1).cases.find((c) => c.title === flaky.title);
+  const flakyCaseId = caseIdByKey.get(`1\x00${caseDef.file}\x00${flaky.title}`);
+  FLAKE_DEMO.caseId = flakyCaseId;
+  const isCart = (nr) => nr.method === 'GET' && /\/api\/cart$/.test(nr.url);
+
+  // Project 1 runs, newest first — the newest run has the smallest id.
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const rowOf = (run) => TEST_RUNS_CASES.find((row) => row.test_run_id === run.id && row.test_case_id === flakyCaseId);
+
+  // Enough flaky runs for a suspect: turn the newest clean passes flaky until there are.
+  let flakyCount = proj1Runs.filter((run) => rowOf(run)?.retries === 1).length;
+  for (const run of proj1Runs) {
+    if (flakyCount >= FLAKE_SUSPECT_MIN_FLAKY_RUNS) break;
+    const row = rowOf(run);
+    if (!row || row.status !== 'passed' || row.retries !== 0) continue;
+    row.retries = 1;
+    row.attempts = JSON.stringify([
+      { retry: 0, status: 'failed', duration: Math.round(row.duration / 2), startedAt: row.started_at },
+      { retry: 1, status: 'passed', duration: row.duration, startedAt: row.started_at + row.duration },
+    ]);
+    run.flaky_tests += 1;
+    flakyCount++;
+  }
+
+  let slowPasses = 0;
+  for (const [index, run] of proj1Runs.entries()) {
+    const row = rowOf(run);
+    if (!row || row.status !== 'passed') continue;
+    const requests = NETWORK_REQUESTS.filter((nr) => nr.test_runs_case_id === row.id);
+    if (row.retries !== 1) {
+      // A clean pass: the cart answers fast, bar a few slow ones that passed anyway.
+      const slow = index % 5 === 3 && slowPasses < FLAKE_SUSPECT_SLOW_PASSES;
+      if (slow) slowPasses++;
+      for (const nr of requests) {
+        if (isCart(nr)) setRequestDuration(nr, slow ? 1800 + index * 10 : 60 + ((index * 37) % 140));
+      }
+      continue;
+    }
+
+    // A flaky run: the failed first attempt waited on a slow cart, the retry did not.
+    FLAKE_DEMO.failureCommit ??= run.metadata?.scm?.commit ?? null;
+    const failedRequests = splitFlakyExecution(row, {
+      error: FLAKE_SUSPECT_ERROR,
+      requests,
+      failedMs: (nr) => (isCart(nr) ? 1700 + ((index * 137) % 700) : undefined),
+      retryMs: (nr) => (isCart(nr) ? 60 + ((index * 37) % 140) : undefined),
+    });
+    for (const nr of failedRequests) if (isCart(nr)) FLAKE_DEMO.failedCartMs.push(nr.duration);
+  }
+}
+
+// ── Verified flake fix (post-processing, rng-free) ──────────────────────────
+// The UI project's pagination test flaked on main while its second page of
+// rows was slow: each of its flaky runs gets the failed first attempt as its
+// own execution row, with `GET /api/table/rows` slow on it and
+// `GET /api/table/count` slow beside it. The count was also slow on two clean
+// passes, so the flake profile ranks the rows first and the count second. The
+// test passes in every run after its last flake; the flake-lab experiments
+// below reproduce it with the rows delay, rule the count out, and verify the fix.
+const FLAKE_FIX_ERROR =
+  'Error: expect(locator).toHaveText(expected) failed\n\n' +
+  "Locator:  getByTestId('page-indicator')\n" +
+  'Expected: "Page 2 of 8"\n' +
+  'Received: "Page 1 of 8"\n' +
+  'Timeout:  5000ms\n' +
+  '    at tests/ui/table.spec.ts:17:5';
+const FLAKE_FIX_SLOW_COUNT_PASSES = 2;
+/** What the experiments below need from this block: the test, its failed attempts' delays, and its last flake. */
+const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], failureCommit: null, lastFlakeMs: null };
+{
+  const flaky = FLAKY_CASES[3];
+  const caseDef = DEMO_PROJECTS.find((p) => p.id === 3).cases.find((c) => c.title === flaky.title);
+  const flakyCaseId = caseIdByKey.get(`3\x00${caseDef.file}\x00${flaky.title}`);
+  FLAKE_FIX_DEMO.caseId = flakyCaseId;
+  const ROWS_URL = 'https://design.example.com/api/table/rows?page=2&size=25';
+  const COUNT_URL = 'https://design.example.com/api/table/count';
+  const isRows = (nr) => nr.url === ROWS_URL;
+  const isCount = (nr) => nr.url === COUNT_URL;
+
+  // Project 3 runs, newest first — the newest run has the smallest id.
+  const proj3Runs = TEST_RUNS.filter((r) => r.project_id === 3).sort((a, b) => a.id - b.id);
+  let slowCountPasses = 0;
+  for (const [index, run] of proj3Runs.entries()) {
+    const row = TEST_RUNS_CASES.find((r) => r.test_run_id === run.id && r.test_case_id === flakyCaseId);
+    if (!row || row.status !== 'passed') continue;
+
+    // The table fetches its rows and the page count after the page's own requests.
+    const requests = NETWORK_REQUESTS.filter((nr) => nr.test_runs_case_id === row.id);
+    let requestStartMs = Math.max(
+      row.started_at + SEED_FIRST_REQUEST_OFFSET_MS,
+      ...requests.map((nr) => nr.start_time + (nr.duration ?? 0) + SEED_REQUEST_GAP_MS),
+    );
+    for (const url of [ROWS_URL, COUNT_URL]) {
+      const nr = {
+        id: nrId++,
+        test_runs_case_id: row.id,
+        test_run_id: run.id,
+        method: 'GET',
+        url,
+        normalized_url: seedNormalizeUrl(url),
+        status: 200,
+        duration: null,
+        start_time: requestStartMs,
+        resource_type: 'fetch',
+        content_type: 'application/json',
+        server_logs: null,
+        server_traces: null,
+      };
+      setRequestDuration(nr, isRows(nr) ? 90 + ((index * 53) % 120) : 40 + ((index * 29) % 80));
+      requestStartMs += nr.duration + SEED_REQUEST_GAP_MS;
+      NETWORK_REQUESTS.push(nr);
+      requests.push(nr);
+    }
+
+    if (row.retries !== 1) {
+      // A clean pass; on main, the count was slow twice without breaking it.
+      const slow = run.branch === 'main' && index % 3 === 1 && slowCountPasses < FLAKE_FIX_SLOW_COUNT_PASSES;
+      if (slow) {
+        slowCountPasses++;
+        setRequestDuration(requests.find(isCount), 1100 + index * 10);
+      }
+      continue;
+    }
+
+    // A flaky run: the failed first attempt read the page indicator before the rows arrived.
+    FLAKE_FIX_DEMO.failureCommit ??= run.metadata?.scm?.commit ?? null;
+    FLAKE_FIX_DEMO.lastFlakeMs ??= run.start_time * 1000;
+    const failedRequests = splitFlakyExecution(row, {
+      error: FLAKE_FIX_ERROR,
+      requests,
+      failedMs: (nr) =>
+        isRows(nr) ? 1300 + ((index * 211) % 500) : isCount(nr) ? 900 + ((index * 97) % 300) : undefined,
+      retryMs: () => undefined,
+    });
+    for (const nr of failedRequests) {
+      if (isRows(nr)) FLAKE_FIX_DEMO.failedRowsMs.push(nr.duration);
+      if (isCount(nr)) FLAKE_FIX_DEMO.failedCountMs.push(nr.duration);
+    }
+  }
+}
+
+// ── Worker lanes without holes (post-processing, rng-free) ──────────────────
+// A skipped or did-not-run test never ran on a worker — Playwright reports it
+// with no worker index — so it leaves its lane, and the tests after it on that
+// worker move up into the time it held, with every timestamp they carry. The
+// lanes then read as a real run's: back to back, SEED_WORKER_GAP_MS apart.
+{
+  const requestsByCase = new Map();
+  for (const req of NETWORK_REQUESTS) {
+    const list = requestsByCase.get(req.test_runs_case_id);
+    if (list) list.push(req);
+    else requestsByCase.set(req.test_runs_case_id, [req]);
+  }
+  const shiftAll = (list, key, delta) => (list ? list.map((e) => ({ ...e, [key]: e[key] + delta })) : list);
+  const shiftCase = (row, delta) => {
+    row.started_at += delta;
+    row.created_at += delta;
+    row.attempts = JSON.stringify(shiftAll(JSON.parse(row.attempts), 'startedAt', delta));
+    row.steps = shiftAll(row.steps, 'startTime', delta);
+    row.step_events = shiftAll(row.step_events, 'startedAt', delta);
+    row.console_logs = shiftAll(row.console_logs, 'timestamp', delta);
+    row.dialogs = shiftAll(row.dialogs, 'closedAt', delta);
+    for (const req of requestsByCase.get(row.id) ?? []) {
+      req.start_time += delta;
+      req.server_logs = shiftAll(req.server_logs, 'timestamp', delta);
+    }
+  };
+
+  const lanes = new Map();
+  const runStart = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    if (row.status === 'skipped' || row.status === 'didnotrun') {
+      row.worker_index = null;
+      continue;
+    }
+    const key = `${row.test_run_id}|${row.worker_index}`;
+    const lane = lanes.get(key);
+    if (lane) lane.push(row);
+    else lanes.set(key, [row]);
+  }
+  for (const lane of lanes.values()) {
+    lane.sort((a, b) => a.started_at - b.started_at);
+    let cursor = runStart.get(lane[0].test_run_id);
+    for (const row of lane) {
+      if (row.started_at > cursor) shiftCase(row, cursor - row.started_at);
+      cursor = row.started_at + (row.duration ?? 0) + SEED_WORKER_GAP_MS;
+    }
+  }
+}
+
+// ── Resources: a leaky run and its history (post-processing, rng-free) ──────
+// Web Dashboard's newest run is a leaky one: its login fixture opens a browser
+// context per test and never closes it, so every test after the first finds
+// the earlier tests' pages still open in its worker. The three runs before it
+// close what they open, but one of their tests has left a server running in its
+// worker for a while. The run before the newest ran as two CI shards, each on
+// its own machine with its own workers, so it carries one report per shard.
+// Each run carries what its executions cost and its report, as the reporter
+// sends them, and the findings' history is written as the server records it
+// on finish.
+const TEST_RUN_RESOURCE_REPORTS = [];
+const RESOURCE_FINDINGS = [];
+const RESOURCE_OCCURRENCES = [];
+{
+  const webRuns = TEST_RUNS.filter((run) => run.project_id === 5).sort((a, b) => b.start_time - a.start_time);
+  const reportByRun = new Map();
+  for (const [index, run] of webRuns.slice(0, 4).entries()) {
+    const leaky = index === 0;
+    const rows = TEST_RUNS_CASES.filter(
+      (row) => row.test_run_id === run.id && row.worker_index !== null && row.status !== 'didnotrun',
+    );
+    if (index === 1) {
+      // Two shards: the first half of the workers ran on shard 1, the rest on
+      // shard 2, each shard numbering its own workers from 0 as Playwright does.
+      const workers = [...new Set(rows.map((row) => row.worker_index))].sort((a, b) => a - b);
+      const half = Math.ceil(workers.length / 2);
+      for (const row of rows) {
+        const position = workers.indexOf(row.worker_index);
+        row.shard_index = position < half ? 1 : 2;
+        row.worker_index = position < half ? position : position - half;
+      }
+      run.shard_total = 2;
+      run.shard_index = 1;
+      run.shards_finished = 2;
+    }
+    const shards = new Map();
+    for (const row of rows) {
+      const shard = row.shard_index ?? null;
+      const lanes = shards.get(shard) ?? new Map();
+      const lane = lanes.get(row.worker_index) ?? [];
+      lane.push(row);
+      lanes.set(row.worker_index, lane);
+      shards.set(shard, lanes);
+    }
+    const parts = [];
+    for (const [shard, lanes] of [...shards.entries()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))) {
+      let artifactBytes = 0;
+      for (const lane of lanes.values()) {
+        lane.sort((a, b) => a.started_at - b.started_at);
+        lane.forEach((row, position) => {
+          row.resources = demoExecutionResources({
+            seq: row.id,
+            durationMs: row.duration ?? 0,
+            openAtStart: position,
+            leaky,
+          });
+          artifactBytes += Object.values(row.resources.artifactBytes).reduce((sum, n) => sum + n, 0);
+        });
+      }
+      const report = demoResourceReport({
+        leaky,
+        // The server left running belongs to one worker, so to one shard.
+        handle: shard === null || shard === 1,
+        wallMs: run.duration,
+        workers: [...lanes.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([worker, lane]) => ({
+            worker,
+            tests: lane.length,
+            spans: lane.map((row) => [row.started_at, row.started_at + (row.duration ?? 0)]),
+          })),
+        fixtureFile: 'tests/admin/fixtures.ts',
+        handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
+        artifactBytes,
+        shardIndex: shard,
+      });
+      parts.push(report);
+      TEST_RUN_RESOURCE_REPORTS.push({
+        id: TEST_RUN_RESOURCE_REPORTS.length + 1,
+        run_id: run.id,
+        shard: shard ?? 0,
+        report,
+        updated_at: run.updated_at,
+      });
+    }
+    reportByRun.set(run.id, { findings: parts.flatMap((part) => part.findings) });
+  }
+
+  // The history, oldest run first, as recordRunResourceFindings writes it.
+  const byFingerprint = new Map();
+  for (const run of webRuns.slice(0, 4).reverse()) {
+    for (const finding of reportByRun.get(run.id).findings) {
+      const fingerprint = resourceFingerprint(finding);
+      let row = byFingerprint.get(fingerprint);
+      if (!row) {
+        row = {
+          id: RESOURCE_FINDINGS.length + 1,
+          project_id: run.project_id,
+          fingerprint,
+          verdict: finding.verdict,
+          kind: finding.kind,
+          place: finding.where,
+          site: finding.site ?? null,
+          first_seen_run_id: run.id,
+          last_seen_run_id: run.id,
+          first_seen_at: run.start_time,
+          last_seen_at: run.start_time,
+          occurrences: 0,
+          status: 'open',
+          clean_runs: 0,
+          created_at: run.start_time,
+          updated_at: run.start_time,
+        };
+        byFingerprint.set(fingerprint, row);
+        RESOURCE_FINDINGS.push(row);
+      }
+      row.last_seen_run_id = run.id;
+      row.last_seen_at = run.start_time;
+      row.occurrences++;
+      row.updated_at = run.start_time;
+      RESOURCE_OCCURRENCES.push({
+        id: RESOURCE_OCCURRENCES.length + 1,
+        finding_id: row.id,
+        run_id: run.id,
+        branch: run.branch,
+        count: finding.count,
+        tests: finding.tests,
+        held_ms: finding.heldMs ?? null,
+        after_test_cpu_ms: finding.afterTestCpuMs ?? null,
+        pages: finding.pages ?? null,
+      });
+    }
+  }
+}
+
+// ── Environment incident (post-processing, rng-free) ────────────────────────
+// One checkout run against staging where the staging host refused every
+// connection: almost every test fails navigating to it, so the run carries the
+// incident flag the server's classifier writes (`metadata.incident`, rule
+// `host-unreachable`) and one auto `incident` marker, and is left out of flaky
+// scores, baselines and regression signals. Its failures join no cluster.
+const INCIDENT_HOST = 'staging.checkout.example.com';
+const INCIDENT_PASSED_CASES = 1;
+const incidentRunIds = new Set();
+const INCIDENT_MARKERS = [];
+{
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const oldestId = proj1Runs[proj1Runs.length - 1].id;
+  const rowsOf = (runId) => TEST_RUNS_CASES.filter((row) => row.test_run_id === runId);
+  const target = proj1Runs
+    .slice(3)
+    .find(
+      (r) =>
+        r.id !== oldestId &&
+        r.environment === 'staging' &&
+        r.status === 'passed' &&
+        r.flaky_tests === 0 &&
+        r.kept_at === null &&
+        r.is_full_run === 1 &&
+        rowsOf(r.id).every((row) => ['passed', 'skipped'].includes(row.status) && row.retries === 0),
+    );
+  if (!target) throw new Error('No checkout run on staging can host the incident');
+
+  const rows = rowsOf(target.id)
+    .filter((row) => row.status === 'passed')
+    .sort((a, b) => a.started_at - b.started_at);
+  const failing = rows.slice(INCIDENT_PASSED_CASES);
+  const failingIds = new Set(failing.map((row) => row.id));
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
+  for (const row of failing) {
+    const caseDef = caseById.get(row.test_case_id);
+    const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
+    const url = `https://${INCIDENT_HOST}${path}`;
+    row.status = 'failed';
+    row.duration = 120 + (row.id % 7) * 15;
+    row.error =
+      `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
+      `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
+      `    at ${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`;
+    row.attempts = JSON.stringify([{ retry: 0, status: 'failed', duration: row.duration, startedAt: row.started_at }]);
+    // The page never loaded: no steps past the navigation, no page evidence.
+    row.steps = [];
+    row.locator_pages_payload_id = null;
+    row.step_events = null;
+    row.wasted_time_ms = 0;
+    row.slowest_step = null;
+    row.slowest_step_duration = null;
+    row.web_vitals = null;
+    row.page_state = null;
+    row.ai_usage = null;
+    row.console_logs = null;
+    row.dialogs = null;
+    row.aria_snapshot = null;
+    // The network capture holds the one navigation the test tried: refused.
+    NETWORK_REQUESTS.push({
+      id: nrId++,
+      test_runs_case_id: row.id,
+      test_run_id: target.id,
+      method: 'GET',
+      url,
+      normalized_url: seedNormalizeUrl(url),
+      status: 0,
+      duration: row.duration - 20,
+      start_time: row.started_at + 10,
+      resource_type: 'document',
+      content_type: null,
+      server_logs: null,
+      server_traces: null,
+      failure: 'net::ERR_CONNECTION_REFUSED',
+    });
+  }
+
+  const executed = rows.length;
+  target.status = 'failed';
+  target.failed_tests = failing.length;
+  target.passed_tests = executed - failing.length;
+  target.label = null;
+  target.metadata.htmlReport = { projects: [{ name: 'chromium', use: { baseURL: `https://${INCIDENT_HOST}` } }] };
+  const reason =
+    `${failing.length} of ${executed} tests failed, ${failing.length} of them navigating or connecting to ` +
+    `${INCIDENT_HOST} (connection refused).`;
+  target.metadata.incident = {
+    rule: 'host-unreachable',
+    reason,
+    host: INCIDENT_HOST,
+    projects: [],
+    failedTests: failing.length,
+    executedTests: executed,
+    hostFailures: failing.length,
+    decidedBy: 'rule',
+    decidedAt: new Date((target.start_time + 600) * 1000).toISOString(),
+    firstRunId: target.id,
+  };
+  incidentRunIds.add(target.id);
+  INCIDENT_MARKERS.push({
+    project_id: 1,
+    occurred_at: target.start_time,
+    label: `Environment incident: ${INCIDENT_HOST}`,
+    description: reason,
+    category: 'incident',
+    environment: 'staging',
+    source: 'auto',
+    run_id: target.id,
+    created_at: target.start_time + 600,
+    updated_at: target.start_time + 600,
+  });
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
-// Mirror the server's computeRegressionSignals: walk each case's executions in
+// Mirror the server's computeRegressionSignals: walk each case's final
+// executions (one per run: an earlier attempt of a retried test is not one) in
 // chronological order; a failure right after a pass is a new regression, and a
 // retry-pass right after a clean pass is newly flaky.
 {
+  const retried = new Set(
+    TEST_RUNS_CASES.filter((trc) => trc.retries > 0).map((trc) => `${trc.test_run_id}:${trc.test_case_id}`),
+  );
   const byCase = new Map();
   for (const trc of TEST_RUNS_CASES) {
+    // An environment incident gets no regression signals and is no one's baseline.
+    if (incidentRunIds.has(trc.test_run_id)) continue;
+    if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
     if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
     byCase.get(trc.test_case_id).push(trc);
   }
@@ -1524,7 +2409,7 @@ const QUARANTINED_TESTS = [];
       source: spec.streakState === 'ready' ? 'proposed' : 'manual',
       quarantined_at_run_id: anchorRunId,
       created_by: null,
-      created_at: ts('2025-05-02T09:00:00'),
+      created_at: ts('2025-04-20T09:00:00'),
       released_at: null,
       released_reason: null,
     });
@@ -1546,7 +2431,7 @@ const QUARANTINED_TESTS = [];
         source: 'manual',
         quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
         created_by: null,
-        created_at: ts('2025-05-02T09:00:00'),
+        created_at: ts('2025-04-20T09:00:00'),
         released_at: null,
         released_reason: null,
       });
@@ -2634,6 +3519,48 @@ const LOCATOR_SNAPSHOTS = [
 // `ANCHOR_SEC` is the newest timestamp in the dataset (in seconds). Mapping it
 // to the current time and shifting everything else by the same delta keeps the
 // data's internal spacing intact and guarantees nothing lands in the future.
+// ── Code reach (the source files each test executed) ─────────────────────────
+// A nightly code-reach sample on the main project: each test reaches the
+// components and modules its stories name, stamped with the project's latest run.
+const CODE_REACH_FILES = [
+  'src/components/CheckoutForm.vue',
+  'src/lib/cart.ts',
+  'src/lib/payment-provider.ts',
+  'src/pages/index.vue',
+  'src/components/ContactFields.vue',
+  'src/services/orders.ts',
+  'src/components/RevenueChart.vue',
+  'src/pages/reports/monthly.vue',
+];
+const CODE_REACH = [];
+{
+  const mainProject = DEMO_PROJECTS[0].id;
+  const latestRun = TEST_RUNS.filter((r) => r.project_id === mainProject).reduce((a, b) => (b.id > a.id ? b : a));
+  let crId = 1;
+  for (const [i, caseId] of (caseIdsByProject[mainProject] ?? []).entries()) {
+    const first = i % CODE_REACH_FILES.length;
+    const files = [
+      ...new Set([
+        CODE_REACH_FILES[first],
+        CODE_REACH_FILES[(first + 3) % CODE_REACH_FILES.length],
+        'src/pages/index.vue',
+      ]),
+    ];
+    for (const file of files.sort()) {
+      CODE_REACH.push({
+        id: crId++,
+        project_id: mainProject,
+        test_case_id: caseId,
+        branch: '',
+        file,
+        origin: 'client',
+        last_seen_run_id: latestRun.id,
+        last_seen_at: latestRun.start_time * 1000,
+      });
+    }
+  }
+}
+
 function collectAnchorSec() {
   let max = 0;
   // Fold a candidate timestamp into the running max, normalizing to seconds.
@@ -2660,6 +3587,7 @@ function collectAnchorSec() {
     bump(r.start_time, 's');
     bump(r.created_at, 's');
     bump(r.updated_at, 's');
+    bump(r.kept_at, 's');
   }
   for (const r of REPORTS) bump(r.created_at, 's');
   for (const r of ATTACHMENTS) bump(r.created_at, 's');
@@ -2667,6 +3595,7 @@ function collectAnchorSec() {
   // Millisecond-precision columns.
   for (const r of PROJECT_ASSIGNMENTS) bump(r.created_at, 'ms');
   for (const r of LOCATOR_SNAPSHOTS) bump(r.last_seen_at, 'ms');
+  for (const r of CODE_REACH) bump(r.last_seen_at, 'ms');
   for (const r of ENTITY_LINKS) {
     bump(r.created_at, 'ms');
     bump(r.updated_at, 'ms');
@@ -2677,6 +3606,8 @@ function collectAnchorSec() {
     for (const e of r.steps || []) bump(e.startTime, 'ms');
     for (const e of r.step_events || []) bump(e.startedAt, 'ms');
     for (const e of r.console_logs || []) bump(e.timestamp, 'ms');
+    for (const e of r.dialogs || []) bump(e.closedAt, 'ms');
+    for (const e of JSON.parse(r.attempts ?? '[]')) bump(e.startedAt, 'ms');
   }
   for (const r of NETWORK_REQUESTS) {
     for (const e of r.server_logs || []) bump(e.timestamp, 'ms');
@@ -2685,6 +3616,487 @@ function collectAnchorSec() {
 }
 
 const ANCHOR_SEC = collectAnchorSec();
+
+// ── Hand-back outcomes and diagnosis ratings (rng-free) ────────────────────
+// What became of what Piwi handed back over the last weeks, so the Analytics
+// page's Hand-back outcomes section and the AI usage panel have something to
+// read: locator heals adopted and verified, auto-heal pull requests merged and
+// one closed, diagnoses rated and confirmed by the fix, failed gates with one
+// pull request merged anyway that then failed again, and a flaky test Flake
+// Lab proved fixed. Every row is placed before the anchor, so the rebase lands
+// it in the past.
+const HANDBACK_OUTCOMES = [];
+{
+  const anchorMs = ANCHOR_SEC * 1000;
+  const DAY_MS = 86_400_000;
+  const daysAgo = (days, hours = 0) => anchorMs - days * DAY_MS - hours * 3_600_000;
+  const add = (row) => {
+    const key = row.suggestion_key ?? '';
+    HANDBACK_OUTCOMES.push({
+      id: HANDBACK_OUTCOMES.length + 1,
+      project_id: row.project_id ?? 1,
+      kind: row.kind,
+      subject_type: row.subject_type,
+      subject_id: row.subject_id,
+      suggestion_key: key,
+      outcome: row.outcome,
+      channel: row.channel ?? 'inferred',
+      actor_user_id: null,
+      actor_api_key_id: null,
+      run_id: null,
+      commit_sha: row.commit_sha ?? null,
+      details: row.details ?? null,
+      dedupe_key: [row.kind, `${row.subject_type}:${row.subject_id}`, key, row.outcome, ''].join('|'),
+      created_at: Math.round(row.at),
+    });
+  };
+
+  // Locator heals: 12 call sites given a replacement, 8 of them now use it, 6 passed since.
+  const shopCases = TEST_CASES.filter((c) => c.project_id === 1).slice(0, 12);
+  shopCases.forEach((testCase, i) => {
+    const key = `heal-${i + 1}`;
+    const details = {
+      location: `${testCase.file_path}:${20 + i}:5`,
+      failingLocator: "getByRole('button', { name: 'Submit' })",
+      recommendedLocator: "getByRole('button', { name: 'Place order' })",
+      recommendedSig: `demo-sig-${i + 1}`,
+      failingRunId: 0,
+    };
+    const base = 24 - i * 2;
+    add({
+      kind: 'locator-heal',
+      subject_type: 'test-case',
+      subject_id: testCase.id,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(base),
+    });
+    if (i < 8) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'applied',
+        details: { ...details, label: 'matched-recommendation' },
+        at: daysAgo(base - 1),
+      });
+    }
+    if (i < 6) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(base - 1, -6),
+      });
+    }
+  });
+
+  // Auto-heal pull requests: 5 opened, 3 merged (2 verified on main since), 1 closed.
+  for (let n = 1; n <= 5; n++) {
+    const details = { prNumber: 40 + n, testCaseIds: [shopCases[n - 1].id] };
+    const key = `heal:v1:1:demo-${n}`;
+    add({
+      kind: 'auto-heal-pr',
+      subject_type: 'heal-action',
+      subject_id: n,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(22 - n * 3),
+    });
+    if (n <= 3)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'applied',
+        details,
+        at: daysAgo(21 - n * 3),
+      });
+    if (n <= 2)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(20 - n * 3),
+      });
+    if (n === 4)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(8),
+      });
+  }
+
+  // Diagnoses: the fixes of clusters 1 and 10 changed the files their diagnosis
+  // named; cluster 1 then failed again.
+  for (const clusterId of [1, 10]) {
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const diagnosis = FAILURE_DIAGNOSES.find((d) => d.cluster_id === clusterId);
+    const details = { diagnosisId: diagnosis.id, provider: diagnosis.provider, model: diagnosis.model };
+    // The live key carries the version's start time, which the rebase would leave stale here.
+    const key = `${diagnosis.id}@demo`;
+    add({
+      kind: 'diagnosis',
+      subject_type: 'cluster',
+      subject_id: clusterId,
+      suggestion_key: key,
+      outcome: 'verified',
+      commit_sha: cluster.fix_commit,
+      details,
+      at: cluster.fix_landed_at * 1000,
+    });
+    if (cluster.fix_verification === 'regressed') {
+      add({
+        kind: 'diagnosis',
+        subject_type: 'cluster',
+        subject_id: clusterId,
+        suggestion_key: key,
+        outcome: 'regressed',
+        details,
+        at: cluster.updated_at * 1000,
+      });
+    }
+  }
+
+  // The gate: 6 failed evaluations; the pull request of the third was merged
+  // anyway, and the failure it caught came back on main.
+  for (let n = 1; n <= 6; n++) {
+    const details = { prNumber: 60 + n, verdict: 'failed', rules: ['maxNewFailures'] };
+    add({
+      kind: 'gate',
+      subject_type: 'gate-evaluation',
+      subject_id: n,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(26 - n * 4),
+    });
+    if (n === 3) {
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(13),
+      });
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'regressed',
+        details: { ...details, clusterId: 1 },
+        at: daysAgo(11),
+      });
+    }
+  }
+
+  // Flake Lab: a verify run proved one flaky test fixed (not the one whose flake the lab reproduced).
+  const verifiedFlake = TEST_CASES.filter((c) => c.project_id === 1 && c.id !== FLAKE_DEMO.caseId).at(-1);
+  add({
+    kind: 'flake-verify',
+    subject_type: 'test-case',
+    subject_id: verifiedFlake.id,
+    suggestion_key: 'verify-1',
+    outcome: 'verified',
+    channel: 'cli',
+    at: daysAgo(6),
+  });
+}
+
+// Ratings on the diagnoses, and earlier versions of them, so the AI usage
+// panel has a helpful share over enough ratings, and one version an agent
+// recorded with the model it ran on.
+{
+  const RATINGS = { 1: 'up', 3: 'up', 6: 'down', 7: 'up', 10: 'up' };
+  for (const d of FAILURE_DIAGNOSES) d.feedback = RATINGS[d.cluster_id] ?? null;
+  FAILURE_DIAGNOSIS_VERSIONS[0].feedback = 'down';
+  const stalePatch = {
+    status: 'stale-file',
+    filesChecked: 1,
+    filesInPatch: 1,
+    errors: ['The file changed since the diagnosis was written.'],
+  };
+  const EARLIER = [
+    { clusterId: 3, minutes: -720, feedback: 'up', patch: appliesPatch },
+    { clusterId: 3, minutes: -1440, feedback: 'down', patch: stalePatch },
+    { clusterId: 6, minutes: -600, feedback: 'down', patch: stalePatch },
+    { clusterId: 7, minutes: -480, feedback: 'up', patch: appliesPatch },
+    { clusterId: 7, minutes: -960, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -300, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -900, feedback: null, patch: null },
+  ];
+  for (const v of EARLIER) {
+    const current = FAILURE_DIAGNOSES.find((d) => d.cluster_id === v.clusterId);
+    FAILURE_DIAGNOSIS_VERSIONS.push({
+      id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+      diagnosis_id: current.id,
+      cluster_id: v.clusterId,
+      scope: 'cluster',
+      test_runs_case_id: null,
+      status: 'completed',
+      provider: 'demo',
+      model: 'demo-simulated',
+      category: current.category,
+      confidence: 'medium',
+      summary: `Earlier take: ${current.summary}`,
+      root_cause: current.root_cause,
+      details: JSON.stringify({ ...JSON.parse(current.details), patchValidation: v.patch }),
+      error: null,
+      input_tokens: 900,
+      output_tokens: 260,
+      duration_ms: 2100,
+      context_sha: null,
+      feedback: v.feedback,
+      created_at: diagnosisTs(v.clusterId, v.minutes),
+    });
+  }
+  const agentBase = FAILURE_DIAGNOSES.find((d) => d.cluster_id === 3);
+  const agentDetails = JSON.parse(agentBase.details);
+  FAILURE_DIAGNOSIS_VERSIONS.push({
+    id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+    diagnosis_id: agentBase.id,
+    cluster_id: 3,
+    scope: 'cluster',
+    test_runs_case_id: null,
+    status: 'completed',
+    provider: 'agent',
+    model: 'demo-agent',
+    category: agentBase.category,
+    confidence: 'high',
+    summary: `Recorded by an agent: ${agentBase.summary}`,
+    root_cause: agentBase.root_cause,
+    details: JSON.stringify({
+      ...agentDetails,
+      patchValidation: undefined,
+      suggestedFix: { ...agentDetails.suggestedFix, patchValidation: appliesPatch },
+      recordedBy: { channel: 'mcp', userId: null, apiKeyId: null },
+    }),
+    error: null,
+    input_tokens: null,
+    output_tokens: null,
+    duration_ms: null,
+    context_sha: null,
+    feedback: 'up',
+    created_at: diagnosisTs(3, -200),
+  });
+}
+
+// ── Flake-lab experiment (rng-free) ─────────────────────────────────────────
+// Two days before the anchor, someone ran `piwi flake` on the checkout
+// project's flaky test: the control stayed clean in 10 runs and delaying
+// `GET /api/cart` to the failures' median reproduced it 3 times in 4. The arm
+// carries the suspect id the flake profile gives the slow cart, so the
+// Flakiness tab shows "reproduced 3/4" on that suspect and the flaky list its
+// badge. The p-value is the one-sided Fisher exact test of 3/4 against 0/10.
+const FLAKE_EXPERIMENTS = [];
+const FLAKE_ARMS = [];
+{
+  const sorted = [...FLAKE_DEMO.failedCartMs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const medianMs = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const delayMs = Math.round(medianMs / 100) * 100;
+  const route = 'GET /api/cart';
+  const finishedAt = ANCHOR_SEC * 1000 - 2 * 24 * 60 * 60 * 1000;
+  FLAKE_EXPERIMENTS.push({
+    id: 1,
+    project_id: 1,
+    test_case_id: FLAKE_DEMO.caseId,
+    kind: 'reproduce',
+    commit_sha: FLAKE_DEMO.failureCommit,
+    failure_commit_sha: FLAKE_DEMO.failureCommit,
+    source: 'cli',
+    machine: 'dev-laptop',
+    playwright_project: 'chromium',
+    verdict: 'reproduced',
+    reproducing_arm_id: 2,
+    verifies_arm_id: null,
+    created_at: finishedAt - 3 * 60 * 1000,
+    finished_at: finishedAt,
+  });
+  const arm = (id, position, fields) => ({
+    id,
+    experiment_id: 1,
+    position,
+    discarded_rounds: 0,
+    other_failures: 0,
+    ...fields,
+  });
+  FLAKE_ARMS.push(
+    arm(1, 0, {
+      arm_key: 'control',
+      suspect_id: null,
+      label: 'control',
+      conditions: [],
+      runs: 10,
+      matching_failures: 0,
+      stopped_early: 0,
+      p_value: null,
+      verdict: null,
+    }),
+    arm(2, 1, {
+      arm_key: 'suspect-1',
+      suspect_id: `slow-route:${route}`,
+      label: `delay ${route} ${Number((delayMs / 1000).toFixed(1))} s`,
+      conditions: [{ kind: 'delay', route, ms: delayMs, match: 'all' }],
+      runs: 4,
+      matching_failures: 3,
+      stopped_early: 1,
+      p_value: 4 / 364,
+      verdict: 'reproduced',
+    }),
+  );
+}
+
+// ── Flake-lab experiments that verify a fix (rng-free) ──────────────────────
+// Hours after the pagination test's last flake, the desktop app's "Reproduce
+// this flake" delayed each suspect to its failures' median: the rows delay
+// reproduced it 3 times in 5 against a clean control (p = 10/455, the one-sided
+// Fisher exact test of 3/5 against 0/10), while the count delay failed once
+// with the same error and twice with another (p = 10/20), so the count is ruled
+// out. A first fix still failed its verify rerun; the second held for the 5
+// runs a 3-in-5 rate needs, after the test's last retry-pass, so the test reads
+// verified fixed, leaves the flaky ranking and its quarantine is proposed for release.
+const FLAKE_FIX_COMMITS = {
+  first: 'd1ce0f7a3b9e2c4d6f8a0b1c2d3e4f5a6b7c8d9e',
+  second: '9b1d4e6f2a7c3e5d8f0a1b2c3d4e5f6a7b8c9d0e',
+};
+{
+  const medianMs = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const delayArm = (route, failedMs) => {
+    const ms = Math.round(medianMs(failedMs) / 100) * 100;
+    return {
+      label: `delay ${route} ${Number((ms / 1000).toFixed(1))} s`,
+      suspect_id: `slow-route:${route}`,
+      conditions: [{ kind: 'delay', route, ms, match: 'all' }],
+    };
+  };
+  const rows = delayArm('GET /api/table/rows', FLAKE_FIX_DEMO.failedRowsMs);
+  const count = delayArm('GET /api/table/count', FLAKE_FIX_DEMO.failedCountMs);
+  const hour = 60 * 60 * 1000;
+  const after = (hours) => FLAKE_FIX_DEMO.lastFlakeMs + hours * hour;
+  if (after(28) > ANCHOR_SEC * 1000) throw new Error('The verified-fix experiments would finish after the seed anchor');
+
+  const experiment = (id, fields) => ({
+    id,
+    project_id: 3,
+    test_case_id: FLAKE_FIX_DEMO.caseId,
+    failure_commit_sha: FLAKE_FIX_DEMO.failureCommit,
+    playwright_project: 'Chromium',
+    ...fields,
+  });
+  const arm = (id, experimentId, position, fields) => ({
+    id,
+    experiment_id: experimentId,
+    position,
+    discarded_rounds: 0,
+    other_failures: 0,
+    stopped_early: 0,
+    p_value: null,
+    verdict: null,
+    ...fields,
+  });
+  const control = (id, experimentId, runs) =>
+    arm(id, experimentId, 0, {
+      arm_key: 'control',
+      suspect_id: null,
+      label: 'control',
+      conditions: [],
+      runs,
+      matching_failures: 0,
+    });
+
+  FLAKE_EXPERIMENTS.push(
+    experiment(2, {
+      kind: 'reproduce',
+      commit_sha: FLAKE_FIX_DEMO.failureCommit,
+      source: 'desktop',
+      machine: 'design-laptop',
+      verdict: 'reproduced',
+      reproducing_arm_id: 4,
+      verifies_arm_id: null,
+      created_at: after(5),
+      finished_at: after(5) + 6 * 60 * 1000,
+    }),
+    experiment(3, {
+      kind: 'verify',
+      commit_sha: FLAKE_FIX_COMMITS.first,
+      source: 'cli',
+      machine: 'design-laptop',
+      verdict: 'still-fails',
+      reproducing_arm_id: 7,
+      verifies_arm_id: 4,
+      created_at: after(22),
+      finished_at: after(22) + 2 * 60 * 1000,
+    }),
+    experiment(4, {
+      kind: 'verify',
+      commit_sha: FLAKE_FIX_COMMITS.second,
+      source: 'cli',
+      machine: 'design-laptop',
+      verdict: 'verified',
+      reproducing_arm_id: 9,
+      verifies_arm_id: 4,
+      created_at: after(27),
+      finished_at: after(27) + 3 * 60 * 1000,
+    }),
+  );
+  FLAKE_ARMS.push(
+    control(3, 2, 10),
+    arm(4, 2, 1, {
+      arm_key: 'suspect-1',
+      ...rows,
+      runs: 5,
+      matching_failures: 3,
+      stopped_early: 1,
+      p_value: 10 / 455,
+      verdict: 'reproduced',
+    }),
+    arm(5, 2, 2, {
+      arm_key: 'suspect-2',
+      ...count,
+      runs: 10,
+      matching_failures: 1,
+      other_failures: 2,
+      p_value: 10 / 20,
+      verdict: 'not-reproduced',
+    }),
+    control(6, 3, 5),
+    arm(7, 3, 1, {
+      arm_key: 'verify',
+      ...rows,
+      runs: 2,
+      matching_failures: 1,
+      stopped_early: 1,
+      verdict: 'still-fails',
+    }),
+    control(8, 4, 5),
+    arm(9, 4, 1, {
+      arm_key: 'verify',
+      ...rows,
+      runs: 5,
+      matching_failures: 0,
+      verdict: 'verified',
+    }),
+  );
+}
 // Delta between load time and the seed's anchor, computed by SQLite when the
 // seed runs. Referenced from a temp table so every statement shares one value
 // (a second-precision drift between statements would otherwise desync the ms
@@ -2710,14 +4122,22 @@ const REBASE_SQL = [
   `UPDATE tags SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE bug_reproductions SET created_at = created_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
+  `UPDATE test_selections SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_suites SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE test_cases SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
-  `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  // kept_at is nullable; NULL + delta stays NULL.
+  `UPDATE test_runs SET start_time = start_time + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, kept_at = kept_at + ${D};`,
   `UPDATE files SET created_at = created_at + ${D};`,
+  `UPDATE case_payloads SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
+  `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE failure_diagnosis_versions SET created_at = created_at + ${D};`,
@@ -2727,16 +4147,813 @@ const REBASE_SQL = [
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
   `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
+  `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
+  `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
+  // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
+  // candidates to it; they are all stamped at BASE_START_MS, which the run
+  // timestamps already bound. Nullable columns stay NULL.
+  `UPDATE probes SET probed_at = probed_at + ${D_MS};`,
+  `UPDATE flake_experiments SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS};`,
+  `UPDATE graph_nodes SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS}, pruned_at = pruned_at + ${D_MS};`,
+  `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
+  `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
+  '',
+  '-- ISO timestamps embedded in JSON columns',
+  `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
+    `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
   '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
   shiftJsonMs('test_runs_cases', 'console_logs', 'timestamp'),
+  shiftJsonMs('test_runs_cases', 'dialogs', 'closedAt'),
+  shiftJsonMs('test_runs_cases', 'attempts', 'startedAt'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
+  `UPDATE test_run_resource_reports SET report = json_set(report, '$.timeline.startedAt', ` +
+    `json_extract(report, '$.timeline.startedAt') + ${D_MS}) ` +
+    `WHERE json_valid(report) AND json_extract(report, '$.timeline.startedAt') IS NOT NULL;`,
   '',
   'DROP TABLE _rebase;',
+];
+
+// ── Feature graph + scenario gaps ──────────────────────────────────────────
+// A slice of the Test Map for the checkout project: a couple of observed nodes,
+// their reaches edges, one pull-request-stamped run and the ranked gaps that
+// fall out — enough for the gaps endpoints and the uncovered-changes section to
+// render against real data.
+const gapRun = TEST_RUNS.filter((r) => r.project_id === 1).reduce((a, b) => (b.id > a.id ? b : a));
+gapRun.metadata.scm.remoteUrl = SCM_REPOS[1].repositoryUrl;
+gapRun.metadata.scm.prNumber = 418;
+gapRun.metadata.scm.baseBranch = SCM_REPOS[1].defaultBranch ?? 'main';
+
+const GRAPH_NODES = [
+  {
+    project_id: 1,
+    kind: 'route',
+    key: 'POST /api/orders',
+    attrs: null,
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'route',
+    key: 'GET /api/cart',
+    attrs: null,
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'page',
+    key: '/checkout',
+    attrs: { url: 'https://shop.demo/checkout' },
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // M2 breadth: a control no test targets, and a page linked but never visited.
+  {
+    project_id: 1,
+    kind: 'control',
+    key: 'button:Export invoices',
+    attrs: { role: 'button' },
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'page',
+    key: '/billing/plans',
+    attrs: { url: 'https://shop.demo/billing/plans' },
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // M3 declared surface: an OpenAPI-declared route with documented error codes
+  // that no test reaches — a "declared, never hit" blind spot.
+  {
+    project_id: 1,
+    kind: 'route',
+    key: 'DELETE /api/orders/:id',
+    attrs: { declared: true, responses: [200, 401, 404, 409] },
+    origin: 'openapi',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // M3 server probes: a handler and the dependency it calls — never probed.
+  {
+    project_id: 1,
+    kind: 'handler',
+    key: 'src/api/orders.post.ts',
+    attrs: null,
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'dependency',
+    key: 'payments-svc',
+    attrs: null,
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // Features, from the `piwi:feature` tag on the tests: the feature map draws
+  // one circle per feature and links the ones sharing a node.
+  {
+    project_id: 1,
+    kind: 'feature',
+    key: 'Checkout',
+    attrs: { source: 'tag' },
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'feature',
+    key: 'Billing',
+    attrs: { source: 'tag' },
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'feature',
+    key: 'Orders',
+    attrs: { source: 'tag' },
+    origin: 'observed',
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+];
+
+const GRAPH_EDGES = [
+  {
+    project_id: 1,
+    from_kind: 'test',
+    from_key: '1',
+    to_kind: 'route',
+    to_key: 'POST /api/orders',
+    kind: 'reaches',
+    confidence: 1,
+    origin: 'observed',
+    evidence: { method: 'POST', status: 201 },
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'test',
+    from_key: '1',
+    to_kind: 'route',
+    to_key: 'GET /api/cart',
+    kind: 'reaches',
+    confidence: 1,
+    origin: 'observed',
+    evidence: { method: 'GET', status: 200 },
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'test',
+    from_key: '2',
+    to_kind: 'route',
+    to_key: 'GET /api/cart',
+    kind: 'reaches',
+    confidence: 1,
+    origin: 'observed',
+    evidence: { method: 'GET', status: 200 },
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'test',
+    from_key: '1',
+    to_kind: 'page',
+    to_key: '/checkout',
+    kind: 'reaches',
+    confidence: 1,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'commit',
+    from_key: gapRun.metadata.scm.commit,
+    to_kind: 'file',
+    to_key: 'src/api/orders.post.ts',
+    kind: 'changes',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'ticket',
+    from_key: 'PROJ-418',
+    to_kind: 'file',
+    to_key: 'src/api/orders.post.ts',
+    kind: 'changes',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // M2 breadth edges: the checkout page contains a control nobody targets and
+  // links to a page nobody visits, and a probe showed the order route unnoticed.
+  {
+    project_id: 1,
+    from_kind: 'page',
+    from_key: '/checkout',
+    to_kind: 'control',
+    to_key: 'button:Export invoices',
+    kind: 'contains',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'page',
+    from_key: '/checkout',
+    to_kind: 'page',
+    to_key: '/billing/plans',
+    kind: 'links',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'test',
+    from_key: '1',
+    to_kind: 'route',
+    to_key: 'POST /api/orders',
+    kind: 'checks',
+    confidence: 0,
+    origin: 'observed',
+    evidence: { fault: 'status-500', outcome: 'not-noticed', level: 'client' },
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // M3 server probes: the order route is handled by a file that calls a
+  // dependency no probe has ever checked — an unprobed-dependency gap.
+  {
+    project_id: 1,
+    from_kind: 'route',
+    from_key: 'POST /api/orders',
+    to_kind: 'handler',
+    to_key: 'src/api/orders.post.ts',
+    kind: 'handled-by',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'handler',
+    from_key: 'src/api/orders.post.ts',
+    to_kind: 'dependency',
+    to_key: 'payments-svc',
+    kind: 'calls',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  // Feature → node groups edges. Checkout and Orders share the order route,
+  // Checkout and Billing share the cart route, so the feature map links them.
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Checkout',
+    to_kind: 'route',
+    to_key: 'POST /api/orders',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Checkout',
+    to_kind: 'route',
+    to_key: 'GET /api/cart',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Checkout',
+    to_kind: 'page',
+    to_key: '/checkout',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Billing',
+    to_kind: 'page',
+    to_key: '/billing/plans',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Billing',
+    to_kind: 'control',
+    to_key: 'button:Export invoices',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Billing',
+    to_kind: 'route',
+    to_key: 'GET /api/cart',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Orders',
+    to_kind: 'route',
+    to_key: 'DELETE /api/orders/:id',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    from_kind: 'feature',
+    from_key: 'Orders',
+    to_kind: 'route',
+    to_key: 'POST /api/orders',
+    kind: 'groups',
+    confidence: null,
+    origin: 'observed',
+    evidence: null,
+    first_seen_run_id: gapRun.id,
+    last_seen_run_id: gapRun.id,
+    last_seen_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+  },
+];
+
+// One probe outcome behind the not-noticed checks edge, for the probe ledger.
+const PROBES = [
+  {
+    project_id: 1,
+    test_case_id: 1,
+    node_id: null,
+    route_key: 'POST /api/orders',
+    level: 'client',
+    fault: 'status-500',
+    applied: 1,
+    outcome: 'not-noticed',
+    handled: 'n/a',
+    run_id: gapRun.id,
+    evidence: { mutation: 'status-500' },
+    probed_at: BASE_START_MS,
+  },
+];
+
+const SCENARIO_GAPS = [
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'declared-never-hit',
+    class: 'blind-spot',
+    key: 'route:DELETE /api/orders/:id',
+    title: 'Declared route DELETE /api/orders/:id — never reached',
+    evidence: ['Declared in OpenAPI · 0 tests in 30 runs · documents 200, 401, 404, 409 — observed reach.'],
+    factors: { churn: 0.4, age: 0.5, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.0056,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'finding',
+    detector: 'not-handled',
+    class: 'unhandled',
+    key: 'dependency:payments-svc @ POST /api/orders',
+    title: 'payments-svc (via POST /api/orders): unhandled failure',
+    evidence: [
+      'A server probe made payments-svc (via POST /api/orders) fail; the application did not handle it (should complete checkout with credit card) — an error-state scenario is missing.',
+    ],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.3 },
+    score: 0.3,
+    test_case_id: 1,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'unprobed-dependency',
+    class: 'false-comfort',
+    key: 'dependency:payments-svc',
+    title: 'payments-svc is never probed',
+    evidence: ['Called by 1 route · no probe has checked what happens when it fails — schedule a dependency probe.'],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
+    score: 0.0004,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'changed-unreached',
+    class: 'blind-spot',
+    key: 'src/api/orders.post.ts',
+    title: 'src/api/orders.post.ts changed but not reached',
+    evidence: [`+41 −3 · no test in run #${gapRun.id} · 0 in 30 runs — observed reach.`],
+    factors: { churn: 0.9, age: 0.8, escapeHistory: 1, priority: 0.7 },
+    score: 0.4536,
+    ticket: 'PROJ-418',
+    test_run_id: gapRun.id,
+    pr_number: 418,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'single-covering-test',
+    class: 'fragile',
+    key: 'route:POST /api/orders',
+    title: 'Only one test reaches route POST /api/orders',
+    evidence: [
+      'Only should complete checkout with credit card reaches this — observed reach. A second scenario would make it resilient.',
+    ],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.0002,
+    test_case_id: 1,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'success-only',
+    class: 'blind-spot',
+    key: 'GET /api/cart',
+    title: 'GET /api/cart: no error path under test',
+    evidence: ['Observed 412 times over the last 30 runs, always 200 — observed reach, no error path exercised.'],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
+    score: 0.0001,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'not-noticed',
+    class: 'false-comfort',
+    key: 'route:POST /api/orders',
+    title: 'Tests pass when POST /api/orders breaks',
+    evidence: [
+      'A probe (status-500) on POST /api/orders did not make any test fail — assert the effect the request should have.',
+    ],
+    factors: { churn: 0.9, age: 0.8, escapeHistory: 1, priority: 0.7 },
+    score: 0.4032,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'control-nobody-exercises',
+    class: 'blind-spot',
+    key: 'control:button:Export invoices',
+    title: 'No test exercises control button:Export invoices',
+    evidence: ['On 1 page · no locator targets it — observed reach.'],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
+    score: 0.0004,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'reachable-unvisited',
+    class: 'blind-spot',
+    key: 'page:/billing/plans',
+    title: '/billing/plans is linked but never visited',
+    evidence: ['Linked from 1 page · never navigated to — observed reach.'],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
+    score: 0.0005,
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    // Accepted a while ago but no test was written — the Home "accepted gaps not
+    // yet written" inbox queue. Its subject route has no reaches edge, so it
+    // stays in the queue until the test lands.
+    project_id: 1,
+    kind: 'gap',
+    detector: 'single-covering-test',
+    class: 'fragile',
+    key: 'route:GET /api/orders/:id/receipt',
+    title: 'Only one test reaches route GET /api/orders/:id/receipt',
+    evidence: ['Only views an order receipt reaches this — observed reach. A second scenario would make it resilient.'],
+    factors: { churn: 0.3, age: 0.4, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.03,
+    status: 'accepted',
+    accepted_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+];
+
+// The v2.4.0 release marker, linked to the run it keeps.
+const releaseRun = TEST_RUNS.find((r) => r.keep_source === 'marker');
+const RELEASE_MARKERS = releaseRun
+  ? [
+      {
+        id: MARKERS.length + 1,
+        project_id: releaseRun.project_id,
+        occurred_at: releaseRun.start_time,
+        label: releaseRun.keep_reason,
+        description: 'Tagged and shipped from this run.',
+        category: 'release',
+        environment: null,
+        source: 'manual',
+        run_id: releaseRun.id,
+        created_at: releaseRun.start_time,
+        updated_at: releaseRun.start_time,
+      },
+    ]
+  : [];
+
+// Two earlier checkout releases, so the release-cycle periods have cycles to
+// resolve: v2.2.0 and v2.3.0 on older checkout runs (the runs go newest first).
+const checkoutRuns = TEST_RUNS.filter((r) => r.project_id === 1);
+const EARLIER_RELEASES = [
+  { index: 15, label: 'v2.2.0' },
+  { index: 7, label: 'v2.3.0' },
+]
+  .filter(({ index }) => checkoutRuns[index])
+  .map(({ index, label }, i) => ({
+    id: MARKERS.length + RELEASE_MARKERS.length + i + 1,
+    project_id: 1,
+    occurred_at: checkoutRuns[index].start_time,
+    label,
+    description: 'Tagged and shipped.',
+    category: 'release',
+    environment: null,
+    source: 'manual',
+    run_id: null,
+    created_at: checkoutRuns[index].start_time,
+    updated_at: checkoutRuns[index].start_time,
+  }));
+
+// ── Test selections ─────────────────────────────────────────────────────────
+// A `smoke` selection in every project (the first test of each spec file
+// carries the tag), so a test filter by selection key resolves across projects.
+const SELECTIONS = PROJECTS.map((project, i) => ({
+  id: i + 1,
+  project_id: project.id,
+  key: 'smoke',
+  name: 'Smoke tests',
+  description: 'The first test of every spec file, tagged @smoke.',
+  definition: JSON.stringify({ include: [{ tags: ['smoke'] }] }),
+  version: 1,
+  created_by: 1,
+  created_at: ts('2025-04-01T09:00:00Z'),
+  updated_at: ts('2025-04-01T09:00:00Z'),
+}));
+
+// ── Saved dashboards ────────────────────────────────────────────────────────
+// A shared checkout dashboard over the smoke tests and a two-week sprint, and a
+// private one breaking wasted CI minutes down by browser. Definitions follow
+// `DashboardDefinition` (shared/analytics/dashboards.ts); a sprint period is a
+// cadence from its start date, so it needs no rebase.
+const DASHBOARD_SCOPE = {
+  comparison: { kind: 'previous' },
+  granularity: 'auto',
+  defaultBranchOnly: true,
+  fullRunsOnly: true,
+};
+const SAVED_DASHBOARDS = [
+  {
+    id: 1,
+    name: 'Checkout team',
+    description: 'The checkout smoke tests, sprint by sprint.',
+    owner_id: 1,
+    visibility: 'shared',
+    definition: JSON.stringify({
+      v: 1,
+      scope: {
+        ...DASHBOARD_SCOPE,
+        period: { kind: 'sprint', offset: 0, start: '2025-01-06', lengthDays: 14 },
+        comparison: { kind: 'previous-unit' },
+        projectIds: [1],
+        selection: 'smoke',
+      },
+      bands: [
+        {
+          title: 'This sprint',
+          description: 'The smoke tests of the checkout suite against the previous sprint.',
+          widgets: [
+            {
+              key: 'headline',
+              type: 'stats',
+              size: 'full',
+              options: { metrics: ['test-pass-rate', 'flaky-tests', 'wasted-ci-minutes', 'open-failure-causes'] },
+            },
+            {
+              key: 'pass-rate',
+              type: 'metric',
+              size: 'full',
+              title: 'Smoke pass rate',
+              options: { metric: 'test-pass-rate', display: 'line' },
+            },
+            { key: 'flaky', type: 'list', size: 'half', options: { source: 'flaky-tests', limit: 5 } },
+            { key: 'releases', type: 'markers', size: 'half', options: { categories: ['release', 'deploy'] } },
+          ],
+        },
+        {
+          title: 'Notes',
+          widgets: [
+            {
+              key: 'note',
+              type: 'text',
+              size: 'full',
+              options: {
+                markdown:
+                  '**Sprint goal**: keep the smoke tests green on `main`.\n\n- Payment provider rollout: watch the PayPal flow\n- Ask in #checkout-quality before quarantining a test',
+              },
+            },
+          ],
+        },
+      ],
+    }),
+    created_at: BASE_START_MS - 10 * 24 * 60 * 60 * 1000,
+    updated_at: BASE_START_MS - 2 * 24 * 60 * 60 * 1000,
+    updated_by: 1,
+    last_viewed_at: BASE_START_MS - 60 * 60 * 1000,
+  },
+  {
+    id: 2,
+    name: 'Wasted CI by browser',
+    description: null,
+    owner_id: 1,
+    visibility: 'private',
+    definition: JSON.stringify({
+      v: 1,
+      scope: { ...DASHBOARD_SCOPE, period: { kind: 'rolling', days: 30 } },
+      bands: [
+        {
+          title: 'Where the minutes go',
+          widgets: [
+            {
+              key: 'wasted-by-browser',
+              type: 'metric',
+              size: 'full',
+              title: 'Wasted CI minutes by browser',
+              options: { metric: 'wasted-ci-minutes', display: 'bar', breakdown: 'browser', top: 5 },
+            },
+            {
+              key: 'wasted-by-project',
+              type: 'metric',
+              size: 'half',
+              options: { metric: 'wasted-ci-minutes', display: 'table', breakdown: 'project' },
+            },
+            { key: 'wasted', type: 'wasted-time', size: 'half' },
+          ],
+        },
+      ],
+    }),
+    created_at: BASE_START_MS - 5 * 24 * 60 * 60 * 1000,
+    updated_at: BASE_START_MS - 5 * 24 * 60 * 60 * 1000,
+    updated_by: 1,
+    last_viewed_at: null,
+  },
 ];
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
@@ -2769,6 +4986,13 @@ const lines = [
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
   '',
+  '-- Project URL patterns (browser extension)',
+  insert('project_url_patterns', PROJECT_URL_PATTERNS),
+  '',
+  '-- Bug reports (Piwi Picker)',
+  insert('bug_reports', BUG_REPORTS),
+  insert('bug_reproductions', BUG_REPRODUCTIONS),
+  '',
   '-- Timeline markers',
   insert('markers', MARKERS),
   '',
@@ -2780,6 +5004,23 @@ const lines = [
   '',
   '-- Test runs',
   insert('test_runs', TEST_RUNS),
+  '',
+  '-- Release markers linked to a run (they keep that run forever)',
+  insert('markers', RELEASE_MARKERS),
+  insert('markers', EARLIER_RELEASES),
+  insert(
+    'markers',
+    INCIDENT_MARKERS.map((m, i) => ({
+      id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + i + 1,
+      ...m,
+    })),
+  ),
+  '',
+  '-- Test selections',
+  insert('test_selections', SELECTIONS),
+  '',
+  '-- Saved dashboards',
+  insert('analytics_dashboards', SAVED_DASHBOARDS),
   '',
   '-- Files (reports)',
   insert('files', REPORTS),
@@ -2795,6 +5036,12 @@ const lines = [
   '',
   '-- Diagnosis version history (references failure_diagnoses + failure_clusters)',
   insert('failure_diagnosis_versions', FAILURE_DIAGNOSIS_VERSIONS),
+  '',
+  '-- Hand-back outcomes (references projects)',
+  insert('handback_outcomes', HANDBACK_OUTCOMES),
+  '',
+  '-- Content-addressed case payloads (referenced by test_runs_cases, so must come first)',
+  insert('case_payloads', CASE_PAYLOADS),
   '',
   '-- Test run cases',
   insert('test_runs_cases', TEST_RUNS_CASES),
@@ -2813,6 +5060,28 @@ const lines = [
   '',
   '-- Locator healing snapshots (references test_cases)',
   insert('locator_snapshots', LOCATOR_SNAPSHOTS),
+  '',
+  '-- Code reach (references test_cases and test_runs)',
+  insert('code_reach', CODE_REACH),
+  '',
+  '-- Probe ledger (Test Map, checked axis)',
+  insert('probes', PROBES),
+  '',
+  '-- Flake-lab experiments and their arms (references test_cases)',
+  insert('flake_experiments', FLAKE_EXPERIMENTS),
+  insert('flake_arms', FLAKE_ARMS),
+  insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
+  insert('resource_findings', RESOURCE_FINDINGS),
+  insert('resource_occurrences', RESOURCE_OCCURRENCES),
+  '',
+  '-- Feature graph nodes (Test Map)',
+  insert('graph_nodes', GRAPH_NODES),
+  '',
+  '-- Feature graph edges (references nothing by FK; endpoints are typed keys)',
+  insert('graph_edges', GRAPH_EDGES),
+  '',
+  '-- Scenario gaps (references test_cases; test_run_id is not an FK)',
+  insert('scenario_gaps', SCENARIO_GAPS),
   '',
   ...REBASE_SQL,
   '',
@@ -2853,3 +5122,4 @@ console.log(`   Diagnoses  : ${FAILURE_DIAGNOSES.length}`);
 console.log(`   DiagVersions: ${FAILURE_DIAGNOSIS_VERSIONS.length}`);
 console.log(`   Links      : ${ENTITY_LINKS.length}`);
 console.log(`   LocatorSnap: ${LOCATOR_SNAPSHOTS.length}`);
+console.log(`   CodeReach  : ${CODE_REACH.length}`);

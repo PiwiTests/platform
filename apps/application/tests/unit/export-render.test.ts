@@ -82,11 +82,23 @@ describe('renderExportHtml', () => {
 
   it('strips ANSI escapes from error text', () => {
     const html = renderExportHtml(
-      bundle({ cases: [exportCase({ detail: { error: '[31mExpected true[39m' } })] }),
+      bundle({ cases: [exportCase({ detail: { error: '\x1b[31mExpected true\x1b[39m' } })] }),
       noAssets,
     );
     expect(html).toContain('Expected true');
-    expect(html).not.toContain('[31m');
+    expect(html).not.toContain('\x1b[31m');
+  });
+
+  it('syntax-highlights call stack snippets behind a plain line-number gutter', () => {
+    const snippet = ['     9 | const total = 1;', '>   10 | await page.getByRole("button").click();'].join('\n');
+    const html = renderExportHtml(
+      bundle({
+        cases: [exportCase({ detail: { testSourceFrames: [{ file: 'tests/login.spec.ts', line: 10, snippet }] } })],
+      }),
+      noAssets,
+    );
+    expect(html).toContain('<span class="ln">&gt;   10 | </span>');
+    expect(html).toContain('<span class="hljs-keyword">await</span>');
   });
 
   it('references nothing outside the document', () => {
@@ -97,11 +109,16 @@ describe('renderExportHtml', () => {
     expect(html).toContain('https://piwi.example.com/test-run-cases/1');
   });
 
-  it('colors a timed-out case as a warning, matching the dashboard', () => {
-    const html = renderExportHtml(bundle({ cases: [exportCase({ status: 'timedout' })] }), noAssets);
+  it('colors a timed-out case as a failure and a case that did not run as a warning, matching the dashboard', () => {
+    const html = renderExportHtml(
+      bundle({ cases: [exportCase({ status: 'timedout' }), exportCase({ status: 'didnotrun' })] }),
+      noAssets,
+    );
     expect(html).toContain('class="badge s-timedout"');
-    // getStatusColor maps timedout to warning; the export must not call it a failure.
-    expect(html).toMatch(/\.s-timedout[^}]*var\(--warn\)/);
+    expect(html).toContain('class="badge s-didnotrun"');
+    // getStatusColor maps timedout to error and didnotrun to warning.
+    expect(html).toMatch(/\.s-timedout[^}]*var\(--fail\)/);
+    expect(html).toMatch(/\.s-didnotrun[^}]*var\(--warn\)/);
   });
 
   it('carries a restrictive content security policy', () => {
@@ -303,6 +320,24 @@ describe('buildExport', () => {
     );
     // 0.486 0.227 0.929 is the keyword purple; a plain monospace block, drawn in
     // the near-black foreground, never sets it. `const` is a TypeScript keyword.
+    expect(pdfContent(built.bytes)).toContain('0.486 0.227 0.929 rg');
+  });
+
+  it('syntax-highlights call stack snippets', async () => {
+    const built = await buildExport(
+      bundle({
+        cases: [
+          exportCase({
+            detail: {
+              testSourceFrames: [{ file: 'tests/login.spec.ts', line: 3, snippet: '>    3 | const answer = 42;' }],
+            },
+          }),
+        ],
+      }),
+      'pdf',
+      1,
+      { reader, budget },
+    );
     expect(pdfContent(built.bytes)).toContain('0.486 0.227 0.929 rg');
   });
 

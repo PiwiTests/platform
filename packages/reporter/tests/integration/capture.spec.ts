@@ -121,10 +121,10 @@ test('captures the failure-time ARIA snapshot and a locator suggestion', async (
 });
 
 // Teardown-race guard: a locator action immediately followed by test end closes
-// the page while the capture probe is still in flight. Before the drain-on-close
-// fix this raised a global "Object with guid handle@… was not bound in the
-// connection" error that failed whichever test was running. Repeating it raises
-// the odds of catching a regression; every one must pass.
+// the page while the capture probe is still in flight. Capture drains on close,
+// so no global "Object with guid handle@… was not bound in the connection" error
+// fails whichever test is running. Repeating it raises the odds of catching a
+// regression; every one must pass.
 for (let i = 0; i < 8; i++) {
   test(`teardown race guard ${i}`, async ({ page }) => {
     await page.goto(baseUrl);

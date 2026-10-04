@@ -201,9 +201,9 @@ test.describe('Dashboard UI Tests', () => {
     await page.goto('/settings/storage');
     await waitForHydration(page);
 
-    // Check heading and stats section
-    await expect(page.getByText('Storage statistics')).toBeVisible();
-    await expect(page.getByText('Test runs', { exact: true })).toBeVisible();
+    // Storage analysis dashboard header (always rendered, before its data loads)
+    // and the cleanup section below it.
+    await expect(page.getByText('Storage usage')).toBeVisible();
     await expect(page.getByText('Cleanup old test runs')).toBeVisible();
 
     // Verify the cleanup button exists
@@ -234,11 +234,11 @@ test.describe('Dashboard UI Tests', () => {
     // brings up the confirmation modal.
     await page.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Delete run' }).click();
-    await expect(page.getByText('Delete test run', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(`Delete run #${runId}`, { exact: true })).toBeVisible({ timeout: 10000 });
 
     // Close the modal
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('Delete test run', { exact: true })).not.toBeVisible();
+    await expect(page.getByText(`Delete run #${runId}`, { exact: true })).not.toBeVisible();
   });
 
   test('run metadata renders in the facts line and the Details popover', async ({ page, request }) => {

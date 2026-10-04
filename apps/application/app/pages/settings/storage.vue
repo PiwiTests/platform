@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import type { AdminStats } from '~~/types/api';
+import type { StorageAnalysis } from '~~/types/api';
 import { envVarsByCategory, getEnvVarMeta } from '#shared/piwi-env-vars';
 
 const toast = useToast();
 
-const { data: stats, refresh, pending } = await useFetch<AdminStats>('/api/admin/stats');
+// Client-only: the growth chart formats dates, so keep it off the server render
+// to avoid a timezone hydration mismatch (matches the analytics widgets).
+const {
+  data: storage,
+  refresh,
+  status,
+  error,
+} = useFetch<StorageAnalysis>('/api/admin/storage', { lazy: true, server: false });
+// The server renders before the fetch starts (`idle`), so idle reads as loading too.
+const loading = computed(() => status.value === 'idle' || status.value === 'pending');
 
 // Storage-backend env vars, driven by the shared registry (single source of
 // truth). Excludes test-only vars (they are not runtime settings).
@@ -31,13 +40,24 @@ async function handleCleanup() {
   isConfirmOpen.value = false;
   cleaning.value = true;
   try {
-    const result = await $fetch<{ success: boolean; deletedRuns: number }>('/api/admin/cleanup', {
+    const result = await $fetch<{
+      success: boolean;
+      deletedRuns: number;
+      keptRunsSkipped?: number;
+      newestRunsSkipped?: number;
+    }>('/api/admin/cleanup', {
       method: 'DELETE',
       body: { olderThanDays: selectedPeriod.value },
     });
+    const skipped = [
+      result.keptRunsSkipped ? `${result.keptRunsSkipped} kept` : null,
+      result.newestRunsSkipped ? `${result.newestRunsSkipped} among their project's newest` : null,
+    ].filter(Boolean);
     toast.add({
       title: 'Cleanup complete',
-      description: `Deleted ${result.deletedRuns} test run(s) older than ${selectedPeriod.value} days.`,
+      description:
+        `Deleted ${result.deletedRuns} test run(s) older than ${selectedPeriod.value} days.` +
+        (skipped.length ? ` Skipped ${skipped.join(' and ')}.` : ''),
       color: 'success',
     });
     await refresh();
@@ -58,7 +78,7 @@ async function handleCleanup() {
 <template>
   <div class="space-y-6">
     <!-- Data location (resolved on-disk paths) -->
-    <DataLocationCard v-if="stats" :database="stats.databaseLocation" :storage="stats.storageLocation" />
+    <DataLocationCard v-if="storage" :database="storage.databaseLocation" :storage="storage.storageLocation" />
 
     <!-- Storage backend (env-only reference) -->
     <SectionCard icon="i-lucide-server" title="Storage backend" help="settings.storage-backend">
@@ -82,72 +102,19 @@ async function handleCleanup() {
       </div>
     </SectionCard>
 
-    <!-- Stats Overview -->
-    <SectionCard icon="i-lucide-database" title="Storage statistics" help="settings.storage-stats">
-      <div v-if="pending" class="flex items-center gap-2 py-4 text-muted">
-        <UIcon name="i-lucide-loader-2" class="animate-spin" />
-        Loading…
-      </div>
-
-      <div v-else-if="stats" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Projects</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalProjects }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Test runs</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalRuns }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Tests (unique)</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalTestCases }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Test results</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalRunsCases }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Stored files</p>
-          <p class="text-2xl font-semibold">
-            {{ stats.totalFiles }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">File size (DB)</p>
-          <p class="text-2xl font-semibold">
-            {{ formatBytes(stats.totalFileSize) }}
-          </p>
-        </div>
-        <div class="space-y-1">
-          <p class="text-sm text-muted">Storage on disk</p>
-          <p class="text-2xl font-semibold">
-            {{ formatBytes(stats.storageSizeOnDisk) }}
-          </p>
-        </div>
-      </div>
-
-      <template #footer>
-        <UButton
-          icon="i-lucide-refresh-cw"
-          variant="outline"
-          size="sm"
-          :loading="pending"
-          label="Refresh"
-          @click="refresh()"
-        />
-      </template>
-    </SectionCard>
+    <!-- Storage analysis: usage, growth over time, by file kind, by project -->
+    <StorageAnalysisDashboard :analysis="storage ?? null" :pending="loading" :error="error" @refresh="refresh()" />
 
     <!-- Cleanup Section -->
-    <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup">
+    <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup" data-shot="cleanup-card">
+      <p v-if="storage?.kept" class="text-xs text-muted mb-3" data-shot="kept-runs-note">
+        <template v-if="storage.kept.runs > 0">
+          {{ storage.kept.runs }} kept {{ storage.kept.runs === 1 ? 'run is' : 'runs are' }} never deleted — they hold
+          {{ formatBytes(storage.kept.bytes) }} in {{ storage.kept.files.toLocaleString() }}
+          {{ storage.kept.files === 1 ? 'file' : 'files' }} of their own.
+        </template>
+        <template v-else>No run is kept forever. Keep one from its run menu to exempt it from cleanup.</template>
+      </p>
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <UFormField label="Delete runs older than" name="period">
           <USelect v-model="selectedPeriod" :items="periodOptions" />
@@ -172,7 +139,7 @@ async function handleCleanup() {
       <template #body>
         <p>
           This will permanently delete all test runs older than <strong>{{ selectedPeriod }} days</strong>, along with
-          their associated reports, traces, and test results. This action cannot be undone.
+          their associated reports, traces, and test results. Kept runs are skipped. This action cannot be undone.
         </p>
       </template>
       <template #footer>

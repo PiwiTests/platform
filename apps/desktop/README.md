@@ -5,7 +5,11 @@ shipped as the Docker image and `@piwitests/server`, and runs it locally. No
 Docker, no `npx`, no server to set up — double-click and go. Everything binds
 `127.0.0.1`; your data lives under the OS app-data directory.
 
-Targets for v1: **Windows (`.msi`)** and **macOS (`.dmg`)**. Linux is deferred.
+Targets: **Windows (`.msi` and `.exe`)**, **macOS (`.dmg`)**, and **Linux (`.deb` /
+`.rpm` / `.AppImage`)**. The Windows **`.exe`** is an NSIS **per-user** installer
+(`%LOCALAPPDATA%`, no admin to install or update); the **`.msi`** installs **per
+machine** (`Program Files`) and needs elevation. Each keeps its own auto-update
+channel, so a per-user install pulls a per-user update.
 
 ## How it works
 
@@ -24,18 +28,29 @@ Targets for v1: **Windows (`.msi`)** and **macOS (`.dmg`)**. Linux is deferred.
    processes die with the shell, so every way out — closing the window, the
    tray's Quit, or an update restart — asks for confirmation first while any
    of them is still running.
-5. Archives the OS hands to the app (drag & drop, "Open with", second-launch
+5. Files the OS hands to the app (drag & drop, "Open with", second-launch
    file arguments, macOS open events) are queued shell-side and drained by the
    dashboard over IPC (`desktop_take_pending_open_files` + a `piwi:open-files`
-   poke), which imports them by path through the desktop-only
-   `/api/desktop/import-local` route.
-6. The dashboard's /mcp page can write the `piwi` MCP entry into detected
+   poke), which imports them by path through the desktop-only routes:
+   Playwright archives (`.zip`) through `/api/desktop/import-local`, and Piwi
+   Picker's bug reports (`.piwibug`, the app's own file type, associated in
+   `tauri.conf.json` with a macOS exported type) through
+   `/api/desktop/import-bug-report`.
+6. The dashboard's /mcp page can write the `piwi-desktop` MCP entry into detected
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
    entries whose URL/token drifted after a port change.
 7. Native notifications shown while the window is hidden bump an unread badge
    on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
    when the window regains focus.
+8. A dashboard link opened in the system browser (the reporter's `View run:`
+   URL clicked in a terminal) shows in the app window instead: the server
+   answers the tab with a notice and forwards the page as an `open-page`
+   message on `/api/desktop/events`
+   (`apps/application/server/middleware/desktop-handoff.ts`); the window
+   navigates to it and calls `desktop_bring_to_front`, which restores, shows
+   and focuses it. Only navigations the browser marks `Sec-Fetch-Site: none`
+   qualify, so a web page cannot drive the window.
 
 Local access is gated by a per-launch token (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other
@@ -58,13 +73,14 @@ npx tauri icon ../application/public/logo.svg   # generate icons (once)
 
 # 3. Run in dev, or build an installer
 npm run dev                 # launches the app against the staged server
-npm run build               # produces the .msi / .dmg under src-tauri/target
+npm run build               # produces the installer for this OS under src-tauri/target
+                            # (.msi + .exe on Windows, .dmg on macOS, .deb/.rpm/.AppImage on Linux)
 ```
 
 > The Node sidecar (`src-tauri/binaries/`), the staged server
 > (`src-tauri/resources/app-server/`), generated icons, and `src-tauri/target/` are all
 > git-ignored build artifacts — CI regenerates them (see
-> `.github/workflows/desktop-release.yml`).
+> `.github/workflows/reusable-publish-desktop.yml`).
 
 ## End-to-end tests
 
@@ -91,8 +107,16 @@ npx tauri icon ../application/public/logo.svg   # once
 npm run e2e                                      # launches `tauri dev --features e2e-testing`
 ```
 
-CI runs this on macOS (real webview, no display server needed) on desktop
-changes — see `.github/workflows/desktop-e2e.yml`.
+CI runs this on macOS (real webview, no display server needed) on pull
+requests that change the desktop app — see `.github/workflows/reusable-e2e-desktop.yml`,
+which `ci.yml` calls.
+
+This `e2e/` suite is a **shell smoke test** (the real webview calling native
+commands). To exercise the *dashboard's* full E2E suite against a running
+desktop app instead — the same server, driven through its loopback origin —
+launch the app and run `npm run app:test:desktop` from `apps/application/`
+(`PIWI_DESKTOP_E2E=1`); it adopts the app's URL + token from `~/.piwi/desktop.json`.
+See [`apps/application/tests/README.md`](../application/tests/README.md#against-the-running-desktop-app).
 
 ## Signing
 
@@ -106,13 +130,40 @@ Off until the updater keypair exists; releases build exactly as before without
 it. To enable:
 
 1. `npx tauri signer generate` (keep the private key + password secret).
-2. Put the **public** key into `src-tauri/tauri.updater.conf.json`.
+2. Put the **public** key into both `src-tauri/tauri.updater.conf.json` (the
+   `.msi` channel) and `src-tauri/tauri.updater.nsis.conf.json` (the `.exe`
+   channel). Same key, one endpoint each.
 3. Add `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as
    repository secrets.
 
-With the secret present, `desktop-release.yml` applies the
-`tauri.updater.conf.json` overlay: bundles gain signed update artifacts,
-tauri-action uploads `latest.json` to the release, and the app (whose compiled
-config now contains the updater entry) exposes Check for updates in
-Settings → About. Builds without the overlay report updates as unsupported —
-the plugin is not even registered there (see `src-tauri/src/updates.rs`).
+With the secret present, `reusable-publish-desktop.yml` applies each leg's overlay:
+bundles gain signed update artifacts, and the app (whose compiled config now
+contains the updater entry) exposes Check for updates in Settings → About.
+Windows ships **two update channels** so each installer updates itself in its own
+mode: the `.msi` reads `latest.json` (per machine, prompts for admin), the `.exe`
+reads `latest-nsis.json` (per user, no admin). tauri-action uploads `latest.json`
+for the `.msi`, macOS and Linux legs; the `.exe` leg sets `uploadUpdaterJson`
+false and a later workflow step publishes `latest-nsis.json` pointing at the NSIS
+`-setup.exe`. Builds without the overlay report updates as unsupported, the plugin
+is not even registered there (see `src-tauri/src/updates.rs`).
+
+The `.exe` channel installs **quietly**: its overlay sets the updater's
+`windows.installMode` to `quiet`, so the plugin starts the NSIS installer with
+`/S /R` — no window, and the installer relaunches the app when it is done. The
+`.msi` channel keeps the default `passive` mode (a progress bar): its
+per-machine install needs the UAC prompt, which a quiet `msiexec` cannot raise.
+
+When startup settles (the server answered, or its wait timed out), the shell
+checks for an update and shows a native notification when one is available (`notify_if_update_available` in
+`updates.rs`). Settings → About → Updates shows the update it found and has a
+checkbox, on by default, that turns the notification off (`notifyUpdateOnStartup`
+in the app's `settings.json` store).
+
+On Windows the install step never returns: the plugin launches the installer and
+leaves through `std::process::exit`, which skips `RunEvent::ExitRequested`. The
+updater's pre-exit hook (`updates.rs`) runs the quit cleanup instead
+(`shut_down` in `lib.rs`) and waits for the Node sidecar to be gone — left
+running, it holds the bundled native modules (sharp's libvips DLLs) and the
+installer fails with "Error opening file for writing". Builds up to 0.37 lacked
+that hook, so the NSIS installer also stops a `node.exe` still running from its
+install folder (`src-tauri/windows/installer-hooks.nsh`) before copying files.

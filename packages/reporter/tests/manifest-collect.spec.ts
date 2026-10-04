@@ -1,0 +1,97 @@
+import { describe, it, expect } from 'vitest';
+import {
+  parseManifestJson,
+  hasInstrumentationHeader,
+  baseUrlFromConfig,
+  configDirFromConfig,
+  fetchInstrumentationManifest,
+  type FetchLike,
+} from '../src/internal/manifest/collect';
+
+describe('parseManifestJson', () => {
+  it('parses routes and pages, dropping malformed entries', () => {
+    const manifest = parseManifestJson(
+      JSON.stringify({
+        routes: [
+          { method: 'GET', pattern: '/api/cart', responses: [200, 'x'] },
+          { method: 'POST' }, // no pattern — dropped
+          'nope',
+        ],
+        pages: [{ pattern: '/checkout', name: 'Checkout' }, {}],
+      }),
+    );
+    expect(manifest?.routes).toHaveLength(1);
+    expect(manifest?.routes?.[0]).toMatchObject({ method: 'GET', pattern: '/api/cart', responses: [200] });
+    expect(manifest?.pages).toHaveLength(1);
+  });
+
+  it('returns null for invalid JSON or an empty manifest', () => {
+    expect(parseManifestJson('not json')).toBeNull();
+    expect(parseManifestJson('{}')).toBeNull();
+  });
+});
+
+describe('hasInstrumentationHeader', () => {
+  it('detects the instrumentation markers on a plain header object', () => {
+    expect(hasInstrumentationHeader({ 'x-piwi-logs': 'abc' })).toBe(true);
+    expect(hasInstrumentationHeader({ 'x-piwi-trace': 'abc' })).toBe(true);
+    expect(hasInstrumentationHeader({ 'content-type': 'text/html' })).toBe(false);
+  });
+
+  it('works with a Headers instance', () => {
+    const headers = new Headers({ 'x-piwi-logs': 'abc' });
+    expect(hasInstrumentationHeader(headers)).toBe(true);
+  });
+});
+
+describe('baseUrlFromConfig / configDirFromConfig', () => {
+  it('reads the first base URL from projects, else the top-level use', () => {
+    expect(baseUrlFromConfig({ use: { baseURL: 'https://top' } })).toBe('https://top');
+    expect(baseUrlFromConfig({ projects: [{ use: {} }, { use: { baseURL: 'https://p' } }] })).toBe('https://p');
+    expect(baseUrlFromConfig({})).toBeNull();
+  });
+
+  it('prefers the config file directory for the committed manifest', () => {
+    expect(configDirFromConfig({ configFile: '/repo/playwright.config.ts' })).toBe('/repo');
+    expect(configDirFromConfig({ rootDir: '/repo/tests' })).toBe('/repo/tests');
+  });
+});
+
+describe('fetchInstrumentationManifest', () => {
+  it('fetches /__piwi/manifest only when the base response is instrumented', async () => {
+    const fetchImpl: FetchLike = async (url) => {
+      if (url.endsWith('/__piwi/manifest')) {
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
+      }
+      return { ok: true, status: 200, headers: { 'x-piwi-trace': 'abc' }, text: async () => '' };
+    };
+    const manifest = await fetchInstrumentationManifest('https://app.test', fetchImpl);
+    expect(manifest?.routes?.[0]?.pattern).toBe('/api/cart');
+  });
+
+  it('returns null when the base response carries no instrumentation header', async () => {
+    const fetchImpl: FetchLike = async () => ({ ok: true, status: 200, headers: {}, text: async () => '' });
+    expect(await fetchInstrumentationManifest('https://app.test', fetchImpl)).toBeNull();
+  });
+
+  it('passes an abort signal so a slow base URL never hangs the run', async () => {
+    const signals: Array<AbortSignal | undefined> = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      signals.push(init?.signal);
+      if (url.endsWith('/__piwi/manifest')) {
+        return { ok: true, status: 200, headers: {}, text: async () => JSON.stringify({ routes: [{ method: 'GET', pattern: '/api/cart' }] }) };
+      }
+      return { ok: true, status: 200, headers: { 'x-piwi-trace': 'abc' }, text: async () => '' };
+    };
+    await fetchInstrumentationManifest('https://app.test', fetchImpl);
+    expect(signals).toHaveLength(2);
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
+  });
+
+  it('returns null when a request rejects (e.g. an aborted timeout)', async () => {
+    const fetchImpl: FetchLike = async () => {
+      throw new DOMException('The operation was aborted.', 'TimeoutError');
+    };
+    expect(await fetchInstrumentationManifest('https://app.test', fetchImpl)).toBeNull();
+  });
+});

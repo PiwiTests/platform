@@ -37,6 +37,9 @@ interface NotificationEventData {
   confidence?: string | null;
   topFailures?: { title: string }[];
   affectedCases?: number;
+  snapshotId?: number;
+  tests?: { title: string }[];
+  reason?: string;
 }
 
 function renderBody(data: NotificationEventData): string {
@@ -45,6 +48,7 @@ function renderBody(data: NotificationEventData): string {
     case 'run.finished':
     case 'run.failed':
     case 'run.failed.default_branch':
+    case 'run.interrupted':
     case 'flakiness.spike':
     case 'perf.regression': {
       const name = data.projectName ?? `Project #${data.projectId}`;
@@ -52,6 +56,8 @@ function renderBody(data: NotificationEventData): string {
       if (data.type === 'run.finished') lines.push(`${name}${branchSuffix}: ${data.status ?? 'finished'}`);
       else if (data.type === 'run.failed')
         lines.push(`${name}${branchSuffix}: ${data.failedTests ?? 0}/${data.totalTests ?? 0} tests failed`);
+      else if (data.type === 'run.interrupted')
+        lines.push(`${name}${branchSuffix}: interrupted before it finished, the reporter stopped sending`);
       else if (data.type === 'run.failed.default_branch')
         lines.push(`${name}: ${data.failedTests ?? 0} failures on default branch`);
       else if (data.type === 'flakiness.spike') lines.push(`${name}: flakiness spike detected`);
@@ -77,8 +83,18 @@ function renderBody(data: NotificationEventData): string {
       lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a fixed cluster is failing again`);
       if (data.title || data.signature) lines.push(data.title || data.signature || '');
       break;
+    case 'bug.looks_fixed':
+      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a test marked to fail now passes`);
+      if (data.tests?.length) lines.push(data.tests.map((t) => t.title).join(', '));
+      break;
+    case 'environment.incident':
+      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: environment incident`);
+      if (data.reason) lines.push(data.reason);
+      break;
+    case 'report.ready':
+      lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);
+      break;
     case 'diagnosis.completed':
-    case 'diagnosis-completed':
       lines.push(data.summary || data.rootCause || '');
       if (data.category) lines.push(`Category: ${data.category}`);
       if (data.confidence) lines.push(`Confidence: ${data.confidence}`);
@@ -88,6 +104,7 @@ function renderBody(data: NotificationEventData): string {
 }
 
 function getLink(data: NotificationEventData): string | null {
+  if (data.snapshotId) return `/reports/${data.snapshotId}`;
   if (data.clusterId) return `/failure-clusters/${data.clusterId}`;
   if (data.runId && data.projectId) return `/test-runs/${data.runId}`;
   return null;
@@ -99,11 +116,7 @@ function handleEvent(data: NotificationEventData) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible' && _windowFocused) return;
 
-  if (
-    (data.type === 'diagnosis.completed' || data.type === 'diagnosis-completed') &&
-    _diagnosisActive &&
-    !_diagnosisActive.value
-  ) {
+  if (data.type === 'diagnosis.completed' && _diagnosisActive && !_diagnosisActive.value) {
     return;
   }
 
@@ -115,7 +128,7 @@ function handleEvent(data: NotificationEventData) {
   if (!body) return;
 
   // Use type + key id for dedup tag
-  const dedupKey = data.clusterId ?? data.runId ?? data.signature ?? data.type;
+  const dedupKey = data.snapshotId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type;
   const tag = `piwi-${data.type}-${dedupKey}`;
 
   const notification = new Notification('Piwi Dashboard', {
@@ -209,9 +222,5 @@ export function useNotificationStream() {
     } else {
       connectLive();
     }
-  });
-
-  onScopeDispose(() => {
-    // Keep alive — this is app-wide, not per-component.
   });
 }

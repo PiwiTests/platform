@@ -1,103 +1,108 @@
-import { probeElementAttrs, type ProbeArg } from '@piwitests/picker-dom';
-import {
-  generateAlternatives,
-  approximateAccessibleName,
-  resolveAriaRole,
-  CAPTURED_ATTRIBUTES,
-  TAG_TO_ROLE,
-  INPUT_TYPE_TO_ROLE,
-} from '@piwitests/core/locator-generation';
+import { checkLocators, createPageEngine, rankElement } from './verified-locators.js';
 
 export interface LintFinding {
   element: Element;
   role: string;
-  /** Always null in practice — see the doc comment on `scanForLintIssues` for why a truthy accessible name can never coexist with a bad score here. */
+  /** The name Playwright computes, when it has one: a name other elements share, which no locator tells apart but by position. */
   accessibleName: string | null;
   /** `${role}-${n}`, numbered by discovery order within that role (e.g. `button-1`, `button-2`) — a starting point, not a guarantee of uniqueness on the page. */
   suggestedTestId: string;
-  /** The best score `generateAlternatives` could find for this element — below the bad-score threshold, meaning no test id, no accessible name, and no stable structural anchor either. */
+  /** The best score of a locator finding this element alone on the page (`checkLocators`), 0 when none does — below the bad-score threshold, meaning no test id, no telling name, and no stable structural anchor either. */
   bestScore: number;
+}
+
+export interface LintScan {
+  findings: LintFinding[];
+  /** The interactive elements of the page, open shadow roots included, those hidden from the accessibility tree aside. */
+  interactive: number;
+  /** How many of them were checked: every one, or the first `MAX_CHECKED` in page order. */
+  checked: number;
+}
+
+/** ARIA widget roles: the elements a test operates. Headings, regions and lists are not lint targets. */
+const INTERACTIVE_ROLES = new Set([
+  'button',
+  'link',
+  'checkbox',
+  'radio',
+  'combobox',
+  'textbox',
+  'switch',
+  'tab',
+  'menuitem',
+  'option',
+  'slider',
+  'spinbutton',
+  'searchbox',
+]);
+
+/**
+ * Below this, the only alternatives left are CSS-class-based
+ * (classifyCssStability tops out at 40) or nothing at all — see
+ * locator-generation.ts's own score comments for the full scale.
+ */
+const BAD_SCORE_THRESHOLD = 50;
+
+/** Interactive elements checked at most, so a page with thousands of them cannot hang the scan; the panel says when it stops. */
+const MAX_CHECKED = 800;
+
+export interface LintScanOptions {
+  /** Checked between slices of work; returning false abandons the scan. */
+  keepGoing?: () => boolean;
+  /** Milliseconds of work between yields back to the page. */
+  sliceMs?: number;
 }
 
 /**
  * Find every interactive element that would score badly as a Playwright
- * locator target right now (A9): no test id, no accessible name, and no
- * unique structural anchor either — `generateAlternatives`' own single
- * source of truth for what counts as a good locator, just read as a
- * pass/fail signal instead of a ranked list.
+ * locator target right now: no locator but a positional one finds it
+ * alone — no test id, no name that tells it apart, and no unique structural
+ * anchor either. The elements and their roles are the ones `getByRole` sees
+ * (`DomModel`, open shadow roots included, hidden ones left out); the ranking and its check against
+ * the page are the Pick results' own (`rankElement`, `checkLocators`), read as
+ * a pass/fail signal instead of a ranked list, with one engine for the whole
+ * scan. Works in slices so the page stays responsive; answers null when
+ * `keepGoing` stopped it.
  *
- * Unlike `evaluateLocatorChain`/`derivePattern`, this isn't re-serialized via
- * `Function.prototype.toString()` in tests: `generateAlternatives` has its
- * own web of private module-level helpers that reconstruction can't carry
- * along, and they aren't exported to install individually either. Tested via
- * the real built `lint-overlay.js` bundle instead (see that file).
+ * Unlike `derivePattern`, this isn't re-serialized via
+ * `Function.prototype.toString()` in tests: `generateAlternatives` and the
+ * engine have their own web of private module-level helpers that
+ * reconstruction can't carry along. Tested via the real built
+ * `lint-overlay.js` bundle instead (see that file).
  */
-export function scanForLintIssues(): LintFinding[] {
-  // ARIA "widget" roles — the interactive surface A9 is scoped to, not every
-  // role tagRoles resolves (headings, regions, lists, etc. aren't lint
-  // targets here).
-  const INTERACTIVE_ROLES = new Set([
-    'button',
-    'link',
-    'checkbox',
-    'radio',
-    'combobox',
-    'textbox',
-    'switch',
-    'tab',
-    'menuitem',
-    'option',
-    'slider',
-    'spinbutton',
-    'searchbox',
-  ]);
-
-  // Below this, the only alternatives left are CSS-class-based
-  // (classifyCssStability tops out at 40) or nothing at all — see
-  // locator-generation.ts's own score comments for the full scale.
-  const BAD_SCORE_THRESHOLD = 50;
-
-  // Hard cap on raw candidates examined, so a pathological page (thousands
-  // of buttons) can't hang the scan. Comfortably above any real page's
-  // actual interactive-element count.
-  const MAX_CANDIDATES = 800;
-
-  const roleSources = [...new Set(['[role]', 'input', 'select', ...Object.keys(TAG_TO_ROLE)])].join(',');
-  const probeArg: ProbeArg = {
-    keep: [...CAPTURED_ATTRIBUTES],
-    tagRoles: TAG_TO_ROLE,
-    inputRoles: INPUT_TYPE_TO_ROLE,
-    roleSources,
-    includeStructural: true,
-    includeLabelText: true,
-  };
-
+export async function scanForLintIssues(options: LintScanOptions = {}): Promise<LintScan | null> {
+  const sliceMs = options.sliceMs ?? 12;
   const findings: LintFinding[] = [];
   const perRoleCount = new Map<string, number>();
-  const candidates = document.querySelectorAll(roleSources);
-  const limit = Math.min(candidates.length, MAX_CANDIDATES);
+  const engine = createPageEngine(document);
+  const model = engine.model;
+  const interactive: Array<{ element: Element; role: string }> = [];
+  for (const element of engine.elements()) {
+    const role = model.role(element);
+    if (role && INTERACTIVE_ROLES.has(role) && !model.isHiddenForAria(element)) interactive.push({ element, role });
+  }
+  const checked = Math.min(interactive.length, MAX_CHECKED);
+  let sliceStart = performance.now();
 
-  for (let i = 0; i < limit; i++) {
-    const el = candidates[i]!;
-    const attrs = probeElementAttrs(el, probeArg);
-    const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-    const role = resolveAriaRole({ ...attrs, accessibleName });
-    if (!role || !INTERACTIVE_ROLES.has(role)) continue;
-
-    const ranked = generateAlternatives({ ...attrs, accessibleName });
-    const bestScore = ranked.length > 0 ? ranked[0]!.score : 0;
+  for (let i = 0; i < checked; i++) {
+    if (performance.now() - sliceStart > sliceMs) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (options.keepGoing && !options.keepGoing()) return null;
+      sliceStart = performance.now();
+    }
+    const { element, role } = interactive[i]!;
+    const { accessibleName, ranked } = rankElement(element, { model });
+    const [best] = checkLocators(element, ranked, { engine, limit: 1 });
+    const bestScore = best?.score ?? 0;
     if (bestScore >= BAD_SCORE_THRESHOLD) continue;
 
-    // accessibleName is always null here: approximateAccessibleName checks
-    // aria-label/textContent/title/placeholder, and any of those being
-    // truthy would already have earned a score-90 role+name alternative
-    // above the threshold. Nothing to slug — number by discovery order
-    // within the role instead (button-1, button-2, link-1, ...).
+    // Numbered by discovery order within the role (button-1, button-2,
+    // link-1, ...): a name here is one other elements share, so no slug of
+    // it would be unique either.
     const n = (perRoleCount.get(role) ?? 0) + 1;
     perRoleCount.set(role, n);
-    const suggestedTestId = `${role}-${n}`;
-    findings.push({ element: el, role, accessibleName, suggestedTestId, bestScore });
+    findings.push({ element, role, accessibleName, suggestedTestId: `${role}-${n}`, bestScore });
   }
 
-  return findings;
+  return { findings, interactive: interactive.length, checked };
 }

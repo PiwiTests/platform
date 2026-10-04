@@ -29,6 +29,15 @@ export interface PiwiDashboardOptions {
   projectName?: string;
   /** Optional description of the project */
   projectDescription?: string;
+  /**
+   * Time budget (ms) for the reporter's end-of-run work: delivering the last
+   * live events, uploading the remaining traces and attachments, and submitting
+   * the run. When it runs out, the reporter stops waiting for the dashboard and
+   * saves the run's results locally; the next run for the project uploads them,
+   * without traces or attachments. Defaults to `900000` (15 minutes). Set to `0`
+   * for no limit. Can also be set with `PIWI_SUBMIT_TIMEOUT`.
+   */
+  submitTimeout?: number;
 
   // ── What gets uploaded ─────────────────────────────────────────────────────
   /** Upload trace files to the dashboard. Defaults to `true`. */
@@ -69,6 +78,37 @@ export interface PiwiDashboardOptions {
    */
   capturePageState?: boolean;
   /**
+   * Capture a lightweight inventory of each visited page on *passing* runs — the
+   * interactive controls (role + accessible name) and links (name, with the query
+   * and hash stripped from the href) present as the test navigates — so the
+   * dashboard can tell which controls and links the suite exposes but never
+   * exercises. Only names and hrefs are captured, never field values; a page's
+   * controls are read at most once per worker per run. **Defaults to `false`** —
+   * opt in with `capturePageInventory: true` (or `PIWI_CAPTURE_PAGE_INVENTORY=true`).
+   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   */
+  capturePageInventory?: boolean;
+  /**
+   * Record which application source files each test executes: the files whose
+   * functions ran, from Chromium's JavaScript coverage, resolved through the
+   * dev server's module URLs or the bundle's source maps. It answers "which
+   * tests reach this file?" for test selection, change coverage and
+   * `piwi preflight`. Only repository-relative file paths are sent. Chromium only;
+   * other browsers record nothing. It slows the page's JavaScript, so run it on
+   * one scheduled job rather than every run. **Defaults to `false`** — opt in
+   * with `captureCodeReach: true` (or `PIWI_CAPTURE_CODE_REACH=true`).
+   * Automatically disabled when `collectPerformanceMetrics` is `false`.
+   */
+  captureCodeReach?: boolean;
+  /**
+   * The directories module paths and source-map sources are resolved against
+   * for `captureCodeReach`, relative to the Playwright config, before the
+   * repository root, which is always tried last. Defaults to the Playwright
+   * config's directory. Set it to the dev server's root when that is not the
+   * config's directory (Nuxt: `['app']`).
+   */
+  codeReachRoots?: string[];
+  /**
    * Capture server-side spans for each API/document request the test makes,
    * read from the `X-Piwi-Trace` response header emitted by a Piwi
    * instrumentation plugin (e.g. `@piwitests/instrumentation-nitro`). The spans show
@@ -79,6 +119,35 @@ export interface PiwiDashboardOptions {
    */
   captureServerTraces?: boolean;
   /**
+   * Keep a ledger of the browsers, contexts, pages and API request contexts each
+   * test opens, and list at the end of the run the ones left open after the
+   * scope that created them ended (a context a test never closed, a `beforeAll`
+   * context no `afterAll` closes, a browser a test launched itself), the pages
+   * opened and never used, and the pages, listeners and route handlers piling up
+   * on a page or context that lives across tests. Each finding names the line or
+   * the fixture that opened the object. Rides the capture fixtures and costs a
+   * few bookkeeping steps per test. Also samples the run's processes and the
+   * machine, with or without the fixtures, and prints what the run cost: CPU by
+   * process, time spent waiting for a CPU, peak memory and disk. The findings,
+   * the run's cost and each test's go to the dashboard with the run, on its
+   * Resources tab. Defaults to `true`. Set to `false` (or
+   * `PIWI_CAPTURE_RESOURCES=false`) to turn both off.
+   */
+  captureResources?: boolean;
+  /**
+   * What the capture fixtures do when a test leaves open a browser, context,
+   * page or API request context that the test itself opened (its body or its
+   * `beforeEach`/`afterEach` hooks; a fixture's objects are the fixture's):
+   * `'report'` lists it in the end-of-run summary, `'fail'` also fails the test
+   * with the line that opened it, and `'close'` closes it when the test ends and
+   * still lists it. A `beforeAll` object left open is only ever reported. Each
+   * test is judged when it ends, so a test that hands what it opened to the next
+   * one fails under `'fail'` and loses it under `'close'`: open such objects in
+   * `beforeAll` and close them in `afterAll`. Defaults to `'report'`. Can also
+   * be set with `PIWI_LEAK_CHECK`.
+   */
+  leakCheck?: 'report' | 'fail' | 'close';
+  /**
    * Sample the ARIA snapshot at the end of a *passing* test, so a later failure
    * can be diffed against the page as it last looked when green. Rate-limited by
    * the server: at run start the reporter asks which tests are due a fresh
@@ -88,6 +157,15 @@ export interface PiwiDashboardOptions {
    * Set to `false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`) to never sample on pass.
    */
   sampleAriaOnPass?: boolean;
+  /**
+   * Upload the application's declared surface at run start: a committed
+   * `piwi.manifest.json` next to the Playwright config, and — when the base URL's
+   * first response carries an instrumentation header — the instrumentation
+   * package's `/__piwi/manifest`. A route or page the manifest declares that no
+   * test reaches becomes a "declared, never hit" gap. Defaults to `true`; set to
+   * `false` (or `PIWI_UPLOAD_MANIFEST=false`) to never upload.
+   */
+  uploadManifest?: boolean;
   /**
    * When installed via `wrapConfig`, default Playwright's own `screenshot` and
    * `trace` options on the top-level `use` block so a failing test keeps a
@@ -105,6 +183,22 @@ export interface PiwiDashboardOptions {
    * to opt out and let Playwright's own defaults stand.
    */
   defaultCapture?: boolean;
+
+  // ── App under test ─────────────────────────────────────────────────────────
+  /**
+   * Check that each `baseURL` the run's projects use answers before any worker
+   * starts, and stop the run with a message naming the ones that do not, so a
+   * suite never runs against an environment that is down. Any HTTP answer
+   * counts (a redirect or a 404 included) except a 502, 503 or 504 from a
+   * gateway; each base URL gets three tries of 10 seconds, 2 seconds apart,
+   * sent with the project's `ignoreHTTPSErrors` and `proxy`. A stopped run
+   * runs no test and reaches no dashboard. The check runs in the reporter's
+   * global setup, after `webServer` has started and before the config's own
+   * `globalSetup`, so leave it off when that setup is what starts the app. Only
+   * the projects `--project` selects are checked. **Defaults to `false`**. Can
+   * also be set with `PIWI_CHECK_BASE_URL=true`.
+   */
+  checkBaseUrl?: boolean;
 
   // ── Local debugging aids (headed runs only, never under CI) ────────────────
   /**
@@ -173,12 +267,23 @@ export interface PiwiDashboardOptions {
   // ── Run metadata ───────────────────────────────────────────────────────────
   /** Additional report types to upload. Each entry can specify `type`, optional `dir`, and optional `label`. */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
-  /** Stable label that ties shards together (e.g. CI run ID). Auto-detected from CI env; override if needed. */
+  /**
+   * Stable label that ties shards together (e.g. CI run ID). Auto-detected from
+   * CI env, with the CI job's id added for a run that is not sharded; a label
+   * set here is used as it is. Override it when your CI is not detected, or to
+   * keep matrix legs that report to one project apart.
+   */
   runLabel?: string;
   /** Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` */
   environment?: string;
   /** Optional display label for the test run (e.g. "v2.3.1 release") */
   label?: string;
+  /**
+   * Keep this run forever: the dashboard's retention never deletes it. Set it
+   * for the runs worth keeping, such as release or tag builds. Defaults to
+   * `false`. Can also be set with `PIWI_KEEP=true`.
+   */
+  keep?: boolean;
   /** Related issue reference, e.g. `"JIRA-123"` */
   relatedIssue?: string;
   /** CI job information */

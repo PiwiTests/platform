@@ -29,7 +29,11 @@
  *
  * Note: the reporter package (`reporter/src/internal/config/env.ts`) has its
  * own `PIWI_ENV_KEYS` map for the vars it reads in CI — those overlap with the
- * ingestion vars here but are owned by the reporter, not this registry.
+ * ingestion vars here but are owned by the reporter, not this registry. So are
+ * `PIWI_ORIGIN` and `PIWI_ORIGIN_REF`, which a launcher sets on the Playwright
+ * process to stamp the run's origin: the app reads them only as the run's
+ * `piwiOrigin` metadata (`shared/run-eligibility.ts`), and the test metadata
+ * reference documents them.
  */
 
 import {
@@ -40,6 +44,7 @@ import {
 
 export type PiwiEnvVarCategory =
   | 'general'
+  | 'localization'
   | 'database'
   | 'storage'
   | 'auth'
@@ -135,6 +140,13 @@ export interface PiwiEnvVarCategoryMeta {
 /** Display metadata for every category, driving the generated reference page. */
 export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryMeta> = {
   general: { title: 'General', order: 1 },
+  localization: {
+    title: 'Localization',
+    order: 1.5,
+    intro:
+      'Controls how dates and times are formatted (day/month order, 12h vs 24h) and which time zone they display in. When set, these lock the instance-default fields in **Settings → Localization**; each viewer can still pick their own format there, overriding the instance default in their own browser.',
+    note: "Values are a BCP-47 locale (e.g. `fr-FR`) or an IANA time zone (e.g. `Europe/Paris`); the keyword `auto` follows the viewer's browser. See [Localization](/operate/localization).",
+  },
   database: {
     title: 'Database',
     order: 2,
@@ -146,14 +158,14 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     title: 'Storage',
     order: 3,
     intro: 'Controls where test artifacts (HTML reports, traces, attachments) are stored.',
-    note: 'Full details and IAM examples: [Storage configuration](/operate/storage).',
+    note: 'Full details and IAM examples: [Storage & retention](/operate/storage).',
   },
   auth: {
     title: 'Authentication',
     order: 4,
     intro:
       'Authentication is optional and off by default. When disabled, all endpoints behave as a single virtual administrator.',
-    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for roles, API keys, and project assignments.',
+    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for roles, [API keys](/operate/api-keys) for keys, and [Project access](/operate/project-access) for project assignments.',
   },
   oauth: { title: 'OAuth (SSO)', order: 5, mergeInto: 'auth' },
   'wasted-time': {
@@ -175,7 +187,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 8,
     intro:
       'Cap how much evidence (and how many tokens) go into each AI diagnosis. Resolution order: defaults ← values stored from **Settings → AI** ← environment; the environment wins and locks the field in the UI. Values are clamped to the min–max range; a `0` disables a section only where the minimum is `0`.',
-    note: 'See [AI diagnosis → Context limits](/features/ai-diagnosis#context-limits-and-token-cost) for section-by-section guidance.',
+    note: 'See [AI provider → Context limits](/guide/ai-provider#context-limits-and-token-cost) for how the caps work.',
   },
   'ai-steps': {
     title: 'AI steps',
@@ -184,7 +196,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 8.5,
     intro:
       "Bounds on the reporter's AI-step **authoring** pass (`page.piwiLocator(...)` / `page.piwiRun(...)` in `resolve`/`heal` mode), which calls the model through this server. They cap how much of the page snapshot and how many output tokens go into each authoring iteration. They never apply during normal `replay` runs, which make no model calls. Values are clamped to the min–max range.",
-    note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](/guide/ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
+    note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](/features/ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
   },
   ingest: {
     title: 'Ingest limits',
@@ -218,7 +230,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 14,
     intro:
       'Tunes the similarity thresholds used when grouping failures into clusters by their error fingerprint (and optional embeddings). Only used when an embedding model is configured.',
-    note: 'See [AI diagnosis → Failure clustering](/features/ai-diagnosis#failure-clustering).',
+    note: 'See [Failure clusters → How failures are grouped](/features/failure-clusters#how-failures-are-grouped).',
   },
   testing: {
     title: 'Backend logs',
@@ -249,13 +261,35 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SECRET_KEY: {
     description:
-      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, webhook/SCM secrets). Strongly recommended in production.',
+      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, SCM tokens, webhook and integration secrets). Required before the dashboard can save any of them.',
     category: 'general',
     secret: true,
     example: 'a 64-char random hex string',
     notes:
-      "Falls back to an insecure built-in development key (with a startup warning in production). Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
+      "Unset, or set to the built-in development key, the dashboard cannot save a secret: the save answers HTTP 409 with a message naming this variable. Generate one with `node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\"`.",
   },
+  // ── Localization ─────────────────────────────────────────────────────────
+  PIWI_LOCALE: {
+    description:
+      'Instance-default BCP-47 locale for formatting dates and times (e.g. "fr-FR" → 22/09/2026 14:30). The keyword "auto" follows each viewer\'s browser. Unset keeps the built-in en-US format.',
+    category: 'localization',
+    example: 'fr-FR',
+    since: '0.36.0',
+    docs: 'operate/localization',
+    notes:
+      'When set, the instance-default locale is locked in Settings → Localization (read-only), but each viewer can still override the format for their own browser. Any valid BCP-47 tag works, not only the ones the settings dropdown lists.',
+  },
+  PIWI_TIME_ZONE: {
+    description:
+      'Instance-default IANA time zone dates and times are shown in (e.g. "Europe/Paris"). The keyword "auto" (the default) uses each viewer\'s own browser time zone.',
+    category: 'localization',
+    example: 'Europe/Paris',
+    since: '0.36.0',
+    docs: 'operate/localization',
+    notes:
+      'When set, the instance-default time zone is locked in Settings → Localization (read-only), but each viewer can still override it for their own browser.',
+  },
+
   PIWI_BUILD_DIR: {
     description: 'Overrides the Nuxt build output directory. Used by the test harness to isolate parallel builds.',
     category: 'build',
@@ -294,19 +328,39 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_DAYS: {
     description:
-      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in).',
+      'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in). Kept runs are never pruned.',
     category: 'database',
     type: 'number',
     min: 0,
     docs: 'operate/storage#data-retention',
   },
+  PIWI_RETENTION_MIN_RUNS: {
+    description:
+      'Newest runs of each project that age-based pruning (the nightly sweep and the manual cleanup) always leaves in place, however old — so a project that stops reporting keeps its last runs. Unset or 0 sets no floor.',
+    category: 'database',
+    type: 'number',
+    default: '0',
+    min: 0,
+    docs: 'operate/storage#data-retention',
+    since: '0.38.0',
+  },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
-      'Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever).',
+      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions and the agents' write log follow the same horizon.",
     category: 'database',
     type: 'number',
     default: '30',
     min: 0,
+  },
+  PIWI_RETENTION_REPORT_DAYS: {
+    description:
+      'Days to keep report snapshots (the stored quality reports on the Reports page) before the nightly sweep prunes them (default 365; 0 keeps them forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.39.0',
+    docs: 'features/quality-reports#report-schedules',
   },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
@@ -348,18 +402,16 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
   },
   PIWI_S3_ACCESS_KEY_ID: {
-    description: 'S3 access key id with write access to the bucket.',
+    description: 'Optional static S3 access key id. When omitted, the AWS SDK default credential chain is used.',
     category: 'storage',
     secret: true,
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
-    requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
   },
   PIWI_S3_SECRET_ACCESS_KEY: {
-    description: 'S3 secret access key.',
+    description: 'Optional static S3 secret access key. Set it together with PIWI_S3_ACCESS_KEY_ID.',
     category: 'storage',
     secret: true,
     relevantWhen: { PIWI_STORAGE_TYPE: 's3' },
-    requiredWhen: { PIWI_STORAGE_TYPE: 's3' },
   },
   PIWI_S3_ENDPOINT: {
     description: 'Custom endpoint for S3-compatible services (MinIO, R2, Spaces).',
@@ -391,6 +443,15 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
     notes: 'The server refuses to start when auth is enabled and this is unset.',
+  },
+  PIWI_METRICS_ENABLED: {
+    description:
+      'Set to "true" to serve GET /api/metrics: the metric catalog\'s current values per project in the OpenMetrics text format, for a Prometheus or a Grafana you run to pull (Piwi sends nothing anywhere). Off by default. With authentication on, the scraper sends an API key, and sees the projects of its user.',
+    category: 'general',
+    type: 'boolean',
+    default: 'false',
+    since: '0.39.0',
+    docs: 'operate/metrics',
   },
   PIWI_SHARE_LINKS_ENABLED: {
     description:
@@ -467,7 +528,7 @@ export const PIWI_ENV_VARS = {
   // ── AI — diagnosis model ─────────────────────────────────────────────────
   PIWI_AI_PROVIDER: {
     description:
-      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI, desktop app only).',
+      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
     category: 'ai',
     type: 'enum',
     enum: ['anthropic', 'openai', 'claude-cli'],
@@ -490,7 +551,8 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_AI_PROVIDER: 'openai' },
   },
   PIWI_AI_BASE_URL: {
-    description: 'Base URL for OpenAI-compatible providers (e.g. http://localhost:11434/v1).',
+    description:
+      'Base URL of the provider API. Required for "openai" — OpenAI itself (https://api.openai.com/v1) as well as compatible servers (e.g. http://localhost:11434/v1); optional for "anthropic" (a gateway or proxy).',
     category: 'ai',
     type: 'url',
     example: 'http://localhost:11434/v1',
@@ -509,7 +571,8 @@ export const PIWI_ENV_VARS = {
       'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
   },
   PIWI_AI_AUTO_DIAGNOSE: {
-    description: 'Set to "true" to auto-diagnose new failure clusters when a run finishes.',
+    description:
+      'Set to "true" to diagnose, when a run finishes, the failure clusters that failed in it and have no completed diagnosis yet (up to PIWI_AI_AUTO_DIAGNOSE_MAX).',
     category: 'ai',
     type: 'boolean',
     default: 'false',
@@ -521,7 +584,7 @@ export const PIWI_ENV_VARS = {
     category: 'ai',
     example: 'French',
     since: '0.29.0',
-    docs: 'features/ai-diagnosis#response-language',
+    docs: 'guide/ai-provider#response-language',
   },
   PIWI_AI_AUTO_DIAGNOSE_MAX: {
     description: 'Max clusters auto-diagnosed per finished run (budget cap; default 3).',
@@ -864,7 +927,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_EXPORT_MAX_BYTES: {
     description:
-      'Max total size of one export, in bytes. Evidence is added largest-last until the budget is reached; the rest is listed as omitted. The archive is built in memory, so this also bounds what a single export costs the server.',
+      "Max total size of one export, in bytes. Evidence is added in order (each execution's attachments, then its traces); a file that would pass the budget is left out and listed as omitted. The archive is built in memory, so this also bounds what a single export costs the server.",
     category: 'export',
     type: 'number',
     default: String(500 * 1024 * 1024),
@@ -891,7 +954,8 @@ export const PIWI_ENV_VARS = {
     max: 20000,
   },
   PIWI_INGEST_MAX_STEPS: {
-    description: 'Max test steps stored per execution.',
+    description:
+      'Max test steps stored per execution. Past it, the steps that failed are kept first, and one marker step counts the steps dropped.',
     category: 'ingest',
     type: 'number',
     default: '500',
@@ -992,7 +1056,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_AUTO_MARKERS: {
     description:
-      'Automatically create a timeline marker when a run’s environment, Playwright version, or reporter version changes from the previous run (default: enabled). Set to false to disable.',
+      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment, and when a run is flagged as an environment incident (default: enabled). Set to false to disable.',
     category: 'markers',
     type: 'boolean',
     default: 'true',
@@ -1007,7 +1071,18 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     docs: 'guide/backend-logs',
     notes:
-      'Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production.',
+      'Set on the instrumented backend (Nitro or ASP.NET Core). Unset: capture is on in development and off in production builds; `true` forces it off everywhere, `false` forces it on even in production. Overrides every other environment setting.',
+  },
+  PIWI_TEST_LOGS_ENVIRONMENTS: {
+    description:
+      'Comma-separated ASP.NET Core environment names the X-Piwi-Logs middleware is active in (default: Development,Test).',
+    category: 'testing',
+    type: 'list',
+    example: 'Development,Podman,Integration',
+    docs: 'guide/backend-logs#choosing-the-environments',
+    since: '0.39.0',
+    notes:
+      'Set on the ASP.NET Core backend. Used only when the app configures no environments itself (a `UsePiwiTestLogs` argument or `PiwiTestLogsOptions`). Names match case-insensitively.',
   },
 
   // ── Failure clustering ───────────────────────────────────────────────────
@@ -1080,6 +1155,15 @@ export const PIWI_ENV_VARS = {
   },
 
   // ── Integrations ─────────────────────────────────────────────────────────
+  PIWI_SCM_GITLAB_HOSTS: {
+    description:
+      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may call with the SCM token. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
+    category: 'integrations',
+    type: 'list',
+    example: 'gitlab.example.com',
+    since: '0.43.0',
+    docs: 'guide/source-control#which-repository',
+  },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
     category: 'integrations',
@@ -1124,6 +1208,15 @@ export const PIWI_ENV_VARS = {
     default: 'Wait for timeout*,*waitForTimeout*',
     notes:
       'Case-insensitive globs (`*` and `?`) matched against a wait step’s title or source location. Use `*` to count every wait.',
+  },
+
+  PIWI_CI_MINUTE_COST: {
+    description:
+      'Cost of one CI minute as an amount and an ISO 4217 currency code (e.g. "0.008 USD"). When set, every wasted-time number in the analytics widgets and quality reports is followed by its cost, and the setting in Settings → Performance is read-only. Unset shows minutes only.',
+    category: 'wasted-time',
+    example: '0.008 USD',
+    since: '0.39.0',
+    docs: 'features/quality-reports#cost-of-a-ci-minute',
   },
 
   // ── Demo / build mode ────────────────────────────────────────────────────
@@ -1215,11 +1308,6 @@ export function getEnvVarMeta(name: PiwiEnvVarName): PiwiEnvVarMeta {
 /** All env var names in a given category. */
 export function envVarsByCategory(category: PiwiEnvVarCategory): PiwiEnvVarName[] {
   return (Object.keys(PIWI_ENV_VARS) as PiwiEnvVarName[]).filter((name) => PIWI_ENV_VARS[name].category === category);
-}
-
-/** Whether a var is a real runtime setting (excludes build/test-harness vars). */
-export function isRuntimeSetting(name: PiwiEnvVarName): boolean {
-  return !getEnvVarMeta(name).runtimeOnly;
 }
 
 /** Numeric semver comparison (missing segments count as 0). */

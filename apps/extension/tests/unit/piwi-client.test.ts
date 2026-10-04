@@ -1,5 +1,24 @@
-import { describe, test, expect } from 'vitest';
-import { normalizeBaseUrl, projectCatalogUrl } from '../../src/shared/piwi-client';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import {
+  fetchCatalog,
+  fetchLocatorIndex,
+  fetchProjects,
+  testConnection,
+  testDesktop,
+} from '../../src/shared/piwi-client';
+import { normalizeBaseUrl, projectCatalogUrl, projectLocatorsUrl, testCaseUrl } from '../../src/shared/instance-links';
+import { setInstanceApiKey } from '../../src/shared/connection-settings';
+import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
+import type * as SecretStore from '../../src/shared/secret-store';
+
+// The extension's IndexedDB, in memory: the client reads the key from it.
+const secrets = memorySecretArea();
+vi.mock('../../src/shared/secret-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof SecretStore>()),
+  secretArea: () => secrets,
+}));
 
 describe('normalizeBaseUrl', () => {
   test('trims whitespace and a trailing slash', () => {
@@ -24,5 +43,192 @@ describe('projectCatalogUrl', () => {
     expect(projectCatalogUrl('https://piwi.example.com/', 7)).toBe(
       'https://piwi.example.com/projects/7/test-functions',
     );
+  });
+});
+
+describe('dashboard deep links', () => {
+  test('projectLocatorsUrl prefills the locators to check, one per line', () => {
+    expect(projectLocatorsUrl('https://piwi.example.com/', 3)).toBe('https://piwi.example.com/projects/3/locators');
+    expect(projectLocatorsUrl('https://piwi.example.com', 3, ["getByTestId('pay')", "getByText('Pay')"])).toBe(
+      `https://piwi.example.com/projects/3/locators?q=${encodeURIComponent("getByTestId('pay')\ngetByText('Pay')")}`,
+    );
+  });
+
+  test('projectLocatorsUrl names the branch when there is one', () => {
+    expect(projectLocatorsUrl('https://piwi.example.com', 3, [], 'feature/x')).toBe(
+      'https://piwi.example.com/projects/3/locators?branch=feature%2Fx',
+    );
+    expect(projectLocatorsUrl('https://piwi.example.com', 3, ["getByText('A')"], '*')).toBe(
+      `https://piwi.example.com/projects/3/locators?q=${encodeURIComponent("getByText('A')")}&branch=*`,
+    );
+  });
+
+  test('testCaseUrl points at the test case page', () => {
+    expect(testCaseUrl('https://piwi.example.com/', 42)).toBe('https://piwi.example.com/test-cases/42');
+  });
+});
+
+describe('responses as the dashboard sends them', () => {
+  const settings = {
+    instanceUrl: 'https://piwi.example.com',
+    projectMappings: [],
+    serverMappings: [],
+    serverProjects: [],
+    serverSyncedAt: 0,
+    connectedAs: '',
+  };
+  const answer = (body: unknown, status = 200) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+  const lastCall = () => {
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    return calls[calls.length - 1] as [string, RequestInit];
+  };
+
+  beforeEach(async () => {
+    (globalThis as any).chrome = { storage: { local: memoryLocalStorage().local } };
+    secrets.data.clear();
+    await setInstanceApiKey('https://piwi.example.com', 'pd_key');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('fetchProjects reads the { items } list the menu endpoint returns', async () => {
+    answer({ items: [{ id: 1, name: 'shop', label: null }] });
+    expect(await fetchProjects(settings)).toEqual([{ id: 1, name: 'shop', label: null }]);
+    answer([{ id: 2, name: 'api', label: 'API' }]);
+    expect(await fetchProjects(settings)).toEqual([{ id: 2, name: 'api', label: 'API' }]);
+  });
+
+  test('fetchCatalog reads the entries out of { items }', async () => {
+    const entry = { id: 5, name: 'login', kind: 'helper' };
+    answer({ items: [{ id: 5, name: 'login', entry }] });
+    expect(await fetchCatalog(settings, 1)).toEqual([entry]);
+    answer({ testFunctions: [{ entry }] });
+    expect(await fetchCatalog(settings, 1)).toEqual([entry]);
+  });
+
+  test('fetchLocatorIndex sends the API key and returns the index', async () => {
+    const index = {
+      projectId: 1,
+      branch: 'main',
+      defaultBranch: 'main',
+      branches: [],
+      locators: [],
+      tests: [],
+      truncated: false,
+    };
+    answer(index);
+    expect(await fetchLocatorIndex(settings, 1)).toEqual(index);
+    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[0]).toBe('https://piwi.example.com/api/projects/1/locator-index');
+    expect((call[1] as RequestInit).headers).toEqual({ 'X-API-Key': 'pd_key' });
+  });
+
+  test('fetchLocatorIndex asks for a branch, and reads an index without branches as every branch', async () => {
+    answer({
+      projectId: 1,
+      locators: [
+        { locator: "getByText('A')", lastSeenAt: '', uses: [{ test: 0, actions: [], callSites: [], projects: [] }] },
+      ],
+      tests: [],
+      truncated: false,
+    });
+    const index = await fetchLocatorIndex(settings, 1, 'feature/x');
+    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[0]).toBe('https://piwi.example.com/api/projects/1/locator-index?branch=feature%2Fx');
+    expect(index).toMatchObject({ branch: null, defaultBranch: '', branches: [] });
+    expect(index.locators[0]!.uses[0]!.branches).toEqual([]);
+  });
+
+  test('the key goes only to the instance it was given for', async () => {
+    answer({ items: [] });
+    await fetchProjects({ ...settings, instanceUrl: 'https://piwi.example.com/' });
+    expect(lastCall()[1].headers).toEqual({ 'X-API-Key': 'pd_key' });
+    // The stored address changed behind the settings page's back: the request goes keyless.
+    await fetchProjects({ ...settings, instanceUrl: 'https://elsewhere.example.com' });
+    expect(lastCall()[0]).toBe('https://elsewhere.example.com/api/projects/menu');
+    expect(lastCall()[1].headers).toEqual({});
+  });
+
+  test('a key typed and not kept yet is what Save and test sends', async () => {
+    answer({ items: [] });
+    expect(await testConnection({ ...settings, instanceUrl: 'https://new.example.com' }, 'pd_typed')).toEqual({
+      ok: true,
+    });
+    expect(lastCall()[1].headers).toEqual({ 'X-API-Key': 'pd_typed' });
+  });
+
+  test('no request to the instance or the desktop app follows a redirect', async () => {
+    answer({ items: [] });
+    await fetchCatalog(settings, 1);
+    expect(lastCall()[1].redirect).toBe('error');
+    await testDesktop({ url: 'http://127.0.0.1:4318', token: 'pd_desktop' });
+    expect(lastCall()[1]).toMatchObject({ redirect: 'error', headers: { 'x-piwi-token': 'pd_desktop' } });
+  });
+
+  test('fetchLocatorIndex explains a rejected key, a missing endpoint and a malformed answer', async () => {
+    answer({ message: 'nope' }, 403);
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('rejected the API key');
+    answer({ message: 'missing' }, 404);
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('no locator index');
+    answer({ unexpected: true });
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('not a locator index');
+    answer({ projectId: 1, locators: [{ locator: "getByText('A')" }], tests: [] });
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow('not a locator index');
+  });
+
+  test('an answer that is not JSON, such as a sign-in page, says the instance is not Piwi', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<!doctype html><title>Sign in</title>', { status: 200 })),
+    );
+    const notPiwi = 'The instance answered with something that is not Piwi';
+    await expect(fetchCatalog(settings, 1)).rejects.toThrow(notPiwi);
+    await expect(fetchLocatorIndex(settings, 1)).rejects.toThrow(notPiwi);
+    expect(await testConnection(settings)).toEqual({ ok: false, error: expect.stringContaining(notPiwi) });
+  });
+
+  test('Save and test names a redirect, which no request follows, asking again without the key', async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.redirect === 'error') throw new TypeError('Failed to fetch');
+      return { type: 'opaqueredirect', status: 0 } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await testConnection({ ...settings, instanceUrl: 'http://piwi.example.com' })).toEqual({
+      ok: false,
+      error: expect.stringContaining('answered with a redirect'),
+    });
+    expect(fetchMock.mock.calls[1]).toEqual([
+      'http://piwi.example.com/api/projects/menu',
+      { redirect: 'manual', signal: expect.anything() },
+    ]);
+    // No answer at all, redirected or not.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    expect(await testConnection(settings)).toEqual({
+      ok: false,
+      error: expect.stringContaining('could not reach the instance'),
+    });
+  });
+});
+
+describe('the requests to the instance', () => {
+  test('are never imported by a content script, which would hold the key in the page', () => {
+    const contentDir = path.resolve(import.meta.dirname, '..', '..', 'src', 'content');
+    const importers = readdirSync(contentDir).filter((file) =>
+      /from '\.\.\/shared\/piwi-client\.js'/.test(readFileSync(path.join(contentDir, file), 'utf8')),
+    );
+    expect(importers).toEqual([]);
   });
 });

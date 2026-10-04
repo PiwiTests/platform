@@ -20,6 +20,9 @@ test.describe.serial('Streaming API Tests', () => {
       data: {
         projectName: PROJECT.STREAMING_TEST,
         startTime: new Date().toISOString(),
+        // The reporter reports the planned suite size up front; the two streamed
+        // tests below make up this run's total.
+        totalTests: 2,
       },
     });
 
@@ -289,7 +292,7 @@ test.describe.serial('Streaming API Tests', () => {
               type: 'step-begin',
               title: 'expect(locator).toBeVisible()',
               location: 'tests/streaming.spec.ts:8:5',
-              stepCategory: 'pw:expect',
+              stepCategory: 'expect',
               parentTitle: 'streaming test 1',
               workerIndex: 0,
               startedAt: 1700000000000,
@@ -307,7 +310,7 @@ test.describe.serial('Streaming API Tests', () => {
               type: 'step-end',
               title: 'expect(locator).toBeVisible()',
               location: 'tests/streaming.spec.ts:8:5',
-              stepCategory: 'pw:expect',
+              stepCategory: 'expect',
               status: 'passed',
               duration: 40,
               parentTitle: 'streaming test 1',
@@ -355,6 +358,79 @@ test.describe.serial('Streaming API Tests', () => {
     // Suite-level hooks keep the timeline shape (test-begin/test-completed, filePath 'hooks').
     expect(sawHookBegin).toBeTruthy();
     expect(sawHookEnd).toBeTruthy();
+  });
+
+  test('GET /api/test-runs/:id/stream keeps the posted order of step events within one batch', async ({
+    request,
+    baseURL,
+  }) => {
+    // Subscribe first — the in-memory bus only delivers to live subscribers.
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, {
+      signal: controller.signal,
+    });
+    expect(response.ok).toBeTruthy();
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let bytesRead = 0;
+    const received: string[] = [];
+
+    // One step ends and the next begins on the same worker, in a single batch —
+    // the way the reporter's batching usually delivers them.
+    const onWorker = { parentTitle: 'streaming test 1', workerIndex: 0 };
+    const wait = { title: 'Wait for timeout', location: 'tests/streaming.spec.ts:9:5', stepCategory: 'pw:api' };
+    const assertion = {
+      title: 'Expect "toHaveValue"',
+      location: 'tests/streaming.spec.ts:10:5',
+      stepCategory: 'expect',
+    };
+    const titles = new Set([wait.title, assertion.title]);
+
+    try {
+      const res = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
+            { type: 'step-begin', ...wait, ...onWorker, startedAt: 1700000000200 },
+            { type: 'step-end', ...wait, ...onWorker, startedAt: 1700000000200, status: 'passed', duration: 500 },
+            { type: 'step-begin', ...assertion, ...onWorker, startedAt: 1700000000700 },
+          ],
+        },
+      });
+      expect(res.ok()).toBeTruthy();
+
+      while (received.length < 3) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        bytesRead += chunk.length;
+        // Parse only complete SSE messages; a partial one waits for the next chunk.
+        const messages = (buffer + chunk).split('\n\n');
+        buffer = messages.pop()!;
+        for (const message of messages) {
+          const line = message.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          const parsed = JSON.parse(line.slice('data:'.length).trim());
+          if ((parsed.type === 'step-begin' || parsed.type === 'step-end') && titles.has(parsed.data?.title)) {
+            received.push(`${parsed.type} ${parsed.data.title}`);
+          }
+        }
+        // Hard cap so a regression cannot hang the suite
+        if (bytesRead > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+
+    // The run page keeps the last step event per worker, so the running assertion must arrive last.
+    expect(received).toEqual([
+      'step-begin Wait for timeout',
+      'step-end Wait for timeout',
+      'step-begin Expect "toHaveValue"',
+    ]);
   });
 
   // ── /finish ──────────────────────────────────────────────────────────────────
@@ -457,6 +533,117 @@ test.describe.serial('Streaming API Tests', () => {
     const details = await detailsResp.json();
     // duration: 0 must be preserved, not replaced with elapsed time
     expect(details.duration).toBe(0);
+  });
+});
+
+// ── /stream catch-up for still-running cases ────────────────────────────────
+
+/**
+ * A case that has begun but not completed has no DB row, so a client that
+ * connects (or refreshes) mid-run must still see it: the stream catch-up
+ * replays every still-running case as a `test-begin` event, and stops once the
+ * case completes (it is then replayed as `test-completed` from the DB row).
+ */
+test.describe.serial('Streaming catch-up for running cases', () => {
+  let runId: number;
+  let streamToken: string;
+
+  const runningCase = { title: 'in-progress case', location: 'tests/running.spec.ts:7:3' };
+
+  // Read the SSE stream's catch-up until `predicate` matches a parsed event or
+  // the byte cap is hit, then abort. Posting the begin/complete BEFORE opening
+  // the stream is the mid-run-refresh scenario: the client connects late.
+  async function findCatchUpEvent(
+    baseURL: string,
+    predicate: (e: { type?: string; data?: Record<string, unknown> }) => boolean,
+  ): Promise<{ type?: string; data?: Record<string, unknown> } | null> {
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, { signal: controller.signal });
+    expect(response.ok).toBeTruthy();
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    let match: { type?: string; data?: Record<string, unknown> } | null = null;
+    try {
+      while (match === null) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        for (const chunk of text.split('\n\n')) {
+          const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          try {
+            const parsed = JSON.parse(line.slice('data:'.length).trim());
+            if (predicate(parsed)) match = parsed;
+          } catch {
+            continue;
+          }
+        }
+        // Hard cap so a regression cannot hang the suite
+        if (text.length > 65536) break;
+      }
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+    return match;
+  }
+
+  test.beforeAll(async ({ request }) => {
+    const startResp = await request.post('/api/test-runs/start', {
+      data: { projectName: PROJECT.STREAMING_RUNNING_CATCHUP, startTime: new Date().toISOString(), totalTests: 1 },
+    });
+    expect(startResp.ok()).toBeTruthy();
+    const data = await startResp.json();
+    runId = data.runId;
+    streamToken = data.streamToken;
+  });
+
+  test('a begun-but-unfinished case is not in the REST payload yet', async ({ request }) => {
+    const beginResp = await request.post(`/api/test-runs/${runId}/events`, {
+      data: { streamToken, testCases: [{ type: 'begin', ...runningCase, workerIndex: 0 }] },
+    });
+    expect(beginResp.ok()).toBeTruthy();
+
+    // The run's REST payload only carries persisted (completed) cases, so the
+    // running case is absent — this is exactly why the stream must replay it.
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    expect(run.testCases.find((tc: { title: string }) => tc.title === runningCase.title)).toBeUndefined();
+  });
+
+  test('the stream catch-up replays the running case as test-begin', async ({ baseURL }) => {
+    const event = await findCatchUpEvent(
+      baseURL!,
+      (e) => e.type === 'test-begin' && e.data?.title === runningCase.title,
+    );
+    expect(event, 'running case should be replayed on connect, not wait for the next live event').not.toBeNull();
+    expect(event!.data!.location).toBe(runningCase.location);
+  });
+
+  test('once the case completes it is replayed as test-completed, not test-begin', async ({ request, baseURL }) => {
+    const completeResp = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [{ type: 'complete', ...runningCase, status: 'passed', duration: 900, retries: 0 }],
+      },
+    });
+    expect(completeResp.ok()).toBeTruthy();
+
+    // The case now has a DB row, so the catch-up serves it as test-completed and
+    // no longer as a running-case test-begin.
+    const completed = await findCatchUpEvent(
+      baseURL!,
+      (e) => e.data?.title === runningCase.title && (e.type === 'test-completed' || e.type === 'test-begin'),
+    );
+    expect(completed).not.toBeNull();
+    expect(completed!.type).toBe('test-completed');
+    expect(completed!.data!.status).toBe('passed');
+  });
+
+  test.afterAll(async ({ request }) => {
+    await request.post(`/api/test-runs/${runId}/finish`, {
+      data: { streamToken, status: 'passed', duration: 1000, totalTests: 1, passedTests: 1, failedTests: 0 },
+    });
   });
 });
 

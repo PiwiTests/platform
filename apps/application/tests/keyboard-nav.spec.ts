@@ -4,9 +4,8 @@ import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 /**
- * Regression guards for the keyboard/navigation fixes:
- *  - the global `g h` / `g p` "go to" chords (previously dead — `useDashboard()`
- *    was never called),
+ * Regression guards for keyboard navigation:
+ *  - the global `g h` / `g p` "go to" chords,
  *  - the skip link being the first Tab stop,
  *  - project tabs reflecting `?tab=` in the URL via replace() (no history growth).
  */

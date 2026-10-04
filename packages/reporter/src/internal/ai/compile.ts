@@ -5,14 +5,8 @@
  * flat candidate into structured data plus a drift fingerprint. Same page + same
  * element ⇒ same artifact, regardless of model sampling.
  */
-import type { AriaCandidate, ElementAttributes, ElementFingerprint, RankedLocator } from '@piwitests/core';
-import {
-  approximateAccessibleName,
-  freshLocatorsFromCandidate,
-  generateAlternatives,
-  headingLevel,
-  resolveAriaRole,
-} from '@piwitests/core';
+import type { AriaCandidate, ElementFingerprint, RankedLocator } from '@piwitests/core';
+import { freshLocatorsFromCandidate } from '@piwitests/core';
 import type { LocatorArg, StructuredLocator } from './artifact.js';
 
 /** A compiled locator plus the fingerprint used to detect later drift. */
@@ -61,30 +55,6 @@ export function rankedToStructured(ranked: RankedLocator): StructuredLocator | n
   const args = positionalArgs(ranked.method, ranked.args);
   if (!args) return null;
   return { method: ranked.method, args };
-}
-
-/** Build the drift fingerprint (role / accessible name / heading level) for an element. */
-export function fingerprintOf(attrs: ElementAttributes): ElementFingerprint {
-  const role = resolveAriaRole(attrs);
-  const name = attrs.accessibleName ?? approximateAccessibleName(attrs) ?? attrs.textContent ?? null;
-  const fingerprint: ElementFingerprint = { role, name };
-  const level = headingLevel(attrs, role);
-  if (level !== null) fingerprint.level = level;
-  if (attrs.rolePosition) fingerprint.rolePosition = attrs.rolePosition;
-  return fingerprint;
-}
-
-/**
- * Compile the highest-scoring stable, flat locator for an element. Returns
- * `null` only when no candidate can be expressed as flat structured data (an
- * anchored-chain-only element — a later phase flattens those).
- */
-export function compileLocator(attrs: ElementAttributes): CompiledLocator | null {
-  for (const ranked of generateAlternatives(attrs)) {
-    const structured = rankedToStructured(ranked);
-    if (structured) return { locator: structured, fingerprint: fingerprintOf(attrs), score: ranked.score };
-  }
-  return null;
 }
 
 /**

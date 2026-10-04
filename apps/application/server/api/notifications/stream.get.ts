@@ -5,6 +5,13 @@ import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
 import { getDatabase } from '../../database';
 import { notificationChannels, subscriptions } from '../../database/schema';
+import {
+  REPORT_READY_EVENT,
+  passesSubscriptionFilters,
+  type NotificationEvent,
+  type NotificationPayload,
+  type SubscriptionFilters,
+} from '#shared/notification-events';
 
 defineRouteMeta({
   openAPI: {
@@ -23,6 +30,7 @@ interface BrowserSubscription {
   events: string[];
   projectId: number | null;
   mutedUntil: Date | null;
+  filters: SubscriptionFilters | null;
 }
 
 export default eventHandler(async (event) => {
@@ -53,6 +61,7 @@ export default eventHandler(async (event) => {
         events: subscriptions.events,
         projectId: subscriptions.projectId,
         mutedUntil: subscriptions.mutedUntil,
+        filters: subscriptions.filters,
       })
       .from(subscriptions)
       .innerJoin(notificationChannels, eq(subscriptions.channelId, notificationChannels.id))
@@ -67,6 +76,7 @@ export default eventHandler(async (event) => {
       events: (r.events as string[] | null) ?? [],
       projectId: r.projectId,
       mutedUntil: r.mutedUntil,
+      filters: r.filters as SubscriptionFilters | null,
     }));
   };
 
@@ -83,13 +93,14 @@ export default eventHandler(async (event) => {
   let loadedAt = Date.now();
   let refreshing = false;
 
-  const matchesSubscription = (type: string, projectId: number): boolean => {
+  const matchesSubscription = (type: string, projectId: number, payload: Record<string, unknown>): boolean => {
     const now = new Date();
     return subs.some(
       (s) =>
         s.events.includes(type) &&
         (s.projectId == null || s.projectId === projectId) &&
-        (!s.mutedUntil || s.mutedUntil <= now),
+        (!s.mutedUntil || s.mutedUntil <= now) &&
+        passesSubscriptionFilters(s.filters, type as NotificationEvent, payload as unknown as NotificationPayload),
     );
   };
 
@@ -120,7 +131,19 @@ export default eventHandler(async (event) => {
       const targetedAtMe = typeof targetUserId === 'number' && targetUserId === user.id;
 
       const type = notificationEvent.type as string | undefined;
-      if (!targetedAtMe && typeof projectId === 'number' && type && !matchesSubscription(type, projectId)) return;
+      // A quality report goes to its personal channel's owner, or, from a global
+      // channel, to whoever can open every project it covers.
+      if (type === REPORT_READY_EVENT) {
+        const covered = (notificationEvent.projectIds as number[] | undefined) ?? [];
+        const allowed = typeof targetUserId === 'number' ? targetedAtMe : covered.every((id) => scopeAllows(scope, id));
+        if (!allowed) return;
+      } else if (
+        !targetedAtMe &&
+        typeof projectId === 'number' &&
+        type &&
+        !matchesSubscription(type, projectId, notificationEvent)
+      )
+        return;
 
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(notificationEvent)}\n\n`));

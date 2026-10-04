@@ -35,7 +35,6 @@ export default eventHandler(async (event) => {
   const projectResults = await db.select().from(projects).where(eq(projects.id, id));
   if (!projectResults[0]) throw apiError({ statusCode: 404, message: 'Project not found' });
 
-  // Validate that all supplied userIds actually exist
   if (parsed.data.userIds.length > 0) {
     const found = await db.select({ id: users.id }).from(users).where(inArray(users.id, parsed.data.userIds));
     const foundIds = new Set(found.map((r) => r.id));
@@ -45,7 +44,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  await setProjectMembers(db, id, parsed.data.userIds, currentUser.id);
+  // With authentication off the caller is a virtual administrator with no users row.
+  await setProjectMembers(db, id, parsed.data.userIds, currentUser.id || undefined);
 
   return { success: true };
 });

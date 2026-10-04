@@ -16,11 +16,14 @@
  */
 import { Role } from '#shared/types';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import type { CapabilityId } from '#shared/capabilities';
 import { helpEnvVars, type HelpTopicKey } from './help-content';
 
 export type SettingsPageId =
   | 'account'
+  | 'localization'
   | 'users'
+  | 'permissions'
   | 'notifications'
   | 'tags'
   | 'storage'
@@ -43,10 +46,9 @@ export interface SettingFieldMeta {
 }
 
 /**
- * Settings splits into two jobs that were previously one flat list of ten:
- * running the instance, and tuning what Piwi infers from your results. A
- * newcomer met "Timeout hygiene" before they had seen a timeout, because
- * nothing said which pages were infrastructure and which were analysis.
+ * Settings splits into two jobs: running the instance, and tuning what Piwi
+ * infers from your results, so infrastructure pages and analysis pages are
+ * grouped apart.
  */
 export type SettingsGroupId = 'instance' | 'analysis' | 'meta';
 
@@ -75,6 +77,12 @@ export interface SettingsPageMeta {
   fields: SettingFieldMeta[];
   /** Topic key for a page-level intro hint shown under the nav. */
   introHelp?: HelpTopicKey;
+  /**
+   * The optional capability this page configures. When that capability is
+   * declined, the nav drops the page and the page itself shows the reconsider
+   * line instead of its settings.
+   */
+  capability?: CapabilityId;
 }
 
 export const SETTINGS_PAGES: SettingsPageMeta[] = [
@@ -90,7 +98,20 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
       { id: 'account.email', label: 'Email address', help: 'account.email' },
       { id: 'account.connected-accounts', label: 'Connected accounts', help: 'account.connected-accounts' },
       { id: 'account.password', label: 'Password', help: 'account.password' },
+      { id: 'account.api-keys', label: 'API keys', help: 'settings.api-keys' },
       { id: 'account.auth-toggle', label: 'Authentication', help: 'settings.auth-toggle', envOnly: true },
+    ],
+  },
+  {
+    id: 'localization',
+    label: 'Localization',
+    icon: 'i-lucide-languages',
+    to: '/settings/localization',
+    group: 'instance',
+    introHelp: 'settings.localization',
+    fields: [
+      { id: 'localization.format', label: 'Date & time format', help: 'settings.locale' },
+      { id: 'localization.time-zone', label: 'Time zone', help: 'settings.time-zone' },
     ],
   },
   {
@@ -108,11 +129,23 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     ],
   },
   {
+    id: 'permissions',
+    label: 'Permissions',
+    icon: 'i-lucide-shield-check',
+    to: '/settings/permissions',
+    group: 'instance',
+    roles: [Role.ADMINISTRATOR],
+    authOnly: true,
+    introHelp: 'settings.permissions',
+    fields: [{ id: 'permissions.grid', label: 'Project access', help: 'settings.permissions' }],
+  },
+  {
     id: 'notifications',
     label: 'Notifications',
     icon: 'i-lucide-bell',
     to: '/settings/notifications',
     group: 'instance',
+    capability: 'notifications',
     fields: [
       { id: 'notifications.smtp', label: 'SMTP email delivery', help: 'settings.smtp', envOnly: true },
       { id: 'notifications.test-email', label: 'Send test email', help: 'notifications.test-email' },
@@ -128,6 +161,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.tags',
+    capability: 'tags',
     fields: [{ id: 'tags.list', label: 'Tags', help: 'settings.tags' }],
   },
   {
@@ -138,6 +172,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'instance',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.integrations',
+    capability: 'integrations',
     fields: [
       { id: 'integrations.connections', label: 'Connections', help: 'settings.integrations' },
       { id: 'integrations.connection', label: 'Connect a system', help: 'settings.integrations.connection' },
@@ -152,7 +187,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     roles: [Role.ADMINISTRATOR],
     fields: [
       { id: 'storage.backend', label: 'Storage backend', help: 'settings.storage-backend', envOnly: true },
-      { id: 'storage.stats', label: 'Storage statistics', help: 'settings.storage-stats' },
+      { id: 'storage.stats', label: 'Storage analysis', help: 'settings.storage-stats' },
       { id: 'storage.cleanup', label: 'Cleanup old test runs', help: 'settings.cleanup' },
     ],
   },
@@ -166,6 +201,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     fields: [
       { id: 'wasted-time.patterns', label: 'Wasted-time patterns', help: 'settings.wasted-time' },
       { id: 'timeout-hygiene.thresholds', label: 'Detection thresholds', help: 'settings.timeout-hygiene' },
+      { id: 'ci-cost', label: 'Cost of a CI minute', help: 'settings.ci-cost' },
     ],
   },
   {
@@ -176,6 +212,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.pr-feedback',
+    capability: 'pr-feedback',
     fields: [{ id: 'pr-feedback.settings', label: 'Pull-request feedback', help: 'settings.pr-feedback' }],
   },
   {
@@ -186,6 +223,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
     introHelp: 'settings.auto-heal',
+    capability: 'auto-heal',
     fields: [{ id: 'auto-heal.settings', label: 'Auto-heal pull requests', help: 'settings.auto-heal' }],
   },
   {
@@ -195,6 +233,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     to: '/settings/ai',
     group: 'analysis',
     roles: [Role.ADMINISTRATOR],
+    capability: 'ai',
     fields: [
       { id: 'ai.diagnosis', label: 'Diagnosis model', help: 'settings.ai-provider' },
       { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
@@ -224,11 +263,6 @@ export function fieldEnvVars(field: SettingFieldMeta): PiwiEnvVarName[] {
   return helpEnvVars(field.help);
 }
 
-/** Whether a field can be overridden by an env var. */
-export function fieldIsOverridable(field: SettingFieldMeta): boolean {
-  return fieldEnvVars(field).length > 0;
-}
-
 /** Union of all env vars across a page's fields (for banners / nav badges). */
 export function pageEnvVars(page: SettingsPageMeta): PiwiEnvVarName[] {
   const seen = new Set<PiwiEnvVarName>();
@@ -236,16 +270,22 @@ export function pageEnvVars(page: SettingsPageMeta): PiwiEnvVarName[] {
   return [...seen];
 }
 
-/** A page is "env-overridable" if any of its fields can be pinned by env. */
-export function pageIsOverridable(page: SettingsPageMeta): boolean {
-  return page.fields.some(fieldIsOverridable);
-}
-
 /** Look up a page by id. */
 export function getSettingsPage(id: SettingsPageId): SettingsPageMeta {
   const page = SETTINGS_PAGES.find((p) => p.id === id);
   if (!page) throw new Error(`Unknown settings page: ${id}`);
   return page;
+}
+
+/**
+ * Whether a signed-in user with `role` may open `path`. Only role-restricted
+ * settings pages are refused; any other path (including non-settings routes)
+ * is allowed. Used by the auth middleware so a direct URL cannot reach a page
+ * the nav hides — the server still enforces the roles on each page's endpoints.
+ */
+export function canOpenSettingsPath(path: string, role: Role | undefined): boolean {
+  const page = SETTINGS_PAGES.find((p) => p.to === path.replace(/\/+$/, ''));
+  return !page?.roles || (role !== undefined && page.roles.includes(role));
 }
 
 // ── Nav construction ───────────────────────────────────────────────────────
@@ -273,6 +313,8 @@ export interface SettingsNavContext {
   isDesktop: boolean;
   /** Pages currently pinned by env, which get a trailing lock badge. */
   envManaged?: Partial<Record<SettingsPageId, boolean>>;
+  /** Capabilities declined at instance level; their pages drop out of the nav. */
+  declinedCapabilities?: Set<CapabilityId>;
 }
 
 /**
@@ -287,7 +329,10 @@ export interface SettingsNavContext {
  */
 export function buildSettingsNavSections(ctx: SettingsNavContext): SettingsNavItem[][] {
   const visible = SETTINGS_PAGES.filter(
-    (page) => (!page.roles || ctx.canSeeAdmin) && !(ctx.isDesktop && page.authOnly),
+    (page) =>
+      (!page.roles || ctx.canSeeAdmin) &&
+      !(ctx.isDesktop && page.authOnly) &&
+      !(page.capability && ctx.declinedCapabilities?.has(page.capability)),
   );
 
   const toItem = (page: SettingsPageMeta): SettingsNavItem => ({

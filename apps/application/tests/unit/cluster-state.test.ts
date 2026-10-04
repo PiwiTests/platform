@@ -76,6 +76,21 @@ describe('computeClusterState — one row per kind', () => {
     expect(s.action).toBeNull(); // open, not resolved
   });
 
+  test('a full fix SHA reads as its short form', () => {
+    const sha = '3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e';
+    const regressed = computeClusterState(
+      cluster({ fixVerification: 'regressed', fixCommit: sha, regressedSinceRunId: 3 }),
+      PROJECT,
+    );
+    expect(regressed.sentence).toContain('Fixed by 3f9c2e1, back since');
+    const verified = computeClusterState(
+      cluster({ fixVerification: 'diagnosis-verified', fixLandedRunId: 62, fixCommit: sha }),
+      PROJECT,
+    );
+    expect(verified.sentence).toContain('(3f9c2e1)');
+    expect(verified.sentence).not.toContain(sha);
+  });
+
   test('regressed while resolved offers reopen', () => {
     const s = computeClusterState(cluster({ status: 'resolved', fixVerification: 'regressed' }), PROJECT);
     // resolved is terminal and wins here
@@ -108,6 +123,22 @@ describe('computeClusterState — one row per kind', () => {
       PROJECT,
     );
     expect(recurs.sentence).toContain('until it recurs');
+  });
+
+  test('a pass at the failing commit is named as flake evidence, not a fix', () => {
+    const s = computeClusterState(cluster({ lastSeenRunId: 64, flakeEvidenceRunId: 66 }), PROJECT);
+    expect(s.kind).toBe('failing');
+    expect(s.sentence).toContain('Passed again at the same commit in run #66, which is flake evidence, not a fix.');
+    expect(s.parts.some((p) => p.kind === 'run' && p.id === 66)).toBe(true);
+
+    const assigned = computeClusterState(
+      cluster({ lastSeenRunId: 64, flakeEvidenceRunId: 66, assignee: 'Avery' }),
+      PROJECT,
+    );
+    expect(assigned.sentence).toContain('which is flake evidence, not a fix.');
+
+    const older = computeClusterState(cluster({ lastSeenRunId: 64, flakeEvidenceRunId: 60 }), PROJECT);
+    expect(older.sentence).not.toContain('flake evidence');
   });
 
   test('quarantined: every affected test is quarantined', () => {

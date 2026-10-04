@@ -12,7 +12,62 @@
  */
 
 /** The Playwright action a recorded step maps to. */
-export type StepAction = 'goto' | 'click' | 'fill' | 'check' | 'uncheck' | 'selectOption' | 'press' | 'assertVisible';
+export type StepAction =
+  | 'goto'
+  | 'click'
+  | 'dblclick'
+  | 'hover'
+  | 'fill'
+  | 'check'
+  | 'uncheck'
+  | 'selectOption'
+  | 'press'
+  | 'setInputFiles'
+  | 'dragTo'
+  | 'assertVisible'
+  | 'assert';
+
+/** The web-first assertions an `assert` step can state. */
+export type AssertionMatcher =
+  | 'toHaveText'
+  | 'toHaveValue'
+  | 'toHaveAccessibleName'
+  | 'toBeVisible'
+  | 'toBeHidden'
+  | 'toBeEnabled'
+  | 'toBeDisabled'
+  | 'toHaveURL';
+
+export const ASSERTION_MATCHERS: readonly AssertionMatcher[] = [
+  'toHaveText',
+  'toHaveValue',
+  'toHaveAccessibleName',
+  'toBeVisible',
+  'toBeHidden',
+  'toBeEnabled',
+  'toBeDisabled',
+  'toHaveURL',
+];
+
+/** Matchers that compare with an expected value; the others check a state. */
+export const VALUE_MATCHERS: ReadonlySet<AssertionMatcher> = new Set([
+  'toHaveText',
+  'toHaveValue',
+  'toHaveAccessibleName',
+  'toHaveURL',
+]);
+
+/** What an `assert` step expects. `toHaveURL` checks the page and needs no target. */
+export interface StepAssertion {
+  matcher: AssertionMatcher;
+  /** The value the page should show: set for `VALUE_MATCHERS`, null for a state matcher. */
+  expected: string | null;
+  /** What the page showed when the step was recorded, when that is worth keeping (a bug report's wrong value). */
+  actual: string | null;
+  negated: boolean;
+  /** Free text from the person who recorded it. */
+  note: string | null;
+}
 
 /** One ranked locator alternative, trimmed to what codegen/matching need (mirrors `RankedLocator` minus scoring metadata not used here). */
 export interface RecordedLocatorAlternative {
@@ -39,23 +94,66 @@ export interface RecordedTarget {
    * Exists because nothing else here identifies an element reliably: two
    * unlabelled `<input>`s on one form share tag, role, accessible name *and*
    * text, and neither gets any locator alternative at all (a bare role anchor
-   * needs the role to be document-unique). Without this, typing into the second
-   * field looked like a continuation of the first and its value overwrote it.
-   * Optional so a recording captured before this existed still deserializes.
+   * needs the role to be document-unique). Without it, typing into the second
+   * field would read as a continuation of the first and overwrite its value.
+   * Optional, so a recording without it still deserializes.
    */
   elementKey?: string | null;
+}
+
+/** A box on the page, in CSS pixels from the viewport's top left corner. */
+export interface ViewportBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The screenshot a bug recording took of the page as a step began, by the id
+ * the recorder gave it, and where the step's element was on it. Kept by the
+ * recorder only: a steps document never holds it.
+ */
+export interface StepView {
+  id: string;
+  box: ViewportBox | null;
 }
 
 /** One recorded, already-normalized user action. */
 export interface RecordedStep {
   action: StepAction;
   target: RecordedTarget | null;
-  /** `fill`/`selectOption` value, or the key name for `press`. Never set for a password-type field — see `redacted`. */
+  /**
+   * `fill`/`selectOption` value, the key name for `press`, or the names of the
+   * files chosen for `setInputFiles`, one per line (never their content). Never
+   * set for a password-type field — see `redacted`.
+   */
   value: string | null;
   /** True when `value` was stripped because the source field was `type="password"` — codegen emits a placeholder instead. */
   redacted: boolean;
   pageUrl: string;
   timestamp: number;
+  /** Set on `assert` steps only. */
+  assertion?: StepAssertion;
+  /** Where a `dragTo` step drops what it drags; set on `dragTo` steps only. */
+  dropTarget?: RecordedTarget | null;
+  /** The page as the step began, in a bug recording; see {@link StepView}. */
+  view?: StepView;
+}
+
+/**
+ * The size of the page's viewport from the step at `step` on, in CSS pixels,
+ * as `page.setViewportSize` sets it. A recording's first one, at step 0, is
+ * the size it was recorded at; the others follow a resize. The browser's zoom
+ * is already in the size (at 200%, a 1280-pixel window is 640 CSS pixels
+ * wide); `zoom` keeps the factor itself when it was not 100%.
+ */
+export interface StepViewport {
+  step: number;
+  width: number;
+  height: number;
+  /** The browser's zoom factor, such as 1.25; absent at 100%. */
+  zoom?: number;
 }
 
 export interface RecordedSession {
@@ -63,19 +161,41 @@ export interface RecordedSession {
   startedAt: number;
   /** The very first page's URL — the only step that becomes an explicit `page.goto(...)` in codegen. */
   startUrl: string;
+  /** The viewport sizes the steps were recorded at, by the step each starts at; absent when none was recorded. */
+  viewports?: StepViewport[];
 }
 
 /** A raw capture event, as built by the extension's DOM listeners — one per meaningful browser event, before coalescing. */
 export interface RawCaptureEvent {
-  kind: 'click' | 'input' | 'change' | 'keydown' | 'navigate';
+  kind:
+    | 'click'
+    | 'dblclick'
+    | 'hover'
+    | 'input'
+    | 'change'
+    | 'files'
+    | 'drop'
+    | 'keydown'
+    | 'navigate'
+    | 'assert'
+    | 'viewport';
+  /** The element acted on or asserted about; null for a navigation and for a `toHaveURL` assertion. */
   target: RecordedTarget | null;
-  /** Current field value (input/change), the key pressed (keydown), or the new URL (navigate). */
+  /** Current field value (input/change), the key pressed (keydown), the new URL (navigate), or the chosen files' names, one per line (files). */
   value: string | null;
   checked: boolean | null;
   inputType: string | null;
   isPasswordField: boolean;
   pageUrl: string;
   timestamp: number;
+  /** What an `assert` event states: an expected value or state, added by hand during a recording. */
+  assertion?: StepAssertion;
+  /** Where a `drop` event's element was dropped; its `target` is the element dragged. */
+  dropTarget?: RecordedTarget | null;
+  /** The page's viewport size, on a `viewport` event: when the recording starts, and after a resize; with the zoom when not 100%. */
+  viewport?: { width: number; height: number; zoom?: number };
+  /** The page as the action began, in a bug recording; see {@link StepView}. */
+  view?: StepView;
 }
 
 /**
@@ -110,6 +230,26 @@ function normalizeText(s: string): string {
 const ENTER_CLICK_WINDOW_MS = 500;
 
 /**
+ * The keys a recording keeps: Enter submits or picks, Escape closes a popup or
+ * a dialog, and the arrows move through a list or a menu. Any other key only
+ * edits a field, which the field's `fill` already carries.
+ */
+export const RECORDED_KEYS: ReadonlySet<string> = new Set(['Enter', 'Escape', 'ArrowDown', 'ArrowUp']);
+
+/**
+ * Whether a recorded key press becomes a step: one of `RECORDED_KEYS`, a
+ * shortcut with a modifier as Playwright writes it (`ControlOrMeta+K`), or a
+ * single character pressed outside a field (a page's own shortcut, such as `?`).
+ * The recorder decides which presses to send; this keeps the rest out.
+ */
+function isRecordedKey(key: string | null | undefined): key is string {
+  if (!key) return false;
+  return (
+    RECORDED_KEYS.has(key) || /^(?:(?:ControlOrMeta|Control|Meta|Alt|Shift)\+)+.+$/.test(key) || [...key].length === 1
+  );
+}
+
+/**
  * Coalesce a stream of raw capture events into `RecordedStep`s:
  *  - a burst of `input` events on the same field collapses into one `fill`,
  *    committed once the field changes or the burst ends (the last value
@@ -117,14 +257,25 @@ const ENTER_CLICK_WINDOW_MS = 500;
  *  - `change` on a checkbox/radio becomes `check`/`uncheck` from the
  *    resulting `checked` state, not a raw `click`;
  *  - `change` on a `<select>` becomes `selectOption`;
- *  - `Enter` on a text field becomes `press('Enter')`, and the browser's own
- *    synthetic click on the same element right after it is dropped rather than
- *    recorded a second time;
- *  - a plain `click` becomes a `click` step;
+ *  - `Enter` becomes `press('Enter')`, and a click on the same element right
+ *    after it (the activation Enter gives a focused button or link) is dropped
+ *    rather than recorded a second time. The click the browser sends to a
+ *    form's submit button for an Enter in one of its fields never arrives
+ *    here: the recorder leaves it out. `Escape`, the arrow keys (`RECORDED_KEYS`)
+ *    and the page's shortcuts (`isRecordedKey`) become presses too;
+ *  - a plain `click` becomes a `click` step, and a `dblclick` replaces the
+ *    two clicks on the same element the browser sent before it;
+ *  - `files` (a file field's choice, names only) becomes `setInputFiles`, and
+ *    `drop` (an HTML drag and drop) becomes `dragTo`;
+ *  - a `hover` event becomes a `hover` step: the recorder sends one only for
+ *    the element whose hover revealed what the next click lands on; a second
+ *    hover on the same element right after the first is dropped;
  *  - `navigate` events become `goto` steps only for the session's very first
  *    page — later navigations are implied by the click/press that caused
  *    them and are dropped (they still update `pageUrl` on later steps via
  *    the caller passing the current page's URL on each event).
+ *  - an `assert` event becomes an `assert` step where it was added, after
+ *    committing any fill in progress; one without an assertion is dropped;
  *  - password-field values are never carried through — `redacted: true`,
  *    `value: null`.
  */
@@ -136,7 +287,10 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
     pageUrl: string;
     timestamp: number;
     redacted: boolean;
+    view?: StepView;
   } | null = null;
+  /** The view of the event a step comes from, when the recorder took one. */
+  const viewOf = (view: StepView | undefined): { view?: StepView } => (view ? { view } : {});
   let sawFirstGoto = false;
 
   function flushPendingFill(): void {
@@ -148,11 +302,15 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
       redacted: pendingFill.redacted,
       pageUrl: pendingFill.pageUrl,
       timestamp: pendingFill.timestamp,
+      ...viewOf(pendingFill.view),
     });
     pendingFill = null;
   }
 
   for (const ev of events) {
+    // A viewport size is not a step: `viewportsForSteps` places it.
+    if (ev.kind === 'viewport') continue;
+
     if (ev.kind === 'navigate') {
       flushPendingFill();
       if (!sawFirstGoto) {
@@ -183,21 +341,23 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
         redacted: ev.isPasswordField,
+        ...viewOf(ev.view),
       };
       continue;
     }
 
     if (ev.kind === 'keydown') {
-      if (ev.value !== 'Enter') continue;
-      // Enter commits whatever field was mid-fill, then replaces the click that would otherwise follow it.
+      if (!isRecordedKey(ev.value)) continue;
+      // A key commits whatever field was mid-fill; Enter then replaces the click that would otherwise follow it.
       flushPendingFill();
       steps.push({
         action: 'press',
         target: ev.target,
-        value: 'Enter',
+        value: ev.value,
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
@@ -212,6 +372,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
           redacted: false,
           pageUrl: ev.pageUrl,
           timestamp: ev.timestamp,
+          ...viewOf(ev.view),
         });
         continue;
       }
@@ -223,9 +384,93 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
           redacted: false,
           pageUrl: ev.pageUrl,
           timestamp: ev.timestamp,
+          ...viewOf(ev.view),
         });
         continue;
       }
+      continue;
+    }
+
+    if (ev.kind === 'assert') {
+      flushPendingFill();
+      if (!ev.assertion) continue;
+      steps.push({
+        action: 'assert',
+        target: ev.assertion.matcher === 'toHaveURL' ? null : ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        ...viewOf(ev.view),
+        assertion: { ...ev.assertion },
+      });
+      continue;
+    }
+
+    if (ev.kind === 'hover') {
+      flushPendingFill();
+      const prev = steps[steps.length - 1];
+      if (!ev.target || (prev?.action === 'hover' && sameTarget(prev.target, ev.target))) continue;
+      steps.push({
+        action: 'hover',
+        target: ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        ...viewOf(ev.view),
+      });
+      continue;
+    }
+
+    if (ev.kind === 'dblclick') {
+      flushPendingFill();
+      // The page as the first of the clicks it replaces began.
+      let view = ev.view;
+      for (let i = 0; i < 2; i++) {
+        const prev = steps[steps.length - 1];
+        if (prev?.action === 'click' && sameTarget(prev.target, ev.target)) view = steps.pop()!.view ?? view;
+      }
+      steps.push({
+        action: 'dblclick',
+        target: ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        ...viewOf(view),
+      });
+      continue;
+    }
+
+    if (ev.kind === 'files') {
+      flushPendingFill();
+      if (!ev.target) continue;
+      steps.push({
+        action: 'setInputFiles',
+        target: ev.target,
+        value: ev.value ?? '',
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        ...viewOf(ev.view),
+      });
+      continue;
+    }
+
+    if (ev.kind === 'drop') {
+      flushPendingFill();
+      if (!ev.target || !ev.dropTarget) continue;
+      steps.push({
+        action: 'dragTo',
+        target: ev.target,
+        value: null,
+        redacted: false,
+        pageUrl: ev.pageUrl,
+        timestamp: ev.timestamp,
+        ...viewOf(ev.view),
+        dropTarget: ev.dropTarget,
+      });
       continue;
     }
 
@@ -234,9 +479,8 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
       // A checkbox/radio click that will also fire `change` is handled there; a plain click on anything else records here.
       if (ev.inputType === 'checkbox' || ev.inputType === 'radio') continue;
       // Enter on a focused button or link fires `keydown` *and* a synthetic
-      // `click`. The press already records the intent, so keeping both made the
-      // generated spec activate the same control twice — a duplicate submit on
-      // any real form.
+      // `click`. The press already records the intent: the click would make the
+      // generated spec activate the same control a second time.
       const prev = steps[steps.length - 1];
       if (
         prev?.action === 'press' &&
@@ -253,15 +497,18 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
         redacted: false,
         pageUrl: ev.pageUrl,
         timestamp: ev.timestamp,
+        ...viewOf(ev.view),
       });
       continue;
     }
   }
 
   flushPendingFill();
-  return steps.map((s) =>
-    s.target ? { ...s, target: { ...s.target, text: s.target.text ? normalizeText(s.target.text) : null } } : s,
-  );
+  const withText = (t: RecordedTarget): RecordedTarget => ({ ...t, text: t.text ? normalizeText(t.text) : null });
+  return steps.map((s) => {
+    const step = s.target ? { ...s, target: withText(s.target) } : s;
+    return step.dropTarget ? { ...step, dropTarget: withText(step.dropTarget) } : step;
+  });
 }
 
 /** Builds a `RecordedSession` from a flat step list — `startUrl` is the first step's page, or the first `goto`'s value. */
@@ -269,4 +516,182 @@ export function buildSession(steps: RecordedStep[], startedAt: number): Recorded
   const firstGoto = steps.find((s) => s.action === 'goto');
   const startUrl = firstGoto?.value ?? steps[0]?.pageUrl ?? '';
   return { steps, startedAt, startUrl };
+}
+
+/**
+ * The viewport sizes of `viewport` events, by the step each applies from: the
+ * first step recorded at or after the size was. Of several sizes before one
+ * step the last counts, a size equal to the one before it is left out, and a
+ * size taken after the last step is dropped.
+ */
+export function viewportsForSteps(steps: RecordedStep[], events: RawCaptureEvent[]): StepViewport[] {
+  const sizes = events.filter((e) => e.kind === 'viewport' && e.viewport).sort((a, b) => a.timestamp - b.timestamp);
+  const byStep = new Map<number, StepViewport>();
+  for (const e of sizes) {
+    const step = steps.findIndex((s) => s.timestamp >= e.timestamp);
+    if (step < 0) continue;
+    const { width, height, zoom } = e.viewport!;
+    byStep.set(step, { step, width, height, ...(zoom != null && zoom !== 1 ? { zoom } : {}) });
+  }
+  const out: StepViewport[] = [];
+  for (const v of [...byStep.values()].sort((a, b) => a.step - b.step)) {
+    const last = out[out.length - 1];
+    if (!last || last.width !== v.width || last.height !== v.height || (last.zoom ?? 1) !== (v.zoom ?? 1)) out.push(v);
+  }
+  return out;
+}
+
+/** The view each step began from, by step: the steps a bug recording took a screenshot for. */
+export function stepViews(steps: RecordedStep[]): Array<StepView & { step: number }> {
+  return steps.flatMap((s, step) => (s.view ? [{ step, id: s.view.id, box: s.view.box }] : []));
+}
+
+/** A recording's session from its raw events: its steps, and the viewport sizes it recorded when there are any. */
+export function sessionFromEvents(events: RawCaptureEvent[], startedAt: number): RecordedSession {
+  const session = buildSession(normalizeSteps(events), startedAt);
+  const viewports = viewportsForSteps(session.steps, events);
+  return viewports.length > 0 ? { ...session, viewports } : session;
+}
+
+/** The kinds of capture event a recorder sends. */
+const CAPTURE_KINDS: ReadonlySet<RawCaptureEvent['kind']> = new Set([
+  'click',
+  'dblclick',
+  'hover',
+  'input',
+  'change',
+  'files',
+  'drop',
+  'keydown',
+  'navigate',
+  'assert',
+  'viewport',
+]);
+
+/** The longest strings `parseCaptureEvent` keeps, and the bounds of its numbers. */
+const CAPTURE_LIMITS = {
+  tagName: 64,
+  /** A target's role, accessible name, test id and text. */
+  targetText: 500,
+  elementKey: 128,
+  alternatives: 10,
+  locator: 2000,
+  method: 64,
+  value: 100_000,
+  inputType: 32,
+  pageUrl: 4096,
+  /** An assertion's expected and recorded values. */
+  assertionValue: 2000,
+  note: 500,
+  /** The widest and tallest viewport, in CSS pixels. */
+  viewportSize: 10_000,
+  zoom: { min: 0.25, max: 5 },
+} as const;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
+/** A string cut to its first `max` characters; null for anything else. */
+function boundedText(v: unknown, max: number): string | null {
+  return typeof v === 'string' ? v.slice(0, max) : null;
+}
+
+/** A locator alternative within the limits, or null. */
+function parseAlternative(v: unknown): RecordedLocatorAlternative | null {
+  if (!isRecord(v)) return null;
+  const { locator, method, score } = v;
+  if (typeof locator !== 'string' || locator.length > CAPTURE_LIMITS.locator) return null;
+  if (typeof method !== 'string' || method.length > CAPTURE_LIMITS.method) return null;
+  if (!isFiniteNumber(score)) return null;
+  return { locator, method, score };
+}
+
+/** A target rebuilt from its known fields, strings cut to their limits and the alternatives that parse; null for anything but an object. */
+function parseTarget(v: unknown): RecordedTarget | null {
+  if (!isRecord(v)) return null;
+  const alternatives: RecordedLocatorAlternative[] = [];
+  if (Array.isArray(v.alternatives)) {
+    for (const entry of v.alternatives) {
+      if (alternatives.length === CAPTURE_LIMITS.alternatives) break;
+      const alternative = parseAlternative(entry);
+      if (alternative) alternatives.push(alternative);
+    }
+  }
+  return {
+    tagName: boundedText(v.tagName, CAPTURE_LIMITS.tagName) ?? '',
+    role: boundedText(v.role, CAPTURE_LIMITS.targetText),
+    accessibleName: boundedText(v.accessibleName, CAPTURE_LIMITS.targetText),
+    testId: boundedText(v.testId, CAPTURE_LIMITS.targetText),
+    text: boundedText(v.text, CAPTURE_LIMITS.targetText),
+    alternatives,
+    ...(typeof v.elementKey === 'string' ? { elementKey: v.elementKey.slice(0, CAPTURE_LIMITS.elementKey) } : {}),
+  };
+}
+
+/** An assertion with a known matcher, or null. */
+function parseAssertion(v: unknown): StepAssertion | null {
+  if (!isRecord(v)) return null;
+  const matcher = v.matcher as AssertionMatcher;
+  if (!ASSERTION_MATCHERS.includes(matcher)) return null;
+  return {
+    matcher,
+    expected: boundedText(v.expected, CAPTURE_LIMITS.assertionValue),
+    actual: boundedText(v.actual, CAPTURE_LIMITS.assertionValue),
+    negated: v.negated === true,
+    note: boundedText(v.note, CAPTURE_LIMITS.note),
+  };
+}
+
+/** A viewport size within the bounds, with its zoom when it has one; null for anything else. */
+function parseViewport(v: unknown): RawCaptureEvent['viewport'] | null {
+  if (!isRecord(v)) return null;
+  const { width, height, zoom } = v;
+  const isSize = (n: unknown): n is number => isFiniteNumber(n) && n >= 1 && n <= CAPTURE_LIMITS.viewportSize;
+  if (!isSize(width) || !isSize(height)) return null;
+  if (zoom == null) return { width, height };
+  if (!isFiniteNumber(zoom) || zoom < CAPTURE_LIMITS.zoom.min || zoom > CAPTURE_LIMITS.zoom.max) return null;
+  return { width, height, zoom };
+}
+
+/**
+ * A capture event from a page that cannot be trusted (a page can call the
+ * binding a recording browser exposes), rebuilt field by field: the known
+ * fields only, each of its own type or else null (false for
+ * `isPasswordField`), strings cut to their limits, and the locator
+ * alternatives that parse. Null when it has no known `kind`, no `pageUrl`
+ * string, no finite `timestamp`, or an assertion without a known matcher. A
+ * password field's value is never kept; a viewport out of bounds is left out,
+ * and so is `view`.
+ */
+export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
+  if (!isRecord(value)) return null;
+  const kind = value.kind as RawCaptureEvent['kind'];
+  if (!CAPTURE_KINDS.has(kind)) return null;
+  const { pageUrl, timestamp } = value;
+  if (typeof pageUrl !== 'string' || !isFiniteNumber(timestamp)) return null;
+  const isPasswordField = value.isPasswordField === true;
+  const event: RawCaptureEvent = {
+    kind,
+    target: parseTarget(value.target),
+    value: isPasswordField ? null : boundedText(value.value, CAPTURE_LIMITS.value),
+    checked: typeof value.checked === 'boolean' ? value.checked : null,
+    inputType: boundedText(value.inputType, CAPTURE_LIMITS.inputType),
+    isPasswordField,
+    pageUrl: pageUrl.slice(0, CAPTURE_LIMITS.pageUrl),
+    timestamp,
+  };
+  if (value.assertion != null) {
+    const assertion = parseAssertion(value.assertion);
+    if (!assertion) return null;
+    event.assertion = assertion;
+  }
+  if (value.dropTarget !== undefined) event.dropTarget = parseTarget(value.dropTarget);
+  const viewport = parseViewport(value.viewport);
+  if (viewport) event.viewport = viewport;
+  return event;
 }

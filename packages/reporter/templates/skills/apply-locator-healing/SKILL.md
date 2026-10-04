@@ -25,6 +25,8 @@ Prefer the **Piwi MCP server** if it is connected (`get_locator_healing`, `expla
 
 6. **Report.** Show the before/after locator, the file and line, and the verifying result. If several tests shared the selector, list every place you changed.
 
+7. **Report back to Piwi.** Commit with the trailer `Piwi-Cluster: <clusterId>` as the last line of the message (the cluster of the failing case; `get_fix_plan` returns the line in `verify.commitTrailer`), then call `report_fix_attempt` with that cluster, `kind: "locator-edit"`, the commit or the branch, and the `edit` (`filePath`, `line`, `from`: the old locator, `to`: the one you applied). Do it once per call site you changed. Piwi records the attempt verified when the test passes on that commit, and counts the healing suggestion as adopted.
+
 ## Guardrails
 
 - Change the **locator**, not the assertion's intent — if a test checked for "Sign in" and the button is now "Log in", that is a copy change to confirm with the user, not a locator to heal.

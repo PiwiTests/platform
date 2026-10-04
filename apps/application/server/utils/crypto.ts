@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto';
+import { apiError } from './api-error';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
@@ -20,13 +21,20 @@ function deriveKey(secret: string): Buffer {
 /**
  * Encrypt a plaintext secret. Returns a `v1:<iv>:<tag>:<ciphertext>` string
  * that can be stored in the database.
+ *
+ * Without a key, or with the published default, it throws a 409
+ * `SECRET_KEY_NOT_CONFIGURED` API error naming `PIWI_SECRET_KEY`, which an
+ * endpoint that stores a secret passes on unchanged.
  */
 export function encryptSecret(plaintext: string, secret: string): string {
   if (!secret || secret === DEFAULT_INSECURE_SECRET) {
-    throw new Error(
-      'Refusing to encrypt a secret without a configured PIWI_SECRET_KEY. Set PIWI_SECRET_KEY to a strong ' +
+    throw apiError({
+      statusCode: 409,
+      errorCode: 'SECRET_KEY_NOT_CONFIGURED',
+      message:
+        'Refusing to encrypt a secret without a configured PIWI_SECRET_KEY. Set PIWI_SECRET_KEY to a strong ' +
         "random value (node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\") before saving credentials.",
-    );
+    });
   }
   const key = deriveKey(secret);
   const iv = randomBytes(IV_BYTES);
@@ -52,6 +60,15 @@ export function decryptSecret(ciphertext: string, secret: string): string {
   const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
   decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
   return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
+}
+
+/**
+ * Whether secrets can be stored: `PIWI_SECRET_KEY` is set to something other
+ * than the published development default, which `encryptSecret` refuses.
+ */
+export function canEncryptSecrets(): boolean {
+  const key = process.env.PIWI_SECRET_KEY;
+  return !!key && key !== DEFAULT_INSECURE_SECRET;
 }
 
 /**

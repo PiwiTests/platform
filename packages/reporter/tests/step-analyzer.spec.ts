@@ -12,7 +12,8 @@ import {
   orderedStepParams,
   MAX_STEP_PARAM_KEYS,
   MAX_STEP_PARAM_VALUE_CHARS,
-} from '../src/internal/collect/step-analyzer.js';
+  MAX_SECTION_HOOKS,
+} from '@piwitests/core/step-analysis';
 
 describe('categorizeStep', () => {
   it('returns "other" for empty title', () => {
@@ -122,19 +123,20 @@ describe('categorizeStep', () => {
 describe('flattenSteps', () => {
   it('flattens nested step trees depth-first', () => {
     const steps = [
-      { title: 'page.goto', duration: 10, category: 'navigation', steps: [
-        { title: 'locator.click', duration: 5, steps: [] },
-        { title: 'expect.toBe', duration: 2, steps: [
-          { title: 'inner', duration: 1, steps: [] },
-        ] },
-      ] },
+      {
+        title: 'page.goto',
+        duration: 10,
+        category: 'navigation',
+        steps: [
+          { title: 'locator.click', duration: 5, steps: [] },
+          { title: 'expect.toBe', duration: 2, steps: [{ title: 'inner', duration: 1, steps: [] }] },
+        ],
+      },
       { title: 'outer', duration: 3, steps: [] },
     ];
     const flat = flattenSteps(steps as any);
     expect(flat.length).toBe(5);
-    expect(
-      flat.map((s) => s.title),
-    ).toEqual(['page.goto', 'locator.click', 'expect.toBe', 'inner', 'outer']);
+    expect(flat.map((s) => s.title)).toEqual(['page.goto', 'locator.click', 'expect.toBe', 'inner', 'outer']);
     expect(flat[0].category).toBe('navigation');
     expect(flat[1].category).toBe('action');
     expect(flat[2].category).toBe('assertion');
@@ -226,9 +228,7 @@ describe('collectStepMetrics', () => {
   });
 
   it('totalStepDuration sums top-level only (nested not double-counted)', () => {
-    const steps = [
-      { title: 'outer', duration: 100, steps: [{ title: 'inner', duration: 50, steps: [] }] },
-    ];
+    const steps = [{ title: 'outer', duration: 100, steps: [{ title: 'inner', duration: 50, steps: [] }] }];
     const m = collectStepMetrics(steps as any);
     expect(m.totalStepDuration).toBe(100); // reduce over top-level only
   });
@@ -322,7 +322,13 @@ describe('extractTestStepEvents', () => {
   it('extracts only hook/fixture top-level steps with absolute timings', () => {
     const start = new Date('2024-01-01T00:00:00.000Z');
     const steps = [
-      { title: 'Before Hooks', category: 'hook', startTime: start, duration: 10, location: { file: 'a.ts', line: 1, column: 2 } },
+      {
+        title: 'Before Hooks',
+        category: 'hook',
+        startTime: start,
+        duration: 10,
+        location: { file: 'a.ts', line: 1, column: 2 },
+      },
       { title: 'locator.click', category: 'action', startTime: start, duration: 5 },
       { title: 'fixture: browser', category: 'fixture', startTime: start, duration: 3, error: new Error('x') },
     ];
@@ -348,13 +354,97 @@ describe('extractTestStepEvents', () => {
     );
     expect(events[0].startedAt).toBe(12345);
   });
+
+  it('names the hooks and fixtures each hook section ran, in order', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const steps = [
+      {
+        title: 'Before Hooks',
+        category: 'hook',
+        startTime: start,
+        duration: 254,
+        steps: [
+          { title: 'beforeAll hook', category: 'hook', startTime: start, duration: 120, steps: [] },
+          { title: 'seed users', category: 'hook', startTime: start, duration: 73, steps: [] },
+          {
+            title: 'beforeEach hook',
+            category: 'hook',
+            startTime: start,
+            duration: 60,
+            steps: [{ title: 'Fixture "db"', category: 'fixture', startTime: start, duration: 1, steps: [] }],
+          },
+          { title: 'Fixture "piwiCapture"', category: 'fixture', startTime: start, duration: 4, steps: [] },
+        ],
+      },
+      { title: 'Click', category: 'pw:api', startTime: start, duration: 5 },
+    ];
+    const [setup] = extractTestStepEvents(steps as any, start);
+    expect(setup.hooks).toEqual([
+      { title: 'beforeAll hook', category: 'hook', duration: 120 },
+      { title: 'seed users', category: 'hook', duration: 73 },
+      { title: 'beforeEach hook', category: 'hook', duration: 60 },
+    ]);
+    expect(setup.error).toBeUndefined();
+  });
+
+  it('carries the first line of a failed section error and flags the hook that failed', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const error = { message: '\u001b[31mError: afterAll boom\u001b[39m\n\n  at a.spec.ts:8:3' };
+    const steps = [
+      {
+        title: 'After Hooks',
+        category: 'hook',
+        startTime: start,
+        duration: 52,
+        error,
+        steps: [
+          { title: 'afterEach hook', category: 'hook', startTime: start, duration: 0, steps: [] },
+          { title: 'afterAll hook', category: 'hook', startTime: start, duration: 24, error, steps: [] },
+        ],
+      },
+    ];
+    const [teardown] = extractTestStepEvents(steps as any, start);
+    expect(teardown.status).toBe('failed');
+    expect(teardown.error).toBe('Error: afterAll boom');
+    expect(teardown.hooks).toEqual([
+      { title: 'afterEach hook', category: 'hook', duration: 0 },
+      { title: 'afterAll hook', category: 'hook', duration: 24, failed: true },
+    ]);
+  });
+
+  it('keeps the failed and the slowest hooks of a crowded section, in the order they ran', () => {
+    const start = new Date('2024-01-01T00:00:00.000Z');
+    const children = Array.from({ length: MAX_SECTION_HOOKS + 3 }, (_, i) => ({
+      title: `Fixture "f${i}"`,
+      category: 'fixture',
+      startTime: start,
+      duration: i,
+      steps: [],
+    }));
+    (children[0] as any).error = { message: 'boom' };
+    const [setup] = extractTestStepEvents(
+      [{ title: 'Before Hooks', category: 'hook', startTime: start, duration: 100, steps: children }] as any,
+      start,
+    );
+    expect(setup.hooks).toHaveLength(MAX_SECTION_HOOKS);
+    expect(setup.hooks![0]).toEqual({ title: 'Fixture "f0"', category: 'fixture', duration: 0, failed: true });
+    expect(setup.hooks!.slice(1).map((h) => h.duration)).toEqual(
+      Array.from({ length: MAX_SECTION_HOOKS - 1 }, (_, i) => i + 4),
+    );
+  });
 });
 
 describe('extractWaitEvents', () => {
   it('extracts wait-category steps with absolute timings', () => {
     const start = new Date('2024-01-01T00:00:00.000Z');
     const steps = [
-      { title: 'page.waitForTimeout', category: undefined, startTime: start, duration: 5000, location: { file: 'test.spec.ts', line: 10, column: 5 } },
+      {
+        title: 'page.waitForTimeout',
+        category: undefined,
+        startTime: start,
+        duration: 5000,
+        location: { file: 'test.spec.ts', line: 10, column: 5 },
+      },
       { title: 'locator.click', category: 'action', startTime: start, duration: 100 },
     ];
     const events = extractWaitEvents(steps as any);
@@ -398,9 +488,7 @@ describe('extractWaitEvents', () => {
         title: 'page.waitForResponse',
         startTime: start,
         duration: 3000,
-        steps: [
-          { title: 'page.waitForTimeout', startTime: new Date(start.getTime() + 100), duration: 500, steps: [] },
-        ],
+        steps: [{ title: 'page.waitForTimeout', startTime: new Date(start.getTime() + 100), duration: 500, steps: [] }],
       },
     ];
     const events = extractWaitEvents(steps as any);
@@ -485,7 +573,7 @@ describe('orderedStepParams', () => {
 });
 
 describe('flattenSteps captures 1.63 subtitle and params', () => {
-  it('captures a Click step\'s locator subtitle and params', () => {
+  it("captures a Click step's locator subtitle and params", () => {
     const flat = flattenSteps([
       {
         title: 'Click',
@@ -517,7 +605,7 @@ describe('flattenSteps captures 1.63 subtitle and params', () => {
     expect(flat[0].category).toBe('navigation');
   });
 
-  it('keeps a test.step author\'s own params, stringifying non-primitives', () => {
+  it("keeps a test.step author's own params, stringifying non-primitives", () => {
     const flat = flattenSteps([
       {
         title: 'sign in',
@@ -541,6 +629,15 @@ describe('flattenSteps captures 1.63 subtitle and params', () => {
     rawParams.long = 'a'.repeat(MAX_STEP_PARAM_VALUE_CHARS + 50);
     const flat = flattenSteps([{ title: 'Click', duration: 1, params: rawParams, steps: [] }] as any);
     expect(Object.keys(flat[0].params!).length).toBe(MAX_STEP_PARAM_KEYS);
+  });
+
+  it('ends a cut value with a marker', () => {
+    const flat = flattenSteps([
+      { title: 'Click', duration: 1, params: { locator: `getByText('${'Lorem ipsum '.repeat(30)}')` }, steps: [] },
+    ] as any);
+    const locator = flat[0].params!.locator as string;
+    expect(locator).toHaveLength(MAX_STEP_PARAM_VALUE_CHARS);
+    expect(locator.endsWith('…')).toBe(true);
   });
 
   it('masks token-shaped values in params and subtitle', () => {

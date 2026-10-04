@@ -3,22 +3,31 @@
  * Renders a failure's in-project call stack as a sequence of source snippets —
  * the line that actually threw (innermost, "Failed here") plus the callers above
  * it — so the interesting code isn't limited to the test line that triggered the
- * failure. Each frame shows its project-relative path:line and highlights the
- * marked failing line.
+ * failure. Each frame shows its project-relative path:line and its code
+ * syntax-highlighted, with the marked failing line on a red band.
  */
 import type { TestSourceFrame } from '~~/types/api';
+import { highlightLines, languageForPath } from '#shared/highlight';
+import { parseSourceSnippet } from '#shared/source-snippet';
 
-defineProps<{
+const props = defineProps<{
   frames: TestSourceFrame[];
   /** Piwi project id + name, threaded so the IDE opener can resolve a workspace root. */
   projectKey?: string | number | null;
   projectName?: string | null;
 }>();
 
-/** Split a line-numbered snippet into rows, flagging the `>`-marked failing line. */
-function rows(snippet: string) {
-  return snippet.split('\n').map((text) => ({ text, failing: text.startsWith('>') }));
-}
+/** Each frame's rows: the gutter as the snippet wrote it, and the code as highlighted HTML. */
+const frameRows = computed(() =>
+  props.frames.map((frame) => {
+    const rows = parseSourceSnippet(frame.snippet);
+    const html = highlightLines(
+      rows.map((row) => row.code),
+      languageForPath(frame.file),
+    );
+    return rows.map((row, i) => ({ ...row, html: html[i] ?? '' }));
+  }),
+);
 </script>
 
 <template>
@@ -48,16 +57,16 @@ function rows(snippet: string) {
       <div class="overflow-x-auto text-xs font-mono leading-relaxed py-1">
         <div class="min-w-max">
           <div
-            v-for="(row, j) in rows(frame.snippet)"
+            v-for="(row, j) in frameRows[i]"
             :key="j"
-            class="px-3 whitespace-pre"
-            :class="
-              row.failing
-                ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-medium'
-                : 'text-gray-600 dark:text-gray-400'
-            "
+            class="px-3 whitespace-pre text-gray-800 dark:text-gray-200"
+            :class="row.failing ? 'bg-red-50 dark:bg-red-950/30 font-medium' : ''"
           >
-            {{ row.text }}
+            <span
+              class="select-none"
+              :class="row.failing ? 'text-red-600 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'"
+              >{{ row.gutter }}</span
+            ><span v-html="row.html" />
           </div>
         </div>
       </div>

@@ -11,6 +11,8 @@
  */
 import type { FailureWhy } from '#shared/failure-verdict';
 import type { ParsedErrorKind } from '#shared/error-parse';
+import { shortCommit } from '#shared/scm-urls';
+import type { FlakeExperimentKind, FlakeSuspectStanding } from '#shared/flake-lab';
 
 export type NextStepKind =
   | 'open-blocker'
@@ -19,6 +21,8 @@ export type NextStepKind =
   | 'apply-patch'
   | 'follow-diagnosis'
   | 'see-what-changed'
+  | 'verify-flake-fix'
+  | 'reproduce-flake'
   | 'compare-attempts'
   | 'rerun-in-ci'
   | 'diagnose'
@@ -69,9 +73,29 @@ export interface NextStepInput {
   aiConfigured?: boolean;
   ciRerunAvailable?: boolean;
 
+  /**
+   * The flaky test's place in the Flake Lab, given for a flaky failure: the step
+   * it needs next and its command, the condition that reproduced it, the suspect
+   * it is shown with, and whether a Flake Lab CI target can run it.
+   */
+  flakeLab?: FlakeLabStepFacts | null;
+
   /** Ids the actions carry as payload. */
   clusterId?: number | null;
   executionId?: number | null;
+}
+
+export interface FlakeLabStepFacts {
+  testCaseId: number;
+  nextStep: FlakeExperimentKind | null;
+  command: string | null;
+  /** The condition that last reproduced it. */
+  reproducedBy: string | null;
+  /** Its top suspect, with a reproduce step only. */
+  suspect: { id: string; label: string; standing: FlakeSuspectStanding } | null;
+  /** Its suspects no experiment tested yet. */
+  untestedSuspects: number;
+  ciAvailable: boolean;
 }
 
 export function computeNextStep(input: NextStepInput): NextStep {
@@ -155,7 +179,7 @@ export function computeNextStep(input: NextStepInput): NextStep {
 
   // 6 — a fix regressed: see what changed since it landed.
   if (input.fixVerification === 'regressed') {
-    const commit = input.fixCommit?.trim();
+    const commit = input.fixCommit?.trim() ? shortCommit(input.fixCommit.trim()) : null;
     return {
       kind: 'see-what-changed',
       title: `See what changed since the fix${commit ? ` in ${commit}` : ''} — it did not hold`,
@@ -166,7 +190,48 @@ export function computeNextStep(input: NextStepInput): NextStep {
     };
   }
 
-  // 7 — a flaky or retry-passing failure: compare the attempts.
+  // 7 — a flaky test the Flake Lab reproduced: verify the fix under that condition.
+  const lab = input.flakeLab;
+  if (lab?.nextStep === 'verify' && lab.command) {
+    const under = lab.reproducedBy ? ` under ${lab.reproducedBy}` : '';
+    const labPayload = { testCaseId: lab.testCaseId };
+    return {
+      kind: 'verify-flake-fix',
+      title: `Verify the flake fix${under}`,
+      why: 'The Flake Lab reproduced this flake; rerunning that condition after the fix shows whether it holds.',
+      primary: { label: 'Copy verify command', action: 'copy-flake-command', payload: { command: lab.command } },
+      secondary: [
+        ...(lab.ciAvailable
+          ? [{ label: 'Verify in CI', action: 'flake-lab-ci', payload: { ...labPayload, kind: 'verify' } }]
+          : []),
+        { label: 'Flakiness', action: 'flakiness-tab', payload: labPayload },
+      ],
+    };
+  }
+
+  // 8 — a flaky test with an untested suspect: reproduce it under the top one.
+  if (lab?.nextStep === 'reproduce' && lab.command && lab.suspect?.standing === 'untested') {
+    const others = lab.untestedSuspects - 1;
+    const labPayload = { testCaseId: lab.testCaseId, suspect: lab.suspect.id };
+    return {
+      kind: 'reproduce-flake',
+      title: `Reproduce this flake under ${lab.suspect.label}`,
+      why:
+        others > 0
+          ? `Its history points at this suspect first, and ${others} more the Flake Lab has not tested; the lab applies each next to a control.`
+          : 'Its history points at this suspect and the Flake Lab has not tested it; the lab applies it next to a control.',
+      primary: { label: 'Copy lab command', action: 'copy-flake-command', payload: { command: lab.command } },
+      secondary: [
+        ...(lab.ciAvailable
+          ? [{ label: 'Reproduce in CI', action: 'flake-lab-ci', payload: { ...labPayload, kind: 'reproduce' } }]
+          : []),
+        { label: 'Flakiness', action: 'flakiness-tab', payload: labPayload },
+        { label: 'Attempts', action: 'attempts-tab', payload: withExecution },
+      ],
+    };
+  }
+
+  // 9 — a flaky or retry-passing failure: compare the attempts.
   if (input.why === 'passed-on-retry' || input.why === 'new-flaky') {
     return {
       kind: 'compare-attempts',
@@ -177,7 +242,7 @@ export function computeNextStep(input: NextStepInput): NextStep {
     };
   }
 
-  // 8 — an environment-looking crash or navigation, with a CI re-run configured.
+  // 10 — an environment-looking crash or navigation, with a CI re-run configured.
   if ((input.errorKind === 'crash' || input.errorKind === 'navigation') && input.ciRerunAvailable) {
     return {
       kind: 'rerun-in-ci',
@@ -188,7 +253,7 @@ export function computeNextStep(input: NextStepInput): NextStep {
     };
   }
 
-  // 9 — AI is configured but nothing deterministic explains this yet.
+  // 11 — AI is configured but nothing deterministic explains this yet.
   if (input.aiConfigured && !input.diagnosisCompleted) {
     return {
       kind: 'diagnose',
@@ -199,7 +264,7 @@ export function computeNextStep(input: NextStepInput): NextStep {
     };
   }
 
-  // 10 — reproduce locally.
+  // 12 — reproduce locally.
   return {
     kind: 'reproduce',
     title: 'Reproduce locally',

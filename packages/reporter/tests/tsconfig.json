@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Tests import ../src, so the root spans the whole package; src/ keeps its
+    // own `rootDir`, which tsup's dts build relies on.
+    "rootDir": "..",
+    // The integration and bench specs import the built package
+    // (`dist/index.js`). Treating dist/ and src/ as one directory resolves those
+    // imports against src/ when dist/ has not been built.
+    "rootDirs": ["../src", "../dist"]
+  },
+  "include": ["**/*.ts"]
+}

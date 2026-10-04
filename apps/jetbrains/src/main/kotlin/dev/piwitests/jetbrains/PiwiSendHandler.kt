@@ -1,0 +1,213 @@
+package dev.piwitests.jetbrains
+
+import com.google.gson.Gson
+import com.intellij.credentialStore.generateServiceName
+import com.intellij.ide.passwordSafe.PasswordSafe
+import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.wm.IdeFocusManager
+import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelFutureListener
+import io.netty.channel.ChannelHandlerContext
+import io.netty.handler.codec.http.DefaultFullHttpResponse
+import io.netty.handler.codec.http.FullHttpRequest
+import io.netty.handler.codec.http.HttpHeaderNames
+import io.netty.handler.codec.http.HttpMethod
+import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.codec.http.HttpResponseStatus
+import io.netty.handler.codec.http.HttpVersion
+import io.netty.handler.codec.http.QueryStringDecoder
+import org.jetbrains.ide.BuiltInServerManager
+import org.jetbrains.ide.HttpRequestHandler
+import java.awt.datatransfer.StringSelection
+import java.security.SecureRandom
+import java.util.Base64
+import java.util.concurrent.CompletableFuture
+
+/** The pairing token Piwi Picker sends with each request, kept in the password safe. */
+object PiwiSendToken {
+    private val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
+
+    @Volatile private var cached: String? = null
+
+    fun current(): String = cached ?: (PasswordSafe.instance.getPassword(attributes) ?: "").also { cached = it }
+
+    fun ensure(): String = current().ifEmpty {
+        val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
+        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).also {
+            PasswordSafe.instance.setPassword(attributes, it)
+            cached = it
+        }
+    }
+}
+
+/**
+ * `POST /api/piwi/send` on the IDE's built-in server: what Piwi Picker sends,
+ * inserted at the caret of the focused project's editor.
+ */
+class PiwiSendHandler : HttpRequestHandler() {
+    override fun isSupported(request: FullHttpRequest): Boolean =
+        QueryStringDecoder(request.uri()).path() == PATH &&
+            (request.method() == HttpMethod.POST || request.method() == HttpMethod.OPTIONS)
+
+    // The token authenticates each request; the extension's origin is not a local one.
+    override fun isAccessible(request: HttpRequest): Boolean = QueryStringDecoder(request.uri()).path() == PATH
+
+    override fun process(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): Boolean {
+        val origin = request.headers().get(HttpHeaderNames.ORIGIN)
+        if (request.method() == HttpMethod.OPTIONS) {
+            respond(context, origin, HttpResponseStatus.NO_CONTENT, null)
+            return true
+        }
+        if (!Glue.sendAuthorized(request.headers().get(HttpHeaderNames.AUTHORIZATION), PiwiSendToken.current())) {
+            respond(context, origin, HttpResponseStatus.UNAUTHORIZED, mapOf("error" to "not paired"))
+            return true
+        }
+        if (request.content().readableBytes() > Glue.MAX_SEND_BYTES) {
+            respond(context, origin, HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE, mapOf("error" to "too large"))
+            return true
+        }
+        when (val payload = Glue.parseSendPayload(request.content().toString(Charsets.UTF_8))) {
+            is Glue.SendPayload.Refused -> respond(context, origin, HttpResponseStatus.BAD_REQUEST, mapOf("error" to payload.error))
+            else -> insert(payload).whenComplete { file, error ->
+                if (error != null) {
+                    respond(context, origin, HttpResponseStatus.UNPROCESSABLE_ENTITY, mapOf("error" to (error.cause ?: error).message))
+                } else {
+                    respond(context, origin, HttpResponseStatus.OK, mapOf("inserted" to true, "file" to file))
+                }
+            }
+        }
+        return true
+    }
+
+    /**
+     * Render a recorded flow through the editor service, for the page expression at the caret and with its imports
+     * apart, then insert it at the caret; completes with the file's path.
+     */
+    private fun insert(payload: Glue.SendPayload): CompletableFuture<String?> {
+        val result = CompletableFuture<String?>()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val project = targetProject() ?: throw IllegalStateException("no project is open")
+                val caret = caretOf(project)
+                var imports = emptyList<String>()
+                val text = when (payload) {
+                    is Glue.SendPayload.Locator -> payload.text
+                    is Glue.SendPayload.Steps -> {
+                        val server = project.service<PiwiProjectService>().server()
+                            ?: throw IllegalStateException("the Piwi editor service is not running in this project")
+                        val params = RenderStepsParams(caret?.uri ?: "", payload.steps, caret?.line, caret?.character, "separate")
+                        val rendered = server.renderSteps(params).orNull()
+                        imports = rendered?.imports.orEmpty()
+                        rendered?.code?.takeIf { it.isNotBlank() }
+                            ?: throw IllegalStateException(rendered?.warnings?.joinToString("; ") ?: "nothing to insert")
+                    }
+                    is Glue.SendPayload.Refused -> throw IllegalStateException(payload.error)
+                }
+                ApplicationManager.getApplication().invokeLater {
+                    try {
+                        result.complete(insertAtCaret(project, text, imports, payload is Glue.SendPayload.Locator))
+                    } catch (e: Exception) {
+                        result.completeExceptionally(e)
+                    }
+                }
+            } catch (e: Exception) {
+                result.completeExceptionally(e)
+            }
+        }
+        return result
+    }
+
+    private fun targetProject(): Project? =
+        IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
+            ?: ProjectManager.getInstance().openProjects.firstOrNull { !it.isDefault }
+
+    /** The file open in the project's editor (its URI, when it is on disk) and its caret, 0-based. */
+    private data class Caret(val uri: String?, val line: Int, val character: Int)
+
+    private fun caretOf(project: Project): Caret? {
+        val future = CompletableFuture<Caret?>()
+        ApplicationManager.getApplication().invokeLater {
+            val editor = FileEditorManager.getInstance(project).selectedTextEditor
+            future.complete(
+                editor?.let {
+                    val offset = it.caretModel.offset
+                    val line = it.document.getLineNumber(offset)
+                    val uri = it.virtualFile?.let { file -> runCatching { file.toNioPath().toUri().toString() }.getOrNull() }
+                    Caret(uri, line, offset - it.document.getLineStartOffset(line))
+                },
+            )
+        }
+        return future.get(10, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    /** Inserts `text` at the caret, and the `imports` the file lacks after its imports, as one command. */
+    private fun insertAtCaret(project: Project, text: String, imports: List<String>, locator: Boolean): String? {
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor
+            ?: throw IllegalStateException("no editor is open in ${project.name}")
+        val document = editor.document
+        val caret = editor.caretModel.primaryCaret
+        val line = document.getLineNumber(caret.offset)
+        val lineText = document.getText(com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line)))
+        val block = Glue.indentBlock(text, lineText.takeWhile { it == ' ' || it == '\t' })
+        WriteCommandAction.runWriteCommandAction(project, "Insert from Piwi Picker", null, {
+            val start = caret.selectionStart
+            document.replaceString(start, caret.selectionEnd, block)
+            caret.moveToOffset(start + block.length)
+            Glue.importInsertion(document.immutableCharSequence, imports)?.let { document.insertString(it.offset, it.text) }
+        })
+        PiwiCommands.notify(project, if (locator) "Inserted the locator from Piwi Picker." else "Inserted the recorded steps from Piwi Picker.")
+        return editor.virtualFile?.path
+    }
+
+    private fun respond(context: ChannelHandlerContext, origin: String?, status: HttpResponseStatus, body: Map<String, Any?>?) {
+        val bytes = body?.let { Gson().toJson(it).toByteArray() } ?: ByteArray(0)
+        val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.wrappedBuffer(bytes))
+        val headers = response.headers()
+        if (body != null) headers.set(HttpHeaderNames.CONTENT_TYPE, "application/json")
+        headers.set(HttpHeaderNames.CONTENT_LENGTH, bytes.size)
+        if (origin != null && EXTENSION_ORIGIN.matches(origin)) {
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "POST, OPTIONS")
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Authorization, Content-Type")
+            headers.set(HttpHeaderNames.VARY, "Origin")
+        }
+        context.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE)
+    }
+
+    companion object {
+        const val PATH = "/api/piwi/send"
+        private val EXTENSION_ORIGIN = Regex("^(chrome|moz)-extension://.+")
+    }
+}
+
+/** Piwi: Pair with Piwi Picker — copies the address Piwi Picker's options take. */
+class PairPickerAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val token = PiwiSendToken.ensure()
+            val port = BuiltInServerManager.getInstance().waitForStart().port
+            val address = "http://127.0.0.1:$port${PiwiSendHandler.PATH}#$token"
+            ApplicationManager.getApplication().invokeLater {
+                CopyPasteManager.getInstance().setContents(StringSelection(address))
+                if (project != null) {
+                    PiwiCommands.notify(
+                        project,
+                        "The pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
+                    )
+                }
+            }
+        }
+    }
+}

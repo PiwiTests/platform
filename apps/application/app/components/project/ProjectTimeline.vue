@@ -24,7 +24,7 @@ const columns: TableColumn<MarkerInfo>[] = [
   { accessorKey: 'category', header: 'Category' },
   { accessorKey: 'label', header: 'Label' },
   { accessorKey: 'environment', header: 'Environment' },
-  { accessorKey: 'actions', header: '' },
+  { id: 'actions', header: 'Actions' },
 ];
 
 const isFormOpen = ref(false);
@@ -152,6 +152,9 @@ async function handleDelete() {
           <span v-else class="text-xs text-muted">All</span>
         </template>
 
+        <template #actions-header>
+          <span class="sr-only">Actions</span>
+        </template>
         <template #actions-cell="{ row }">
           <div v-if="canEdit" class="flex gap-1 justify-end">
             <UButton icon="i-lucide-pencil" color="neutral" variant="ghost" size="sm" @click="openEdit(row.original)" />

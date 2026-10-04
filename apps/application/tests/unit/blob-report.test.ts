@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { parseBlobReport, BlobReportError } from '../../server/utils/blob-report';
+import { parseBlobReport, BlobReportError, readBlobScm } from '../../server/utils/blob-report';
 import { openArchive, ArchiveError } from '../../server/utils/archive-reader';
 import { buildZip } from '../../server/utils/trace-zip';
 import { buildBlobReport } from '../utils/blob-report-fixture';
@@ -161,6 +161,8 @@ describe('parseBlobReport', () => {
     const xpass = byTitle.get('fixed but still marked')!;
     expect(xpass.status).toBe('failed');
     expect(xpass.error).toBe('Expected to fail, but passed.');
+    expect(xpass.expectedStatus).toBe('failed');
+    expect(xfail.expectedStatus).toBe('failed');
 
     expect(parsed.passedTests).toBe(1);
     expect(parsed.failedTests).toBe(1);
@@ -253,5 +255,32 @@ describe('parseBlobReport', () => {
       ]),
     );
     expect(truncated.cases).toEqual([]);
+  });
+});
+
+describe('readBlobScm', () => {
+  test("prefers the CI provider's branch over a detached checkout's", () => {
+    expect(
+      readBlobScm({
+        ci: { commitHash: 'abc123', branch: 'feature/pay', commitHref: 'https://example.test/c/abc123' },
+        gitCommit: { hash: 'abc123', branch: 'HEAD', subject: 'Pay' },
+      }),
+    ).toEqual({ commit: 'abc123', branch: 'feature/pay' });
+  });
+
+  test("reads the checkout's commit and branch when no CI provider is recorded", () => {
+    expect(readBlobScm({ gitCommit: { hash: 'def456', branch: 'main' } })).toEqual({
+      commit: 'def456',
+      branch: 'main',
+    });
+  });
+
+  test('reads the flat revision id older Playwright versions recorded', () => {
+    expect(readBlobScm({ 'revision.id': '789abc' })).toEqual({ commit: '789abc', branch: null });
+  });
+
+  test('is null when the config metadata records no revision', () => {
+    expect(readBlobScm({})).toBeNull();
+    expect(readBlobScm(undefined)).toBeNull();
   });
 });

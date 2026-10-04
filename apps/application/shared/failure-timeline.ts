@@ -13,6 +13,15 @@
  * timestamp is listed in `unplaced` with a reason rather than guessed at.
  */
 import { stepLabel } from '@piwitests/core/step-analysis';
+import {
+  failingStepIndex,
+  isCaptureStep,
+  isPhaseContainer,
+  stepParents,
+  stepPhases,
+  type StepPhase,
+  type TreeStepLike,
+} from '@piwitests/core/step-tree';
 import { parseCallsiteLocation } from './callsite-location';
 
 /** The rows a lane groups. `backend` holds log entries attached to a request. */
@@ -137,6 +146,8 @@ export interface FailureTimelineInput {
   duration?: number | null;
   timeout?: number | null;
   status?: string | null;
+  /** The execution's error text — tells the step that failed the test from an error it caught. */
+  error?: string | null;
   steps?: unknown;
   stepEvents?: unknown;
   consoleLogs?: unknown;
@@ -218,12 +229,17 @@ function clampLabel(text: string): string {
   return trimmed.length > MAX_LABEL_CHARS ? `${trimmed.slice(0, MAX_LABEL_CHARS - 1)}…` : trimmed;
 }
 
-/** A step is "failed" when it carries an error or a truthy `failed` flag. */
-function stepFailed(step: StepRow): boolean {
-  if (step.failed === true) return true;
-  const error = step.error;
-  if (typeof error === 'string') return error.trim().length > 0;
-  return error != null && typeof error === 'object';
+/**
+ * The last step of the test body the capture did not add — what a failed
+ * execution with no step marked failed is taken to have failed on. Falls back to
+ * the last step.
+ */
+function lastBodyStepIndex(steps: TreeStepLike[], phases: StepPhase[]): number {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]!;
+    if (phases[i] === 'body' && !isCaptureStep(step) && !isPhaseContainer(step)) return i;
+  }
+  return steps.length - 1;
 }
 
 const FAILED_STATUSES = new Set(['failed', 'timedout', 'timedOut', 'interrupted']);
@@ -315,13 +331,21 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
   // step durations, which is an estimate the UI is told about.
   const estimated = steps.length > 0 && !stepsHaveStartTimes;
   let cursor = startedAt ?? origin;
+  // The step tree the flat list came from: the failing step is the innermost of
+  // the failing chain that carries the execution's error (Playwright marks the
+  // hook or test.step around it failed too), never an error the test caught or
+  // one of the capture's own reads.
+  const treeSteps = steps as TreeStepLike[];
+  const parents = stepParents(treeSteps);
+  const phases = stepPhases(treeSteps, parents);
   const failedStepIndex = (() => {
-    const explicit = steps.findIndex((s) => stepFailed(s));
-    if (explicit !== -1) return explicit;
-    // The last step of a failed execution is the failure when nothing is marked.
-    if (steps.length > 0 && FAILED_STATUSES.has(str(input.status))) return steps.length - 1;
+    const failing = failingStepIndex(treeSteps, parents, str(input.error) || null);
+    if (failing !== null) return failing;
+    // The last step of the test body is the failure when nothing is marked.
+    if (steps.length > 0 && FAILED_STATUSES.has(str(input.status))) return lastBodyStepIndex(treeSteps, phases);
     return null;
   })();
+  const hasChildren = new Set(parents.filter((p) => p !== -1));
 
   // Position every step first (real or cumulative), so `test.step` group spans
   // are known before each action is asked which one contains it.
@@ -334,10 +358,17 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
   });
 
   // `test.step` groups: an action's group is the innermost test.step whose span
-  // contains it (a test.step contains itself, so it heads its own group).
+  // contains it (a test.step contains itself, so it heads its own group). A step
+  // with children in the test body is a group too, so a test.step an older
+  // reporter categorized by its title still heads its group.
+  const isGroup = (index: number) => {
+    const category = str(steps[index]!.category);
+    if (category === 'test.step') return true;
+    return hasChildren.has(index) && phases[index] === 'body' && category !== 'hook' && category !== 'fixture';
+  };
   const testStepSpans = steps
     .map((step, index) => ({ index, title: clampLabel(stepLabel(step)), ...positions[index]! }))
-    .filter((s) => str(steps[s.index]!.category) === 'test.step' && s.title.length > 0);
+    .filter((s) => isGroup(s.index) && s.title.length > 0);
   const groupTitleFor = (at: number, dur: number): string | null => {
     const mid = at + dur / 2;
     let best: { title: string; width: number } | null = null;
@@ -360,6 +391,10 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
 
   let failedStep: FailureTimeline['failedStep'] = null;
   steps.forEach((step, index) => {
+    // The capture's own steps are not the test's; a phase container's span is
+    // its children's, which the lane already draws.
+    const treeStep = treeSteps[index]!;
+    if (isCaptureStep(treeStep) || isPhaseContainer(treeStep)) return;
     const { at, dur } = positions[index]!;
     const failed = index === failedStepIndex;
     const label = clampLabel(stepLabel(step) || `Step ${index + 1}`);

@@ -1,5 +1,6 @@
 ---
 title: Analytics
+description: "Cross-project trends over a period you choose: filters, comparison periods, targets, drill-down to the rows behind a number, and chart export."
 lang: en-US
 ---
 
@@ -7,70 +8,154 @@ lang: en-US
 
 <Needs reporter />
 
-Every other view in Piwi answers a question about one project, one run, or one test. The **Analytics**
-page (`/analytics`) is the one that steps back: it aggregates every project over a time window you
-choose, so you can see where the suite as a whole is drifting — and hand a number to someone who
-doesn't read stack traces.
+The **Analytics** page (`/analytics`) steps back from single runs and tests: it aggregates every
+project over a period you choose, to show where the suite as a whole is drifting.
 
 ## Scope
 
-A scope bar at the top sets:
+The **Filters** block at the top sets what every widget counts, with *Reset* in its header. On a phone
+it folds to a one-line summary.
 
-- **Period** — last 7 / 30 / 90 days, last year, or all time.
-- **Projects** — optional; restrict to the projects you pick (intersected with the ones you can see).
-- **Environments** and **branches** — optional multi-select; restrict to runs labeled `production`,
-  `staging`, … or reported on the chosen branches (see [Environment](/guide/concepts#environment)). These
-  and the full-runs toggle are the same **filter bar** Home and each project page use.
-- **Full runs only** — exclude partial and interrupted runs, which otherwise skew pass rates.
+- **Period**, with the comparison and the buckets (below). The line under it states the resolved dates,
+  the comparison and any note (a project without the chosen selection, a deleted marker).
+- **Runs**: the projects (intersected with the ones you can see), environments and branches (optional
+  multi-select, see [Environment](/guide/concepts#environment)), the branch policy (*Default branch* or
+  *All branches*, below) and *Full runs only*, which excludes partial runs. All but the projects and
+  the policy are the **filter bar** Home and project pages use.
+- **Tests**: optional; a selection, test tags or browsers (below).
 
-Every widget re-aggregates against that scope, and each period is compared against the *preceding*
-period of the same length, which is where the "vs previous" deltas come from.
+Probe runs (the fault-injected replays `piwi probe` produces) are never counted, whatever the filters.
+Two widgets read past the period: **Flakiest tests** ranks each project's last 50 runs whatever the
+period or *Full runs only*, and applies an environment or branch only when exactly one is picked; **Failure
+clusters** lists every open cluster, using the period only for its resolved count.
 
-## Widgets
+### Periods
 
-**Insights** — an auto-generated, severity-ranked feed of what actually changed: pass-rate drops,
-failing streaks, stale failure clusters, wasted CI time, oversized timeouts and stale `test.slow()`
-marks, regression surges, and slow shared endpoints. Each entry links to the project, run, cluster, or
-test case behind it. Start here; the rest of the page is the evidence.
+- **Rolling**: the last 7 days to 12 months, in whole UTC days, today included.
+- **Calendar**: this or last week, month, quarter or year. Boundaries follow your time zone (the one set
+  under Settings → Localization, else your browser's); a week starts on your locale's first day.
+- **Custom range**: two dates, both included.
+- **Since a marker**: from a [timeline marker](./timeline-markers) to now.
+- **Release cycle**: between two consecutive `release` markers, the current one or the previous one.
+- **Sprint**: a start date and a length, this sprint or the last.
+- **All time**: everything still stored.
 
-**Portfolio health** — one sortable row per project: pass rate and its change vs the previous period,
-flaky volume, open failure clusters, average run duration, and latest run. Worst health sorts first.
+### Comparison and buckets
 
-**Pass rate heatmap** — projects × time, colored by daily (or weekly, over longer periods) pass rate.
-This is the fastest way to answer *when* something started degrading.
+Every change on the page is measured against the **comparison**: the previous period of the same length
+(the default), the previous calendar unit, release cycle or sprint, the same period a year earlier, or
+nothing.
 
-**CI time** and **Wasted CI time** — total minutes your runs consumed, and how many of those produced
-no signal: time spent inside wait steps plus time spent executing attempts that ended failed or timed
-out. Because a timed-out test burns its entire (often oversized) budget, the widget also calls out how
-much is reclaimable by tightening timeouts and removing stale `test.slow()` marks.
+**Buckets** decide how the trends and the heatmap cut the period: automatic (about 31 buckets), daily,
+weekly or monthly. Buckets start at UTC midnight, so a heatmap cell is one UTC day.
 
-**Flakiest tests** — the global flaky leaderboard, using the same [scoring and impact
-ranking](./flaky-tests#impact-ranking) as each project's Flaky tests tab.
+### Branch policy
 
-**Failure clusters** — open root causes across all projects by age, occurrences, and error-type mix,
-with the oldest unresolved cluster highlighted.
+By default only runs on each project's **default branch** count, so a broken feature branch does not
+move the trends. A run whose branch is unknown (a trace import, a run outside git) counts only in a
+project that never reported a branch. The default branch is the project's setting, else
+the one its latest run reported, else `main`. *All branches* counts every run; branches picked in the
+filter bar override both.
 
-**Regression velocity** — new regressions and newly-flaky tests introduced per period, stacked, with
-the change vs the previous period. Rising bars mean quality debt is accumulating faster than it's paid
-down.
+### Test filter
 
-**Browser matrix** — pass rate per project × browser, so a suite that's green on Chromium and failing
-on WebKit stands out without opening a single run.
+The *Tests* filter narrows every number to some tests:
 
-**Slow endpoints** — backend calls captured during tests, aggregated across all projects by normalized
-route: p50/p90 latency, error rate, and how many projects hit each one. A shared endpoint regressing
-shows up here before it's obvious in any single suite. Requires the
-[capture fixtures](/guide/capture-fixtures).
+- a **selection**, by key: `smoke` resolves in each project to that project's
+  [selection](/features/test-selection) with that key, so a convention shared across projects works on the
+  cross-project page; a project without it is left out and named;
+- **test tags**: tests carrying all of them;
+- **browsers**: the Playwright projects the executions ran on.
+
+It means the tests that match **today**, with their whole history. The widgets then count from the
+stored executions, final attempt per test and browser, so they reach back only as far as retention keeps
+runs. A widget that cannot narrow (the failure clusters) says so above its card.
+
+With one project in scope, *Save as selection* stores the tags as a selection you can run with
+`piwi run <key>`.
+
+### Sharing a view
+
+The address carries the scope (`?period=last-month&sel=smoke`), so a copied link opens on what its
+sender saw; without it, the page opens on the scope you used last in this browser. To keep your own
+view, save an [analytics dashboard](./dashboards).
+
+### Where the numbers come from
+
+The pass rates, run counts, durations, CI time, wasted time and regression counts are read from
+**daily rollups**, one precomputed row per project, UTC day, environment, branch and run kind, kept at
+ingest and checked nightly against the stored runs. When [retention](/operate/storage#data-retention)
+deletes old runs, their numbers stay in the rollups, so a one-year pass-rate line survives a 30-day
+retention window. Lists of tests and clusters, and anything under a test filter, read the stored runs.
+The rollups also [export](/operate/metrics) to a BI tool or a Prometheus scraper.
+
+## Widgets and metrics
+
+The page is the built-in **Overview** dashboard, in four bands. [Analytics widgets](/reference/analytics-widgets)
+lists every widget an [analytics dashboard](./dashboards) can place, and [Metrics](/reference/metrics) defines every
+number they show, with its unit and which direction is better.
+
+## Hand-back outcomes
+
+The **Hand-back outcomes** section, in the *Where the pain is* band, says what became of what Piwi handed back over
+the period, one line per kind:
+
+- **Locator heals**: call sites whose code now uses the recommended locator, whoever changed it, and the
+  [auto-heal](./auto-heal) pull requests merged or closed.
+- **AI diagnoses**: those written, rated helpful, and confirmed by a fix that changed the files they named.
+- **CI gate**: failed [gate verdicts](./pr-feedback#the-gate-verdict), and pull requests merged anyway, with any
+  failure that came back.
+- **Flaky tests**: fixes a [Flake Lab](./flake-lab) verify run proved, and those that flaked again.
+- **Fix attempts**: fixes a person or an agent reported, and what the runs made of them.
+
+![Hand-back outcomes: locator heals, AI diagnoses, the CI gate and a verified flaky test](/screenshots/analytics-handbacks.png)
+
+A rate needs 10 ratings, pull requests or fixes; below that the line says the sample is too small. The counts
+survive retention, and are kept per project and day, so branch and environment filters do not narrow them. A
+project that declined a kind's capability is left out of it. Each number is also a [metric](/reference/metrics).
+
+## From a number to its rows
+
+A number links to the list behind it, opened with the same period and filters. In the portfolio, a
+project's runs, flaky tests and open failure clusters open that project's lists; each heatmap cell opens
+the project's runs of that day. With one project in scope, the headline tiles and every bucket of a chart
+do the same. The project page says the list came from Analytics and offers **Show every run**.
+
+## Exporting a chart
+
+Every chart carries a menu in its header. **Copy as PNG** puts the chart, with its title, on the clipboard
+as an image, ready to paste into a slide; a browser that cannot copy images downloads the PNG instead.
+**Download Excel** saves the numbers behind the chart as an .xlsx workbook, one row per bucket or group:
+numbers and dates are real cells, and a test title is never run as a formula. To send a whole
+dashboard, export it as a [quality report](./quality-reports) instead.
+
+## Targets
+
+A project can carry **targets**, set in the **Targets** section of its **Settings** tab: a test pass rate to reach, and
+limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix.
+Each one is optional. Over the period a dashboard shows, a target is **met** or **missed**:
+
+- the headline tiles mark each number that has a target, met or missed, with one project in scope;
+- the portfolio's **Targets** column counts the targets each project meets;
+- the insights feed says which target a project missed, and by how much;
+- a quality report lists every target, met or missed, and its risks name the missed ones.
+
+A weekly target (wasted CI minutes) is scaled to the length of the period, so a 30-day period is checked
+against about four weeks of it.
 
 ## Marking what you changed
 
-Trends are only actionable when you can line them up against events. [Timeline markers](./timeline-markers)
-let you record a deploy, a CI-runner migration, or a dependency bump against a project and see it drawn
-as a vertical line across the trend charts — so "the slowdown started the day we switched runners"
+[Timeline markers](./timeline-markers) record a deploy, a CI-runner migration or a dependency bump
+against a project, drawn as a vertical line across the trend charts. On the analytics page, with one project in scope every marker
+is drawn; across projects only `release`, `infra` and `incident` markers are, labeled with their project — so "the slowdown started the day we switched runners"
 becomes something you can see rather than remember.
 
-## See also
+## Related
 
-- [Flaky tests](./flaky-tests) — the per-project analysis these widgets aggregate
-- [Timeline markers](./timeline-markers) — annotate the trends with real-world events
-- [UI overview](./ui-overview#analytics) — where this sits in the navigation
+- [Dashboards](./dashboards): analytics dashboards of your own
+- [Quality reports](./quality-reports): this page as a document, with **Export**
+- [Flaky tests](./flaky-tests): the per-project analysis these widgets aggregate
+- [Timeline markers](./timeline-markers): annotate the trends with real-world events
+- [Cut costly flakiness](/recipes/flaky-cleanup): from the flaky leaderboard to an afternoon of fixes
+- [Cut the time it costs](/recipes/faster-suite): where the CI minutes go, and how to get them back
+- [UI overview](./ui-overview#analytics): where this sits in the navigation

@@ -3,8 +3,8 @@
  * Single stat tile — small uppercase label above a value, with an optional
  * hint line below. Standardizes the ad-hoc `bg-gray-50 dark:bg-gray-900`
  * tiles used across detail pages. Place inside a `StatTileGrid`. The default
- * slot overrides `value` and the `label` slot overrides `label` when richer
- * markup (e.g. a `HelpHint`) is needed.
+ * slot overrides `value`, the `label` slot overrides `label` and the `hint`
+ * slot overrides `hint` when richer markup (e.g. a `HelpHint`) is needed.
  */
 withDefaults(
   defineProps<{
@@ -29,6 +29,8 @@ withDefaults(
     <p class="mt-0.5 break-words" :class="[size === 'lg' ? 'text-xl font-bold' : 'text-sm font-semibold', valueClass]">
       <slot>{{ value ?? '—' }}</slot>
     </p>
-    <p v-if="hint" class="text-xs text-gray-400 mt-1">{{ hint }}</p>
+    <p v-if="hint || $slots.hint" class="text-xs text-gray-400 mt-1">
+      <slot name="hint">{{ hint }}</slot>
+    </p>
   </div>
 </template>

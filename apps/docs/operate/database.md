@@ -1,5 +1,6 @@
 ---
 title: Database
+description: "SQLite by default or PostgreSQL for a shared instance, how to switch between them, and where retention and backups are covered."
 lang: en-US
 ---
 
@@ -15,10 +16,11 @@ Test artifacts — HTML reports, traces, attachments — do **not** live here; t
 
 ## SQLite (default)
 
-Nothing to configure. The database file is created at `.data/piwi.db` on the first API call, inside the
+Nothing to configure. The database file is created at `.data/piwi.db` when the server starts, inside the
 directory you mounted as `/app/.data` (container) or the working directory you ran from (`npx`).
 
-Set `PIWI_DATABASE_PATH` to put it somewhere else:
+Set `PIWI_DATABASE_PATH` to put it somewhere else. Its directory must already exist — Piwi creates `.data/`
+itself only when `PIWI_DATABASE_PATH` is unset:
 
 ::: code-group
 
@@ -32,9 +34,10 @@ PIWI_DATABASE_PATH=/custom/path/database.db
 
 :::
 
-SQLite allows one writer at a time. That is ample for a team's test volume — a run submission is a
-short burst of writes — but if you run several dashboard replicas against one database, or see
-`database is locked` under load, move to PostgreSQL.
+SQLite allows one writer at a time. Piwi queues its own writes, and waits up to 5 seconds for a lock
+held by another process (a script, a second server). That is ample for a team's test volume — a run
+submission is a short burst of writes — but if you run several dashboard replicas against one
+database, or see `database is locked` under load, move to PostgreSQL.
 
 ## PostgreSQL
 
@@ -66,14 +69,13 @@ about, or accept starting fresh. Your file storage is unaffected either way.
 - **Retention** — the nightly sweep prunes runs older than `PIWI_RETENTION_DAYS`, off by default. See
   [Data retention](./storage#data-retention).
 - **Backups** — SQLite has an online-consistent backup recipe, PostgreSQL uses `pg_dump`. Both, plus
-  what to copy alongside the database, are in [Backups](./deployment#backups).
+  what to copy alongside the database, are in [Backup & restore](./backup-restore).
 - **Upgrades apply migrations automatically and they are forward-only.** Read
   [Upgrading](./upgrading) before bumping a version tag.
 
-## See also
-
+## Related
 - [Configuration reference](/reference/configuration#database) — every `PIWI_DATABASE_*` and retention variable
-- [Storage configuration](./storage) — where reports, traces and attachments go
-- [Deployment](./deployment) — Compose, Kubernetes and one-click templates
+- [Storage & retention](./storage) — where reports, traces and attachments go
+- [Deployment](./deployment) — Compose and Kubernetes, and [one-click deploy](./one-click-deploy) templates
 - Changing the schema is a contributor task, not an operator one:
   [CONTRIBUTING.md](https://github.com/PiwiTests/platform/blob/main/CONTRIBUTING.md)

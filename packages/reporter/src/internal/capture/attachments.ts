@@ -12,12 +12,16 @@ export const ATTACHMENT_NAMES = {
   console: 'piwi-console',
   dialogs: 'piwi-dialogs',
   network: 'piwi-network',
+  pageInventory: 'piwi-page-inventory',
+  locatorPages: 'piwi-locator-pages',
+  codeReach: 'piwi-code-reach',
   webVitals: 'piwi-web-vitals',
   locatorSuggestion: 'piwi-locator-suggestion',
   pageState: 'piwi-page-state',
   userPick: 'piwi-user-pick',
   aiUsage: 'piwi-ai-usage',
   aiMeta: 'piwi-ai-meta',
+  resources: 'piwi-resources',
 } as const;
 
 /** Set of every internal attachment name — used to skip them when collecting user attachments. */

@@ -1,8 +1,9 @@
 import { markers, testRuns } from '../../server/database/schema';
-import { eq, and, asc, desc, lt } from 'drizzle-orm';
+import { eq, and, asc, desc, lt, ne } from 'drizzle-orm';
 
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
+import { syncReleaseMarkerKeep } from './run-keep';
 
 export interface MarkerInput {
   label: string;
@@ -22,6 +23,15 @@ export async function listProjectMarkers(db: DrizzleDB, projectId: number) {
   return { markers: rows };
 }
 
+/** A marker may link only to a run of its own project. */
+export async function markerRunBelongsToProject(db: DrizzleDB, projectId: number, runId: number): Promise<boolean> {
+  const rows = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.id, runId), eq(testRuns.projectId, projectId)));
+  return rows.length > 0;
+}
+
 export async function createMarker(db: DrizzleDB, projectId: number, data: MarkerInput) {
   const result = await db
     .insert(markers)
@@ -36,6 +46,7 @@ export async function createMarker(db: DrizzleDB, projectId: number, data: Marke
       source: 'manual',
     })
     .returning();
+  await syncReleaseMarkerKeep(db, result[0]!.runId);
   return { success: true, marker: result[0]! };
 }
 
@@ -51,6 +62,7 @@ export async function updateMarker(db: DrizzleDB, id: number, data: Partial<Omit
   if (data.description !== undefined) updates.description = data.description;
 
   await db.update(markers).set(updates).where(eq(markers.id, id));
+  await syncReleaseMarkerKeep(db, existing[0].runId);
   const updated = await db.select().from(markers).where(eq(markers.id, id));
   return { success: true, marker: updated[0]! };
 }
@@ -59,6 +71,7 @@ export async function deleteMarker(db: DrizzleDB, id: number) {
   const existing = await db.select().from(markers).where(eq(markers.id, id));
   if (!existing[0]) throw new Error('Marker not found');
   await db.delete(markers).where(eq(markers.id, id));
+  await syncReleaseMarkerKeep(db, existing[0].runId);
   return { success: true };
 }
 
@@ -76,11 +89,12 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   const run = runRows[0];
   if (!run) return;
 
-  // Don't duplicate an auto marker for this run.
+  // Don't duplicate an auto marker for this run. The run's incident marker is
+  // a different event and does not count.
   const alreadyMarked = await db
     .select({ id: markers.id })
     .from(markers)
-    .where(and(eq(markers.runId, runId), eq(markers.source, 'auto')));
+    .where(and(eq(markers.runId, runId), eq(markers.source, 'auto'), ne(markers.category, 'incident')));
   if (alreadyMarked.length > 0) return;
 
   // Previous runs of this project, most recent first. Filter to the same

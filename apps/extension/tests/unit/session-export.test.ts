@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isValidPickName, renderFixture, renderMarkdown, renderJson } from '../../src/shared/session-export.js';
+import ts from 'typescript';
+import {
+  isReservedPickName,
+  isValidPickName,
+  renderFixture,
+  renderMarkdown,
+  renderJson,
+} from '../../src/shared/session-export.js';
 import type { SessionPick } from '../../src/shared/session-storage.js';
 
 const PICKS: SessionPick[] = [
@@ -26,21 +33,68 @@ describe('isValidPickName', () => {
     expect(isValidPickName('submit-button')).toBe(false);
     expect(isValidPickName('')).toBe(false);
   });
+
+  it('rejects the names the page object holds itself: its page, and constructor', () => {
+    expect(isValidPickName('page')).toBe(false);
+    expect(isValidPickName('constructor')).toBe(false);
+    expect(isReservedPickName('page')).toBe(true);
+    expect(isReservedPickName('pageTitle')).toBe(false);
+    expect(isValidPickName('pageTitle')).toBe(true);
+  });
 });
 
+/**
+ * The page object as a test project compiles and runs it: for ES2022, where
+ * class fields are the language's own, then constructed with `page`.
+ */
+function construct(source: string, page: unknown): Record<string, unknown> {
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  });
+  const exports: Record<string, unknown> = {};
+  new Function('exports', 'require', outputText)(exports, () => ({}));
+  const PickedElements = exports.PickedElements as new (page: unknown) => Record<string, unknown>;
+  return new PickedElements(page);
+}
+
 describe('renderFixture', () => {
-  it('renders one readonly field per pick against this.page', () => {
-    const out = renderFixture(PICKS);
-    expect(out).toContain(`import type { Page } from '@playwright/test';`);
-    expect(out).toContain(`export class PickedElements {`);
-    expect(out).toContain(`  readonly submitButton = this.page.getByRole('button', { name: 'Submit' });`);
-    expect(out).toContain(`  readonly emailInput = this.page.getByTestId('email-input');`);
+  it('renders one readonly field per pick, set from the page in the constructor', () => {
+    expect(renderFixture(PICKS)).toBe(
+      [
+        `import type { Locator, Page } from '@playwright/test';`,
+        ``,
+        `export class PickedElements {`,
+        `  readonly page: Page;`,
+        `  readonly submitButton: Locator;`,
+        `  readonly emailInput: Locator;`,
+        ``,
+        `  constructor(page: Page) {`,
+        `    this.page = page;`,
+        `    this.submitButton = page.getByRole('button', { name: 'Submit' });`,
+        `    this.emailInput = page.getByTestId('email-input');`,
+        `  }`,
+        `}`,
+      ].join('\n'),
+    );
   });
 
-  it('renders a syntactically plausible empty class for no picks', () => {
+  it('builds its locators from the page it is constructed with, with class fields compiled as the language’s own', () => {
+    const page = {
+      getByRole: (role: string, options: { name: string }) => `role ${role} ${options.name}`,
+      getByTestId: (id: string) => `test id ${id}`,
+    };
+    const elements = construct(renderFixture(PICKS), page);
+    expect(elements.page).toBe(page);
+    expect(elements.submitButton).toBe('role button Submit');
+    expect(elements.emailInput).toBe('test id email-input');
+  });
+
+  it('renders a class that compiles and runs for no picks, importing only Page', () => {
     const out = renderFixture([]);
+    expect(out).toContain(`import type { Page } from '@playwright/test';`);
     expect(out).toContain(`export class PickedElements {`);
-    expect(out).toContain(`constructor(private readonly page: Page) {}`);
+    const page = {};
+    expect(construct(out, page).page).toBe(page);
   });
 });
 
@@ -54,6 +108,13 @@ describe('renderMarkdown', () => {
       "| submitButton | `getByRole('button', { name: 'Submit' })` | https://example.com/checkout |",
     );
     expect(lines).toContain("| emailInput | `getByTestId('email-input')` | https://example.com/checkout |");
+  });
+
+  it('escapes the | a locator or an address holds, which would end its cell', () => {
+    const out = renderMarkdown([
+      { name: 'either', locator: "locator('a | b')", pageUrl: 'https://example.com/x?q=a|b' },
+    ]);
+    expect(out.split('\n')[2]).toBe("| either | `locator('a \\| b')` | https://example.com/x?q=a\\|b |");
   });
 });
 

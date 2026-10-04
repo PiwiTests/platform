@@ -20,8 +20,17 @@ interface ClassifyInput {
    * network problem, so each vote weighs several keyword matches.
    */
   attemptDiffNetworkVotes?: number;
-  browserDistribution: Record<string, number>;
+  /** Per browser (Playwright project), how many of the recent attempts passed and failed. */
+  browserDistribution: Record<string, BrowserOutcomes>;
 }
+
+export interface BrowserOutcomes {
+  passed: number;
+  failed: number;
+}
+
+/** Failures on the one failing browser, and passes on another, needed to call it environment. */
+const ENVIRONMENT_MIN_ATTEMPTS = 3;
 
 /** Weight of one attempt-diff network vote, in keyword-match equivalents. */
 const ATTEMPT_DIFF_NETWORK_WEIGHT = 3;
@@ -59,10 +68,11 @@ const ASSERTION_MARKERS = [
 const TIMING_NETWORK_MARKERS = [...TIMING_KEYWORDS, ...NETWORK_KEYWORDS];
 
 function countKeywordMatches(texts: string[], keywords: string[]): number {
+  const lowerKeywords = keywords.map((k) => k.toLowerCase());
   let count = 0;
   for (const text of texts) {
     const lower = text.toLowerCase();
-    for (const kw of keywords) {
+    for (const kw of lowerKeywords) {
       if (lower.includes(kw)) {
         count++;
       }
@@ -84,12 +94,12 @@ export function classifyFlakyRootCause(input: ClassifyInput): FlakyRootCause {
 
   if (allTexts.length === 0) return 'other';
 
-  // Environment check: fails on exactly one browser repeatedly,
-  // while other browsers also ran (have > 0) but didn't fail
-  const entries = Object.entries(input.browserDistribution);
-  const browsersWithFails = entries.filter(([, count]) => count > 0);
-  const totalBrowserRuns = entries.reduce((sum, [, count]) => sum + count, 0);
-  if (browsersWithFails.length === 1 && browsersWithFails[0]![1] >= 3 && entries.length >= 2 && totalBrowserRuns >= 3) {
+  // Environment: one browser fails repeatedly, while another browser ran and
+  // passed repeatedly without failing once.
+  const outcomes = Object.values(input.browserDistribution);
+  const failing = outcomes.filter((o) => o.failed > 0);
+  const cleanPassing = outcomes.filter((o) => o.failed === 0 && o.passed >= ENVIRONMENT_MIN_ATTEMPTS);
+  if (failing.length === 1 && failing[0]!.failed >= ENVIRONMENT_MIN_ATTEMPTS && cleanPassing.length > 0) {
     return 'environment';
   }
 

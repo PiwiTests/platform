@@ -17,7 +17,7 @@ function makeCase(overrides: Partial<TestCaseResult>): TestCaseResult {
 
 const steps: LiveStepsByWorker = {
   0: { title: 'click "Pay now"', category: 'pw:api', parentTitle: 'checkout completes' },
-  1: { title: 'expect(page).toHaveURL(...)', category: 'pw:expect', status: 'passed', parentTitle: 'catalog filters' },
+  1: { title: 'expect(page).toHaveURL(...)', category: 'expect', status: 'passed', parentTitle: 'catalog filters' },
 };
 
 test('matches the running row to its worker step', () => {

@@ -369,6 +369,11 @@ const authEnabled = computed(() => config.public.authEnabled);
           >. Password management is handled by that provider.
         </p>
       </SectionCard>
+
+      <!-- API keys section -->
+      <SectionCard icon="i-lucide-key" title="API keys" help="settings.api-keys" data-shot="account-api-keys">
+        <ApiKeysManager :user-id="me.user.id" />
+      </SectionCard>
     </template>
   </div>
 </template>

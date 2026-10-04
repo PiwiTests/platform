@@ -130,8 +130,8 @@ test.describe('Performance UI Tests', () => {
       await page.goto(`/test-run-cases/${testCaseWithSteps.executionId}`);
       await waitForHydration(page);
 
-      // The step table lives in the evidence Timeline tab now — the tab is the
-      // heading, so the block no longer repeats "Failure timeline" / "Steps".
+      // The step table lives in the evidence Timeline tab — the tab is the
+      // heading, so the block does not repeat "Failure timeline" / "Steps".
       await page.getByRole('tab', { name: /^Timeline/ }).click();
       await expect(page.getByRole('table')).toBeVisible();
       // The slowest step is tagged in the table (the `md`-and-up view; the phone

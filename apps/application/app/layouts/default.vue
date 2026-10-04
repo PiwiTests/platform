@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
+import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
 import ProjectsMenu from '~/components/layout/ProjectsMenu.vue';
-import { getStoredDemoVersion } from '~/demo/db.client';
+import { DOCS_BASE_URL } from '#shared/docs';
 
 const route = useRoute();
 const toast = useToast();
@@ -72,6 +72,7 @@ useNotificationStream();
 useDashboard();
 
 const { canSeeAdmin } = useAuth();
+const { isHidden: capHidden } = await useInstanceCapabilities();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -105,10 +106,14 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id;
     const isRunning = project.latestRun?.status === 'running' || project.latestRun?.status === 'initializing';
     const status = project.latestRun?.status || 'unknown';
+    const outcome = statusPaletteKey(status);
     const statusIcon =
-      status === 'passed' ? 'i-lucide-circle-check-big' : status === 'failed' ? 'i-lucide-circle-x' : 'i-lucide-circle';
-    const statusColor =
-      status === 'passed' ? 'success' : status === 'failed' ? 'error' : isRunning ? 'info' : 'neutral';
+      outcome === 'passed'
+        ? 'i-lucide-circle-check-big'
+        : outcome === 'failed'
+          ? 'i-lucide-circle-x'
+          : 'i-lucide-circle';
+    const statusColor = getStatusColor(status);
     const displayLabel = project.label || project.name;
 
     return {
@@ -117,8 +122,10 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
       ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
-        color: statusColor as 'success' | 'error' | 'info' | 'neutral',
+        color: statusColor,
       },
+      // The `project-trailing` slot turns the status badge into a shortcut to the latest run.
+      slot: 'project',
       value: `project-${project.id}`,
       type: 'link' as const,
       to: `/projects/${project.id}`,
@@ -147,23 +154,51 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   return items;
 });
 
+const latestRunByItemValue = computed(() => {
+  const map = new Map<string, NonNullable<ProjectWithStats['latestRun']>>();
+  for (const project of projects.value ?? []) {
+    if (project.latestRun) map.set(`project-${project.id}`, project.latestRun);
+  }
+  return map;
+});
+
+// Nuxt UI does not type the props of a per-item slot (`#project-trailing`), so they are named here.
+function projectStatusBadgeProps({
+  item,
+  ui,
+}: {
+  item: NavigationMenuItem;
+  ui: { linkTrailingBadgeSize: () => string; linkTrailingBadge: () => string };
+}) {
+  return {
+    run: (item.value ? latestRunByItemValue.value.get(item.value) : undefined) ?? null,
+    badge: item.badge as BadgeProps,
+    size: ui.linkTrailingBadgeSize() as BadgeProps['size'],
+    badgeClass: ui.linkTrailingBadge(),
+  };
+}
+
 const links = computed(() => {
   const bottomLinks: NavigationMenuItem[] = [
     {
-      label: 'GitHub',
-      icon: 'i-lucide-github',
-      to: 'https://github.com/piwitests/platform',
+      label: 'Documentation',
+      icon: 'i-lucide-book-marked',
+      to: DOCS_BASE_URL,
       target: '_blank',
     },
   ];
-  bottomLinks.unshift({
-    label: 'MCP server',
-    icon: 'i-lucide-bot',
-    to: '/mcp',
-    onSelect: () => {
-      open.value = false;
-    },
-  });
+  // The MCP server link follows the `mcp` capability: a declined instance drops
+  // it from the sidebar and the command palette alike.
+  if (!capHidden('mcp')) {
+    bottomLinks.unshift({
+      label: 'MCP server',
+      icon: 'i-lucide-bot',
+      to: '/mcp',
+      onSelect: () => {
+        open.value = false;
+      },
+    });
+  }
   // Setup is admin-only: it configures how results reach this instance and, in
   // the desktop build, exposes the local access token. Hiding the link also
   // removes it from the command palette, which is built from these same items.
@@ -201,10 +236,23 @@ const links = computed(() => {
         label: 'Analytics',
         icon: 'i-lucide-chart-line',
         to: '/analytics',
+        active: route.path === '/analytics' || route.path.startsWith('/analytics/'),
         onSelect: () => {
           open.value = false;
         },
       },
+      ...(capHidden('quality-reports')
+        ? []
+        : [
+            {
+              label: 'Quality reports',
+              icon: 'i-lucide-file-chart-column',
+              to: '/reports',
+              onSelect: () => {
+                open.value = false;
+              },
+            },
+          ]),
       {
         label: 'Projects',
         icon: 'i-lucide-folder',
@@ -360,11 +408,12 @@ const { resetDemo } = useDemoReset();
 
 onMounted(async () => {
   // ── Demo data staleness ──
-  // Note: the demo DB now self-heals on load — a changed seed version reseeds
-  // automatically (see db.client `canReusePersistedDemoDb`). This prompt is a
-  // belt-and-suspenders nudge; its "Refresh" runs the same window + service
-  // worker reset the toolbar button uses.
+  // A changed seed version reseeds the demo DB on load (see db.client
+  // `canReusePersistedDemoDb`). This prompt is a second nudge; its "Refresh"
+  // runs the same window + service worker reset the toolbar button uses.
   if (isDemo && demoDataVersion) {
+    // Lazy: the demo database module carries the server schema and Drizzle.
+    const { getStoredDemoVersion } = await import('~/demo/db.client');
     const stored = await getStoredDemoVersion();
     if (stored !== null && stored !== demoDataVersion) {
       toast.add({
@@ -438,7 +487,11 @@ onMounted(async () => {
           orientation="vertical"
           tooltip
           popover
-        />
+        >
+          <template #project-trailing="slotProps">
+            <SidebarProjectStatusBadge v-bind="projectStatusBadgeProps(slotProps)" @navigate="open = false" />
+          </template>
+        </UNavigationMenu>
 
         <UNavigationMenu :collapsed="collapsed" :items="links[1]" orientation="vertical" tooltip class="mt-auto" />
       </template>
@@ -475,6 +528,12 @@ onMounted(async () => {
 
     <!-- Desktop shell: after linking a folder, offer to import the runs already in it -->
     <DesktopImportPreviousRunsModal />
+
+    <!-- Desktop shell: a repro request from Piwi Picker, waiting for the developer's click -->
+    <DesktopReproRequestModal />
+
+    <!-- Desktop shell: Piwi Picker asks to pair, waiting for the developer's Allow -->
+    <DesktopPickerPairingModal />
 
     <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
     <DesktopLocalRunsTray />

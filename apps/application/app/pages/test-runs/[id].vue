@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue';
-import type { TestRunDetails, TestCaseResult, ReportInfo, TestStepEvent, FailureGroup } from '~~/types/api';
+import type {
+  TestRunDetails,
+  TestCaseResult,
+  ReportInfo,
+  TestStepEvent,
+  FailureGroup,
+  RunClusterMeta,
+} from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunStream } from '~/composables/useRunStream';
+import { summarizeRunCases } from '#shared/utils/test-counts';
 
 const route = useRoute();
 const router = useRouter();
@@ -46,27 +54,47 @@ useHead(
   }),
 );
 
-const toast = useToast();
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
-const deleting = ref(false);
+const isKeepOpen = ref(false);
+const { release: releaseKeep, canRelease } = useRunKeep();
 
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing');
 const isFinalizing = ref(false);
 const liveTestCases = ref<TestCaseResult[]>([]);
 const liveTestCaseKeys = new Map<string, true>();
-const liveProgress = ref<{ totalTests: number; passedTests: number; failedTests: number; skippedTests: number } | null>(
-  null,
-);
 // Worker index → the step the worker is currently on (from transient SSE step
 // events; nothing is persisted from them). Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
 let eventSource: EventSource | null = null;
 
-// Combined test cases: from server data + live stream.
+// Combined test cases: from server data + live stream. Includes every attempt
+// (a retried test has one row per attempt) — the timeline and the per-execution
+// links need them all.
 const displayTestCases = ref<TestCaseResult[]>([]);
+
+/**
+ * One entry per test — the final attempt (highest retry count) — so a retried
+ * test is a single row whose outcome is its last attempt. Keyed by the
+ * persisted test-case id + browser once known, else the streaming key (title +
+ * location + browser), so it collapses live placeholder rows and finished
+ * attempt rows alike. Feeds the header counts, the count bar and the grouped
+ * list; the timeline keeps the full attempt list.
+ */
+function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
+  const byKey = new Map<string, TestCaseResult>();
+  for (const tc of cases) {
+    const browser = tc.browser?.projectName ?? tc.browser?.browserName ?? '';
+    const key = tc.testCaseId > 0 ? `c${tc.testCaseId}\x00${browser}` : `${tc.title}\x00${tc.location}\x00${browser}`;
+    const prev = byKey.get(key);
+    if (!prev || (tc.retries ?? 0) >= (prev.retries ?? 0)) byKey.set(key, tc);
+  }
+  return [...byKey.values()];
+}
+
+const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
 
 watch(
   [isLive, testRun],
@@ -104,14 +132,10 @@ function flushPendingEvents() {
   pendingEvents = [];
   for (const parsed of events) {
     const data = parsed.data as Record<string, unknown>;
-    if (parsed.type === 'init') {
-      liveProgress.value = {
-        totalTests: data.totalTests as number,
-        passedTests: data.passedTests as number,
-        failedTests: data.failedTests as number,
-        skippedTests: data.skippedTests as number,
-      };
-    } else if (parsed.type === 'test-begin') {
+    // 'init' and 'run-progress' carry the server's running counters; the header
+    // and bar are derived from the de-duplicated case list instead (see
+    // displayProgress), so those snapshots are not applied here.
+    if (parsed.type === 'test-begin') {
       const d = data as {
         title: string;
         filePath?: string;
@@ -165,6 +189,7 @@ function flushPendingEvents() {
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
+        retries?: number | null;
         executionId?: number | null;
         testCaseId?: number | null;
       };
@@ -192,6 +217,9 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
+            // A later attempt's higher retry count wins, so a fail-then-pass
+            // test ends up as passed-on-retry rather than a plain pass.
+            retries: d.retries ?? existing.retries,
             // The real ids replace the placeholder once persistence happens;
             // a duplicate event without ids keeps whatever the row already has.
             executionId: d.executionId ?? existing.executionId,
@@ -219,6 +247,7 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? null,
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,
+            retries: d.retries ?? null,
           },
         ];
         displayTestCases.value = [...liveTestCases.value];
@@ -265,22 +294,9 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
-    } else if (parsed.type === 'run-progress') {
-      liveProgress.value = data as {
-        totalTests: number;
-        passedTests: number;
-        failedTests: number;
-        skippedTests: number;
-      };
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
-      liveProgress.value = data as {
-        totalTests: number;
-        passedTests: number;
-        failedTests: number;
-        skippedTests: number;
-      };
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
       liveSteps.value = {};
@@ -429,35 +445,42 @@ watch(
   { immediate: true },
 );
 
-// Display progress: live or from loaded data
+// Display progress: the header counts, the count bar and the grouped list are
+// all derived from the same de-duplicated case list (one row per test, its
+// final attempt), so they cannot disagree — clicking a bar segment always lands
+// on exactly that many rows. A flaky test passed on a retry, so it counts as
+// passed and as flaky, never as a failure via its earlier failed attempt. While
+// live the planned suite size the reporter reports at /start is the denominator
+// (right from the first render); once finished the persisted case list is
+// complete. The stored run columns are only a fallback for a run whose cases are
+// not loaded.
 const displayProgress = computed(() => {
-  if (isLive.value && liveProgress.value) {
-    return liveProgress.value;
-  }
   if (!testRun.value) return null;
+  const cases = dedupedDisplayCases.value;
+  if (isLive.value || cases.length > 0) {
+    const s = summarizeRunCases(cases);
+    return {
+      totalTests: Math.max(testRun.value.totalTests ?? 0, s.total),
+      passedTests: s.passed,
+      failedTests: s.failed,
+      skippedTests: s.skipped,
+      fixmeTests: s.fixme,
+      didNotRunTests: s.didNotRun,
+      flakyTests: s.flaky,
+    };
+  }
   return {
     totalTests: testRun.value.totalTests,
     passedTests: testRun.value.passedTests,
     failedTests: testRun.value.failedTests,
     skippedTests: testRun.value.skippedTests,
+    fixmeTests: 0,
+    didNotRunTests: testRun.value.didNotRunTests ?? 0,
+    flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
 
-async function handleDeleteRun() {
-  isDeleteConfirmOpen.value = false;
-  deleting.value = true;
-  try {
-    await $fetch(`/api/test-runs/${runId}`, { method: 'DELETE' });
-    toast.add({ title: 'Test run deleted', color: 'success' });
-    await navigateTo(`/projects/${testRun.value?.project?.id}`);
-  } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Delete failed', description: errorMessage || 'An error occurred', color: 'error' });
-  } finally {
-    deleting.value = false;
-  }
-}
+const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.keptAt ?? null }]);
 
 // A plain-text run summary for the navbar's Copy run summary action.
 function buildRunSummary(): string {
@@ -467,14 +490,23 @@ function buildRunSummary(): string {
     run.status === 'passed' ? '✅' : run.status === 'failed' ? '❌' : run.status === 'running' ? '🔄' : '⚠️';
   const label = run.label ? ` — ${run.label}` : '';
   const project = run.project?.label ?? run.project?.name ?? '';
-  const flaky = run.flakyTests ?? 0;
-  const didNotRun = run.didNotRunTests ?? 0;
+  // Count from the same source as the header so the copied summary matches what
+  // is on screen; fall back to the stored columns when the cases aren't loaded.
+  const p = displayProgress.value;
+  const total = p?.totalTests ?? run.totalTests ?? 0;
+  const passed = p?.passedTests ?? run.passedTests ?? 0;
+  const failed = p?.failedTests ?? run.failedTests ?? 0;
+  const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
+  const fixme = p?.fixmeTests ?? 0;
+  const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
+  const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
   const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
   const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
+  const fixmePart = fixme > 0 ? ` (${fixme} fixme)` : '';
   return [
     `*Run #${run.id}*${label}`,
     `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${run.totalTests ?? 0} total · ${run.passedTests ?? 0} passed · ${run.failedTests ?? 0} failed · ${run.skippedTests ?? 0} skipped${didNotRunPart}${flakyPart}`,
+    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${fixmePart}${didNotRunPart}${flakyPart}`,
     `Duration: ${formatDuration(run.duration)}`,
   ].join('\n');
 }
@@ -482,7 +514,6 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
-const testCaseBrowserFilter = ref('all');
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.
@@ -519,14 +550,17 @@ const showFailureTabs = computed(() => hasFailures.value || (testRun.value?.flak
 // taken from the same failure-groups payload. Fetched whenever the failure tabs
 // become available: a flaky-only run has no failedTests yet still has clusters,
 // and a live run can gain its first failure mid-stream.
-const clusterMeta = ref<Record<number, { name: string; status: string | null }>>({});
+const clusterMeta = ref<RunClusterMeta>({});
 
 async function fetchClusterMeta() {
   if (!import.meta.client) return;
   try {
     const r = await $fetch<{ items: FailureGroup[] }>(`/api/test-runs/${runId}/failure-groups`);
     clusterMeta.value = Object.fromEntries(
-      r.items.map((g) => [g.clusterId, { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null }]),
+      r.items.map((g) => [
+        g.clusterId,
+        { name: g.title || `Cluster #${g.clusterId}`, status: g.status ?? null, issue: g.knownIssue ?? null },
+      ]),
     );
   } catch {
     // chips fall back to plain cluster ids, headers to no triage badge
@@ -563,7 +597,7 @@ const uniqueWorkerCount = computed(() => {
 
 const tabItems = computed(() => [
   {
-    label: `Tests (${displayTestCases.value.length})`,
+    label: `Tests (${dedupedDisplayCases.value.length})`,
     icon: 'i-lucide-beaker',
     value: 'test-cases',
     slot: 'test-cases',
@@ -582,6 +616,9 @@ const tabItems = computed(() => [
     value: 'workers',
     slot: 'workers',
   },
+  ...(testRun.value?.hasResources
+    ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]
+    : []),
 ]);
 
 const tabPanelClass: Record<string, string> = {
@@ -604,9 +641,9 @@ if (route.query.tab === 'failure-groups') {
   }
 }
 
-// The former Insights, Since last pass and Compare tabs are one Changes tab;
-// the former Slow endpoints tab moved to the project page. Redirect their
-// deep-links so shared URLs and older links still land somewhere sensible.
+// Deep-links naming the insights, regression or compare tab open the Changes
+// tab, and endpoints opens the Tests tab (slow endpoints are on the project
+// page), so shared URLs land somewhere sensible.
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
   insights: 'changes',
   regression: 'changes',
@@ -648,25 +685,50 @@ const testCasesListRef: {
 
 function handleSelectTestCase(id: number) {
   activeTab.value = 'test-cases';
+  // The timeline lists every attempt, but the Tests list shows one row per test
+  // (its final attempt), so redirect a non-final attempt's id to its test's row.
+  const source = displayTestCases.value.find((tc) => tc.executionId === id);
+  const rowId =
+    source && source.testCaseId > 0
+      ? (dedupedDisplayCases.value.find(
+          (tc) =>
+            tc.testCaseId === source.testCaseId &&
+            (tc.browser?.projectName ?? '') === (source.browser?.projectName ?? ''),
+        )?.executionId ?? id)
+      : id;
   nextTick(() => {
-    testCasesListRef.value?.scrollToCase(id);
+    testCasesListRef.value?.scrollToCase(rowId);
   });
 }
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; onSelect: () => void }[] = [];
+  const items: { label: string; icon: string; color?: 'error'; disabled?: boolean; onSelect: () => void }[] = [];
   items.push({
     label: 'Copy run summary',
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
-  if (canSeeAdmin.value) {
+  const kept = !!testRun.value?.keptAt;
+  if (!kept) {
+    items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
+  } else if (canRelease.value) {
     items.push({
-      label: 'Delete run',
+      label: 'Release keep',
+      icon: 'i-lucide-lock-open',
+      onSelect: async () => {
+        if (await releaseKeep(Number(runId))) refresh();
+      },
+    });
+  }
+  if (canSeeAdmin.value) {
+    // A kept run cannot be deleted until it is released.
+    items.push({
+      label: kept ? 'Delete run (release it first)' : 'Delete run',
       icon: 'i-lucide-trash-2',
       color: 'error',
+      disabled: kept,
       onSelect: () => (isDeleteConfirmOpen.value = true),
     });
   }
@@ -757,9 +819,9 @@ const moreMenuItems = computed(() => {
             data-shot="failure-clusters"
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
-            v-model:browser-filter="testCaseBrowserFilter"
-            :test-cases="displayTestCases"
+            :test-cases="dedupedDisplayCases"
             :is-live="isLive"
+            :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
@@ -789,6 +851,8 @@ const moreMenuItems = computed(() => {
               :shard-total="testRun?.shardTotal ?? null"
               :live="isLive"
               :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
+              :run-id="Number(runId)"
+              :has-resources="testRun?.hasResources ?? false"
               @select-test-case="handleSelectTestCase"
             />
             <RunTimelineExtras
@@ -800,23 +864,29 @@ const moreMenuItems = computed(() => {
             />
           </div>
         </template>
+
+        <template #tab-resources>
+          <RunResources
+            :run-id="Number(runId)"
+            :project-key="testRun?.projectId"
+            :project-name="testRun?.project?.name"
+            :refresh-key="runRefreshKey"
+            @open-timeline="activeTab = 'workers'"
+          />
+        </template>
       </DetailPageLayout>
     </template>
   </UDashboardPanel>
 
-  <!-- Delete Confirm Dialog -->
   <ClientOnly>
-    <UModal :open="isDeleteConfirmOpen" title="Delete test run" @update:open="isDeleteConfirmOpen = $event">
-      <template #body>
-        <p>
-          Are you sure you want to delete <strong>test run #{{ testRun?.id }}</strong
-          >? This will also remove all associated test results, reports, and traces. This action cannot be undone.
-        </p>
-      </template>
-      <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteConfirmOpen = false" />
-        <UButton color="error" label="Delete" icon="i-lucide-trash-2" :loading="deleting" @click="handleDeleteRun" />
-      </template>
-    </UModal>
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+  </ClientOnly>
+
+  <ClientOnly>
+    <RunsDeleteModal
+      v-model:open="isDeleteConfirmOpen"
+      :runs="runToDelete"
+      @deleted="navigateTo(`/projects/${testRun?.project?.id}`)"
+    />
   </ClientOnly>
 </template>

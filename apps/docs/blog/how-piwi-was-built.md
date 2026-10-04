@@ -1,5 +1,6 @@
 ---
 title: How Piwi was built
+description: "Why Piwi exists, the two rules behind every feature, and how failure explanation, flaky scoring and the tools around them were built."
 date: 2026-08-17
 author: Fabien Ménager
 excerpt: 'The story and the hard parts of an eight-month side project: gathering failure evidence, grouping failures by cause, diagnosis grounded in your real diff, and the two rules behind all of it.'
@@ -138,7 +139,7 @@ The idea came from earlier experiments: I had built browser playgrounds for EF C
 
 ### AI steps: the LLM is a compiler, not a runtime
 
-The usual objection to natural-language tests is that a model in the hot path is slow, flaky, and a network dependency in CI. [AI steps](/guide/ai-steps) keep it out of the path entirely: `page.piwiLocator('the email address field')` calls the model once, at authoring time, and every run after that is plain Playwright with **zero model calls and zero network**.
+The usual objection to natural-language tests is that a model in the hot path is slow, flaky, and a network dependency in CI. [AI steps](/features/ai-steps) keep it out of the path entirely: `page.piwiLocator('the email address field')` calls the model once, at authoring time, and every run after that is plain Playwright with **zero model calls and zero network**.
 
 The obvious way to build this is to let the model emit the locator, cache the string, and replay it. That falls apart the moment you commit the cache to git: model output is not byte-stable, so every re-author rewrites the file and your diffs fill with noise, and a stored free-form selector is opaque and unsafe to run. So the model never returns a locator. It returns one decision from a closed schema, the element's ARIA role and accessible name, and a deterministic scorer in `@piwitests/core` compiles that into an allowlisted locator program:
 
@@ -223,3 +224,5 @@ Eight months in, the mission fits in three sentences: **keep the history, explai
 The rhythm is slower now, on purpose. I stabilize what exists: features, performance, security, with regular audits to keep the code cohesive, performant, maintainable and secure. New ideas still come, but each one has to answer two questions first: **would I actually use this? Will it help me the day I am fixing or improving my tests?** If the answer is no, it does not get built.
 
 If you have ever lost a morning to a flaky test, or gone looking for the report of a failure that CI deleted days ago, you know exactly why I built this. It is open source and MIT, the [demo](https://piwitests.dev/demo/) opens in your browser in about ten seconds with no signup, and the [code is on GitHub](https://github.com/PiwiTests/platform). I hope it gives you back as much time as it has given me.
+
+*Update: the dashboard has moved to a fair source license, FSL-1.1-MIT. It stays free to use and self-host, and each release becomes MIT two years after it is published; the reporter and the integrations stay MIT. See [License](/guide/license).*

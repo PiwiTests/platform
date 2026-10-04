@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { describeCluster } from '#shared/describe-cluster';
-import { getProviderIcon } from '#shared/link-detect';
-import type { LinkProvider } from '#shared/link-detect';
 import {
   INBOX_QUEUES,
   clusterInQueue,
   countQueues,
   isSnoozedBack,
   effectiveAssignee,
+  groupIncidentClusters,
   type InboxQueue,
   type SnoozeOption,
   type UserIdentity,
@@ -99,7 +98,13 @@ function withOverrides(cluster: OpenFailureCluster): OpenFailureCluster {
   return { ...cluster, assignee: assigneeOverride.value.get(cluster.id) ?? null };
 }
 
-const liveClusters = computed(() => props.clusters.filter((c) => !removedIds.value.has(c.id)).map(withOverrides));
+// Clusters an environment-incident run opened collapse into one row per run,
+// listed above the clusters on the All open queue.
+const grouped = computed(() =>
+  groupIncidentClusters(props.clusters.filter((c) => !removedIds.value.has(c.id)).map(withOverrides)),
+);
+const liveClusters = computed(() => grouped.value.clusters);
+const incidentRows = computed(() => (queue.value === 'all' ? grouped.value.incidents : []));
 
 const counts = computed(() => countQueues(liveClusters.value, queueCtx.value));
 
@@ -648,7 +653,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
     </div>
 
-    <p v-if="rows.length === 0" class="py-3 text-sm text-gray-500 dark:text-gray-400">
+    <div
+      v-if="incidentRows.length > 0"
+      class="divide-y divide-gray-100 dark:divide-gray-800"
+      data-shot="inbox-incident"
+    >
+      <NuxtLink
+        v-for="incident in incidentRows"
+        :key="`incident-${incident.runId}`"
+        :to="`/test-runs/${incident.runId}`"
+        :data-incident-row="incident.runId"
+        class="flex flex-col gap-0.5 py-3 px-2 -mx-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800/60"
+      >
+        <span class="text-sm font-medium text-primary">
+          Environment incident · run #{{ incident.runId }}{{ incident.host ? ` · ${incident.host}` : '' }}
+        </span>
+        <span class="text-xs text-muted">{{ incident.reason }}</span>
+        <span class="text-xs text-muted">
+          {{ incident.clusters[0]?.projectLabel || incident.clusters[0]?.projectName }} ·
+          {{ incident.clusters.length }} new {{ incident.clusters.length === 1 ? 'cluster' : 'clusters' }}, not counted
+        </span>
+      </NuxtLink>
+    </div>
+
+    <p v-if="rows.length === 0 && incidentRows.length === 0" class="py-3 text-sm text-gray-500 dark:text-gray-400">
       {{
         queue === 'all'
           ? 'No open failure clusters — nothing needs triage right now.'
@@ -656,7 +684,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       }}
     </p>
 
-    <div v-else class="divide-y divide-gray-100 dark:divide-gray-800">
+    <div v-if="rows.length > 0" class="divide-y divide-gray-100 dark:divide-gray-800">
       <div
         v-for="(cluster, index) in visibleRows"
         :key="cluster.id"
@@ -718,20 +746,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
               <UIcon name="i-lucide-git-merge" class="size-3" />Merge suggested
             </UBadge>
 
-            <a
-              v-if="cluster.issueLink"
-              :href="cluster.issueLink.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="shrink-0"
-              :title="`Known issue: ${cluster.issueLink.key ?? cluster.issueLink.url}`"
-              @click.stop
-            >
-              <UBadge color="neutral" variant="subtle" size="xs" class="gap-1">
-                <UIcon :name="getProviderIcon(cluster.issueLink.provider as LinkProvider)" class="size-3" />
-                {{ cluster.issueLink.key ?? 'Issue' }}
-              </UBadge>
-            </a>
+            <IssueKeyChip v-if="cluster.issueLink" :issue="cluster.issueLink" />
           </div>
 
           <!-- Top clue (muted) -->

@@ -21,7 +21,7 @@ export type RouteHandler = (req: RecordedReq, res: http.ServerResponse) => void;
  * Start a fake HTTP server that records every request. The `handler` is called
  * for each request; route on `req.url`. Use `jsonRes` to write JSON responses.
  */
-export function startServer(handler: RouteHandler): FakeServer {
+export function startServer(handler: RouteHandler): Promise<FakeServer> {
   const requests: RecordedReq[] = [];
   const server = http.createServer((req, res) => {
     let body = '';
@@ -87,7 +87,7 @@ export function fakeSuite(opts: { projectMetadata?: Record<string, unknown> } = 
     title: '',
     parent: undefined,
     _parallelMode: 'default',
-    _annotations: [],
+    _staticAnnotations: [],
     project: () => project,
     allTests: () => [],
   };
@@ -102,9 +102,11 @@ export function fakeTestCase(opts: {
   column?: number;
   parent?: any;
   annotations?: any[];
+  expectedStatus?: string;
 }): any {
   return {
     title: opts.title ?? 'test',
+    expectedStatus: opts.expectedStatus ?? 'passed',
     location: { file: opts.file ?? '/tmp/test.spec.ts', line: opts.line ?? 1, column: opts.column ?? 1 },
     parent: opts.parent ?? fakeSuite(),
     annotations: opts.annotations ?? [],

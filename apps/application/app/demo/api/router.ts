@@ -6,7 +6,7 @@
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   users,
   files,
@@ -17,18 +17,34 @@ import {
   testRunsCases,
   failureClusters,
   failureDiagnoses,
+  graphNodes,
+  bugReports,
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import {
   getUserAssignments,
   setUserAssignments,
   getProjectMembers,
   setProjectMembers,
+  getProjectAccessGrid,
+  getProjectAccessUser,
+  setProjectAccess,
 } from '#shared/handlers/project-assignments';
 import { getDemoDb } from '../db.client';
+import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
+import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
+import { getBranchFailures } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
+import {
+  backfillLocatorUsages,
+  getExecutionLocators,
+  getLocatorIndex,
+  getLocatorUsages,
+} from '~~/server/utils/locator-usages';
+import { parseLocatorBranchQuery, parseLocatorUsageQuery } from '#shared/locator-usages.types';
 import { buildFixPlan } from '~~/server/utils/fix-plan';
 import { findFixedBefore } from '~~/server/utils/cluster-memory';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
@@ -37,6 +53,32 @@ import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
 import { apiExportTestRunCase, apiExportFailureCluster } from './export';
+import {
+  apiCreateReportSchedule,
+  apiCreateReportSnapshot,
+  apiDeleteReportSchedule,
+  apiExportReportSnapshot,
+  apiGetReportSchedule,
+  apiGetReportSnapshot,
+  apiListReportSchedules,
+  apiListReportSnapshots,
+  apiPreviewReportSchedule,
+  apiReportPreview,
+  apiRunReportSchedule,
+  apiUpdateReportSchedule,
+} from './reports';
+import {
+  apiCreateDashboard,
+  apiDeleteDashboard,
+  apiDuplicateDashboard,
+  apiGetDashboard,
+  apiGetDashboardWidget,
+  apiListDashboards,
+  apiPreviewWidget,
+  apiSaveDashboard,
+  apiSetDefaultDashboard,
+} from './dashboards';
+import { DEMO_CHANNEL } from './demo-channel';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -48,9 +90,11 @@ import {
 import {
   listProjects,
   getProject,
+  listKeptRuns,
   getProjectAiStepCoverage,
   getProjectPerformance,
   getProjectTestCases,
+  getProjectTestCaseFacets,
   parseTestCasesQuery,
   getProjectSlowTests,
   getProjectTimeoutOpportunities,
@@ -59,12 +103,18 @@ import {
   createProject,
   getProjectMenu,
   deleteProjectData,
-  getProjectFlakyTests,
+  getProjectFlakyTestsWithVerified,
   getProjectsOverview,
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
-import { listProjectMarkers, createMarker, updateMarker, deleteMarker } from '#shared/handlers/markers';
+import {
+  listProjectMarkers,
+  createMarker,
+  updateMarker,
+  deleteMarker,
+  markerRunBelongsToProject,
+} from '#shared/handlers/markers';
 import {
   listProjectTestFunctions,
   createTestFunction,
@@ -75,10 +125,13 @@ import { validateExtractedFunction } from '#shared/test-function-extract-prompt'
 import { createTestFunctionSchema, updateTestFunctionSchema } from '#shared/test-function-schemas';
 import {
   addQuarantine,
+  dismissQuarantineProposal,
   listQuarantine,
+  markDismissedProposals,
   releaseQuarantine,
   RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
+import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
   listSelections,
   getSelection,
@@ -90,6 +143,25 @@ import {
 } from '#shared/handlers/selections';
 import { getSelectionSuggestions } from '#shared/handlers/selection-suggestions';
 import { getSelectionAnalytics } from '#shared/handlers/selection-analytics';
+import {
+  computeScenarioGaps,
+  listScenarioGaps,
+  triageGap,
+  issueScenarioDraft,
+  listAcceptedUnwritten,
+} from '#shared/handlers/scenario-gaps';
+import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
+import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
+import { parseRouteNodeKey } from '#shared/graph';
+import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
+import type { AppManifest, ManifestSource } from '#shared/types';
+import {
+  buildProbePlan,
+  recordProbeResults,
+  DEFAULT_PROBE_BUDGET,
+  type ProbeResultInput,
+} from '#shared/handlers/probes';
+import { computeChangeCoverage } from '#shared/handlers/change-coverage';
 import {
   isBuiltinKey,
   parseRankBy,
@@ -104,12 +176,37 @@ import {
   getTestCaseHistory,
   getTestRunCaseTraces,
   getTestCaseStabilityTrend,
+  STABILITY_TREND_DEFAULT_DAYS,
   getFailureTimeline,
   getExecutionSteps,
   getFailureClues,
   getAttemptDiff,
 } from '#shared/handlers/test-cases';
+import { parseGranularity } from '#shared/analytics/period';
+import { getFlakeProfile } from '#shared/handlers/flake-profile';
+import {
+  FLAKE_EXPERIMENT_SOURCES,
+  FlakePlanUnavailable,
+  FlakeResultsRejected,
+  getFlakeExperimentPlan,
+  getFlakyListSuspects,
+  getProjectFlakeLab,
+  listFlakeExperiments,
+  listFlakeLabInbox,
+  recordFlakeResults,
+  resolveTestCaseByLocation,
+  type FlakeResultsInput,
+} from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
+import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
+import { parseFixAttempt } from '#shared/fix-attempts';
+import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
+import { getClusterActivity } from '#shared/handlers/cluster-activity';
+import { isRunOriginKind } from '@piwitests/core/wire';
+import { getVerifiedFixes } from '#shared/handlers/flake-verified';
+import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
 import {
   getFailureCluster,
   getOpenFailureClusters,
@@ -119,9 +216,12 @@ import {
   quarantineClusterTests,
   bulkTriageClusters,
   patchClusterBaseCommit,
+  recordClusterBisect,
   extractClusterCases,
   getClusterDiagnosis,
   getExecutionDiagnosis,
+  getClusterOccurrenceTrend,
+  CLUSTER_TREND_DEFAULT_DAYS,
 } from '#shared/handlers/failure-clusters';
 import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
@@ -157,6 +257,7 @@ import {
   createDemoConnection,
   updateDemoConnection,
   testDemoConnection,
+  checkDemoConnection,
   demoTrackerStatus,
   demoIssueDraft,
   demoCreateIssue,
@@ -164,6 +265,8 @@ import {
   demoSyncTrackerLinks,
   demoConnectionProjects,
   demoConnectionIssueTypes,
+  demoCreateFields,
+  demoTransitionSample,
   demoAssignable,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
@@ -177,6 +280,7 @@ import {
   getRecentTestRuns,
   getTestRunSummary,
   patchTestRun,
+  parseTestRunPatch,
   getNetworkRequests,
   getFailureGroups,
   computeRegressionContextForRun,
@@ -185,7 +289,10 @@ import {
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
 import { parseAnalyticsScope } from '#shared/analytics/scope';
-import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
+import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/handlers/analytics/rollup-export';
+import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
+import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
+import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
 import {
   listUsers,
   createUserRecord,
@@ -197,6 +304,12 @@ import {
 } from '#shared/handlers/users';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { getSetupStatus } from '#shared/handlers/setup-status';
+import {
+  getInstanceCapabilities,
+  getProjectCapabilities,
+  setInstanceDecisions,
+  setProjectDecisions,
+} from '#shared/handlers/capabilities';
 import { getAriaSampling } from '#shared/handlers/aria-sampling';
 import {
   apiSetupTestRun,
@@ -221,20 +334,48 @@ import {
   apiGetAiUsage,
   apiListAiModels,
 } from './ai';
-import { apiGetAdminStats } from './admin';
+import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { demoHttpError } from './http-error';
+import {
+  addProjectUrlPattern,
+  listProjectUrlPatterns,
+  listVisibleUrlPatterns,
+  replaceProjectUrlPatterns,
+  suggestUrlPatterns,
+  urlPatternInputSchema,
+  urlPatternListSchema,
+  type UrlPatternWriteResult,
+} from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
+import { setRunIncident } from '#shared/handlers/run-health';
+import { parseSetRunIncident } from '#shared/run-incident';
+import {
+  addBugReproduction,
+  isReproductionRunAllowed,
+  bugReportPatchSchema,
+  bugReproductionSchema,
+  getBugReport,
+  getBugReportMissedBy,
+  listBugReports,
+  renderBugReportSpec,
+  specDirSchema,
+  updateBugReport,
+} from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
   apiGetTimeoutHygiene,
   apiPutTimeoutHygiene,
+  apiGetCiCost,
+  apiPutCiCost,
   apiGetPrFeedback,
   apiGetAutoHeal,
   apiPutAutoHeal,
   apiGetHealActions,
   apiPutPrFeedback,
+  apiGetLocale,
+  apiPutLocale,
 } from './settings';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -253,6 +394,13 @@ interface RouteEntry {
   method: HttpMethod;
   pattern: RegExp;
   handler: (matches: RegExpMatchArray, body?: unknown, query?: URLSearchParams, ctx?: DemoCtx) => Promise<unknown>;
+}
+
+/** Mirrors the server's role check: no acting user means auth is off, which acts as an administrator. */
+async function demoActingUserIsAdmin(db: Awaited<ReturnType<typeof getDemoDb>>, ctx?: DemoCtx): Promise<boolean> {
+  if (!ctx?.actingUserId) return true;
+  const rows = await db.select({ role: users.role }).from(users).where(eq(users.id, ctx.actingUserId));
+  return !rows[0] || rows[0].role === Role.ADMINISTRATOR;
 }
 
 /**
@@ -286,7 +434,7 @@ function assertDemoScope(ctx: DemoCtx | undefined, projectId: number): void {
  */
 async function assertDemoEntityScope(
   ctx: DemoCtx | undefined,
-  entity: 'project' | 'run' | 'case' | 'cluster' | 'execution',
+  entity: 'project' | 'run' | 'case' | 'cluster' | 'execution' | 'bugReport',
   id: number,
 ): Promise<void> {
   if (!ctx || ctx.scope === 'all') return;
@@ -306,6 +454,9 @@ async function assertDemoEntityScope(
       .from(failureClusters)
       .where(eq(failureClusters.id, id));
     projectId = row?.projectId ?? null;
+  } else if (entity === 'bugReport') {
+    const [row] = await db.select({ projectId: bugReports.projectId }).from(bugReports).where(eq(bugReports.id, id));
+    projectId = row?.projectId ?? null;
   } else {
     const [row] = await db
       .select({ projectId: testRuns.projectId })
@@ -318,16 +469,114 @@ async function assertDemoEntityScope(
   assertDemoScope(ctx, projectId);
 }
 
+/** The items of a successful URL-pattern write, or the HTTP error the server answers a refused one with. */
+function demoUrlPatternItems(result: UrlPatternWriteResult) {
+  if (result.ok) return result.items;
+  if (result.reason === 'not-found') throw demoHttpError(404, 'Project not found');
+  if (result.reason === 'too-many') throw demoHttpError(400, 'A project has at most 100 URL patterns');
+  throw demoHttpError(409, `The project already has the pattern ${result.pattern}`);
+}
+
 const routes: RouteEntry[] = [
-  // Analytics — one generic entry; widgets dispatch through the shared handler map
+  // Analytics — the scope summary, then one generic entry; widgets dispatch through the shared handler map
   {
     method: 'GET',
-    pattern: /^\/api\/analytics\/([\w-]+)$/,
+    pattern: /^\/api\/dashboards\/scope$/,
+    handler: async (_m, _, q, ctx) =>
+      getAnalyticsScopeSummary(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/rollups$/,
+    handler: async (_m, _, q, ctx) => {
+      const format = (q?.get('format') ?? 'json').toLowerCase();
+      if (format !== 'json' && format !== 'csv')
+        throw demoHttpError(400, `Unsupported format '${format}'. Use json or csv.`);
+      const items = await collectRollupExport(await getDemoDb(), parseAnalyticsScope(q), ctx?.scope ?? 'all');
+      if (format === 'json') return { items };
+      return new Response(`\uFEFF${rollupCsvHeader()}${rollupCsvRows(items)}`, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="piwi-rollups-${new Date().toISOString().slice(0, 10)}.csv"`,
+        },
+      });
+    },
+  },
+  // Dashboards — saved dashboards, one widget of a dashboard and the editor's preview
+  {
+    method: 'GET',
+    pattern: /^\/api\/dashboards$/,
+    handler: async (_m, _b, _q, ctx) => apiListDashboards(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/dashboards$/,
+    handler: async (_m, body, _q, ctx) => apiCreateDashboard(body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/dashboards\/([\w-]+)$/,
+    handler: async (m, _b, q, ctx) => apiGetDashboard(m[1]!, q, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/dashboards\/([\w-]+)$/,
+    handler: async (m, body, _q, ctx) => apiSaveDashboard(m[1]!, body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/dashboards\/([\w-]+)$/,
+    handler: async (m, _b, _q, ctx) => apiDeleteDashboard(m[1]!, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/dashboards\/([\w-]+)\/duplicate$/,
+    handler: async (m, body, _q, ctx) =>
+      apiDuplicateDashboard(m[1]!, body, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/dashboards\/([\w-]+)\/widgets\/([\w-]+)$/,
+    handler: async (m, _b, q, ctx) =>
+      apiGetDashboardWidget(m[1]!, m[2]!, q, ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/widgets\/preview$/,
+    handler: async (_m, body, _q, ctx) => apiPreviewWidget(body, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/default-dashboard$/,
+    handler: async (_m, body) => apiSetDefaultDashboard(body),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/widgets\/([\w-]+)$/,
     handler: async (m, _, q, ctx) => {
       const widget = m[1]!;
       if (!isAnalyticsWidgetId(widget)) throw demoHttpError(400, 'Unknown analytics widget');
-      return runAnalyticsWidget(await getDemoDb(), widget, parseAnalyticsScope(q), ctx?.scope ?? 'all');
+      try {
+        const options = widgetOptionsFromQuery(q?.get('options'));
+        return await runAnalyticsWidget(
+          await getDemoDb(),
+          widget,
+          parseAnalyticsScope(q),
+          ctx?.scope ?? 'all',
+          options,
+        );
+      } catch (error) {
+        if (error instanceof WidgetOptionsError) throw demoHttpError(400, error.message);
+        throw error;
+      }
     },
+  },
+  // Quality reports — the preview and downloads, from the shared bundle and renderers
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/preview$/,
+    handler: async (_m, _, q, ctx) => apiReportPreview(q, ctx?.scope ?? 'all', ctx?.actingUserId ?? null),
   },
   // Projects
   {
@@ -406,6 +655,15 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/deletion$/,
+    // The in-browser DB reports no deletion progress; the delete modal shows its indeterminate state.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { progress: null };
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/performance$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -423,6 +681,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectTestCases(await getDemoDb(), +m[1]!, parseTestCasesQuery(q));
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-cases\/facets$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const maxAgeDays = Math.max(0, Math.floor(Number(q?.get('maxAgeDays')) || 0));
+      return getProjectTestCaseFacets(await getDemoDb(), +m[1]!, { maxAgeDays });
     },
   },
   {
@@ -485,6 +752,18 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/flake-suspects$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const ids = (q?.get('testCaseIds') ?? '')
+        .split(',')
+        .map((v) => Number(v.trim()))
+        .filter((n) => Number.isInteger(n) && n > 0);
+      return { items: await getFlakyListSuspects(await getDemoDb(), +m[1]!, ids) };
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/flaky-tests$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -498,26 +777,34 @@ const routes: RouteEntry[] = [
       const priority = (TEST_PRIORITIES as readonly string[]).includes(priorityRaw)
         ? (priorityRaw as (typeof TEST_PRIORITIES)[number])
         : undefined;
+      const db = await getDemoDb();
+      const { items, verifiedFixed } = await getProjectFlakyTestsWithVerified(
+        db,
+        +m[1]!,
+        runs,
+        environment,
+        { tags, owner, priority },
+        branch,
+      );
       // CODEOWNERS resolution needs an SCM client the browser cannot reach —
       // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
-      return {
-        items: await getProjectFlakyTests(
-          await getDemoDb(),
-          +m[1]!,
-          runs,
-          environment,
-          { tags, owner, priority },
-          branch,
-        ),
-      };
+      return { items: await withFlakyRootCauses(db, +m[1]!, items), verifiedFixed };
     },
   },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/latest-run$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return getProjectLatestRun(await getDemoDb(), +m[1]!);
+      const origin = q?.get('origin');
+      if (origin != null && (!isRunOriginKind(origin) || q?.get('ref') == null)) {
+        throw demoHttpError(400, 'origin needs a known run origin and a ref');
+      }
+      return getProjectLatestRun(
+        await getDemoDb(),
+        +m[1]!,
+        isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
+      );
     },
   },
   {
@@ -626,9 +913,37 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-runs\/(\d+)$/,
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
-      const b = body as { label?: string | null };
-      if (b.label === undefined) throw demoHttpError(400, 'No fields to update');
-      return patchTestRun(await getDemoDb(), +m[1]!, b.label);
+      const patch = parseTestRunPatch(body);
+      if (typeof patch === 'string') throw demoHttpError(400, patch);
+      const db = await getDemoDb();
+      if (patch.keep === false && !(await demoActingUserIsAdmin(db, ctx))) {
+        throw demoHttpError(403, 'Only an administrator can release a kept run');
+      }
+      try {
+        return await patchTestRun(db, +m[1]!, patch, { userId: ctx?.actingUserId ?? null });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
+        throw err;
+      }
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/incident$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const input = parseSetRunIncident(body);
+      if (typeof input === 'string') throw demoHttpError(400, input);
+      const db = await getDemoDb();
+      const by = ctx?.actingUserId
+        ? ((await db.select({ name: users.name }).from(users).where(eq(users.id, ctx.actingUserId)))[0]?.name ?? null)
+        : null;
+      try {
+        return await setRunIncident(db, +m[1]!, { ...input, by });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
+        throw err;
+      }
     },
   },
   {
@@ -696,7 +1011,30 @@ const routes: RouteEntry[] = [
       return computeRunInsights(await getDemoDb(), +m[1]!, {
         baselineId: baselineId != null && Number.isFinite(baselineId) ? baselineId : null,
         baseBranch,
+        failedFallback: true,
       });
+    },
+  },
+
+  // Run resources
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/resources$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const resources = await getRunResources(await getDemoDb(), +m[1]!);
+      if (!resources) throw demoHttpError(404, 'Run not found');
+      return resources;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/resource-timeline$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const timeline = await getRunResourceTimeline(await getDemoDb(), +m[1]!);
+      if (!timeline) throw demoHttpError(404, 'Run not found');
+      return timeline;
     },
   },
 
@@ -715,6 +1053,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       return getFailureCluster(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/occurrence-trend$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const days = parseInt(q?.get('days') || String(CLUSTER_TREND_DEFAULT_DAYS));
+      return getClusterOccurrenceTrend(await getDemoDb(), +m[1]!, { days });
     },
   },
   {
@@ -800,6 +1147,62 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       const b = body as { commit?: string | null };
       return patchClusterBaseCommit(await getDemoDb(), +m[1]!, b.commit);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/bisect$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseBisectResultBody(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const bisectedCommit = await recordClusterBisect(await getDemoDb(), +m[1]!, parsed.value);
+      if (!bisectedCommit) throw demoHttpError(404, 'Failure cluster not found');
+      return { ok: true, bisectedCommit };
+    },
+  },
+  // The demo bundles no skill files; the desktop app is the one that installs them.
+  {
+    method: 'GET',
+    pattern: /^\/api\/agent-skills$/,
+    handler: async () => ({ version: '', items: [] }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/agent-diagnosis$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseAgentDiagnosis(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const result = await recordAgentDiagnosis(await getDemoDb(), +m[1]!, parsed.value, {
+        actor: { channel: parsed.value.channel ?? 'ui', userId: ctx?.actingUserId ?? null },
+      });
+      if (!result.ok) throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], AGENT_DIAGNOSIS_ERRORS[result.error]);
+      return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/fix-attempts$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseFixAttempt(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const result = await reportFixAttempt(await getDemoDb(), +m[1]!, parsed.value, {
+        channel: parsed.value.channel ?? 'ui',
+        userId: ctx?.actingUserId ?? null,
+      });
+      if (!result.ok)
+        throw demoHttpError(FIX_ATTEMPT_ERRORS[result.error].status, FIX_ATTEMPT_ERRORS[result.error].message);
+      return { ok: true, recorded: result.recorded, attempt: result.attempt };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/activity$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      return { items: await getClusterActivity(await getDemoDb(), +m[1]!) };
     },
   },
   {
@@ -917,6 +1320,15 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to run the lab in.
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      return { ok: false, demo: true, message: 'Flake Lab in CI is not available in the demo.' };
+    },
+  },
+  {
     method: 'PATCH',
     pattern: /^\/api\/failure-diagnoses\/(\d+)\/feedback$/,
     handler: async (m, body, _q, ctx) => {
@@ -956,6 +1368,14 @@ const routes: RouteEntry[] = [
   },
   { method: 'POST', pattern: /^\/api\/settings\/ai\/models$/, handler: (_, body) => apiListAiModels(body) },
 
+  // Date & time localization
+  { method: 'GET', pattern: /^\/api\/settings\/locale$/, handler: () => apiGetLocale() },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/locale$/,
+    handler: (_, body) => apiPutLocale(body as Parameters<typeof apiPutLocale>[0]),
+  },
+
   // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
   { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
 
@@ -981,11 +1401,100 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-plan$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const kind = q?.get('kind') === 'verify' ? 'verify' : 'reproduce';
+      const runs = q?.get('runs') ? Number(q.get('runs')) : null;
+      try {
+        return await getFlakeExperimentPlan(await getDemoDb(), +m[1]!, {
+          kind,
+          runs: Number.isInteger(runs) && runs! >= 1 && runs! <= 100 ? runs : null,
+          record: q?.get('record') !== 'false',
+          commit: q?.get('commit') || null,
+          source: FLAKE_EXPERIMENT_SOURCES.find((s) => s === q?.get('source')),
+          machine: q?.get('machine') || null,
+        });
+      } catch (error) {
+        if (error instanceof FlakePlanUnavailable) throw demoHttpError(error.statusCode, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-experiments$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const limit = Number(q?.get('limit')) || undefined;
+      const db = await getDemoDb();
+      return {
+        items: await listFlakeExperiments(db, +m[1]!, { limit }),
+        verifiedFix: (await getVerifiedFixes(db, [+m[1]!])).get(+m[1]!) ?? null,
+      };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/flake-lab\/results$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      try {
+        return await recordFlakeResults(await getDemoDb(), +m[1]!, (body ?? {}) as FlakeResultsInput);
+      } catch (error) {
+        if (error instanceof FlakeResultsRejected) throw demoHttpError(error.statusCode, error.message);
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/flake-lab$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const int = (name: string) => {
+        const value = parseInt(q?.get(name) ?? '', 10);
+        return Number.isNaN(value) ? undefined : value;
+      };
+      return getProjectFlakeLab(await getDemoDb(), +m[1]!, {
+        runs: int('runs'),
+        environment: q?.get('environment')?.trim() || null,
+        branch: q?.get('branch')?.trim() || null,
+        limit: int('limit'),
+        suspects: q?.get('suspects') === 'true' || q?.get('suspects') === '1',
+      });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/flake-lab\/test$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const match = /^(.+):(\d+)$/.exec((q?.get('location') ?? '').trim());
+      if (!match) throw demoHttpError(400, 'location must be a spec path and a line, file:line');
+      const found = await resolveTestCaseByLocation(await getDemoDb(), +m[1]!, match[1]!, Number(match[2]));
+      if (!found) throw demoHttpError(404, `No test case at ${q?.get('location')}`);
+      return found;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-profile$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      const profile = await getFlakeProfile(await getDemoDb(), +m[1]!);
+      if (!profile) throw demoHttpError(404, 'Test case not found');
+      return profile;
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/test-cases\/(\d+)\/stability-trend$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      const buckets = parseInt(q?.get('buckets') || '20');
-      return getTestCaseStabilityTrend(await getDemoDb(), +m[1]!, buckets);
+      const days = parseInt(q?.get('days') || String(STABILITY_TREND_DEFAULT_DAYS));
+      const granularity = parseGranularity(q?.get('by')) ?? 'auto';
+      return getTestCaseStabilityTrend(await getDemoDb(), +m[1]!, { days, granularity });
     },
   },
 
@@ -1058,6 +1567,16 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return getLocatorHealing(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/locators$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      const result = await getExecutionLocators(await getDemoDb(), +m[1]!);
+      if (!result) throw demoHttpError(404, 'Test run case not found');
+      return result;
     },
   },
   {
@@ -1223,6 +1742,16 @@ const routes: RouteEntry[] = [
   },
   { method: 'DELETE', pattern: /^\/api\/tags\/(\d+)$/, handler: async (m) => deleteTag(await getDemoDb(), +m[1]!) },
 
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/kept-runs$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const limit = Number(q?.get('limit')) || undefined;
+      return listKeptRuns(await getDemoDb(), +m[1]!, { limit });
+    },
+  },
+
   // Markers (project timeline)
   {
     method: 'GET',
@@ -1243,6 +1772,7 @@ const routes: RouteEntry[] = [
         category?: string;
         environment?: string | null;
         description?: string | null;
+        runId?: number | string | null;
       };
       const label = typeof b.label === 'string' ? b.label : '';
       if (label.length < 1 || label.length > 120)
@@ -1255,12 +1785,21 @@ const routes: RouteEntry[] = [
       if (b.description != null && b.description.length > 2000) {
         throw demoHttpError(400, 'description must be at most 2000 characters');
       }
-      return createMarker(await getDemoDb(), +m[1]!, {
+      const runId = b.runId == null || b.runId === '' ? null : Number(b.runId);
+      if (runId !== null && (!Number.isInteger(runId) || runId <= 0)) {
+        throw demoHttpError(400, 'runId must be a positive integer');
+      }
+      const db = await getDemoDb();
+      if (runId && !(await markerRunBelongsToProject(db, +m[1]!, runId))) {
+        throw demoHttpError(400, 'runId must be a run of this project');
+      }
+      return createMarker(db, +m[1]!, {
         label,
         occurredAt,
         category: b.category,
         environment: b.environment ?? null,
         description: b.description ?? null,
+        runId,
       });
     },
   },
@@ -1283,6 +1822,82 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/markers\/(\d+)$/,
     handler: async (m) => deleteMarker(await getDemoDb(), +m[1]!),
+  },
+
+  // Locator index: which tests use a locator
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = parseLocatorUsageQuery(q?.get('match'), q?.get('value'));
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getLocatorUsages(await getDemoDb(), +m[1]!, parsed.match, parsed.value, { branch: branch.branch });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-index$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      const index = await getLocatorIndex(await getDemoDb(), +m[1]!, { branch: branch.branch });
+      if (!index) throw demoHttpError(404, 'Project not found');
+      return index;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/code-reach$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getCodeReachForFile(await getDemoDb(), +m[1]!, file, branch.branch);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/locator-alternatives$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const file = q?.get('file')?.trim() ?? '';
+      if (!file || file.length > 500) throw demoHttpError(400, 'file is required (at most 500 characters)');
+      return { items: await getLocatorAlternatives(await getDemoDb(), +m[1]!, file) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/branch-failures$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = q?.get('branch')?.trim() ?? '';
+      if (branch.length > 255) throw demoHttpError(400, 'branch is at most 255 characters');
+      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/code-index$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const branch = parseLocatorBranchQuery(q?.get('branch'));
+      if ('error' in branch) throw demoHttpError(400, branch.error);
+      return getCodeIndex(await getDemoDb(), +m[1]!, branch.branch);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/locator-usages\/rebuild$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return backfillLocatorUsages(await getDemoDb(), +m[1]!, { reset: true });
+    },
   },
 
   // Test function catalog (recorder codegen matching)
@@ -1362,8 +1977,11 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/quarantine$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const { entries, debt } = await listQuarantine(db, +m[1]!);
       return {
-        ...(await listQuarantine(await getDemoDb(), +m[1]!)),
+        entries: (await markDismissedProposals(db, +m[1]!, entries, [])).entries,
+        debt,
         candidates: [],
         releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
       };
@@ -1397,6 +2015,34 @@ const routes: RouteEntry[] = [
       const result = await releaseQuarantine(await getDemoDb(), +m[1]!, +m[2]!, reason);
       if (!result.released) throw demoHttpError(404, 'No active quarantine for this test');
       return { success: true, ...result };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/quarantine\/(\d+)\/dismiss$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const b = (body ?? {}) as { proposal?: unknown; reason?: unknown };
+      if (!isQuarantineProposal(b.proposal)) throw demoHttpError(400, 'proposal must be quarantine or release');
+      const proposal = b.proposal;
+      const reason = normalizeDismissReason(b.reason);
+      let dismissed: boolean;
+      try {
+        dismissed = await dismissQuarantineProposal(
+          await getDemoDb(),
+          +m[1]!,
+          +m[2]!,
+          proposal,
+          { channel: 'ui', userId: ctx?.actingUserId ?? null },
+          reason,
+        );
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Test case not found in this project')
+          throw demoHttpError(404, e.message);
+        throw e;
+      }
+      if (!dismissed) throw demoHttpError(404, `No ${proposal} proposal for this test`);
+      return { success: true, proposal, dismissed };
     },
   },
 
@@ -1444,7 +2090,7 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    pattern: /^\/api\/projects\/(\d+)\/selections\/analytics$/,
+    pattern: /^\/api\/projects\/(\d+)\/selections\/overview$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getSelectionAnalytics(await getDemoDb(), +m[1]!);
@@ -1458,6 +2104,210 @@ const routes: RouteEntry[] = [
       const selection = await getSelection(await getDemoDb(), +m[1]!, decodeURIComponent(m[2]!));
       if (!selection) throw demoHttpError(404, `No selection "${decodeURIComponent(m[2]!)}" in this project`);
       return selection;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/change-coverage$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      // An absent `run` means "no run under inspection", not run 0 — parse it to
+      // null so the join reports history reach instead of marking every file
+      // uncovered against a run that never existed.
+      const runRaw = query?.get('run');
+      const runNum = runRaw != null && runRaw !== '' ? Number(runRaw) : null;
+      const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
+      // The demo has no SCM provider; show a small representative diff so the
+      // uncovered-changes join renders against the seeded reach.
+      return computeChangeCoverage(await getDemoDb(), +m[1]!, {
+        changedFiles: [
+          { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
+          { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
+          { filePath: 'src/utils/rounding.ts', additions: 5, deletions: 1 },
+        ],
+        runId,
+        baseBranch: 'main',
+        tickets: ['PROJ-418'],
+        scmAvailable: true,
+      });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/recompute$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
+      return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/surface\/manifest$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const nodes = await db
+        .select({ kind: graphNodes.kind, key: graphNodes.key, origin: graphNodes.origin, attrs: graphNodes.attrs })
+        .from(graphNodes)
+        .where(and(eq(graphNodes.projectId, +m[1]!), inArray(graphNodes.origin, ['manifest', 'openapi'])));
+      const routes = nodes
+        .filter((n) => n.kind === 'route')
+        .map((n) => {
+          const { method, pattern } = parseRouteNodeKey(n.key);
+          return {
+            method,
+            pattern,
+            origin: n.origin,
+            responses: (n.attrs as { responses?: number[] } | null)?.responses ?? [],
+          };
+        });
+      const pages = nodes
+        .filter((n) => n.kind === 'page')
+        .map((n) => ({ pattern: n.key, origin: n.origin, name: (n.attrs as { name?: string } | null)?.name ?? null }));
+      return { openApiUrl: null, routes, pages };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/surface\/manifest$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const payload = (body ?? {}) as { source?: ManifestSource; manifest?: AppManifest };
+      const source: ManifestSource = payload.source ?? 'committed';
+      const manifest: AppManifest = payload.manifest ?? {};
+      const ingested = await ingestProjectManifest(await getDemoDb(), +m[1]!, manifest, source);
+      return {
+        success: ingested,
+        routes: manifest.routes?.length ?? 0,
+        pages: manifest.pages?.length ?? 0,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/probes\/plan$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const rawBudget = query?.get('budget');
+      const budget = rawBudget != null && Number.isFinite(Number(rawBudget)) ? Number(rawBudget) : DEFAULT_PROBE_BUDGET;
+      return buildProbePlan(await getDemoDb(), +m[1]!, { budget });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/probes\/results$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const payload = (body ?? {}) as { runId?: number | null; results?: ProbeResultInput[] };
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      const runId = typeof payload.runId === 'number' ? payload.runId : null;
+      const { recorded } = await recordProbeResults(await getDemoDb(), +m[1]!, runId, results);
+      return { success: true, recorded };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/gaps\/inbox$/,
+    handler: async () => ({ items: await listAcceptedUnwritten(await getDemoDb(), 'all') }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/flake-lab\/inbox$/,
+    handler: async (_m, _b, _q, ctx) => ({
+      items: await listFlakeLabInbox(await getDemoDb(), !ctx || ctx.scope === 'all' ? 'all' : [...ctx.scope]),
+    }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/gaps\/precision$/,
+    handler: async () => {
+      const db = await getDemoDb();
+      const rows = await db.select({ id: projects.id, name: projects.name }).from(projects);
+      const items = [];
+      for (const p of rows) {
+        const detectors = await loadDetectorPrecision(db, p.id);
+        if (detectors.length > 0) items.push({ projectId: p.id, projectName: p.name, detectors });
+      }
+      return { items };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/precision$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await loadDetectorPrecision(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/triage$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const result = await triageGap(await getDemoDb(), +m[1]!, +m[2]!, (body ?? {}) as any);
+      if ('error' in result) {
+        if (result.error === 'gap-not-found') throw demoHttpError(404, 'Gap not found');
+        throw demoHttpError(400, 'Covering test not found in this project');
+      }
+      return { success: true, status: result.status };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/draft$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const draft = await issueScenarioDraft(await getDemoDb(), +m[1]!, +m[2]!, { channel: 'ui' });
+      if (!draft) throw demoHttpError(404, 'Gap not found');
+      return draft;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/graph$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const nodeParam = (query?.get('node') ?? '').trim();
+      const sep = nodeParam.indexOf(':');
+      if (sep <= 0) throw demoHttpError(400, 'node must be "kind:key"');
+      const rawDepth = Number(query?.get('depth'));
+      const depth = Number.isFinite(rawDepth) ? Math.min(MAX_GRAPH_DEPTH, Math.max(1, rawDepth)) : 2;
+      return getFeatureGraph(
+        await getDemoDb(),
+        +m[1]!,
+        { kind: nodeParam.slice(0, sep), key: nodeParam.slice(sep + 1) },
+        depth,
+      );
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/feature-map$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getFeatureMap(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const num = (v: string | null | undefined) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      return {
+        items: await listScenarioGaps(await getDemoDb(), +m[1]!, {
+          kind: query?.get('kind') ?? undefined,
+          class: query?.get('class') ?? undefined,
+          detector: query?.get('detector') ?? undefined,
+          status: query?.get('status') ?? undefined,
+          prNumber: num(query?.get('pr')),
+          limit: num(query?.get('limit')),
+        }),
+      };
     },
   },
   {
@@ -1640,6 +2490,41 @@ const routes: RouteEntry[] = [
     },
   },
 
+  // Project affectations — the permission grid (every user × every project)
+  {
+    method: 'GET',
+    pattern: /^\/api\/project-access$/,
+    handler: async (_m, _b, _q, ctx) => {
+      const db = await getDemoDb();
+      if (!(await demoActingUserIsAdmin(db, ctx))) throw demoHttpError(403, 'Insufficient permissions');
+      return { ...(await getProjectAccessGrid(db)), authEnabled: true };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/project-access$/,
+    handler: async (_m, body, _q, ctx) => {
+      const db = await getDemoDb();
+      if (!(await demoActingUserIsAdmin(db, ctx))) throw demoHttpError(403, 'Insufficient permissions');
+      const b = (body ?? {}) as { userId?: unknown; projectId?: unknown; granted?: unknown };
+      const isId = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0;
+      if (!isId(b.userId) || !(b.projectId === null || isId(b.projectId)) || typeof b.granted !== 'boolean') {
+        throw demoHttpError(400, 'Invalid request body');
+      }
+      const target = (await db.select({ role: users.role }).from(users).where(eq(users.id, b.userId)))[0];
+      if (!target) throw demoHttpError(404, 'User not found');
+      if ((target.role as Role) === Role.ADMINISTRATOR) {
+        throw demoHttpError(400, 'Administrators can open every project');
+      }
+      if (b.projectId !== null) {
+        const project = (await db.select({ id: projects.id }).from(projects).where(eq(projects.id, b.projectId)))[0];
+        if (!project) throw demoHttpError(404, 'Project not found');
+      }
+      await setProjectAccess(db, b.userId, b.projectId, b.granted, ctx?.actingUserId ?? null);
+      return { user: await getProjectAccessUser(db, b.userId) };
+    },
+  },
+
   // Entity links
   {
     method: 'GET',
@@ -1701,6 +2586,15 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/connections\/(\d+)\/test$/,
     handler: async () => testDemoConnection(),
   },
+  {
+    method: 'POST',
+    pattern: /^\/api\/integrations\/connections\/check$/,
+    handler: async (_, body) => {
+      const result = checkDemoConnection(body as { baseUrl?: string });
+      if (!result) throw demoHttpError(400, 'Enter the site address, e.g. https://your-team.atlassian.net');
+      return result;
+    },
+  },
   { method: 'GET', pattern: /^\/api\/integrations\/status$/, handler: async () => demoTrackerStatus() },
   {
     method: 'GET',
@@ -1722,8 +2616,17 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/integrations\/issues$/,
     handler: async (_, body) => {
-      const b = body as { entityType: 'failure_cluster' | 'test_runs_case'; entityId: number; title?: string };
-      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title);
+      const b = body as {
+        entityType: 'failure_cluster' | 'test_runs_case';
+        entityId: number;
+        title?: string;
+        issueType?: string;
+        fields?: unknown;
+      };
+      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+        issueType: b.issueType,
+        fields: b.fields,
+      });
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
@@ -1737,6 +2640,16 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
     handler: async () => demoConnectionIssueTypes(),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types\/([^/]+)\/fields$/,
+    handler: async (m) => demoCreateFields(decodeURIComponent(m[3]!)),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/transitions$/,
+    handler: async (_m, _body, query) => demoTransitionSample(query?.get('from') === 'done' ? 'done' : 'open'),
   },
   {
     method: 'GET',
@@ -1779,6 +2692,173 @@ const routes: RouteEntry[] = [
     handler: async () => getSetupStatus(await getDemoDb()),
   },
 
+  // Capability states and decisions — the same resolver as the server, over the
+  // in-browser DB, so declines persist like everything else in the demo.
+  {
+    method: 'GET',
+    pattern: /^\/api\/capabilities$/,
+    handler: async () => getInstanceCapabilities(await getDemoDb()),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/capabilities$/,
+    handler: async (_, body) => {
+      const db = await getDemoDb();
+      await setInstanceDecisions(db, (body as { decisions?: Record<string, unknown> })?.decisions ?? {});
+      return getInstanceCapabilities(db);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/capabilities$/,
+    handler: async (m, _, __, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/bug-reports$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const status = q?.get('status') ?? null;
+      return { items: await listBugReports(await getDemoDb(), +m[1]!, { status }) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/bug-reports\/intake$/,
+    // The demo has no tracker connection: a send files nowhere, and it keeps no step screenshots.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false, stepShots: 0 };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const report = await getBugReport(await getDemoDb(), +m[1]!);
+      if (!report) throw demoHttpError(404, 'Bug report not found');
+      return report;
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/bug-reports\/(\d+)$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const parsed = bugReportPatchSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const report = await updateBugReport(await getDemoDb(), +m[1]!, parsed.data);
+      if (!report) throw demoHttpError(404, 'Bug report not found');
+      return report;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/bug-reports\/(\d+)\/reproductions$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const parsed = bugReproductionSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const db = await getDemoDb();
+      if (!(await isReproductionRunAllowed(db, +m[1]!, parsed.data.runId)))
+        throw demoHttpError(400, 'runId is not a run of this bug report’s project');
+      return addBugReproduction(db, +m[1]!, parsed.data, null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/missed-by$/,
+    // The demo has no CODEOWNERS to read: no owner.
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const missed = await getBugReportMissedBy(await getDemoDb(), +m[1]!);
+      if (!missed) throw demoHttpError(404, 'Bug report not found');
+      return { ...missed, owner: null };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/bug-reports\/(\d+)\/spec$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'bugReport', +m[1]!);
+      const specDir = specDirSchema.safeParse(q?.get('specDir') ?? undefined);
+      if (!specDir.success) throw demoHttpError(400, 'Invalid spec folder');
+      const mode = q?.get('mode') === 'run' ? 'run' : 'commit';
+      const spec = await renderBugReportSpec(await getDemoDb(), +m[1]!, mode, specDir.data);
+      if (!spec) throw demoHttpError(404, 'Bug report not found');
+      return {
+        mode: spec.mode,
+        code: spec.code,
+        fileName: spec.fileName,
+        path: spec.path,
+        warnings: spec.warnings,
+        matchedSpans: spec.matchedSpans,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await listProjectUrlPatterns(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = urlPatternListSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return {
+        items: demoUrlPatternItems(await replaceProjectUrlPatterns(await getDemoDb(), +m[1]!, parsed.data.items)),
+      };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = urlPatternInputSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      return { items: demoUrlPatternItems(await addProjectUrlPattern(await getDemoDb(), +m[1]!, parsed.data)) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/url-patterns\/suggestions$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return suggestUrlPatterns(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/extension\/url-patterns$/,
+    handler: async (_m, _b, _q, ctx) => {
+      const db = await getDemoDb();
+      const scope = ctx?.scope ?? 'all';
+      const [items, menu] = await Promise.all([listVisibleUrlPatterns(db, scope), getProjectMenu(db, scope)]);
+      return { user: null, items, projects: menu.map((p) => ({ id: p.id, label: p.label || p.name, canEdit: true })) };
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/projects\/(\d+)\/capabilities$/,
+    handler: async (m, body, __, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      await setProjectDecisions(db, +m[1]!, (body as { decisions?: Record<string, unknown> })?.decisions ?? {});
+      return getProjectCapabilities(db, +m[1]!);
+    },
+  },
+
   // Version — demo runs entirely client-side (sql.js in the browser, no Node
   // server), so `node`/`dbBackend` describe that rather than a real backend.
   // `appVersion`/`buildSha`/`buildTime` are already available via
@@ -1816,13 +2896,15 @@ const routes: RouteEntry[] = [
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, handler: () => apiGetAdminStats() },
+  { method: 'GET', pattern: /^\/api\/admin\/storage$/, handler: () => apiGetStorageAnalysis() },
   {
     method: 'DELETE',
     pattern: /^\/api\/admin\/cleanup$/,
     // Mirror the server response keys (deletedRuns/spaceReclaim) — the storage
     // page reads deletedRuns for its toast; there is nothing to reclaim in a
     // browser demo.
-    handler: () => Promise.resolve({ success: true, deletedRuns: 0, spaceReclaim: null }),
+    handler: () =>
+      Promise.resolve({ success: true, deletedRuns: 0, keptRunsSkipped: 0, newestRunsSkipped: 0, spaceReclaim: null }),
   },
 ];
 
@@ -1905,6 +2987,12 @@ routes.push(
     pattern: /^\/api\/settings\/timeout-hygiene$/,
     handler: (_, body) => apiPutTimeoutHygiene(body as Parameters<typeof apiPutTimeoutHygiene>[0]),
   },
+  { method: 'GET', pattern: /^\/api\/settings\/ci-cost$/, handler: () => apiGetCiCost() },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/settings\/ci-cost$/,
+    handler: (_, body) => apiPutCiCost(body as Parameters<typeof apiPutCiCost>[0]),
+  },
   { method: 'GET', pattern: /^\/api\/settings\/pr-feedback$/, handler: () => apiGetPrFeedback() },
   {
     method: 'PUT',
@@ -1921,17 +3009,6 @@ routes.push(
 );
 
 // ── Demo notification channels & subscriptions (stateful in-memory) ───────────
-
-const DEMO_CHANNEL = {
-  id: 1,
-  name: 'Account email',
-  type: 'personal_email',
-  userId: null as number | null,
-  verified: true,
-  config: { address: 'demo@example.com' },
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
 
 interface DemoSubscription {
   id: number;
@@ -1957,7 +3034,7 @@ routes.push(
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ items: [DEMO_CHANNEL] }),
+    handler: () => Promise.resolve({ items: [DEMO_CHANNEL], canStoreSecrets: true }),
   },
   {
     method: 'POST',
@@ -1968,6 +3045,11 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/channels\/(\d+)\/test$/,
+    handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/channels\/test$/,
     handler: () => Promise.resolve({ success: false, error: 'Not available in demo mode' }),
   },
 
@@ -1998,6 +3080,8 @@ routes.push(
       if (events.length === 0 || events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
         throw demoHttpError(400, 'events must contain at least one valid event');
       }
+      const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
+      if (!filters.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
       const digestAt = typeof b.digestAt === 'string' && /^\d{1,2}:\d{2}$/.test(b.digestAt) ? b.digestAt : null;
       const sub: DemoSubscription = {
@@ -2006,7 +3090,7 @@ routes.push(
         channelId: b.channelId ?? 1,
         projectId: b.projectId ?? null,
         events,
-        filters: b.filters ?? null,
+        filters: filters.data ?? null,
         mode,
         digestAt,
         mutedUntil: null,
@@ -2033,7 +3117,11 @@ routes.push(
         sub.events = b.events;
       }
       if (b.mode !== undefined) sub.mode = b.mode === 'digest' ? 'digest' : 'realtime';
-      if (b.filters !== undefined) sub.filters = b.filters;
+      if (b.filters !== undefined) {
+        const filters = subscriptionFiltersSchema.nullable().safeParse(b.filters);
+        if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+        sub.filters = filters.data;
+      }
       if (b.digestAt !== undefined) sub.digestAt = b.digestAt;
       if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
       if (b.active !== undefined) sub.active = b.active;
@@ -2049,6 +3137,76 @@ routes.push(
       if (idx >= 0) _demoSubs.splice(idx, 1);
       return Promise.resolve({ success: true });
     },
+  },
+);
+
+// Report schedules and snapshots — stored in the in-browser database; the demo
+// has no scheduler, so a schedule never fires by itself.
+const demoReportChannels = () => [
+  {
+    id: DEMO_CHANNEL.id,
+    name: DEMO_CHANNEL.name,
+    type: DEMO_CHANNEL.type,
+    userId: DEMO_CHANNEL.userId,
+    address: DEMO_CHANNEL.config.address,
+  },
+];
+
+routes.push(
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/schedules$/,
+    handler: (_m, _b, _q, ctx) => apiListReportSchedules(demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules$/,
+    handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules\/preview$/,
+    handler: (_m, body, _q, ctx) => apiPreviewReportSchedule(body, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m) => apiGetReportSchedule(+m[1]!, demoReportChannels()),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m, body, _q, ctx) => apiUpdateReportSchedule(+m[1]!, body, demoReportChannels(), ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/reports\/schedules\/(\d+)$/,
+    handler: (m) => apiDeleteReportSchedule(+m[1]!),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/schedules\/(\d+)\/run$/,
+    handler: (m) => apiRunReportSchedule(+m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots$/,
+    handler: (_m, _b, q, ctx) => apiListReportSnapshots(q, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/reports\/snapshots$/,
+    handler: (_m, body, _q, ctx) => apiCreateReportSnapshot(body, ctx?.scope ?? 'all', ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots\/(\d+)$/,
+    handler: (m, _b, _q, ctx) => apiGetReportSnapshot(+m[1]!, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/reports\/snapshots\/(\d+)\/export$/,
+    handler: (m, _b, q, ctx) => apiExportReportSnapshot(+m[1]!, q, ctx?.scope ?? 'all'),
   },
 );
 

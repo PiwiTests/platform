@@ -12,6 +12,7 @@
         --muted: #6b7280;
         --border: #e5e7eb;
         --accent: #7c3aed;
+        --bug: #dc2626;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -20,6 +21,7 @@
           --fg: #f9fafb;
           --muted: #9ca3af;
           --border: #374151;
+          --bug: #f87171;
         }
       }
       * {
@@ -27,11 +29,10 @@
       }
       body {
         margin: 0;
-        /* 440 is the measured threshold at which every tile's hint still fits
-           on one line now that the icon and shortcut key share the row with
-           it; below this they wrap and give back the height the row layout
-           just saved, above it nothing further is gained. */
-        width: 440px;
+        /* Two tiles side by side, each with its icon, its label on one line
+           in English, and its key. Chrome caps a popup at 800 × 600; this
+           layout stays under the height in every shipped language. */
+        width: 480px;
         background: var(--bg);
         color: var(--fg);
         font:
@@ -41,13 +42,13 @@
           sans-serif;
       }
       .popup {
-        padding: 14px;
+        padding: 12px 14px 12px;
       }
       header {
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
         font-weight: 600;
       }
       header img {
@@ -85,34 +86,66 @@
         stroke-linejoin: round;
         fill: none;
       }
+      /* One line: which project applies here, and the offer to add the site when none does. */
       .active-project-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 8px;
+        row-gap: 4px;
         margin-bottom: 10px;
       }
       .active-project-row label {
-        display: block;
-        font-size: 10.5px;
+        flex-shrink: 0;
+        font-size: 11.5px;
         color: var(--muted);
-        margin-bottom: 3px;
       }
       .active-project-row select {
-        width: 100%;
+        flex: 1;
+        min-width: 0;
         font: inherit;
         font-size: 12.5px;
-        padding: 6px 8px;
-        border-radius: 8px;
+        padding: 4px 6px;
+        border-radius: 7px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: inherit;
       }
-      .actions {
+      .add-site-row {
+        display: flex;
+        flex-basis: 100%;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .only-add-site label,
+      .only-add-site select {
+        display: none;
+      }
+      .add-site-row[hidden] {
+        display: none;
+      }
+      .add-site-row button {
+        flex-shrink: 0;
+        font: inherit;
+        padding: 3px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8px;
+        margin-bottom: 8px;
       }
-      /* Row rather than column: the icon sits beside the text instead of
-         above it, which drops a whole line off every tile and keeps the
-         popup short enough not to scroll. */
-      .actions button {
+      /* Every tool is a tile: its icon, its label (and a hint under the ones
+         that open a flow), and the key that runs it. */
+      .tile {
         display: flex;
         align-items: center;
         gap: 8px;
@@ -126,38 +159,59 @@
         text-align: left;
         cursor: pointer;
       }
-      .actions button:hover,
-      .actions button:focus-visible {
+      .tile:hover,
+      .tile:focus-visible {
         border-color: var(--accent);
       }
-      .actions button.primary {
+      .tile.primary {
         background: var(--accent);
         border-color: var(--accent);
         color: #fff;
       }
+      /* Report a bug: a flow of its own, for testers as much as developers. */
+      .tile.bug {
+        border-color: rgb(220 38 38 / 0.55);
+        background: linear-gradient(120deg, rgb(220 38 38 / 0.1), rgb(245 158 11 / 0.08));
+      }
+      .tile.bug svg {
+        color: var(--bug);
+      }
+      .tile.bug:hover,
+      .tile.bug:focus-visible {
+        border-color: var(--bug);
+      }
+      /* Tested elements needs a Piwi instance: set apart from the standalone tools. */
+      .tile.feature {
+        margin-bottom: 8px;
+        border-color: rgb(124 58 237 / 0.55);
+        background: linear-gradient(120deg, rgb(124 58 237 / 0.1), rgb(16 185 129 / 0.1));
+      }
+      .tile.compact {
+        padding: 6px 10px;
+      }
       /* The tool currently running on the page. Only one can be, so this also
          answers "did that actually start?" at a glance. */
-      .actions button.running {
+      .tile.running {
         border-color: var(--accent);
         box-shadow: inset 0 0 0 1px var(--accent);
       }
-      .actions button.running .label::after {
-        content: ' ·  running';
+      .tile.running .label::after {
+        content: var(--piwi-running, ' ·  running');
         color: var(--accent);
         font-weight: 500;
         font-size: 10.5px;
       }
-      .actions button.primary.running .label::after {
+      .tile.primary.running .label::after {
         color: #fff;
       }
-      .actions .text {
+      .tile .text {
         flex: 1;
         min-width: 0;
         display: flex;
         flex-direction: column;
         gap: 1px;
       }
-      .actions button svg {
+      .tile svg {
         width: 18px;
         height: 18px;
         flex-shrink: 0;
@@ -168,20 +222,27 @@
         fill: none;
         opacity: 0.9;
       }
-      .actions .label {
+      .tile.compact svg {
+        width: 16px;
+        height: 16px;
+      }
+      .tile .label {
         font-size: 12.5px;
         font-weight: 600;
         line-height: 1.3;
       }
-      .actions .hint {
+      .tile.compact .label {
+        font-weight: 500;
+      }
+      .tile .hint {
         color: var(--muted);
         font-size: 10.5px;
         line-height: 1.35;
       }
-      .actions button.primary .hint {
+      .tile.primary .hint {
         color: #ffffffcc;
       }
-      .actions .key {
+      .tile .key {
         flex-shrink: 0;
         font:
           10px ui-monospace,
@@ -193,12 +254,44 @@
         border: 1px solid var(--border);
         color: var(--muted);
       }
-      .actions button.primary .key {
+      .tile.primary .key {
         border-color: #ffffff55;
         color: #ffffffcc;
       }
+      .section-label {
+        margin: 12px 0 6px;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      /* Where the developer tools went: the DevTools panel and the Elements pane. */
+      .devtools-note {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin: 4px 0 0;
+        padding: 7px 9px;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        font-size: 11px;
+        line-height: 1.45;
+        color: var(--muted);
+      }
+      .devtools-note svg {
+        width: 15px;
+        height: 15px;
+        flex-shrink: 0;
+        margin-top: 1px;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
       footer {
-        margin-top: 12px;
+        margin-top: 10px;
         color: var(--muted);
         font-size: 11px;
       }
@@ -218,12 +311,42 @@
         font-size: 11.5px;
         margin-bottom: 8px;
       }
-      /* Only ever filled in on an error, so reserving a line for it left a
-         permanent gap under the header. Collapse it until there's something
-         to say — a message appearing pushes the actions down, which is the
-         point of it. */
+      /* Only ever filled in on an error: collapsed until there is something to say. */
       #status:empty {
         display: none;
+      }
+      .worker-notice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        padding: 6px 8px;
+        border: 1px solid #f59e0b;
+        border-radius: 6px;
+        background: rgb(245 158 11 / 0.12);
+        font-size: 11.5px;
+      }
+      .worker-notice[hidden] {
+        display: none;
+      }
+      .worker-notice p {
+        flex: 1;
+        margin: 0;
+      }
+      .worker-notice button {
+        flex-shrink: 0;
+        padding: 3px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--fg);
+        font: inherit;
+        cursor: pointer;
+      }
+      .worker-notice button:hover,
+      .worker-notice button:focus-visible {
+        border-color: var(--accent);
+        outline: none;
       }
     </style>
   </head>
@@ -232,7 +355,7 @@
       <header>
         <img src="icons/icon-32.png" width="18" height="18" alt="" />
         <span>Piwi Picker</span>
-        <button id="config-button" type="button" class="icon-button" aria-label="Configure Piwi connection" title="Configure Piwi connection">
+        <button id="config-button" type="button" class="icon-button" aria-label="Settings" title="Settings" data-i18n-aria-label="popup_settings" data-i18n-title="popup_settings">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="3" />
             <path
@@ -241,129 +364,160 @@
           </svg>
         </button>
       </header>
-      <div id="status"></div>
-      <div id="active-project-row" class="active-project-row" style="display: none">
-        <label for="active-project">Active project</label>
-        <select id="active-project"></select>
+      <!-- Shown when the background worker runs an older build than this popup:
+           Chrome keeps an unpacked extension's worker until the extension is
+           reloaded, while the popup is read from disk each time it opens. -->
+      <div id="worker-notice" class="worker-notice" role="alert" hidden>
+        <p data-i18n="popup_workerNotice">
+          Piwi Picker was rebuilt since it was loaded, and part of it still runs the previous build, so some tools won’t
+          answer. Reloading ends a recording in progress.
+        </p>
+        <button id="worker-reload" type="button" data-i18n="popup_reload">Reload Piwi Picker</button>
       </div>
-      <div class="actions">
-        <button id="record" type="button" aria-keyshortcuts="1">
-          <span class="text">
-            <span class="label" id="record-label">Record actions</span>
-            <span class="hint" id="record-hint">Multi-page → TypeScript</span>
-          </span>
+      <div id="status" role="status"></div>
+      <div id="active-project-row" class="active-project-row" style="display: none">
+        <label for="active-project" data-i18n="popup_activeProject">Active project</label>
+        <select id="active-project"></select>
+        <div id="add-site-row" class="add-site-row" hidden>
+          <span data-i18n="popup_noProjectHere">No project matches this site.</span>
+          <button
+            id="add-site"
+            type="button"
+            data-i18n="popup_addSite"
+            data-i18n-title="popup_addSiteTitle"
+            title="Open the settings with this site’s pattern filled in"
+          >
+            Add this site
+          </button>
+        </div>
+      </div>
+
+      <div class="grid actions">
+        <button id="record" class="tile" type="button" aria-keyshortcuts="1">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="8" />
           </svg>
+          <span class="text">
+            <span class="label" id="record-label" data-i18n="popup_record">Record actions</span>
+            <span class="hint" id="record-hint" data-i18n="popup_recordHint">Across pages → a test</span>
+          </span>
           <kbd class="key" aria-hidden="true">1</kbd>
         </button>
-        <button id="pick" class="primary" type="button" aria-keyshortcuts="2">
-          <span class="text">
-            <span class="label">Pick an element</span>
-            <span class="hint">Ranked, stable locators</span>
-          </span>
+        <button id="pick" class="tile primary" type="button" aria-keyshortcuts="2">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="6.5" />
             <path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22" />
           </svg>
+          <span class="text">
+            <span class="label" data-i18n="popup_pick">Pick an element</span>
+            <span class="hint" data-i18n="popup_pickHint">Ranked, stable locators</span>
+          </span>
           <kbd class="key" aria-hidden="true">2</kbd>
         </button>
-        <button id="hover-inspect" type="button" aria-keyshortcuts="3">
-          <span class="text">
-            <span class="label">Hover-inspect</span>
-            <span class="hint">Toggle: locator tooltip</span>
-          </span>
+      </div>
+
+      <div class="grid">
+        <button id="report-bug" class="tile bug" type="button" aria-keyshortcuts="B">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z" />
-            <circle cx="12" cy="12" r="2.5" />
+            <rect x="7.5" y="7" width="9" height="12.5" rx="4.5" />
+            <path d="M9.5 7.5a2.5 2.5 0 015 0M12 11v8.5M7.5 12H4M20 12h-3.5M7.8 16.5l-3 2M16.2 16.5l3 2M7.8 9l-2.5-2M16.2 9l2.5-2" />
           </svg>
-          <kbd class="key" aria-hidden="true">3</kbd>
-        </button>
-        <button id="locator-console" type="button" aria-keyshortcuts="4">
           <span class="text">
-            <span class="label">Locator console</span>
-            <span class="hint">See matches live</span>
+            <span class="label" id="report-bug-label" data-i18n="popup_reportBug">Report a bug</span>
+            <span class="hint" id="report-bug-hint" data-i18n="popup_reportBugHint">Steps and what's wrong → a failing test</span>
           </span>
+          <kbd class="key" aria-hidden="true">B</kbd>
+        </button>
+        <button id="replay-bug" class="tile" type="button" aria-keyshortcuts="R">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="2.5" y="4" width="19" height="16" rx="2" />
-            <path d="M6.5 9.5l3 2.5-3 2.5M13 15h4.5" />
+            <path d="M8 5.5v13l10-6.5z" />
+            <path d="M4 4v16" />
           </svg>
-          <kbd class="key" aria-hidden="true">4</kbd>
-        </button>
-        <button id="multi-pick" type="button" aria-keyshortcuts="5">
           <span class="text">
-            <span class="label">Multi-pick</span>
-            <span class="hint">2–3 items → a list</span>
+            <span class="label" data-i18n="popup_replayBug">Replay a bug report</span>
+            <span class="hint" data-i18n="popup_replayBugHint">Play its steps here, with a cursor</span>
           </span>
+          <kbd class="key" aria-hidden="true">R</kbd>
+        </button>
+      </div>
+
+      <button id="coverage-overlay" class="tile feature" type="button" aria-keyshortcuts="T">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="3" y="3" width="8" height="8" rx="1.5" />
+          <path d="M5.3 7.2l1.5 1.5 2.7-3" />
+          <rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="2.2 2" />
+          <path d="M15 3h6v6M9 21H3v-6" />
+        </svg>
+        <span class="text">
+          <span class="label" data-i18n="popup_testedElements">Tested elements</span>
+          <span class="hint" id="coverage-hint" data-i18n="popup_testedElementsHint">What your tests reach on this page, and what they miss</span>
+        </span>
+        <kbd class="key" aria-hidden="true">T</kbd>
+      </button>
+
+      <div class="section-label" id="more-tools-label" data-i18n="popup_moreTools">More tools</div>
+      <div class="grid actions" role="group" aria-labelledby="more-tools-label">
+        <button id="multi-pick" class="tile compact" type="button" aria-keyshortcuts="3" title="2–3 items → a list" data-i18n-title="popup_multiPickHint">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <rect x="3" y="4" width="18" height="5" rx="1.5" />
             <rect x="3" y="12.5" width="18" height="5" rx="1.5" />
             <path d="M7 21h10" />
           </svg>
-          <kbd class="key" aria-hidden="true">5</kbd>
+          <span class="text"><span class="label" data-i18n="popup_multiPick">Multi-pick</span></span>
+          <kbd class="key" aria-hidden="true">3</kbd>
         </button>
-        <button id="lint-overlay" type="button" aria-keyshortcuts="6">
-          <span class="text">
-            <span class="label">Lint overlay</span>
-            <span class="hint">Untestable elements</span>
-          </span>
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 3.5l9 16.5H3z" />
-            <path d="M12 10v4M12 17h.01" />
-          </svg>
-          <kbd class="key" aria-hidden="true">6</kbd>
-        </button>
-        <button id="assertion-panel" type="button" aria-keyshortcuts="7">
-          <span class="text">
-            <span class="label">Assertions</span>
-            <span class="hint">Ranked expect(…) lines</span>
-          </span>
+        <button id="assertion-panel" class="tile compact" type="button" aria-keyshortcuts="4" title="Ranked expect(…) lines" data-i18n-title="popup_assertionsHint">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="8.5" />
             <path d="M8 12.2l2.8 2.8L16 9" />
           </svg>
-          <kbd class="key" aria-hidden="true">7</kbd>
+          <span class="text"><span class="label" data-i18n="popup_assertions">Assertions</span></span>
+          <kbd class="key" aria-hidden="true">4</kbd>
         </button>
-        <button id="session-panel" type="button" aria-keyshortcuts="8">
-          <span class="text">
-            <span class="label">Session</span>
-            <span class="hint">Name picks → export</span>
-          </span>
+        <button id="lint-overlay" class="tile compact" type="button" aria-keyshortcuts="5" title="Hard-to-test elements" data-i18n-title="popup_lintHint">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M6.5 3h11a1 1 0 011 1v16.5l-6.5-3.8-6.5 3.8V4a1 1 0 011-1z" />
+            <path d="M12 3.5l9 16.5H3z" />
+            <path d="M12 10v4M12 17h.01" />
           </svg>
-          <kbd class="key" aria-hidden="true">8</kbd>
+          <span class="text"><span class="label" data-i18n="popup_lint">Lint overlay</span></span>
+          <kbd class="key" aria-hidden="true">5</kbd>
         </button>
-        <button id="agent-context-panel" type="button" aria-keyshortcuts="9">
-          <span class="text">
-            <span class="label">Agent context</span>
-            <span class="hint">Summary for an AI</span>
-          </span>
+        <button id="agent-context-panel" class="tile compact" type="button" aria-keyshortcuts="6" title="Summary for an AI" data-i18n-title="popup_agentContextHint">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" />
             <path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z" />
           </svg>
-          <kbd class="key" aria-hidden="true">9</kbd>
+          <span class="text"><span class="label" data-i18n="popup_agentContext">Agent context</span></span>
+          <kbd class="key" aria-hidden="true">6</kbd>
         </button>
-        <button id="test-function-panel" type="button" aria-keyshortcuts="0">
-          <span class="text">
-            <span class="label">Test functions</span>
-            <span class="hint">Check the catalog here</span>
-          </span>
+        <button id="test-function-panel" class="tile compact" type="button" aria-keyshortcuts="7" title="Check the catalog here" data-i18n-title="popup_testFunctionsHint">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M9 11l2.5 2.5L15 9" />
             <rect x="2.5" y="3.5" width="19" height="17" rx="2.5" />
           </svg>
-          <kbd class="key" aria-hidden="true">0</kbd>
+          <span class="text"><span class="label" data-i18n="popup_testFunctions">Test functions</span></span>
+          <kbd class="key" aria-hidden="true">7</kbd>
         </button>
       </div>
+
+      <p class="devtools-note">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="2.5" y="4" width="19" height="16" rx="2" />
+          <path d="M2.5 9h19M7 13.5l2.5 2-2.5 2M12 17.5h4" />
+        </svg>
+        <span data-i18n="popup_devtoolsNote"
+          >The locator console, the session, network mocks, viewports, Playwright view and Save login are in DevTools, in
+          the Piwi panel.</span
+        >
+      </p>
+
+      <!-- Each tile shows its own key, so the footer names only the shortcut that works without the popup. -->
       <footer>
-        Press <kbd>1</kbd>–<kbd>0</kbd> to run an action ·
         <!-- Filled in from chrome.commands.getAll(): the browser may not have
              been able to assign the suggested key, and claiming one that isn't
              bound is worse than saying so. -->
         <span id="pick-shortcut"></span> ·
-        <a href="https://piwitests.dev/extension" target="_blank" rel="noopener">docs</a>
+        <a href="https://piwitests.dev/extension" target="_blank" rel="noopener" data-i18n="popup_docs">docs</a>
       </footer>
     </div>
     <script type="module" src="src/popup/main.ts"></script>

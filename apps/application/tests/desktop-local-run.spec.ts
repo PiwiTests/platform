@@ -219,7 +219,7 @@ test.describe('Desktop local run', () => {
     expect(stops).toBe(0);
   });
 
-  test('stopping is explicit, from the tray', async ({ page }) => {
+  test('stopping is explicit, from the tray, and waits for the run to wind down', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
@@ -227,13 +227,33 @@ test.describe('Desktop local run', () => {
     await page.getByRole('button', { name: 'Run locally' }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
-    await tray(page).getByRole('button', { name: 'Stop' }).click();
+    await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
+    // The shell asked Playwright to stop; the run ends when its process exits.
+    await expect(tray(page).getByText('Stopping…', { exact: true })).toBeVisible();
+    await expect(tray(page).getByRole('button', { name: 'Force stop' })).toBeVisible();
+
+    await page.evaluate(() => window.__piwiFakeTauri.finish(130));
     await expect(tray(page).getByText('Stopped', { exact: true })).toBeVisible();
 
-    const stopped = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.find((i) => i.cmd === 'desktop_stop_local_tests'),
+    const stops = await page.evaluate(
+      () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').length,
     );
-    expect(stopped).toBeTruthy();
+    expect(stops).toBe(1);
+  });
+
+  test('a second stop forces the run to end', async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Run locally' }).click();
+    await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
+    await tray(page).getByRole('button', { name: 'Force stop' }).click();
+
+    const stops = await page.evaluate(() =>
+      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
+    );
+    expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
   });
 
   test('run presets from the dropdown run immediately and persist per project', async ({ page }) => {
@@ -309,12 +329,32 @@ test.describe('Desktop local run', () => {
     await page.getByRole('button', { name: 'Run locally' }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
-    // The local process reports through the project's own Piwi reporter; here
-    // that check-in is a real submit to the same server, which announces it on
-    // the SSE stream the app correlates from.
+    // The local process reports through the project's own Piwi reporter, with the
+    // origin reference the app gave it; here that check-in is a real submit to the
+    // same server, which announces it on the SSE stream the app correlates from.
+    // A run another process reports at the same time is never taken for it.
+    const [spawned] = await runInvocations(page);
+    const originRef = spawned!.args!.originRef as string;
+    expect(originRef).toMatch(/^desktop:[a-z0-9]+$/);
+    const other = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.DESKTOP_LOCAL_RUN,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        metadata: { piwiOrigin: { kind: 'local' } },
+        testCases: [],
+      },
+    });
+    expect(other.ok()).toBeTruthy();
     const res = await retryPost(request, '/api/test-runs/submit', {
       data: {
         projectName: PROJECT.DESKTOP_LOCAL_RUN,
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 2000,
@@ -337,8 +377,11 @@ test.describe('Desktop local run', () => {
       },
     });
     expect(res.ok()).toBeTruthy();
+    const { runId: testRunId } = await res.json();
 
-    await expect(tray(page).getByRole('link', { name: /Live in Piwi — Run #\d+/ })).toBeVisible({ timeout: 15000 });
+    await expect(tray(page).getByRole('link', { name: `Live in Piwi — Run #${testRunId}` })).toBeVisible({
+      timeout: 15000,
+    });
 
     await page.evaluate(() => window.__piwiFakeTauri.finish(0));
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 /**
  * The tools that ship alongside the dashboard but install elsewhere — the
- * browser extension, the desktop app, the reporter CLI, MCP agent access and
- * the IDE hand-off. Unlike the capability ladder above it, none of these leave
+ * browser extension, the desktop app, the reporter CLI, MCP agent access, the
+ * editor extensions and the IDE hand-off. Unlike the capability ladder above it, none of these leave
  * evidence on the instance, so the card is informative rather than detected.
  */
+import { DESKTOP_DOWNLOAD_URL, JETBRAINS_PLUGIN_URL, PICKER_STORE_URL } from '#shared/companion-links';
+
 const isDesktop = useIsDesktop();
 </script>
 
@@ -27,13 +29,7 @@ const isDesktop = useIsDesktop();
             is opt-in.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
-            <UButton
-              to="https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe"
-              target="_blank"
-              size="xs"
-              variant="soft"
-              icon="i-lucide-download"
-            >
+            <UButton :to="PICKER_STORE_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
               Chrome Web Store
             </UButton>
             <DocLink to="features/extension" class="text-sm">Docs</DocLink>
@@ -52,6 +48,9 @@ const isDesktop = useIsDesktop();
             nothing else is configured. For one developer's own history on a laptop.
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
+            <UButton :to="DESKTOP_DOWNLOAD_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              GitHub Releases
+            </UButton>
             <DocLink to="features/desktop" class="text-sm">Docs</DocLink>
           </div>
         </div>
@@ -74,7 +73,7 @@ const isDesktop = useIsDesktop();
           <div class="flex items-center gap-3 mt-2 text-sm">
             <DocLink to="guide/getting-started#fast-path-one-command" class="text-sm">init</DocLink>
             <DocLink to="guide/ci#blocking-a-merge" class="text-sm">gate</DocLink>
-            <DocLink to="guide/test-selection" class="text-sm">run &amp; select</DocLink>
+            <DocLink to="features/test-selection" class="text-sm">run &amp; select</DocLink>
           </div>
         </div>
       </li>
@@ -91,7 +90,27 @@ const isDesktop = useIsDesktop();
           </p>
           <div class="flex items-center gap-3 mt-2 text-sm">
             <UButton to="/mcp" size="xs" variant="soft" icon="i-lucide-plug">MCP setup</UButton>
-            <DocLink to="features/mcp#agent-skills" class="text-sm">Skills docs</DocLink>
+            <DocLink to="features/agent-skills" class="text-sm">Skills docs</DocLink>
+          </div>
+        </div>
+      </li>
+
+      <li class="flex gap-4 py-4 first:pt-0 last:pb-0">
+        <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-elevated text-dimmed">
+          <UIcon name="i-lucide-puzzle" class="size-5" />
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 class="font-medium mb-1">Editor extensions</h3>
+          <p class="text-sm text-gray-600 dark:text-gray-400">
+            The Piwi plugin for JetBrains IDEs (WebStorm, IntelliJ IDEA Ultimate, Rider) and the Piwi extension for VS
+            Code put this dashboard's answers on the line you edit: the latest CI failures at their failing lines with
+            the locator heal as a quick fix, and the tests behind each locator and file.
+          </p>
+          <div class="flex items-center gap-3 mt-2 text-sm">
+            <UButton :to="JETBRAINS_PLUGIN_URL" target="_blank" size="xs" variant="soft" icon="i-lucide-download">
+              JetBrains Marketplace
+            </UButton>
+            <DocLink to="features/editors" class="text-sm">Docs</DocLink>
           </div>
         </div>
       </li>

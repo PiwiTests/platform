@@ -1,6 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { parseSelectArgs, parseDuration } from '../src/cli/select.js';
+import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { spawn } from 'node:child_process';
+import type * as ChildProcess from 'node:child_process';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { parseSelectArgs, parseDuration, runRun } from '../src/cli/select.js';
 import { readSelectionStamp } from '../src/internal/support/selection-env.js';
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof ChildProcess>();
+  return { ...actual, spawn: vi.fn() };
+});
 
 describe('parseDuration', () => {
   it('parses units and plain millisecond counts', () => {
@@ -84,5 +95,160 @@ describe('readSelectionStamp', () => {
     expect(
       readSelectionStamp({ PIWI_SELECTION: 'smoke', PIWI_SELECTION_VERSION: '1', PIWI_SELECTION_COUNT: '2' }),
     ).toBeNull(); // no hash
+  });
+});
+
+describe('runRun', () => {
+  const env = { PIWI_DASHBOARD_URL: 'https://dash.example', PIWI_API_KEY: 'k' };
+  const RESOLUTION = {
+    key: 'smoke',
+    version: 3,
+    tests: [],
+    resolvedHash: 'hash-1',
+    estimate: { count: 2, totalDurationMs: null },
+    warnings: [],
+    materialization: { format: 'args', args: ['a.spec.ts:3', 'b.spec.ts:9'], command: '' },
+  };
+  let dir: string;
+  let cwd: string;
+  let stderr: ReturnType<typeof vi.spyOn>;
+
+  /** A dashboard that lists project "Web" as id 7 and resolves `smoke`, or one that cannot be reached. */
+  function dashboard(up: boolean): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (!up) throw new TypeError('fetch failed');
+        if (url.endsWith('/api/projects/menu')) {
+          return new Response(JSON.stringify({ items: [{ id: 7, name: 'Web' }] }), { status: 200 });
+        }
+        if (url.includes('/api/projects/7/selections/smoke/resolve')) {
+          return new Response(JSON.stringify(RESOLUTION), { status: 200 });
+        }
+        return new Response('{}', { status: 404 });
+      }),
+    );
+  }
+
+  /** The Playwright arguments and environment of the last spawn. */
+  function lastSpawn(): { args: string[]; env: NodeJS.ProcessEnv } {
+    const calls = vi.mocked(spawn).mock.calls;
+    const call = calls[calls.length - 1] as unknown as [string, string[], { env: NodeJS.ProcessEnv }];
+    return { args: call[1].slice(call[1].indexOf('test') + 1), env: call[2].env };
+  }
+
+  beforeEach(() => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-select-')));
+    cwd = process.cwd();
+    process.chdir(dir);
+    vi.mocked(spawn).mockImplementation((() => {
+      const child = new EventEmitter();
+      setImmediate(() => child.emit('exit', 0));
+      return child;
+    }) as unknown as typeof spawn);
+    stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    process.chdir(cwd);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.mocked(spawn).mockReset();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('uses the cached selection when the dashboard is unreachable and the project is a name', async () => {
+    dashboard(true);
+    expect(await runRun(['smoke', '--project', 'web'], env)).toBe(0);
+    expect(lastSpawn().args).toEqual(['a.spec.ts:3', 'b.spec.ts:9']);
+
+    dashboard(false);
+    expect(await runRun(['smoke', '--project', 'WEB', '--', '--workers=1'], env)).toBe(0);
+    const { args, env: childEnv } = lastSpawn();
+    expect(args).toEqual(['a.spec.ts:3', 'b.spec.ts:9', '--workers=1']);
+    expect(childEnv.PIWI_SELECTION).toBe('smoke');
+    expect(childEnv.PIWI_SELECTION_HASH).toBe('hash-1');
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('using cached resolution'));
+  });
+
+  it('takes the project from PIWI_PROJECT_NAME', async () => {
+    const named = { ...env, PIWI_PROJECT_NAME: 'Web' };
+    dashboard(true);
+    await runRun(['smoke'], named);
+    dashboard(false);
+    await runRun(['smoke'], named);
+    expect(lastSpawn().args).toEqual(['a.spec.ts:3', 'b.spec.ts:9']);
+  });
+
+  it('runs the full suite when the dashboard is unreachable and nothing is cached', async () => {
+    dashboard(false);
+    expect(await runRun(['smoke', '--project', 'web', '--', '--workers=1'], env)).toBe(0);
+    expect(lastSpawn().args).toEqual(['--workers=1']);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('no cached resolution, running the full suite'));
+  });
+
+  it('keeps an id and a name for the same project apart', async () => {
+    dashboard(true);
+    await runRun(['smoke', '--project', 'web'], env);
+
+    dashboard(false);
+    await runRun(['smoke', '--project', '7'], env);
+    expect(lastSpawn().args).toEqual([]);
+
+    dashboard(true);
+    await runRun(['smoke', '--project', '7'], env);
+    dashboard(false);
+    await runRun(['smoke', '--project', '7'], env);
+    expect(lastSpawn().args).toEqual(['a.spec.ts:3', 'b.spec.ts:9']);
+  });
+
+  it('keeps a shard, a format and a budget apart', async () => {
+    dashboard(true);
+    await runRun(['smoke', '--project', 'web', '--shard', '1/2'], env);
+
+    dashboard(false);
+    await runRun(['smoke', '--project', 'web', '--shard', '2/2'], env);
+    expect(lastSpawn().args).toEqual([]);
+    await runRun(['smoke', '--project', 'web', '--shard', '1/2'], env);
+    expect(lastSpawn().args).toEqual(['a.spec.ts:3', 'b.spec.ts:9']);
+  });
+
+  it('stops with exit 2 under --strict, cache or not', async () => {
+    dashboard(true);
+    await runRun(['smoke', '--project', 'web'], env);
+    vi.mocked(spawn).mockClear();
+
+    dashboard(false);
+    expect(await runRun(['smoke', '--project', 'web', '--strict'], env)).toBe(2);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('runs the full suite for a project the dashboard does not know, when nothing is cached', async () => {
+    dashboard(true);
+    expect(await runRun(['smoke', '--project', 'other', '--', '--workers=1'], env)).toBe(0);
+    expect(lastSpawn().args).toEqual(['--workers=1']);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('No project named "other"'));
+  });
+
+  it('tells the reporter which shard the run is, and gives Playwright no --shard of its own', async () => {
+    dashboard(true);
+    expect(await runRun(['smoke', '--project', 'web', '--shard', '2/4'], env)).toBe(0);
+    const { args, env: childEnv } = lastSpawn();
+    expect(childEnv.PIWI_SHARD).toBe('2/4');
+    expect(args.some((arg) => arg.startsWith('--shard'))).toBe(false);
+  });
+
+  it('tells the reporter the shard of a cached selection too', async () => {
+    dashboard(true);
+    await runRun(['smoke', '--project', 'web', '--shard', '2/4'], env);
+    dashboard(false);
+    await runRun(['smoke', '--project', 'web', '--shard', '2/4'], env);
+    expect(lastSpawn().env.PIWI_SHARD).toBe('2/4');
+  });
+
+  it('sets no shard for a run that is not sharded', async () => {
+    dashboard(true);
+    await runRun(['smoke', '--project', 'web'], env);
+    expect(lastSpawn().env.PIWI_SHARD).toBeUndefined();
   });
 });

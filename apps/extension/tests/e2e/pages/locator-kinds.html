@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Locator kinds</title>
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+      .gone {
+        display: none;
+      }
+      .ghost {
+        visibility: hidden;
+      }
+      .zero {
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        display: block;
+      }
+      .transparent {
+        opacity: 0;
+      }
+      .offscreen {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+      }
+      .wrap {
+        display: contents;
+      }
+      .icon-check::before {
+        content: '✓';
+      }
+      .labelled-by-css::before {
+        content: 'Starred';
+      }
+      .alt-content::before {
+        content: '★' / 'Favorite';
+      }
+      .block-before::before {
+        content: 'Step';
+        display: block;
+      }
+      .card {
+        border: 1px solid #ccc;
+        padding: 4px;
+        margin: 4px;
+      }
+      .row {
+        display: flex;
+        gap: 4px;
+      }
+      .hidden-by-class {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/" class="logo"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Acme home" /></a>
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="/products">Products</a></li>
+          <li><a href="/pricing">Pricing</a></li>
+          <li><a>Not a link</a></li>
+          <li><a href="/account" aria-current="page">My account</a></li>
+        </ul>
+      </nav>
+      <search><input type="search" placeholder="Search products" aria-label="Search" /></search>
+    </header>
+
+    <main>
+      <h1>Checkout</h1>
+      <h2 id="shipping-title">Shipping address</h2>
+      <div role="heading" aria-level="3">Delivery options</div>
+      <h4>Gift <em>wrapping</em></h4>
+
+      <form aria-labelledby="shipping-title" id="shipping" data-testid="shipping-form">
+        <label for="first">First name</label>
+        <input id="first" name="first" data-testid="first-name" />
+
+        <label>Last name <input name="last" placeholder="Doe" /></label>
+
+        <input aria-label="Email address" type="email" name="email" placeholder="you@example.com" />
+
+        <span id="phone-label">Phone</span> <span id="phone-hint">(mobile)</span>
+        <input aria-labelledby="phone-label phone-hint" type="tel" name="phone" />
+
+        <input type="text" name="company" placeholder="Company (optional)" title="Company name" />
+        <input type="text" name="vat" placeholder="VAT number" />
+        <input type="password" placeholder="Password" name="password" />
+        <input type="number" name="qty" aria-label="Quantity" value="2" />
+        <input type="range" name="tip" aria-label="Tip" min="0" max="20" value="5" />
+        <input type="date" name="when" aria-label="Delivery date" />
+        <input type="hidden" name="token" value="abc" />
+
+        <label for="country">Country</label>
+        <select id="country" name="country">
+          <option>France</option>
+          <option selected>Germany</option>
+          <option disabled>Narnia</option>
+        </select>
+
+        <label for="tags">Tags</label>
+        <select id="tags" multiple>
+          <option selected>fragile</option>
+          <option>express</option>
+        </select>
+
+        <label for="city">City</label>
+        <input id="city" list="cities" />
+        <datalist id="cities">
+          <option value="Paris"></option>
+          <option value="Berlin"></option>
+        </datalist>
+
+        <label for="notes">Delivery notes</label>
+        <textarea id="notes" placeholder="Leave at the door"></textarea>
+
+        <fieldset>
+          <legend>Payment method</legend>
+          <label><input type="radio" name="pay" value="card" checked /> Card</label>
+          <label><input type="radio" name="pay" value="paypal" /> PayPal</label>
+          <label><input type="radio" name="pay" value="wire" disabled /> Wire transfer</label>
+        </fieldset>
+
+        <fieldset disabled>
+          <legend>Invoice <button type="button">Help</button></legend>
+          <input aria-label="Invoice email" />
+          <button type="button">Send invoice</button>
+        </fieldset>
+
+        <label><input type="checkbox" name="terms" /> I accept the terms</label>
+        <label><input type="checkbox" name="news" checked /> Newsletter</label>
+        <input type="checkbox" id="mixed" aria-label="Select all" />
+
+        <div role="checkbox" aria-checked="mixed" tabindex="0">Some selected</div>
+        <div role="switch" aria-checked="true" tabindex="0">Dark mode</div>
+
+        <input type="submit" value="Place order" />
+        <input type="submit" />
+        <input type="reset" />
+        <input type="button" value="Preview" />
+        <input type="image" alt="Pay with card" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+        <input type="file" aria-label="Attachment" />
+        <button type="submit" data-test="save-address">Save address</button>
+        <button type="button" disabled>Disabled action</button>
+        <output for="qty" name="total">Total: 42 €</output>
+        <meter aria-label="Progress" value="0.6">60%</meter>
+        <progress value="30" max="100" aria-label="Upload"></progress>
+      </form>
+
+      <section aria-label="Products" id="products">
+        <article class="card" data-qa="product">
+          <h3>Blue mug</h3>
+          <p class="price">12 €</p>
+          <button type="button" class="add">Add to cart</button>
+          <button type="button" aria-label="Favorite blue mug" class="icon-check"></button>
+        </article>
+        <article class="card" data-qa="product">
+          <h3>Red mug</h3>
+          <p class="price">14 €</p>
+          <button type="button" class="add">Add to cart</button>
+          <button type="button" aria-pressed="true">Compare</button>
+        </article>
+        <article class="card" data-qa="product">
+          <h3>Green mug <span class="badge">new</span></h3>
+          <p class="price">16 €</p>
+          <button type="button" class="add" disabled>Add to cart</button>
+          <button type="button" aria-pressed="false">Compare</button>
+        </article>
+      </section>
+      <section id="unnamed-section"><p>Plain section</p></section>
+
+      <div class="toolbar" role="toolbar" aria-label="Formatting">
+        <span role="button" tabindex="0">Bold</span>
+        <span role="button" tabindex="0" aria-disabled="true">Italic</span>
+        <div aria-disabled="true">
+          <span role="button" tabindex="0">Underline</span>
+        </div>
+        <button type="button" class="icon-check" title="Mark done"></button>
+        <button type="button" class="labelled-by-css"></button>
+        <button type="button" class="alt-content"></button>
+        <button type="button" class="block-before">Two</button>
+        <button type="button">
+          <svg width="10" height="10" role="img">
+            <title>Gear</title>
+            <rect width="10" height="10"></rect>
+          </svg>
+        </button>
+        <button type="button"><img alt="Trash" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" /> Delete</button>
+        <button type="button" aria-expanded="false" aria-controls="menu-list">Menu</button>
+        <button type="button" aria-describedby="save-help">Save draft</button>
+        <span id="save-help">Keeps your changes for later</span>
+        <button type="button" aria-description="Opens the settings panel">Settings</button>
+        <button type="button" title="Refresh the list">⟳</button>
+      </div>
+
+      <div role="tablist" aria-label="Views">
+        <button role="tab" aria-selected="true">Grid</button>
+        <button role="tab" aria-selected="false">List</button>
+        <button role="tab" aria-selected="false" aria-disabled="true">Map</button>
+      </div>
+
+      <ul role="menu" id="menu-list" aria-label="Actions">
+        <li role="menuitem">Rename</li>
+        <li role="menuitemcheckbox" aria-checked="true">Pin</li>
+        <li role="menuitemradio" aria-checked="false">Sort by name</li>
+        <li role="none"><a role="menuitem" href="/archive">Archive</a></li>
+      </ul>
+
+      <ul role="tree" aria-label="Folders">
+        <li role="treeitem" aria-level="1" aria-expanded="true">Documents</li>
+        <li role="treeitem" aria-level="2" aria-selected="true">Invoices</li>
+        <li role="treeitem" aria-level="2">Receipts</li>
+      </ul>
+
+      <div role="listbox" aria-label="Sizes">
+        <div role="option" aria-selected="true">Small</div>
+        <div role="option" aria-selected="false">Medium</div>
+        <div role="option">Large</div>
+      </div>
+
+      <div role="combobox" aria-expanded="true" aria-owns="flavor-list" aria-label="Flavor">
+        <input aria-label="Flavor input" />
+      </div>
+      <div role="listbox" id="flavor-list">
+        <div role="option" aria-selected="true">Vanilla</div>
+      </div>
+
+      <table>
+        <caption>
+          Orders
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Order</th>
+            <th scope="col">Status</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr aria-selected="true">
+            <th scope="row">#1001</th>
+            <td>Shipped</td>
+            <td>42 €</td>
+          </tr>
+          <tr>
+            <th>#1002</th>
+            <td>Pending</td>
+            <td>13 €</td>
+          </tr>
+          <tr>
+            <td>#1003</td>
+            <td>Cancelled</td>
+            <td><button type="button">Refund</button></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table role="grid" aria-label="Seats">
+        <tr>
+          <td>A1</td>
+          <td aria-selected="true">A2</td>
+        </tr>
+      </table>
+
+      <table role="presentation">
+        <tr>
+          <td>Layout cell</td>
+        </tr>
+      </table>
+
+      <ul role="presentation">
+        <li>Presentational item</li>
+      </ul>
+
+      <dl>
+        <dt>Term</dt>
+        <dd>Definition</dd>
+      </dl>
+
+      <details>
+        <summary>More info</summary>
+        <p>Hidden until opened</p>
+        <button type="button">Inside details</button>
+      </details>
+      <details open>
+        <summary>Open info</summary>
+        <button type="button">Visible in details</button>
+      </details>
+
+      <div class="text-cases">
+        <p id="greeting">Hello <b>world</b>, welcome back!</p>
+        <p>Lots of spaces</p>
+        <p>Non&nbsp;breaking&nbsp;space</p>
+        <p>Zero&#8203;width</p>
+        <p>Line<br />break</p>
+        <p>Café au lait</p>
+        <p>STRASSE und Straße</p>
+        <p>Quote ' and " inside</p>
+        <p>Emoji 🎉 party</p>
+        <span>Split </span><span>across</span>
+        <div>Parent text <span>child text</span></div>
+        <div><span>Only child</span></div>
+        <div>Only child</div>
+        <script>
+          var scriptText = 'Hidden script text';
+        </script>
+        <style>
+          .style-text {
+            color: red;
+          }
+        </style>
+        <p>Order #1002 is pending</p>
+        <p data-testid="status">Status: <strong>OK</strong></p>
+      </div>
+
+      <div class="hidden-cases">
+        <button type="button" class="gone">Gone button</button>
+        <button type="button" class="ghost">Ghost button</button>
+        <button type="button" hidden>Hidden attribute button</button>
+        <div aria-hidden="true"><button type="button">Aria hidden button</button></div>
+        <button type="button" class="transparent">Transparent button</button>
+        <button type="button" class="offscreen">Offscreen button</button>
+        <span class="zero"><button type="button">Zero box button</button></span>
+        <span class="wrap"><button type="button">Contents child button</button></span>
+        <div class="gone"><a href="/x">Gone link</a></div>
+        <p class="ghost">Ghost text</p>
+        <img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" class="decor" />
+        <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" title="Chart" />
+        <svg aria-label="Logo mark" width="5" height="5"></svg>
+      </div>
+
+      <div class="test-ids">
+        <button data-testid="pay" type="button">Pay now</button>
+        <button data-testid="pay-later" type="button">Pay later</button>
+        <div data-test-id="banner">Banner</div>
+        <div data-qa="footer-cta">Join us</div>
+        <div id="promo" data-testid="Promo">Promo</div>
+      </div>
+
+      <dialog open aria-labelledby="dlg-title">
+        <h2 id="dlg-title">Confirm deletion</h2>
+        <p>This cannot be undone.</p>
+        <button type="button">Cancel</button>
+        <button type="button" data-testid="confirm">Delete</button>
+      </dialog>
+      <div role="alert">Payment failed</div>
+      <div role="status" aria-live="polite">3 items</div>
+
+      <div id="shadow-host"></div>
+      <x-card id="card-host" data-testid="card-host"
+        ><span slot="title">Slotted title</span><button slot="action" type="button">Slotted action</button></x-card
+      >
+
+      <iframe id="child-frame" title="Payment frame" src="/frame.html" width="300" height="150"></iframe>
+    </main>
+
+    <aside><p>Related</p></aside>
+    <footer>
+      <p>© Acme</p>
+      <a href="/legal">Legal notice</a>
+    </footer>
+    <article>
+      <footer>Article footer</footer>
+    </article>
+
+    <script>
+      const host = document.getElementById('shadow-host');
+      const root = host.attachShadow({ mode: 'open' });
+      root.innerHTML = `
+        <style>.inner { padding: 2px; }</style>
+        <div class="inner">
+          <h3>Shadow heading</h3>
+          <button type="button" data-testid="shadow-btn">Shadow button</button>
+          <label for="shadow-input">Shadow field</label>
+          <input id="shadow-input" placeholder="Inside shadow" />
+          <div id="nested-host"></div>
+        </div>`;
+      const nested = root.getElementById('nested-host').attachShadow({ mode: 'open' });
+      nested.innerHTML = '<button type="button">Nested shadow button</button><p>Deep text</p>';
+
+      const closedHost = document.createElement('div');
+      closedHost.id = 'closed-host';
+      closedHost.attachShadow({ mode: 'closed' }).innerHTML = '<button type="button">Closed shadow button</button>';
+      document.querySelector('main').appendChild(closedHost);
+
+      class XCard extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: 'open' }).innerHTML = `
+            <section aria-label="Card">
+              <h4><slot name="title"></slot></h4>
+              <div class="actions"><slot name="action"></slot><button type="button">Card menu</button></div>
+            </section>`;
+        }
+      }
+      customElements.define('x-card', XCard);
+      document.getElementById('mixed').indeterminate = true;
+    </script>
+  </body>
+</html>

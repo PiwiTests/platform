@@ -1,7 +1,11 @@
+import { resolveE2ETarget, targetAuthHeaders } from './desktop-target';
+
 async function preCleanup() {
+  const target = resolveE2ETarget();
   try {
-    const response = await fetch('http://localhost:3000/api/tests/cleanup', {
+    const response = await fetch(`${target.baseUrl}/api/tests/cleanup`, {
       method: 'DELETE',
+      headers: targetAuthHeaders(target),
     });
     if (!response.ok) {
       console.warn(`[Setup Cleanup] Failed: ${response.status} ${await response.text()}`);
@@ -16,10 +20,9 @@ async function preCleanup() {
 }
 
 // NOTE: Piwi run registration is handled by `wrapConfig()` in playwright.config.ts,
-// which injects the reporter's own global-setup module. We must NOT call
-// `createGlobalSetup()` here as well — doing so registered the run twice (same
-// instanceId), and the second registration cancelled the first, leaving an
-// orphaned "full"/cancelled run with no test cases alongside the real run.
+// which injects the reporter's own global-setup module. Do NOT call
+// `createGlobalSetup()` here as well: it would register the run a second time
+// (same instanceId), cancelling the first.
 export default async function globalSetup(_config: any) {
   await preCleanup();
 }

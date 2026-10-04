@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'List test cases for a project with aggregated stats',
     description:
-      'Paginated test-case catalog with per-case aggregates: total runs, pass/fail/skip/flaky counts, executed-only pass rate and average duration, derived status category, and last run. Returns `{ items, total, limit, offset }`. Timed-out runs are folded into the failed counts.',
+      'Paginated test-case catalog with per-case aggregates: total runs, pass/fail/skip/flaky counts, executed-only pass rate and average duration, derived status category, last run, and the line and column its latest execution reported. Returns `{ items, total, limit, offset }`. Timed-out runs are folded into the failed counts.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -29,7 +29,16 @@ defineRouteMeta({
         in: 'query',
         required: false,
         schema: { type: 'string' },
-        description: 'Case-insensitive substring filter on title or file path',
+        description:
+          'Search the catalog the way its search box does. Words and "quoted phrases" match the title, the describe blocks or the file path; qualifiers match one field: `file:` (alias `path:`), `describe:` (`suite:`), `title:` (`test:`, `name:`), `tag:`, `lock:`, `owner:`, `priority:`, `feature:`. A leading `-` excludes (`-tag:slow`). Text fields match anywhere, with `*` as a wildcard; the others match a whole value. Case is ignored. Every term must match, except that repeating `file:`, `owner:`, `priority:` or `feature:` matches any of the values.',
+      },
+      {
+        name: 'file',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Spec file path: the path the test case stores, or its end from a folder boundary (`tests/cart.spec.ts` finds `e2e/tests/cart.spec.ts`).',
       },
       {
         name: 'status',
@@ -80,10 +89,11 @@ defineRouteMeta({
         required: false,
         schema: {
           type: 'string',
-          enum: ['lastRun', 'title', 'totalRuns', 'passRate', 'avgDuration', 'status'],
+          enum: ['file', 'lastRun', 'title', 'totalRuns', 'passRate', 'avgDuration', 'status'],
           default: 'lastRun',
         },
-        description: 'Sort column',
+        description:
+          'Sort column. `file` is declaration order: file path, then the line and column of the latest execution.',
       },
       {
         name: 'dir',

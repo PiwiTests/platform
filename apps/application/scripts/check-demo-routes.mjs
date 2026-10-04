@@ -34,7 +34,16 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
-  'POST /api/failure-clusters/:id/bisect', // desktop build only; the shell records a bisect result, 404 everywhere else
+  'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
+  'GET /api/desktop/live-runs', // desktop build only; reports the shell's watched runs, empty everywhere else
+  'GET /api/desktop/events', // desktop build only; the desktop window's run progress and page requests, read only inside the shell
+  'POST /api/desktop/repro-requests', // desktop build only; Piwi Picker asks the app to run a report, 404 everywhere else
+  'GET /api/desktop/repro-requests/:id', // desktop build only; a repro request and its verdict, 404 everywhere else
+  'PATCH /api/desktop/repro-requests/:id', // desktop build only; the window records what it did with a request
+  'GET /api/desktop/repro-requests/:id/spec', // desktop build only; the shell reads the spec it writes and runs
+  'POST /api/desktop/picker-pairings', // desktop build only; Piwi Picker asks to pair with the app, 404 everywhere else
+  'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
+  'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
   'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section is hidden client-side in demo mode instead of faking an understanding of whatever the visitor pastes
   'POST /api/ai/step-resolution', // AI-step authoring — resolves an arbitrary page snapshot against a natural-language prompt; no server or real LLM in the demo, and the reporter only calls it in resolve/heal mode (never a normal run), so there is nothing to script
   // Share links: capability tokens for anonymous viewers. The demo has no
@@ -47,9 +56,39 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'DELETE /api/share-links/:id',
   'GET /api/share-links/settings',
   'GET /api/projects/:id/share-links',
+  'POST /api/reports/snapshots/:id/share-links',
+  'GET /api/reports/snapshots/:id/share-links',
+  'POST /api/dashboards/:id/share-links',
+  'GET /api/dashboards/:id/share-links',
+  // Former paths kept for scripts: the app calls the new ones, since ad blockers
+  // refuse requests whose address contains "analytics".
+  'GET /api/analytics/:widget',
+  'GET /api/projects/:id/selections/analytics',
+  // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
+  // server in the browser demo for a scraper to reach.
+  'GET /api/metrics',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',
+  // Local Claude CLI session: desktop-app only, drives a `claude` binary on the
+  // host. 404 everywhere else, including the demo, with nothing to script.
+  'GET /api/ai/claude-cli/status',
+  'POST /api/ai/claude-cli/login',
+  'POST /api/ai/claude-cli/logout',
+  // Connecting Piwi Picker: a device authorization that ends in an API key for
+  // an account. The demo has no server for an extension to reach and no keys.
+  'POST /api/extension/connect',
+  'POST /api/extension/connect/token',
+  'GET /api/extension/connect/request',
+  'POST /api/extension/connect/decision',
+  // DOM-snapshot picker frame: serves a sandboxed HTML document over its own
+  // CSP, not JSON — the browser demo renders snapshots through its own handler.
+  'GET /api/test-run-cases/:id/dom-snapshot-frame',
+  // Bug reports arrive from Piwi Picker as a multipart upload with PNG
+  // screenshots and JPEG step screenshots kept in server storage; the demo has neither.
+  'POST /api/projects/:id/bug-reports',
+  'GET /api/bug-reports/:id/screenshots/:index',
+  'GET /api/bug-reports/:id/step-shots/:step',
 ]);
 
 // ── Derive all server routes from the file system ────────────────────────
@@ -110,7 +149,7 @@ while ((m = PATTERN_RE.exec(routerSrc)) !== null) {
 // We build [{ method, pattern }] by scanning the routes array lines.
 // Extract method+pattern pairs.  Use the `s` flag so that `.*?` spans
 // newlines — many route entries in the demo router write `method` and
-// `pattern` on separate lines and the old single-line regex missed them.
+// `pattern` on separate lines.
 const ROUTE_BLOCK_RE = /\{\s*method:\s*'(GET|POST|PUT|PATCH|DELETE)'.*?pattern:\s*(\/[^,]+\/)/gs;
 const demoRoutes = [];
 while ((m = ROUTE_BLOCK_RE.exec(routerSrc)) !== null) {

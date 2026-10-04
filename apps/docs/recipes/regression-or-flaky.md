@@ -1,5 +1,6 @@
 ---
 title: Regression or flake?
+description: "Decide in a minute whether a red test is your regression or a known flake, from the run's changes and the test's own history."
 lang: en-US
 ---
 
@@ -19,7 +20,7 @@ and sorts the failures for you. The distinction you want is right there in the h
 - **Newly flaky / passed on retry** — it passed but needed a retry.
 
 <figure>
-  <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, new failures, fixed tests and the commits landed since the baseline">
+  <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, new failures, newly flaky tests, slower and faster tests, and the commits landed since the baseline">
   <figcaption>The Changes tab — read against one baseline, with new failures separated from tests that only passed on retry.</figcaption>
 </figure>
 
@@ -43,15 +44,15 @@ Read it like this:
 |---|---|
 | Solid green, then red from one run onward | A regression. Find the commit in that gap. |
 | Red/green alternating for weeks | A flake that happened to fail on your run. |
-| Green, then red, and the failing execution **passed on retry** | A flake — the `passed on retry` chip is on the execution's Verdict card. |
+| Green, then red, and the failing execution **passed on retry** | A flake — the execution's header carries a *Passed on retry* badge. |
 | Newly red *and* the failure is shared with other tests | Probably neither — see [triaging a mass failure](./mass-failure). |
 
 ## 3. Find what changed around it
 
 Once you know it's a real regression, narrow the window:
 
-- The failing execution's **Verdict** card links back to the **last green run**, so you have two commits
-  to diff between.
+- The failing execution's **History** section links back to the **last green run** ("Last passed in run
+  #N"), so you have two commits to diff between.
 - If the drop lines up with a deploy or an infrastructure change, a
   [timeline marker](/features/timeline-markers) draws it as a vertical line on the trend chart — "it started
   the day we switched CI runners" is a much faster answer than a bisect.
@@ -69,15 +70,15 @@ through, and `get_test_stability_trend` answers "is this getting flakier?" for o
 
 **Wire it into CI.** The [CI gate](/guide/ci#blocking-a-merge) already knows the difference: a test in
 [quarantine](/features/flaky-tests#quarantine-with-a-way-out) keeps running and keeps reporting, but doesn't
-block the merge — and the gate always states how many failures it excluded.
+block the merge — and the gate reports how many failures it excluded.
 
 **Get told instead of looking.** [Notifications](/features/notifications) let you subscribe to
 `run.failed.default_branch` rather than `run.failed`, so you hear about main going red instead of every
 red branch build — the difference between an alert people read and one people mute. `flakiness.spike`
-fires separately when flakiness crosses your configured threshold.
+fires separately for any run with flaky tests; a subscription's flakiness threshold (set through the API)
+narrows it.
 
-## See also
-
+## Related
 - [Flaky tests](/features/flaky-tests) — how the composite score and root-cause categories are computed
 - [Core concepts](/guide/concepts) — *test case* vs *execution*, the distinction this recipe leans on
 - [Timeline markers](/features/timeline-markers) — correlating a drop with a deploy

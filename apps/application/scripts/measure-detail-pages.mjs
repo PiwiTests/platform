@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Measures how legible the execution page (`/test-run-cases/:id`) and the failure
- * cluster page (`/failure-clusters/:id`) are, so the clarity plan's "In numbers"
- * table can be re-measured after each phase and diffed against the baseline.
+ * cluster page (`/failure-clusters/:id`) are, as numbers two versions of the
+ * pages can be diffed on.
  *
  * For each route it reads, inside the detail panel: the scroll offset of every
  * named block from the top of the panel, the panel's total scroll height, how
@@ -30,7 +30,7 @@ import { waitForHydration, settlePage } from './lib/page-waits.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-/** The routes §1.5 measures: two executions and four clusters. */
+/** The routes measured by default: two executions and four clusters. */
 const DEFAULT_ROUTES = [
   '/test-run-cases/37',
   '/test-run-cases/13',
@@ -156,7 +156,8 @@ function measurePage({ viewportHeight }) {
     while (walker.nextNode()) {
       const node = walker.currentNode;
       if (!node.textContent.trim() || !node.parentElement) continue;
-      const cs = getComputedStyle(node.parentElement);
+      // A code chip counts once, whatever colors its syntax tokens take.
+      const cs = getComputedStyle(node.parentElement.closest('code') ?? node.parentElement);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       styles.add(
         [

@@ -6,16 +6,52 @@ import type { ProbeArg, ProbedAttrs } from './types.js';
  * attributes, geometry, label association, and selector-uniqueness counts,
  * plus (when `arg.includeStructural`) its position among same-role elements
  * and anchor-worthy ancestors, which power name-free and ancestor-scoped
- * locator alternatives.
+ * locator alternatives. With `arg.countMatches` false it counts nothing and
+ * reports the anchors alone. The test id is read from `arg.testIdAttribute`,
+ * `data-testid` by default.
  *
  * Must stay a fully self-contained function (no references to this module's
  * closure): both hosts re-serialize it via `Function.prototype.toString()`.
  * `el` is browser-context (no DOM lib in this package), hence `any`.
  */
 export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
-  const { keep, tagRoles, inputRoles, roleSources, includeStructural, includeLabelText } = arg;
+  const { keep, tagRoles, inputRoles, roleSources, includeStructural } = arg;
+  const countMatches = arg.countMatches !== false;
+  const testIdAttr = arg.testIdAttribute || 'data-testid';
+  const FIELD_TAGS = ['input', 'select', 'textarea'];
+  /** `root`'s text, leaving out `skip`'s subtree — a wrapping label's text without the field it wraps. */
+  const textWithout = (root: any, skip: any): string => {
+    if (root === skip) return '';
+    if (root.nodeType === 3) return root.nodeValue || '';
+    let text = '';
+    const kids = root.childNodes || [];
+    for (let i = 0; i < kids.length; i++) text += textWithout(kids[i], skip);
+    return text;
+  };
+  /**
+   * The text that labels `n`: the elements its `aria-labelledby` points at,
+   * else its first `<label>` (a `for` label or a wrapping one). Best-effort
+   * like every other probe — a host whose `labels` is not indexable costs this
+   * one value, not the whole capture.
+   */
+  const labelTextOf = (n: any): string | null => {
+    try {
+      const ids = (n.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+      let text = '';
+      for (const id of ids) {
+        const ref = n.ownerDocument.getElementById(id);
+        if (ref) text += ` ${textWithout(ref, n)}`;
+      }
+      if (!text.trim() && n.labels && n.labels.length > 0) text = textWithout(n.labels[0], n);
+      return text.replace(/\s+/g, ' ').trim().slice(0, 120) || null;
+    } catch {
+      return null;
+    }
+  };
   const attrMap: Record<string, string | null> = {};
-  for (const key of keep) {
+  // The project's test id attribute is read even when the whitelist, which names Playwright's default, leaves it out.
+  const keys = arg.testIdAttribute && keep.indexOf(arg.testIdAttribute) === -1 ? [...keep, arg.testIdAttribute] : keep;
+  for (const key of keys) {
     const v = el.getAttribute(key) ?? el[key];
     attrMap[key] = typeof v === 'string' ? v.slice(0, 200) : v ? String(v).slice(0, 200) : null;
   }
@@ -25,44 +61,46 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
   // count > 1 marks the alternative as ambiguous (strict-mode violation) so
   // generateAlternatives drops it.
   const selectorCounts: ProbedAttrs['selectorCounts'] = {};
-  try {
-    const doc = el.ownerDocument;
-    const cssEsc = (s: string): string => doc.defaultView.CSS.escape(s);
-    const count = (sel: string): number | undefined => {
-      try {
-        return doc.querySelectorAll(sel).length;
-      } catch {
-        return undefined;
+  if (countMatches) {
+    try {
+      const doc = el.ownerDocument;
+      const cssEsc = (s: string): string => doc.defaultView.CSS.escape(s);
+      const count = (sel: string): number | undefined => {
+        try {
+          return doc.querySelectorAll(sel).length;
+        } catch {
+          return undefined;
+        }
+      };
+      if (attrMap[testIdAttr]) {
+        selectorCounts.testId = count(`[${testIdAttr}=${JSON.stringify(attrMap[testIdAttr])}]`);
       }
-    };
-    if (attrMap['data-testid']) {
-      selectorCounts.testId = count(`[data-testid=${JSON.stringify(attrMap['data-testid'])}]`);
-    }
-    if (attrMap['id']) selectorCounts.id = count(`#${cssEsc(attrMap['id'])}`);
-    if (attrMap['name']) selectorCounts.name = count(`[name=${JSON.stringify(attrMap['name'])}]`);
-    // `getByPlaceholder`/`getByAltText`/`getByTitle` each resolve to exactly the
-    // elements carrying that attribute value, so an attribute selector counts
-    // their real match set — without these, a placeholder repeated across a
-    // wizard's steps scored as though it were unique.
-    if (attrMap['placeholder']) {
-      selectorCounts.placeholder = count(`[placeholder=${JSON.stringify(attrMap['placeholder'])}]`);
-    }
-    if (attrMap['alt']) selectorCounts.alt = count(`[alt=${JSON.stringify(attrMap['alt'])}]`);
-    if (attrMap['title']) selectorCounts.title = count(`[title=${JSON.stringify(attrMap['title'])}]`);
-    const classList = (attrMap['class'] || '')
-      .split(/\s+/)
-      .filter((c: string) => c.length > 1)
-      .slice(0, 10);
-    if (classList.length > 0) {
-      const classCounts: Record<string, number> = {};
-      for (const cls of classList) {
-        const n = count(`.${cssEsc(cls)}`);
-        if (n !== undefined) classCounts[cls] = n;
+      if (attrMap['id']) selectorCounts.id = count(`#${cssEsc(attrMap['id'])}`);
+      if (attrMap['name']) selectorCounts.name = count(`[name=${JSON.stringify(attrMap['name'])}]`);
+      // `getByPlaceholder`/`getByAltText`/`getByTitle` each resolve to exactly the
+      // elements carrying that attribute value, so an attribute selector counts
+      // their real match set, so a placeholder repeated across a wizard's steps
+      // does not score as unique.
+      if (attrMap['placeholder']) {
+        selectorCounts.placeholder = count(`[placeholder=${JSON.stringify(attrMap['placeholder'])}]`);
       }
-      selectorCounts.classes = classCounts;
+      if (attrMap['alt']) selectorCounts.alt = count(`[alt=${JSON.stringify(attrMap['alt'])}]`);
+      if (attrMap['title']) selectorCounts.title = count(`[title=${JSON.stringify(attrMap['title'])}]`);
+      const classList = (attrMap['class'] || '')
+        .split(/\s+/)
+        .filter((c: string) => c.length > 1)
+        .slice(0, 10);
+      if (classList.length > 0) {
+        const classCounts: Record<string, number> = {};
+        for (const cls of classList) {
+          const n = count(`.${cssEsc(cls)}`);
+          if (n !== undefined) classCounts[cls] = n;
+        }
+        selectorCounts.classes = classCounts;
+      }
+    } catch {
+      // Uniqueness probing is best-effort — never fail the capture.
     }
-  } catch {
-    // Uniqueness probing is best-effort — never fail the capture.
   }
 
   // Structural probe: the element's position among same-role elements plus
@@ -87,8 +125,8 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       // read again as its parent's child. Memoized per probe call (the maps are
       // local and die with it), which turns those repeats into map lookups
       // instead of fresh attribute reads and fresh `textContent` concatenations.
-      // `textContent` in particular is O(subtree), so re-reading it was what
-      // made a probe of a large page superlinear.
+      // `textContent` in particular is O(subtree), so re-reading it would make
+      // a probe of a large page superlinear.
       const roleMemo = new Map<any, string | null>();
       const textMemo = new Map<any, string>();
 
@@ -122,10 +160,18 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       // function is serialized into the page by the reporter and cannot
       // reference imports. Keep the two in step.
       const nameOf = (n: any): string | null => {
+        const labelledBy = !!n.getAttribute('aria-labelledby');
+        const isField = FIELD_TAGS.indexOf((n.tagName || '').toLowerCase()) !== -1;
+        const lt = labelledBy || isField ? labelTextOf(n) : null;
+        if (lt && labelledBy) return lt;
         const al = n.getAttribute('aria-label');
         if (al) return al;
-        const txt = (n.textContent || '').replace(/\s+/g, ' ').trim();
-        if (txt) return txt;
+        if (isField) {
+          if (lt) return lt;
+        } else {
+          const txt = (n.textContent || '').replace(/\s+/g, ' ').trim();
+          if (txt) return txt;
+        }
         return n.getAttribute('title') || n.getAttribute('placeholder') || null;
       };
       const targetName = nameOf(el);
@@ -178,18 +224,18 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       };
 
       // A truncated scan would produce wrong counts/indexes — skip instead.
-      const nodes = doc.querySelectorAll(roleSources);
-      const nodesUsable = nodes.length <= 4000;
+      const nodes = countMatches ? doc.querySelectorAll(roleSources) : [];
+      const nodesUsable = countMatches && nodes.length <= 4000;
       const rolesUsable = !!targetRole && nodesUsable;
 
       if (rolesUsable) {
         let roleCountAll = 0;
         let index = -1;
         let levelCount = 0;
-        // How many elements a `getByRole(role, { name })` would actually
-        // match. Without it, an ambiguous locator scores exactly as well as a
-        // unique one and wins on base score alone. `visibleRoleName` is the
-        // subset that is laid out — what `.visible()` would keep.
+        // How many elements share the role and the exact accessible name, so
+        // an ambiguous locator does not score as well as a unique one on base
+        // score alone. `visibleRoleName` is the subset that is laid out — what
+        // `.visible()` would keep.
         let roleNameCount = 0;
         let visibleRoleNameCount = 0;
         for (let i = 0; i < nodes.length; i++) {
@@ -222,7 +268,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
         }
       }
 
-      if (textNeedle) {
+      if (textNeedle && countMatches) {
         const textCount = countTextOwners(doc.body || doc.documentElement, 4000);
         if (textCount >= 0) selectorCounts.text = textCount;
       }
@@ -230,7 +276,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       // The anchor walk runs for role-less leaves too: a `<span class="price">`
       // has no role to scope, but scoping its text to a parent is the only way
       // to tell one repeated card from another.
-      if (rolesUsable || textNeedle) {
+      if (rolesUsable || textNeedle || !countMatches) {
         // `li` and `tr` are almost never document-unique, so they are useless
         // as bare role anchors — but they are the repeated container a
         // `filter({ hasText })` chain exists to single out.
@@ -250,9 +296,10 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
         // first attribute in document order instead would have handed that
         // scoring an arbitrary winner.
         const TEST_DATA_ATTRS = ['data-test', 'data-test-id', 'data-qa', 'data-qa-id', 'data-cy', 'data-e2e'];
-        /** Whether a `data-*` name and value are usable as an anchor at all. `data-testid` is excluded — it has its own, higher-scoring path. */
+        const testIdName = testIdAttr.toLowerCase();
+        /** Whether a `data-*` name and value are usable as an anchor at all. The test id attribute is excluded: it has its own, higher-scoring path. */
         const usableDataAttr = (name: string, value: string): boolean => {
-          if (!name || name.slice(0, 5) !== 'data-' || name === 'data-testid') return false;
+          if (!name || name.slice(0, 5) !== 'data-' || name.toLowerCase() === testIdName) return false;
           if (NOISY_DATA_ATTR.test(name) || POSITIONAL_DATA_ATTR.test(name)) return false;
           // A valueless marker (`data-open`) identifies nothing; an over-long
           // one is almost always serialized state.
@@ -300,10 +347,18 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
          * text-bearing leaf that names the row rather than reporting its state.
          * The target's own text is never used: filtering a container by the very
          * text we are trying to disambiguate is circular and singles out nothing.
+         * With `countMatches` off, a container of more than 200 elements has
+         * none, found without walking past its 200th.
          */
         const usableDiscriminator = (t: string): boolean =>
           !!t && t.length <= 60 && t !== targetText && namesRatherThanReports(t);
+        const hasAtMost = (root: any, cap: number): boolean => {
+          const walker = doc.createTreeWalker(root, 1);
+          for (let n = 0; walker.nextNode(); n++) if (n >= cap) return false;
+          return true;
+        };
         const discriminatingText = (anc: any): string | null => {
+          if (!countMatches && !hasAtMost(anc, 200)) return null;
           const heading = anc.querySelector('h1,h2,h3,h4,h5,h6,[role="heading"]');
           if (heading) {
             const t = rawText(heading);
@@ -336,7 +391,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
           depth++;
           const tag = (node.tagName || '').toLowerCase();
           if (tag === 'body' || tag === 'html') break;
-          const testId = node.getAttribute('data-testid');
+          const testId = node.getAttribute(testIdAttr);
           const id = node.getAttribute('id');
           const explicitRole = node.getAttribute('role');
           const ariaLabel = node.getAttribute('aria-label');
@@ -357,14 +412,14 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
                 }
               }
             }
-            const scopedTextCount = countTextOwners(node, 2000);
+            const scopedTextCount = countMatches ? countTextOwners(node, 2000) : -1;
             // A repeated container — a card, a row — has no unique hook of its
             // own, but the text it holds still names it.
             // Isolated: a hiccup finding the discriminator must cost this one
             // optional field, not every anchor collected so far.
             let filterText: string | null = null;
             try {
-              if (anchorRole && nodesUsable) filterText = discriminatingText(node);
+              if (anchorRole && (nodesUsable || !countMatches)) filterText = discriminatingText(node);
             } catch {
               filterText = null;
             }
@@ -377,14 +432,16 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
               ariaLabel: ariaLabel || null,
               ...(scopedRoleCount >= 0 ? { scopedRoleCount } : {}),
               ...(scopedTextCount >= 0 ? { scopedTextCount } : {}),
-              ...(testId ? { testIdCount: count(`[data-testid=${JSON.stringify(testId)}]`) } : {}),
-              ...(id ? { idCount: count(`#${cssEsc(id)}`) } : {}),
+              ...(testId && countMatches ? { testIdCount: count(`[${testIdAttr}=${JSON.stringify(testId)}]`) } : {}),
+              ...(id && countMatches ? { idCount: count(`#${cssEsc(id)}`) } : {}),
               ...(anchorRole && nodesUsable ? { roleCount: docRoleCount(anchorRole) } : {}),
-              ...(filterText
-                ? { filterText, filterRoleCount: filterMatchCount(anchorRole as string, filterText) }
+              ...(filterText ? { filterText } : {}),
+              ...(filterText && countMatches
+                ? { filterRoleCount: filterMatchCount(anchorRole as string, filterText) }
                 : {}),
-              ...(dataAttr
-                ? { dataAttr, dataAttrCount: count(`[${dataAttr.name}=${JSON.stringify(dataAttr.value)}]`) }
+              ...(dataAttr ? { dataAttr } : {}),
+              ...(dataAttr && countMatches
+                ? { dataAttrCount: count(`[${dataAttr.name}=${JSON.stringify(dataAttr.value)}]`) }
                 : {}),
             });
           }
@@ -397,18 +454,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
   }
 
   const hasLabel = !!(el.labels && el.labels.length > 0);
-  // Reading the label is best-effort like every other probe: a host whose
-  // `labels` is not indexable must cost this one field, not the whole capture.
-  let labelText: string | null | undefined;
-  if (includeLabelText) {
-    labelText = null;
-    try {
-      const label = hasLabel ? el.labels[0] : null;
-      labelText = ((label && label.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
-    } catch {
-      labelText = null;
-    }
-  }
+  const labelText = labelTextOf(el);
 
   return {
     tagName: el.tagName?.toLowerCase?.() ?? 'unknown',
@@ -421,7 +467,7 @@ export function probeElementAttrs(el: any, arg: ProbeArg): ProbedAttrs {
       y: Math.round(r.y + r.height / 2),
     },
     hasLabel,
-    ...(includeLabelText ? { labelText } : {}),
+    labelText,
     selectorCounts,
     ...(includeStructural ? { rolePosition, ancestors } : {}),
   };

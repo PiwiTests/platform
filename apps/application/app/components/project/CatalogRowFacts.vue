@@ -17,13 +17,16 @@ defineProps<{ tc: TestCaseWithStats }>();
       :passed="tc.passedRuns"
       :failed="tc.failedRuns"
       :skipped="tc.skippedRuns"
+      :fixme="tc.fixmeRuns ?? 0"
       :flaky="tc.flakyRuns"
       :did-not-run="tc.didNotRunRuns"
       :total="tc.totalRuns"
     />
   </div>
   <DurationValue v-if="tc.avgDuration != null" :ms="tc.avgDuration" class="tabular-nums" />
-  <span class="tabular-nums" :title="prettyDateFormat(tc.lastRun)">
-    {{ tc.lastRun != null ? formatRelativeTime(tc.lastRun) : '—' }}
-  </span>
+  <ClientOnly>
+    <span class="tabular-nums" :title="prettyDateFormat(tc.lastRun)">
+      {{ tc.lastRun != null ? formatRelativeTime(tc.lastRun) : '—' }}
+    </span>
+  </ClientOnly>
 </template>

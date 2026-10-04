@@ -11,6 +11,7 @@ import {
   type RawStoredRole,
 } from '../../utils/ai-settings';
 import { claudeCliEnabled } from '../../utils/ai-claude-cli';
+import { storedKeyFor } from '../../utils/ai-provider';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
 defineRouteMeta({
@@ -18,7 +19,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates the per-role AI configuration (diagnosis, research, embedding), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. Requires administrator role. Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored and only per-role model overrides (or clearing them with `roles: null`) are applied. The response always reflects the effective configuration.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. An `apiKey` or `scmToken` is encrypted at rest, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. Requires administrator role. Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
     'x-required-roles': ['administrator'],
   },
 });
@@ -155,8 +156,22 @@ export default eventHandler(async (event) => {
           message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model`,
         });
       }
+      // A stored key is kept only for the provider and base URL it was saved for;
+      // pointing the role elsewhere needs the key entered again.
+      const existing = existingRoles[role];
+      if (
+        provider !== 'claude-cli' &&
+        cfg.apiKey === undefined &&
+        existing?.apiKey &&
+        !storedKeyFor({ ...existing, apiKey: 'stored' }, provider, baseUrl)
+      ) {
+        throw apiError({
+          statusCode: 400,
+          message: `Role "${role}": enter the API key again. A saved key is only sent to the provider and base URL it was saved for.`,
+        });
+      }
       // claude-cli carries no key or base URL — the CLI owns auth and endpoint.
-      const apiKey = provider === 'claude-cli' ? undefined : resolveKey(cfg.apiKey, existingRoles[role]?.apiKey);
+      const apiKey = provider === 'claude-cli' ? undefined : resolveKey(cfg.apiKey, existing?.apiKey);
       out[role] = {
         provider,
         model,

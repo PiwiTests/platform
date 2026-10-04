@@ -2,21 +2,13 @@ import { getQuery, type H3Event } from 'h3';
 import { apiError } from './api-error';
 
 /**
- * Query-parameter parsing helpers with one consistent contract (D10 in
- * proposals/1.0-stabilization.md).
- *
- * Before 1.0 the ~15 query-parsing routes each rolled their own idiom
- * (`parseInt` with and without radix, `Number()`, zod coerce) with divergent
- * garbage-handling — some 400'd, some silently defaulted, one silently dropped a
- * filter. These helpers give every route the same **clamp-and-400** semantics:
+ * Query-parameter parsing helpers. Every route that uses them gets the same
+ * **clamp-and-400** semantics:
  *
  * - a value that is present but not the expected type is a 400 (never a silent
  *   default, never a dropped filter);
  * - an absent value falls back to the declared default (or `undefined`);
  * - integers are clamped into `[min, max]` when bounds are given.
- *
- * Accepting more spellings later stays additive; rejecting garbage is the part
- * that must land before the contract freezes.
  */
 
 function firstValue(raw: unknown): string | undefined {

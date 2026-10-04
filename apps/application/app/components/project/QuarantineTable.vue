@@ -4,7 +4,8 @@
  *
  * The streak column is the point of the view: a quarantined test still runs, so
  * it can earn its way out, and the table says when it has rather than waiting
- * to be asked.
+ * to be asked: after a streak of passes, or at once when a Flake Lab verify
+ * experiment proved the fix after the quarantine.
  */
 import { buildTestRowBadges } from '~/utils/test-row-badges';
 
@@ -29,7 +30,11 @@ interface QuarantineEntry {
   ageMs: number;
   consecutivePasses: number;
   releaseProposed: boolean;
+  releaseReason: 'streak' | 'verified-fix' | null;
+  verifiedFix: { commit: string | null; verifiedAt: string } | null;
   runsSinceQuarantine: number;
+  /** Someone dismissed the proposed release; the test stays until a person releases it. */
+  releaseDismissed: boolean;
 }
 
 interface Candidate {
@@ -39,6 +44,8 @@ interface Candidate {
   flakyScore: number;
   wastedCiMinutes: number;
   rationale: string;
+  /** Dismissed since the newest run. */
+  dismissed: boolean;
 }
 
 interface QuarantineResponse {
@@ -49,6 +56,7 @@ interface QuarantineResponse {
 }
 
 const toast = useToast();
+const { canWrite } = useAuth();
 const busy = ref<number | null>(null);
 
 const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
@@ -94,7 +102,7 @@ async function release(testCaseId: number) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-shot="quarantine-table">
     <SectionCard title="Quarantine" icon="i-lucide-shield-alert" :count="data?.debt.active" help="project.quarantine">
       <template #subtitle>
         A quarantined test keeps running and keeps reporting — it is excluded from the CI gate's verdict and nothing
@@ -138,7 +146,18 @@ async function release(testCaseId: number) {
             :project-name="projectName"
           >
             <template #metrics>
-              <UBadge v-if="entry.releaseProposed" color="success" variant="soft" size="xs">
+              <UBadge
+                v-if="entry.releaseReason === 'verified-fix'"
+                color="success"
+                variant="soft"
+                size="xs"
+                :title="`Flake Lab verified the fix ${formatRelativeTime(entry.verifiedFix!.verifiedAt)}`"
+                data-testid="quarantine-verified-fix"
+              >
+                Verified fixed{{ entry.verifiedFix?.commit ? ` on ${entry.verifiedFix.commit.slice(0, 7)}` : '' }} —
+                ready
+              </UBadge>
+              <UBadge v-else-if="entry.releaseProposed" color="success" variant="soft" size="xs">
                 {{ entry.consecutivePasses }} green — ready
               </UBadge>
               <span v-else-if="entry.runsSinceQuarantine === 0" class="text-xs">not run yet</span>
@@ -148,9 +167,23 @@ async function release(testCaseId: number) {
               <span class="tabular-nums" :title="`Quarantined ${formatAge(entry.ageMs)} ago`">
                 {{ formatAge(entry.ageMs) }}
               </span>
+              <span
+                v-if="entry.releaseProposed && entry.releaseDismissed"
+                class="text-xs"
+                data-testid="quarantine-release-dismissed"
+              >
+                release dismissed
+              </span>
+              <QuarantineDismissButton
+                v-else-if="entry.releaseProposed && canWrite"
+                :project-id="projectId"
+                :test-case-id="entry.testCaseId"
+                proposal="release"
+                @dismissed="refresh()"
+              />
               <UButton
                 size="xs"
-                :color="entry.releaseProposed ? 'primary' : 'neutral'"
+                :color="entry.releaseProposed && !entry.releaseDismissed ? 'primary' : 'neutral'"
                 variant="soft"
                 :loading="busy === entry.testCaseId"
                 @click="release(entry.testCaseId)"
@@ -189,6 +222,14 @@ async function release(testCaseId: number) {
                 <div class="text-xs text-muted">{{ candidate.rationale }}</div>
               </td>
               <td class="px-3 py-2 text-right whitespace-nowrap">
+                <span v-if="candidate.dismissed" class="text-xs text-muted mr-2">dismissed</span>
+                <QuarantineDismissButton
+                  v-else-if="canWrite"
+                  :project-id="projectId"
+                  :test-case-id="candidate.testCaseId"
+                  proposal="quarantine"
+                  @dismissed="refresh()"
+                />
                 <UButton
                   size="xs"
                   color="neutral"

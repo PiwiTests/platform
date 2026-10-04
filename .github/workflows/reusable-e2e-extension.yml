@@ -1,0 +1,48 @@
+name: Extension E2E
+
+# Drives the real built extension (dist/) with Chromium via --load-extension.
+# Heavier than the unit/lint checks of ci.yml's checks job (needs a build and a
+# real browser): ci.yml calls it on pull requests that change the extension or
+# the packages it bundles, and it runs on demand.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # Each shard runs whole files on one worker (see tests/e2e/playwright.config.ts);
+    # the longest, which holds replay.spec.ts, takes about 8 minutes.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      # Keep in step with the shard list above.
+      SHARD_TOTAL: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: full
+
+      - name: Run extension E2E
+        working-directory: apps/extension
+        run: npm run extension:test:e2e -- --shard=${{ matrix.shard }}/${{ env.SHARD_TOTAL }}
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: extension-e2e-report-${{ matrix.shard }}
+          path: apps/extension/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7

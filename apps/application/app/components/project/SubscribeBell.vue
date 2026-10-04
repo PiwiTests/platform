@@ -1,8 +1,19 @@
 <script setup lang="ts">
-import type { NotificationEvent } from '#shared/notification-events';
-import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import type { NotificationEvent, SubscriptionFilters } from '#shared/notification-events';
+import {
+  NOTIFICATION_EVENTS,
+  describeSubscriptionFilters,
+  notificationEventLabel as eventLabel,
+} from '#shared/notification-events';
 
-const props = defineProps<{ projectId: number; projectLabel?: string }>();
+const props = defineProps<{
+  projectId: number;
+  projectLabel?: string;
+  /** Branch names the project's runs reported, offered by the branch filter. */
+  knownBranches?: string[];
+  /** Environment names the project's runs reported, offered by the environment filter. */
+  knownEnvironments?: string[];
+}>();
 
 const config = useRuntimeConfig();
 const isDemoMode = config.public.demoMode;
@@ -47,10 +58,26 @@ interface Subscription {
   id: number;
   userId?: number | null;
   events: string[];
+  filters: SubscriptionFilters | null;
   mode: string;
   mutedUntil: string | null;
   active: boolean;
   channel: { id: number; name: string; type: string };
+}
+
+/** `filters` with its branch and environment lists replaced; null when nothing is left to filter on. */
+function withRunScope(
+  filters: SubscriptionFilters | null,
+  branches: string[],
+  environments: string[],
+): SubscriptionFilters | null {
+  const { branches: _branches, environments: _environments, ...rest } = filters ?? {};
+  const next: SubscriptionFilters = {
+    ...rest,
+    ...(branches.length ? { branches } : {}),
+    ...(environments.length ? { environments } : {}),
+  };
+  return Object.keys(next).length ? next : null;
 }
 
 // Channels/subscriptions are reachable in demo mode, without auth (instance-wide
@@ -85,7 +112,9 @@ const channels = computed(() => channelsData.value?.items ?? []);
 // ── New subscription form ─────────────────────────────────────────────────────
 const showForm = ref(false);
 const selectedChannelId = ref<number | undefined>(undefined);
-const selectedEvents = ref<string[]>(['run.failed']);
+const selectedEvents = ref<string[]>(['run.failed', 'environment.incident']);
+const selectedBranches = ref<string[]>([]);
+const selectedEnvironments = ref<string[]>([]);
 const subscribeGlobal = ref(false);
 const subscribing = ref(false);
 
@@ -104,12 +133,16 @@ function canManageSub(sub: Subscription) {
 const editingSub = ref<Subscription | null>(null);
 const editChannelId = ref<number | undefined>(undefined);
 const editEvents = ref<string[]>([]);
+const editBranches = ref<string[]>([]);
+const editEnvironments = ref<string[]>([]);
 const savingEdit = ref(false);
 
 function startEdit(sub: Subscription) {
   editingSub.value = sub;
   editChannelId.value = sub.channel.id;
   editEvents.value = [...sub.events];
+  editBranches.value = [...(sub.filters?.branches ?? [])];
+  editEnvironments.value = [...(sub.filters?.environments ?? [])];
 }
 
 function cancelEdit() {
@@ -122,7 +155,11 @@ async function saveEdit() {
   try {
     await $fetch(`/api/subscriptions/${editingSub.value.id}`, {
       method: 'PATCH',
-      body: { channelId: editChannelId.value, events: editEvents.value as NotificationEvent[] },
+      body: {
+        channelId: editChannelId.value,
+        events: editEvents.value as NotificationEvent[],
+        filters: withRunScope(editingSub.value.filters, editBranches.value, editEnvironments.value),
+      },
     });
     await refreshSubs();
     editingSub.value = null;
@@ -141,7 +178,7 @@ const channelItems = computed(() =>
 );
 
 const eventItems = NOTIFICATION_EVENTS.map((e) => ({
-  label: e === 'auto_heal.pr_opened' ? 'Auto-heal › PR opened' : e.replace(/\./g, ' › '),
+  label: eventLabel(e),
   value: e,
 }));
 
@@ -157,23 +194,31 @@ watch(open, (val) => {
   }
 });
 
+watch(showForm, (shown) => {
+  if (shown) return;
+  selectedBranches.value = [];
+  selectedEnvironments.value = [];
+  subscribeGlobal.value = false;
+});
+
 async function subscribe() {
   if (!selectedChannelId.value || selectedEvents.value.length === 0) return;
   subscribing.value = true;
   try {
+    const filters = withRunScope(null, selectedBranches.value, selectedEnvironments.value);
     await $fetch('/api/subscriptions', {
       method: 'POST',
       body: {
         channelId: selectedChannelId.value,
         projectId: props.projectId,
         events: selectedEvents.value,
+        ...(filters ? { filters } : {}),
         mode: 'realtime',
         ...(canSubscribeGlobal.value && subscribeGlobal.value ? { global: true } : {}),
       },
     });
     await refreshSubs();
     showForm.value = false;
-    subscribeGlobal.value = false;
     toast.add({ title: 'Subscribed', color: 'success' });
     if (isDemoMode) {
       demoNotifications?.scheduleFor(props.projectId, props.projectLabel || 'this project', selectedEvents.value);
@@ -215,6 +260,10 @@ function isMuted(sub: Subscription) {
   return sub.mutedUntil && new Date(sub.mutedUntil) > new Date();
 }
 
+function filterSummary(sub: Subscription) {
+  return describeSubscriptionFilters(sub.filters).join(' · ');
+}
+
 function channelIcon(type: string) {
   if (type === 'personal_email') return 'i-lucide-user-round';
   if (type === 'email') return 'i-lucide-mail';
@@ -229,7 +278,7 @@ const bellSubscribed = computed(() =>
 </script>
 
 <template>
-  <UPopover v-if="showComponent" v-model:open="open" :ui="{ content: 'w-72' }">
+  <UPopover v-if="showComponent" v-model:open="open" :ui="{ content: 'w-80' }">
     <UButton
       :icon="bellSubscribed ? 'i-lucide-bell-ring' : 'i-lucide-bell'"
       size="sm"
@@ -336,6 +385,12 @@ const bellSubscribed = computed(() =>
                   </label>
                 </div>
               </UFormField>
+              <SubscriptionScopeFields
+                v-model:branches="editBranches"
+                v-model:environments="editEnvironments"
+                :known-branches="knownBranches"
+                :known-environments="knownEnvironments"
+              />
               <div class="flex gap-1.5 justify-end">
                 <UButton size="xs" color="neutral" variant="ghost" @click="cancelEdit">Cancel</UButton>
                 <UButton
@@ -357,9 +412,19 @@ const bellSubscribed = computed(() =>
               :class="isMuted(sub) ? 'opacity-60' : ''"
             >
               <UIcon :name="channelIcon(sub.channel.type)" class="size-3.5 text-muted shrink-0" />
-              <span class="flex-1 font-medium truncate">
-                {{ sub.channel.name }}
-                <span v-if="sub.userId === null && authEnabled" class="text-primary">(global)</span>
+              <span class="flex-1 min-w-0">
+                <span class="block font-medium truncate">
+                  {{ sub.channel.name }}
+                  <span v-if="sub.userId === null && authEnabled" class="text-primary">(global)</span>
+                </span>
+                <span
+                  v-if="filterSummary(sub)"
+                  class="block text-muted truncate"
+                  :title="filterSummary(sub)"
+                  data-testid="subscription-filters"
+                >
+                  {{ filterSummary(sub) }}
+                </span>
               </span>
               <template v-if="canManageSub(sub)">
                 <UButton
@@ -418,6 +483,12 @@ const bellSubscribed = computed(() =>
               </label>
             </div>
           </UFormField>
+          <SubscriptionScopeFields
+            v-model:branches="selectedBranches"
+            v-model:environments="selectedEnvironments"
+            :known-branches="knownBranches"
+            :known-environments="knownEnvironments"
+          />
           <label
             v-if="canSubscribeGlobal"
             class="flex items-center gap-1.5 text-xs cursor-pointer"

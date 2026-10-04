@@ -1,4 +1,5 @@
 import { isPiwiAnnotation, TEST_PRIORITIES, type TestMetadata } from '@piwitests/core/test-meta';
+import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import type { TestCaseResult } from '~~/types/api';
 
 /**
@@ -9,7 +10,7 @@ import type { TestCaseResult } from '~~/types/api';
 export interface TestRowBadge {
   key: string;
   label: string;
-  color: 'error' | 'warning' | 'info' | 'success' | 'neutral' | 'primary';
+  color: 'error' | 'warning' | 'info' | 'success' | 'neutral' | 'primary' | 'flaky';
   variant: 'solid' | 'subtle' | 'soft' | 'outline';
   icon?: string;
   title?: string;
@@ -54,6 +55,8 @@ export interface TestRowBadgeInput {
   passedOnRetry?: boolean | null;
   /** This test is currently quarantined. */
   quarantined?: boolean | null;
+  /** A `test.fail()` test that passed: the bug it reproduces looks fixed. */
+  looksFixed?: boolean | null;
   annotations?: Array<{ type: string; description?: string }> | null;
   tags?: string[] | null;
   /** Lock names this test held — a shared resource the runner serializes holders of. */
@@ -70,6 +73,16 @@ export interface TestRowBadgeInput {
 export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
   const badges: TestRowBadge[] = [];
 
+  if (input.looksFixed) {
+    badges.push({
+      key: 'looks-fixed',
+      label: 'Looks fixed',
+      color: 'success',
+      variant: 'subtle',
+      icon: 'i-lucide-bug-off',
+      title: 'Marked test.fail() and passed: remove test.fail() with the fix',
+    });
+  }
   if (input.isNewRegression) {
     badges.push({
       key: 'new-regression',
@@ -77,14 +90,14 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
       color: 'error',
       variant: 'solid',
       icon: 'i-lucide-flame',
-      title: 'First run in which this test failed',
+      title: 'Failing here, passing in the baseline run',
     });
   }
   if (input.isNewFlaky) {
     badges.push({
       key: 'newly-flaky',
       label: 'Newly flaky',
-      color: 'info',
+      color: 'flaky',
       variant: 'solid',
       icon: 'i-lucide-shuffle',
       title: 'First run in which this test was flaky',
@@ -94,7 +107,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
     badges.push({
       key: 'passed-on-retry',
       label: 'Passed on retry',
-      color: 'warning',
+      color: 'flaky',
       variant: 'subtle',
       icon: 'i-lucide-rotate-cw',
       title: 'Failed at least once in this run, then passed',
@@ -167,6 +180,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
 /** Whether a badge is one of the exceptional signals (shown even when others hide). */
 export function badgesFromTestCase(tc: TestCaseResult, opts?: { quarantined?: boolean }): TestRowBadge[] {
   return buildTestRowBadges({
+    looksFixed: isExpectedFailurePassed(tc.status, tc.expectedStatus),
     isNewRegression: tc.isNewRegression,
     isNewFlaky: tc.isNewFlaky,
     passedOnRetry: tc.status === 'passed' && (tc.retries ?? 0) > 0,

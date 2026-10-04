@@ -1,4 +1,14 @@
-import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
+import { initI18n, t, tn, tNodes, uiLanguage } from '../shared/i18n.js';
+import {
+  bindToTool,
+  endTool,
+  installEscapeToCancel,
+  isToolActive,
+  startTool,
+  teardownToolSurfaces,
+  toolIsCurrent,
+  waitForGlobal,
+} from '../shared/tool-session.js';
 import {
   installPickerOverlay,
   removePickerOverlay,
@@ -7,6 +17,10 @@ import {
   type PickerOverlayArg,
 } from '@piwitests/picker-dom';
 import { suggestAssertions, type AssertionSuggestion } from './assertion-suggest.js';
+import { attachPanelShadow } from './panel-root.js';
+import { pickerOverlayStrings } from './picker-strings.js';
+import { holdFocus } from './modal-panel.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const HOST_ID = 'piwi-assertion-panel-host';
 
@@ -16,42 +30,14 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-/** Poll for a global the picker overlay sets, mirroring `pick.ts`'s own helper — the assertion suggester only ever needs the element-pick step, never the anchors step (it suggests assertions against the top-ranked locator, not a refined one). */
-function waitForGlobal<T>(key: string): Promise<T> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const value = (globalThis as any)[key];
-      if (value !== undefined) {
-        resolve(value as T);
-        return;
-      }
-      setTimeout(check, 120);
-    };
-    check();
-  });
-}
-
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = 'Copied';
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<void> {
+async function renderAssertionPanel(suggestion: AssertionSuggestion, toolEpoch: number): Promise<void> {
   document.getElementById(HOST_ID)?.remove();
 
   const host = document.createElement('div');
   host.id = HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
   document.documentElement.appendChild(host);
-  const root = host.attachShadow({ mode: 'closed' });
+  const root = attachPanelShadow(host, { mode: 'closed' });
 
   // Exposed for assertion-suggest.spec.ts: suggestAssertions calls
   // @piwitests/core's generateAlternatives, which has its own private
@@ -78,15 +64,16 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
     @media (prefers-color-scheme: light) {
       .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
     }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .title { font-weight: 600; font-size: 14px; }
-    .sub { color: #9ca3af; font-size: 12px; word-break: break-all; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .header > div { min-width: 0; }
+    .title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; hyphens: auto; }
+    .sub { color: #9ca3af; font-size: 12px; overflow-wrap: anywhere; }
     .close {
       background: none; border: none; color: inherit; opacity: .7; cursor: pointer; font-size: 18px;
       line-height: 1; padding: 4px 8px; border-radius: 6px;
     }
     .close:hover, .close:focus-visible { opacity: 1; background: rgba(128,128,128,.15); }
-    .empty { color: #9ca3af; font-size: 12.5px; }
+    .empty { color: #9ca3af; font-size: 12.5px; overflow-wrap: anywhere; }
     .row { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
     .method { color: #c4b5fd; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
@@ -109,7 +96,8 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   const panel = document.createElement('div');
   panel.className = 'panel';
   panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Piwi assertion suggestions');
+  panel.lang = uiLanguage();
+  panel.setAttribute('aria-label', t('assert_dialog'));
   panel.tabIndex = -1;
 
   const header = document.createElement('div');
@@ -118,18 +106,19 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   const title = document.createElement('div');
   title.className = 'title';
   title.textContent =
-    suggestion.candidates.length === 0
-      ? 'No assertions suggested'
-      : `${suggestion.candidates.length} suggested assertion${suggestion.candidates.length === 1 ? '' : 's'}`;
+    suggestion.candidates.length === 0 ? t('assert_none') : tn('assert_count', suggestion.candidates.length);
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.innerHTML = suggestion.locator
-    ? `against <span class="piwi-loc">${highlightLocator(suggestion.locator)}</span>`
-    : '';
+  if (suggestion.locator) {
+    const locator = document.createElement('span');
+    locator.className = 'piwi-loc';
+    locator.innerHTML = highlightLocator(suggestion.locator);
+    sub.append(...tNodes('assert_locator', { locator }));
+  }
   titleWrap.append(title, sub);
   const closeBtn = document.createElement('button');
   closeBtn.className = 'close';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('common_close'));
   closeBtn.textContent = '×';
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
@@ -137,19 +126,12 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
   if (suggestion.candidates.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = 'No locator could be generated for this element, so no assertion could be suggested.';
+    empty.textContent = t('assert_noLocator');
     panel.appendChild(empty);
   }
 
   return new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      document.removeEventListener('keydown', onKeyDown, true);
-      host.remove();
-      resolve();
-    };
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -158,6 +140,12 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
+    const finish = bindToTool(toolEpoch, () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      host.remove();
+      releaseFocus();
+      resolve();
+    });
     closeBtn.addEventListener('click', finish);
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
@@ -174,8 +162,8 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
       const btn = document.createElement('button');
       btn.className = 'copy';
       btn.type = 'button';
-      btn.textContent = 'Copy';
-      btn.addEventListener('click', () => void copyToClipboard(candidate.expectLine, btn));
+      btn.textContent = t('common_copy');
+      btn.addEventListener('click', () => void copyWithFeedback(candidate.expectLine, btn));
       top.append(method, btn);
       row.appendChild(top);
 
@@ -196,40 +184,43 @@ async function renderAssertionPanel(suggestion: AssertionSuggestion): Promise<vo
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
   });
 }
 
 /**
- * Runs the assertion-suggester flow (C2): pick a single element or region,
+ * Runs the assertion-suggester flow: pick a single element or region,
  * then suggest ranked `expect(...)` candidates against its top-ranked
- * locator. Reuses the same single-pick mechanism as `pick.ts` (sharing its
- * `__piwiPicking` re-entrancy guard, since both drive the same underlying
- * overlay) but skips the anchors step — this is about assertions, not
- * refining the locator itself.
+ * locator. Reuses the same single-pick mechanism as `pick.ts` but skips the
+ * anchors step — this is about assertions, not refining the locator itself
+ * (it suggests assertions against the top-ranked locator, not a refined one).
+ * Injected again while it runs, it leaves the running one be; any other tool,
+ * a pick included, gives way to it.
  */
 async function runAssertionSuggester(): Promise<void> {
   const g = globalThis as any;
-  if (g.__piwiPicking) return;
-  g.__piwiPicking = true;
+  if (isToolActive('assertion-panel')) return;
   const toolEpoch = startTool('assertion-panel', teardownToolSurfaces);
   installEscapeToCancel();
   try {
+    // The overlay and the panel speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     clearPickGlobals();
-    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
+    const overlayArg: PickerOverlayArg = { transport: 'global', failing: null, strings: pickerOverlayStrings() };
     installPickerOverlay(overlayArg);
-    const state = await waitForGlobal<string>('__piwiPickState');
-    if (state !== 'picked') return;
+    const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
+    if (state !== 'picked' || !toolIsCurrent(toolEpoch)) return;
     // Done with the picking overlay — otherwise it stays up behind this
     // tool's own panel, still reading "Analyzing element…".
     removePickerOverlay();
 
     const el = g.__piwiPickedElement as Element;
     const suggestion = suggestAssertions(el);
-    await renderAssertionPanel(suggestion);
+    await renderAssertionPanel(suggestion, toolEpoch);
   } finally {
-    clearPickGlobals();
-    g.__piwiPicking = false;
+    // A flow another tool took over from leaves the pick globals to that tool.
+    if (toolIsCurrent(toolEpoch)) clearPickGlobals();
     endTool(toolEpoch);
   }
 }

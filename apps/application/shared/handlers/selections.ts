@@ -12,6 +12,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases, testSelections } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
+import { eligibleExecutionSql } from '../run-eligibility';
 import {
   BUILTIN_SELECTIONS,
   getBuiltinSelection,
@@ -58,7 +59,11 @@ export interface CatalogRow {
 
 // ── Catalog loading ──────────────────────────────────────────────────────────
 
-/** Load every test in a project with the per-case aggregates a selection reads. */
+/**
+ * Load every test in a project with the per-case aggregates a selection reads.
+ * Only executions of runs the `selection-catalog` use reads count: lab runs,
+ * bisect steps and reproductions stay out of every aggregate.
+ */
 export async function loadSelectionCatalog(
   db: DrizzleDB,
   projectId: number,
@@ -70,7 +75,7 @@ export async function loadSelectionCatalog(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
         FROM ${testRunsCases}
-        WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
@@ -78,14 +83,14 @@ export async function loadSelectionCatalog(
   const lastStatus = sql<string | null>`(
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
-      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
   const lastLine = sql<number | null>`(
       SELECT ${testRunsCases.line}
       FROM ${testRunsCases}
-      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
@@ -114,7 +119,13 @@ export async function loadSelectionCatalog(
       lastLine,
     })
     .from(testCases)
-    .leftJoin(testRunsCases, eq(testCases.id, testRunsCases.testCaseId))
+    .leftJoin(
+      testRunsCases,
+      and(
+        eq(testCases.id, testRunsCases.testCaseId),
+        eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
+      ),
+    )
     .where(eq(testCases.projectId, projectId))
     .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title);
 
@@ -163,7 +174,9 @@ async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Ma
       })
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(eq(testCases.projectId, projectId)),
+      .where(
+        and(eq(testCases.projectId, projectId), eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)),
+      ),
   );
 
   const rows: any[] = await db

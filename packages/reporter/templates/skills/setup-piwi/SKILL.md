@@ -47,7 +47,7 @@ change it to import from the fixtures file instead, e.g. `import { test, expect 
 
 ## Authentication
 
-If the dashboard has auth enabled, runs need an API key. Have the user create one in the dashboard (**Settings → Users → API keys**; keys start with `pd_`), then put it in `.env` as `PIWI_API_KEY=pd_...` and make sure `.env` is git-ignored. Never hardcode a key into `playwright.config.ts` or commit it. In CI, pass it as a secret (`PIWI_API_KEY`).
+If the dashboard has auth enabled, runs need an API key. Have the user create one in the dashboard (**Settings → Account → API keys**; keys start with `pd_`), then put it in `.env` as `PIWI_API_KEY=pd_...` and make sure `.env` is git-ignored. Never hardcode a key into `playwright.config.ts` or commit it. In CI, pass it as a secret (`PIWI_API_KEY`).
 
 ## Verify it worked
 

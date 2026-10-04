@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  clusterOutcome,
   renderEventSubject,
   notificationTargetPath,
   buildNotificationDedupeKey,
@@ -60,6 +61,20 @@ describe('renderEventSubject', () => {
     expect(renderEventSubject('cluster.regressed', { ...base, fixLandedRunId: 7 })).toBe('Fix regressed — my-project');
   });
 
+  test('clusterOutcome names the triage change a verdict made, when it made one', () => {
+    const base = { clusterId: 5, projectId: 2, projectName: 'my-project', signature: 'sig', runId: 9 };
+    const fixed = { ...base, verification: 'stopped-failing' as const };
+    expect(clusterOutcome('cluster.fixed', fixed)).toEqual({ headline: 'Cluster stopped failing', triageNote: null });
+    expect(clusterOutcome('cluster.fixed', { ...fixed, resolved: true }).triageNote).toBe(
+      'Triage status set to resolved.',
+    );
+    const regressed = { ...base, fixLandedRunId: 7 };
+    expect(clusterOutcome('cluster.regressed', regressed)).toEqual({ headline: 'Fix regressed', triageNote: null });
+    expect(clusterOutcome('cluster.regressed', { ...regressed, reopened: true }).triageNote).toBe(
+      'Triage status set back to open.',
+    );
+  });
+
   test('cluster.fixed and cluster.regressed link to the cluster and dedupe per cluster and run', () => {
     const base = { clusterId: 5, projectId: 2, projectName: 'my-project', signature: 'sig', runId: 9 };
     const fixed = { ...base, verification: 'stopped-failing' as const };
@@ -77,6 +92,15 @@ describe('renderEventSubject', () => {
   test('flakiness.spike and perf.regression produce distinct subjects', () => {
     expect(renderEventSubject('flakiness.spike', runPayload)).toBe('Flakiness spike — my-project');
     expect(renderEventSubject('perf.regression', runPayload)).toBe('Performance regression — my-project');
+  });
+
+  test('bug.looks_fixed names the bug when one test names one', () => {
+    const base = { projectId: 1, projectName: 'shop', runId: 3 };
+    const one = { title: 't', filePath: 'a.spec.ts', executionId: 1, testCaseId: 1, bugId: 37 };
+    expect(renderEventSubject('bug.looks_fixed', { ...base, tests: [one] })).toBe('Bug #37 looks fixed — shop');
+    expect(renderEventSubject('bug.looks_fixed', { ...base, tests: [one, { ...one, bugId: undefined }] })).toBe(
+      '2 bugs look fixed — shop',
+    );
   });
 
   test('auto_heal.pr_opened names the PR number and project', () => {

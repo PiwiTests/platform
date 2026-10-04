@@ -19,6 +19,10 @@ import type { Database as SqlJsDatabase, SqlJsStatic } from 'sql.js';
 import * as initSqlJsLib from 'sql.js';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
 import * as schema from '~~/server/database/schema.sqlite';
+import { backfillUnindexedProjects } from '~~/server/utils/locator-usages';
+import { getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
+import { backfillDailyRollups, ROLLUPS_BACKFILLED_SETTING } from '#shared/handlers/analytics/rollups';
+import { seedDemoReports } from './report-seed';
 
 const initSqlJs = initSqlJsLib.default || initSqlJsLib;
 
@@ -290,6 +294,25 @@ async function initialize(): Promise<void> {
     },
     { schema },
   );
+
+  // The server builds each project's locator index from its stored runs at
+  // startup; the demo does the same when its database opens. Projects already
+  // built are marked, so a reopened database skips them.
+  await backfillUnindexedProjects(drizzleDb).catch((e) =>
+    console.warn('[Demo DB] could not build the locator index', e),
+  );
+
+  // Daily rollups of the seeded runs, computed once, as the server's startup
+  // backfill does.
+  await (async () => {
+    if (await getAppSetting(drizzleDb as any, ROLLUPS_BACKFILLED_SETTING)) return;
+    await backfillDailyRollups(drizzleDb as any);
+    await setAppSetting(drizzleDb as any, ROLLUPS_BACKFILLED_SETTING, new Date().toISOString());
+  })()
+    .catch((e) => console.warn('[Demo DB] could not compute the daily rollups', e))
+    // The seeded report schedule and snapshots are rendered from the rollups, so they come after.
+    .then(() => seedDemoReports(drizzleDb as any))
+    .catch((e) => console.warn('[Demo DB] could not seed the report snapshots', e));
 }
 
 /**
@@ -325,10 +348,6 @@ export async function getStoredDemoVersion(): Promise<string | null> {
 }
 
 /**
- * Wipes the persisted database from IndexedDB so the next call to
- * getDemoDb() re-seeds from the original seed.sql.
- */
-/**
  * Store the bytes of a file an import brought in, under the same storage path
  * the run's `files` rows point at, so serving it is a straight lookup.
  */
@@ -348,6 +367,10 @@ export async function getDemoImportedFile(path: string): Promise<Uint8Array | nu
   return null;
 }
 
+/**
+ * Wipes the persisted database from IndexedDB so the next call to
+ * getDemoDb() re-seeds from the original seed.sql.
+ */
 export async function resetDemoDb(): Promise<void> {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = null;

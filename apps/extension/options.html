@@ -2,11 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Piwi Picker — Options</title>
+    <title data-i18n="options_title">Piwi Picker settings</title>
     <style>
       :root {
         color-scheme: light dark;
-        --bg: #ffffff;
+        --bg: #f6f7f9;
+        --card: #ffffff;
         --surface: #f9fafb;
         --fg: #111827;
         --muted: #6b7280;
@@ -17,11 +18,14 @@
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #111827;
+          --bg: #0b1220;
+          --card: #111827;
           --surface: #1f2937;
           --fg: #f9fafb;
           --muted: #9ca3af;
           --border: #374151;
+          --success: #4ade80;
+          --error: #f87171;
         }
       }
       * {
@@ -38,46 +42,94 @@
           sans-serif;
       }
       .page {
-        max-width: 560px;
+        max-width: 820px;
         margin: 0 auto;
-        padding: 32px 20px;
+        padding: 28px 20px 40px;
       }
       header {
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 8px;
+        margin-bottom: 18px;
         font-weight: 600;
-        font-size: 16px;
+        font-size: 18px;
       }
       header img {
         border-radius: 6px;
       }
+      /* Each setting is a card with its own actions and its own status line. */
+      .card {
+        margin-top: 16px;
+        padding: 18px 20px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--card);
+      }
+      .card-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 4px;
+      }
+      .card-head h2 {
+        flex: 1;
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .pill {
+        flex-shrink: 0;
+        font-size: 11.5px;
+        font-weight: 500;
+        padding: 2px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .pill.on {
+        color: var(--success);
+        border-color: color-mix(in srgb, var(--success) 45%, transparent);
+        background: color-mix(in srgb, var(--success) 10%, transparent);
+      }
+      .pill[hidden] {
+        display: none;
+      }
       p.lead {
         color: var(--muted);
         font-size: 13px;
-        margin-top: 0;
-        margin-bottom: 20px;
+        margin: 0 0 14px;
       }
-      section {
-        margin-top: 24px;
+      .card-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 14px;
       }
-      section > h2 {
+      /* Collapsed while it has nothing to say and no action to offer. */
+      .card-foot:has(> [role='status']:empty):not(:has(> button:not([hidden]))) {
+        display: none;
+      }
+      .subhead {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 18px 0 6px;
+      }
+      .subhead h3 {
+        flex: 1;
+        margin: 0;
         font-size: 13px;
         font-weight: 600;
-        margin: 0 0 4px;
-      }
-      section > p.hint {
-        margin: 0 0 10px;
       }
       label {
         display: block;
         font-size: 12.5px;
         font-weight: 600;
-        margin-bottom: 4px;
-        margin-top: 16px;
+        margin: 14px 0 4px;
       }
-      label:first-of-type {
+      .card-head + label,
+      p.lead + label {
         margin-top: 0;
       }
       .hint {
@@ -85,41 +137,60 @@
         font-size: 11.5px;
         margin-top: 4px;
       }
+      p.hint {
+        margin: 0 0 8px;
+      }
       input,
       select {
         font: inherit;
-        padding: 8px 10px;
+        padding: 7px 10px;
         border-radius: 8px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: inherit;
-      }
-      input,
-      select:not(.mapping-project) {
         width: 100%;
+        min-width: 0;
       }
       input:focus-visible,
-      select:focus-visible {
+      select:focus-visible,
+      button:focus-visible,
+      summary:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 1px;
       }
+      input[aria-invalid] {
+        border-color: var(--error);
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+      }
       .row {
         display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         gap: 8px;
-        margin-top: 18px;
+        margin-top: 12px;
+      }
+      .row .spacer {
+        flex: 1;
       }
       button {
         font: inherit;
-        padding: 9px 14px;
+        padding: 8px 14px;
         border-radius: 8px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: inherit;
         cursor: pointer;
+        white-space: nowrap;
       }
-      button:hover,
-      button:focus-visible {
+      button:hover {
         border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
       }
       button.primary {
         background: var(--accent);
@@ -130,33 +201,59 @@
         color: var(--error);
       }
       button.small {
-        padding: 6px 10px;
+        padding: 5px 10px;
         font-size: 12.5px;
+      }
+      button[hidden] {
+        display: none;
+      }
+      .inline {
+        display: flex;
+        gap: 8px;
+      }
+      .inline input {
+        flex: 1 1 auto;
+      }
+      .inline button {
+        flex-shrink: 0;
+      }
+      /* The lines kept in this browser: a table with a header, one line per pattern. */
+      .mapping-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+        gap: 6px;
+        align-items: center;
+      }
+      .mapping-head {
+        margin-bottom: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .mapping-head[hidden] {
+        display: none;
       }
       #mappings {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-      }
-      .mapping-row {
-        display: flex;
         gap: 6px;
-        align-items: center;
-        flex-wrap: wrap;
       }
-      .mapping-row input.mapping-pattern {
-        flex: 1 1 220px;
-        min-width: 0;
+      .mapping-row input,
+      .mapping-row select {
+        padding: 6px 8px;
+      }
+      .mapping-row .mapping-pattern,
+      .mapping-row .mapping-branch {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 12.5px;
+        font-size: 12px;
       }
-      .mapping-row select.mapping-project {
-        flex: 1 1 160px;
-        min-width: 0;
+      /* The column header names each field; the placeholder only says what empty means, in the narrower type. */
+      .mapping-row input::placeholder,
+      .add-fields input::placeholder {
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
       }
       .mapping-row button.remove-mapping {
-        flex-shrink: 0;
-        padding: 6px 10px;
+        padding: 4px 9px;
         opacity: 0.7;
       }
       .mapping-row button.remove-mapping:hover {
@@ -167,74 +264,375 @@
       .empty-mappings {
         color: var(--muted);
         font-size: 12.5px;
-        padding: 10px 0;
+        padding: 6px 0;
       }
-      #status {
-        margin-top: 14px;
+      .empty-mappings[hidden],
+      #sites-body[hidden] {
+        display: none;
+      }
+      .server-row {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        flex-wrap: wrap;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border);
         font-size: 12.5px;
-        min-height: 16px;
       }
-      #status.ok {
+      .server-row:last-child {
+        border-bottom: none;
+      }
+      .server-row .pattern {
+        flex: 1 1 220px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .server-row .meta {
+        color: var(--muted);
+      }
+      .source {
+        flex-shrink: 0;
+        font-size: 11px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      [role='status'] {
+        font-size: 12.5px;
+        min-height: 0;
+      }
+      [role='status'].ok {
         color: var(--success);
       }
-      #status.error {
+      [role='status'].error {
         color: var(--error);
       }
+      .panel {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+      .panel[hidden] {
+        display: none;
+      }
+      .code-panel {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .code-panel[hidden] {
+        display: none;
+      }
+      .code-panel code {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+      }
+      .connected {
+        margin-top: 10px;
+        color: var(--success);
+        font-size: 12.5px;
+      }
+      .connected[hidden] {
+        display: none;
+      }
+      details {
+        margin-top: 14px;
+      }
+      details > summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      details[open] > summary {
+        margin-bottom: 8px;
+      }
+      details.panel > summary {
+        color: inherit;
+        font-weight: 600;
+      }
+      .add-fields {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+        gap: 6px;
+      }
+      .add-fields .wide {
+        grid-column: 1 / -1;
+      }
+      .add-fields.four {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 6px;
+      }
       .privacy {
-        margin-top: 28px;
-        padding-top: 18px;
-        border-top: 1px solid var(--border);
+        margin-top: 22px;
         color: var(--muted);
         font-size: 12px;
+      }
+      @media (max-width: 640px) {
+        .mapping-grid,
+        .add-fields.four {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+        .mapping-head {
+          display: none;
+        }
       }
     </style>
   </head>
   <body>
     <div class="page">
       <header>
-        <img src="icons/icon-32.png" width="20" height="20" alt="" /><span>Piwi Picker — Connect to Piwi</span>
+        <img src="icons/icon-32.png" width="24" height="24" alt="" /><span data-i18n="options_title"
+          >Piwi Picker settings</span
+        >
       </header>
-      <p class="lead">
-        Optional. Connecting lets the recorder match your recording against your projects' own page-object methods and
-        helpers, and rank them live as you record. Nothing here is required for picking locators or recording a plain
-        TypeScript spec — that always works standalone.
-      </p>
 
-      <label for="instance-url">Piwi instance URL</label>
-      <input id="instance-url" type="url" placeholder="https://piwi.example.com" autocomplete="off" />
+      <section class="card" id="language-card">
+        <label for="language" data-i18n="options_language">Language</label>
+        <select id="language"></select>
+        <div class="hint" data-i18n="options_languageHint">
+          The language of Piwi Picker’s own texts. Page texts, locators and the tests it writes stay as they are.
+        </div>
+        <div class="hint draft-note" id="language-draft" hidden></div>
+        <div class="card-foot"><div id="language-status" role="status"></div></div>
+      </section>
 
-      <label for="api-key">API key</label>
-      <input id="api-key" type="password" placeholder="pd_…" autocomplete="off" />
-      <div class="hint">Generated from your account's API key settings in the Piwi dashboard.</div>
-
-      <div class="row">
-        <button id="test-connection" type="button">Test connection</button>
-      </div>
-
-      <section>
-        <h2>Project mappings</h2>
-        <p class="hint">
-          Which project applies on which site — one instance can serve more than one. Checked in order; the first
-          matching pattern wins. Same wildcard syntax as a test function's own URL pattern: <code>*</code> matches
-          within a path segment, <code>**</code> matches across segments.
+      <section class="card" id="instance-card" aria-labelledby="instance-heading">
+        <div class="card-head">
+          <h2 id="instance-heading" data-i18n="options_connectHeading">Connect to Piwi</h2>
+          <span id="instance-pill" class="pill" data-i18n="options_stateNotConnected">Not connected</span>
+        </div>
+        <p class="lead" data-i18n="options_lead">
+          Optional. Connected to your Piwi instance, the recorder uses your projects’ own page objects and helper
+          functions, and ranks them live as you record. Picking locators and recording a plain test always work without
+          it.
         </p>
-        <div id="mappings"></div>
-        <div class="row" style="margin-top: 10px">
-          <button id="add-mapping" type="button" class="small">+ Add mapping</button>
+
+        <label for="instance-url" data-i18n="options_instanceUrl">Address of your Piwi instance</label>
+        <div class="inline">
+          <input
+            id="instance-url"
+            type="url"
+            placeholder="https://piwi.example.com"
+            data-i18n-placeholder="options_instanceUrlPlaceholder"
+            autocomplete="off"
+          />
+          <button id="connect" class="primary" type="button" data-i18n="options_connect">Connect</button>
+        </div>
+        <div class="hint" data-i18n="options_connectHint">
+          Opens your instance in a new tab, where you allow Piwi Picker; it then receives its own API key.
+        </div>
+
+        <div id="connect-panel" class="panel code-panel" hidden>
+          <div id="connect-code-line"></div>
+          <button id="connect-cancel" type="button" class="small" data-i18n="options_connectCancel">Cancel</button>
+        </div>
+        <div id="connected-as" class="connected" hidden></div>
+
+        <details id="api-key-fallback">
+          <summary data-i18n="options_useApiKey">Use an API key instead</summary>
+          <label for="api-key" data-i18n="options_apiKey">API key</label>
+          <div class="inline">
+            <input id="api-key" type="password" placeholder="pd_…" autocomplete="off" />
+            <button id="api-key-save" type="button" data-i18n="options_apiKeySave">Save and test</button>
+          </div>
+          <div class="hint" data-i18n="options_apiKeyHint">
+            Create one in the Piwi dashboard, in your account’s API key settings.
+          </div>
+        </details>
+
+        <div class="card-foot">
+          <div id="status" role="status"></div>
+          <button id="disconnect" class="danger small" type="button" data-i18n="options_disconnect" hidden>
+            Disconnect
+          </button>
         </div>
       </section>
 
-      <div class="row">
-        <button id="save" class="primary" type="button">Save</button>
-        <button id="disconnect" class="danger" type="button">Disconnect</button>
-      </div>
+      <section class="card" id="sites-card" aria-labelledby="sites-heading">
+        <div class="card-head">
+          <h2 id="sites-heading" data-i18n="options_mappingsHeading">Project mappings</h2>
+        </div>
+        <p class="hint" data-i18n="options_mappingsHint">
+          Which project applies on which site. Patterns kept in this browser are read first, then your instance’s, and
+          the first that matches wins. <code data-i18n-slot="star">*</code> matches within one part of the path,
+          <code data-i18n-slot="globstar">**</code> across parts. The branch, optional, is the one deployed at those
+          addresses (a staging site on <code data-i18n-slot="example">develop</code>, say): Tested elements then shows
+          what that branch’s tests reach.
+        </p>
+        <p id="sites-connect-first" class="empty-mappings" data-i18n="options_sitesConnectFirst" hidden>
+          Sites map to your instance’s projects: connect first.
+        </p>
 
-      <div id="status"></div>
+        <div id="sites-body">
+          <div class="subhead">
+            <h3 data-i18n="options_serverHeading">From your Piwi instance</h3>
+            <button id="refresh-server" type="button" class="small" data-i18n="options_serverRefresh">Refresh</button>
+          </div>
+          <p class="hint" data-i18n="options_serverHint">
+            Set in each project’s settings, under Browser extension URLs, and read each time this page opens.
+          </p>
+          <div id="server-mappings"></div>
 
-      <div class="privacy">
-        Only used from this options page — an API key entered here never reaches a web page's JavaScript. Recording
-        steps are sent nowhere unless you explicitly copy or send them; connecting only fetches each mapped project's
-        function catalog.
+          <div class="subhead">
+            <h3 data-i18n="options_localHeading">This browser only</h3>
+          </div>
+          <div id="mapping-head" class="mapping-grid mapping-head" aria-hidden="true">
+            <span data-i18n="options_pattern">Address pattern</span>
+            <span data-i18n="options_project">Project</span>
+            <span data-i18n="options_branch">Branch deployed there</span>
+            <span data-i18n="options_pathPrefix">Path prefix</span>
+            <span data-i18n="options_testPathPrefix">Tests’ path prefix</span>
+            <span></span>
+          </div>
+          <div id="mappings"></div>
+          <div class="row">
+            <button id="add-mapping" type="button" class="small" data-i18n="options_addMapping">+ Add a line</button>
+            <span class="spacer"></span>
+            <button id="save" class="primary small" type="button" data-i18n="options_save">Save</button>
+          </div>
+
+          <details id="add-site" class="panel">
+            <summary data-i18n="options_addHeading">Add a site</summary>
+            <p class="hint" data-i18n="options_addHint">
+              Adds the pattern to a project on your instance, for everyone who connects to it. It takes a role that can
+              edit the project.
+            </p>
+            <div class="add-fields">
+              <input
+                id="add-pattern"
+                class="mono"
+                type="text"
+                placeholder="https://shop.example.com/**"
+                data-i18n-placeholder="options_patternPlaceholder"
+                data-i18n-aria-label="options_pattern"
+              />
+              <select id="add-project" data-i18n-aria-label="options_project"></select>
+            </div>
+            <div class="add-fields four">
+              <input
+                id="add-environment"
+                type="text"
+                placeholder="Environment (optional)"
+                data-i18n-placeholder="options_environmentPlaceholder"
+                data-i18n-aria-label="options_environment"
+              />
+              <input
+                id="add-branch"
+                class="mono"
+                type="text"
+                placeholder="default branch"
+                data-i18n-placeholder="options_branchPlaceholder"
+                data-i18n-aria-label="options_branch"
+              />
+              <input
+                id="add-prefix"
+                class="mono"
+                type="text"
+                placeholder="no path prefix"
+                data-i18n-placeholder="options_pathPrefixPlaceholder"
+                data-i18n-aria-label="options_pathPrefix"
+              />
+              <input
+                id="add-test-prefix"
+                class="mono"
+                type="text"
+                placeholder="no tests’ prefix"
+                data-i18n-placeholder="options_testPathPrefixPlaceholder"
+                data-i18n-aria-label="options_testPathPrefix"
+              />
+            </div>
+            <div class="hint" id="add-note" hidden></div>
+            <div class="row">
+              <button id="add-to-server" type="button" class="small primary" data-i18n="options_addToServer">
+                Add to Piwi
+              </button>
+              <button id="add-locally" type="button" class="small" data-i18n="options_addLocally">
+                Keep in this browser only
+              </button>
+            </div>
+          </details>
+
+          <div class="card-foot"><div id="mappings-status" role="status"></div></div>
+        </div>
+      </section>
+
+      <section class="card" id="desktop-card" aria-labelledby="desktop-heading">
+        <div class="card-head">
+          <h2 id="desktop-heading" data-i18n="options_desktopHeading">Desktop app</h2>
+          <span id="desktop-pill" class="pill" data-i18n="options_stateNotPaired">Not paired</span>
+        </div>
+        <p class="lead" data-i18n="options_desktopHint">
+          Optional. Paired with the Piwi Dashboard desktop app, Replay can ask it to run a bug report with Playwright in
+          your project.
+        </p>
+        <label for="desktop-url" data-i18n="options_desktopUrl">Address of the desktop app</label>
+        <div class="inline">
+          <input id="desktop-url" type="url" class="mono" placeholder="http://127.0.0.1:3000" autocomplete="off" />
+          <button id="desktop-pair" class="primary" type="button" data-i18n="options_desktopPair">Pair</button>
+        </div>
+        <div class="hint" data-i18n="options_desktopUrlHint">
+          Shown on the app’s Setup page, under Connect Piwi Picker. Pair asks the app’s window to allow Piwi Picker.
+        </div>
+
+        <div id="desktop-pair-panel" class="panel code-panel" hidden>
+          <div id="desktop-code-line"></div>
+          <button id="desktop-pair-cancel" type="button" class="small" data-i18n="options_connectCancel">Cancel</button>
+        </div>
+
+        <details id="desktop-manual">
+          <summary data-i18n="options_desktopManual">Pair by hand</summary>
+          <label for="desktop-token" data-i18n="options_desktopToken">Token</label>
+          <div class="inline">
+            <input id="desktop-token" type="password" placeholder="pd_…" autocomplete="off" />
+            <button id="desktop-save" type="button" data-i18n="options_desktopSave">Save and test</button>
+          </div>
+          <div class="hint" data-i18n="options_desktopManualHint">
+            The token is on the app’s Setup page, under Connect Piwi Picker, beside its address.
+          </div>
+        </details>
+
+        <div class="card-foot">
+          <div id="desktop-status" role="status"></div>
+          <button id="desktop-forget" class="danger small" type="button" data-i18n="options_desktopForget" hidden>
+            Unpair
+          </button>
+        </div>
+      </section>
+
+      <section class="card" id="editor-card" aria-labelledby="editor-heading">
+        <div class="card-head">
+          <h2 id="editor-heading" data-i18n="options_editorHeading">Send to editor</h2>
+          <span id="editor-pill" class="pill" data-i18n="options_stateNotPaired">Not paired</span>
+        </div>
+        <p class="lead" data-i18n="options_editorHint">
+          In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address
+          it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and
+          are inserted at its cursor.
+        </p>
+        <label for="editor-address" data-i18n="options_editorAddress">Pairing address</label>
+        <div class="inline">
+          <input id="editor-address" type="password" autocomplete="off" spellcheck="false" />
+          <button id="editor-pair" type="button" class="primary" data-i18n="options_editorPair">Pair</button>
+        </div>
+        <div class="card-foot">
+          <div id="editor-status" role="status"></div>
+          <button id="editor-unpair" type="button" class="danger small" data-i18n="options_editorUnpair" hidden>
+            Unpair
+          </button>
+        </div>
+      </section>
+
+      <div class="privacy" data-i18n="options_privacy">
+        Only used from this page: the API key never reaches a web page’s scripts. Recorded steps go nowhere unless you
+        copy them, download them or send them to your paired editor or desktop app. Connecting downloads your projects’
+        URL patterns, each mapped project’s function catalog and the elements its tests reach; adding a site sends only
+        its pattern.
       </div>
     </div>
     <script type="module" src="src/options/main.ts"></script>

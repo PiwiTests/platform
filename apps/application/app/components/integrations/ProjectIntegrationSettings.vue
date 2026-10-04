@@ -2,9 +2,11 @@
 /**
  * The per-project tracker binding form (admin, project Settings tab): which
  * connection and Jira project/issue type a failure files into, the default
- * labels and assignee, the ticket language, what a ticket carries, the two-way
- * sync policies, the owner routes, and the auto-create fields (greyed out — the
- * trigger is not enabled yet). Saves the whole resolved binding to
+ * labels and assignee, values for the fields that issue type requires, the
+ * ticket language, what a ticket carries, the two-way sync policies with values
+ * for the fields their transitions ask for, the owner routes, and the
+ * auto-create fields (greyed out — the trigger is not enabled yet). Saves the
+ * whole resolved binding to
  * PUT /api/projects/:id/integrations.
  *
  * The form holds strings (never null) so the inputs bind cleanly; the server
@@ -12,6 +14,8 @@
  */
 import { DEFAULT_PROJECT_INTEGRATION, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
+import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
+import { requiredFieldsToFill, type FieldValues } from '#shared/integrations/fields';
 import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } from '#shared/integrations/types';
 
 const props = defineProps<{ projectId: number }>();
@@ -32,6 +36,7 @@ const form = reactive({
   defaultAssignee: '',
   locale: '' as '' | 'en' | 'fr',
   labels: '',
+  fieldDefaults: {} as FieldValues,
   include: { ...DEFAULT_PROJECT_INTEGRATION.include },
   policies: {
     ...DEFAULT_PROJECT_INTEGRATION.policies,
@@ -61,22 +66,40 @@ const projectKeyItems = computed(() =>
 );
 const issueTypeItems = computed(() => issueTypes.value.map((t) => ({ label: t.name, value: t.id })));
 
+/** The connection the project list was last loaded for, so an empty list is not shown while loading. */
+const projectsLoadedFor = ref(0);
+
 async function loadPickers() {
   if (!form.connectionId) {
     jiraProjects.value = [];
     issueTypes.value = [];
     return;
   }
+  const connectionId = form.connectionId;
   try {
     const { projects } = await $fetch<{ projects: TrackerProjectOption[] }>(
-      `/api/integrations/connections/${form.connectionId}/projects`,
+      `/api/integrations/connections/${connectionId}/projects`,
     );
     jiraProjects.value = projects;
   } catch {
     jiraProjects.value = [];
   }
+  projectsLoadedFor.value = connectionId;
   await loadIssueTypes();
 }
+
+const selectedConnection = computed(() => connections.value.find((c) => c.id === form.connectionId) ?? null);
+/** The chosen Jira project's page, to check it (and its permissions) in Jira. */
+const projectLink = computed(() =>
+  selectedConnection.value?.baseUrl && form.projectKey
+    ? jiraProjectUrl(selectedConnection.value.baseUrl, form.projectKey)
+    : null,
+);
+const noProjectsHelp = computed(() =>
+  form.connectionId && projectsLoadedFor.value === form.connectionId && jiraProjects.value.length === 0
+    ? JIRA_NO_PROJECTS_HINT
+    : undefined,
+);
 
 async function loadIssueTypes() {
   if (!form.connectionId || !form.projectKey) {
@@ -98,6 +121,7 @@ function fromBinding(b: ResolvedProjectIntegration) {
   form.projectKey = b.projectKey ?? '';
   form.issueType = b.issueType ?? '';
   form.defaultAssignee = b.defaultAssignee ?? '';
+  form.fieldDefaults = { ...(b.fieldDefaults ?? {}) };
   form.locale = b.locale ?? '';
   form.labels = (b.labels ?? []).join(', ');
   form.include = { ...b.include };
@@ -127,6 +151,7 @@ function toBinding(): Partial<ResolvedProjectIntegration> {
     projectKey: form.projectKey || null,
     issueType: form.issueType || null,
     defaultAssignee: form.defaultAssignee || null,
+    fieldDefaults: form.fieldDefaults,
     locale: form.locale || null,
     labels: list(form.labels),
     include: { ...form.include },
@@ -191,6 +216,19 @@ async function save() {
 watch(() => form.connectionId, loadPickers);
 watch(() => form.projectKey, loadIssueTypes);
 onMounted(load);
+
+// ── Jira fields: what the chosen issue type's create screen requires ──────────
+const {
+  fields: screenFields,
+  loading: fieldsLoading,
+  error: fieldsError,
+} = useTrackerFields(
+  () => form.connectionId || null,
+  () => form.projectKey || null,
+  () => form.issueType || null,
+);
+/** The required fields to give a default: required, not filled by Jira, not managed by Piwi. */
+const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
 </script>
 
 <template>
@@ -218,7 +256,10 @@ onMounted(load);
           <UFormField label="Ticket language">
             <USelectMenu v-model="form.locale" :items="localeItems" value-key="value" class="w-full" />
           </UFormField>
-          <UFormField label="Jira project">
+          <UFormField label="Jira project" :help="noProjectsHelp">
+            <template v-if="projectLink" #hint>
+              <OutboundLink :href="projectLink">Open in Jira</OutboundLink>
+            </template>
             <USelectMenu
               v-model="form.projectKey"
               :items="projectKeyItems"
@@ -246,19 +287,45 @@ onMounted(load);
           </UFormField>
         </div>
 
+        <!-- Jira fields: values for what the issue type requires, and optional defaults -->
+        <div v-if="form.connectionId && form.projectKey && form.issueType" data-shot="binding-jira-fields">
+          <p class="text-xs font-medium text-muted mb-2 flex items-center gap-1">
+            Jira fields <HelpHint topic="integrations.required-fields" />
+          </p>
+          <CheckResultLine v-if="fieldsLoading" state="pending" text="Reading the issue type's fields from Jira…" />
+          <CheckResultLine
+            v-else-if="fieldsError"
+            state="warning"
+            :text="fieldsError"
+            hint="The binding still saves; fields Jira requires are then only checked when an issue is created."
+          />
+          <div v-else class="space-y-3">
+            <p v-if="requiredFields.length" class="text-sm text-highlighted">
+              Jira requires {{ requiredFields.length === 1 ? 'this field' : 'these fields' }} for this issue type. A
+              value set here fills every issue filed from this project.
+            </p>
+            <p v-else class="text-sm text-muted">This issue type requires no field beyond what Piwi fills.</p>
+            <TrackerFieldDefaults
+              v-model="form.fieldDefaults"
+              :fields="screenFields"
+              :connection-id="form.connectionId"
+              :project-key="form.projectKey"
+            />
+          </div>
+        </div>
+
         <!-- What the ticket carries -->
         <div>
           <p class="text-xs font-medium text-muted mb-2">What the ticket carries</p>
           <div class="grid gap-2 sm:grid-cols-2">
             <USwitch v-model="form.include.includeDiagnosis" label="Diagnosis" />
             <USwitch v-model="form.include.includePatch" label="Suggested patch" />
-            <USwitch v-model="form.include.includeScreenshot" label="Screenshot attachment" />
             <USwitch v-model="form.include.includeShareLink" label="Shareable report link" />
           </div>
         </div>
 
         <!-- Sync policies -->
-        <div>
+        <div data-shot="binding-sync-policies">
           <p class="text-xs font-medium text-muted mb-2">Keep the ticket honest</p>
           <div class="space-y-2">
             <USwitch v-model="form.policies.commentOnFix" label="Comment when the fix lands" />
@@ -272,6 +339,17 @@ onMounted(load);
                 class="flex-1"
               />
             </div>
+            <TransitionFields
+              v-if="form.policies.transitionOnFix && form.connectionId && form.projectKey"
+              v-model="form.policies.fixTransitionFields"
+              :connection-id="form.connectionId"
+              :project-key="form.projectKey"
+              :issue-type="form.issueType || null"
+              from="open"
+              :transition="form.policies.fixTransitionId"
+              class="ps-11"
+              @pick="(value) => (form.policies.fixTransitionId = value)"
+            />
             <div class="flex items-center gap-2">
               <USwitch v-model="form.policies.commentOnRegression" label="Comment on regression" />
               <UInput
@@ -281,10 +359,26 @@ onMounted(load);
                 class="flex-1"
               />
             </div>
+            <TransitionFields
+              v-if="form.policies.reopenTransitionId.trim() && form.connectionId && form.projectKey"
+              v-model="form.policies.reopenTransitionFields"
+              :connection-id="form.connectionId"
+              :project-key="form.projectKey"
+              :issue-type="form.issueType || null"
+              from="done"
+              :transition="form.policies.reopenTransitionId"
+              class="ps-11"
+              @pick="(value) => (form.policies.reopenTransitionId = value)"
+            />
             <USwitch v-model="form.policies.commentOnNewOccurrences" label="Daily 'still failing' note" />
             <USwitch v-model="form.policies.resolveOnClose" label="Resolve the cluster when the ticket closes" />
             <USwitch v-model="form.policies.reopenOnTicketReopen" label="Reopen the cluster when the ticket reopens" />
             <USwitch v-model="form.policies.commentOnMerge" label="Comment on both tickets when clusters merge" />
+            <USwitch
+              v-model="form.policies.fileEveryBugReport"
+              label="File every bug report"
+              description="Create an issue for each bug report Piwi Picker sends to this project, whoever sends it"
+            />
           </div>
           <UFormField
             label="Needs-ticket after (days)"

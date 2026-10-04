@@ -20,7 +20,7 @@ defineProps<{
       </span>
     </div>
     <!-- Patch lines -->
-    <DiffPatch v-if="file.patch" :patch="file.patch" />
+    <DiffPatch v-if="file.patch" :patch="file.patch" :file="file.filename" />
     <div v-else class="px-3 py-2 text-gray-400 text-[11px]">No patch available</div>
   </div>
 </template>

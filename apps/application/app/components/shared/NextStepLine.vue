@@ -2,13 +2,13 @@
 /**
  * "Next" — the one step the page recommends, from `computeNextStep`: the step as
  * a sentence, its reason as a meta line, then one row of actions — the primary
- * action as the block's only solid button, one secondary action inline (the rest
- * in a small overflow menu, so the first screen keeps its control budget), and,
- * for the steps where a code change is the work, the retry command to run
- * afterwards. Each action button emits its id and payload; the page turns that
- * into the real behaviour, so this component stays presentation-only and
- * reusable across the execution and cluster pages. The block that renders this
- * line provides its label.
+ * action as the block's only solid button, one secondary action inline, and the
+ * rest in a small overflow menu, so the first screen keeps its control budget;
+ * for the steps where a code change is the work, that menu also copies the retry
+ * command to run afterwards. Each action button emits its id and payload; the
+ * page turns that into the real behaviour, so this component stays
+ * presentation-only and reusable across the execution and cluster pages. The
+ * block that renders this line provides its label.
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { NextStep, NextStepKind } from '#shared/next-step';
@@ -25,16 +25,25 @@ const emit = defineEmits<{ action: [action: string, payload?: Record<string, unk
 const RETRY_KINDS: NextStepKind[] = ['replace-locator', 'apply-patch', 'follow-diagnosis'];
 const showRetry = computed(() => Boolean(props.retryCommand) && RETRY_KINDS.includes(props.nextStep.kind));
 
-// One secondary inline; the rest fold into a small overflow menu.
+const { copy: copyRetryCmd } = useCopy();
+
+// One secondary inline; the rest fold into a small overflow menu, the retry
+// command last.
 const inlineSecondary = computed(() => props.nextStep.secondary[0] ?? null);
-const overflowSecondary = computed<DropdownMenuItem[]>(() =>
-  props.nextStep.secondary.slice(1).map((a) => ({
+const overflowSecondary = computed<DropdownMenuItem[]>(() => [
+  ...props.nextStep.secondary.slice(1).map((a) => ({
     label: a.label,
     onSelect: () => emit('action', a.action, a.payload),
   })),
-);
-
-const { copy: copyRetryCmd, copied: retryCopied } = useCopy();
+  ...(showRetry.value
+    ? [
+        {
+          label: 'Copy retry command',
+          onSelect: () => void copyRetryCmd(props.retryCommand!, { toast: 'Retry command copied' }),
+        },
+      ]
+    : []),
+]);
 </script>
 
 <template>
@@ -68,18 +77,6 @@ const { copy: copyRetryCmd, copied: retryCopied } = useCopy();
           aria-label="More next-step actions"
         />
       </UDropdownMenu>
-      <template v-if="showRetry">
-        <span class="text-xs text-muted">then</span>
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="outline"
-          :trailing-icon="retryCopied ? 'i-lucide-check' : undefined"
-          @click="copyRetryCmd(retryCommand!, { toast: 'Retry command copied' })"
-        >
-          Copy retry command
-        </UButton>
-      </template>
     </div>
   </div>
 </template>

@@ -33,7 +33,7 @@ export function resolveOverallStatus(
  * the server. Carries the `type` discriminant through so the same mapper works
  * for `begin` and `complete` stream events as well as batch submissions.
  *
- * Quirks preserved from the original in-reporter implementation:
+ * Field defaults:
  * - `status`/`duration`/`error`/`retries` pass through unchanged (no `null`
  *   default), so a `begin` event yields `undefined` for those fields.
  * - Numeric/array fields use `|| null` (so `0` and `''` collapse to `null`),
@@ -64,6 +64,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     networkRequests: rest.networkRequests || null,
     webVitals: rest.webVitals || null,
     pageState: rest.pageState || null,
+    pageInventory: rest.pageInventory || null,
     aiUsage: rest.aiUsage || null,
     consoleLogs: rest.consoleLogs || null,
     dialogs: rest.dialogs || null,
@@ -79,9 +80,84 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     locks: rest.locks ?? null,
     testMeta: rest.testMeta ?? null,
     locatorSnapshots: rest.locatorSnapshots || null,
+    locatorPages: rest.locatorPages || null,
+    codeReach: rest.codeReach || null,
+    resources: rest.resources ?? null,
     didNotRunReason: rest.didNotRunReason ?? null,
+    expectedStatus: rest.expectedStatus ?? null,
     blockedBy: rest.blockedBy ?? null,
   };
+}
+
+/** Distinct-test run counts (one entry per test, not per attempt). */
+interface RunCounts {
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  timedOutTests: number;
+  skippedTests: number;
+  didNotRunTests: number;
+  /** Passed only after a retry — a subset of `passedTests`. */
+  flakyTests: number;
+}
+
+function browserProjectName(browser: unknown): string {
+  if (
+    browser &&
+    typeof browser === 'object' &&
+    typeof (browser as { projectName?: unknown }).projectName === 'string'
+  ) {
+    return (browser as { projectName: string }).projectName;
+  }
+  return '';
+}
+
+/**
+ * Run counts computed from the collected cases as **distinct tests**: the final
+ * attempt per (title, location, browser) decides each test's outcome, so retries
+ * never inflate the totals (`total = passed + failed + timedOut + skipped +
+ * didNotRun`, ignoring any rare interrupted case). Timed-out stays its own
+ * bucket — the server folds it into failed on ingest — and a test that passed
+ * only after a retry counts as passed and as flaky. Playwright reports each
+ * attempt through `onTestEnd`, so the raw counters tally attempts; this is what
+ * turns them back into a per-test summary before the run body is sent.
+ */
+export function computeDistinctRunCounts(
+  testCases: ReadonlyArray<{
+    title: string;
+    location: string;
+    status?: string;
+    retries?: number | null;
+    browser?: unknown;
+  }>,
+): RunCounts {
+  const final = new Map<string, { status: string; retries: number }>();
+  for (const tc of testCases) {
+    const key = `${tc.title}\x00${tc.location}\x00${browserProjectName(tc.browser)}`;
+    const retries = tc.retries ?? 0;
+    const prev = final.get(key);
+    // The highest-retry attempt is the final one, so it decides the outcome.
+    if (!prev || retries >= prev.retries) final.set(key, { status: tc.status ?? '', retries });
+  }
+  const counts: RunCounts = {
+    totalTests: final.size,
+    passedTests: 0,
+    failedTests: 0,
+    timedOutTests: 0,
+    skippedTests: 0,
+    didNotRunTests: 0,
+    flakyTests: 0,
+  };
+  for (const { status, retries } of final.values()) {
+    if (status === 'passed') {
+      counts.passedTests++;
+      if (retries > 0) counts.flakyTests++;
+    } else if (status === 'failed') counts.failedTests++;
+    else if (status === 'timedOut' || status === 'timedout') counts.timedOutTests++;
+    else if (status === 'skipped') counts.skippedTests++;
+    else if (status === 'didnotrun') counts.didNotRunTests++;
+  }
+  return counts;
 }
 
 /** Options for `serializeRun`. */
@@ -114,6 +190,9 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     didNotRunTests: payload.didNotRunTests ?? 0,
     environment: payload.environment ?? null,
     label: payload.label ?? null,
+    keep: payload.keep === true,
+    // A probe run is stamped in `onBegin` (see the reporter), so the marker
+    // already rides in `payload.metadata` here and on every other submit path.
     metadata: payload.metadata,
     instanceId: payload.instanceId,
     playwrightVersion: payload.playwrightVersion,
@@ -123,6 +202,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
     isFullRun: payload.isFullRun ?? true,
     filterDetails: payload.filterDetails ?? null,
   };
+  if (payload.resourceReport) body.resourceReport = payload.resourceReport;
   if (opts.includeTestCases) {
     body.testCases = payload.testCases.map((tc) => toWireTestCase(tc));
   }

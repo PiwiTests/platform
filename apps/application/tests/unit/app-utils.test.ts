@@ -14,7 +14,6 @@ import {
   formatStatusLabel,
   isFailedStatus,
   failureFirstCompare,
-  testCaseCategoryColor,
   clusterStatusColor,
   clusterErrorTypeColor,
   fixVerificationBadge,
@@ -143,10 +142,18 @@ describe('getStatusColor', () => {
   test('maps known statuses to badge colors', () => {
     expect(getStatusColor('passed')).toBe('success');
     expect(getStatusColor('failed')).toBe('error');
-    expect(getStatusColor('timedout')).toBe('warning');
-    expect(getStatusColor('timedOut')).toBe('warning');
+    expect(getStatusColor('flaky')).toBe('flaky');
+    expect(getStatusColor('didnotrun')).toBe('warning');
     expect(getStatusColor('running')).toBe('info');
+    expect(getStatusColor('finalizing')).toBe('info');
     expect(getStatusColor('cancelled')).toBe('neutral');
+    expect(getStatusColor('never-run')).toBe('neutral');
+  });
+
+  test('reads timed-out and interrupted as failed, like the run counters', () => {
+    expect(getStatusColor('timedout')).toBe('error');
+    expect(getStatusColor('timedOut')).toBe('error');
+    expect(getStatusColor('interrupted')).toBe('error');
   });
 
   test('falls back to neutral for unknown statuses', () => {
@@ -203,6 +210,7 @@ describe('status icon helpers', () => {
   test('gives each outcome its own icon', () => {
     expect(getStatusIcon('passed')).toBe('i-lucide-check-circle-2');
     expect(getStatusIcon('failed')).toBe('i-lucide-x-circle');
+    expect(getStatusIcon('flaky')).toBe('i-lucide-shuffle');
     expect(getStatusIcon('didnotrun')).toBe('i-lucide-circle-slash');
     expect(getStatusIcon('running')).toBe('i-lucide-loader-circle');
     expect(getStatusIcon('skipped')).toBe('i-lucide-minus-circle');
@@ -211,6 +219,7 @@ describe('status icon helpers', () => {
   test('gives each outcome its own colour, and one colour to the in-flight three', () => {
     expect(getStatusTextClass('passed')).toContain('emerald');
     expect(getStatusTextClass('failed')).toContain('rose');
+    expect(getStatusTextClass('flaky')).toContain('purple');
     expect(getStatusTextClass('didnotrun')).toContain('amber');
     expect(getStatusTextClass('running')).toContain('blue');
     expect(getStatusTextClass('initializing')).toBe(getStatusTextClass('running'));
@@ -235,16 +244,6 @@ describe('toTestPriority', () => {
     expect(toTestPriority('')).toBeUndefined();
     expect(toTestPriority(null)).toBeUndefined();
     expect(toTestPriority(undefined)).toBeUndefined();
-  });
-});
-
-describe('testCaseCategoryColor', () => {
-  test('maps derived catalog categories to badge colors', () => {
-    expect(testCaseCategoryColor('flaky')).toBe('warning');
-    expect(testCaseCategoryColor('never-run')).toBe('neutral');
-    expect(testCaseCategoryColor('didnotrun')).toBe('warning');
-    expect(testCaseCategoryColor('passed')).toBe('success');
-    expect(testCaseCategoryColor('failed')).toBe('error');
   });
 });
 
@@ -315,32 +314,28 @@ describe('file path helpers', () => {
     );
   });
 
-  test('getTraceViewerUrl embeds the encoded file API URL using the current origin', () => {
-    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
+  test('getTraceViewerUrl embeds the encoded root-relative file API URL', () => {
     const url = getTraceViewerUrl('.data/storage/t.zip');
-    expect(url).toBe(`/trace-viewer/?trace=${encodeURIComponent('http://localhost:3000/api/files/t.zip')}`);
-    vi.unstubAllGlobals();
+    expect(url).toBe(`/trace-viewer/?trace=${encodeURIComponent('/api/files/t.zip')}`);
   });
 
   test('getTraceViewerUrl prefixes the base path for both the viewer and the trace URL', () => {
-    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
     const url = getTraceViewerUrl('.data/storage/t.zip', '/demo/');
-    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('http://localhost:3000/demo/api/files/t.zip')}`);
-    vi.unstubAllGlobals();
+    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('/demo/api/files/t.zip')}`);
   });
 
-  test('getTraceViewerUrl falls back to a relative trace URL when location is absent (SSR)', () => {
+  test('getTraceViewerUrl builds the same link with and without a browser location (SSR)', () => {
+    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
+    const inBrowser = getTraceViewerUrl('t.zip', '/demo/');
     vi.stubGlobal('location', undefined);
-    const url = getTraceViewerUrl('t.zip');
-    expect(url).toBe(`/trace-viewer/?trace=${encodeURIComponent('/api/files/t.zip')}`);
+    const onServer = getTraceViewerUrl('t.zip', '/demo/');
     vi.unstubAllGlobals();
+    expect(inBrowser).toBe(onServer);
   });
 
   test('getTraceViewerUrl points at the static asset URL when staticAsset is set (demo mode)', () => {
-    vi.stubGlobal('location', { origin: 'http://localhost:3000' });
     const url = getTraceViewerUrl('demo/traces/t.zip', '/demo/', true);
-    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('http://localhost:3000/demo/demo/traces/t.zip')}`);
-    vi.unstubAllGlobals();
+    expect(url).toBe(`/demo/trace-viewer/?trace=${encodeURIComponent('/demo/demo/traces/t.zip')}`);
   });
 });
 

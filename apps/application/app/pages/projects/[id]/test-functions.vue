@@ -8,6 +8,7 @@
  */
 import type { ProjectDetails, TestFunctionsResponse, TestFunctionInfo, TestFunctionStepAction } from '~~/types/api';
 import { buildExtractionPrompt, LOW_CONFIDENCE_THRESHOLD } from '#shared/test-function-extract-prompt';
+import { PICKER_STORE_URL } from '#shared/companion-links';
 
 const route = useRoute();
 const projectId = route.params.id as string;
@@ -356,8 +357,8 @@ async function save() {
   }
 }
 
-// Deleting used to happen on the click itself. A catalog entry is hand-authored
-// work — a pattern, its params, their sources — and nothing here undoes it.
+// Deleting asks for confirmation: a catalog entry is hand-authored work — a
+// pattern, its params, their sources — and nothing here undoes it.
 const functionToDelete = ref<TestFunctionInfo | null>(null);
 const isDeleteConfirmOpen = ref(false);
 
@@ -410,11 +411,13 @@ function describeSteps(entry: TestFunctionInfo): string {
       <div class="p-4 space-y-4">
         <SectionCard title="Test function catalog" icon="i-lucide-function-square" :count="entries.length || null">
           <template #subtitle>
-            Page-object methods and helpers the
+            Page-object methods and helpers a recording is matched against, in the
             <DocLink to="features/extension#connecting-to-a-piwi-instance" no-icon class="text-primary hover:underline"
               >Piwi Picker extension</DocLink
             >
-            matches a recording against, to generate calls to your own code instead of raw locator lines.
+            or
+            <DocLink to="features/editor-recording" no-icon class="text-primary hover:underline">your editor</DocLink>,
+            to generate calls to your own code instead of raw locator lines.
           </template>
           <template #actions>
             <UButton label="Add function" icon="i-lucide-plus" size="sm" @click="openAdd" />
@@ -424,15 +427,11 @@ function describeSteps(entry: TestFunctionInfo): string {
           <EmptyState
             v-else-if="entries.length === 0"
             icon="i-lucide-function-square"
-            text="No functions registered yet — add one, or extract one from a recording in the extension."
+            text="No functions registered yet — add one by hand, or paste a function's source to extract it."
           >
             <p class="text-xs text-gray-400 max-w-sm">
               The extension is a separate install:
-              <a
-                href="https://chromewebstore.google.com/detail/piwi-picker/pakhnokpjboejcghgcmkjlpnogfjihhe"
-                target="_blank"
-                rel="noopener"
-                class="text-primary hover:underline"
+              <a :href="PICKER_STORE_URL" target="_blank" rel="noopener" class="text-primary hover:underline"
                 >Piwi Picker on the Chrome Web Store</a
               >
               (Chrome and Edge) — setup in the

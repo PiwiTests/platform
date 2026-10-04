@@ -26,3 +26,21 @@ export function tauriEvent(): TauriEvent | null {
   const g = globalThis as unknown as { __TAURI__?: { event?: TauriEvent } };
   return g.__TAURI__?.event ?? null;
 }
+
+interface TauriWindowApi {
+  getCurrentWindow: () => { label: string };
+}
+
+/**
+ * The label of the shell window this page runs in — `main` for the dashboard
+ * window, `aux-<n>` for a window opened with `desktop_open_window` — or `null`
+ * outside the desktop shell.
+ */
+export function tauriWindowLabel(): string | null {
+  const g = globalThis as unknown as { __TAURI__?: { window?: TauriWindowApi } };
+  try {
+    return g.__TAURI__?.window?.getCurrentWindow().label ?? null;
+  } catch {
+    return null;
+  }
+}

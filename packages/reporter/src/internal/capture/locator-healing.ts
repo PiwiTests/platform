@@ -213,7 +213,7 @@ export const FORM_FIELD_TAGS: ReadonlySet<string> = new Set(['input', 'select', 
  * these, an element carrying neither `aria-label` nor `aria-labelledby` is
  * named by its trimmed text — which the probe already returns.
  */
-export const NAME_FROM_CONTENT_ROLES: ReadonlySet<string> = new Set([
+const NAME_FROM_CONTENT_ROLES: ReadonlySet<string> = new Set([
   'button',
   'cell',
   'checkbox',

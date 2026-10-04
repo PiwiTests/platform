@@ -53,6 +53,22 @@ describe('resolveEvidenceState', () => {
     expect(s.state).toBe('not-captured');
   });
 
+  test('a declined capability reads declined, above the fixture and applicability logic', () => {
+    const s = resolveEvidenceState('network', { hasData: false, fixturesActive: true, capability: 'declined' });
+    expect(s.state).toBe('declined');
+    if (s.state === 'declined') expect(s.description).toContain('declined for this project');
+  });
+
+  test('data still wins over a declined capability', () => {
+    const s = resolveEvidenceState('network', {
+      hasData: true,
+      source: 'fixture',
+      fixturesActive: true,
+      capability: 'declined',
+    });
+    expect(s.state).toBe('present');
+  });
+
   test('every card id resolves to one of the four states for every input combination', () => {
     for (const id of EVIDENCE_CARD_IDS) {
       for (const hasData of [true, false]) {
@@ -75,6 +91,12 @@ describe('evidenceAbsenceReason', () => {
     expect(evidenceAbsenceReason('console', { hasData: false, fixturesActive: true })).toContain('fixtures active');
     expect(evidenceAbsenceReason('backendLogs', { hasData: false, fixturesActive: true })).toContain(
       'backend integration',
+    );
+  });
+
+  test('a declined capability reads "declined for this project"', () => {
+    expect(evidenceAbsenceReason('console', { hasData: false, fixturesActive: true, capability: 'declined' })).toBe(
+      'declined for this project',
     );
   });
 });

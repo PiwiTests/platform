@@ -91,7 +91,9 @@ async function loadTraceBundle(path: string): Promise<DemoTraceBundle | null> {
     readResource: async (name) => {
       const exact = resources.get(name);
       if (exact) return exact;
-      // `_sha1` refs may carry the stored extension or not — match on the bare hash.
+      // A body ref (v8 `_sha1` or v9 `_file`, already normalized to the bare
+      // name by `matchNetworkBodySha1`) may carry the stored extension or not —
+      // match on the bare hash.
       const bare = name.split('.')[0]!;
       for (const [known, data] of resources) {
         if (known.split('.')[0] === bare) return data;

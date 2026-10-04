@@ -1,12 +1,15 @@
 import {
   ScmProvider,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
   truncatePatch,
-  MAX_SCM_FILES,
+  MAX_SCM_FILES_TOTAL,
   MAX_FILE_BYTES,
   MAX_RAW_DIFF_BYTES,
   FETCH_TIMEOUT_MS,
 } from './ScmProvider';
 import type {
+  ScmCommit,
   ScmCommitDetail,
   ScmCommitAuthor,
   ScmChanges,
@@ -17,7 +20,8 @@ import type {
   ScmFileEdit,
   CreatePullRequestInput,
 } from './ScmProvider';
-import { TtlCache } from './cache';
+import { TtlCache } from '../ttl-cache';
+import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 
 /** Turn a non-2xx Bitbucket response into an Error carrying the API's own message. */
@@ -29,6 +33,9 @@ async function bitbucketError(res: Response, action: string): Promise<Error> {
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
+const rangeCommitsCache = new TtlCache<ScmCommit[]>(10 * 60 * 1000);
+/** Commits listed for one range: one page of the commits endpoint. */
+const MAX_RANGE_COMMITS = 100;
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
 // Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
@@ -130,33 +137,98 @@ export class BitbucketProvider extends ScmProvider {
   }
 
   async fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null> {
-    const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:${fromSha}:${toSha}`;
+    if (!isValidGitRef(fromSha) || !isValidGitRef(toSha)) return null;
+    const [changes, commits] = await Promise.all([this.diffRange(fromSha, toSha), this.rangeCommits(fromSha, toSha)]);
+    return changes ? { ...changes, commits } : null;
+  }
+
+  /**
+   * The commits reachable from `toSha` and not from `fromSha`, oldest first as
+   * the other hosts list them, with their full messages. Empty when the
+   * commits endpoint fails: the files still answer.
+   */
+  private async rangeCommits(fromSha: string, toSha: string): Promise<ScmCommit[]> {
+    const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:commits:${fromSha}:${toSha}`;
+    const hit = rangeCommitsCache.get(key);
+    if (hit !== undefined) return hit;
+    try {
+      const url = new URL(`${this.base}/commits`);
+      url.searchParams.set('include', toSha);
+      url.searchParams.set('exclude', fromSha);
+      url.searchParams.set('pagelen', String(MAX_RANGE_COMMITS));
+      const res = await fetch(url.toString(), {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { values?: Array<{ hash: string; message?: string }> };
+      const result = (data.values ?? [])
+        .map((c) => {
+          const message = c.message ?? '';
+          return { sha: c.hash.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
+        })
+        .reverse();
+      rangeCommitsCache.set(key, result);
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Diff two refs. Callers pass either two validated refs (fetchChanges) or a
+   * commit and its own `~1` parent (fetchCommitDiff) — the parent suffix is built
+   * from an already-validated SHA, so each ref is trusted here and encoded per
+   * segment before it enters the `from..to` spec.
+   */
+  private async diffRange(fromRef: string, toRef: string): Promise<ScmChanges | null> {
+    const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:${fromRef}:${toRef}`;
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
-    const spec = `${fromSha}..${toSha}`;
-    const [diffstatRes, diffRes] = await Promise.all([
-      fetch(`${this.base}/diffstat/${spec}?pagelen=${MAX_SCM_FILES}`, {
-        headers: this.makeHeaders(),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      }),
-      fetch(`${this.base}/diff/${spec}`, {
-        headers: this.makeHeaders(),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      }),
-    ]);
-    if (!diffstatRes.ok) return null;
+    const spec = `${encodeGitRef(fromRef)}..${encodeGitRef(toRef)}`;
+    // Raw patch text in parallel; the diffstat is paged for the file list.
+    const diffPromise = fetch(`${this.base}/diff/${spec}`, {
+      headers: this.makeHeaders(),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
 
-    const diffstat = (await diffstatRes.json()) as {
-      values?: Array<{
-        status: string;
-        old?: { path: string };
-        new?: { path: string };
-        lines_removed?: number;
-        lines_added?: number;
-      }>;
+    type DiffStatValue = {
+      status: string;
+      old?: { path: string };
+      new?: { path: string };
+      lines_removed?: number;
+      lines_added?: number;
     };
+    const values: DiffStatValue[] = [];
+    let filesTruncated = false;
+    // Follow Bitbucket's `next` cursor up to the total cap so a large pull
+    // request's later files are not silently dropped at one page of 30.
+    let next: string | null = `${this.base}/diffstat/${spec}?pagelen=100`;
+    let firstPage = true;
+    while (next && values.length < MAX_SCM_FILES_TOTAL) {
+      const res: Response = await fetch(next, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        if (firstPage) return null;
+        break;
+      }
+      firstPage = false;
+      const page = (await res.json()) as { values?: DiffStatValue[]; next?: string };
+      for (const v of page.values ?? []) {
+        if (values.length >= MAX_SCM_FILES_TOTAL) {
+          filesTruncated = true;
+          break;
+        }
+        values.push(v);
+      }
+      next = page.next ?? null;
+      if (next && values.length >= MAX_SCM_FILES_TOTAL) filesTruncated = true;
+    }
 
+    const diffRes = await diffPromise;
     let patchesByFile = new Map<string, string>();
     let patchesOmitted = false;
     if (diffRes.ok) {
@@ -171,7 +243,8 @@ export class BitbucketProvider extends ScmProvider {
     const result: ScmChanges = {
       commits: [],
       patchesOmitted,
-      files: (diffstat.values ?? []).slice(0, MAX_SCM_FILES).map((f) => {
+      filesTruncated,
+      files: values.map((f) => {
         const filename = (f.new?.path || f.old?.path) ?? '';
         return {
           filename,
@@ -187,11 +260,14 @@ export class BitbucketProvider extends ScmProvider {
   }
 
   async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
-    return this.fetchChanges(`${sha}~1`, sha);
+    if (!isValidGitRef(sha)) return null;
+    // `${sha}~1` is git rev syntax, not a plain ref, so it is built from the
+    // validated SHA and handed straight to diffRange rather than re-validated.
+    return this.diffRange(`${sha}~1`, sha);
   }
 
   async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
-    if (!sha) return null;
+    if (!isValidGitRef(sha)) return null;
     const key = `${this.keyPrefix}:author:${this.workspace}/${this.repoSlug}:${sha}`;
     const hit = commitAuthorCache.get(key);
     if (hit !== undefined) return hit;
@@ -272,12 +348,13 @@ export class BitbucketProvider extends ScmProvider {
   }
 
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {
+    if (!isValidGitRef(ref)) return null;
     const cleanPath = path.replace(/^\//, '');
     const key = `${this.keyPrefix}:file:${this.workspace}/${this.repoSlug}:${ref}:${cleanPath}`;
     const hit = fetchFileCache.get(key);
     if (hit !== undefined) return hit;
 
-    const res = await fetch(`${this.base}/src/${encodeURIComponent(ref)}/${cleanPath}`, {
+    const res = await fetch(`${this.base}/src/${encodeURIComponent(ref)}/${encodePathSegments(cleanPath)}`, {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -432,13 +509,17 @@ export class BitbucketProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+  override async dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     const target = settings.bitbucket;
     if (!target) throw new Error('No Bitbucket pipeline configured for CI re-run');
 
-    // A custom pipeline still runs against a branch; the config names only the
-    // pipeline, so use the repository's default branch as the ref.
-    const branch = (await this.getDefaultBranch()) || 'main';
+    // A custom pipeline runs against a branch: the requested one, else the
+    // repository's default branch, since the config names only the pipeline.
+    const branch = request.ref || (await this.getDefaultBranch()) || 'main';
     const res = await fetch(`${this.base}/pipelines/`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
@@ -459,6 +540,10 @@ export class BitbucketProvider extends ScmProvider {
       pipeline.build_number != null
         ? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pipelines/results/${pipeline.build_number}`
         : (pipeline.links?.self?.href ?? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pipelines`);
-    return { url };
+    return {
+      url,
+      ref: branch,
+      ...(pipeline.build_number != null ? { buildNumber: String(pipeline.build_number) } : {}),
+    };
   }
 }

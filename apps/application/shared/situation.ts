@@ -14,12 +14,14 @@ import { relativeTimeAgo } from '#shared/relative-time';
 
 /** One span of the sentence — plain text, or a linkable reference the UI can render. */
 export interface SituationPart {
-  kind: 'text' | 'run' | 'commit' | 'cluster' | 'owner' | 'test';
+  kind: 'text' | 'run' | 'commit' | 'cluster' | 'owner' | 'test' | 'issue';
   text: string;
   /** The entity id behind a `run` / `commit` / `cluster` part, for the link. */
   id?: string | number;
   /** An optional app-relative href the UI may use directly. */
   href?: string;
+  /** The tracker's page for an `issue` part — outside the app, so it opens in a new tab. */
+  url?: string;
 }
 
 export interface Situation {
@@ -36,6 +38,8 @@ export interface SituationInput {
   clusterStatus?: string | null;
   /** The cluster's assignee, when one is set — overrides "unassigned". */
   assignee?: string | null;
+  /** The tracker issue the cluster is known by, when one is linked or was created for it. */
+  knownIssue?: { key: string; url: string; status: string | null } | null;
   /** Fixed for tests; defaults to now. */
   now?: Date;
 }
@@ -98,6 +102,14 @@ export function buildSituation(input: SituationInput): Situation {
     const assigneeText = input.assignee?.trim() ? `assigned to ${input.assignee.trim()}` : 'unassigned';
     const fixedBefore = since.fixedBefore ? '; fixed once before, the fix did not hold' : '';
     push('text', ` (${status}, ${assigneeText}${fixedBefore}). `);
+
+    // The ticket that tracks it — said after the cluster, whose issue it is.
+    const issue = input.knownIssue;
+    if (issue?.key) {
+      push('text', 'Tracked in ');
+      push('issue', issue.key, { id: issue.key, url: issue.url });
+      push('text', issue.status ? ` (${issue.status}). ` : '. ');
+    }
   }
 
   // Owner — closes the sentence.

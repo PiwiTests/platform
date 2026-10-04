@@ -1,0 +1,93 @@
+name: JetBrains plugin
+
+# Builds and tests apps/jetbrains on WebStorm 2024.1, the oldest supported
+# platform, and runs the Plugin Verifier on the IDEs gradle.properties lists.
+# The IDE downloads are large: ci.yml calls it on pull requests and pushes to
+# main that change the plugin, the editor service or the core package, and it
+# runs on demand. A pull request verifies on the oldest and the newest WebStorm;
+# main and a manual run verify on every IDE.
+on:
+  workflow_call:
+    inputs:
+      all-ides:
+        description: Verify on every IDE, not only the oldest and the newest WebStorm.
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      all-ides:
+        description: Verify on every IDE, not only the oldest and the newest WebStorm.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Build the editor service
+        working-directory: packages/editor
+        run: npm run editor:build
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Test and build
+        working-directory: apps/jetbrains
+        run: ./gradlew test buildPlugin
+
+      - name: Upload the plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: piwi-jetbrains
+          path: apps/jetbrains/build/distributions/*.zip
+          retention-days: 7
+
+  # One IDE per job: a runner's disk holds one unpacked IDE at a time.
+  verify:
+    name: verify (${{ matrix.ide }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        ide: ${{ fromJSON(inputs.all-ides && '["WS:2024.1","WS:2026.2.3","IU:2026.2.3","RD:2026.2.2"]' || '["WS:2024.1","WS:2026.2.3"]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Build the editor service
+        working-directory: packages/editor
+        run: npm run editor:build
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Verify on ${{ matrix.ide }}
+        working-directory: apps/jetbrains
+        run: ./gradlew verifyPlugin -PverifyIdes=${{ matrix.ide }}

@@ -1,6 +1,6 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { resolveAiConfig, callAiProvider } from '../../../utils/ai-provider';
+import { resolveAiConfig, callAiProvider, storedKeyFor } from '../../../utils/ai-provider';
 import { embedTexts } from '../../../utils/ai-embeddings';
 import type { AiModelRole, AiProvider, ResolvedAiRole } from '~~/types/api';
 
@@ -56,8 +56,12 @@ export default eventHandler(async (event) => {
   } else {
     // Form values win; a blank key falls back to the saved key for this role
     // (users leave the field empty to keep the stored secret), then to the
-    // diagnosis role's key (the common "reuse" source).
-    const apiKey = body.apiKey || resolved?.roles[role]?.apiKey || resolved?.roles.diagnosis?.apiKey || '';
+    // diagnosis role's key (the common "reuse" source), each only for the
+    // provider and base URL it was saved for.
+    const apiKey =
+      body.apiKey ||
+      storedKeyFor(resolved?.roles[role], body.provider, body.baseUrl) ||
+      storedKeyFor(resolved?.roles.diagnosis, body.provider, body.baseUrl);
     config = {
       provider: body.provider as AiProvider,
       apiKey,

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * Desktop shell only: the project's linked local folder, managed from the
- * project edit page alongside the other project settings. Changes apply
+ * Desktop shell only: the project's linked local folder, managed in the
+ * project's Settings tab alongside the other project settings. Changes apply
  * immediately — the link lives in the shell's own store on this machine, not
  * in the server database. Renders nothing without the IPC bridge.
  */
+import type { ComponentPublicInstance } from 'vue';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
 const props = defineProps<{ projectId: string | number; projectName?: string | null }>();
@@ -22,6 +23,34 @@ watch(
   { immediate: true },
 );
 
+const route = useRoute();
+const card = ref<ComponentPublicInstance | null>(null);
+
+const KEEP_IN_VIEW_MS = 3000;
+const READER_SCROLL_EVENTS = ['wheel', 'touchmove', 'keydown'];
+
+// A link to `#local-folder` lands on this card. It renders once the shell is detected, while the cards above it are
+// still loading, so it stays at the top of the view as they grow — until the reader scrolls or the time is up.
+watch(
+  available,
+  (isAvailable) => {
+    const el = card.value?.$el as HTMLElement | undefined;
+    if (!isAvailable || route.hash !== '#local-folder' || !el?.parentElement) return;
+    const scrollToCard = () => el.scrollIntoView({ block: 'start' });
+    const observer = new ResizeObserver(scrollToCard);
+    const stop = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      for (const name of READER_SCROLL_EVENTS) window.removeEventListener(name, stop);
+    };
+    const timer = setTimeout(stop, KEEP_IN_VIEW_MS);
+    for (const name of READER_SCROLL_EVENTS) window.addEventListener(name, stop, { once: true });
+    observer.observe(el.parentElement);
+    scrollToCard();
+  },
+  { flush: 'post' },
+);
+
 /** Link (or re-link) the folder, then offer to import the runs already in it. */
 async function chooseAndPropose() {
   const linked = await pickAndLink();
@@ -33,6 +62,7 @@ async function chooseAndPropose() {
   <SectionCard
     v-if="available"
     id="local-folder"
+    ref="card"
     icon="i-lucide-folder-symlink"
     title="Local folder"
     help="project.local-folder"

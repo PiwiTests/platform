@@ -6,7 +6,7 @@
  * layout; runs keep going while it is closed, and closing it never stops
  * anything. Renders nothing without the IPC bridge.
  */
-import type { LocalRun } from '~/composables/useDesktopLocalRuns';
+import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
@@ -44,8 +44,13 @@ function duration(run: LocalRun): string {
 function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'error' | 'neutral' } {
   switch (run.status) {
     case 'running':
-      return { label: localRunProgressLabel(run), color: 'info' };
+      return { label: localRunProgressLabel(run), color: run.stopRequested ? 'neutral' : 'info' };
     case 'passed':
+      if (run.kind === 'flake') {
+        return flakeLabOutcome(run.exitCode) === 'reproduced'
+          ? { label: 'Reproduced', color: 'success' }
+          : { label: 'Not reproduced', color: 'neutral' };
+      }
       return { label: 'Passed', color: 'success' };
     case 'failed':
       return { label: run.exitCode != null ? `Failed (exit ${run.exitCode})` : 'Failed', color: 'error' };
@@ -108,8 +113,13 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               {{ run.steps[run.stepIndex]?.display }}
             </code>
             <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
+            <UTooltip v-if="run.status === 'running' && run.stopRequested" text="Kill the process without waiting">
+              <UButton size="xs" color="error" variant="solid" icon="i-lucide-square" @click="store.stopRun(run)">
+                Force stop
+              </UButton>
+            </UTooltip>
             <UButton
-              v-if="run.status === 'running'"
+              v-else-if="run.status === 'running'"
               size="xs"
               color="error"
               variant="soft"
@@ -118,7 +128,7 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
             >
               Stop
             </UButton>
-            <UTooltip v-else text="Run again with the same options">
+            <UTooltip v-else-if="run.kind !== 'flake' || run.flake" text="Run again with the same options">
               <UButton
                 size="xs"
                 color="neutral"

@@ -1,13 +1,6 @@
-import { and, eq, lte, lt } from 'drizzle-orm';
+import { and, eq, inArray, lte, lt } from 'drizzle-orm';
 import { notificationDeliveries, notificationChannels, subscriptions, users } from '../../database/schema';
-import {
-  sendEmail,
-  renderRunNotificationEmail,
-  renderNewClusterEmail,
-  renderDigestEmail,
-  isEmailConfigured,
-  type DigestItem,
-} from '../email';
+import { sendEmail, renderNotificationEmail, renderDigestEmail, isEmailConfigured, type DigestItem } from '../email';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { safeFetch } from '../safe-fetch';
 import type {
@@ -17,10 +10,29 @@ import type {
   NotificationPayload,
   RunFinishedPayload,
   ClusterNewPayload,
+  BugLooksFixedPayload,
+  EnvironmentIncidentPayload,
 } from '#shared/notification-events';
-import { renderEventSubject, notificationTargetPath, failureTargetPath } from '#shared/notification-events';
+import {
+  clusterOutcome,
+  renderEventSubject,
+  notificationTargetPath,
+  failureTargetPath,
+  TOP_FAILURES_LIMIT,
+} from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
+import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
+import {
+  loadReportForDelivery,
+  publishReportNotification,
+  reportSlackMessage,
+  reportWebhookBody,
+  sendReportEmail,
+  snapshotUrl,
+} from '../reports/deliver';
+import { deliveredShareUrl } from '../reports/context';
+import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 /** Slack digest messages list at most this many items; the rest are counted. */
@@ -62,37 +74,7 @@ async function resolveEmailAddress(db: Db, channel: ChannelRow): Promise<string>
 async function sendToEmail(to: string, event: NotificationEvent, payload: NotificationPayload) {
   if (!isEmailConfigured()) throw new Error('SMTP not configured');
 
-  let html: string;
-  let text: string;
-
-  if (event.startsWith('run.')) {
-    const p = payload as RunFinishedPayload;
-    ({ html, text } = renderRunNotificationEmail({
-      projectName: p.projectName,
-      runId: p.runId,
-      status: p.status,
-      totalTests: p.totalTests,
-      failedTests: p.failedTests,
-      branch: p.branch,
-      topFailures: p.topFailures,
-    }));
-  } else if (event === 'cluster.new') {
-    const p = payload as ClusterNewPayload;
-    ({ html, text } = renderNewClusterEmail({
-      projectName: p.projectName,
-      clusterId: p.clusterId,
-      signature: p.signature,
-      title: p.title,
-      sampleErrorExcerpt: p.sampleErrorExcerpt,
-      affectedCases: p.affectedCases,
-      knownIssue: p.knownIssue,
-    }));
-  } else {
-    const subject = renderEventSubject(event, payload);
-    html = `<p>${subject}</p>`;
-    text = subject;
-  }
-
+  const { html, text } = renderNotificationEmail(event, payload);
   await sendEmail({ to, subject: renderEventSubject(event, payload), html, text });
 }
 
@@ -105,6 +87,17 @@ async function postToSlack(webhookUrl: string, body: Record<string, unknown>) {
   if (!res.ok) throw new Error(`Slack webhook returned ${res.status}`);
 }
 
+async function postToTeams(config: Record<string, unknown>, body: Record<string, unknown>) {
+  const webhookUrl = config.webhookUrl as string;
+  if (!webhookUrl) throw new Error('No Microsoft Teams webhook URL configured');
+  const res = await safeFetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Microsoft Teams webhook returned ${res.status}`);
+}
+
 async function sendToSlack(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
   const webhookUrl = config.webhookUrl as string;
   if (!webhookUrl) throw new Error('No Slack webhook URL configured');
@@ -112,10 +105,13 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   const text = renderEventSubject(event, payload);
   let emoji = ':bell:';
   if (event.startsWith('run.failed')) emoji = ':x:';
+  else if (event === 'run.interrupted') emoji = ':warning:';
   else if (event === 'cluster.new') emoji = ':bug:';
   else if (event === 'cluster.fixed') emoji = ':white_check_mark:';
   else if (event === 'cluster.regressed') emoji = ':rotating_light:';
   else if (event === 'flakiness.spike') emoji = ':game_die:';
+  else if (event === 'bug.looks_fixed') emoji = ':white_check_mark:';
+  else if (event === 'environment.incident') emoji = ':construction:';
 
   const base = siteBase();
   // Slack section text is capped at 3000 chars; keep excerpts short.
@@ -145,15 +141,25 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   } else if (event === 'cluster.fixed' || event === 'cluster.regressed') {
     const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
     const parts: string[] = [p.title || `\`${slackExcerpt(p.signature)}\``];
-    if (event === 'cluster.fixed') {
-      const fixed = p as ClusterFixedPayload;
-      if (fixed.resolved) parts.push('Triage status set to resolved.');
-    } else if ((p as ClusterRegressedPayload).reopened) {
-      parts.push('Triage status set back to open.');
-    }
+    const { triageNote } = clusterOutcome(event, p);
+    if (triageNote) parts.push(triageNote);
     if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
+  } else if (event === 'environment.incident') {
+    const p = payload as EnvironmentIncidentPayload;
+    const parts = [p.reason, 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).'];
+    parts.push(`<${base}/test-runs/${p.runId}|View run>`);
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
+  } else if (event === 'bug.looks_fixed') {
+    const p = payload as BugLooksFixedPayload;
+    for (const t of p.tests.slice(0, TOP_FAILURES_LIMIT)) {
+      const link = `<${base}/test-run-cases/${t.executionId}|${t.title}>`;
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `• *${link}* passes: remove \`test.fail()\` in \`${t.filePath}\`` },
+      });
+    }
   }
 
   await postToSlack(webhookUrl, { text: `${emoji} *${text}*`, blocks });
@@ -184,13 +190,17 @@ async function sendSlackDigest(config: Record<string, unknown>, items: DigestIte
 }
 
 async function sendToWebhook(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
+  await postSignedWebhook(config, JSON.stringify({ event, payload, timestamp: new Date().toISOString() }));
+}
+
+/** POST a JSON body to a webhook channel, HMAC-SHA256 signed in `X-Piwi-Signature` when it has a secret. */
+async function postSignedWebhook(config: Record<string, unknown>, body: string) {
   const url = config.url as string;
   if (!url) throw new Error('No webhook URL configured');
 
   const encryptedSecret = config.secret as string | undefined;
   const secret = encryptedSecret ? decryptSecret(encryptedSecret, getEncryptionKey()) : null;
 
-  const body = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (secret) {
@@ -204,8 +214,34 @@ async function sendToWebhook(config: Record<string, unknown>, event: Notificatio
   if (!res.ok) throw new Error(`Webhook returned ${res.status}`);
 }
 
+/**
+ * Deliver a quality report (`report.ready`, queued by a report schedule):
+ * the snapshot rendered for the channel type.
+ */
+async function sendQualityReport(db: Db, d: DeliveryRow, c: ChannelRow) {
+  const config = (c.config ?? {}) as Record<string, unknown>;
+  const payload = (d.payload ?? {}) as ReportReadyPayload;
+  const { bundle, projectIds } = await loadReportForDelivery(db as any, payload);
+  const shareUrl = deliveredShareUrl(payload.shareToken);
+  if (c.type === 'personal_email' || c.type === 'email') {
+    await sendReportEmail(await resolveEmailAddress(db, c), bundle, payload, shareUrl);
+  } else if (c.type === 'slack') {
+    const webhookUrl = config.webhookUrl as string;
+    if (!webhookUrl) throw new Error('No Slack webhook URL configured');
+    await postToSlack(webhookUrl, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
+  } else if (c.type === 'teams') {
+    await postToTeams(config, teamsReportMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
+  } else if (c.type === 'webhook') {
+    await postSignedWebhook(config, reportWebhookBody(bundle, payload, shareUrl));
+  } else if (c.type === 'browser') {
+    publishReportNotification(bundle, payload, c.userId, projectIds);
+  } else throw new Error(`Unknown channel type: ${c.type}`);
+}
+
 /** Deliver a single outbox row through its channel. */
 async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
+  // A quality report is not a notification event: it has its own renderers and no subject line.
+  if (d.event === REPORT_READY_EVENT) return sendQualityReport(db, d, c);
   const config = (c.config ?? {}) as Record<string, unknown>;
   const event = d.event as NotificationEvent;
   const payload = (d.payload ?? {}) as NotificationPayload;
@@ -213,6 +249,7 @@ async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
   if (c.type === 'personal_email' || c.type === 'email') {
     await sendToEmail(await resolveEmailAddress(db, c), event, payload);
   } else if (c.type === 'slack') await sendToSlack(config, event, payload);
+  else if (c.type === 'teams') await postToTeams(config, teamsEventMessage(event, payload, siteBase()));
   else if (c.type === 'webhook') await sendToWebhook(config, event, payload);
   else if (c.type === 'browser') {
     /* Delivered via SSE — the notification/stream endpoint handles this channel type */
@@ -233,6 +270,8 @@ async function sendDigest(db: Db, c: ChannelRow, rows: DeliveryRow[]) {
     await sendEmail({ to, subject, html, text });
   } else if (c.type === 'slack') {
     await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, items);
+  } else if (c.type === 'teams') {
+    await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(items, siteBase()));
   } else {
     throw new Error(`Digest not supported for channel type: ${c.type}`);
   }
@@ -266,14 +305,47 @@ async function markFailed(db: Db, rows: DeliveryRow[], message: string, now: Dat
   }
 }
 
+export interface SweepResult {
+  sent: number;
+  failed: number;
+}
+
+/** The sweep running in this process, and the one pass queued behind it. */
+let activeSweep: Promise<SweepResult> | null = null;
+let queuedSweep: Promise<SweepResult> | null = null;
+
 /**
- * Process pending deliveries that are due now (scheduledFor <= now, status = 'pending', attempts < MAX).
+ * Process the deliveries that are due now (see `sweepDue`). One sweep runs at a
+ * time in this process: a call made while one is running waits for it, then
+ * shares a single follow-up pass with every other call made meanwhile, so rows
+ * written during a sweep still go out.
+ */
+export function sweepOutbox(db: Db): Promise<SweepResult> {
+  if (!activeSweep) {
+    activeSweep = sweepDue(db).finally(() => {
+      activeSweep = null;
+    });
+    return activeSweep;
+  }
+  queuedSweep ??= activeSweep
+    .catch(() => undefined)
+    .then(() => {
+      queuedSweep = null;
+      return sweepOutbox(db);
+    });
+  return queuedSweep;
+}
+
+/**
+ * Send the deliveries that are due now (scheduledFor <= now, attempts < MAX):
+ * `pending` ones, and `processing` ones whose claim's lease has run out.
  *
  * Email and Slack deliveries queued by a digest-mode subscription batch into
  * one message per channel; every other delivery (realtime, webhook, browser)
- * sends individually. Returns per-row sent/failed counts.
+ * sends individually. Each row is claimed just before it is sent and skipped
+ * when another sweep holds it. Returns per-row sent/failed counts.
  */
-export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: number }> {
+async function sweepDue(db: Db): Promise<SweepResult> {
   const now = new Date();
   let sent = 0;
   let failed = 0;
@@ -285,14 +357,15 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
     .leftJoin(subscriptions, eq(notificationDeliveries.subscriptionId, subscriptions.id))
     .where(
       and(
-        eq(notificationDeliveries.status, 'pending'),
+        inArray(notificationDeliveries.status, OUTBOX_SWEEPABLE_STATUSES),
         lte(notificationDeliveries.scheduledFor, now),
         lt(notificationDeliveries.attempts, MAX_ATTEMPTS),
       ),
     );
 
   const digestable = (row: (typeof due)[number]) =>
-    row.mode === 'digest' && (row.c.type === 'email' || row.c.type === 'personal_email' || row.c.type === 'slack');
+    row.mode === 'digest' &&
+    (row.c.type === 'email' || row.c.type === 'personal_email' || row.c.type === 'slack' || row.c.type === 'teams');
 
   const singles: (typeof due)[number][] = [];
   const digestGroups = new Map<number, (typeof due)[number][]>();
@@ -314,6 +387,8 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
   }
 
   for (const { d, c } of singles) {
+    const claimed = await claimOutboxRows(db, notificationDeliveries, [d.id]);
+    if (!claimed.has(d.id)) continue;
     try {
       await sendSingle(db, d, c);
       await markSent(db, [d], now);
@@ -325,7 +400,13 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
   }
 
   for (const group of digestGroups.values()) {
-    const rows = group.map((g) => g.d);
+    const claimed = await claimOutboxRows(
+      db,
+      notificationDeliveries,
+      group.map((g) => g.d.id),
+    );
+    const rows = group.map((g) => g.d).filter((d) => claimed.has(d.id));
+    if (rows.length === 0) continue;
     try {
       await sendDigest(db, group[0]!.c, rows);
       await markSent(db, rows, now);

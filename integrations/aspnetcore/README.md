@@ -4,13 +4,15 @@ ASP.NET Core integration for [Piwi Dashboard](https://piwitests.dev) — capture
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
 
-**Active only in Development and Test environments.** No header is emitted in Production.
+**Active in Development and Test by default.** No header is emitted in Production unless you opt in — see [Choosing the environments](#choosing-the-environments) for recette tiers with their own environment names.
 
 ## Installation
 
 ```bash
 dotnet add package PiwiTests.Instrumentation.AspNetCore
 ```
+
+Logging through Serilog? Add `PiwiTests.Instrumentation.Serilog` too — see [Serilog](#serilog).
 
 ## Usage
 
@@ -28,9 +30,84 @@ app.UsePiwiTestLogs();
 app.Run();
 ```
 
-`AddPiwiTestLogs()` registers an `ILoggerProvider` that intercepts Warning and Error entries and stores them in an `AsyncLocal` buffer scoped to the current HTTP request.
+`AddPiwiTestLogs()` registers an `ILoggerProvider` that feeds Warning and Error entries into a per-request capture buffer (`PiwiTestLogCapture`, from the [`PiwiTests.Instrumentation.Core`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Core) package this one depends on), scoped to the current HTTP request with `AsyncLocal`.
 
-`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header before the response is sent — but only when the environment is Development or Test.
+`UsePiwiTestLogs()` adds middleware that serializes the buffer to JSON, gzip-compresses it, and writes the result (Base64-encoded) to the `X-Piwi-Logs` response header as the response starts, but only in the active environments (Development and Test by default). Entries logged after that point (while a body is still streaming) can no longer ride on the response.
+
+## Generic Host + classic `Startup`
+
+The capture buffer is decoupled from any single logging front-end, so the integration is not limited to minimal hosting or to the Microsoft.Extensions.Logging pipeline. Hosting-agnostic overloads cover `Startup`-based apps:
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+    services.AddPiwiTestLogs();   // also available on ILoggingBuilder
+}
+
+public void Configure(IApplicationBuilder app, IHostEnvironment env)
+{
+    app.UsePiwiTestLogs(env, "Development", "Podman", "Integration");
+}
+```
+
+`app.UsePiwiTestLogs(env)` keeps the Development/Test default; [Choosing the environments](#choosing-the-environments) lists every way to set them.
+
+## Serilog
+
+When logging is routed through **Serilog** (with the default `writeToProviders: false`), other `ILoggerProvider`s are never called, so `AddPiwiTestLogs()` alone captures nothing. Add the [`PiwiTests.Instrumentation.Serilog`](https://www.nuget.org/packages/PiwiTests.Instrumentation.Serilog) sink instead:
+
+```bash
+dotnet add package PiwiTests.Instrumentation.Serilog
+```
+
+```csharp
+// Serilog configuration
+loggerConfiguration.WriteTo.PiwiTestLogs();
+
+// Startup.Configure(IApplicationBuilder app, IHostEnvironment env)
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+```
+
+The sink captures Warning, Error and Fatal events (Fatal as `Critical`), takes the category from `SourceContext`, and does nothing outside a request the middleware brackets — so register it unconditionally and let the middleware decide the environments.
+
+Any other logging front-end can feed the same buffer through `PiwiTestLogCapture.TryAdd` (namespace `PiwiTests.Instrumentation`). `TryAdd` centralizes the level filter (Warning and above), the 50-entry cap, and the 500-character message truncation, so no feeding path can over-capture, even one that bypasses `IsEnabled`.
+
+## Choosing the environments
+
+Test tiers often run under their own environment names (`Podman`, `Integration`, …). Only the middleware needs to know them: outside a request it brackets, the capture buffer is inert, so the log provider and the Serilog sink can stay registered everywhere at no cost.
+
+Pick where the middleware is active in one of three ways:
+
+```csharp
+// 1. A predicate, for full control
+app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
+
+// 2. Environment names (case-insensitive)
+app.UsePiwiTestLogs(env, "Development", "Podman", "Integration");
+
+// 3. Options, set once in ConfigureServices (or builder.AddPiwiTestLogs(o => ...))
+services.AddPiwiTestLogs(o => o.IsActive = e => e.IsDevelopment() || e.IsEnvironment("Integration"));
+services.AddPiwiTestLogs(o => o.Environments.Add("Integration"));   // replaces the Development/Test default
+```
+
+Or leave the code alone and set the variables on the backend:
+
+| Variable                      | Effect                                                                                  |
+|-------------------------------|-----------------------------------------------------------------------------------------|
+| `PIWI_TEST_LOGS_ENVIRONMENTS` | Comma-separated environment names, e.g. `Development,Podman,Integration`                |
+| `PIWI_TEST_LOGS_DISABLED`     | `true` turns the middleware off everywhere; `false` turns it on in any environment      |
+
+The first setting present wins:
+
+1. `PIWI_TEST_LOGS_DISABLED` (`true` or `false`) — overrides everything below
+2. the predicate passed to `UsePiwiTestLogs`
+3. the environment names passed to `UsePiwiTestLogs`
+4. `PiwiTestLogsOptions.IsActive`
+5. `PiwiTestLogsOptions.Environments`
+6. `PIWI_TEST_LOGS_ENVIRONMENTS`
+7. the default: Development and Test
+
+The decision is made once, when the pipeline is built.
 
 ## What gets captured
 
@@ -51,8 +128,7 @@ Each captured entry contains:
 | `level`            | `"Warning"`, `"Error"`, or `"Critical"`                                                              |
 | `category`         | Logger category name (e.g. `MyApp.Services.OrderService`)                                            |
 | `message`          | Formatted log message                                                                                |
-| `exceptionMessage` | Exception message, if one was logged                                                                 |
-| `StackTrace`       | Shrunk stack trace (5 frames max, framework frames removed, namespace parts shortened to first letter)|
+| `stack`            | Exception message, then the shrunk stack trace (5 frames max, framework frames removed, namespace parts shortened to first letter); omitted when no exception was logged |
 
 ## Requirements
 
@@ -71,6 +147,68 @@ Playwright test
                       └─ Piwi reporter reads header
                            └─ stored as serverLogs on the network request
                                 └─ visible in test-case detail + AI diagnosis
+```
+
+## Server probes — the `X-Piwi-Probe` header
+
+The middleware accepts a signed fault instruction from a Piwi probe run (Test
+Map, level two). A verified header is recorded on `HttpContext.Items["PiwiProbe"]`;
+a fault is **applied** only once a project turns server probes on
+(`PIWI_SERVER_PROBES=true`), which stays off by default. The middleware runs only
+in the environments it is active in, Development and Test by default (the same
+guard as log capture).
+
+| Variable             | Effect                                                             |
+|----------------------|-------------------------------------------------------------------|
+| `PIWI_PROBE_SECRET`  | Shared HMAC secret. When unset, the probe header is ignored.      |
+| `PIWI_SERVER_PROBES` | `true` to apply verified faults to the signed request.            |
+
+**Faults applied — the honest subset for ASP.NET Core** (`PiwiProbeFaults`):
+handler-level faults only — `throw`, `status`/`auth` (500/401), `delay`/`slow`/
+`slow-first` (+5s) and `extreme` (empty 200), matched to the target route. The
+reporter picks the Nth match and signs that one request, so the fault applies to
+any request the header matches and the single-use nonce keeps it from repeating.
+Data mutation before serialization and dependency faults on outbound
+`HttpClient` calls are the Nitro package's fuller subset; they need response
+buffering and a delegating handler this package does not yet wire, so they are
+**not applied here and never marked applied** — a probe naming one records as
+inconclusive rather than a false gap. A fault is marked applied
+(`HttpContext.Items["PiwiProbeApplied"]`) only once it actually takes effect, and
+that label is reported to the reporter on the response's `X-Piwi-Trace` root span
+(`piwi.probe.applied`), which the reporter compares with the fault it asked for.
+
+**Header format.** `X-Piwi-Probe` carries a base64-encoded JSON envelope, the
+same scheme as the Nitro package:
+
+```jsonc
+{
+  "nonce": "<hex, single use>",
+  "ts": 1700000000000,            // issued-at, Unix ms; honored within 60s
+  "specJson": "{\"route\":\"POST /api/orders\",\"fault\":\"status-500\",\"nth\":1}",
+  "sig": "<hex HMAC-SHA256>"      // over `${nonce}.${ts}.${specJson}` with PIWI_PROBE_SECRET
+}
+```
+
+A verified spec is stored in `HttpContext.Items["PiwiProbe"]`. Verification lives
+in `PiwiProbe.Verify`; `PiwiProbe.Sign` produces a matching signature.
+
+> **Single-use nonces are tracked per process** (`ProbeNonceCache`), so the replay
+> guard is exact only against one server instance — a header replayed to a
+> different instance behind a load balancer, or after a restart, is bounded only
+> by the signature and the 60s TTL. Probe runs target a single instance, so this
+> is not a concern in practice.
+
+> **Scope note.** For a verified probe request this package emits an `X-Piwi-Trace`
+> header whose root span names the applied fault (`piwi.probe.applied`), alongside
+> `X-Piwi-Logs`. It does not yet apply data mutation or dependency faults (see the
+> honest subset above).
+
+## Development
+
+The packages and their tests build from one solution, the same command CI runs:
+
+```bash
+dotnet test integrations/aspnetcore/PiwiTests.Instrumentation.slnx
 ```
 
 ## License

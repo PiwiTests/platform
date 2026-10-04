@@ -4,11 +4,18 @@ import {
   describeFailure,
   describeFailureText,
   formatTimeout,
-  headlineMarkdown,
   lastStepTitle,
+  stepHeadlineContext,
   HEADLINE_MAX_CHARS,
 } from '../src/describe-failure';
 import { ERRORS, type ErrorKey } from './fixtures/playwright-errors';
+import {
+  afterAllFailure,
+  beforeAllFailure,
+  beforeEachFailure,
+  bodyFailure,
+  type RecordedExecution,
+} from './fixtures/playwright-steps';
 
 const headline = (key: ErrorKey, ctx?: { lastStepTitle?: string | null }) =>
   describeFailure(parsePlaywrightError(ERRORS[key]), ctx).headline;
@@ -66,7 +73,8 @@ describe('describeFailure — one line per shape', () => {
     for (const key of Object.keys(ERRORS) as ErrorKey[]) {
       const d = describeFailure(parsePlaywrightError(ERRORS[key]));
       expect(d.headline.length, key).toBeLessThanOrEqual(HEADLINE_MAX_CHARS);
-      expect(d.headline, key).not.toMatch(/\n|/);
+      // eslint-disable-next-line no-control-regex
+      expect(d.headline, key).not.toMatch(/\n|\x1b/);
       expect(d.headline, key).not.toMatch(/<(?:N|VALUE|URL|STR|UUID|HASH|EMAIL)>/);
       expect(d.parts.map((p) => p.text).join(''), key).toBe(d.headline);
       expect(d.headline.trim().length, key).toBeGreaterThan(0);
@@ -195,7 +203,7 @@ describe('describeFailure — length control', () => {
 
 describe('describeFailure — fallbacks', () => {
   test('an unknown shape returns its first line, trimmed and ANSI-free', () => {
-    const d = describeFailureText('[31m  Something odd happened  [0m\nmore\n');
+    const d = describeFailureText('\x1b[31m  Something odd happened  \x1b[0m\nmore\n');
     expect(d?.headline).toBe('Something odd happened');
   });
 
@@ -227,9 +235,60 @@ describe('helpers', () => {
     expect(lastStepTitle(null)).toBeNull();
   });
 
-  test('headlineMarkdown puts locators and values in code spans and escapes the rest', () => {
-    const d = describeFailure(parsePlaywrightError(ERRORS.toHaveCount));
-    expect(headlineMarkdown(d)).toBe("Expected 26 rows, found 51 — `getByRole('row')` toHaveCount");
-    expect(headlineMarkdown({ parts: [{ kind: 'text', text: 'a_b*c' }] })).toBe('a\\_b\\*c');
+  test('lastStepTitle names the failing step inside a hook, never the hook container', () => {
+    expect(lastStepTitle(beforeEachFailure.steps)).toBe('Click');
+    expect(lastStepTitle(beforeAllFailure.steps)).toBe('seeding the report fixtures');
+  });
+
+  test('lastStepTitle falls back to the last step of the test body, not the teardown', () => {
+    const passedSteps = bodyFailure.steps.map(({ failed: _failed, error: _error, ...step }) => step);
+    expect(lastStepTitle(passedSteps)).toBe('Fill "ada@example.com"');
+  });
+});
+
+describe('headlines read with the recorded steps', () => {
+  const headlineOf = (execution: RecordedExecution) =>
+    describeFailureText(execution.error, stepHeadlineContext(execution.steps, execution.error))?.headline;
+
+  test('a failure in the test body has no lead', () => {
+    expect(headlineOf(bodyFailure)).toBe(
+      "getByLabel('Email address') was not found on the page — fill timed out after 2 s",
+    );
+  });
+
+  test('a failure in a hook names the hook first', () => {
+    expect(headlineOf(beforeEachFailure)).toBe(
+      "In beforeEach: getByRole('button', { name: 'Edit profile' }) was not found on the page — click timed out after 1.5 s",
+    );
+  });
+
+  test('the message given to expect() is quoted, after the hook', () => {
+    expect(headlineOf(beforeAllFailure)).toBe(
+      'In beforeAll, "seeding the report fixtures" failed: expected true, got false — toBe',
+    );
+    expect(headlineOf(afterAllFailure)).toBe('In afterAll, "cleanup endpoint" failed: expected 200, got 500 — toBe');
+  });
+
+  test('a custom expect() message leads a failure in the test body too', () => {
+    const error =
+      'Error: the order total\n\nexpect(received).toBe(expected) // Object.is equality\n\nExpected: 42\nReceived: 41';
+    expect(describeFailureText(error)?.headline).toBe('"the order total" failed: expected 42, got 41 — toBe');
+  });
+
+  test('a lead keeps the capital of a name the line starts with', () => {
+    const failedIn = { phase: 'setup' as const, hook: 'beforeAll' };
+    expect(describeFailureText('TypeError: fetch failed', { failedIn })?.headline).toBe(
+      'In beforeAll: TypeError: fetch failed',
+    );
+    expect(describeFailureText('Error: Timed out waiting for the seed', { failedIn })?.headline).toMatch(
+      /^In beforeAll: timed out/,
+    );
+  });
+
+  test('a test timeout that names its hook keeps its own wording', () => {
+    const d = describeFailure(parsePlaywrightError(ERRORS.testTimeoutHook), {
+      failedIn: { phase: 'setup', hook: 'beforeEach' },
+    });
+    expect(d.headline.startsWith('In ')).toBe(false);
   });
 });

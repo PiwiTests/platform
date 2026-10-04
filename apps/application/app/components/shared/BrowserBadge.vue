@@ -36,7 +36,7 @@ const tooltipLines = computed(() => {
   return lines;
 });
 
-// The browser name is no longer shown inline, so surface it (plus any config) on hover.
+// The browser name is not shown inline, so surface it (plus any config) on hover.
 const tooltipText = computed(() => {
   if (!name.value) return '';
   return tooltipLines.value.length ? `${name.value} · ${tooltipLines.value.join(' · ')}` : name.value;

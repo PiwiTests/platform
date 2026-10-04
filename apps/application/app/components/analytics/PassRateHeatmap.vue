@@ -11,32 +11,45 @@ const {
 } = await useAnalyticsWidget<AnalyticsHeatmap>('pass-rate-heatmap', () => props.query);
 
 function cellStyle(rate: number | null): Record<string, string> {
-  if (rate === null) return {};
-  // Green (high) → amber → red (low), with alpha rising as it worsens.
-  if (rate >= 99.5) return { backgroundColor: 'rgba(34, 197, 94, 0.85)' };
-  if (rate >= 90) return { backgroundColor: 'rgba(34, 197, 94, 0.5)' };
-  if (rate >= 75) return { backgroundColor: 'rgba(245, 158, 11, 0.55)' };
-  if (rate >= 50) return { backgroundColor: 'rgba(249, 115, 22, 0.65)' };
-  return { backgroundColor: 'rgba(239, 68, 68, 0.75)' };
+  return rate === null ? {} : { backgroundColor: passRateStep(rate).color };
 }
 
 function cellTitle(row: { name: string; label: string | null }, index: number, rate: number | null): string {
   const date = heatmap.value?.buckets[index] ?? '';
-  const span = (heatmap.value?.bucketDays ?? 1) > 1 ? ` (${heatmap.value!.bucketDays} days)` : '';
+  const span = heatmap.value?.monthly
+    ? ' (month)'
+    : (heatmap.value?.bucketDays ?? 1) > 1
+      ? ` (${heatmap.value!.bucketDays} days)`
+      : '';
   return `${row.label || row.name} · ${date}${span}: ${rate !== null ? `${rate}% passed` : 'no runs'}`;
 }
 
-const legendItems = [
-  { color: 'rgba(34, 197, 94, 0.85)', label: '100%' },
-  { color: 'rgba(34, 197, 94, 0.5)', label: '≥ 90%' },
-  { color: 'rgba(245, 158, 11, 0.55)', label: '≥ 75%' },
-  { color: 'rgba(249, 115, 22, 0.65)', label: '≥ 50%' },
-  { color: 'rgba(239, 68, 68, 0.75)', label: '< 50%' },
-];
+const NuxtLink = resolveComponent('NuxtLink');
+
+/** The runs behind a cell: that project's runs of that bucket, with the same scope. */
+function cellHref(projectId: number, index: number): string | undefined {
+  const date = heatmap.value?.buckets[index];
+  if (!date || !heatmap.value) return undefined;
+  const days = heatmap.value.monthly ? 30 : heatmap.value.bucketDays;
+  return drillDownHref('runs', projectId, props.query, { range: bucketRange(date, days) });
+}
+
+const legendItems = PASS_RATE_STEPS.map(({ color, label }) => ({ color, label }));
+
+const exportData = computed(() =>
+  heatmap.value
+    ? {
+        name: 'pass-rate-heatmap',
+        header: ['project', ...heatmap.value.buckets],
+        rows: heatmap.value.rows.map((row) => [row.label || row.name, ...row.cells]),
+      }
+    : null,
+);
 
 const subtitle = computed(() => {
+  if (heatmap.value?.monthly) return 'One cell = one month (UTC)';
   const bucketDays = heatmap.value?.bucketDays ?? 1;
-  return bucketDays > 1 ? `One cell = ${bucketDays} days` : 'One cell = one day';
+  return bucketDays > 1 ? `One cell = ${bucketDays} days (UTC)` : 'One cell = one day (UTC)';
 });
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -86,6 +99,8 @@ const axisTicks = computed(() => {
     :subtitle="subtitle"
     help="analytics.heatmap"
     :legend="legendItems"
+    :export-data="exportData"
+    :png="false"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the heatmap: ${errorMessage(error)}`">
@@ -112,12 +127,14 @@ const axisTicks = computed(() => {
             {{ row.label || row.name }}
           </NuxtLink>
           <div class="flex gap-px">
-            <div
+            <component
+              :is="rate === null ? 'div' : NuxtLink"
               v-for="(rate, index) in row.cells"
               :key="index"
               class="h-6 flex-1 rounded-sm min-w-1 bg-gray-100 dark:bg-gray-800"
               :style="cellStyle(rate)"
               :title="cellTitle(row, index, rate)"
+              :to="rate === null ? undefined : cellHref(row.projectId, index)"
             />
           </div>
         </div>

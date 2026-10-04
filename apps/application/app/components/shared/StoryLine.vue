@@ -32,12 +32,14 @@ const STRENGTH: Record<FailureClueStrength, string> = {
 const topClue = computed(() => props.clues[0] ?? null);
 
 // The sentence: the diagnosis leads when it completed, else the story, else the
-// top clue in its own words.
+// top clue in its own words — its detail alone when the detail already opens
+// with the title.
 const sentence = computed(() => {
   if (props.diagnosis) return props.diagnosis.summary;
   if (props.story) return props.story.sentence;
   const c = topClue.value;
-  return c ? `${c.title} — ${c.detail}` : '';
+  if (!c) return '';
+  return c.detail.toLowerCase().startsWith(c.title.toLowerCase()) ? c.detail : `${c.title} — ${c.detail}`;
 });
 
 // A clue detail may quote a locator in backticks; those spans render as code.
@@ -58,7 +60,8 @@ const grade = computed<string | null>(() => {
   return strength ? STRENGTH[strength] : null;
 });
 
-// How many clues agree with the explanation.
+// How many clues agree with the explanation. A lone clue that is the sentence
+// itself agrees with nothing, so it states no count.
 const agreeCount = computed(() => {
   if (props.story) return props.story.clueIds.length;
   return props.clues.length;
@@ -67,6 +70,7 @@ const agreeLabel = computed(() => {
   const n = agreeCount.value;
   if (n <= 0) return null;
   if (props.diagnosis) return `supported by ${n} clue${n === 1 ? '' : 's'}`;
+  if (n === 1 && !props.story) return null;
   return `${n} clue${n === 1 ? '' : 's'} agree${n === 1 ? 's' : ''}`;
 });
 

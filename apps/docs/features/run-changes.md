@@ -1,5 +1,6 @@
 ---
 title: What changed in a run
+description: "What changed in a run against its baseline: new failures, fixed tests, new flakes, the largest duration changes and the commits in between."
 lang: en-US
 ---
 
@@ -13,14 +14,24 @@ The **Changes** tab on a run compares it against **one baseline** and tells you 
 
 Every section reads the **same baseline**, so the "new failures" count is computed once and used throughout. The selector at the top says which run it is, which branch and environment that run is on, and **why it was chosen**.
 
-By default the baseline is the last passing full run **in the same environment** — on the same branch, then on the **base branch** the run's branch forked from (the pull request's target branch when the reporter captured one, else the project's default branch), then on any branch — and only when the run's environment has no passing run at all does the same ladder run again across environments (see [Branches](./branches#branch-aware-baselines) and [Core concepts](/guide/concepts#baseline-last-green-run)). The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
+By default the baseline is the last passing full run chosen by the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then same branch, base branch, any branch. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
+
+### When no earlier run passed
+
+A project that has never had a green run still gets a comparison. When no earlier full run passed, the tab walks the same ladder again for the **last failed run** and says so: _"No earlier full run passed; the last failed run on feature/x in staging."_ The sections read the same way against it: **New failures** are the tests that passed in that run and fail here, **Still failing** the ones that failed in both. Timed-out and interrupted runs stopped before the suite ended, so they are never picked automatically.
+
+Only the Changes tab and the MCP `get_run_insights` tool take a failed run. The stored regression signals, the [CI gate](/guide/ci#blocking-a-merge) and [pull-request feedback](/features/pr-feedback) keep comparing with a passing run, so their verdicts never rest on a run that was itself red.
+
+When nothing qualifies (the earlier runs are partial, timed out or interrupted), the tab says so and offers the earlier runs to pick from. On the project's first finished run, it says there is nothing earlier yet.
+
+### Picking another baseline
 
 Two ways to compare against something else:
 
-- **Base branch** — take the baseline from one branch only: its last passing run, same environment first. The list offers every branch with an earlier passing run, so it appears once the project has one to choose. Deep-linkable as `?baseBranch=<name>`.
-- **Run** — compare against one specific run, whatever its branch or environment. Deep-linkable as `?baseline=<runId>`, so a link to a comparison reopens the same two runs. **Previous run** is the shortcut for the run just before this one.
+- **Base branch** — take the baseline from one branch only: its last passing run, else its last failed run, same environment first. The list offers every branch with an earlier full run that passed or failed, so it appears once a branch other than this run's own has one. Deep-linkable as `?baseBranch=<name>`.
+- **Run** — compare against one earlier run, whatever its branch, environment or outcome. The list shows the 50 runs before this one, each with its branch, environment, start time and outcome, partial runs marked; type a branch or environment name to filter it. Deep-linkable as `?baseline=<runId>`, so a link to a comparison reopens the same two runs. **Previous run** is the shortcut for the run just before this one.
 
-**Automatic** returns to the default choice. The same two options exist on the API (`GET /api/test-runs/{id}/insights?baseBranch=…` / `?baseline=…`) and on the MCP `get_run_insights` tool (`baseBranch`).
+**Automatic** returns to the default choice. The same options exist on the REST API (see the [API docs](https://piwitests.dev/demo/docs)), where `earlierRuns` lists the runs that can be passed as `baseline`, and on the MCP `get_run_insights` tool (`baseBranch`).
 
 ## What it shows
 
@@ -41,6 +52,7 @@ Comparing two runs is also how the [run comparison](./ui-overview#test-run-detai
 
 ## Related
 
+- [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new
 - [Branches](./branches#branch-aware-baselines) — why the default baseline is the same-branch run
 - [Flaky tests](./flaky-tests) — the per-project flaky, regression and spec-health signals
 - [Failure clusters & the inbox](./failure-clusters) — the failures grouped by cause

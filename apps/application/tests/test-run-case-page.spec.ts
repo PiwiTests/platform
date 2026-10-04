@@ -62,6 +62,39 @@ test.describe('Test-run-case page', () => {
                 params: { locator: "getByRole('button', { name: 'Pay' })" },
               },
             ],
+            // Benign capture-fixtures data — successful, fast requests, a plain
+            // log line, the page state on the expected route and Web Vitals — so
+            // the fixture-backed evidence tabs have content and none of it trips a
+            // failure clue. It keeps this an ordinary fixture-instrumented failure.
+            networkRequests: [
+              {
+                method: 'GET',
+                url: 'http://localhost:3000/checkout',
+                status: 200,
+                duration: 180,
+                resourceType: 'document',
+              },
+              {
+                method: 'GET',
+                url: 'http://localhost:3000/api/cart',
+                status: 200,
+                duration: 90,
+                resourceType: 'fetch',
+              },
+            ],
+            consoleLogs: [{ type: 'log', text: 'checkout page ready', timestamp: startTime + 500 }],
+            pageState: { url: 'http://localhost:3000/checkout' },
+            webVitals: {
+              navigation: {
+                url: 'http://localhost:3000/checkout',
+                ttfb: 60,
+                domInteractive: 320,
+                domContentLoaded: 420,
+                loadComplete: 900,
+                transferSize: 60000,
+              },
+              paint: { firstPaint: 210, firstContentfulPaint: 360 },
+            },
           },
           {
             title: 'homepage loads',
@@ -118,7 +151,7 @@ test.describe('Test-run-case page', () => {
     const tablist = page.getByRole('tablist', { name: 'Evidence sections' });
     await expect(tablist).toBeVisible();
     for (const name of ['Timeline', 'Screen', 'Source', 'Network', 'Console', 'State', 'Performance']) {
-      await expect(page.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible();
+      await expect(tablist.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible();
     }
 
     // The Fix card gathers what to do (diagnosis, verify, …) below the evidence.
@@ -148,7 +181,7 @@ test.describe('Test-run-case page', () => {
     await expect(page.locator('[data-shot="next-step"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Fix', exact: true })).toHaveCount(0);
     // A passing execution shows the steps table without the failure axis or its
-    // controls. The tab is the heading now — the block no longer repeats "Steps".
+    // controls. The tab is the heading — the block does not repeat "Steps".
     await expect(page.getByRole('button', { name: 'Around the failure' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /^Steps/ })).toHaveCount(0);
     await expect(page.locator('table').first()).toBeVisible();
@@ -157,7 +190,7 @@ test.describe('Test-run-case page', () => {
   test('the retry command is in the More menu, not an always-on header button', async ({ page }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
-    // The header no longer carries a standing Copy retry command button.
+    // The header carries no standing Copy retry command button.
     await expect(page.getByRole('button', { name: /Copy retry command/ })).toHaveCount(0);
     // It is reachable in the More actions menu.
     await page.getByRole('button', { name: 'More actions' }).click();
@@ -169,9 +202,11 @@ test.describe('Test-run-case page', () => {
     await waitForHydration(page);
     const performanceTab = page.getByRole('tab', { name: /^Performance/ });
     await performanceTab.click();
-    // The tab is the heading now; the block no longer repeats "Browser performance".
+    // The tab is the heading; the block does not repeat "Browser performance".
     await expect(performanceTab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByText(/Web Vitals/i).first()).toBeVisible();
+    // The captured Web Vitals render as metric tiles (the tab shows only when it
+    // has data — a fixtureless execution has no Performance tab at all).
+    await expect(page.getByText('TTFB', { exact: true })).toBeVisible();
   });
 
   test('GET /api/test-run-cases/:id/timeline places the steps and marks the failure', async ({ request }) => {
@@ -199,7 +234,7 @@ test.describe('Test-run-case page', () => {
 
     await page.getByRole('tab', { name: /^Timeline/ }).click();
 
-    // The tab is the heading now — the block no longer repeats "Failure timeline".
+    // The tab is the heading — the block does not repeat "Failure timeline".
     await expect(page.getByRole('heading', { name: 'Failure timeline' })).toHaveCount(0);
     // Both window controls drive the axis and the table together.
     await expect(page.getByRole('button', { name: 'Around the failure' })).toBeVisible();
@@ -207,7 +242,7 @@ test.describe('Test-run-case page', () => {
     // This run recorded no step start times, so the estimated note shows.
     await expect(page.getByText(/Step positions are derived from durations/)).toBeVisible();
 
-    // One merged table — the old duplicate "what happened" list is gone.
+    // One merged table, with no separate "what happened" list.
     await expect(page.getByRole('heading', { name: 'What happened in this window' })).toHaveCount(0);
     const table = page.getByRole('table');
     await expect(table).toHaveCount(1);
@@ -306,11 +341,13 @@ test.describe('Situation block on seeded cases', () => {
     await expect(situation).toContainText('New regression');
     await expect(situation.getByRole('link', { name: /cluster #/ })).toBeVisible();
 
-    // The next step applies the diagnosed fix, with the trailing retry command.
+    // The next step applies the diagnosed fix; its overflow menu copies the retry command.
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Apply the diagnosed fix');
     await expect(next.getByRole('button', { name: 'Copy git apply' })).toBeVisible();
-    await expect(next.getByRole('button', { name: 'Copy retry command' })).toBeVisible();
+    await next.getByRole('button', { name: 'More next-step actions' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Copy retry command' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // "New regression" appears exactly once on the page.
     await expect(page.getByText('New regression')).toHaveCount(1);
@@ -331,16 +368,29 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
   });
 
-  test('#37 folds the raw page structure behind a disclosure on the Screen tab', async ({ page }) => {
+  test('#37 shows the page at the failure as views on the Screen tab and picks from its DOM', async ({ page }) => {
     await page.goto('/test-run-cases/37');
     await waitForHydration(page);
-    await page.getByRole('tab', { name: /^Screen/ }).click();
-    // The ARIA tree and the DOM are folded away under Page structure, not open.
-    const disclosure = page.getByRole('button', { name: /Page structure/ });
-    await expect(disclosure).toBeVisible();
-    await disclosure.click();
-    // Opening it renders the failure-time page — an iframe, never escaped XML.
-    await expect(page.locator('iframe[title="Failure-time page"]')).toBeVisible();
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Screen', exact: true })
+      .click();
+    // One strip of views, opening on the screenshot.
+    const views = page.getByRole('tablist', { name: 'Screen view' });
+    await expect(views.getByRole('tab', { name: 'Screenshot', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(views.getByRole('tab', { name: 'Video', exact: true })).toBeVisible();
+    // The DOM view renders the page — an iframe, never escaped markup.
+    await views.getByRole('tab', { name: 'DOM', exact: true }).click();
+    await expect(page.locator('iframe[title="DOM at the failure"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy HTML' })).toBeVisible();
+    // The Accessibility tree view shows the tree as text.
+    await views.getByRole('tab', { name: 'Accessibility tree', exact: true }).click();
+    await expect(page.getByText('button "Pay now" [disabled]')).toBeVisible();
+    // "Open in picker" loads the same snapshot into the locator picker, from any view.
+    await page.getByRole('button', { name: 'Open in picker' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('iframe[title="DOM snapshot"]')).toBeVisible();
+    await expect(dialog.getByText('No DOM snapshot or ARIA data available')).toHaveCount(0);
   });
 
   test('#587 proposes replacing the locator and opens the Locator fix section', async ({ page }) => {
