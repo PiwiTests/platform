@@ -70,6 +70,11 @@ export const HELP_TOPICS = {
     text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
     doc: 'features/failure-clusters#the-failure-inbox',
   },
+  'home.flake-lab': {
+    title: 'Flake Lab queue',
+    text: 'Flaky tests the Flake Lab can move forward: a reproduced flake whose fix waits for a verify, then a flaky test whose top suspect no experiment has tested. Run the command from the project root, or from the code lens in your editor.',
+    doc: 'features/flake-lab#from-the-editor-and-the-failure-pages',
+  },
   'cluster.state': {
     title: 'Cluster state',
     text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
@@ -176,6 +181,11 @@ export const HELP_TOPICS = {
   'analytics.progress': {
     title: 'Fixes and triage',
     text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
+  },
+  'analytics.handbacks': {
+    title: 'Hand-back outcomes',
+    text: 'What became of what Piwi handed back in the period: locator heals now used in the code, auto-heal pull requests merged or closed, AI diagnoses rated and confirmed by the fix, merges the gate blocked or that were merged anyway, and flaky tests Flake Lab proved fixed. Counted per project and day, so branch and environment filters do not narrow it, and a rate needs ten ratings, pull requests or fixes before it is given. A kind whose capability a project declined leaves that project out.',
+    doc: 'features/analytics#hand-back-outcomes',
   },
   'analytics.risks': {
     title: 'Risks',
@@ -302,7 +312,7 @@ export const HELP_TOPICS = {
   },
   'analytics.branch-policy': {
     title: 'Branch policy',
-    text: 'Default branch counts runs on each project’s default branch, plus runs whose branch is unknown, so a broken feature branch does not move the trends. All branches counts everything; picking branches by hand overrides both.',
+    text: 'Default branch counts runs on each project’s default branch, so a broken feature branch does not move the trends; a run whose branch is unknown counts only in a project that never reported a branch. All branches counts everything; picking branches by hand overrides both.',
     doc: 'features/analytics#branch-policy',
   },
   'analytics.test-filter': {
@@ -388,8 +398,8 @@ export const HELP_TOPICS = {
   },
   'project.test-cases': {
     title: 'Tests',
-    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs. Search by title or file, filter by status, tag or lock, and group by spec file to see each file’s health. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
-    doc: 'features/ui-overview#project-detail',
+    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
+    doc: 'reference/test-search',
   },
   'project.members': {
     title: 'Project access',
@@ -403,7 +413,7 @@ export const HELP_TOPICS = {
   },
   'project.scm-token': {
     title: 'Repository access token',
-    text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted.',
+    text: 'A read-only Git host token lets diagnosis pull the actual commit diffs behind a failure for SCM-grounded analysis. Stored encrypted. On the desktop app, a project linked to a clone of its repository reads them with git instead, without a token.',
     doc: 'guide/source-control',
   },
   'case.stability-trend': {
@@ -428,7 +438,7 @@ export const HELP_TOPICS = {
   },
   'project.ci-rerun': {
     title: 'CI re-run',
-    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing the retry arguments through the input/variable you name. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block.',
+    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs piwi flake for one flaky test, from its next step.',
     doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {
@@ -459,25 +469,51 @@ export const HELP_TOPICS = {
     doc: 'operate/storage#keeping-runs-forever',
     envVars: ['PIWI_RETENTION_DAYS'],
   },
+  'run.ingestHealth': {
+    title: 'Ingest',
+    text: 'What the dashboard left out or rebuilt while storing this run: steps and console entries over the ingest caps, traces it could not store, evidence rebuilt from a trace, and the fallback the reporter took when its usual way of sending the run failed. A missing step or console line may be one of these, not something the test skipped.',
+    doc: 'features/ui-overview#test-run-detail',
+    envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
+  },
   'run.metadata': {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run. Group by cluster, file, file and describe block, lock, or none; search title, path and error text; filter by status (test.skip() and test.fixme() skips apart), browser, tag, lock, new regressions and newly flaky.',
-    doc: 'features/ui-overview#test-run-detail',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as file:, describe:, tag: or browser: search one field, and a leading - excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none; filter by status (test.skip() and test.fixme() skips apart), new regressions and newly flaky.',
+    doc: 'reference/test-search',
   },
   'run.changes': {
     title: 'Changes',
-    text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; the line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one specific run. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
+    text: 'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch; when no earlier full run passed, the last failed run, found the same way. The line under the selector says which rung applied. Pick a base branch to take the baseline from that branch only, or pick one earlier run: each shows its branch, environment and outcome. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
     doc: 'features/run-changes',
     recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
   },
   'run.timeline': {
     title: 'Workers timeline',
-    text: "When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. The hatched part of a bar is hook time: setup (beforeAll, beforeEach, fixtures) at the start, teardown (afterEach, afterAll, worker cleanup) at the end, and a failed hook in dark red even with Show hooks off. Hover one for the hooks it ran and the error; click it to open the steps on that hook. A bar spans the hooks Playwright leaves out of a test's duration, such as a slow beforeAll. Each lane is one worker: Playwright replaces a worker process after a failed test, and ↻ marks where the new process took over. A dashed line is time the worker ran no test; hover it or ↻ for what it was. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show waits for the wasted waits, and Show locks to see when each named lock was held and how much of the run it serialized.",
+    text: "When each test ran on each parallel worker. Gaps and long bars reveal poor parallelization or a single slow test stalling a shard. The hatched part of a bar is hook time: setup (beforeAll, beforeEach, fixtures) at the start, teardown (afterEach, afterAll, worker cleanup) at the end, and a failed hook in dark red even with Show hooks off. Hover one for the hooks it ran and the error; click it to open the steps on that hook. A bar spans the hooks Playwright leaves out of a test's duration, such as a slow beforeAll. Each lane is one worker: Playwright replaces a worker process after a failed test, and ↻ marks where the new process took over. A dashed line is time the worker ran no test; hover it or ↻ for what it was. Click a test to expand its steps into a nested waterfall on the same axis — like a span viewer. Turn on Show waits for the wasted waits, and Show locks to see when each named lock was held and how much of the run it serialized. Above the rows, when the reporter measured them, the machine's CPU, the memory of the run's processes and the pages open in the workers share the same axis, one set per shard: hover them for the values at that moment and the tests running then, and turn each off from the Resources menu. The same menu draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.",
     doc: 'features/ui-overview#test-run-detail',
+  },
+  'run.resource-findings': {
+    title: 'Resource findings',
+    text: 'What the capture fixtures found at the end of each test: browsers, contexts and pages left open after the test or describe block that opened them (with how long they stayed open), pages opened and never used, pages, listeners or route handlers piling up on a page or context that lives across tests, and Node handles a test left running in its worker. Each names the line or the fixture that opened the object. Without the fixtures, the reporter only counts browsers and contexts opened and closed in each file’s steps: those are probable leaks.',
+    doc: 'features/resource-leaks#what-it-reports',
+  },
+  'run.resource-pages': {
+    title: 'Open pages over time',
+    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows. A line that keeps rising is a page left open test after test.',
+    doc: 'features/resource-leaks#in-the-dashboard',
+  },
+  'run.resource-machine': {
+    title: 'Machine',
+    text: 'What the run cost the machine it ran on, sampled by the reporter: how busy the CPUs were, CPU time by process (renderers, browsers, workers, the web server), time spent waiting for a CPU, peak memory and the largest process, and the disk the artifacts used. A sharded run shows one machine per shard. What a platform cannot tell is listed as not measured.',
+    doc: 'features/cpu-memory-disk#reading-it',
+  },
+  'run.resource-costliest': {
+    title: 'Costliest tests',
+    text: 'The tests that used the most CPU in their worker and in the browser processes they started, measured at the end of each test. A test that found pages already open paid for what an earlier test left behind.',
+    doc: 'features/cpu-memory-disk#in-the-dashboard',
   },
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
@@ -487,7 +523,7 @@ export const HELP_TOPICS = {
   },
   'case.evidence': {
     title: 'Evidence',
-    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the screenshot and video with the visual and page diffs, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at; the raw page structure — the accessibility tree and the failure-time DOM — folds behind Page structure at the bottom of the Screen tab. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
+    text: 'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the page at the failure, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at. The Screen tab shows the page as views (its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video), and Open in picker finds a locator on that DOM; the failing step on the timeline carries the same first three. An empty tab says whether the evidence was never captured, captured with nothing to show, or does not apply.',
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   // ── Setup & capabilities ──────────────────────────────────────────────
@@ -500,6 +536,11 @@ export const HELP_TOPICS = {
     title: 'Capabilities',
     text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
     doc: 'guide/getting-started',
+  },
+  'cluster.activity': {
+    title: 'Activity',
+    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it.',
+    doc: 'features/agent-skills#what-agents-report-back',
   },
   'fix.toolbox': {
     title: 'More ways to fix',
@@ -523,6 +564,11 @@ export const HELP_TOPICS = {
     title: 'Failure timeline',
     text: 'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure. The default view is the window around the failed step (10s before, 2s after); switch to “Whole test” to see everything. The type chips hide or show the steps, requests, console entries, dialogs and backend logs in the window (“Only” or Alt-click shows just one type; the failing step and the last shown type always stay), and the line beside them says what is hidden; the choice is remembered in this browser. The list below reads it chronologically — click a line to jump to that step, console entry or request. The failed step is the one that raised the test’s own error; an error the test caught and went on from (a probe in a try/catch, a retried toPass attempt) is greyed out and marked as caught. When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     doc: 'features/evidence#one-execution-diagnosis-first',
+  },
+  'case.resources': {
+    title: 'What the test cost',
+    text: 'The CPU this test used in its worker and in the browser processes it started, the largest of those processes, how busy the worker’s event loop was, and the pages it found open when it started and left open when it ended. Browser processes are read on Linux only.',
+    doc: 'features/cpu-memory-disk#in-the-dashboard',
   },
   'case.web-vitals': {
     title: 'Web Vitals',
@@ -623,8 +669,8 @@ export const HELP_TOPICS = {
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
     title: 'Project notifications',
-    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert.',
-    doc: 'features/notifications#subscriptions',
+    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert, and optionally the branches and environments to hear about — `*` matches any characters, as in `release/*`.',
+    doc: 'features/notifications#branches-and-environments',
   },
 
   // ── Settings ──────────────────────────────────────────────────────────
@@ -899,7 +945,7 @@ export const HELP_TOPICS = {
   },
   'ide.open': {
     title: 'Open in IDE',
-    text: "Click a source path to open it in your local editor. Set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit Test to check it works. The desktop app opens files through your IDE's command-line launcher (code, rider, …) — the most reliable method; in the browser, Auto probes the JetBrains local server first before falling back to a vscode:// or jetbrains:// launch. These preferences live in this browser only.",
+    text: "Click a source path to open it in your local editor. With the Piwi plugin in a JetBrains IDE (Rider, WebStorm, IntelliJ IDEA) whose project is connected to this instance, there is nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms. Otherwise set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit Test to check it works. The desktop app also opens files through your IDE's command-line launcher (code, rider, …); in the browser, Auto falls back to the JetBrains local server, then to a vscode:// or jetbrains:// launch, which cannot confirm. These preferences live in this browser only.",
     doc: 'features/ide-integration',
   },
 

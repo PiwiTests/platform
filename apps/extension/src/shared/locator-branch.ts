@@ -24,6 +24,11 @@ export async function setLocatorBranchOverride(projectId: number, branch: string
   await sessionArea().set({ [OVERRIDE_KEY]: all });
 }
 
+/** Drops every project's choice: on Disconnect, and when another instance's projects take over. */
+export async function clearLocatorBranchOverrides(): Promise<void> {
+  await sessionArea().remove(OVERRIDE_KEY);
+}
+
 /** The branch to read; null for the project's default branch. */
 export function resolveLocatorBranch(project: ActiveProject, override: string | undefined): string | null {
   if (override !== undefined) return override.trim() || null;

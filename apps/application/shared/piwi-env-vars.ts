@@ -29,7 +29,11 @@
  *
  * Note: the reporter package (`reporter/src/internal/config/env.ts`) has its
  * own `PIWI_ENV_KEYS` map for the vars it reads in CI — those overlap with the
- * ingestion vars here but are owned by the reporter, not this registry.
+ * ingestion vars here but are owned by the reporter, not this registry. So are
+ * `PIWI_ORIGIN` and `PIWI_ORIGIN_REF`, which a launcher sets on the Playwright
+ * process to stamp the run's origin: the app reads them only as the run's
+ * `piwiOrigin` metadata (`shared/run-eligibility.ts`), and the test metadata
+ * reference documents them.
  */
 
 import {
@@ -342,7 +346,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
-      'Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever).',
+      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions and the agents' write log follow the same horizon.",
     category: 'database',
     type: 'number',
     default: '30',
@@ -950,7 +954,8 @@ export const PIWI_ENV_VARS = {
     max: 20000,
   },
   PIWI_INGEST_MAX_STEPS: {
-    description: 'Max test steps stored per execution.',
+    description:
+      'Max test steps stored per execution. Past it, the steps that failed are kept first, and one marker step counts the steps dropped.',
     category: 'ingest',
     type: 'number',
     default: '500',
@@ -1051,7 +1056,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_AUTO_MARKERS: {
     description:
-      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment (default: enabled). Set to false to disable.',
+      'Automatically create a timeline marker when a run’s Playwright or reporter version differs from the previous run in the same environment, and when a run is flagged as an environment incident (default: enabled). Set to false to disable.',
     category: 'markers',
     type: 'boolean',
     default: 'true',
@@ -1150,6 +1155,15 @@ export const PIWI_ENV_VARS = {
   },
 
   // ── Integrations ─────────────────────────────────────────────────────────
+  PIWI_SCM_GITLAB_HOSTS: {
+    description:
+      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may call with the SCM token. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
+    category: 'integrations',
+    type: 'list',
+    example: 'gitlab.example.com',
+    since: '0.43.0',
+    docs: 'guide/source-control#which-repository',
+  },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
     category: 'integrations',
@@ -1294,11 +1308,6 @@ export function getEnvVarMeta(name: PiwiEnvVarName): PiwiEnvVarMeta {
 /** All env var names in a given category. */
 export function envVarsByCategory(category: PiwiEnvVarCategory): PiwiEnvVarName[] {
   return (Object.keys(PIWI_ENV_VARS) as PiwiEnvVarName[]).filter((name) => PIWI_ENV_VARS[name].category === category);
-}
-
-/** Whether a var is a real runtime setting (excludes build/test-harness vars). */
-export function isRuntimeSetting(name: PiwiEnvVarName): boolean {
-  return !getEnvVarMeta(name).runtimeOnly;
 }
 
 /** Numeric semver comparison (missing segments count as 0). */

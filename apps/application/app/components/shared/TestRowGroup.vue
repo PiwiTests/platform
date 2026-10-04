@@ -5,7 +5,7 @@
  * interleaves this header and the rows into one item array, exactly as the run's
  * Tests tab does).
  *
- * It covers the three groupings the plan defines: by cluster (the cluster name,
+ * It covers three groupings: by cluster (the cluster name,
  * its triage status and an *Open cluster* link), by file (the path as an
  * open-in-IDE link with the per-file status tallies) and a plain *Passed (N)*
  * group. The caller owns the open/closed state and passes it back as `open`.
@@ -43,6 +43,8 @@ const props = withDefaults(
     filePath?: string | null;
     projectKey?: string | number | null;
     projectName?: string | null;
+    /** Search values to mark in the label (`testSearchHighlights`). */
+    highlight?: readonly string[] | null;
   }>(),
   {
     depth: 0,
@@ -54,6 +56,7 @@ const props = withDefaults(
     filePath: null,
     projectKey: null,
     projectName: null,
+    highlight: null,
   },
 );
 
@@ -95,9 +98,17 @@ const visibleStats = computed(() => {
         :project-key="projectKey"
         :project-name="projectName"
         class="font-medium text-default"
-      />
+      >
+        <template v-if="highlight?.length" #default="{ label: pathLabel }"
+          ><SearchHighlight :text="pathLabel" :patterns="highlight"
+        /></template>
+      </OpenInIdeLink>
     </span>
-    <span v-else class="font-medium text-default truncate min-w-0">{{ label }}</span>
+    <span v-else class="font-medium text-default truncate min-w-0"
+      ><SearchHighlight v-if="highlight?.length" :text="label" :patterns="highlight" /><template v-else>{{
+        label
+      }}</template></span
+    >
 
     <UBadge color="neutral" variant="soft" size="xs" class="shrink-0 tabular-nums">
       {{ count }} {{ count === 1 ? 'test' : 'tests' }}

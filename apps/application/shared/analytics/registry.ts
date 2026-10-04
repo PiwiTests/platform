@@ -13,6 +13,7 @@
  * belongs to, and the group it is listed under when a widget is picked.
  */
 import { z } from 'zod';
+import type { CapabilityId } from '#shared/capabilities';
 import { DIMENSIONS, getMetric, METRICS, type DimensionId, type MetricId } from './metrics';
 
 export type AnalyticsBandId = 'health' | 'pain' | 'trends' | 'detail';
@@ -52,17 +53,14 @@ export interface AnalyticsWidgetMeta {
    * The capability the widget follows in each project of the scope: a project
    * that declined it is left out, and with none left the widget is not shown.
    */
-  capability?: 'test-map';
+  capability?: CapabilityId;
 }
 
 /**
  * The metrics a widget can show: the catalog minus the Test Map metrics, which
  * the scenario-gaps widget reads.
  */
-export const WIDGET_METRIC_IDS = METRICS.filter((m) => !('capability' in m)).map((m) => m.id) as [
-  MetricId,
-  ...MetricId[],
-];
+export const WIDGET_METRIC_IDS = METRICS.filter((m) => m.grain !== 'gap').map((m) => m.id) as [MetricId, ...MetricId[]];
 
 const metricIdSchema = z.enum(WIDGET_METRIC_IDS);
 
@@ -82,7 +80,6 @@ export const statsOptionsSchema = z.object({
 });
 
 export const METRIC_DISPLAYS = ['stat', 'line', 'bar', 'table', 'heatmap'] as const;
-export type MetricDisplay = (typeof METRIC_DISPLAYS)[number];
 
 const DIMENSION_IDS = DIMENSIONS.map((d) => d.id) as [DimensionId, ...DimensionId[]];
 
@@ -107,6 +104,7 @@ const QUARANTINE_BREAKDOWNS: DimensionId[] = ['project', 'project-tag', 'owner',
  */
 export function metricBreakdowns(id: MetricId): DimensionId[] {
   const def = getMetric(id);
+  if (def.grain === 'handback') return [];
   const supported =
     def.grain === 'cluster'
       ? CLUSTER_BREAKDOWNS
@@ -135,7 +133,6 @@ export const metricOptionsSchema = z.object({
 });
 
 export const LIST_SOURCES = ['runs', 'failure-clusters', 'flaky-tests', 'scenario-gaps'] as const;
-export type ListSource = (typeof LIST_SOURCES)[number];
 
 export const listOptionsSchema = z.object({
   /** What the list shows, matching the scope: runs, failure causes, flaky tests or scenario gaps. */
@@ -178,10 +175,6 @@ export const moversOptionsSchema = z.object({
 });
 
 export type StatsOptions = z.infer<typeof statsOptionsSchema>;
-export type ListOptions = z.infer<typeof listOptionsSchema>;
-export type MarkersOptions = z.infer<typeof markersOptionsSchema>;
-export type TextOptions = z.infer<typeof textOptionsSchema>;
-export type SingleProjectOptions = z.infer<typeof singleProjectOptionsSchema>;
 export type MetricOptions = z.infer<typeof metricOptionsSchema>;
 
 export const ANALYTICS_WIDGETS = [
@@ -230,6 +223,16 @@ export const ANALYTICS_WIDGETS = [
     description: 'Failure causes fixed, assigned and ticketed, quarantine releases, auto-heal pull requests.',
     icon: 'i-lucide-list-checks',
     size: 'half',
+    band: 'pain',
+    testFilters: false,
+  },
+  {
+    id: 'handbacks',
+    title: 'Hand-back outcomes',
+    description:
+      'What became of what Piwi handed back: locator heals, auto-heal pull requests, AI diagnoses, gate verdicts, verified flake fixes.',
+    icon: 'i-lucide-undo-2',
+    size: 'full',
     band: 'pain',
     testFilters: false,
   },

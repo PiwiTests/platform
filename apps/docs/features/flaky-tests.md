@@ -33,7 +33,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 ### Root-cause classification
 
-Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the attempt diff. It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
+Every flaky test is automatically tagged with one of five categories, using keyword and distribution heuristics over its errors, steps, and browser spread, sharpened by the failed requests actually captured and by the [attempt diff](./evidence#attempts). It reads the test's last 100 failed attempts and its last 100 passes from any run, green or red, so the failed attempt of a test that passed on retry counts, and a rare flake keeps its failures however many passes came since:
 
 | Category | Typical signals |
 |----------|-----------------|
@@ -43,7 +43,8 @@ Every flaky test is automatically tagged with one of five categories, using keyw
 | `environment` | Fails at least 3 times on exactly one browser while another browser passed at least 3 times without failing |
 | `other` | No clear signal |
 
-It also counts the failed and 5xx requests of recent failing attempts, and weighs most a request that failed on the failing attempt only (the [attempt diff](./evidence#attempts)).
+A test is classified when it passes on retry in a finished run, and a listed test still without a category when the
+list opens.
 
 Filter the flaky table by category to triage a class of failures at once.
 
@@ -67,9 +68,9 @@ those failures. A neighbor names the paths both tests write, marked approximate 
 whose clocks agree only roughly. First attempts, the UTC hour and other runs on the same environment are context,
 without a condition. Nothing is stored.
 
-The flaky list names each test's top suspect, the [Attempts](./evidence#attempts) tab links a request to its suspect,
-the clue `known-flake-suspect` marks a failure showing one, and MCP's `get_flake_profile` returns the profile.
-The [Flake Lab](./flake-lab) tests each suspect against a control run.
+The flaky list names each test's top suspect (a reproduced one first), the [Attempts](./evidence#attempts) tab links
+requests to suspects, the clue `known-flake-suspect` marks failures showing one, and MCP's `get_flake_profile`
+returns it. The [Flake Lab](./flake-lab) tests each suspect against a control run.
 
 ### Verified fixed
 
@@ -101,7 +102,8 @@ The usual approach is `--grep-invert @quarantine`: the test stops running, nothi
 list only grows.
 
 **A quarantined test in Piwi keeps running and keeps reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
-`--max-failed`, `--require-tag` and `--require-selection` checks and nothing else. That single difference is what makes the exit possible:
+`--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and the
+[commit status](./pr-feedback#what-gets-posted), nothing else. That makes the exit possible:
 
 - Passing executions after quarantine (one per attempt per browser project) accumulate as a **streak**; one failure
   resets it.
@@ -109,11 +111,14 @@ list only grows.
   to be asked.
 - A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to
   click.
-- **Candidates** (API only) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact. A test that
-  flakes constantly but finishes in 200 ms costs nothing; one that flakes weekly and burns a four-minute timeout is
-  what actually hurts.
+- **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score
+  of 40+, ranked by impact; a high-confidence AI diagnosis calling the test flaky adds a reason. A 200 ms flake
+  costs nothing; one burning a four-minute timeout weekly hurts.
 - **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
   been in, and how many still have no passing streak at all.
+
+**Dismiss** turns down either proposal, with an optional reason, and changes nothing else; a dismissed candidate
+returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal).
 
 The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be
 worthless — and `--max-quarantined` sets a ceiling so the list can't grow unbounded.
@@ -138,10 +143,7 @@ The project's **Tests** tab has a **Group by File** view that groups tests by th
 
 ## Across every project
 
-Everything above is scoped to one project. The **Analytics** page lifts the same signals to your whole
-portfolio over a time window you choose — portfolio health, a pass-rate heatmap, wasted CI minutes,
-regression velocity, a global flaky leaderboard, and an auto-generated insights feed. See
-[Analytics](./analytics).
+Everything above is scoped to one project; [Analytics](./analytics) lifts the same signals across every project.
 
 ## Related
 - [Regression or flake?](/recipes/regression-or-flaky): is one red test flaky?

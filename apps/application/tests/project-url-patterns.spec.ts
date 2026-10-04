@@ -1,3 +1,4 @@
+import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import { waitForHydration } from './utils';
@@ -115,7 +116,7 @@ test.describe.serial('project URL patterns', () => {
 
   test('the Settings tab adds every suggestion of an environment with its environment', async ({ page, request }) => {
     await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
 
     const card = page.locator('[data-shot="project-url-patterns"]');
@@ -137,7 +138,7 @@ test.describe.serial('project URL patterns', () => {
 
   test('the Settings tab adds a suggestion and saves the list', async ({ page, request }) => {
     await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
 
     const card = page.locator('[data-shot="project-url-patterns"]');
@@ -184,7 +185,7 @@ test.describe.serial('project URL patterns', () => {
   });
 
   test('the editor flags a pattern without a scheme and does not save it', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await card.getByRole('button', { name: 'Add a pattern' }).click();
@@ -194,7 +195,7 @@ test.describe.serial('project URL patterns', () => {
   });
 
   test('the editor flags a refused path prefix of either kind and does not save it', async ({ page }) => {
-    await page.goto(`/projects/${projectId}?tab=settings`);
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
     await waitForHydration(page);
     const card = page.locator('[data-shot="project-url-patterns"]');
     await card.getByLabel('Path prefix', { exact: true }).first().fill('/app?lang=fr');
@@ -204,5 +205,109 @@ test.describe.serial('project URL patterns', () => {
     await card.getByLabel('Tests’ path prefix').first().fill('/shop/*');
     await expect(card.getByText('A plain path, such as /app')).toBeVisible();
     await expect(card.getByRole('button', { name: 'Save patterns' })).toBeDisabled();
+  });
+});
+
+/**
+ * A suite whose runs record no baseURL: the editor reads the full addresses its
+ * tests opened with page.goto and the pages they loaded, and says why it has
+ * nothing to suggest while there are none.
+ */
+test.describe.serial('project URL patterns without a baseURL', () => {
+  let projectId: number;
+
+  const submit = async (request: APIRequestContext, steps: unknown[], networkRequests?: unknown[]) => {
+    const res = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.URL_PATTERNS_GOTO,
+        status: 'passed',
+        environment: 'qa',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'opens the cart',
+            status: 'passed',
+            duration: 100,
+            location: 'tests/cart.spec.ts:3:1',
+            steps,
+            networkRequests,
+          },
+        ],
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    return ((await res.json()) as { projectId: number }).projectId;
+  };
+
+  test.beforeAll(async ({ request }) => {
+    projectId = await submit(request, [{ title: 'Click', category: 'action', duration: 5 }]);
+    await request.put(`/api/projects/${projectId}/url-patterns`, { data: { items: [] } });
+  });
+
+  test('the Settings tab says why it has nothing to suggest', async ({ page }) => {
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    await expect(card.getByText('No pattern yet. Add one.', { exact: true })).toBeVisible();
+    await expect(card.getByTestId('url-pattern-no-suggestions')).toContainText(
+      'no recent run recorded a Playwright baseURL, opened a full address with page.goto or kept the network requests of a page it loaded',
+    );
+    await expect(card.getByTestId('url-pattern-suggestions')).toBeHidden();
+  });
+
+  test('a page.goto to a full address is suggested with the run’s environment', async ({ page, request }) => {
+    await submit(request, [
+      { title: 'Navigate', category: 'navigation', duration: 5, params: { url: 'https://goto.shop.example/cart' } },
+    ]);
+    const suggestions = (await (await request.get(`/api/projects/${projectId}/url-patterns/suggestions`)).json()) as {
+      items: Array<{ pattern: string; environment: string | null; sources: string[] }>;
+      covered: number;
+    };
+    expect(suggestions.items.map((s) => [s.pattern, s.environment, s.sources])).toEqual([
+      ['https://goto.shop.example/**', 'qa', ['navigation']],
+    ]);
+
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    await expect(card.getByText('From page.goto calls')).toBeVisible();
+    await card.getByRole('button', { name: 'Add https://goto.shop.example/**' }).click();
+    await expect(card.getByLabel('Environment')).toHaveValue('qa');
+    await card.getByRole('button', { name: 'Save patterns' }).click();
+    await expect(page.getByText('URL patterns saved', { exact: true })).toBeVisible();
+
+    await page.reload();
+    await waitForHydration(page);
+    await expect(card.getByTestId('url-pattern-no-suggestions')).toHaveText(
+      'Every site the suite visited already has a pattern.',
+    );
+  });
+
+  test('a page the tests loaded is suggested when they opened a path only', async ({ page, request }) => {
+    // A run merged from blob reports: no baseURL, and `page.goto('/orders')` names no site.
+    await submit(
+      request,
+      [{ title: 'Navigate', category: 'navigation', duration: 5, params: { url: '/orders' } }],
+      [
+        { method: 'GET', url: 'https://merged.shop.example/orders', status: 200, resourceType: 'document' },
+        { method: 'GET', url: 'https://api.merged.shop.example/orders', status: 200, resourceType: 'fetch' },
+      ],
+    );
+    const suggestions = (await (await request.get(`/api/projects/${projectId}/url-patterns/suggestions`)).json()) as {
+      items: Array<{ pattern: string; environment: string | null; sources: string[] }>;
+    };
+    expect(suggestions.items.map((s) => [s.pattern, s.environment, s.sources])).toEqual([
+      ['https://merged.shop.example/**', 'qa', ['network']],
+    ]);
+
+    await page.goto(`/projects/${projectId}?tab=settings&section=browser-extension`);
+    await waitForHydration(page);
+    const card = page.locator('[data-shot="project-url-patterns"]');
+    await expect(card.getByText('From network requests')).toBeVisible();
   });
 });

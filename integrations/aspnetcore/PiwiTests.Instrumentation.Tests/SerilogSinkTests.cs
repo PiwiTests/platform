@@ -77,4 +77,24 @@ public class SerilogSinkTests
         Assert.Equal("Orders", entry.Category);
         Assert.Equal("Stock low for 42", entry.Message);
     }
+
+    [Fact]
+    public async Task Writes_the_dashboard_keys_for_an_exception_logged_through_Serilog()
+    {
+        using var logger = new LoggerConfiguration().WriteTo.PiwiTestLogs().CreateLogger();
+        await using var app = await TestApp.StartAsync("Integration",
+            (a, env) => a.UsePiwiTestLogs(env, "Development", "Integration"),
+            hostBuilder: h => h.UseSerilog(logger));
+
+        using var json = TestApp.DecodeRawLogs(await app.Client.GetAsync("/error"))!;
+
+        var entry = json.RootElement.EnumerateArray().Last();
+        Assert.Equal(["category", "level", "message", "stack", "timestamp"], TestApp.SortedKeys(entry));
+        Assert.Equal("Error", entry.GetProperty("level").GetString());
+        Assert.Equal("Orders", entry.GetProperty("category").GetString());
+        Assert.Equal("Order 7 failed", entry.GetProperty("message").GetString());
+        var stack = entry.GetProperty("stack").GetString()!;
+        Assert.StartsWith("boom\n", stack);
+        Assert.Contains("TestApp.HandleAsync", stack);
+    }
 }

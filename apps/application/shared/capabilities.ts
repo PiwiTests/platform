@@ -35,7 +35,10 @@ export type CapabilityId =
   | 'test-map'
   | 'server-probes'
   | 'bug-reports'
-  | 'flake-lab';
+  | 'flake-lab'
+  | 'resources'
+  | 'agent-diagnoses'
+  | 'agent-write-log';
 
 export type CapabilityModule = 'core' | 'workflow' | 'healing' | 'agents';
 export type CapabilityLevel = 'instance' | 'project';
@@ -248,6 +251,36 @@ export const CAPABILITIES: CapabilityDef[] = [
     since: '0.41.0',
     doc: 'features/flaky-tests',
   },
+  {
+    id: 'resources',
+    module: 'workflow',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'resources',
+    passiveData: true,
+    since: '0.45.0',
+    doc: 'features/resource-leaks',
+  },
+  {
+    id: 'agent-diagnoses',
+    module: 'agents',
+    levels: ['instance', 'project'],
+    needs: [],
+    detection: 'agent-diagnoses',
+    passiveData: true,
+    since: '0.46.0',
+    doc: 'features/ai-diagnosis',
+  },
+  {
+    id: 'agent-write-log',
+    module: 'agents',
+    levels: ['instance'],
+    needs: [],
+    detection: 'agent-write-log',
+    passiveData: true,
+    since: '0.46.0',
+    doc: 'features/mcp',
+  },
 ];
 
 /** The registry keyed by id, for a direct lookup. */
@@ -288,9 +321,6 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
   { module: 'healing', label: 'Fix faster', description: 'Locator healing and auto-heal pull requests.' },
   { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff.' },
 ];
-
-/** The optional presets, in the order shown (core is always on, so excluded). */
-export const OPTIONAL_PRESETS: CapabilityPreset[] = CAPABILITY_PRESETS.filter((p) => p.module !== 'core');
 
 /** Facts about one capability in one context, gathered by the shared handler. */
 export interface CapabilityInput {

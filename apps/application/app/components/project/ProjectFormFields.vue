@@ -1,84 +1,23 @@
 <script setup lang="ts">
 /**
- * Shared field set for the project create + edit forms so the two never drift.
- * Render inside a `<UForm>` (the parent owns the schema, submit and footer).
- *
- * The field set is API-driven and gated by `mode`:
- * - `create` shows the immutable `name` (POST /api/projects only accepts
- *   name/label/description/tags).
- * - `edit` shows `diagnosisInstructions` + `scmToken` (PUT /api/projects/[id]
- *   only; the SCM token is encrypted against an existing project).
- * Shared in both: label, description, tags.
+ * Shared field set for the project create form and the General section of the
+ * project settings, so the two never drift. Render inside a `<UForm>` (the
+ * parent owns the schema, submit and footer). `create` adds the immutable
+ * `name`; both show label, description and tags.
  */
 import type { TagInfo } from '~~/types/api';
-import type { CapabilityId, ProjectDecision } from '#shared/capabilities';
 
-const props = withDefaults(
-  defineProps<{
-    mode: 'create' | 'edit';
-    allTags: TagInfo[];
-    /** Edit mode: whether a SCM token is already stored (adjusts placeholder/help). */
-    hasToken?: boolean;
-    /** Edit mode: the project id, for the per-project capability overrides. */
-    projectId?: number;
-    /** Edit mode: the project's stored capability decisions, seeding the overrides. */
-    capabilities?: Partial<Record<CapabilityId, ProjectDecision>> | null;
-    /** Edit mode: hide the OpenAPI field when `test-map` is declined or not applicable. */
-    hideOpenApi?: boolean;
-    /** Edit mode: hide the server-probes group when `server-probes` is declined or not applicable. */
-    hideServerProbes?: boolean;
-  }>(),
-  { hasToken: false, hideOpenApi: false, hideServerProbes: false },
-);
+defineProps<{
+  mode: 'create' | 'edit';
+  allTags: TagInfo[];
+}>();
 
 const emit = defineEmits<{ 'tag-created': [] }>();
 
 const name = defineModel<string>('name', { default: '' });
 const label = defineModel<string>('label', { default: '' });
 const description = defineModel<string>('description', { default: '' });
-const diagnosisInstructions = defineModel<string>('diagnosisInstructions', { default: '' });
-const aiLanguage = defineModel<string>('aiLanguage', { default: '' });
-const scmToken = defineModel<string>('scmToken', { default: '' });
-const defaultBranch = defineModel<string>('defaultBranch', { default: '' });
-const openApiUrl = defineModel<string>('openApiUrl', { default: '' });
 const tags = defineModel<TagInfo[]>('tags', { default: () => [] });
-
-/** Server-probe form state — the level-two probe gate, off by default. Faults and
- * routes are comma-separated in the form and split to arrays on save. */
-export interface ServerProbesForm {
-  enabled: boolean;
-  faults: string;
-  routes: string;
-  dependencyOnStateChanging: boolean;
-}
-const serverProbes = defineModel<ServerProbesForm>('serverProbes', {
-  default: () => ({ enabled: false, faults: '', routes: '', dependencyOnStateChanging: false }),
-});
-
-/** Full-shape CI re-run form state — the server drops empty targets on save. */
-export interface CiRerunForm {
-  enabled: boolean;
-  github: { workflow: string; ref: string; inputName: string };
-  gitlab: { ref: string; variableName: string };
-  bitbucket: { pipeline: string; variableName: string };
-}
-/** Where bug specs go and what they import `test` from; blank fields fall back to the defaults. */
-export interface GeneratedSpecsForm {
-  testImport: string;
-  bugsFolder: string;
-}
-const generatedSpecs = defineModel<GeneratedSpecsForm>('generatedSpecs', {
-  default: () => ({ testImport: '', bugsFolder: '' }),
-});
-
-const ciRerun = defineModel<CiRerunForm>('ciRerun', {
-  default: () => ({
-    enabled: false,
-    github: { workflow: '', ref: '', inputName: '' },
-    gitlab: { ref: '', variableName: '' },
-    bitbucket: { pipeline: '', variableName: '' },
-  }),
-});
 </script>
 
 <template>
@@ -104,170 +43,6 @@ const ciRerun = defineModel<CiRerunForm>('ciRerun', {
     <UFormField label="Description" name="description" description="Optional description of this project.">
       <UTextarea v-model="description" placeholder="Enter project description" :rows="3" class="w-full" />
     </UFormField>
-
-    <template v-if="mode === 'edit'">
-      <UFormField name="diagnosisInstructions" description="Combined with the global instructions from Settings → AI.">
-        <template #label>
-          <span class="inline-flex items-center gap-1">
-            AI diagnosis instructions <HelpHint topic="project.ai-instructions" />
-          </span>
-        </template>
-        <UTextarea
-          v-model="diagnosisInstructions"
-          placeholder="e.g. This project tests the payment checkout flow. The backend uses Stripe for payments and the payment API is at /api/v2/payments. Database errors are usually caused by connection pool exhaustion under load."
-          :rows="5"
-          class="w-full font-mono text-sm"
-        />
-      </UFormField>
-
-      <UFormField
-        name="aiLanguage"
-        label="AI response language"
-        description="Overrides Settings → AI for this project. Blank inherits the instance-wide language. Code, locators, paths and error text stay verbatim."
-      >
-        <UInput v-model="aiLanguage" placeholder="e.g. French — blank inherits the global setting" class="w-full" />
-      </UFormField>
-
-      <UFormField
-        name="scmToken"
-        :description="
-          hasToken
-            ? 'Leave empty to keep the stored token, enter a new value to replace it, or save empty to remove it'
-            : 'For GitHub, GitLab, or Bitbucket. Falls back to the global SCM token if not set.'
-        "
-      >
-        <template #label>
-          <span class="inline-flex items-center gap-1">SCM token <HelpHint topic="project.scm-token" /></span>
-        </template>
-        <UInput
-          v-model="scmToken"
-          type="password"
-          :placeholder="hasToken ? '•••••••• (unchanged)' : 'ghp_..., glpat-..., or bitbucket token'"
-          class="w-full font-mono"
-        />
-      </UFormField>
-
-      <UFormField
-        label="Default branch"
-        name="defaultBranch"
-        description="Baselines, flakiness and trends fall back to this branch. Leave empty to resolve it from the SCM provider (else 'main')."
-      >
-        <UInput v-model="defaultBranch" placeholder="e.g. main" class="w-full font-mono" />
-      </UFormField>
-
-      <UFormField
-        v-if="!hideOpenApi"
-        label="OpenAPI document URL"
-        name="openApiUrl"
-        description="Declared surface. Fetched server-side; its routes and documented response codes become declared graph nodes, so a route the spec documents but no test reaches is a gap. Leave empty to skip."
-      >
-        <UInput v-model="openApiUrl" placeholder="e.g. https://app.example.com/openapi.json" class="w-full font-mono" />
-      </UFormField>
-
-      <UFormField
-        v-if="!hideServerProbes"
-        name="serverProbes"
-        description="Level-two probes inject a fault inside the server for one signed request, to check whether a passing test would notice. Experimental and off by default: the entry condition (client probes reporting not-noticed on at least one in ten pairs) has not been measured yet. Needs a shared probe secret on the app under test and the probe runner, and a non-production target."
-      >
-        <template #label>
-          <span class="inline-flex items-center gap-1"
-            >Server probes <UBadge color="neutral" variant="subtle" size="xs">Experimental</UBadge></span
-          >
-        </template>
-        <div class="space-y-3">
-          <USwitch v-model="serverProbes.enabled" label="Enable server probes for this project" />
-          <div v-if="serverProbes.enabled" class="space-y-3">
-            <UInput
-              v-model="serverProbes.faults"
-              placeholder="allowed faults, comma-separated — e.g. throw, status, delay, dependency"
-              class="w-full font-mono"
-            />
-            <UInput
-              v-model="serverProbes.routes"
-              placeholder="allowed routes, comma-separated — blank allows every reached route"
-              class="w-full font-mono"
-            />
-            <USwitch
-              v-model="serverProbes.dependencyOnStateChanging"
-              label="Allow dependency faults on state-changing routes (needs an ephemeral or staging database)"
-            />
-          </div>
-        </div>
-      </UFormField>
-
-      <UFormField
-        name="ciRerun"
-        description="Let reporters and admins re-run a cluster's affected tests in CI from its page, using the SCM token above. Off by default; fill in the block for your provider."
-      >
-        <template #label>
-          <span class="inline-flex items-center gap-1">CI re-run <HelpHint topic="project.ci-rerun" /></span>
-        </template>
-        <div class="space-y-3">
-          <USwitch v-model="ciRerun.enabled" label="Enable re-run from the dashboard" />
-          <div v-if="ciRerun.enabled" class="space-y-4 rounded-md border border-default p-3">
-            <div class="space-y-2">
-              <p class="text-xs font-medium text-muted">GitHub — workflow_dispatch</p>
-              <div class="grid gap-2 sm:grid-cols-3">
-                <UInput v-model="ciRerun.github.workflow" placeholder="workflow file, e.g. e2e.yml" class="font-mono" />
-                <UInput v-model="ciRerun.github.ref" placeholder="ref, e.g. main" class="font-mono" />
-                <UInput v-model="ciRerun.github.inputName" placeholder="input name, e.g. args" class="font-mono" />
-              </div>
-            </div>
-            <div class="space-y-2">
-              <p class="text-xs font-medium text-muted">GitLab — pipeline</p>
-              <div class="grid gap-2 sm:grid-cols-2">
-                <UInput v-model="ciRerun.gitlab.ref" placeholder="ref, e.g. main" class="font-mono" />
-                <UInput
-                  v-model="ciRerun.gitlab.variableName"
-                  placeholder="variable name, e.g. PW_ARGS"
-                  class="font-mono"
-                />
-              </div>
-            </div>
-            <div class="space-y-2">
-              <p class="text-xs font-medium text-muted">Bitbucket — custom pipeline</p>
-              <div class="grid gap-2 sm:grid-cols-2">
-                <UInput
-                  v-model="ciRerun.bitbucket.pipeline"
-                  placeholder="custom pipeline name, e.g. rerun"
-                  class="font-mono"
-                />
-                <UInput
-                  v-model="ciRerun.bitbucket.variableName"
-                  placeholder="variable name, e.g. PW_ARGS"
-                  class="font-mono"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </UFormField>
-
-      <UFormField
-        name="generatedSpecs"
-        description="For the failing test Piwi writes from a bug report: where it goes and what it imports test and expect from, such as ../fixtures when your tests use their own."
-      >
-        <template #label>
-          <span class="inline-flex items-center gap-1">Generated specs <HelpHint topic="bug-report.spec" /></span>
-        </template>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <UInput
-            v-model="generatedSpecs.bugsFolder"
-            placeholder="folder for bug specs, tests/bugs"
-            class="font-mono"
-            aria-label="Folder for bug specs"
-          />
-          <UInput
-            v-model="generatedSpecs.testImport"
-            placeholder="test import, @playwright/test"
-            class="font-mono"
-            aria-label="Test import"
-          />
-        </div>
-      </UFormField>
-
-      <ProjectCapabilityDecisions v-if="projectId" :project-id="projectId" :initial="capabilities" />
-    </template>
 
     <UFormField
       label="Tags"

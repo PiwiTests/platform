@@ -32,6 +32,7 @@ export interface ParsedCompleteEvent {
   pageInventory?: unknown;
   locatorPages?: unknown;
   codeReach?: unknown;
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -59,9 +60,7 @@ export interface ParsedCompleteEvent {
  * Build a `RunCaseInput` from a parsed streaming "complete" event. This is the
  * single source of truth for the wire-field → persisted-field mapping, shared by
  * the live server ingest (`api/test-runs/[id]/events`) and the demo-mode ingest
- * (`app/demo/api/reporter`). Keeping one mapping prevents the two sites from
- * drifting — a past drift silently omitted `stepEvents` in demo mode, which made
- * the timeline's wasted-time bars vanish after a reload.
+ * (`app/demo/api/reporter`), so both persist the same fields.
  */
 export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput {
   return {
@@ -92,6 +91,7 @@ export function mapCompleteEventToRunCase(tc: ParsedCompleteEvent): RunCaseInput
     pageInventory: tc.pageInventory,
     locatorPages: tc.locatorPages,
     codeReach: tc.codeReach,
+    resources: tc.resources ?? null,
     aiUsage: tc.aiUsage,
     consoleLogs: tc.consoleLogs,
     dialogs: tc.dialogs,

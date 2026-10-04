@@ -1,12 +1,14 @@
 // Import SQLite drizzle for static type inference.
 // At runtime the correct driver is selected based on PIWI_DATABASE_URL;
 // TypeScript uses the SQLite types as the canonical reference throughout.
+import { getTableName } from 'drizzle-orm';
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
 import { backfillProjectAssignments } from '#shared/handlers/project-assignments';
 import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
+import { configureSqliteConnections } from './sqlite-connections';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +17,12 @@ type DB = ReturnType<typeof sqliteDrizzle<typeof sqliteSchema>>;
 
 /** The resolved database client returned by getDatabase(). Import this instead of re-deriving it locally. */
 export type DbClient = Awaited<ReturnType<typeof getDatabase>>;
+
+/**
+ * Whether this table exists before migrations run tells a database meeting project
+ * access for the first time from one already enforcing it (backfillProjectAssignments).
+ */
+const PROJECT_ACCESS_TABLE = getTableName(sqliteSchema.projectAssignments);
 
 let db: DB;
 let initPromise: Promise<DB> | null = null;
@@ -99,14 +107,13 @@ async function openDatabase(): Promise<DB> {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations-pg');
           console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`);
-          await applyMigrations(
-            postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder })),
-            migrationsFolder,
-          );
+          const target = postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder }));
+          const projectAccessIsNew = !(await target.tableExists(PROJECT_ACCESS_TABLE));
+          await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
-          // Backfill project assignments for existing users (idempotent)
+          // Grant existing users global access, once, on a database meeting project access for the first time
           try {
-            await backfillProjectAssignments(db as any);
+            await backfillProjectAssignments(db as any, { tableIsNew: projectAccessIsNew });
             console.log('[Database] Project assignments backfill completed');
           } catch (bfErr) {
             console.error('[Database] Project assignments backfill failed:', bfErr);
@@ -150,25 +157,20 @@ async function openDatabase(): Promise<DB> {
         await client.execute('PRAGMA auto_vacuum=INCREMENTAL');
       }
       await client.execute('PRAGMA journal_mode=WAL');
-      await client.execute('PRAGMA synchronous=NORMAL');
-      // Enforce the ON DELETE actions declared in the schema. Delete paths
-      // still remove child rows explicitly (see server/utils/retention.ts) so
-      // behavior does not depend on this per-connection pragma.
-      await client.execute('PRAGMA foreign_keys=ON');
+      await configureSqliteConnections(client);
       db = sqliteDrizzle(client, { schema: sqliteSchema });
 
       migrationPromise = (async () => {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations');
           console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
-          await applyMigrations(
-            sqliteMigrationTarget(client, () => migrate(db, { migrationsFolder })),
-            migrationsFolder,
-          );
+          const target = sqliteMigrationTarget(client, () => migrate(db, { migrationsFolder }));
+          const projectAccessIsNew = !(await target.tableExists(PROJECT_ACCESS_TABLE));
+          await applyMigrations(target, migrationsFolder);
           console.log('[Database] SQLite migrations completed successfully');
-          // Backfill project assignments for existing users (idempotent)
+          // Grant existing users global access, once, on a database meeting project access for the first time
           try {
-            await backfillProjectAssignments(db);
+            await backfillProjectAssignments(db, { tableIsNew: projectAccessIsNew });
             console.log('[Database] Project assignments backfill completed');
           } catch (bfErr) {
             console.error('[Database] Project assignments backfill failed:', bfErr);

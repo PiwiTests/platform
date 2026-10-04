@@ -2,10 +2,9 @@
  * Incremental SHA-256, for hashing something too big to hold.
  *
  * `crypto.subtle.digest` takes a `BufferSource` and has no streaming form, so
- * digesting a file with it means allocating the whole file first — which is the
- * one thing standing between an import and never materialising the archive at
- * all. This is the same algorithm with an `update`/`digest` pair, so a 500 MB
- * upload can be hashed 8 MB at a time.
+ * digesting a file with it means allocating the whole file first. This is the
+ * same algorithm with an `update`/`digest` pair, so an import never
+ * materializes the archive: a 500 MB upload is hashed 8 MB at a time.
  *
  * Browser halves only. The server hashes with `node:crypto`, which is both
  * incremental and faster.
@@ -117,14 +116,11 @@ export class Sha256 {
   /**
    * One 64-byte block, read big-endian out of `data` at `offset`.
    *
-   * The eight rounds in the body are one round each, written out rather than
-   * looped. A SHA-256 round ends by shifting all eight working variables along
-   * by one, so a plain loop spends a third of its time on those assignments;
-   * unrolling a full cycle of eight lets the shift happen by *naming* — round
-   * two reads `d` where round one read `e` — and only the two variables that
-   * actually change are written. Measured at 155 MB/s against 100 MB/s for the
-   * rolled form, which is what makes a streaming hash cost about what the
-   * allocate-then-`subtle.digest` path it replaces did.
+   * The eight rounds in the body are one round each, written out. A SHA-256
+   * round ends by shifting all eight working variables along by one; unrolling
+   * a full cycle of eight lets the shift happen by *naming* — round two reads
+   * `d` where round one read `e` — so only the two variables that change are
+   * written.
    *
    * The whole thing is checked against `crypto.subtle` in the unit tests; that
    * is the guard that keeps this readable-as-a-black-box.

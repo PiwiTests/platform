@@ -356,6 +356,11 @@ export interface AnalyticsMetricValue {
   trend: 'better' | 'worse' | 'same' | null;
   /** Currency of a money metric. */
   currency: string | null;
+  /**
+   * For a rate with a sample floor: how many items it is computed over, and the
+   * floor. The value is null while `size` is under `min`.
+   */
+  sample?: { size: number; min: number } | null;
 }
 
 /** The target mark of a tile: how many projects in scope meet the metric's target. */
@@ -488,6 +493,49 @@ export interface AnalyticsRisks {
   quarantine: { count: number; oldestDays: number | null };
   /** Targets the projects in scope missed over the period. */
   missedTargets: ProjectTargetVerdict[];
+}
+
+/** One hand-back metric in the Hand-back outcomes widget. */
+export interface AnalyticsHandbackMetric {
+  metric: MetricId;
+  label: string;
+  unit: MetricUnit;
+  /** Null for a rate below its sample floor. */
+  value: number | null;
+  previous: number | null;
+  /** The number of items a rate is computed over; null for a count. */
+  sample: number | null;
+}
+
+/**
+ * What became of Piwi's hand-backs over the period, per kind. A kind is null
+ * when every project in scope declined the capability it belongs to.
+ */
+export interface AnalyticsHandbacks {
+  /** The fewest items a rate is computed over. */
+  minSample: number;
+  /** Failing call sites given a replacement locator, those whose code then used it, and those a later run passed. */
+  heals: { suggested: number; adopted: number; verified: number } | null;
+  healPullRequests: { opened: number; merged: number; closed: number; verified: number } | null;
+  /**
+   * Diagnoses written and rated, the diagnosed failure causes fixed, those
+   * whose fix changed the files the diagnosis named, and those that failed again.
+   */
+  diagnoses: {
+    written: number;
+    rated: number;
+    helpful: number;
+    diagnosedFixes: number;
+    verified: number;
+    regressed: number;
+  } | null;
+  /** Failed gate evaluations, pull requests merged despite one, and caught failures that came back. */
+  gate: { blocked: number; overrides: number; escapes: number } | null;
+  /** Flaky tests a Flake Lab verify run proved fixed, and those that flaked again. */
+  flakes: { verified: number; regressed: number } | null;
+  /** Fixes a person or an agent reported, and what the runs made of them. */
+  fixAttempts: { reported: number; verified: number; regressed: number } | null;
+  metrics: AnalyticsHandbackMetric[];
 }
 
 /** Open scenario gaps of the projects in scope whose Test Map is active. Counts, never a coverage percentage. */

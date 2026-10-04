@@ -1,53 +1,47 @@
-// Desktop-only: record the first bad commit a bisect found on a failure cluster,
-// so the result survives reloads and reaches the fix plan (its endpoint, the
-// Markdown export and the get_fix_plan MCP tool). 404 on the normal server build
-// (no PIWI_DESKTOP_TOKEN); under the desktop guard only the app's own window can
-// reach it, and it already drove the bisect on this machine.
-import { eq } from 'drizzle-orm';
-import { failureClusters } from '../../../database/schema';
+// Record the first bad commit a bisect found on a failure cluster, so the
+// result survives reloads and reaches the fix plan (its endpoint, the Markdown
+// export and the get_fix_plan MCP tool). The desktop app records the bisects it
+// runs against its own instance; an editor shares one the desktop app ran for a
+// failure on a team instance, with its own key.
+import { parseBisectResultBody } from '@piwitests/core/bisect';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
-import type { BisectedCommit } from '#shared/reproduce';
+import { recordClusterBisect } from '#shared/handlers/failure-clusters';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
-    summary: 'Record a bisected first bad commit (desktop app)',
+    summary: 'Record a bisected first bad commit',
     description:
-      'Desktop build only — 404 on the server build. Persists the first bad commit the desktop-driven git bisect found on this cluster (sha, subject, author, date), so it shows in the fix plan next to the regression window.',
+      'Persists the first bad commit a `git bisect` found on this cluster (sha, subject, author, date), so it shows in the fix plan next to the regression window. The desktop app records the bisects it runs; an editor shares one the desktop app ran for this instance, with its own key. 400 without a 7 to 40 character hex SHA.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-roles': ['administrator', 'reporter'],
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              sha: { type: 'string', description: 'The commit SHA, 7 to 40 hex characters.' },
+              subject: { type: 'string' },
+              author: { type: 'string' },
+              date: { type: 'string', description: 'ISO date the commit was authored.' },
+            },
+            required: ['sha'],
+          },
+        },
+      },
+    },
   },
 });
 
-const SHA_RE = /^[0-9a-f]{7,40}$/;
-
 export default eventHandler(async (event) => {
-  if (!process.env.PIWI_DESKTOP_TOKEN) {
-    throw apiError({ statusCode: 404, message: 'Desktop build only' });
-  }
   const id = requireRouteId(event, 'id', 'cluster ID');
   const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
-  const body = await readBody(event);
-  const sha = typeof body?.sha === 'string' ? body.sha.trim().toLowerCase() : '';
-  if (!SHA_RE.test(sha)) {
-    throw apiError({ statusCode: 400, message: 'A valid commit SHA is required' });
-  }
-  const result: BisectedCommit = {
-    sha,
-    subject: typeof body?.subject === 'string' ? body.subject.trim() : '',
-    author: typeof body?.author === 'string' && body.author.trim() ? body.author.trim() : null,
-    date: typeof body?.date === 'string' && body.date.trim() ? body.date.trim() : null,
-    // Derived from the project's SCM provider when the plan is read, never stored.
-    commitUrl: null,
-  };
+  const parsed = parseBisectResultBody(await readBody(event));
+  if (!parsed.ok) throw apiError({ statusCode: 400, message: parsed.message });
 
-  const updated = await db
-    .update(failureClusters)
-    .set({ bisectResult: result, updatedAt: new Date() })
-    .where(eq(failureClusters.id, id))
-    .returning({ id: failureClusters.id });
-  if (updated.length === 0) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  return { ok: true, bisectedCommit: result };
+  const bisectedCommit = await recordClusterBisect(db, id, parsed.value);
+  if (!bisectedCommit) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
+  return { ok: true, bisectedCommit };
 });

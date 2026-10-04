@@ -46,6 +46,12 @@ export function findPlaywrightRoots(root: string): string[] {
   return found;
 }
 
+/** The Playwright config a directory holds; null when it holds none. */
+export function playwrightConfigFile(dir: string): string | null {
+  const name = CONFIG_NAMES.find((n) => fs.existsSync(path.join(dir, n)));
+  return name ? path.join(dir, name) : null;
+}
+
 async function git(cwd: string, args: string[]): Promise<string | null> {
   try {
     const { stdout } = await run('git', args, { cwd, maxBuffer: 64 * 1024 * 1024, encoding: 'utf-8' });

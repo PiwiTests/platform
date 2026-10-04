@@ -1,10 +1,13 @@
+import { reportedRequestUrl } from '@piwitests/core/bug-report';
 import { checkLocators, rankElement, type CheckedLocator } from './verified-locators.js';
 
 /**
- * Bundles the page URL, a compact element summary, and every ranked locator
- * alternative into one paste-able block for an AI coding agent (E1,
- * standalone portion — the connected-mode parts of E1, a failing test +
- * error + call site, need a Piwi server and are out of scope here).
+ * Bundles the page's address, a compact element summary, and every ranked
+ * locator alternative into one paste-able block for an AI coding agent.
+ *
+ * Addresses, the page's and a link's `href`, are written as a bug report
+ * writes them (`reportedRequestUrl`): ids collapsed, query values removed,
+ * no fragment, so a token in the address never reaches the agent.
  *
  * Not a Playwright `ariaSnapshot()` of the page: this summarizes just the
  * picked element itself — tag, role, the accessible name Playwright computes,
@@ -18,6 +21,22 @@ import { checkLocators, rankElement, type CheckedLocator } from './verified-loca
 export function buildAgentContext(el: Element, pageUrl: string): string {
   function normalizeText(s: string): string {
     return s.replace(/\s+/g, ' ').trim();
+  }
+
+  /** The page's address: its origin and route. */
+  function pageAddress(url: string): string {
+    const route = reportedRequestUrl(url, url);
+    try {
+      return route.startsWith('/') ? `${new URL(url).origin}${route}` : route;
+    } catch {
+      return route;
+    }
+  }
+
+  /** An attribute's value; an address is reported as the page's is, a link to an id on the page kept as written. */
+  function attributeValue(name: string, value: string): string {
+    if (name !== 'href' || /^#[\w-]*$/.test(value)) return value;
+    return reportedRequestUrl(value, pageUrl);
   }
 
   /** What the page says about a locator, for the agent: nothing for one finding the element alone. */
@@ -42,10 +61,10 @@ export function buildAgentContext(el: Element, pageUrl: string): string {
 
   const attrLine = Object.entries(attrs.attributes)
     .filter(([, v]) => v != null)
-    .map(([k, v]) => `${k}="${v}"`)
+    .map(([k, v]) => `${k}="${attributeValue(k, v!)}"`)
     .join(' ');
 
-  const lines: string[] = ['## Piwi element context', '', `Page: ${pageUrl}`, ''];
+  const lines: string[] = ['## Piwi element context', '', `Page: ${pageAddress(pageUrl)}`, ''];
 
   const nameBits = [role ? `role: ${role}` : null, accessibleName ? `accessible name: "${accessibleName}"` : null]
     .filter(Boolean)

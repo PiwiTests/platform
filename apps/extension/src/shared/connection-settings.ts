@@ -1,12 +1,15 @@
 import { normalizePathPrefix } from '@piwitests/core/page-key';
+import { moveLegacySecret, secretArea, type SecretArea } from './secret-store.js';
 
 /**
- * The optional connection to a Piwi instance — instance URL, API key, and
- * which project applies where. `chrome.storage.local` (same bucket as
- * `storage.ts`'s last-used copy mode): a remembered device setting, not a
- * working session, so it survives the browser restarting. Never sent
- * anywhere except in requests the user's own actions trigger (see
- * `piwi-client.ts` — the settings page and the background worker only).
+ * The optional connection to a Piwi instance — instance URL and which project
+ * applies where. `chrome.storage.local` (same bucket as `storage.ts`'s
+ * last-used copy mode): a remembered device setting, not a working session, so
+ * it survives the browser restarting. The API key is not part of it: it is in
+ * the secret area (`secret-store.ts`), with the origin of the instance it was
+ * given for, read only by the settings page and the background worker
+ * (`getInstanceApiKey`), and sent only in requests the user's own actions
+ * trigger (see `piwi-client.ts`).
  *
  * A single instance can serve more than one site, so the project isn't one
  * fixed value — it's resolved per page (see `active-project.ts`'s
@@ -17,7 +20,7 @@ import { normalizePathPrefix } from '@piwitests/core/page-key';
  * `urlMatches`), so "which pages does this apply to" means one thing
  * everywhere in this extension.
  */
-export interface ProjectMapping {
+interface ProjectMapping {
   urlPattern: string;
   projectId: number;
   /** Cached display label so the popup/options UI doesn't need a network round-trip just to show a name. */
@@ -38,13 +41,13 @@ export interface ProjectMapping {
 }
 
 /** A project URL pattern kept on the instance, as the last sync read it. */
-export interface ServerMapping extends ProjectMapping {
+interface ServerMapping extends ProjectMapping {
   /** A label such as `staging`; absent when the pattern names none. */
   environment?: string;
 }
 
 /** A project the connected user can see, and whether their role may add URL patterns to it. */
-export interface ServerProject {
+interface ServerProject {
   id: number;
   label: string;
   canEdit: boolean;
@@ -52,7 +55,6 @@ export interface ServerProject {
 
 export interface ConnectionSettings {
   instanceUrl: string;
-  apiKey: string;
   /** Kept in this browser only; checked in order before `serverMappings` — see `resolveActiveProject`. */
   projectMappings: ProjectMapping[];
   /** The instance's patterns, in the order it lists them, as of `serverSyncedAt`. */
@@ -68,7 +70,6 @@ const CONNECTION_KEY = 'piwiConnection';
 
 const EMPTY: ConnectionSettings = {
   instanceUrl: '',
-  apiKey: '',
   projectMappings: [],
   serverMappings: [],
   serverProjects: [],
@@ -120,7 +121,6 @@ export function coerceConnectionSettings(value: unknown): ConnectionSettings {
   const v = value as Partial<Record<keyof ConnectionSettings, unknown>>;
   return {
     instanceUrl: typeof v.instanceUrl === 'string' ? v.instanceUrl : '',
-    apiKey: typeof v.apiKey === 'string' ? v.apiKey : '',
     projectMappings: coerceList(v.projectMappings, coerceMapping),
     serverMappings: coerceList(v.serverMappings, coerceServerMapping),
     serverProjects: coerceList(v.serverProjects, coerceServerProject),
@@ -194,7 +194,89 @@ export async function clearConnectionSettings(): Promise<void> {
   await chrome.storage.local.remove(CONNECTION_KEY);
 }
 
-/** True once there's an instance URL and at least one URL pattern, from either list — the minimum needed to fetch a catalog for any page. */
+/**
+ * True once there's an instance URL and at least one URL pattern, from either
+ * list — the minimum needed to fetch a catalog for any page. It never looks at
+ * the API key, which a content script cannot read.
+ */
 export function isConnected(settings: ConnectionSettings): boolean {
   return settings.instanceUrl.trim().length > 0 && settings.projectMappings.length + settings.serverMappings.length > 0;
+}
+
+/** The API key in the secret area, and the origin of the instance it was given for. */
+interface InstanceSecret {
+  apiKey: string;
+  origin: string;
+}
+
+/** The origin of an http(s) instance address, or null. */
+function instanceOrigin(instanceUrl: string): string | null {
+  try {
+    const url = new URL(instanceUrl.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function coerceInstanceSecret(value: unknown): InstanceSecret | null {
+  const v = value as Partial<InstanceSecret> | null;
+  return v && typeof v.apiKey === 'string' && v.apiKey && typeof v.origin === 'string'
+    ? { apiKey: v.apiKey, origin: v.origin }
+    : null;
+}
+
+/**
+ * The API key kept for the instance at `instanceUrl`: empty when none is kept,
+ * or when it was given for another origin, so the key only ever goes to the
+ * instance it came from, whatever address the stored settings name. The
+ * settings page and the background worker only.
+ */
+export async function getInstanceApiKey(instanceUrl: string, area: SecretArea = secretArea()): Promise<string> {
+  await moveLegacyApiKey(area);
+  const secret = coerceInstanceSecret(await area.get('instance'));
+  return secret && secret.origin === instanceOrigin(instanceUrl) ? secret.apiKey : '';
+}
+
+/** Keeps `apiKey` for the instance at `instanceUrl`; an empty key keeps none. */
+export async function setInstanceApiKey(
+  instanceUrl: string,
+  apiKey: string,
+  area: SecretArea = secretArea(),
+): Promise<void> {
+  const origin = instanceOrigin(instanceUrl);
+  const key = apiKey.trim();
+  if (origin && key) await area.set('instance', { apiKey: key, origin } satisfies InstanceSecret);
+  else await area.remove('instance');
+}
+
+export async function clearInstanceApiKey(area: SecretArea = secretArea()): Promise<void> {
+  await area.remove('instance');
+}
+
+/** The stored settings with the `apiKey` an older version kept in them, as stored. */
+async function readLegacyConnection(): Promise<Record<string, unknown> | null> {
+  const value = (await chrome.storage.local.get(CONNECTION_KEY))[CONNECTION_KEY];
+  return value && typeof value === 'object' && 'apiKey' in value ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * Moves the API key an older version kept in the stored settings into the
+ * secret area, bound to the instance those settings name, and removes it from
+ * them. Does nothing once no stored settings hold one.
+ */
+export async function moveLegacyApiKey(area: SecretArea = secretArea()): Promise<void> {
+  const legacy = await readLegacyConnection();
+  if (!legacy) return;
+  const apiKey = typeof legacy.apiKey === 'string' ? legacy.apiKey.trim() : '';
+  const origin = instanceOrigin(typeof legacy.instanceUrl === 'string' ? legacy.instanceUrl : '');
+  const secret: InstanceSecret | null = apiKey && origin ? { apiKey, origin } : null;
+  await moveLegacySecret(area, 'instance', secret, async () => {
+    // Read again: the settings may have changed while the key was written.
+    const current = await readLegacyConnection();
+    if (!current) return;
+    const rest = { ...current };
+    delete rest.apiKey;
+    await chrome.storage.local.set({ [CONNECTION_KEY]: rest });
+  });
 }

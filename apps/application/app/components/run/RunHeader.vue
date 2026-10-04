@@ -2,6 +2,9 @@
 import type { TestRunDetails, ReportInfo } from '~~/types/api';
 import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import { readIncidentReview, readRunIncident } from '#shared/run-incident';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -42,9 +45,19 @@ const ci = computed(() => props.testRun?.metadata?.ci);
 const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
+const incident = computed(() => readRunIncident(props.testRun?.metadata));
+const incidentReview = computed(() => readIncidentReview(props.testRun?.metadata));
+const incidentBadges = computed(() =>
+  incident.value
+    ? [{ label: 'Incident', color: 'warning' as const, title: 'An environment incident: this run is not counted' }]
+    : [],
+);
 const customDataHtml = computed(() =>
   customData.value ? highlightCode(JSON.stringify(customData.value, null, 2), 'json').html : '',
 );
+
+// What ingest left out or rebuilt, one sentence each; empty for a run stored whole.
+const ingestNotes = computed(() => describeIngestHealth(readIngestHealth(props.testRun?.metadata)));
 
 const showStorage = computed(() => !!(storageStats.value?.totalFiles || props.finalizing));
 
@@ -128,7 +141,12 @@ function onLabelKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <DetailHeader :status="testRun?.status ?? ''" :title="`Run #${testRun?.id}`" data-shot="run-header">
+  <DetailHeader
+    :status="testRun?.status ?? ''"
+    :title="`Run #${testRun?.id}`"
+    :badges="incidentBadges"
+    data-shot="run-header"
+  >
     <template #badges-extra>
       <!-- The label editor sits right after the title. -->
       <template v-if="editingLabel">
@@ -257,11 +275,21 @@ function onLabelKeydown(e: KeyboardEvent) {
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environment" />
       </template>
+      <template v-if="ingestNotes.length">
+        <span class="text-dimmed">·</span>
+        <span :title="ingestNotes.join('\n')" data-shot="run-ingest-fact">{{
+          ingestNotes.length === 1 ? '1 ingest note' : `${ingestNotes.length} ingest notes`
+        }}</span>
+      </template>
       <template v-if="ci?.buildNumber || ci?.buildUrl">
         <span class="text-dimmed">·</span>
-        <a v-if="ci?.buildUrl" :href="ci.buildUrl" target="_blank" class="text-primary hover:underline">{{
-          ci?.buildNumber ? `Build #${ci.buildNumber}` : 'View build'
-        }}</a>
+        <a
+          v-if="safeHttpUrl(ci?.buildUrl)"
+          :href="safeHttpUrl(ci?.buildUrl) ?? undefined"
+          target="_blank"
+          class="text-primary hover:underline"
+          >{{ ci?.buildNumber ? `Build #${ci.buildNumber}` : 'View build' }}</a
+        >
         <span v-else>Build #{{ ci.buildNumber }}</span>
       </template>
     </template>
@@ -304,6 +332,14 @@ function onLabelKeydown(e: KeyboardEvent) {
         </span>
         <span v-else>Not kept — retention deletes it once it is old enough</span>
       </div>
+      <div v-if="ingestNotes.length" class="flex items-start gap-1.5" data-shot="run-ingest-health">
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Ingest <HelpHint topic="run.ingestHealth"
+        /></span>
+        <ul class="space-y-1">
+          <li v-for="note in ingestNotes" :key="note">{{ note }}</li>
+        </ul>
+      </div>
       <div v-if="showStorage" class="flex items-center gap-1.5">
         <span class="text-muted">Storage</span>
         <RunStorageChip :storage-stats="storageStats" :reports="allReports" :finalizing="finalizing" />
@@ -323,12 +359,30 @@ function onLabelKeydown(e: KeyboardEvent) {
           @updated="emit('label-updated')"
         />
       </div>
+      <RunIncidentLine
+        v-if="testRun?.id && !incident"
+        variant="action"
+        :run-id="testRun.id"
+        :incident="null"
+        :review="incidentReview"
+        @changed="emit('label-updated')"
+      />
       <div v-if="customData">
         <span class="text-muted">Custom data</span>
         <pre
           class="mt-1 bg-zinc-50 dark:bg-zinc-900 p-2 rounded text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto"
         ><code v-html="customDataHtml" /></pre>
       </div>
+    </template>
+
+    <template v-if="incident" #below>
+      <RunIncidentLine
+        variant="line"
+        :run-id="testRun.id"
+        :incident="incident"
+        :review="incidentReview"
+        @changed="emit('label-updated')"
+      />
     </template>
 
     <template #count-bar>

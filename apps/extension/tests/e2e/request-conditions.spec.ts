@@ -44,6 +44,9 @@ const SHOP = `<!doctype html><html><body>
   };
 </script></body></html>`;
 
+/** A page under `/app/` whose base URL is `/api/`: its relative requests go to `/api/…`. */
+const BASED = `<!doctype html><html><head><base href="/api/"></head><body>Orders</body></html>`;
+
 const PIXEL = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -51,38 +54,63 @@ const PIXEL = Buffer.from(
 
 interface Fixtures {
   site: string;
+  /** The same pages from a second server: another origin, which the extension also has access to. */
+  otherSite: string;
   context: BrowserContext;
   extensionId: string;
+  /** Whether the extension has `debugger`; without it, as in Firefox, the page's wrapper applies the conditions. */
+  debuggingProtocol: boolean;
+}
+
+/** The shop's pages and its API. */
+function serveShop(request: http.IncomingMessage, response: http.ServerResponse): void {
+  if (request.url?.startsWith('/api/cart')) {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ total: 40 }));
+    return;
+  }
+  if (request.url?.startsWith('/api/slow')) {
+    response.setHeader('content-type', 'application/json');
+    setTimeout(() => response.end('{}'), 3_000);
+    return;
+  }
+  if (request.url?.startsWith('/app/')) {
+    response.setHeader('content-type', 'text/html');
+    response.end(BASED);
+    return;
+  }
+  if (request.url?.startsWith('/pic.png')) {
+    response.setHeader('content-type', 'image/png');
+    response.end(PIXEL);
+    return;
+  }
+  response.setHeader('content-type', 'text/html');
+  response.end(SHOP);
 }
 
 /** The real extension, granted the local site as a person grants it from the panel's click. */
 const test = base.extend<Fixtures>({
+  debuggingProtocol: [true, { option: true }],
   site: async ({}, use) => {
-    const server = http.createServer((request, response) => {
-      if (request.url?.startsWith('/api/cart')) {
-        response.setHeader('content-type', 'application/json');
-        response.end(JSON.stringify({ total: 40 }));
-        return;
-      }
-      if (request.url?.startsWith('/pic.png')) {
-        response.setHeader('content-type', 'image/png');
-        response.end(PIXEL);
-        return;
-      }
-      response.setHeader('content-type', 'text/html');
-      response.end(SHOP);
-    });
+    const server = http.createServer(serveShop);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     await use(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
     server.close();
   },
-  context: async ({}, use) => {
+  otherSite: async ({}, use) => {
+    const server = http.createServer(serveShop);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await use(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+    server.close();
+  },
+  context: async ({ debuggingProtocol }, use) => {
     const extension = mkdtempSync(path.join(tmpdir(), 'piwi-conditions-ext-'));
     cpSync(DIST, extension, { recursive: true });
     const manifest = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'));
+    const permissions = (manifest.permissions as string[]).filter((p) => debuggingProtocol || p !== 'debugger');
     writeFileSync(
       path.join(extension, 'manifest.json'),
-      JSON.stringify({ ...manifest, host_permissions: ['http://127.0.0.1/*'] }),
+      JSON.stringify({ ...manifest, permissions, host_permissions: ['http://127.0.0.1/*'] }),
     );
     const context = await launchWithExtension(extension);
     await use(context);
@@ -286,4 +314,326 @@ test('conditions turned off while they are still being turned on end with nothin
   await expect.poll(() => attached(context, tabId)).toBe(false);
   await shop.waitForLoadState();
   expect(await load(shop, 'fetch')).toMatchObject({ result: 'total 40' });
+});
+
+/** Waits until the page's wrapper holds the conditions with these ids. */
+async function wrapperHolds(page: Page, ids: string[]): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (
+          (window as unknown as { __piwiRequestConditions?: { conditions: Array<{ id: string }> } })
+            .__piwiRequestConditions?.conditions ?? []
+        ).map((c) => c.id),
+      ),
+    )
+    .toEqual(ids);
+}
+
+/** Sends an XHR for the cart and aborts it at once, as a typeahead drops a request it no longer needs: what the page sees. */
+function sendAndAbort(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      new Promise<string[]>((resolve) => {
+        const seen: string[] = [];
+        const xhr = new XMLHttpRequest();
+        for (const type of ['readystatechange', 'load', 'error', 'abort', 'loadend']) {
+          xhr.addEventListener(type, () => seen.push(`${type} ${xhr.readyState}`));
+        }
+        xhr.open('GET', `/api/cart?_=${Date.now()}`);
+        xhr.send();
+        xhr.abort();
+        seen.push(`aborted ${xhr.readyState} ${xhr.status}`);
+        // Past any delay: nothing more arrives.
+        setTimeout(() => resolve(seen), 2_500);
+      }),
+  );
+}
+
+/** Sends the cart request on the page's one XHR, made on the first call: its state once opened, then as it ends. */
+function sendAgain(page: Page): Promise<string> {
+  return page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const w = window as unknown as { reused?: XMLHttpRequest };
+        const xhr = (w.reused ??= new XMLHttpRequest());
+        xhr.open('GET', `/api/cart?_=${Date.now()}`);
+        const opened = `${xhr.readyState} ${xhr.status}`;
+        xhr.onloadend = () => resolve(`${opened} → ${xhr.readyState} ${xhr.status} ${xhr.responseText}`);
+        xhr.send();
+      }),
+  );
+}
+
+test('once the page is on another site, the strip names the site its conditions are for, and turns them off there', async ({
+  context,
+  extensionId,
+  site,
+}) => {
+  const shop = await context.newPage();
+  await shop.goto(`${site}/shop`);
+  const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+  const sender = await extensionPage(context, extensionId);
+  expect(await setConditions(sender, { tabId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+  const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, { tabId });
+  await panel.getByRole('tab', { name: 'Network' }).click();
+  const conditions = panel.getByRole('region', { name: 'Request conditions' });
+  await expect(conditions.getByRole('listitem')).toHaveText([/Answer GET/]);
+  await expect(conditions).not.toContainText('Set for');
+
+  // The same server under another name: another origin, which the extension has no access to.
+  const elsewhere = site.replace('127.0.0.1', 'localhost');
+  await shop.goto(`${elsewhere}/shop`);
+  await fireDevtoolsEvent(panel, 'navigated', `${elsewhere}/shop`);
+  await expect(conditions).toContainText(`Set for ${site}`);
+  // The worker changes a tab's conditions only while it shows their site: all of them go, or none.
+  await expect(conditions.getByRole('button', { name: 'Remove' })).toHaveCount(0);
+  await conditions.getByRole('button', { name: 'Turn all off and reload' }).click();
+  await expect(conditions).toBeHidden();
+  expect(await sender.evaluate(() => chrome.storage.session.get('piwiRequestConditions'))).toEqual({});
+});
+
+test('a condition added once the page is on another site is that site’s own, without the first site’s', async ({
+  context,
+  extensionId,
+  site,
+  otherSite,
+}) => {
+  const shop = await context.newPage();
+  await shop.goto(`${site}/shop`);
+  const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+  const sender = await extensionPage(context, extensionId);
+  expect(await setConditions(sender, { tabId, origin: site, conditions: [failCart], cpuRate: 4 })).toEqual({
+    ok: true,
+  });
+  const panel = await openDevtoolsPage(context, extensionId, 'devtools-panel.html', shop, { tabId });
+  await panel.getByRole('tab', { name: 'Network' }).click();
+  const conditions = panel.getByRole('region', { name: 'Request conditions' });
+  await expect(conditions.getByRole('listitem')).toHaveText([/Answer GET/, /CPU/]);
+
+  await shop.goto(`${otherSite}/shop`);
+  await fireDevtoolsEvent(panel, 'navigated', `${otherSite}/shop`);
+  await expect(conditions).toContainText(`Set for ${site}`);
+  await fireDevtoolsEvent(panel, 'requestFinished', {
+    request: { method: 'GET', url: `${otherSite}/api/slow?_=1695820800000` },
+    response: { status: 200, content: { mimeType: 'application/json' } },
+    time: 3,
+    _resourceType: 'fetch',
+    __body: '{}',
+  });
+  await panel.getByRole('list', { name: 'Network' }).getByRole('button').first().click();
+  await panel.getByRole('button', { name: 'Slow down' }).click();
+  await expect(conditions.getByRole('listitem')).toHaveText([/Slow down GET \*\*\/api\/slow/]);
+  await expect(conditions).not.toContainText('Set for');
+  const stored = (await sender.evaluate(() => chrome.storage.session.get('piwiRequestConditions'))) as {
+    piwiRequestConditions: { origin: string; conditions: Array<{ kind: string }>; cpuRate?: number | null };
+  };
+  expect(stored.piwiRequestConditions.origin).toBe(otherSite);
+  expect(stored.piwiRequestConditions.conditions.map((c) => c.kind)).toEqual(['delay']);
+  expect(stored.piwiRequestConditions.cpuRate ?? null).toBeNull();
+});
+
+/** Sends a POST with a body and aborts it at once: what the XHR and its upload object fire, and its state. */
+function postAndAbort(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      new Promise<string[]>((resolve) => {
+        const seen: string[] = [];
+        const xhr = new XMLHttpRequest();
+        for (const type of ['loadstart', 'readystatechange', 'load', 'error', 'abort', 'timeout', 'loadend']) {
+          xhr.addEventListener(type, () => seen.push(`${type} ${xhr.readyState}`));
+          if (type !== 'readystatechange') xhr.upload.addEventListener(type, () => seen.push(`upload ${type}`));
+        }
+        xhr.open('POST', `/api/cart?_=${Date.now()}`);
+        xhr.send('{"sku":"SPRING-TEE"}');
+        xhr.abort();
+        seen.push(`aborted ${xhr.readyState} ${xhr.status}`);
+        // Past any delay: nothing more arrives.
+        setTimeout(() => resolve(seen), 2_500);
+      }),
+  );
+}
+
+interface Ended {
+  seen: string[];
+  elapsed: number;
+  state: string;
+  timeout: number;
+}
+
+/** Sends a GET with `timeout` set: the events it fires, how long it took to end, its state, and the timeout it reads. */
+function getWithTimeout(page: Page, path: string, timeout: number): Promise<Ended> {
+  return page.evaluate(
+    ([url, ms]) =>
+      new Promise<Ended>((resolve) => {
+        const seen: string[] = [];
+        const started = performance.now();
+        const xhr = new XMLHttpRequest();
+        for (const type of ['loadstart', 'load', 'error', 'abort', 'timeout', 'loadend']) {
+          xhr.addEventListener(type, () => seen.push(type));
+        }
+        xhr.open('GET', `${url}?_=${Date.now()}`);
+        xhr.timeout = ms;
+        xhr.onloadend = () =>
+          resolve({
+            seen,
+            elapsed: Math.round(performance.now() - started),
+            state: `${xhr.readyState} ${xhr.status}`,
+            timeout: xhr.timeout,
+          });
+        xhr.send();
+      }),
+    [path, timeout] as const,
+  );
+}
+
+test.describe('without the debugging protocol, through the page’s wrapper', () => {
+  test.use({ debuggingProtocol: false });
+
+  test('a fetch held back rejects as soon as its signal aborts, and one already aborted gets no answer', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    const slowCart = { ...failCart, id: 'slow', kind: 'delay', delayMs: 1_500 };
+    const failOther = { ...failCart, id: 'other', pattern: '**/api/other' };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [slowCart, failOther] })).toEqual({
+      ok: true,
+    });
+    await wrapperHolds(shop, ['slow', 'other']);
+    const outcome = await shop.evaluate(async () => {
+      const started = performance.now();
+      const during = new AbortController();
+      setTimeout(() => during.abort(), 200);
+      const slow = await fetch(`/api/cart?_=${Date.now()}`, { signal: during.signal }).then(
+        () => 'answered',
+        (err: Error) => err.name,
+      );
+      const elapsed = Math.round(performance.now() - started);
+      const before = new AbortController();
+      before.abort();
+      const failed = await fetch('/api/other', { signal: before.signal }).then(
+        (r) => `answered ${r.status}`,
+        (err: Error) => err.name,
+      );
+      return { slow, elapsed, failed };
+    });
+    expect(outcome).toMatchObject({ slow: 'AbortError', failed: 'AbortError' });
+    expect(outcome.elapsed).toBeLessThan(1_000);
+  });
+
+  test('an XHR with a body, aborted while held back, fires what the browser fires, its upload’s events included', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const native = await postAndAbort(shop);
+    expect(native).toContain('upload abort');
+
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    const slowPost = { ...failCart, id: 'slow', method: 'POST', kind: 'delay', delayMs: 1_500 };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [slowPost] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['slow']);
+    expect(await postAndAbort(shop)).toEqual(native);
+  });
+
+  test('an XHR held back counts its timeout from send(), and one answered here starts as one sent does', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    const slowCart = { ...failCart, id: 'slow', kind: 'delay', delayMs: 1_500 };
+    const slowSlow = { ...failCart, id: 'slower', pattern: '**/api/slow?_=*', kind: 'delay', delayMs: 600 };
+    const failOther = { ...failCart, id: 'other', pattern: '**/api/other?_=*' };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [slowCart, slowSlow, failOther] })).toEqual({
+      ok: true,
+    });
+    await wrapperHolds(shop, ['slow', 'slower', 'other']);
+
+    // The timeout ends it while it is held back.
+    const held = await getWithTimeout(shop, '/api/cart', 500);
+    expect(held).toMatchObject({ seen: ['loadstart', 'timeout', 'loadend'], state: '4 0', timeout: 500 });
+    expect(held.elapsed).toBeLessThan(1_400);
+    // Sent after its delay, to a server slower than what is left of its timeout: the browser's own timeout ends it.
+    const sent = await getWithTimeout(shop, '/api/slow', 1_000);
+    expect(sent).toMatchObject({ seen: ['loadstart', 'timeout', 'loadend'], state: '4 0', timeout: 1_000 });
+    expect(sent.elapsed).toBeGreaterThanOrEqual(900);
+    expect(sent.elapsed).toBeLessThan(1_500);
+    // Answered here, without being sent.
+    expect(await getWithTimeout(shop, '/api/other', 0)).toMatchObject({
+      seen: ['loadstart', 'load', 'loadend'],
+      state: '4 500',
+    });
+  });
+
+  test('an XHR the page aborts while it is held back ends as the browser ends it', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const native = await sendAndAbort(shop);
+    expect(native).toEqual(['readystatechange 1', 'readystatechange 4', 'abort 4', 'loadend 4', 'aborted 0 0']);
+
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    const slowCart = { ...failCart, id: 'slow', kind: 'delay', delayMs: 1_500 };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [slowCart] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['slow']);
+    expect(await sendAndAbort(shop)).toEqual(native);
+  });
+
+  test('an XHR the wrapper answered starts afresh when the page opens it again', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const shop = await context.newPage();
+    await shop.goto(`${site}/shop`);
+    const tabId = await tabIdOf(context, extensionId, `${site}/shop`);
+    const sender = await extensionPage(context, extensionId);
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['cart']);
+    expect(await sendAgain(shop)).toBe('1 0 → 4 500 Internal Server Error');
+    const failOther = { ...failCart, id: 'other', pattern: '**/api/other' };
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [failOther] })).toEqual({ ok: true });
+    await wrapperHolds(shop, ['other']);
+    expect(await sendAgain(shop)).toBe('1 0 → 4 200 {"total":40}');
+  });
+
+  test('a relative request is matched where it goes, against the page’s base URL', async ({
+    context,
+    extensionId,
+    site,
+  }) => {
+    const orders = await context.newPage();
+    await orders.goto(`${site}/app/orders`);
+    const tabId = await tabIdOf(context, extensionId, `${site}/app/orders`);
+    const sender = await extensionPage(context, extensionId);
+    expect(await setConditions(sender, { tabId, origin: site, conditions: [failCart] })).toEqual({ ok: true });
+    await wrapperHolds(orders, ['cart']);
+    const statuses = await orders.evaluate(async () => {
+      const viaFetch = (await fetch(`cart?_=${Date.now()}`)).status;
+      const viaXhr = await new Promise<number>((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `cart?_=${Date.now()}`);
+        xhr.onloadend = () => resolve(xhr.status);
+        xhr.send();
+      });
+      return [viaFetch, viaXhr];
+    });
+    expect(statuses).toEqual([500, 500]);
+  });
 });

@@ -70,11 +70,13 @@ Every gap takes the same four verbs as an inbox item:
 - **Snooze** for a day, a week, or until the node changes.
 - **Dismiss** with a reason: *not worth testing*, *covered elsewhere* (which records the covering test as reaching the
   node), or *wrong*.
-- **Covered by** records a covering test without dismissing the gap.
+- **Covered by** names the test that covers it and closes the gap. A gap closed this way stays closed when its
+  detector raises it again. The covering test is recorded as reaching the node, but a test recorded by hand does not
+  count as observed reach of a control, so it never switches on *control nobody exercises* for the project.
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
 the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A
-closed gap that comes back reopens. Home lists the gaps accepted more than a week ago whose test was never written.
+closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
 The map is recomputed after every run and nightly.
 
 Every verdict is also a labeled example: accepted and covered-by count *for* a detector, dismissed as *wrong* counts
@@ -85,7 +87,8 @@ The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)
 to your channels. Agents list and draft gaps with
 [`list_scenario_gaps`](/reference/mcp-tools#list_scenario_gaps) and
-[`draft_scenario`](/reference/mcp-tools#draft_scenario), and the
+[`draft_scenario`](/reference/mcp-tools#draft_scenario), give a verdict with
+[`triage_gap`](/reference/mcp-tools#triage_gap), and the
 [write-the-missing-test](/features/agent-skills) skill drives the loop.
 
 ## What feeds the map
@@ -111,8 +114,9 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
   package serves no manifest.
 - **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ "routes": [...], "pages": [...] }`)
   is uploaded whenever present, whatever the backend.
-- **An OpenAPI URL**, set per project. Piwi fetches the document on a recompute and records each route's documented
-  response codes, so a *success only* gap can name the error codes a route documents but never returned under test.
+- **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi fetches the document
+  on a recompute and records each route's documented response codes, so a *success only* gap can name the error codes a
+  route documents but never returned under test.
 
 ## What this is not
 

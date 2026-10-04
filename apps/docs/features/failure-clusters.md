@@ -18,7 +18,8 @@ Failed executions that share the same **error fingerprint** join one cluster, so
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
   emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
-  `{ name: '…' }` of a table row. The locator target itself (the test id, the role) still tells different failures apart.
+  `{ name: '…' }` of a table row, wherever the error prints the locator. The locator target itself (the test id, the
+  role) still tells different failures apart.
 - It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
   cause reached from several spec files stays one cluster.
 - The fingerprint is always computed from the error the cluster was created from, so an improved normalization
@@ -88,8 +89,9 @@ failure](/guide/first-failure)), across every test that shares the failure. The 
   means the change is not in the code.
 - **The state line**, below.
 
-The **Affected tests** list selects which test's latest execution the evidence shows. The diagnosis, the locator fix,
-verify and reproduce sit in the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
+The **Affected tests** list selects which test's latest execution the evidence shows; its **Move to a new cluster**
+[splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The diagnosis, the locator fix, verify and reproduce sit in
+the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
 
 ### The state line
 
@@ -99,7 +101,8 @@ The cluster page states where a cluster stands in **one sentence with one verb**
 tracker say an open cluster is done, the line offers the **one action** that reconciles them, *Mark resolved*; a
 snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
 own. Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
-the cluster for a day, a week or until it recurs.
+the cluster for a day, a week or until it recurs. Changing the status, from the inbox, a list, bulk triage or an
+agent, keeps the triage note and the lines Piwi added to it.
 
 ### Occurrences over time
 
@@ -119,6 +122,12 @@ long the cluster was open. Three verdicts, because they are not the same claim:
 **Every affected test must pass**: a test that did not run counts against the fix. A filtered run can close a cluster
 if it covered all of it, so `--grep` over exactly the affected tests is enough.
 
+**The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
+proves nothing was fixed: Piwi records it as flake evidence and the state line says *passed again at the same commit,
+which is flake evidence, not a fix*. **The branch must match**: only a run on the branch the cluster last failed on, or
+on the default branch, records a fix, so a green pull-request or heal branch leaves a cluster that fails on `main`
+open.
+
 The verdict moves the status only on strong evidence: *Diagnosis verified* sets an **open** cluster **resolved**, and
 *Regressed* sets a **resolved** one back to **open**, each adding a line to the triage note. *Stopped failing* alone
 changes nothing, and an *ignored* cluster is never touched. The [notifications](./notifications) `cluster.fixed` and
@@ -133,8 +142,10 @@ back** badge, when a new run fails it again.
 
 ## From an AI agent
 
-Over the [MCP server](/features/mcp), `list_open_clusters` takes the same `queue` argument, and `set_cluster_status`
-triages.
+Over the [MCP server](/features/mcp), `list_open_clusters` takes the same `queue` argument, and the inbox's actions
+have tools: `triage_cluster` sets the status (with a note), assigns, snoozes, quarantines or releases one or more
+clusters at once, `decide_merge_suggestion` approves or rejects a merge suggestion, `rerun_cluster_in_ci` re-runs a
+cluster's tests in CI, and `link_issue` links an existing ticket. `set_cluster_status` triages one cluster.
 
 ## Related
 

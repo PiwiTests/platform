@@ -45,8 +45,9 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over every run; select two runs and
   **Compare** to see [what changed](./run-changes) between them, or select any number and
   [delete them](/operate/storage#storage-management).
-- **Tests**: every test case with its pass rate and last run, filterable by status, tag, lock, owner and priority, and
-  groupable by spec file ([test metadata](/reference/test-metadata)).
+- **Tests**: every test case with its pass rate and last run, in file order, with the
+  [test search](/reference/test-search) (title, describe block, file, tag, lock, owner, priority, feature) and a status
+  filter, and groupable by file, or by file and describe block.
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
   [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
 - **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the
@@ -55,8 +56,12 @@ full runs only) scopes every list. The **More** menu holds Edit, [Test functions
   ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
   ([Slow tests & wasted time](./slow-tests)).
-- **Settings**: project [access](/operate/project-access), the default branch, a per-project
-  [SCM token](/guide/source-control) and [AI instructions](./ai-diagnosis#custom-instructions).
+- **Settings**: one section at a time, picked from a menu beside it: the label and tags, the project's
+  [members](/operate/project-access), [source control](/guide/source-control) (token, default branch, CI re-run),
+  [AI instructions](./ai-diagnosis#custom-instructions), [capabilities](/operate/capabilities),
+  [targets](./analytics#targets), the [issue tracker](./issue-tracking), the
+  [browser extension URLs](./extension-connection#url-patterns) and, in the desktop app, the
+  [local folder](./desktop#running-tests-from-the-app).
 
 ## Locators
 
@@ -67,10 +72,13 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 
 `/test-runs/:id`: one run. The header carries the status, the primary action (**Copy retry command** on a red run,
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
-results stream in live. The tabs:
+results stream in live. When ingest left something out or rebuilt it, the facts line counts **ingest notes** and
+**Details** lists them: steps and console entries over the [ingest caps](/reference/configuration#ingest-limits), traces not stored,
+evidence rebuilt from a trace, and the fallback the reporter took to send the run. The tabs:
 
-- **Tests**: every execution with its failure headline, grouped by cluster (the default on a red run), file, describe
-  block or [lock](/reference/test-metadata#test-locks), with bulk triage.
+- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
+  file, describe block or [lock](/reference/test-metadata#test-locks), with the same
+  [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
   distribution ([Slow tests & wasted time](./slow-tests)).
@@ -85,6 +93,10 @@ results stream in live. The tabs:
     another: **↻** marks where a new one took over, and the stretch before it is the old process shutting down and
     the new one starting. A dashed line is time the worker ran no test — before its first test, between two tests,
     or after its last one while the others finished. Hover either to see which it was.
+  - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
+    workers are drawn above the worker rows, on the same axis, and one metric of your choice under each worker row.
+    Hover a track for its values at that moment; turn each one off from the **Resources** menu. See
+    [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard).
 
 ## Test case detail
 

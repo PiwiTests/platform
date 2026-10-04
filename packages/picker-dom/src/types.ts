@@ -17,6 +17,22 @@ export interface ProbeArg {
   roleSources?: string;
   /** Compute `rolePosition` and ancestor-anchor candidates. The live picker always wants these; the snapshot picker never does (no anchors step there). */
   includeStructural: boolean;
+  /**
+   * Count how many elements each candidate matches: `selectorCounts`,
+   * `rolePosition` and every anchor's counts, each a walk of the document or
+   * of an ancestor's subtree. True unless set: a caller that counts with an
+   * index of its own turns it off, and the anchors then carry what identifies
+   * them and no count, whatever the size of the page.
+   */
+  countMatches?: boolean;
+  /**
+   * The attribute `getByTestId` reads in the project (Playwright's
+   * `testIdAttribute`); `data-testid` when null or absent. It is read with
+   * `keep`, counted for `selectorCounts.testId`, read off each ancestor for its
+   * `testId` and `testIdCount`, and never taken as an ancestor's `dataAttr`;
+   * any other `data-*`, `data-testid` included, is an ordinary one.
+   */
+  testIdAttribute?: string | null;
 }
 
 /** Element shape the in-page probe returns — structural view of what the picker overlays need. */
@@ -33,7 +49,7 @@ export interface ProbedAttrs {
     id?: number;
     name?: number;
     classes?: Record<string, number>;
-    /** How many elements share this element's role *and* accessible name — i.e. what `getByRole(role, { name })` would really match. */
+    /** How many elements share this element's role *and* exact accessible name (`getByRole(role, { name })` without `exact` also matches names that contain it). */
     roleName?: number;
     /** Of the `roleName` matches, how many are laid out (a box, or an `offsetParent`) — what `getByRole(role, { name }).visible()` would match. */
     visibleRoleName?: number;

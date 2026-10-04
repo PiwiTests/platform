@@ -7,6 +7,8 @@ import {
   healDedupeKey,
   healBranchName,
   isHealBranch,
+  parseHealBranch,
+  healEditKey,
 } from '#shared/auto-heal';
 
 describe('resolveAutoHealSettings', () => {
@@ -80,5 +82,38 @@ describe('isHealBranch', () => {
     expect(isHealBranch('piwi/heal/42-abc', 'piwi/heal/')).toBe(true);
     expect(isHealBranch('main', 'piwi/heal/')).toBe(false);
     expect(isHealBranch(null, 'piwi/heal/')).toBe(false);
+  });
+});
+
+describe('parseHealBranch', () => {
+  test('reads back the run id and signature healBranchName wrote', () => {
+    const branch = healBranchName('piwi/heal/', 42, 'abcd1234');
+    expect(parseHealBranch(branch, 'piwi/heal/')).toEqual({ runId: 42, signature: 'abcd1234' });
+  });
+
+  test('is null for another prefix, a hand-made branch under the prefix, or no branch', () => {
+    expect(parseHealBranch('piwi/heal/42-abcd1234', 'bots/heal/')).toBeNull();
+    expect(parseHealBranch('piwi/heal/my-fix', 'piwi/heal/')).toBeNull();
+    expect(parseHealBranch('piwi/heal/42-abcd1234-2', 'piwi/heal/')).toBeNull();
+    expect(parseHealBranch(null, 'piwi/heal/')).toBeNull();
+  });
+});
+
+describe('healEditKey', () => {
+  const edit = {
+    filePath: 'tests/a.spec.ts',
+    failingLocator: 'getByRole({"name":"Pay"})',
+    suggestedLocator: "getByTestId('pay')",
+  };
+
+  test('ignores the line, so a shifted call site keeps its key', () => {
+    expect(healEditKey({ ...edit })).toBe(healEditKey({ ...edit, line: 99 } as typeof edit));
+  });
+
+  test('changes with the file, the failing locator or the replacement', () => {
+    const key = healEditKey(edit);
+    expect(healEditKey({ ...edit, filePath: 'tests/b.spec.ts' })).not.toBe(key);
+    expect(healEditKey({ ...edit, failingLocator: null })).not.toBe(key);
+    expect(healEditKey({ ...edit, suggestedLocator: "getByTestId('buy')" })).not.toBe(key);
   });
 });

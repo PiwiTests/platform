@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HIDDEN_VALUE, mockCode, mockFileName, mockUrlPattern } from '../../src/shared/mock-code.js';
+import { HIDDEN_VALUE, mockCode, mockFileName, mockUrlPattern, responseBody } from '../../src/shared/mock-code.js';
 
 const cart = {
   method: 'GET',
@@ -91,6 +91,25 @@ describe('mockCode', () => {
     expect(JSON.parse(result.file!.content).rows).toHaveLength(50);
   });
 
+  it('answers a JSON body that a round-trip would change with the body as it came, unless a value is hidden', () => {
+    const body = '{"id":12345678901234567890,"__proto__":{"admin":true},"name":"caf\\u00e9"}';
+    const { code, hidden } = mockCode({ ...cart, body });
+    expect(hidden).toBe(0);
+    expect(code).toContain(
+      `route.fulfill({ contentType: 'application/json', body: '${body.replace(/\\/g, '\\\\')}' })`,
+    );
+
+    const big = mockCode({ ...cart, body }, { maxInlineBody: 10 });
+    expect(big.code).toContain("path: 'mocks/cart.json'");
+    expect(big.file!.content).toBe(body);
+
+    // A value hidden: the body is written again, every key kept.
+    const withToken = mockCode({ ...cart, body: '{"__proto__":{"admin":true},"token":"abc"}' });
+    expect(withToken.hidden).toBe(1);
+    expect(withToken.code).toContain('"__proto__": {');
+    expect(withToken.code).toContain(`"token": "${HIDDEN_VALUE}"`);
+  });
+
   it('writes an error or a network failure for the same route', () => {
     expect(mockCode(cart, { kind: 'error' }).code).toBe(
       "await page.route('**/api/cart', (route) =>\n  route.fulfill({ status: 500, contentType: 'text/plain', body: 'Internal Server Error' }),\n);",
@@ -98,5 +117,61 @@ describe('mockCode', () => {
     expect(mockCode(cart, { kind: 'abort', pattern: '**/api/*' }).code).toBe(
       "await page.route('**/api/*', (route) =>\n  route.abort(),\n);",
     );
+  });
+});
+
+describe('responseBody', () => {
+  type Callback = (content: string | null, encoding: string) => void;
+  const entry = (getContent: unknown, content?: { text?: string; encoding?: string }) => ({
+    getContent,
+    response: { content },
+  });
+
+  it('reads what Chrome hands its callback: the content and its encoding', async () => {
+    expect(await responseBody(entry((callback: Callback) => callback('aGk=', 'base64'), { text: 'x' }))).toEqual({
+      text: 'aGk=',
+      base64: true,
+    });
+    expect(await responseBody(entry((callback: Callback) => callback('{"total":40}', '')))).toEqual({
+      text: '{"total":40}',
+      base64: false,
+    });
+  });
+
+  it('calls getContent on its entry, as DevTools’ own request objects need', async () => {
+    const request = {
+      body: '{"total":40}',
+      getContent(this: { body: string }, callback: Callback) {
+        callback(this.body, '');
+      },
+    };
+    expect(await responseBody(request)).toEqual({ text: '{"total":40}', base64: false });
+  });
+
+  it('reads what Firefox’s promise gives, the content and its MIME type, with the encoding the entry names', async () => {
+    expect(await responseBody(entry(() => Promise.resolve(['{"total":40}', 'application/json']), {}))).toEqual({
+      text: '{"total":40}',
+      base64: false,
+    });
+    expect(await responseBody(entry(() => Promise.resolve(['aGk=', 'image/png']), { encoding: 'base64' }))).toEqual({
+      text: 'aGk=',
+      base64: true,
+    });
+  });
+
+  it('falls back to the body the entry holds when DevTools gives none', async () => {
+    expect(await responseBody(entry((callback: Callback) => callback(null, ''), { text: 'kept' }))).toEqual({
+      text: 'kept',
+      base64: false,
+    });
+    expect(await responseBody(entry(() => Promise.reject(new Error('gone')), { text: 'kept' }))).toEqual({
+      text: 'kept',
+      base64: false,
+    });
+    expect(await responseBody(entry(undefined, { text: 'aGk=', encoding: 'base64' }))).toEqual({
+      text: 'aGk=',
+      base64: true,
+    });
+    expect(await responseBody(entry(undefined))).toEqual({ text: null, base64: false });
   });
 });

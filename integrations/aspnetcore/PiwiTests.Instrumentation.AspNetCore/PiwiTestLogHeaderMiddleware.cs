@@ -16,9 +16,8 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
     private const string ProbeHeaderName = "X-Piwi-Probe";
 
     // The shared secret a probe run signs the X-Piwi-Probe header with. Server
-    // probes stay off unless a project opts in (PIWI_SERVER_PROBES=true); off is
-    // the default in this milestone, so a verified probe is recorded but no fault
-    // is applied — only the client-safe subset would ever be, and only once on.
+    // probes stay off unless PIWI_SERVER_PROBES=true; when off (the default), a
+    // verified probe is recorded but no fault is applied.
     private static readonly string? ProbeSecret = Environment.GetEnvironmentVariable("PIWI_PROBE_SECRET");
     private static readonly bool ServerProbesEnabled =
         string.Equals(Environment.GetEnvironmentVariable("PIWI_SERVER_PROBES"), "true", StringComparison.Ordinal);
@@ -114,7 +113,7 @@ public sealed class PiwiTestLogHeaderMiddleware(RequestDelegate next)
     {
         // The level filter, entry cap and message truncation are applied by PiwiTestLogCapture.TryAdd.
         if (logs is { Count: > 0 })
-            context.Response.Headers[HeaderName] = GzipBase64(JsonSerializer.SerializeToUtf8Bytes(logs));
+            context.Response.Headers[HeaderName] = GzipBase64(PiwiTestLogJson.Serialize(logs));
 
         if (probe is null)
             return;

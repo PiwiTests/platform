@@ -16,6 +16,7 @@ const DIST = path.join(here, '..', '..', 'dist');
 const TOKEN = 'b'.repeat(32);
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAf/Z';
 
 const HUD = { mark: 0, missing: 1, wrongPage: 2, finish: 3 } as const;
 
@@ -265,7 +266,14 @@ test.describe('Send to Piwi, in the real extension', () => {
       }
       if (req.method === 'GET' && req.url === '/api/projects/7/bug-reports/intake') {
         res.end(
-          JSON.stringify({ tracker: 'jira', projectKey: 'SHOP', locale: 'fr', canCreate: true, fileEvery: false }),
+          JSON.stringify({
+            tracker: 'jira',
+            projectKey: 'SHOP',
+            locale: 'fr',
+            canCreate: true,
+            fileEvery: false,
+            stepShots: 100,
+          }),
         );
         return;
       }
@@ -286,7 +294,7 @@ test.describe('Send to Piwi, in the real extension', () => {
         return;
       }
       if (req.method === 'GET' && req.url === '/api/bug-reports/37') {
-        res.end(JSON.stringify({ title: 'Coupon not applied', steps: sampleReport().steps }));
+        res.end(JSON.stringify({ projectId: 7, title: 'Coupon not applied', steps: sampleReport().steps }));
         return;
       }
       res.statusCode = 404;
@@ -358,17 +366,27 @@ test.describe('Send to Piwi, in the real extension', () => {
           projectKey: 'SHOP',
           canCreate: true,
           fileEvery: false,
+          stepShots: 100,
         },
+        stepShots: 100,
       });
       // Only the intake was asked; nothing is sent before Send.
       expect(received.map((r) => r.url)).toEqual(['/api/projects/7/bug-reports/intake']);
 
+      const withStepShot = sampleReport();
+      withStepShot.evidence.stepShots = [
+        { step: 0, file: 'steps/001.jpg', box: null, viewport: { width: 800, height: 600 }, takenAt: 1 },
+      ];
       const answer = await fromTab({
         type: 'piwi-send-bug-report',
-        report: sampleReport(),
+        report: withStepShot,
         language: 'fr',
         createIssue: true,
         screenshots: [{ name: '1-marked.png', dataUrl: PNG }],
+        stepShots: [
+          { name: '001.jpg', dataUrl: JPEG },
+          { name: '../001.jpg', dataUrl: JPEG },
+        ],
       });
       expect(answer).toEqual({
         ok: true,
@@ -386,6 +404,10 @@ test.describe('Send to Piwi, in the real extension', () => {
       expect(text).toContain('name="createIssue"\r\n\r\ntrue');
       expect(text).toContain('name="screenshot"; filename="1-marked.png"');
       expect(text).toContain('Content-Type: image/png');
+      // The step screenshot, by the name the report gives it; a name that is not a step's file is not sent.
+      expect(text).toContain('name="stepShot"; filename="001.jpg"');
+      expect(text).toContain('Content-Type: image/jpeg');
+      expect(text.match(/name="stepShot"/g)).toHaveLength(1);
       expect(post.body.includes(Buffer.from(PNG.split(',')[1]!, 'base64'))).toBe(true);
 
       // The explanation is shown once per profile.
@@ -401,7 +423,10 @@ test.describe('Send to Piwi, in the real extension', () => {
       expect(steps.ok).toBe(true);
       expect(steps.steps).toMatchObject({ title: 'Coupon not applied', steps: [{ action: 'goto', value: '/cart' }] });
 
-      // Share result: the verdict, where it ran and the browser, on the report.
+      // Share result: the verdict, where it ran and the browser, on the report the replay played.
+      expect(
+        await fromTab({ type: 'piwi-start-replay', steps: steps.steps, origin: SHOP_ORIGIN, bugReportId: 37 }),
+      ).toEqual({ ok: true });
       expect(await fromTab({ type: 'piwi-share-target' })).toEqual({ instance: new URL(instance).host });
       expect(
         await fromTab({

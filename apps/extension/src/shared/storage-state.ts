@@ -19,7 +19,7 @@ export interface BrowserCookie {
   expirationDate?: number;
 }
 
-export interface StorageStateCookie {
+interface StorageStateCookie {
   name: string;
   value: string;
   domain: string;
@@ -36,8 +36,33 @@ export interface StorageState {
   origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
 }
 
+/** Two-label public suffixes such as `co.uk` or `com.au`, which are no one's site. */
+const SECOND_LEVEL_SUFFIX = /^(?:ac|co|com|edu|gov|net|org)\.[a-z]{2}$/;
+
+/**
+ * The host permissions that let `chrome.cookies` answer every cookie a page of
+ * `hostname` is sent. The browser checks each cookie against the extension's
+ * permissions by the cookie's domain alone, with no port and the scheme its
+ * `Secure` flag implies, so the page's origin is not enough: the host goes in
+ * for both schemes and any port, and so does each parent domain a cookie can
+ * be set on (none for an IP address or a single-label host such as
+ * `localhost`).
+ */
+export function cookieOriginPatterns(hostname: string): string[] {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  const patterns = [`*://${host}/*`];
+  if (/^[\d.]+$/.test(host) || host.startsWith('[')) return patterns;
+  const labels = host.split('.');
+  for (let i = 1; i < labels.length - 1; i++) {
+    const parent = labels.slice(i).join('.');
+    if (SECOND_LEVEL_SUFFIX.test(parent)) break;
+    patterns.push(`*://${parent}/*`);
+  }
+  return patterns;
+}
+
 /** Where the file goes in a project, as Playwright's authentication guide names it. */
-export const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
+const STORAGE_STATE_PATH = 'playwright/.auth/user.json';
 
 /** `lax`, and `unspecified`, which Chromium treats as Lax, → `Lax`. */
 function sameSiteOf(value: string): StorageStateCookie['sameSite'] {

@@ -60,19 +60,18 @@ export type NetworkRequestBuilder = { items: NetworkRequestItem[] };
 
 /**
  * Flatten per-case network request builders into insert-ready values by filling
- * in `testRunsCaseId` and `testRunId`.
+ * in `testRunsCaseId` and `testRunId`. Each inserted case names, by `rowIndex`,
+ * the builder of the batch row it was inserted from.
  */
 export function buildNetworkRequestInsertValues(
   networkRequestBuilders: NetworkRequestBuilder[],
-  insertedCases: Array<{ id: number }>,
+  insertedCases: Array<{ id: number; rowIndex: number }>,
   testRunId: number,
 ): Array<NetworkRequestItem & { testRunsCaseId: number; testRunId: number }> {
   const values: ReturnType<typeof buildNetworkRequestInsertValues> = [];
-  for (let i = 0; i < insertedCases.length && i < networkRequestBuilders.length; i++) {
-    const caseId = insertedCases[i]!.id;
-    const builder = networkRequestBuilders[i]!;
-    for (const item of builder.items) {
-      values.push({ testRunsCaseId: caseId, testRunId, ...item });
+  for (const { id, rowIndex } of insertedCases) {
+    for (const item of networkRequestBuilders[rowIndex]?.items ?? []) {
+      values.push({ testRunsCaseId: id, testRunId, ...item });
     }
   }
   return values;

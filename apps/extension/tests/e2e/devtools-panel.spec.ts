@@ -171,6 +171,48 @@ test.describe('the Piwi panel', () => {
     await expect(panel.getByText('Reproduced: the bug shows here')).toBeVisible();
   });
 
+  test('Pause and Continue release only a wait in progress, Next step and Stop a wait to come too', async ({
+    context,
+    extensionId,
+  }) => {
+    const shop = await context.newPage();
+    const panel = await openPanel(shop, extensionId, context);
+    await panel.getByRole('tab', { name: 'Replay' }).click();
+    // What the panel sends the replayed site's tabs.
+    await panel.evaluate(() => {
+      const sent: unknown[] = [];
+      (globalThis as { __sent?: unknown[] }).__sent = sent;
+      chrome.tabs.query = (() => Promise.resolve([{ id: 1 }])) as unknown as typeof chrome.tabs.query;
+      chrome.tabs.sendMessage = ((_tabId: number, message: unknown) => {
+        sent.push(message);
+        return Promise.resolve();
+      }) as typeof chrome.tabs.sendMessage;
+    });
+    const sent = () =>
+      panel.evaluate(() => (globalThis as { __sent?: Array<{ wake: unknown }> }).__sent!.map((m) => m.wake));
+    const replay = {
+      id: 'r1',
+      steps: REPORT,
+      origin: ORIGIN,
+      position: 1,
+      results: [{ status: 'done', detail: null }],
+      status: 'running',
+      stepMode: true,
+      cursor: null,
+      startedAt: 0,
+    };
+    await setSession(panel, { piwiReplay: replay });
+
+    await panel.getByRole('button', { name: 'Pause' }).click();
+    await expect.poll(sent).toEqual(['waiting']);
+    await panel.getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(sent).toEqual(['waiting', 'waiting']);
+    await panel.getByRole('button', { name: 'Next step' }).click();
+    await expect.poll(sent).toEqual(['waiting', 'waiting', true]);
+    await panel.getByRole('button', { name: 'Stop' }).click();
+    await expect.poll(sent).toEqual(['waiting', 'waiting', true, true]);
+  });
+
   test('turns the Playwright view on in the inspected tab, or asks for the site', async ({ context, extensionId }) => {
     const shop = await context.newPage();
     const panel = await openPanel(shop, extensionId, context);

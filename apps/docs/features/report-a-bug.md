@@ -1,6 +1,6 @@
 ---
 title: Report a bug
-description: "Record the steps to a bug in Piwi Picker, mark what is wrong, and get a failing Playwright test, a Markdown report and a zip with the evidence, with no Piwi instance."
+description: "Record the steps to a bug in Piwi Picker, mark what is wrong, and get a failing Playwright test, a Markdown report and a `.piwibug` file with the evidence, with no Piwi instance."
 lang: en-US
 ---
 
@@ -11,7 +11,7 @@ lang: en-US
 Reproduce a bug in your browser, say what the page should show, and get the test that proves it. **Report a bug** is
 a tool of the [Piwi Picker extension](./extension): it records your steps with the recorder, lets you mark what is
 wrong ("this should read Total: 45"), collects evidence from the page, and hands you a failing Playwright test, a
-Markdown report and a zip for the developer. Everything is built in your browser; nothing is sent anywhere unless you
+Markdown report and a `.piwibug` file for the developer. Everything is built in your browser; nothing is sent anywhere unless you
 send it to your [Piwi instance](./bug-reports).
 
 ## Recording the steps
@@ -43,9 +43,17 @@ While a bug report records, Piwi Picker keeps:
   as Piwi does for routes, and no header or body is ever read.
 - **An outline of the page** around the element you marked: roles, names, states and field values, in the YAML form
   Playwright's ARIA snapshots use, at most 400 lines. Piwi Picker builds it from its own reading of the page, so it
-  is an outline, not Playwright's snapshot. Password fields never show their value.
+  is an outline, not Playwright's snapshot. Password fields, and fields for a card number, its security code or a
+  one-time code, never show their value.
 - **Screenshots**, at each mark, at Finish and when you ask for one, three at most.
-- **The context**: the page, the browser and its version, the window size, the time and the extension's version.
+- **A screenshot of each step**: the page as the step began, with the element it acts on, for whoever has to
+  [play that step by hand](./replay-a-bug-report#when-a-step-cannot-be-played). They show the whole page: leave them out
+  in the report if they show what should not be shared. Taken through the debugging protocol, so mostly in Chrome and
+  Edge.
+- **The context**: the page, the browser and its version, the time and the extension's version.
+- **The viewport size**: at the start, then after each resize or zoom change, with the zoom when it is not 100%. The
+  failing test sets it with `page.setViewportSize` before the step it applies from, so a bug seen on a narrow window
+  reproduces at that width.
 
 The first 100 console entries and 100 failed requests are kept; the report counts the rest.
 
@@ -83,12 +91,12 @@ tab and choose **Take a screenshot**.
   `test.fail()` and it guards the fix.
 - **Copy report** copies the report as Markdown, for an issue or a message: the steps in plain words, what was
   expected and what the page showed, the notes, the console entries, the failed requests and the outline.
-- **Download .zip** saves `steps.json` (a [steps file](/reference/steps-format)), the spec, `bug-report.md`,
-  `evidence.json` and the screenshots. A developer can render the steps for their own project with
-  [`piwi codegen`](/reference/cli#codegen).
+- **Download .piwibug** saves it all as one [file](/reference/bug-report-file), which Replay and the
+  [desktop app](./desktop#importing-local-files) open. It is a zip archive: rename it to `.zip` to look inside, or to
+  attach it to a GitHub issue. [`piwi codegen`](/reference/cli#codegen) renders its `steps.json` for any project.
 
-Typed values stay as you typed them, except passwords, which are never recorded: the spec reads them from an
-environment variable. Look over the report before you share it.
+Typed values stay as you typed them, except passwords, card numbers, their security codes and one-time codes, which
+are never recorded: the spec reads them from an environment variable. Look over the report before you share it.
 
 With the extension connected to an instance, **Send to Piwi…** shows exactly what would be sent, with a box per kind of
 evidence, and sends it only when you click **Send**. The instance keeps the report, writes its failing test for the
@@ -96,49 +104,20 @@ project and follows its runs: see [Bug reports](./bug-reports).
 
 ## Replaying a report
 
-**Replay** plays a report's steps again in a tab, with a cursor that moves to each element and a caption saying what
-it does, then says whether the bug shows there. It suits the developer who receives the report: open the app on your
-own dev server, and the steps run there, with your session and your browser's developer tools at hand.
-
-- From the finished report, **Replay** plays it at once on the same site.
-- From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the `.zip`
-  or its `steps.json`, the report just recorded in this browser, or, connected, one of the project's reports on Piwi.
-  The steps run on the tab's site, whichever site they were recorded on.
-
-Each element is found with the locator the failing test uses, and waited for as Playwright waits: exactly one match,
-visible, enabled and still. The replay ends with one of three answers:
-
-- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 50", and the panel says
-  whether that is the value reported.
-- **Not reproduced**: every expected result holds here.
-- **Could not reach the bug**: a step found no element, several, or a disabled one, or the flow ended on another page.
-  The data, the login or a flag differ here.
-
-Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
-"POST /api/cart/coupon answered 500". For a report from Piwi, **Share result…** records the answer on the report, with
-the site it ran on, after showing what it sends.
-
-**Step by step** waits for **Next** before each step, with the element outlined, so you can set a breakpoint first.
-
-In Chrome and Edge, Replay sends trusted input as Playwright does: a real hover, clicks, keys and drags that the page
-cannot tell from a person's. Chrome shows its debugging bar until the replay ends. In Firefox, when the browser refuses
-the session, or once the bar is cancelled, Replay goes on with the page's own events; the panel says which, step by
-step. A report names the files a step chose but never carries them: Replay asks you to choose them, or to skip the step.
-
-**Run with Playwright…**, beside **Start** and on a finished replay, sends the steps to the paired
-[desktop app](./bug-reports#running-it-with-playwright-in-the-desktop-app), which runs them in your project once you
-confirm it there.
+**Replay**, on the finished report or from the popup (`R`), plays the steps again in a tab and says whether the bug
+shows there: see [Replay a bug report](./replay-a-bug-report).
 
 ## Limits
 
 - It follows one site, like [Record actions](./extension#record-actions), in the top-level document only.
 - Without the debugging protocol, only the page's own `fetch` and `XMLHttpRequest` calls are seen: not images,
   stylesheets, a form that loads a new page, or a request made by a worker.
-- A recording sends nothing anywhere: only **Send to Piwi…**, **Share result…** and **Run with Playwright…** do, each
-  after showing what it sends.
+- A recording sends nothing anywhere: only **Send to Piwi…** does, after showing what it sends.
 
 ## Related
 
 - [Browser extension](./extension): every tool of Piwi Picker
+- [Replay a bug report](./replay-a-bug-report): playing a report again, in the browser or with Playwright
 - [Steps file](/reference/steps-format): the format of `steps.json`
+- [Bug report file](/reference/bug-report-file): what a `.piwibug` holds
 - [CLI: codegen](/reference/cli#codegen): a steps file rendered as a spec for your project

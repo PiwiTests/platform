@@ -6,6 +6,7 @@ export const NOTIFICATION_EVENTS = [
   'run.finished',
   'run.failed',
   'run.failed.default_branch',
+  'run.interrupted',
   'cluster.new',
   'cluster.fixed',
   'cluster.regressed',
@@ -14,6 +15,7 @@ export const NOTIFICATION_EVENTS = [
   'diagnosis.completed',
   'auto_heal.pr_opened',
   'bug.looks_fixed',
+  'environment.incident',
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
@@ -21,6 +23,7 @@ export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 const EVENT_LABELS: Partial<Record<NotificationEvent, string>> = {
   'auto_heal.pr_opened': 'Auto-heal › PR opened',
   'bug.looks_fixed': 'Bug › looks fixed',
+  'environment.incident': 'Environment incident',
 };
 
 /** How the subscription pickers name an event. */
@@ -30,7 +33,7 @@ export function notificationEventLabel(event: string): string {
 
 /**
  * A report schedule's delivery: queued in the notification outbox by the
- * `reports:schedule` task, one row per channel. Deliberately not a member of
+ * `reports:schedule` task, one row per channel. Not a member of
  * {@link NOTIFICATION_EVENTS}: a quality report arrives on its schedule's
  * clock, so it is never something to subscribe to.
  */
@@ -68,7 +71,16 @@ export interface TopFailure {
   executionId?: number;
 }
 
-export interface RunFinishedPayload {
+/**
+ * The branch and environment of the run an event comes from. Every payload of a
+ * {@link RUN_SCOPED_EVENTS} event carries them when the run reported them.
+ */
+export interface RunScope {
+  branch?: string;
+  environment?: string;
+}
+
+export interface RunFinishedPayload extends RunScope {
   runId: number;
   projectId: number;
   projectName: string;
@@ -77,7 +89,6 @@ export interface RunFinishedPayload {
   failedTests: number;
   passedTests: number;
   flakyTests: number;
-  branch?: string;
   isDefaultBranch?: boolean;
   flakinessRate?: number; // 0-1
   /** Duration of the run in milliseconds. */
@@ -95,7 +106,7 @@ export interface RunFinishedPayload {
   owners?: string[];
 }
 
-export interface ClusterNewPayload {
+export interface ClusterNewPayload extends RunScope {
   clusterId: number;
   projectId: number;
   projectName: string;
@@ -107,6 +118,8 @@ export interface ClusterNewPayload {
   affectedCases?: number;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
+  /** Distinct owners of the tests that failed into the cluster in this run, resolved as for {@link RunFinishedPayload}. */
+  owners?: string[];
 }
 
 /**
@@ -207,8 +220,16 @@ export interface FixAuthor {
   email: string;
 }
 
+/** An auto-heal pull request, named on the fix it landed. */
+export interface HealPrRef {
+  number: number;
+  url: string;
+  /** The heal action that opened it. */
+  actionId: number;
+}
+
 /** A cluster whose every affected test passed again. */
-export interface ClusterFixedPayload {
+export interface ClusterFixedPayload extends RunScope {
   clusterId: number;
   projectId: number;
   projectName: string;
@@ -229,10 +250,12 @@ export interface ClusterFixedPayload {
   fixAuthor?: FixAuthor;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
+  /** The auto-heal pull request whose commit (its `Piwi-Heal` trailer) landed the fix. */
+  healPr?: HealPrRef;
 }
 
 /** A cluster with a recorded fix that is failing again. */
-export interface ClusterRegressedPayload {
+export interface ClusterRegressedPayload extends RunScope {
   clusterId: number;
   projectId: number;
   projectName: string;
@@ -285,12 +308,39 @@ export interface LooksFixedTest {
   link?: string;
 }
 
-export interface BugLooksFixedPayload {
+export interface BugLooksFixedPayload extends RunScope {
   projectId: number;
   projectName: string;
   runId: number;
-  branch?: string;
   tests: LooksFixedTest[];
+}
+
+/**
+ * A run flagged as an environment incident: its failures come from the
+ * environment under test, so it sends this one event in place of the run's
+ * failure, flakiness, performance and new-cluster events.
+ */
+export interface EnvironmentIncidentPayload extends RunScope {
+  runId: number;
+  projectId: number;
+  projectName: string;
+  status: string;
+  totalTests: number;
+  failedTests: number;
+  isDefaultBranch?: boolean;
+  /** The rule that flagged the run (`host-unreachable`, `browser-crash`, `cross-project`). */
+  rule: string;
+  /** One sentence: how many tests failed, and reaching which host. */
+  reason: string;
+  /** The app's host the failures were reaching, when one stood out. */
+  host?: string;
+  /** How many other projects saw the same host or error fail within the window. */
+  otherProjects: number;
+  /**
+   * The same value for every run of one incident across projects: a channel
+   * that hears from several of them receives one message.
+   */
+  incidentKey: string;
 }
 
 export type NotificationPayload =
@@ -300,20 +350,72 @@ export type NotificationPayload =
   | ClusterRegressedPayload
   | DiagnosisCompletedPayload
   | AutoHealPrOpenedPayload
-  | BugLooksFixedPayload;
+  | BugLooksFixedPayload
+  | EnvironmentIncidentPayload;
 
 /** Per-subscription delivery filters, stored as JSON on the subscription row. */
 export interface SubscriptionFilters {
+  /** Only deliver events from runs on these branches; `*` matches any characters (`release/*`). */
   branches?: string[];
+  /** Only deliver events from runs in these environments; `*` matches any characters. */
+  environments?: string[];
   tags?: string[];
   statuses?: string[];
   defaultBranchOnly?: boolean;
-  /** Only deliver when one of these owns a failing test in the run. */
+  /** Only deliver when one of these owns a failing test behind the event ({@link OWNER_SCOPED_EVENTS}). */
   owners?: string[];
   /** Minimum flakiness rate (0-1) for flakiness.spike deliveries. */
   flakinessThreshold?: number;
   /** Minimum slowdown percent for perf.regression deliveries. */
   perfRegressionPct?: number;
+}
+
+/**
+ * Events that come from one run and carry its {@link RunScope}: the branch and
+ * environment filters apply to them. `auto_heal.pr_opened` names the pull
+ * request's branch, and `diagnosis.completed` is about a cluster across runs.
+ */
+export const RUN_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<NotificationEvent>([
+  'run.finished',
+  'run.failed',
+  'run.failed.default_branch',
+  'run.interrupted',
+  'flakiness.spike',
+  'perf.regression',
+  'cluster.new',
+  'cluster.fixed',
+  'cluster.regressed',
+  'bug.looks_fixed',
+  'environment.incident',
+]);
+
+/**
+ * Events whose payload names the owners of the tests behind it: the owners
+ * filter applies to them, and one with no owner is not delivered to an
+ * owner-scoped subscription.
+ */
+export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<NotificationEvent>([
+  'run.finished',
+  'run.failed',
+  'run.failed.default_branch',
+  'flakiness.spike',
+  'perf.regression',
+  'cluster.new',
+]);
+
+/**
+ * Whether a branch or environment name matches one of the patterns: an exact
+ * name, or a pattern where `*` matches any run of characters, `/` included.
+ */
+export function matchesNamePattern(name: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    if (!pattern.includes('*')) return pattern === name;
+    const source = pattern
+      .split('*')
+      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+      .join('.*');
+    return new RegExp(`^${source}$`).test(name);
+  });
 }
 
 /** Whether an event/payload passes a subscription's delivery filters. */
@@ -326,21 +428,29 @@ export function passesSubscriptionFilters(
 
   const runPayload = payload as RunFinishedPayload;
 
+  if (RUN_SCOPED_EVENTS.has(event)) {
+    // A run that reported no branch (or environment) is on none of the listed ones.
+    const { branch, environment } = payload as RunScope;
+    if (filters.branches?.length && !(branch && matchesNamePattern(branch, filters.branches))) return false;
+    if (filters.environments?.length && !(environment && matchesNamePattern(environment, filters.environments))) {
+      return false;
+    }
+  }
   if (filters.defaultBranchOnly && event.startsWith('run.')) {
     if (!runPayload.isDefaultBranch) return false;
-  }
-  if (filters.branches?.length && event.startsWith('run.') && runPayload.branch) {
-    if (!filters.branches.includes(runPayload.branch)) return false;
   }
   if (filters.statuses?.length && event.startsWith('run.') && runPayload.status) {
     if (!filters.statuses.includes(runPayload.status)) return false;
   }
-  if (filters.owners?.length && event.startsWith('run.')) {
+  if (filters.owners?.length && OWNER_SCOPED_EVENTS.has(event)) {
     // No owner on the payload means nothing failed, or ownership could not be
     // resolved. Either way an owner-scoped subscription has nothing to say.
-    const runOwners = runPayload.owners ?? [];
-    if (!runOwners.some((owner) => filters.owners!.includes(owner))) return false;
+    const owners = (payload as { owners?: string[] }).owners ?? [];
+    if (!owners.some((owner) => filters.owners!.includes(owner))) return false;
   }
+  // An incident is about the environment, not anyone's tests: a subscription
+  // scoped to owners does not hear about it.
+  if (filters.owners?.length && event === 'environment.incident') return false;
   if (filters.flakinessThreshold != null && event === 'flakiness.spike') {
     const rate = runPayload.flakinessRate ?? 0;
     if (rate < filters.flakinessThreshold) return false;
@@ -354,12 +464,30 @@ export function passesSubscriptionFilters(
 }
 
 /**
+ * A subscription's filters in words, one entry per filter set: what the
+ * subscription lists show under each row. Empty when nothing is filtered.
+ */
+export function describeSubscriptionFilters(filters: SubscriptionFilters | null | undefined): string[] {
+  if (!filters) return [];
+  const parts: string[] = [];
+  if (filters.branches?.length) parts.push(`Branch: ${filters.branches.join(', ')}`);
+  if (filters.environments?.length) parts.push(`Environment: ${filters.environments.join(', ')}`);
+  if (filters.defaultBranchOnly) parts.push('Default branch only');
+  if (filters.statuses?.length) parts.push(`Status: ${filters.statuses.join(', ')}`);
+  if (filters.owners?.length) parts.push(`Owner: ${filters.owners.join(', ')}`);
+  if (filters.flakinessThreshold != null) parts.push(`Flakiness ≥ ${Math.round(filters.flakinessThreshold * 100)}%`);
+  if (filters.perfRegressionPct != null) parts.push(`Slowdown ≥ ${filters.perfRegressionPct}%`);
+  return parts;
+}
+
+/**
  * Idempotency key for one logical notification to one channel. Keyed on the
  * entity the event is about — the run for run-scoped events, the cluster for
  * cluster.new (one run can surface several new clusters), the cluster plus the
  * run for cluster.fixed / cluster.regressed (a cluster can be fixed and regress
- * more than once), and the cluster plus completion time for
- * diagnosis.completed (the same cluster can be re-diagnosed).
+ * more than once), the cluster plus completion time for
+ * diagnosis.completed (the same cluster can be re-diagnosed), and the incident
+ * for environment.incident (one incident can flag runs in several projects).
  */
 export function buildNotificationDedupeKey(
   event: NotificationEvent,
@@ -377,6 +505,10 @@ export function buildNotificationDedupeKey(
   if (event === 'diagnosis.completed') {
     const p = payload as DiagnosisCompletedPayload;
     return `${event}:c${p.clusterId}:${p.completedAt ?? 'x'}:${channelId}`;
+  }
+  if (event === 'environment.incident') {
+    const p = payload as EnvironmentIncidentPayload;
+    return `${event}:${p.incidentKey}:${channelId}`;
   }
   const runId = (payload as RunFinishedPayload).runId;
   return `${event}:r${runId ?? 'x'}:${channelId}`;
@@ -417,6 +549,24 @@ export function notificationTargetPath(event: NotificationEvent, payload: Notifi
   return runId ? `/test-runs/${runId}` : null;
 }
 
+/** What a `cluster.fixed` / `cluster.regressed` verdict says: its headline, and the triage change it made, if any. */
+export function clusterOutcome(
+  event: 'cluster.fixed' | 'cluster.regressed',
+  payload: ClusterFixedPayload | ClusterRegressedPayload,
+): { headline: string; triageNote: string | null } {
+  if (event === 'cluster.fixed') {
+    const p = payload as ClusterFixedPayload;
+    return {
+      headline: p.verification === 'diagnosis-verified' ? 'Diagnosis verified' : 'Cluster stopped failing',
+      triageNote: p.resolved ? 'Triage status set to resolved.' : null,
+    };
+  }
+  return {
+    headline: 'Fix regressed',
+    triageNote: (payload as ClusterRegressedPayload).reopened ? 'Triage status set back to open.' : null,
+  };
+}
+
 /** Subject / title line for each event type. */
 export function renderEventSubject(event: NotificationEvent, payload: NotificationPayload): string {
   switch (event) {
@@ -426,18 +576,18 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
       const p = payload as RunFinishedPayload;
       return `Test run ${p.status} — ${p.projectName}${p.branch ? ` (${p.branch})` : ''}`;
     }
+    case 'run.interrupted': {
+      const p = payload as RunFinishedPayload;
+      return `Test run interrupted — ${p.projectName}${p.branch ? ` (${p.branch})` : ''}`;
+    }
     case 'cluster.new': {
       const p = payload as ClusterNewPayload;
       return `New failure cluster — ${p.projectName}`;
     }
-    case 'cluster.fixed': {
-      const p = payload as ClusterFixedPayload;
-      const what = p.verification === 'diagnosis-verified' ? 'Diagnosis verified' : 'Cluster stopped failing';
-      return `${what} — ${p.projectName}`;
-    }
+    case 'cluster.fixed':
     case 'cluster.regressed': {
-      const p = payload as ClusterRegressedPayload;
-      return `Fix regressed — ${p.projectName}`;
+      const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
+      return `${clusterOutcome(event, p).headline} — ${p.projectName}`;
     }
     case 'flakiness.spike': {
       const p = payload as RunFinishedPayload;
@@ -454,6 +604,10 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return `Auto-heal opened PR #${p.prNumber} — ${p.projectName}`;
+    }
+    case 'environment.incident': {
+      const p = payload as EnvironmentIncidentPayload;
+      return `Environment incident — ${p.projectName}${p.host ? ` (${p.host})` : ''}`;
     }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;

@@ -1,21 +1,26 @@
 import { describe, test, expect } from 'vitest';
 import ts from 'typescript';
 import {
+  BUG_REPORT_MEDIA_TYPE,
   BUG_REPORT_VERSION,
   bugContextFrom,
+  bugReportFromFiles,
   bugTitle,
   describeBrowser,
   describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
+  isBugReportArchive,
   parseBugReport,
   renderBugMarkdown,
   renderBugSpec,
   reportedRequestUrl,
   specRunVerdict,
+  stepShotFile,
   summarizeEvidence,
   type BugReport,
 } from '../src/bug-report';
+import { bugPhrases } from '../src/bug-phrases';
 import { normalizeSteps, buildSession, type RawCaptureEvent, type RecordedTarget } from '../src/recording';
 import { parseSteps, toStepsDocument } from '../src/steps';
 
@@ -164,6 +169,33 @@ describe('bug report', () => {
     const { code } = renderBugSpec(couponReport(), { testImport: '../fixtures', expectFail: false });
     expect(code).toContain(`from '../fixtures';`);
     expect(code).not.toContain('test.fail()');
+  });
+
+  test('the Markdown and the spec give the viewport each step was played at', () => {
+    const base = couponReport();
+    const report: BugReport = {
+      ...base,
+      steps: {
+        ...base.steps,
+        viewports: [
+          { step: 0, width: 1280, height: 800 },
+          { step: 2, width: 390, height: 844 },
+        ],
+      },
+    };
+    const md = renderBugMarkdown(report);
+    expect(md).toContain('1. Go to `/cart?session=abc`\n   - Viewport from this step: 1280×800');
+    expect(md).toMatch(/\n3\. .*\n {3}- Viewport from this step: 390×844/);
+    expect(renderBugMarkdown(report, bugPhrases('fr'))).toContain('Fenêtre à partir de cette étape\u00a0: 390×844');
+    const zoomed: BugReport = {
+      ...report,
+      steps: { ...report.steps, viewports: [{ step: 0, width: 1024, height: 576, zoom: 1.25 }] },
+    };
+    expect(renderBugMarkdown(zoomed)).toContain('   - Viewport from this step: 1024×576, at 125% zoom');
+    expect(renderBugMarkdown(zoomed, bugPhrases('fr'))).toContain('1024×576, zoom à 125\u202f%');
+    const { code } = renderBugSpec(report);
+    expect(code).toContain('await page.setViewportSize({ width: 1280, height: 800 });');
+    expect(code).toContain('await page.setViewportSize({ width: 390, height: 844 });');
   });
 
   test('the Markdown has the steps in words, expected and actual, the note and the evidence', () => {
@@ -330,6 +362,102 @@ describe('parseBugReport', () => {
     expect(parsed.report.evidence.outline!.split('\n')).toHaveLength(400);
     expect(parsed.report.context.origin).toBeNull();
     expect(parsed.report.context.path).toBeNull();
+  });
+});
+
+describe('bug report archive', () => {
+  /** The local header and data of one stored zip entry, as an archive starts. */
+  function firstEntry(name: string, data: string, method = 0): Uint8Array {
+    const nameBytes = new TextEncoder().encode(name);
+    const dataBytes = new TextEncoder().encode(data);
+    const out = new Uint8Array(30 + nameBytes.length + dataBytes.length);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint16(8, method, true);
+    view.setUint32(18, dataBytes.length, true);
+    view.setUint32(22, dataBytes.length, true);
+    view.setUint16(26, nameBytes.length, true);
+    out.set(nameBytes, 30);
+    out.set(dataBytes, 30 + nameBytes.length);
+    return out;
+  }
+
+  test('tells a bug report archive by its first entry, whatever the file is named', () => {
+    expect(isBugReportArchive(firstEntry('mimetype', BUG_REPORT_MEDIA_TYPE))).toBe(true);
+    expect(isBugReportArchive(firstEntry('mimetype', 'application/epub+zip'))).toBe(false);
+    expect(isBugReportArchive(firstEntry('mimetype', BUG_REPORT_MEDIA_TYPE, 8))).toBe(false);
+    expect(isBugReportArchive(firstEntry('steps.json', '{}'))).toBe(false);
+    expect(isBugReportArchive(new Uint8Array([0x50, 0x4b]))).toBe(false);
+  });
+
+  test('reads a report back from its steps.json and evidence.json', () => {
+    const report = couponReport();
+    const parsed = bugReportFromFiles({
+      steps: JSON.stringify(report.steps),
+      evidence: JSON.stringify({ v: report.v, context: report.context, evidence: report.evidence }),
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.report.steps).toEqual(report.steps);
+    expect(parsed.report.evidence.requests).toEqual(report.evidence.requests);
+    expect(parsed.report.context.pageKey).toBe(report.context.pageKey);
+  });
+
+  test('reads the steps alone, and refuses files that are not JSON', () => {
+    const parsed = bugReportFromFiles({ steps: JSON.stringify(couponReport().steps), evidence: null });
+    expect(parsed.ok && parsed.report.evidence).toEqual(emptyBugEvidence());
+    expect(bugReportFromFiles({ steps: '{', evidence: null })).toEqual({
+      ok: false,
+      errors: ['steps.json: not valid JSON'],
+    });
+    expect(bugReportFromFiles({ steps: '{}', evidence: '{' }).ok).toBe(false);
+  });
+});
+
+describe('step screenshots', () => {
+  const view = (id: string) => ({ id, box: { x: 10, y: 20, width: 100, height: 30 } });
+
+  test('a step keeps the view of the event it starts from, which a steps document leaves out', () => {
+    const steps = normalizeSteps([
+      ev({ kind: 'navigate', value: `${ORIGIN}/cart`, timestamp: 1 }),
+      ev({ kind: 'input', target: coupon, value: 'S', timestamp: 2, view: view('a') }),
+      ev({ kind: 'input', target: coupon, value: 'SP', timestamp: 3, view: view('b') }),
+      ev({ kind: 'click', target: apply, timestamp: 4, view: view('c') }),
+      ev({ kind: 'click', target: apply, timestamp: 5, view: view('d') }),
+      ev({ kind: 'dblclick', target: apply, timestamp: 6, view: view('e') }),
+    ]);
+    expect(steps.map((step) => step.view?.id ?? null)).toEqual([null, 'a', 'c']);
+    const doc = toStepsDocument(buildSession(steps, 1));
+    expect(doc.steps.some((step) => 'view' in step)).toBe(false);
+  });
+
+  test('a report reads its step screenshots back, one per step, named after the step, and counts them', () => {
+    const report = couponReport();
+    const shot = (step: number, file = stepShotFile(step)) => ({
+      step,
+      file,
+      box: { x: 1, y: 2, width: 3, height: 4 },
+      viewport: { width: 1280, height: 720 },
+      takenAt: 9,
+    });
+    expect(stepShotFile(0)).toBe('steps/001.jpg');
+    const parsed = parseBugReport({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        stepShots: [shot(2), shot(1), shot(1), shot(3, '../steps/004.jpg'), { ...shot(4), box: 'x', viewport: null }],
+      },
+    });
+    expect(parsed.ok && parsed.report.evidence.stepShots).toEqual([
+      shot(1),
+      shot(2),
+      { ...shot(4), box: null, viewport: null },
+    ]);
+    expect(parseBugReport(report).ok && parseBugReport(report)).not.toHaveProperty('report.evidence.stepShots');
+    if (!parsed.ok) return;
+    expect(summarizeEvidence(parsed.report.evidence)).toBe(
+      '1 screenshot · 3 step screenshots · 1 console error · 1 failed request · page outline',
+    );
   });
 });
 

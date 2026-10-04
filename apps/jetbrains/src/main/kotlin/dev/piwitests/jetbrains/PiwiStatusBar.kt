@@ -3,8 +3,8 @@ package dev.piwitests.jetbrains
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
-import com.intellij.openapi.actionSystem.ex.ActionUtil
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.StatusBar
@@ -14,7 +14,7 @@ import com.intellij.util.Consumer
 import java.awt.Component
 import java.awt.event.MouseEvent
 
-/** The latest run on the checked-out branch, in the status bar. */
+/** The latest run on the checked-out branch, in the status bar; while a recording runs, its state and step count. */
 class PiwiStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId() = ID
 
@@ -46,19 +46,27 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
             if (!service.status?.contexts.orEmpty().none { it.connected }) CopyMcpConfigurationAction.offer(project)
         }
         service.refreshStatus()
+        project.service<PiwiRecordings>().onChange(this) { statusBar.updateWidget(ID()) }
     }
 
     override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
-    private fun view() = project.service<PiwiProjectService>().let { Glue.statusView(it.status, it.runs) }
+    private fun view() = project.service<PiwiProjectService>().let { Glue.statusView(it.status, it.runs, it.local().desktop) }
 
-    override fun getText(): String = view().text
+    private fun recording() = project.getServiceIfCreated(PiwiRecordings::class.java)?.current()
+
+    override fun getText(): String = recording()?.let { Glue.recordingStatus(it.state, it.steps, it.edited, it.stopping) } ?: view().text
 
     override fun getAlignment(): Float = Component.LEFT_ALIGNMENT
 
-    override fun getTooltipText(): String = view().tooltip
+    override fun getTooltipText(): String = recording()?.let { "${it.view.text}\nClick to go to the recorded lines." } ?: view().tooltip
 
     override fun getClickConsumer(): Consumer<MouseEvent> = Consumer { event ->
+        val recording = recording()
+        if (recording != null) {
+            OpenFileDescriptor(project, recording.file, recording.blockStart() ?: 0).navigate(true)
+            return@Consumer
+        }
         val view = view()
         val action = when (view.action) {
             Glue.StatusAction.OPEN -> {
@@ -70,7 +78,7 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
             Glue.StatusAction.NONE -> null
         }
         action?.let { ActionManager.getInstance().getAction(it) }?.let {
-            ActionUtil.invokeAction(it, event.component, ActionPlaces.STATUS_BAR_PLACE, event, null)
+            ActionManager.getInstance().tryToExecute(it, event, event.component, ActionPlaces.STATUS_BAR_PLACE, true)
         }
     }
 

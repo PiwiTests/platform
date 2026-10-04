@@ -2,7 +2,7 @@ import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
-import { parseLocation } from '../../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapCompleteEventToRunCase } from '../../../utils/map-complete-event';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';

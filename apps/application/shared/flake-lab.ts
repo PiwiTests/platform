@@ -127,6 +127,15 @@ export function flakeLabNextCommand(testCaseId: number, state: FlakeLabTestState
   return step ? flakeCommand(testCaseId, step) : null;
 }
 
+/**
+ * The suspect id an arm tested, as the profile names it today. An arm recorded
+ * against a load suspect with its threshold in the id (`load:3`) tested the
+ * load suspect (`load`).
+ */
+export function canonicalSuspectId(suspectId: string): string {
+  return suspectId.startsWith('load:') ? 'load' : suspectId;
+}
+
 /** The latest result of each suspect in a list of experiments (newest first). Pure. */
 export function latestSuspectResults(experiments: FlakeExperimentRecord[]): Map<string, FlakeSuspectResult> {
   const out = new Map<string, FlakeSuspectResult>();
@@ -134,9 +143,11 @@ export function latestSuspectResults(experiments: FlakeExperimentRecord[]): Map<
     if (e.kind !== 'reproduce') continue;
     const control = e.arms.find((a) => a.key === 'control');
     for (const a of e.arms) {
-      if (!a.suspectId || !a.verdict || out.has(a.suspectId)) continue;
-      out.set(a.suspectId, {
-        suspectId: a.suspectId,
+      if (!a.suspectId || !a.verdict) continue;
+      const suspectId = canonicalSuspectId(a.suspectId);
+      if (out.has(suspectId)) continue;
+      out.set(suspectId, {
+        suspectId,
         experimentId: e.id,
         verdict: a.verdict as FlakeReproduceVerdict,
         runs: a.runs,
@@ -150,4 +161,113 @@ export function latestSuspectResults(experiments: FlakeExperimentRecord[]): Map<
     }
   }
   return out;
+}
+
+/** Where one suspect stands in the lab: never tested, or its latest arm's verdict. */
+export type FlakeSuspectStanding = 'untested' | FlakeReproduceVerdict;
+
+export function flakeSuspectStanding(result: FlakeSuspectResult | null | undefined): FlakeSuspectStanding {
+  return result ? result.verdict : 'untested';
+}
+
+/** The order the lab runs suspects in: those it never tested first, one that did not reproduce last. */
+const PLAN_STANDING_ORDER: readonly FlakeSuspectStanding[] = ['untested', 'reproduced', 'amplified', 'not-reproduced'];
+/** The order a test's top suspect is picked in: a reproduction first, one that did not reproduce last. */
+const TOP_STANDING_ORDER: readonly FlakeSuspectStanding[] = ['reproduced', 'untested', 'amplified', 'not-reproduced'];
+
+function orderByStanding<T extends { id: string }>(
+  suspects: readonly T[],
+  results: ReadonlyMap<string, FlakeSuspectResult>,
+  order: readonly FlakeSuspectStanding[],
+): T[] {
+  const place = (s: T) => order.indexOf(flakeSuspectStanding(results.get(s.id)));
+  return suspects
+    .map((s, rank) => ({ s, rank }))
+    .sort((a, b) => place(a.s) - place(b.s) || a.rank - b.rank)
+    .map(({ s }) => s);
+}
+
+/**
+ * Suspects in the order a reproduce experiment runs them: the untested ones in
+ * rank order, then a reproduced one, then an amplified one, then those that did
+ * not reproduce. Every suspect stays in the list. Pure.
+ */
+export function planFlakeSuspectOrder<T extends { id: string }>(
+  suspects: readonly T[],
+  results: ReadonlyMap<string, FlakeSuspectResult>,
+): T[] {
+  return orderByStanding(suspects, results, PLAN_STANDING_ORDER);
+}
+
+/**
+ * The suspect a test is shown with: the highest-ranked one the lab reproduced,
+ * else the highest-ranked untested one, else an amplified one, else the
+ * highest-ranked one that did not reproduce; null without suspects. Pure.
+ */
+export function topFlakeSuspect<T extends { id: string }>(
+  suspects: readonly T[],
+  results: ReadonlyMap<string, FlakeSuspectResult>,
+): T | null {
+  return orderByStanding(suspects, results, TOP_STANDING_ORDER)[0] ?? null;
+}
+
+function binomialCdf(k: number, n: number, p: number): number {
+  let term = Math.pow(1 - p, n);
+  let sum = term;
+  for (let i = 1; i <= k; i++) {
+    term *= ((n - i + 1) / i) * (p / (1 - p));
+    sum += term;
+  }
+  return sum;
+}
+
+/**
+ * The highest failure rate still consistent with `failures` in `runs` at the
+ * given confidence (the one-sided Clopper–Pearson bound): ten runs without a
+ * failure only say the rate is below about 26%. 1 with no runs. Pure.
+ */
+export function failureRateUpperBound(failures: number, runs: number, confidence = 0.95): number {
+  if (runs <= 0) return 1;
+  const k = Math.max(0, Math.min(failures, runs));
+  if (k >= runs) return 1;
+  const alpha = 1 - confidence;
+  if (k === 0) return 1 - Math.pow(alpha, 1 / runs);
+  let low = k / runs;
+  let high = 1;
+  for (let i = 0; i < 60; i++) {
+    const mid = (low + high) / 2;
+    if (binomialCdf(k, runs, mid) > alpha) low = mid;
+    else high = mid;
+  }
+  return high;
+}
+
+/** A rate as a whole percentage, at least 1%. */
+function percent(rate: number): string {
+  return `${Math.max(1, Math.round(rate * 100))}%`;
+}
+
+/**
+ * What a suspect's latest lab result says, in one sentence; null when it was
+ * never tested. A suspect that did not reproduce keeps its place at the end of
+ * the plan, and the sentence says what its runs can and cannot rule out. Pure.
+ */
+export function flakeSuspectLabNote(result: FlakeSuspectResult | null | undefined): string | null {
+  if (!result) return null;
+  const under = `${result.matchingFailures} of ${result.runs} runs under it failed the same way`;
+  const control =
+    result.controlRuns > 0 ? `, against ${result.controlMatchingFailures} of ${result.controlRuns} without it` : '';
+  if (result.verdict === 'reproduced') return `Reproduced: ${under}${control}.`;
+  if (result.verdict === 'amplified') return `Amplified: ${under}${control}, too few to call it reproduced.`;
+  const bound = percent(failureRateUpperBound(result.matchingFailures, result.runs));
+  return `Not reproduced: ${under}${control}. ${result.runs} runs only show it fails in fewer than ${bound} of runs under it, so a rarer flake can still come from it; the lab runs it after the untested suspects.`;
+}
+
+/** A suspect's lab result in a few words: `reproduced 7 of 10`, `not reproduced 0 of 10 (below 26%)`, `untested`. Pure. */
+export function flakeSuspectLabShort(result: FlakeSuspectResult | null | undefined): string {
+  if (!result) return 'untested';
+  const counts = `${result.matchingFailures} of ${result.runs}`;
+  if (result.verdict === 'reproduced') return `reproduced ${counts}`;
+  if (result.verdict === 'amplified') return `amplified ${counts}`;
+  return `not reproduced ${counts} (below ${percent(failureRateUpperBound(result.matchingFailures, result.runs))})`;
 }

@@ -11,6 +11,7 @@ import {
   failureDiagnoses,
   failureDiagnosisVersions,
   files,
+  handbackOutcomes,
   healActions,
   integrationActions,
   locatorSnapshots,
@@ -62,14 +63,13 @@ export interface DeleteRunsResult {
  *
  * Child rows are deleted explicitly, in FK order, rather than relying on
  * ON DELETE actions: SQLite foreign-key enforcement is a per-connection
- * pragma (historically supplied only by a libsql driver default, not by
- * every client that opens the file), and file/blob cleanup needs the rows
- * before they disappear. The result is identical on both dialects.
+ * pragma that not every client opening the file sets, and file/blob cleanup
+ * needs the rows before they disappear. The result is identical on both
+ * dialects.
  *
  * Trace-blob storage is freed by {@link gcTraceBlobs} AFTER the `files` rows are
  * gone, so a blob shared by several deleted rows (or by another run) is counted
- * correctly — a per-row refcount taken before deletion sees the not-yet-deleted
- * siblings and leaks the blob.
+ * correctly.
  *
  * The daily rollups follow in the transaction that deletes the run rows: the
  * retained rows of the touched days are recomputed from the runs that stay.
@@ -199,6 +199,11 @@ export async function deleteRunsByIds(
       .update(locatorSnapshots)
       .set({ lastSeenRunId: null })
       .where(inArray(locatorSnapshots.lastSeenRunId, batch));
+  }
+
+  // Hand-back outcomes follow their own age cutoff (`pruneOutcomesOlderThan`); only the run pointer is cleared.
+  for (const batch of batches(presentRunIds)) {
+    await db.update(handbackOutcomes).set({ runId: null }).where(inArray(handbackOutcomes.runId, batch));
   }
 
   // A project's day in as few slices as possible, so each day is recomputed about once.
@@ -450,15 +455,16 @@ export async function pruneReportSnapshots(db: DbClient, olderThanDays: number):
 }
 
 /**
- * Delete auto-heal actions that finished (opened/failed/skipped) before the
- * cutoff. Pending actions are never touched — they still have work to do. The
- * DB row is only a record of what Piwi did; deleting it never affects the PR
- * itself, which lives in the user's repository.
+ * Delete auto-heal actions that settled (merged/closed/failed/skipped) before the
+ * cutoff. Pending, processing and opened actions are never touched: they still
+ * have work to do, or hold an open PR that counts toward the cap and keeps its
+ * edit from being proposed twice. The DB row is only a record of what Piwi did;
+ * deleting it never affects the PR itself, which lives in the user's repository.
  */
 export async function pruneHealActions(db: DbClient, olderThanDays: number): Promise<number> {
   const cutoffDate = new Date(Date.now() - olderThanDays * MS_PER_DAY);
   const settled = and(
-    inArray(healActions.status, ['opened', 'failed', 'skipped']),
+    inArray(healActions.status, ['merged', 'closed', 'failed', 'skipped']),
     lt(healActions.updatedAt, cutoffDate),
   )!;
   const pruned = await countWhere(db, healActions, settled);

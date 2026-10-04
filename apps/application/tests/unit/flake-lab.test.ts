@@ -223,6 +223,63 @@ describe('the reproduce plan', () => {
     expect(plan.combined).toBeNull();
   });
 
+  test('gives the next step its facts: reproduce under the top untested suspect', async () => {
+    const facts = await lab.getFlakeLabStepFacts(db as never, FLAKY, { ciAvailable: true, now: NOW });
+    const plan = await lab.getFlakeExperimentPlan(db as never, FLAKY, { now: NOW });
+    expect(facts).toEqual({
+      testCaseId: FLAKY,
+      nextStep: 'reproduce',
+      command: `npx @piwitests/reporter flake ${FLAKY}`,
+      reproducedBy: null,
+      suspect: { id: plan.suspects[0]!.id, label: plan.suspects[0]!.label, standing: 'untested' },
+      untestedSuspects: plan.suspects.length,
+      ciAvailable: true,
+    });
+  });
+
+  test('runs the untested suspects first and a suspect that did not reproduce last, explained', async () => {
+    const before = await lab.getFlakeExperimentPlan(db as never, FLAKY, { now: NOW });
+    const cart = 'slow-route:GET /api/cart';
+    expect(before.arms[0]!.suspectId).toBe(cart);
+    const [row] = await db
+      .insert(schema.flakeExperiments)
+      .values({
+        projectId: 1,
+        testCaseId: FLAKY,
+        kind: 'reproduce',
+        verdict: 'not-reproduced',
+        source: 'cli',
+        createdAt: NOW,
+        finishedAt: NOW,
+      })
+      .returning({ id: schema.flakeExperiments.id });
+    const arm = { experimentId: row!.id, conditions: [], runs: 10, matchingFailures: 0 };
+    await db.insert(schema.flakeArms).values([
+      { ...arm, armKey: 'control', position: 0, label: 'control' },
+      { ...arm, armKey: 'suspect-1', position: 1, suspectId: cart, label: 'delay', verdict: 'not-reproduced' },
+    ]);
+    try {
+      const plan = await lab.getFlakeExperimentPlan(db as never, FLAKY, { now: NOW });
+      expect(plan.arms).toHaveLength(before.arms.length);
+      expect(plan.arms.at(-1)!.suspectId).toBe(cart);
+      expect(plan.arms[0]!.suspectId).not.toBe(cart);
+      expect(plan.arms.find((a) => a.suspectId === cart)!.rank).toBe(1);
+      expect(plan.suspects[0]).toMatchObject({ id: cart, rank: 1, lab: { verdict: 'not-reproduced', runs: 10 } });
+      expect(plan.suspects[0]!.lab!.note).toMatch(/fewer than 26% of runs/);
+      expect(plan.suspects[1]!.lab).toBeNull();
+
+      const project = await lab.getProjectFlakeLab(db as never, 1, { suspects: true, now: NOW });
+      const flaky = project.tests.find((t) => t.testCaseId === FLAKY)!;
+      expect(flaky.suspect).toMatchObject({ standing: 'untested', lab: 'untested' });
+      expect(flaky.suspect!.id).not.toBe(cart);
+      expect(flaky.untestedSuspects).toBe(plan.suspects.length - 1);
+      const plain = await lab.getProjectFlakeLab(db as never, 1, { now: NOW });
+      expect(plain.tests.find((t) => t.testCaseId === FLAKY)!.suspect).toBeUndefined();
+    } finally {
+      await db.delete(schema.flakeExperiments).where(eq(schema.flakeExperiments.id, row!.id));
+    }
+  });
+
   test('refuses a verify plan before anything reproduced', async () => {
     await expect(lab.getFlakeExperimentPlan(db as never, 555_555, { now: NOW })).rejects.toMatchObject({
       statusCode: 404,
@@ -359,6 +416,65 @@ describe('recording results', () => {
     // The newest finished reproduce experiment is the control-only one above.
     expect(summary).toMatchObject({ testCaseId: FLAKY, verdict: 'not-reproduced' });
   });
+
+  test('an arm recorded against a load suspect with its threshold counts as the load suspect', () => {
+    const arm = (suspectId: string, verdict: string) => ({
+      key: suspectId,
+      label: 'CPU ×4',
+      suspectId,
+      verdict,
+      runs: 4,
+      matchingFailures: 3,
+      pValue: 0.01,
+    });
+    const experiment = (id: number, arms: unknown[]) =>
+      ({ id, kind: 'reproduce', finishedAt: null, arms }) as unknown as Parameters<
+        typeof lab.latestSuspectResults
+      >[0][0];
+    const results = lab.latestSuspectResults([
+      experiment(2, [arm('load', 'not-reproduced')]),
+      experiment(1, [arm('load:3', 'reproduced')]),
+    ]);
+    expect([...results.keys()]).toEqual(['load']);
+    expect(results.get('load')).toMatchObject({ experimentId: 2, verdict: 'not-reproduced' });
+    expect(lab.latestSuspectResults([experiment(1, [arm('load:7', 'reproduced')])]).get('load')).toMatchObject({
+      verdict: 'reproduced',
+    });
+  });
+
+  test('the flaky list names a reproduced suspect over a higher-ranked one', async () => {
+    const { getTopFlakeSuspects } = await import('../../shared/handlers/flake-profile');
+    const [ranked] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW });
+    expect(ranked!.suspect!.id).toBe('slow-route:GET /api/cart');
+
+    const result = (suspectId: string, verdict: 'reproduced' | 'not-reproduced') => ({
+      suspectId,
+      experimentId: 1,
+      verdict,
+      runs: 10,
+      matchingFailures: verdict === 'reproduced' ? 7 : 0,
+      controlRuns: 10,
+      controlMatchingFailures: 0,
+      pValue: null,
+      label: suspectId,
+      finishedAt: null,
+    });
+    const reproduced = new Map([
+      [FLAKY, new Map([[`alongside:${NEIGHBOR}`, result(`alongside:${NEIGHBOR}`, 'reproduced')]])],
+    ]);
+    const [preferred] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: reproduced });
+    expect(preferred!.suspect!.id).toBe(`alongside:${NEIGHBOR}`);
+
+    // A higher-ranked suspect that did not reproduce gives way to the next untested one, and stays listed.
+    const cart = 'slow-route:GET /api/cart';
+    const demoted = new Map([[FLAKY, new Map([[cart, result(cart, 'not-reproduced')]])]]);
+    const [next] = await getTopFlakeSuspects(db as never, 1, [FLAKY], { now: NOW, results: demoted });
+    expect(next!.suspect!.id).not.toBe(cart);
+
+    // The list reads each test's lab results: the cart suspect reproduced earlier, so it leads.
+    const [item] = await lab.getFlakyListSuspects(db as never, 1, [FLAKY]);
+    expect(item!.suspect!.id).toBe('slow-route:GET /api/cart');
+  });
 });
 
 describe('verify', () => {
@@ -402,6 +518,12 @@ describe('verify', () => {
     const listed = await lab.listFlakeExperiments(db as never, FLAKY);
     const verified = listed.find((e) => e.id === Number(plan.experimentId))!;
     expect(verified.verifies).toMatchObject({ label: 'delay GET /api/cart 1.8 s' });
+
+    // Only the verified verdict is the flake-verify hand-back's outcome.
+    const outcomes = await db.select().from(schema.handbackOutcomes);
+    expect(outcomes.map((o) => [o.kind, o.subjectType, o.subjectId, o.suggestionKey, o.outcome, o.channel])).toEqual([
+      ['flake-verify', 'test-case', FLAKY, `experiment:${plan.experimentId}`, 'verified', 'cli'],
+    ]);
   });
 });
 

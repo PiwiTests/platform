@@ -1,0 +1,75 @@
+name: PR lint
+
+# The commits of a pull request, its title and the workflows. Every job runs on every event, so each check's latest
+# run on a commit is a real one: a job skipped on some events would read as passed over a failure of the same name.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commitlint:
+    name: commitlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # commitlint needs no install script: the workspaces' builds and `nuxt prepare` are skipped.
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          ignore-scripts: 'true'
+
+      - name: Lint the commits of the pull request
+        run: npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
+
+  # The title becomes the commit subject on main when a pull request is squash-merged.
+  title:
+    name: title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Lint the title
+        uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            docs
+            chore
+            ci
+            refactor
+            test
+            build
+            style
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: "Subject must start lowercase (Conventional Commits)."
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # shellcheck reports warnings and errors in the `run` scripts; its info and style notes are left out.
+      - name: Lint the workflows and actions
+        run: docker run --rm -v "$PWD:/repo" -w /repo -e SHELLCHECK_OPTS=--severity=warning rhysd/actionlint:1.7.12 -color

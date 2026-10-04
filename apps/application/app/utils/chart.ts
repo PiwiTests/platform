@@ -107,7 +107,7 @@ export function formatTickDate(date: Date): string {
 /**
  * Maps a timestamp onto an ordinal (per-point) x axis by interpolating between
  * the centers of the two neighboring points. Returns null outside the plotted
- * range, matching how markers off the time axis were previously skipped.
+ * range, so a marker off the time axis is skipped.
  */
 export function timeToOrdinalX(dates: Date[], centers: number[], time: number): number | null {
   if (dates.length === 0 || dates.length !== centers.length) return null;

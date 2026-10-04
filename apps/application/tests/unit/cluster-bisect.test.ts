@@ -1,0 +1,186 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+import * as schema from '../../server/database/schema.sqlite';
+import { apiError } from '../../server/utils/api-error';
+import { openTempDb, type TempDb } from './temp-db';
+import type { McpContext } from '../../server/utils/mcp/tools';
+import type { User } from '../../server/database/schema';
+import type { Role } from '#shared/types';
+
+// The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
+// so clear it before the modules under test load. A team instance has no
+// desktop token.
+delete process.env.PIWI_DATABASE_URL;
+delete process.env.PIWI_DESKTOP_TOKEN;
+
+const state = vi.hoisted(() => ({
+  db: null as unknown,
+  user: null as unknown,
+  routeRoles: null as Role[] | null,
+}));
+vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
+// Signed in as `state.user`, held to the roles the route declares, as requireAuth holds a key to them.
+vi.mock('../../server/utils/auth', () => ({
+  requireAuth: async () => {
+    const user = state.user as User;
+    if (state.routeRoles && !state.routeRoles.includes(user.role as Role)) {
+      throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
+    }
+    return user;
+  },
+  isAuthEnabled: () => true,
+}));
+
+interface FakeEvent {
+  body?: unknown;
+  params?: Record<string, string>;
+}
+
+vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: { 'x-required-roles'?: Role[] } }) => {
+  state.routeRoles = meta.openAPI?.['x-required-roles'] ?? null;
+});
+vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
+vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
+vi.stubGlobal('apiError', apiError);
+
+type Handler = (event: FakeEvent) => Promise<{ ok: boolean; bisectedCommit: unknown }>;
+const recordBisect = (await import('../../server/api/failure-clusters/[id]/bisect.post')).default as unknown as Handler;
+const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
+const { buildExecutionReproduce } = await import('#shared/handlers/reproduce');
+const setClusterBisect = MCP_TOOLS.find((t) => t.name === 'set_cluster_bisect')!.handler;
+
+const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
+const reporter = asUser(2, 'reporter', 'Robin');
+const viewer = asUser(3, 'user', 'Sam');
+const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+
+let db: TempDb;
+let close: () => Promise<void>;
+
+beforeEach(async () => {
+  ({ db, close } = await openTempDb());
+  state.db = db;
+  state.user = reporter;
+  await db.insert(schema.users).values([
+    { id: 2, username: 'robin', password: '', role: 'reporter', name: 'Robin' },
+    { id: 3, username: 'sam', password: '', role: 'user', name: 'Sam' },
+  ]);
+  await db.insert(schema.projects).values([
+    { id: 1, name: 'shop' },
+    { id: 2, name: 'other' },
+  ]);
+  await db.insert(schema.projectAssignments).values([
+    { userId: 2, projectId: 1 },
+    { userId: 3, projectId: 1 },
+  ]);
+  await db.insert(schema.testRuns).values([
+    { id: 1, projectId: 1, status: 'failed', startTime: new Date() },
+    { id: 2, projectId: 2, status: 'failed', startTime: new Date() },
+  ]);
+  const cluster = (id: number, projectId: number) => ({
+    id,
+    projectId,
+    fingerprint: `fp-${id}`,
+    signature: `Error ${id}`,
+    errorType: 'assertion',
+    firstSeenRunId: projectId,
+    lastSeenRunId: projectId,
+    occurrences: 1,
+  });
+  await db.insert(schema.failureClusters).values([cluster(1, 1), cluster(2, 2)]);
+  await db
+    .insert(schema.testCases)
+    .values({ id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'applies the coupon' });
+  await db
+    .insert(schema.testRunsCases)
+    .values({ id: 501, testRunId: 1, testCaseId: 1, status: 'failed', failureClusterId: 1 });
+});
+
+afterEach(async () => {
+  await close();
+});
+
+async function storedBisect(id: number): Promise<unknown> {
+  const [row] = await db
+    .select({ bisectResult: schema.failureClusters.bisectResult })
+    .from(schema.failureClusters)
+    .where(eq(schema.failureClusters.id, id));
+  return row?.bisectResult ?? null;
+}
+
+describe('POST /api/failure-clusters/:id/bisect', () => {
+  test('records the first bad commit on a server with no desktop token', async () => {
+    const result = await recordBisect({
+      params: { id: '1' },
+      body: { sha: SHA.toUpperCase(), subject: ' Drop the cart cache ', author: 'Ada', date: '2026-10-01T10:00:00Z' },
+    });
+    const expected = {
+      sha: SHA,
+      subject: 'Drop the cart cache',
+      author: 'Ada',
+      date: '2026-10-01T10:00:00Z',
+      commitUrl: null,
+    };
+    expect(result).toEqual({ ok: true, bisectedCommit: expected });
+    expect(await storedBisect(1)).toEqual(expected);
+    // The cluster's failures now name it in their reproduction and fix plan.
+    expect((await buildExecutionReproduce(db, 501))?.desktop.bisectedCommit).toEqual(expected);
+  });
+
+  test('is limited to reporters and administrators', async () => {
+    expect(state.routeRoles).toEqual(['administrator', 'reporter']);
+    state.user = viewer;
+    await expect(recordBisect({ params: { id: '1' }, body: { sha: SHA } })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(await storedBisect(1)).toBeNull();
+  });
+
+  test("refuses a cluster of a project the caller is not assigned to, and a SHA that isn't one", async () => {
+    await expect(recordBisect({ params: { id: '2' }, body: { sha: SHA } })).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    await expect(recordBisect({ params: { id: '1' }, body: { sha: 'HEAD~1' } })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(recordBisect({ params: { id: '99' }, body: { sha: SHA } })).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    expect(await storedBisect(2)).toBeNull();
+  });
+});
+
+describe('set_cluster_bisect', () => {
+  const ctx = (user: User): McpContext => ({ user, scope: new Set([1]) });
+
+  test('records the commit through the same handler as the route', async () => {
+    const result = await setClusterBisect(
+      db,
+      { clusterId: 1, sha: SHA.slice(0, 12), subject: 'Drop the cache' },
+      ctx(reporter),
+    );
+    expect(result).toEqual({ clusterId: 1, sha: SHA.slice(0, 12), subject: 'Drop the cache' });
+    expect(await storedBisect(1)).toEqual({
+      sha: SHA.slice(0, 12),
+      subject: 'Drop the cache',
+      author: null,
+      date: null,
+      commitUrl: null,
+    });
+  });
+
+  test('refuses a read-only key, a cluster out of scope and an invalid SHA; answers null for a missing cluster', async () => {
+    await expect(setClusterBisect(db, { clusterId: 1, sha: SHA }, ctx(viewer))).rejects.toThrow(
+      'This action requires reporter or administrator access',
+    );
+    await expect(setClusterBisect(db, { clusterId: 2, sha: SHA }, ctx(reporter))).rejects.toThrow(
+      'No access to project 2',
+    );
+    await expect(setClusterBisect(db, { clusterId: 1, sha: 'main' }, ctx(reporter))).rejects.toThrow(
+      'A valid commit SHA is required',
+    );
+    expect(await setClusterBisect(db, { clusterId: 99, sha: SHA }, ctx(reporter))).toBeNull();
+    expect(await storedBisect(1)).toBeNull();
+  });
+});

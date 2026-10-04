@@ -25,14 +25,18 @@ import { clippedInShadows } from './shadow.js';
 
 const RESULTS = '#piwi-picker-results-host';
 
+const activeTool = (page: Page) =>
+  page.evaluate(() => (globalThis as { __piwiActiveTool?: { id: string } }).__piwiActiveTool?.id ?? null);
+
 /** Pick an element; `up` walks that many steps to its containers before the click commits. */
 async function pick(page: Page, selector: string, up = 0): Promise<void> {
   await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
-  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  await expect(page.locator('#__piwi_picker_banner')).toBeVisible();
   await page.hover(selector);
   for (let i = 0; i < up; i++) await page.keyboard.press('ArrowUp');
   await page.click(selector);
-  const skip = page.getByRole('button', { name: 'Skip (Esc)' });
+  // The anchors step's Skip, in the language the test runs in.
+  const skip = page.getByRole('button', { name: /\((Esc|Échap)\)$/ });
   const results = page.locator(`${RESULTS} .panel`);
   await expect(skip.or(results)).toBeVisible();
   if (await skip.isVisible()) await skip.click();
@@ -70,6 +74,31 @@ test.describe('pick results in connected mode', () => {
     expect(sent.map((m) => m.type)).toContain('piwi-open-coverage');
   });
 
+  test('Show every tested element hands over to the overlay, and a pick starts again once it is closed', async ({
+    page,
+    context,
+  }) => {
+    await stubCoverageChrome(context);
+    await openShop(page, '?nodialog');
+    await pick(page, 'article:has-text("Blue mug") button.primary');
+    const section = page.locator(`${RESULTS} .piwi`);
+    await expect(section).toContainText('Reached by 2 tests of Acme Mugs');
+
+    await section.getByRole('button', { name: 'Show every tested element' }).click();
+    await expect(page.locator(RESULTS)).toHaveCount(0);
+    // What the worker does on `piwi-open-coverage`.
+    await injectCoverage(page);
+    await expect(page.locator('#piwi-coverage-host')).toBeAttached();
+    expect(await activeTool(page)).toBe('coverage-overlay');
+    await expect(page.locator('#piwi-coverage-host .panel')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#piwi-coverage-host')).toHaveCount(0);
+    await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+    await expect(page.getByText('click any element to generate locators')).toBeVisible();
+    expect(await activeTool(page)).toBe('pick');
+  });
+
   test('tells the tests reaching the element from those reaching a container around it', async ({ page, context }) => {
     await stubCoverageChrome(context, { cached: shopIndex([...SHOP_TESTS, CARD_TEST]) });
     await openShop(page, '?nodialog');
@@ -97,6 +126,8 @@ test.describe('pick results in connected mode', () => {
     expect(sent.map((m) => m.type)).toContain('piwi-open-coverage');
     await injectCoverage(page);
     expect((await readCoverage(page)).scope).toBe('button "Add to cart"');
+    await expect(page.locator('#piwi-coverage-host')).toBeAttached();
+    await expect(page.locator(RESULTS)).toHaveCount(0);
   });
 
   test('counts what tests reach inside a picked container', async ({ page, context }) => {

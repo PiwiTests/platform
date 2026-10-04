@@ -15,7 +15,6 @@ function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
 
 const AUTH_PORT = 3099;
 const AUTH_SERVER_URL = `http://localhost:${AUTH_PORT}`;
-const DB_PATH = join(process.cwd(), '.test-temp', 'auth-test.db');
 const STORAGE_PATH = join(process.cwd(), '.test-temp', 'auth-test-storage');
 
 /**
@@ -45,15 +44,14 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // when running in CI. Skip all tests in this file when not in CI.
   test.skip(!process.env.CI, 'Auth server tests only run in CI (see playwright.config.ts webServer)');
 
+  // The auth server opens its database file when it starts, so the file stays in
+  // place: libSQL opens a new connection after each transaction, and one opened
+  // on a deleted path starts an empty database.
   test.beforeAll(() => {
-    // Clean up test database and storage before running, in case of retries from a previous run
-    for (const path of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) safeRmSync(path);
     safeRmSync(STORAGE_PATH, { recursive: true, force: true });
   });
 
   test.afterAll(() => {
-    // Clean up test database and storage created by the auth server
-    for (const path of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) safeRmSync(path);
     safeRmSync(STORAGE_PATH, { recursive: true, force: true });
   });
 
@@ -1138,7 +1136,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // D11 in the browser: a "user" sees the effect of an undecided capability (the
+  // Capability roles in the browser: a "user" sees the effect of an undecided capability (the
   // one naming line) but none of the decline controls, and cannot reach Setup.
   // Reuses ci-user, who already has access to a fixtureless failing run in
   // PROJECT.AUTH_ROLE_CHECKS from an earlier test in this serial suite.

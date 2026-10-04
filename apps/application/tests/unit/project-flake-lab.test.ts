@@ -9,8 +9,16 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
 delete process.env.PIWI_DATABASE_URL;
-const { flakeCommand, flakeLabNextCommand, flakeLabNextStep, flakeLabTestState, getProjectFlakeLab } =
-  await import('../../shared/handlers/flake-lab');
+const {
+  flakeCommand,
+  flakeLabInboxItems,
+  flakeLabNextCommand,
+  flakeLabNextStep,
+  flakeLabTestState,
+  getProjectFlakeLab,
+  listFlakeLabInbox,
+} = await import('../../shared/handlers/flake-lab');
+type FlakeLabTest = import('../../shared/handlers/flake-lab').FlakeLabTest;
 
 const HOUR_MS = 3_600_000;
 const T0 = Date.UTC(2026, 8, 1);
@@ -156,13 +164,14 @@ describe('the project’s lab', () => {
       filePath: 'checkout.spec.ts',
       flaky: true,
       retryPassRuns: 3,
+      flakeRate: 0.5,
       reproducedBy: 'delay GET /api/cart 1.9 s',
       nextCommand: 'npx @piwitests/reporter flake verify 1',
       experiments: 1,
       lastExperimentAt: at(7).toISOString(),
     });
     expect(lab.tests[1]).toMatchObject({ nextCommand: 'npx @piwitests/reporter flake 2', lastExperimentAt: null });
-    expect(lab.tests[2]).toMatchObject({ title: 'lists orders', flaky: false, retryPassRuns: null });
+    expect(lab.tests[2]).toMatchObject({ title: 'lists orders', flaky: false, retryPassRuns: null, flakeRate: null });
     expect(lab.counts).toEqual({ flaky: 2, untested: 1, awaitingFix: 1, verified: 0, experiments: 2 });
     expect(lab.experiments.map((e) => [e.testCaseId, e.title, e.verdict])).toEqual([
       [1, 'pays', 'reproduced'],
@@ -196,6 +205,24 @@ describe('the project’s lab', () => {
     });
   });
 
+  test('Home reads the projects the caller sees, and skips one that declined the Flake Lab', async () => {
+    const items = await listFlakeLabInbox(db as never, 'all');
+    expect(items[0]).toMatchObject({
+      projectId: 1,
+      testCaseId: 1,
+      step: 'verify',
+      detail: 'delay GET /api/cart 1.9 s',
+      command: 'npx @piwitests/reporter flake verify 1',
+    });
+    expect(await listFlakeLabInbox(db as never, [])).toEqual([]);
+    expect(await listFlakeLabInbox(db as never, [2])).toEqual([]);
+    await db
+      .update(schema.projects)
+      .set({ capabilities: { 'flake-lab': 'declined' } })
+      .where(eq(schema.projects.id, 1));
+    expect(await listFlakeLabInbox(db as never, 'all')).toEqual([]);
+  });
+
   test('keeps the newest experiments to the limit, and counts them all', async () => {
     const lab = await getProjectFlakeLab(db as never, 1, { limit: 1 });
     expect(lab.experiments.map((e) => e.testCaseId)).toEqual([1]);
@@ -204,5 +231,79 @@ describe('the project’s lab', () => {
 
   test('refuses an unknown project', async () => {
     await expect(getProjectFlakeLab(db as never, 99)).rejects.toThrow('Project not found');
+  });
+});
+
+describe('what Home links to', () => {
+  const test0 = (overrides: Partial<FlakeLabTest>): FlakeLabTest => ({
+    testCaseId: 1,
+    title: 'pays',
+    filePath: 'checkout.spec.ts',
+    state: 'untested',
+    nextCommand: 'npx @piwitests/reporter flake 1',
+    flaky: true,
+    retryPassRuns: 3,
+    reproducedBy: null,
+    lastExperimentAt: null,
+    experiments: 0,
+    verifiedFix: null,
+    flakeRate: 0.18,
+    suspect: {
+      id: 'cart',
+      label: 'GET /api/cart slower',
+      standing: 'untested',
+      matchingFailures: null,
+      runs: null,
+      lab: 'untested',
+    },
+    untestedSuspects: 2,
+    ...overrides,
+  });
+  const project = { id: 7, name: 'Shop' };
+
+  test('a fix waiting for a verify and a flaky test with an untested top suspect', () => {
+    const items = flakeLabInboxItems(project, [
+      test0({
+        testCaseId: 1,
+        state: 'reproduced',
+        nextCommand: 'npx @piwitests/reporter flake verify 1',
+        reproducedBy: 'delay GET /api/cart 1.8 s',
+      }),
+      test0({ testCaseId: 2 }),
+    ]);
+    expect(items).toEqual([
+      expect.objectContaining({
+        testCaseId: 1,
+        step: 'verify',
+        detail: 'delay GET /api/cart 1.8 s',
+        projectName: 'Shop',
+      }),
+      expect.objectContaining({
+        testCaseId: 2,
+        step: 'reproduce',
+        detail: 'GET /api/cart slower',
+        untestedSuspects: 2,
+        flakeRate: 0.18,
+      }),
+    ]);
+  });
+
+  test('leaves out a test with no untested suspect, off the ranking, or whose fix holds', () => {
+    const tested = {
+      id: 'cart',
+      label: 'x',
+      standing: 'not-reproduced' as const,
+      matchingFailures: 0,
+      runs: 10,
+      lab: 'x',
+    };
+    expect(
+      flakeLabInboxItems(project, [
+        test0({ suspect: tested, untestedSuspects: 0 }),
+        test0({ suspect: null }),
+        test0({ flaky: false }),
+        test0({ state: 'verified', nextCommand: null }),
+      ]),
+    ).toEqual([]);
   });
 });

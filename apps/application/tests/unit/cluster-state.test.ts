@@ -125,6 +125,22 @@ describe('computeClusterState — one row per kind', () => {
     expect(recurs.sentence).toContain('until it recurs');
   });
 
+  test('a pass at the failing commit is named as flake evidence, not a fix', () => {
+    const s = computeClusterState(cluster({ lastSeenRunId: 64, flakeEvidenceRunId: 66 }), PROJECT);
+    expect(s.kind).toBe('failing');
+    expect(s.sentence).toContain('Passed again at the same commit in run #66, which is flake evidence, not a fix.');
+    expect(s.parts.some((p) => p.kind === 'run' && p.id === 66)).toBe(true);
+
+    const assigned = computeClusterState(
+      cluster({ lastSeenRunId: 64, flakeEvidenceRunId: 66, assignee: 'Avery' }),
+      PROJECT,
+    );
+    expect(assigned.sentence).toContain('which is flake evidence, not a fix.');
+
+    const older = computeClusterState(cluster({ lastSeenRunId: 64, flakeEvidenceRunId: 60 }), PROJECT);
+    expect(older.sentence).not.toContain('flake evidence');
+  });
+
   test('quarantined: every affected test is quarantined', () => {
     const s = computeClusterState(cluster({ affectedTests: 2, quarantinedTests: 2 }), PROJECT);
     expect(s.kind).toBe('quarantined');

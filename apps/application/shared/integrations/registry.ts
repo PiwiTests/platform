@@ -26,7 +26,7 @@ export interface IntegrationProviderMeta {
   label: string;
   /** Icon name for the provider (Nuxt UI icon syntax). */
   icon: string;
-  /** What the provider's client can do; the UI and later milestones read these. */
+  /** What the provider's client can do. */
   capabilities: readonly string[];
   /** The credential inputs the connect form generates, beyond name and base URL. */
   credentialFields: readonly CredentialField[];

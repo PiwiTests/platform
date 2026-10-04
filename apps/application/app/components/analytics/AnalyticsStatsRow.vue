@@ -61,6 +61,7 @@ const NuxtLink = resolveComponent('NuxtLink');
           :data-testid="`stat-${tile.metric}`"
         >
           <template #hint>
+            <span v-if="sampleNote(tile)" class="block text-muted">{{ sampleNote(tile) }}</span>
             <span v-if="f.delta(tile)" :class="metricTrendClass(tile.trend)">{{ f.delta(tile) }}</span>
             <span v-if="tile.companion">
               <template v-if="f.delta(tile)"> · </template

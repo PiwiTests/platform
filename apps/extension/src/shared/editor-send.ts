@@ -4,6 +4,7 @@
  * the pairing it keeps (`editor-pairing.ts`).
  */
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
+import { flashLabel } from './clipboard.js';
 import { t } from './i18n.js';
 import { outdatedWorkerMessage } from './worker-status.js';
 
@@ -23,10 +24,7 @@ export async function sendToEditor(payload: EditorSendPayload): Promise<SendToEd
 
 /** A Send to editor button's feedback: its label for a moment, and the reason in its tooltip on failure. */
 export function showSendResult(btn: HTMLButtonElement, result: SendToEditorResult): void {
-  const original = btn.textContent;
-  btn.textContent = result.ok ? t('common_sentToEditor') : t('common_sendToEditorFailed');
+  // A second click meanwhile restarts the feedback, and the label still goes back to the button's own.
+  flashLabel(btn, result.ok ? t('common_sentToEditor') : t('common_sendToEditorFailed'), 1500);
   btn.title = result.ok ? '' : result.error;
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1500);
 }

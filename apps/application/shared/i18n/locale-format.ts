@@ -34,7 +34,7 @@ export const LOCALE_SETTING_KEY = 'date_locale';
 /** App-settings key holding the instance-default time zone. */
 export const TIME_ZONE_SETTING_KEY = 'date_time_zone';
 
-/** Locale used when nothing is configured anywhere (the historical behavior). */
+/** Locale used when nothing is configured anywhere. */
 export const BUILTIN_LOCALE = 'en-US';
 
 /** Sentinel meaning "follow the viewer's browser". */
@@ -184,8 +184,7 @@ export function resolveInstanceLocale(env: string | null | undefined, stored: st
 
 /**
  * The instance-default time zone from its two sources. The built-in default is
- * `'auto'` (the viewer's browser zone), which is what the dashboard has always
- * done.
+ * `'auto'` (the viewer's browser zone).
  */
 export function resolveInstanceTimeZone(env: string | null | undefined, stored: string | null | undefined) {
   const fromEnv = coerceTimeZone(env);
@@ -253,10 +252,9 @@ export interface FormatPrefs {
 /**
  * Format an absolute timestamp for display.
  *
- * With `{ locale: 'en-US', timeZone: 'auto' }` the output is identical to the
- * dashboard's historical `M/d/yyyy, h:mm:ss a` — `Intl` and the previous
- * date-fns format agree byte for byte for that locale. Other locales render in
- * their own convention (`fr-FR` → `22/09/2026 14:30:05`).
+ * With `{ locale: 'en-US', timeZone: 'auto' }` the output is
+ * `M/d/yyyy, h:mm:ss a`. Other locales render in their own convention
+ * (`fr-FR` → `22/09/2026 14:30:05`).
  *
  * Returns `'N/A'` for empty or unparseable input. A malformed locale/zone that
  * slipped past validation falls back to `en-US` in the viewer's own zone rather

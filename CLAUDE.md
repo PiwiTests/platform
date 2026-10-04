@@ -9,3 +9,4 @@ Instructions are split by area — read the guide for the directory you are edit
 - [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md) — the VS Code extension
 - [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md) — the JetBrains plugin
 - [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md) — the VitePress documentation site
+- [`.github/AGENTS.md`](.github/AGENTS.md) — the CI workflows and the action they share

@@ -23,11 +23,47 @@ To see Piwi's answers inside the editor instead — CI failures at their lines, 
 tests behind each locator, the heal as a quick fix — install the
 [editor extension](/features/editors).
 
+## JetBrains IDEs: the Piwi plugin
+
+With the [Piwi plugin](./editors#jetbrains-ides) installed in Rider, WebStorm,
+IntelliJ IDEA Ultimate or another JetBrains IDE (from **Settings → Plugins**, or
+**[the JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**),
+clicking a path opens it there with **nothing to set up** once the project is
+connected to the instance the dashboard belongs to (the reporter's `PIWI_*`
+variables, **Settings → Tools → Piwi** or the desktop app):
+
+- The dashboard asks every JetBrains IDE running, on its built-in server
+  (ports 63342 to 63361: a second IDE running takes the next free port). The IDE
+  whose open project holds the file opens it at its line and brings its window
+  to the front.
+- The dashboard then shows **Opened in Rider** (or the IDE's name), or, when no
+  open project holds the file, says so and lists the projects the IDE has open.
+  No other method can confirm the file opened.
+- The path, relative to the folder the tests ran in, is looked up under the
+  folder of each Playwright config in the project, the project folder and its
+  content roots. So a Rider solution in a subfolder, or a Playwright project
+  inside a monorepo, needs no workspace root and no project name. A workspace
+  root, when you set one, is tried first; the file must still be inside the
+  project.
+- When several IDEs hold the file, the one matching the **JetBrains product**
+  you set wins; when several projects do, the one connected to the same Piwi
+  project wins.
+
+The IDE answers only a page of the Piwi instance one of its open projects is
+connected to (**Settings → Tools → Piwi**, or `PIWI_DASHBOARD_URL` in the
+environment or the workspace `.env`), or of the [desktop app](./desktop.md)
+running on the same machine; an instance's page finds files only in the projects
+connected to it. A page from any other address, another page on your machine
+included, gets no answer whatever the IDE's built-in server settings allow, and
+the first address refused in an IDE session is named in a notification. When the dashboard you use is the project's instance under another
+address, connect the project to that address.
+
 ## Set it up
 
 1. Hover any source path and click the **⌄** caret, then **Configure…** — or open
    it from the user menu (bottom-left) → **Open in IDE…**.
-2. Set your **workspace root**: the absolute path of your local checkout, e.g.
+2. For VS Code, or a JetBrains IDE without the Piwi plugin, set your **workspace
+   root**: the absolute path of the folder the tests run from, e.g.
    `/home/me/my-repo` (or `C:\Users\me\my-repo` on Windows). Repo-relative paths
    are joined onto it, which is what VS Code needs to resolve a file.
 3. Pick a **method** (or leave it on **Auto**), then hit **Test** to open
@@ -39,9 +75,9 @@ tests behind each locator, the heal as a quick fix — install the
 | Method | How it opens | Needs |
 |--------|--------------|-------|
 | **VS Code** | `vscode://file/<abs-path>:<line>` URL scheme | A workspace root (for the absolute path). Flavors: VS Code, Insiders, VSCodium, Cursor. |
-| **JetBrains (URL)** | `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/); the IDE product tag (e.g. `idea`, `webstorm`) and the open project name. |
-| **JetBrains (local server)** | `http://localhost:63342/api/file/<path>:<line>` | The IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled. |
-| **Auto** | Tries the JetBrains local server first, then falls back to a URL launch | Whatever the chosen fallback needs. |
+| **JetBrains (URL)** | The Piwi plugin, then `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
+| **JetBrains (local server)** | The Piwi plugin, then `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. It cannot confirm the file opened. |
+| **Auto** | The Piwi plugin, then the other methods in turn (see below) | Whatever the method that answers needs. |
 
 ### Desktop app — direct launch (most reliable)
 
@@ -58,13 +94,19 @@ This needs **no** `vscode://`/`jetbrains://` protocol handler, no JetBrains
 Toolbox, no open-project name to match and no "allow unsigned requests" — the
 reasons the URL schemes are unreliable, on Rider especially — and unlike a URL
 scheme it reports back whether the launcher started (and flags a missing file).
-It needs a workspace root or a linked project folder, and the launcher on your
-`PATH`:
+It needs a workspace root or a linked project folder. The app finds the launcher
+on your `PATH`, then where the IDEs install it, since an app started from the
+Dock or the Start menu does not see the `PATH` your shell sets:
 
-- **JetBrains:** Toolbox → **Settings** → **Generate shell scripts** (the script
-  name is the product tag, e.g. `rider`).
-- **VS Code:** command palette → **Shell Command: Install 'code' command in
-  PATH** (macOS; already on `PATH` on Windows/Linux).
+- **Windows:** the Toolbox scripts folder (`rider.cmd`), then the IDE's own
+  `bin` folder (`rider64.exe`) under `%LOCALAPPDATA%\Programs` (a Toolbox or
+  per-user install) or `C:\Program Files\JetBrains`, newest version first;
+  `code.cmd` in VS Code's `bin` folder.
+- **macOS:** the Toolbox scripts folder, `/usr/local/bin`, `/opt/homebrew/bin`,
+  then the app bundles in `/Applications` and `~/Applications`
+  (`Rider.app/Contents/MacOS/rider`, VS Code's `Contents/Resources/app/bin/code`).
+- **Linux:** the Toolbox scripts folder, `~/.local/bin`, `/usr/local/bin`,
+  `/usr/bin`, `/snap/bin`, then `/opt/<IDE>/bin` (`rider` or `rider.sh`).
 
 When no matching launcher is found the desktop app falls back to the URL scheme
 for the chosen method, so nothing regresses. On desktop, a project's
@@ -73,22 +115,35 @@ open with zero extra setup.
 
 ### Auto — "try all, stop on first success"
 
-Only the **local server** method can be confirmed from the browser: the dashboard
-sends it a `fetch` and, if the IDE answers, reports success. The `vscode://` and
+Only the **Piwi plugin** can confirm the file opened: its answer is one the page
+can read. The IDE Remote Control endpoint can be reached but its answer not read,
+so the dashboard only knows an IDE is listening; the `vscode://` and
 `jetbrains://` URL schemes are handed off to the operating system with **no
 success signal** — the browser's own "Open &lt;app&gt;?" prompt is the only real
 confirmation.
 
-So **Auto** probes the JetBrains local server first (the detectable rung) and, if
-nothing answers, launches a single URL scheme (VS Code when a workspace root is
-set, otherwise `jetbrains://`) — reported honestly as "opening… (can't confirm)".
-If you only ever use one editor, set the method explicitly to skip the probe.
+So **Auto** goes, stopping at the first that works:
 
-::: warning HTTPS and the local server
-Browsers block a page served over **HTTPS** from calling `http://localhost`
-(mixed content) — Firefox and Safari always, Chrome increasingly. The local-server
-method (and Auto's detectable rung) therefore works best when the dashboard is
-served over **http / localhost**. Over HTTPS, Auto still falls back to the URL
+1. The Piwi plugin in any JetBrains IDE running. If an IDE answers that none of
+   its open projects holds the file, Auto says so rather than launch another
+   editor.
+2. In the desktop app, the command-line launchers: JetBrains first when a
+   JetBrains IDE is running, VS Code first otherwise.
+3. The IDE Remote Control local server, reported as **Sent to JetBrains**, not
+   as opened.
+4. A single URL scheme: VS Code when a workspace root is set, otherwise
+   `jetbrains://`, reported as "opening…".
+
+If you only ever use one editor, set the method explicitly to skip the other
+rungs.
+
+::: warning HTTPS and the IDE on localhost
+The Piwi plugin and the local server are reached on `http://127.0.0.1` /
+`http://localhost`. When the dashboard is served over **HTTPS** from another
+address, some browsers block that request as mixed content, and recent Chrome
+versions ask once for permission to reach apps on your device. These two
+methods therefore work best when the dashboard is served over **http /
+localhost**, or in the desktop app. Over HTTPS, Auto still falls back to the URL
 schemes, which are unaffected.
 :::
 
@@ -106,10 +161,13 @@ config's real file name is read from the linked folder; elsewhere it defaults to
 If you view several projects that live in different local checkouts (or a
 monorepo), open **Configure…** from a path inside that project — the dialog then
 offers a **workspace root override** and a **JetBrains project name** just for
-that project. Everything else falls back to your global settings.
+that project. Everything else falls back to your global settings. The Piwi
+plugin needs neither: it finds the file in the IDE's open projects.
 
 ## Privacy
 
 All of this — the method, workspace root(s), editor flavor and JetBrains
 product/port — lives in your browser's `localStorage` under `piwi-ide-prefs`.
-Nothing about your local filesystem is sent to the Piwi server.
+Nothing about your local filesystem is sent to the Piwi server. The Piwi plugin
+is asked from your browser directly, on your own machine: the file path, the
+workspace root and the Piwi project's name go to the IDE, nowhere else.

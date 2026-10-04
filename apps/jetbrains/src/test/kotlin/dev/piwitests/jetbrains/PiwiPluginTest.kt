@@ -2,6 +2,7 @@ package dev.piwitests.jetbrains
 
 import com.intellij.codeInsight.hints.codeVision.DaemonBoundCodeVisionProvider
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.platform.lsp.api.LspServerSupportProvider
@@ -33,6 +34,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
             com.intellij.openapi.options.Configurable.PROJECT_CONFIGURABLE.getExtensions(project)
                 .any { it.instanceClass == PiwiConfigurable::class.java.name },
         )
+        // Registered on JavaScript, the annotator serves its dialects too: a spec is TypeScript.
+        val annotators = com.intellij.lang.ExternalLanguageAnnotators.INSTANCE
+        assertTrue(annotators.allForLanguage(com.intellij.lang.javascript.JavaScriptSupportLoader.TYPESCRIPT).any { it is PiwiTestAnnotator })
+        assertTrue(com.intellij.openapi.options.colors.ColorSettingsPage.EP_NAME.extensionList.any { it is PiwiColorSettingsPage })
         for (id in listOf("Piwi.Connect", "Piwi.Disconnect", "Piwi.OpenSettings", "Piwi.Refresh", "Piwi.RunTestsForFile", "Piwi.OpenInDashboard", "Piwi.CopyMcpConfiguration", "Piwi.RunSelection", "Piwi.PairPicker")) {
             assertNotNull(id, ActionManager.getInstance().getAction(id))
         }
@@ -49,6 +54,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
             service.saveCredentials("https://b.example", "Shop", "pd_b")
             service.settings().serverUrl = "https://a.example"
             assertEquals("pd_a", service.credentials().apiKey)
+            service.disconnect()
+            assertEquals(EditorCredentials(null, null, null), service.credentials())
+            // A project only, no address and no key.
+            service.saveCredentials("", "Shop", "pd_ignored")
+            assertEquals(EditorCredentials(null, null, "Shop"), service.credentials())
+            // The desktop app, chosen on this machine: what is saved for the instance stays.
+            service.useDesktop("Mugs")
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs"), service.credentials())
+            service.useInstance()
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs"), service.credentials())
+            service.useDesktop(null)
             service.disconnect()
             assertEquals(EditorCredentials(null, null, null), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
@@ -85,7 +101,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         server.start()
         val url = "http://127.0.0.1:${server.address.port}"
         try {
-            assertTrue(PiwiInstance.needsKey(url))
+            assertEquals(PiwiInstance.Reached(url, needsKey = true), PiwiInstance.reach(url))
             val signIn = PiwiInstance.startSignIn(url, "WebStorm", "Linux")
             assertEquals("BCDF-GHJK", signIn.userCode)
             assertEquals(5, signIn.interval)
@@ -99,11 +115,104 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /**
+     * An instance on this machine answers on whichever loopback address it listens on: this one listens on
+     * 127.0.0.1 only, so `[::1]` is refused (or has no IPv6 at all) and Connect keeps the address that answered.
+     */
+    fun testReachesAnInstanceOnTheOtherLoopbackAddress() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            val bytes = """{"items":[{"id":7,"name":"Acme Mugs"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val port = server.address.port
+        try {
+            assertEquals(PiwiInstance.Reached("http://127.0.0.1:$port", false), PiwiInstance.reach("http://[::1]:$port"))
+            assertEquals(PiwiInstance.Reached("http://localhost:$port", false), PiwiInstance.reach("http://localhost:$port"))
+        } finally {
+            server.stop(0)
+        }
+        val refused = try {
+            PiwiInstance.reach("http://localhost:$port")
+            null
+        } catch (e: PiwiInstance.Unreachable) {
+            e
+        }
+        assertEquals(
+            "nothing answers at http://localhost:$port (nor at http://127.0.0.1:$port or http://[::1]:$port). " +
+                "Is the instance running, on that port?",
+            refused?.message,
+        )
+    }
+
+    /** An instance that drops a request asking to upgrade, as `nuxt dev` does: Connect never asks. */
+    fun testReachesAnInstanceThatDropsUpgradeRequests() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            if (exchange.requestHeaders.containsKey("Upgrade")) {
+                exchange.close()
+                return@createContext
+            }
+            val bytes = """{"items":[{"id":7,"name":"Acme Mugs"}]}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val url = "http://127.0.0.1:${server.address.port}"
+        try {
+            assertEquals(PiwiInstance.Reached(url, false), PiwiInstance.reach(url))
+            assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, null).map { it.name })
+        } finally {
+            server.stop(0)
+        }
+    }
+
     fun testCopyTextCopiesTheAgentContext() {
         PiwiCommands.execute(project, "piwi.copyText", listOf(com.google.gson.JsonPrimitive("# Failing test: pays")))
         val copied = com.intellij.openapi.ide.CopyPasteManager.getInstance()
             .getContents<String>(java.awt.datatransfer.DataFlavor.stringFlavor)
         assertEquals("# Failing test: pays", copied)
+    }
+
+    /** The project's Playwright configs are searched for on disk, and the service's workspace is the folders searched. */
+    fun testFindsThePlaywrightConfigsAndHandsTheirFoldersToTheService() {
+        val service = project.getService(PiwiProjectService::class.java)
+        val base = File(project.basePath!!)
+        val config = File(base, "e2e/playwright.config.ts").apply { parentFile.mkdirs() }
+        try {
+            config.writeText("export default {};\n")
+            service.searchPlaywright()
+            assertTrue(service.hasPlaywrightConfig())
+            assertEquals(listOf(base.toPath().resolve("e2e")), service.playwrightConfigDirs())
+            assertEquals(listOf(base.toPath()), service.searchRoots())
+            val folders = PiwiLspServerDescriptor(project).createInitializeParams().workspaceFolders
+            assertEquals(service.searchRoots(), folders.map { java.nio.file.Path.of(java.net.URI(it.uri)) })
+        } finally {
+            config.delete()
+            service.searchPlaywright()
+        }
+        assertFalse(service.hasPlaywrightConfig())
+    }
+
+    /** A read action waiting on the service gives way as soon as the platform cancels it: typing never waits on it. */
+    fun testAWaitOnTheServiceEndsWhenCanceled() {
+        val never = CompletableFuture<String>()
+        assertNull(never.awaitCancellably(50))
+        assertEquals("ok", CompletableFuture.completedFuture("ok").awaitCancellably(50))
+        val indicator = com.intellij.openapi.progress.EmptyProgressIndicator()
+        val waited = com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread<Throwable?> {
+            try {
+                com.intellij.openapi.progress.ProgressManager.getInstance().runProcess({ never.awaitCancellably(20_000) }, indicator)
+                null
+            } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+                e
+            }
+        }
+        Thread.sleep(100)
+        indicator.cancel()
+        assertTrue(waited.get(5, TimeUnit.SECONDS) is com.intellij.openapi.progress.ProcessCanceledException)
     }
 
     fun testServesTheFilesTheServiceReads() {
@@ -148,6 +257,74 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
     }
 
+    /** The dashboard's Open in IDE finds a run's file in the open project and opens it at its line, through the built-in server. */
+    fun testTheDashboardOpensAFileAtItsLine() {
+        // The light test project's content is in memory: the files the dashboard asks for are on disk, under its directory.
+        val base = File(project.basePath!!)
+        File(base, "tests").mkdirs()
+        File(base, "tests/checkout.spec.ts").writeText("import { test } from '@playwright/test';\n\ntest('pays', async () => {\n  await pay();\n});\n")
+        File(base, "e2e/tests").mkdirs()
+        File(base, "e2e/tests/login.spec.ts").writeText("test('signs in', async () => {});\n")
+        val outside = FileUtil.createTempDirectory("piwi-outside", null)
+        File(outside, "tests").mkdirs()
+        File(outside, "tests/secret.spec.ts").writeText("secret\n")
+        // The dashboard is the instance the project is connected to, here under another loopback name.
+        val settings = project.service<PiwiSettings>().state
+        val saved = settings.serverUrl
+        settings.serverUrl = "http://localhost:3000"
+        com.intellij.openapi.util.Disposer.register(testRootDisposable) { settings.serverUrl = saved }
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val client = java.net.http.HttpClient.newHttpClient()
+        fun get(query: String, origin: String? = "http://127.0.0.1:3000"): java.net.http.HttpResponse<String> {
+            val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiOpenHandler.PATH}?$query"))
+            if (origin != null) request.header("Origin", origin)
+            val future = client.sendAsync(request.GET().build(), java.net.http.HttpResponse.BodyHandlers.ofString())
+            val deadline = System.currentTimeMillis() + 20_000
+            while (!future.isDone && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            return future.get(1, TimeUnit.SECONDS)
+        }
+        fun json(response: java.net.http.HttpResponse<String>) = com.google.gson.JsonParser.parseString(response.body()).asJsonObject
+
+        // Another page on this machine, another site, a request without an origin: a 403 and nothing about the project.
+        for (origin in listOf("http://127.0.0.1:5173", "https://evil.example", null)) {
+            val refused = get("file=tests/checkout.spec.ts&check", origin)
+            assertEquals("$origin: ${refused.body()}", 403, refused.statusCode())
+            assertFalse("$origin: ${refused.body()}", refused.body().contains("\"found\"") || refused.body().contains(base.path))
+        }
+
+        assertEquals(400, get("line=3").statusCode())
+        val missing = get("file=tests/nowhere.spec.ts&check")
+        assertEquals(missing.body(), 404, missing.statusCode())
+        assertEquals(false, json(missing).get("found").asBoolean)
+        assertEquals("http://127.0.0.1:3000", missing.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+
+        // The dashboard's root, the run's working directory, is tried first; a root outside the project opens nothing.
+        val fromRoot = get("file=tests/login.spec.ts&check&root=" + java.net.URLEncoder.encode(File(base, "e2e").path, Charsets.UTF_8))
+        assertEquals(fromRoot.body(), 200, fromRoot.statusCode())
+        val escaped = get("file=tests/secret.spec.ts&check&root=" + java.net.URLEncoder.encode(outside.path, Charsets.UTF_8))
+        assertEquals(escaped.body(), 404, escaped.statusCode())
+
+        val checked = get("file=tests/checkout.spec.ts&line=4&column=9&check")
+        assertEquals(checked.body(), 200, checked.statusCode())
+        assertEquals(false, json(checked).get("opened").asBoolean)
+        assertNull(com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).selectedTextEditor?.virtualFile?.takeIf { it.name == "checkout.spec.ts" })
+
+        val opened = get("file=tests/checkout.spec.ts&line=4&column=9")
+        assertEquals(opened.body(), 200, opened.statusCode())
+        assertEquals(true, json(opened).get("opened").asBoolean)
+        assertEquals(
+            FileUtil.toSystemIndependentName(File(base, "tests/checkout.spec.ts").canonicalPath),
+            FileUtil.toSystemIndependentName(File(json(opened).get("file").asString).canonicalPath),
+        )
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val editor = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).selectedTextEditor
+        assertEquals("checkout.spec.ts", editor?.virtualFile?.name)
+        assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
+    }
+
     /** The service the plugin bundles, started with the descriptor's command line, answers in the protocol classes. */
     fun testTheBundledServiceAnswersThroughTheDescriptor() {
         val stub = StubInstance()
@@ -190,6 +367,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     Thread.sleep(100)
                 }
                 assertEquals("Acme Mugs", status?.contexts?.single()?.projectName)
+                assertEquals(NamedInstance(stub.url, "environment"), status?.contexts?.single()?.instance)
+                assertEquals(null, status?.desktopUrl)
 
                 // The latest run is read after the indexes: wait for it too.
                 var runs: RunStatusResult? = null
@@ -201,6 +380,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(41, runs?.contexts?.single()?.run?.id)
                 assertEquals("Piwi: 1 failing", Glue.statusView(status, runs).text)
 
+                // No desktop app runs here: Connect offers none.
+                assertEquals(null, server.desktop().get(5, TimeUnit.SECONDS)?.url)
+
                 val failure = server.failures().get(5, TimeUnit.SECONDS)?.items?.single()
                 assertEquals(File(dir, "tests/pages/checkout.page.ts").toURI().toString().replace("file:/", "file:///"), failure?.uri)
                 assertEquals(4, failure?.line)
@@ -210,6 +392,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 val summary = server.fileSummary(UriParams(pageObject)).get(5, TimeUnit.SECONDS)
                 assertEquals(listOf(4 to "1 test · click · 1 failing"), summary?.lines?.map { it.line to it.title })
                 assertEquals("piwi.runTests", summary?.lines?.single()?.command?.command)
+
+                // In the spec: the line the failure went through, why, and the evidence above it.
+                val spec = File(dir, "tests/checkout.spec.ts").toURI().toString().replace("file:/", "file:///")
+                val specLines = server.fileSummary(UriParams(spec)).get(5, TimeUnit.SECONDS)?.lines.orEmpty()
+                val test = specLines.single { it.status != null }
+                assertEquals("failed", test.status)
+                assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900"), test.failure)
+                assertEquals(
+                    listOf(
+                        Triple(4, "✗ not found", "piwi.openInDashboard"),
+                        Triple(4, "Screenshot", "piwi.openScreenshot"),
+                        Triple(4, "Trace", "piwi.openTrace"),
+                    ),
+                    specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
+                )
+                val shot = server.screenshot(TraceParams(spec, 900)).get(10, TimeUnit.SECONDS)
+                assertEquals("PNG-stub", shot?.path?.let { File(it).readText() })
 
                 val mcp = server.mcp().get(5, TimeUnit.SECONDS)?.servers?.single()
                 assertEquals("${stub.url}/mcp", mcp?.url)
@@ -237,7 +436,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "",
             ).joinToString("\n"),
         )
-        write("tests/checkout.spec.ts", "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n")
+        write(
+            "tests/checkout.spec.ts",
+            listOf(
+                "import { test } from '@playwright/test';",
+                "import { CheckoutPage } from './pages/checkout.page';",
+                "",
+                "test('removes a row', async ({ page }) => {",
+                "  await new CheckoutPage(page).row().click();",
+                "});",
+                "",
+            ).joinToString("\n"),
+        )
         fun git(vararg args: String) {
             val p = ProcessBuilder(listOf("git", "-c", "user.email=t@example.com", "-c", "user.name=t") + args)
                 .directory(dir).redirectErrorStream(true).start()
@@ -286,10 +496,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     {"run":{"id":41,"status":"failed","branch":"main","startTime":"2026-09-27T10:00:00.000Z","totalTests":2,
                       "passedTests":1,"failedTests":1,"flakyTests":0,"skippedTests":0},
                      "failures":[{"executionId":900,"testCaseId":3,"title":"removes a row","file":"tests/checkout.spec.ts",
-                      "line":3,"status":"failed","headline":"not found","location":"/ci/work/tests/pages/checkout.page.ts:5:21",
-                      "traces":["traces/900.zip"],"screenshot":null}]}
+                      "line":4,"status":"failed","headline":"not found","location":"/ci/work/tests/pages/checkout.page.ts:5:21",
+                      "message":"Error: locator.click: Timeout 5000ms exceeded.",
+                      "frames":["/ci/work/tests/pages/checkout.page.ts:5:21","/ci/work/tests/checkout.spec.ts:5:32"],
+                      "traces":["traces/900.zip"],"screenshot":"shots/900.png"}]}
                 """.trimIndent(),
-                "/api/projects/7/test-cases" to """{"items":[]}""",
+                "/api/projects/7/test-cases" to """
+                    {"items":[{"id":3,"title":"removes a row","filePath":"tests/checkout.spec.ts","status":"failed",
+                      "totalRuns":4,"passedRuns":3}]}
+                """.trimIndent(),
+                "/api/files/shots/900.png" to "PNG-stub",
                 "/api/projects/7/locator-alternatives" to """{"items":[]}""",
             )
             server.createContext("/") { exchange ->

@@ -28,7 +28,7 @@ export interface AutoHealSettings {
   minScore: number;
   /** Open the PR as a draft (ignored on Bitbucket, which has no draft PRs). */
   draft: boolean;
-  /** Cap on simultaneously-open auto-heal PRs per project. */
+  /** Cap on auto-heal PRs still open on the SCM per project; merged and closed PRs stop counting. */
   maxOpenPrs: number;
   /** Prefix for the branch auto-heal pushes to. Always ends with `/`. */
   branchPrefix: string;
@@ -108,6 +108,8 @@ export interface HealEditPayload {
   source: string;
   /** True when the replacement is a user's confirmed pick. */
   pickedByUser: boolean;
+  /** When a person confirmed the pick in the dashboard's snapshot picker, ISO 8601. */
+  pickedAt?: string | null;
   /** The failure cluster this edit belongs to, for the PR body links. */
   clusterId: number | null;
   /** The execution the edit was derived from. */
@@ -142,9 +144,28 @@ export interface HealActionResult {
   branch: string;
   /** Edits dropped at dispatch time because the head had drifted. */
   droppedEdits?: number;
+  /** The latest eligible run on the heal branch. */
+  branchRun?: HealBranchRun;
+  /** The first run on the heal branch in which every healed test passed. */
+  verifiedOnBranch?: HealBranchRun;
 }
 
-export type HealActionStatus = 'pending' | 'opened' | 'failed' | 'skipped';
+/** A run on a heal branch, as its action records it. */
+export interface HealBranchRun {
+  runId: number;
+  commit: string | null;
+  /** Every healed test ran in it and passed. */
+  passed: boolean;
+  /** ISO 8601. */
+  at: string;
+}
+
+/**
+ * `processing` is an action a sweep is opening right now; `opened` is a PR still
+ * open on the SCM; `merged` and `closed` are the states the PR-state refresh
+ * records once the SCM reports it settled.
+ */
+export type HealActionStatus = 'pending' | 'processing' | 'opened' | 'merged' | 'closed' | 'failed' | 'skipped';
 
 // ── Deterministic identity (dedupe key + branch name) ────────────────────────
 
@@ -172,6 +193,28 @@ export function healDedupeKey(projectId: number, signature: string): string {
 /** The branch name auto-heal pushes to: `<prefix><runId>-<sig>`. */
 export function healBranchName(branchPrefix: string, runId: number, signature: string): string {
   return `${branchPrefix}${runId}-${signature}`;
+}
+
+/**
+ * The run id and edit-set signature a heal branch name carries, or null for a
+ * branch auto-heal did not name (`healBranchName` is the inverse).
+ */
+export function parseHealBranch(
+  branch: string | null | undefined,
+  branchPrefix: string,
+): { runId: number; signature: string } | null {
+  if (!branch || !branch.startsWith(branchPrefix)) return null;
+  const match = /^(\d+)-([0-9a-f]{8})$/.exec(branch.slice(branchPrefix.length));
+  if (!match) return null;
+  return { runId: Number(match[1]), signature: match[2]! };
+}
+
+/**
+ * The identity of one edit, across edit sets: the file, the failing locator and
+ * the replacement. A PR closed without merging blocks its edits by this key.
+ */
+export function healEditKey(edit: Pick<HealEditPayload, 'filePath' | 'failingLocator' | 'suggestedLocator'>): string {
+  return fnv1a([edit.filePath, edit.failingLocator ?? '', edit.suggestedLocator].join('\u0000'));
 }
 
 /** True when a branch name was produced by auto-heal — used to break the feedback loop. */

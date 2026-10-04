@@ -54,7 +54,7 @@ You will not fix them all today, and disabling them is how suites rot. The usual
 list only grows.
 
 [Quarantine in Piwi](/features/flaky-tests#quarantine-with-a-way-out) keeps the test running and reporting. It
-is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and nothing else:
+is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and the run's commit status, and nothing else:
 
 - Passing runs accumulate as a **streak**; one failure resets it.
 - After five consecutive passes the test is flagged **ready to release** — you're told, not asked.

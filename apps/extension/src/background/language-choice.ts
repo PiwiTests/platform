@@ -8,7 +8,7 @@ import { LANGUAGE_KEY, isLanguage, type Language, type LanguageChoice, type RawC
  */
 
 /** Reads a shipped catalog from the extension's own package. Extension pages and the worker only. */
-export async function readPackagedCatalog(code: Language): Promise<RawCatalog> {
+async function readPackagedCatalog(code: Language): Promise<RawCatalog> {
   const response = await fetch(chrome.runtime.getURL(`_locales/${code}/messages.json`));
   if (!response.ok) throw new Error(`_locales/${code}/messages.json: ${response.status}`);
   return (await response.json()) as RawCatalog;

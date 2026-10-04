@@ -27,6 +27,10 @@ project's Failure clusters tab, for a reporter or admin to approve or dismiss, a
 past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
 whenever an embedding role is configured, independently of auto-diagnose.
 
+Each pair is judged once: the model's no is kept, so the same pair is not sent to the model again. A pair that
+someone dismissed, or that came from [moving tests to a new cluster](#split-a-cluster-by-hand), is never merged
+automatically, however close the two clusters score.
+
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: clusters are embedded, compared by cosine similarity, and kept apart, adjudicated by a model, or merged depending on the score">
   <figcaption>The cosine score decides between keeping two clusters apart, asking a model (or a person), and merging them.</figcaption>
@@ -35,6 +39,14 @@ whenever an embedding role is configured, independently of auto-diagnose.
 With auto-diagnose on, new clusters also get a short **title** from one cheap batched model call per run. Without one,
 a cluster is named from its error kind, locator, route and spec file, such as
 `Timeout on getByLabel('Email address') in checkout.spec.ts`.
+
+### Split a cluster by hand
+
+The opposite of a merge needs no AI. When some of a cluster's tests fail with the same error for a different reason,
+select them in the cluster page's **Affected tests** and choose **Move to a new cluster** (reporter or administrator).
+Their failures move to a new cluster at once, with the triage note you type, and the cluster they left gains a line
+naming the move. Later failures of those tests with the same error join the new cluster, the other tests' failures
+stay where they were, and the two clusters are never merged automatically.
 
 ## Enabling AI diagnosis
 
@@ -93,6 +105,14 @@ is told to return no patch unless it can quote the lines it changes. Applying a 
 **Copy `git apply` command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
 deterministic locator edits rather than model output.
 
+## Diagnoses written by an agent
+
+A coding agent can record its own diagnosis on a cluster with the MCP tool `record_diagnosis`, in the same JSON a
+model returns here. It needs no AI provider on this instance, its patch is validated against the source the cluster
+failed at when [source control](/guide/source-control) is connected, and the panel shows it as **written by an
+agent** with the model it named. It replaces the current diagnosis, which stays in the history. Declining the
+**Agent diagnoses** capability refuses them; declining AI diagnosis does not.
+
 ## Locator healing
 
 When the failure is a broken locator, the context includes the ranked replacements and the recommended fix from
@@ -109,12 +129,17 @@ Every re-diagnose keeps the previous result; a nightly sweep keeps the newest 20
 (`PIWI_RETENTION_DIAGNOSIS_VERSIONS`, `0` keeps all). **History** in the panel header lists them
 newest first, with the model, category, confidence and token cost, and shows what changed since each one.
 
+A re-diagnose sends the previous assessment to the model: its category, confidence, summary and root cause, the
+cluster's triage note, and, when you rated it unhelpful, your note and an instruction not to repeat it without new
+evidence. A rating belongs to the version it rated: the new diagnosis starts unrated, and the history keeps the old
+one's thumbs.
+
 A diagnosis is flagged **may be stale** only when the evidence changed since it ran **and** the cluster is still
 failing; the banner says whether new occurrences or new evidence caused it.
 
 ## Custom instructions
 
-Tailor the analysis to your stack with **global** instructions (Settings → AI) and **per-project** instructions. Use them to describe your architecture, common false positives, or house style for fixes.
+Tailor the analysis to your stack with **global** instructions (Settings → AI) and **per-project** instructions (Project → Settings → AI diagnosis). Use them to describe your architecture, common false positives, or house style for fixes.
 
 ## Context limits (and token cost)
 

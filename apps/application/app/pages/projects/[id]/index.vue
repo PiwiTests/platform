@@ -6,13 +6,7 @@ import type {
   PerformanceTrendPoint,
   SlowTest,
   FlakyTest,
-  ProjectMemberEntry,
-  ProjectMembersResponse,
-  UserDetails,
-  UsersResponse,
   MarkersResponse,
-  TagInfo,
-  TagsResponse,
 } from '~~/types/api';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
@@ -269,7 +263,7 @@ useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'gaps', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
-// Old ?tab= values (and the retired sub-routes) still land on the right tab.
+// Other ?tab= values (and the redirecting sub-routes) land on the tab that holds them.
 const TAB_ALIASES: Record<string, TabValue> = {
   'test-runs': 'runs',
   compare: 'runs',
@@ -346,15 +340,19 @@ if (initialTab && !tabHidden(initialTab)) {
 }
 
 // Reflect the active tab in the URL (replace, so tab switches don't stack history).
+// The Settings section belongs to the Settings tab, so it leaves with it.
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
-  router.replace({ query: { ...route.query, tab } });
+  const { section: _section, ...query } = route.query;
+  router.replace({ query: tab === 'settings' ? { ...route.query, tab } : { ...query, tab } });
 });
 
-// Rewrite an old ?tab= alias to its canonical value once the page is interactive.
+// Rewrite an old ?tab= alias to its canonical value once the page is interactive;
+// `members` names a section of the Settings tab, so it keeps that section.
 onMounted(() => {
   if (route.query.tab !== activeTab.value) {
-    router.replace({ query: { ...route.query, tab: activeTab.value } });
+    const section = route.query.tab === 'members' ? { section: 'members' } : {};
+    router.replace({ query: { ...route.query, tab: activeTab.value, ...section }, hash: route.hash });
   }
 });
 
@@ -640,212 +638,6 @@ watch(
   { immediate: true },
 );
 
-// === SETTINGS TAB: members ===
-const members = ref<ProjectMemberEntry[]>([]);
-const allUsers = ref<UserDetails[]>([]);
-const selectedMemberIds = ref<number[]>([]);
-
-const mergedMembers = computed(() => {
-  const memberMap = new Map(members.value.map((m) => [m.id, m]));
-  const result: (ProjectMemberEntry & { hasAccess: boolean })[] = [];
-  for (const u of allUsers.value) {
-    if (u.role === 'administrator') continue;
-    const m = memberMap.get(u.id);
-    result.push({
-      id: u.id,
-      username: u.username,
-      name: u.name ?? null,
-      role: u.role,
-      global: m?.global ?? false,
-      hasAccess: !!m,
-    });
-  }
-  for (const m of members.value) if (m.role === 'administrator') result.push({ ...m, hasAccess: true });
-  return result;
-});
-
-const membersChanged = computed(() => {
-  const originalIds = members.value
-    .filter((m) => m.role !== 'administrator' && !m.global)
-    .map((m) => m.id)
-    .sort();
-  const currentIds = [...selectedMemberIds.value].sort();
-  return JSON.stringify(originalIds) !== JSON.stringify(currentIds);
-});
-
-watch(
-  () => project.value?.id,
-  async (newId) => {
-    if (!newId || !isAdmin.value) return;
-    try {
-      const [membersData, usersData] = await Promise.all([
-        $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`),
-        $fetch<UsersResponse>('/api/users'),
-      ]);
-      members.value = membersData.items;
-      allUsers.value = usersData.items;
-      selectedMemberIds.value = membersData.items
-        .filter((m) => m.role !== 'administrator' && !m.global)
-        .map((m) => m.id);
-    } catch {
-      members.value = [];
-      allUsers.value = [];
-      selectedMemberIds.value = [];
-    }
-  },
-  { immediate: true },
-);
-
-function toggleMemberSelection(userId: number) {
-  const idx = selectedMemberIds.value.indexOf(userId);
-  if (idx >= 0) selectedMemberIds.value.splice(idx, 1);
-  else selectedMemberIds.value.push(userId);
-}
-
-async function handleSaveMembers() {
-  try {
-    await $fetch(`/api/projects/${projectId}/members`, {
-      method: 'PUT',
-      body: { userIds: selectedMemberIds.value },
-    });
-    toast.add({ title: 'Members updated', color: 'success' });
-    const data = await $fetch<ProjectMembersResponse>(`/api/projects/${projectId}/members`);
-    members.value = data.items;
-  } catch (error: unknown) {
-    const message =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Update failed', description: message || 'An error occurred', color: 'error' });
-  }
-}
-
-// === SETTINGS TAB: project edit form ===
-const { data: tagsData, refresh: refreshTags } = await useFetch<TagsResponse>('/api/tags');
-const allTags = computed(() => tagsData.value?.items || []);
-
-const storedCiRerun = computed(
-  () =>
-    (project.value as { ciRerun?: unknown } | null)?.ciRerun as {
-      enabled?: boolean;
-      github?: { workflow?: string; ref?: string; inputName?: string };
-      gitlab?: { ref?: string; variableName?: string };
-      bitbucket?: { pipeline?: string; variableName?: string };
-    } | null,
-);
-
-const storedServerProbes = computed(
-  () =>
-    (project.value as { serverProbes?: unknown } | null)?.serverProbes as {
-      enabled?: boolean;
-      faults?: string[];
-      routes?: string[];
-      dependencyOnStateChanging?: boolean;
-    } | null,
-);
-
-const editState = ref({
-  label: '',
-  description: '',
-  diagnosisInstructions: '',
-  aiLanguage: '',
-  scmToken: '',
-  defaultBranch: '',
-  openApiUrl: '',
-  serverProbes: { enabled: false, faults: '', routes: '', dependencyOnStateChanging: false },
-  ciRerun: {
-    enabled: false,
-    github: { workflow: '', ref: '', inputName: '' },
-    gitlab: { ref: '', variableName: '' },
-    bitbucket: { pipeline: '', variableName: '' },
-  },
-  generatedSpecs: { testImport: '', bugsFolder: '' },
-});
-const selectedTags = ref<TagInfo[]>([]);
-const savingSettings = ref(false);
-const hasScmToken = computed(() => Boolean((project.value as { hasScmToken?: boolean } | null)?.hasScmToken));
-
-watch(
-  project,
-  (p) => {
-    if (!p) return;
-    const ci = storedCiRerun.value;
-    editState.value = {
-      label: p.label || '',
-      description: p.description || '',
-      diagnosisInstructions: (p as { diagnosisInstructions?: string }).diagnosisInstructions || '',
-      aiLanguage: (p as { aiLanguage?: string }).aiLanguage || '',
-      scmToken: '',
-      defaultBranch: (p as { defaultBranch?: string }).defaultBranch || '',
-      openApiUrl: (p as { openApiUrl?: string }).openApiUrl || '',
-      serverProbes: {
-        enabled: storedServerProbes.value?.enabled ?? false,
-        faults: (storedServerProbes.value?.faults ?? []).join(', '),
-        routes: (storedServerProbes.value?.routes ?? []).join(', '),
-        dependencyOnStateChanging: storedServerProbes.value?.dependencyOnStateChanging ?? false,
-      },
-      ciRerun: {
-        enabled: ci?.enabled ?? false,
-        github: {
-          workflow: ci?.github?.workflow ?? '',
-          ref: ci?.github?.ref ?? '',
-          inputName: ci?.github?.inputName ?? '',
-        },
-        gitlab: { ref: ci?.gitlab?.ref ?? '', variableName: ci?.gitlab?.variableName ?? '' },
-        bitbucket: { pipeline: ci?.bitbucket?.pipeline ?? '', variableName: ci?.bitbucket?.variableName ?? '' },
-      },
-      generatedSpecs: {
-        testImport: p.generatedSpecs?.testImport ?? '',
-        bugsFolder: p.generatedSpecs?.bugsFolder ?? '',
-      },
-    };
-    selectedTags.value = p.tags || [];
-  },
-  { immediate: true },
-);
-
-/** Split a comma/whitespace-separated form value into a trimmed, non-empty list. */
-function splitCommaList(value: string): string[] {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-async function handleSaveSettings() {
-  savingSettings.value = true;
-  try {
-    await $fetch(`/api/projects/${projectId}` as '/api/projects/:id', {
-      method: 'PATCH',
-      body: {
-        label: editState.value.label || null,
-        description: editState.value.description || null,
-        diagnosisInstructions: editState.value.diagnosisInstructions || null,
-        aiLanguage: editState.value.aiLanguage || null,
-        scmToken: editState.value.scmToken || null,
-        defaultBranch: editState.value.defaultBranch || null,
-        openApiUrl: editState.value.openApiUrl || null,
-        serverProbes: {
-          enabled: editState.value.serverProbes.enabled,
-          faults: splitCommaList(editState.value.serverProbes.faults),
-          routes: splitCommaList(editState.value.serverProbes.routes),
-          dependencyOnStateChanging: editState.value.serverProbes.dependencyOnStateChanging,
-        },
-        ciRerun: editState.value.ciRerun,
-        generatedSpecs: {
-          testImport: editState.value.generatedSpecs.testImport.trim() || null,
-          bugsFolder: editState.value.generatedSpecs.bugsFolder.trim() || null,
-        },
-        tagIds: selectedTags.value.map((t) => t.id),
-      },
-    });
-    toast.add({ title: 'Project updated', description: 'Project settings have been saved.', color: 'success' });
-    await refresh();
-  } catch {
-    toast.add({ title: 'Error', description: 'Failed to update project', color: 'error' });
-  } finally {
-    savingSettings.value = false;
-  }
-}
-
 // Clusters list refreshes after a suggested merge is approved.
 const clustersRefreshKey = ref(0);
 
@@ -915,6 +707,8 @@ const moreMenuItems = computed(() => {
               v-if="!projCapHidden('notifications')"
               :project-id="parseInt(projectId)"
               :project-label="project?.label || project?.name"
+              :known-branches="availableBranches"
+              :known-environments="availableEnvironments"
             />
             <UButton
               v-if="!projCapHidden('quality-reports')"
@@ -1531,106 +1325,7 @@ const moreMenuItems = computed(() => {
         </div>
 
         <!-- SETTINGS TAB -->
-        <div v-if="activeTab === 'settings'" class="space-y-4">
-          <SectionCard
-            v-if="isAdmin"
-            icon="i-lucide-users"
-            title="Members"
-            help="project.members"
-            subtitle="Who can see this project"
-          >
-            <template #actions>
-              <UButton
-                label="Save changes"
-                icon="i-lucide-check"
-                size="sm"
-                :disabled="!membersChanged"
-                @click="handleSaveMembers"
-              />
-            </template>
-
-            <div v-if="mergedMembers.length > 0" class="space-y-2">
-              <div
-                v-for="member in mergedMembers"
-                :key="member.id"
-                class="flex items-center justify-between rounded-lg border border-default px-4 py-3"
-              >
-                <div>
-                  <div class="font-medium text-sm">{{ member.name || member.username }}</div>
-                  <div class="text-xs text-muted flex items-center gap-2">
-                    <span>@{{ member.username }}</span>
-                    <UBadge
-                      :color="
-                        member.role === 'administrator' ? 'primary' : member.role === 'reporter' ? 'info' : 'neutral'
-                      "
-                      variant="subtle"
-                      size="xs"
-                    >
-                      {{ member.role }}
-                    </UBadge>
-                    <span v-if="member.global" class="italic">Global access</span>
-                  </div>
-                </div>
-                <UCheckbox
-                  v-if="member.role !== 'administrator'"
-                  :model-value="selectedMemberIds.includes(member.id)"
-                  :disabled="member.global"
-                  :title="member.global ? 'Has global access — remove global assignment first' : ''"
-                  @change="toggleMemberSelection(member.id)"
-                />
-                <span v-else class="text-xs text-muted italic">Admin</span>
-              </div>
-            </div>
-            <div v-else class="text-center py-8 text-muted text-sm">Loading members…</div>
-          </SectionCard>
-
-          <SectionCard icon="i-lucide-settings" title="Project settings" :subtitle="`Project key: ${project?.name}`">
-            <p class="text-xs text-gray-500 mb-4">
-              The project name matches results from the reporter and cannot be changed.
-            </p>
-            <UForm :state="editState" class="space-y-5" @submit="handleSaveSettings">
-              <ProjectFormFields
-                mode="edit"
-                :has-token="hasScmToken"
-                :project-id="Number(projectId)"
-                :capabilities="project?.capabilities ?? null"
-                :hide-open-api="projCapHidden('test-map')"
-                :hide-server-probes="projCapHidden('server-probes')"
-                v-model:label="editState.label"
-                v-model:description="editState.description"
-                v-model:diagnosisInstructions="editState.diagnosisInstructions"
-                v-model:aiLanguage="editState.aiLanguage"
-                v-model:scmToken="editState.scmToken"
-                v-model:defaultBranch="editState.defaultBranch"
-                v-model:openApiUrl="editState.openApiUrl"
-                v-model:serverProbes="editState.serverProbes"
-                v-model:ciRerun="editState.ciRerun"
-                v-model:generatedSpecs="editState.generatedSpecs"
-                v-model:tags="selectedTags"
-                :all-tags="allTags"
-                @tag-created="refreshTags()"
-              />
-              <div class="flex justify-end gap-2 pt-2">
-                <UButton type="submit" icon="i-lucide-check" :loading="savingSettings">Save changes</UButton>
-              </div>
-            </UForm>
-          </SectionCard>
-
-          <ProjectTargetsForm
-            v-if="canManage"
-            :project-id="Number(projectId)"
-            :targets="(project as { targets?: unknown } | null)?.targets ?? null"
-            @saved="refresh()"
-          />
-
-          <ProjectUrlPatternsForm v-if="canManage" :project-id="Number(projectId)" />
-
-          <!-- Issue-tracker binding: how this project's failures reach Jira. -->
-          <ProjectIntegrationSettings v-if="canManage" :project-id="Number(projectId)" />
-
-          <!-- Desktop shell only: the linked folder is a per-machine setting. -->
-          <DesktopProjectFolderSection :project-id="projectId" :project-name="project?.name" />
-        </div>
+        <ProjectSettingsPanel v-if="activeTab === 'settings' && project" :project="project" @saved="refresh()" />
       </div>
     </template>
   </UDashboardPanel>

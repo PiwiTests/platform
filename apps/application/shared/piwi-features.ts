@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/failure-clusters',
       },
       {
+        title: 'Environment incidents',
+        summary:
+          'A run that failed because the app under test was down, recognized and kept out of flaky scores, baselines, fix verification and the gate.',
+        needs: [],
+        where: 'Test run header; Home inbox; Project → Timeline',
+        doc: 'features/environment-incidents',
+      },
+      {
         title: 'Flaky tests & quarantine',
         summary:
           'Flaky detection and cost scoring, the suspects each flaky test’s history points at, and quarantine that keeps a known-bad test running but off the merge gate.',
@@ -172,6 +180,22 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['fixtures'],
         where: 'Project → Performance; Analytics',
         doc: 'features/slow-tests',
+      },
+      {
+        title: 'Resource leaks',
+        summary:
+          'Browsers, contexts and pages your tests leave open or open for nothing, listed with the line that opened them.',
+        needs: ['fixtures'],
+        where: 'Run → Resources; Execution → Performance; reporter output',
+        doc: 'features/resource-leaks',
+      },
+      {
+        title: 'CPU, memory & disk',
+        summary:
+          'What a run cost the machine: CPU by process, time spent waiting for a CPU, peak memory and disk, after every run.',
+        needs: [],
+        where: 'Run → Resources; reporter output; GitHub job summary',
+        doc: 'features/cpu-memory-disk',
       },
       {
         title: 'AI diagnosis',
@@ -417,6 +441,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/report-a-bug',
       },
       {
+        title: 'Replay a bug report',
+        summary:
+          'Play a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
+        needs: ['extension'],
+        where: 'Browser extension → Replay a bug report',
+        doc: 'features/replay-a-bug-report',
+      },
+      {
         title: 'Bug reports',
         summary:
           'Reports sent from Piwi Picker kept with their steps and evidence, each rendered as a failing test for your project and followed through its runs until the fix holds.',
@@ -453,6 +485,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: [],
         where: 'VS Code extension, JetBrains plugin',
         doc: 'features/editors',
+      },
+      {
+        title: 'Record tests from the editor',
+        summary:
+          "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
+        needs: [],
+        where: 'Piwi: Record here; Tools → Piwi → Record Here in a JetBrains IDE',
+        doc: 'features/editor-recording',
       },
       {
         title: 'Editor connection',

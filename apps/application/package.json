@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/dashboard",
-  "version": "0.41.0",
+  "version": "0.45.0",
   "private": true,
   "type": "module",
   "imports": {
@@ -53,7 +53,6 @@
     "@emnapi/runtime": "1.11.2",
     "@iconify-json/lucide": "^1.2.117",
     "@libsql/client": "^0.17.4",
-    "@nuxt/hints": "^1.0.0-alpha.5",
     "@nuxt/test-utils": "^4.0.2",
     "@nuxt/ui": "^4.10.0",
     "@vite-pwa/nuxt": "^1.1.1",

@@ -1,4 +1,4 @@
-import { t } from '../shared/i18n.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 /** The recorder's page surfaces, shared by `record-panel.ts` and `bug-panel.ts`. */
 
@@ -30,35 +30,55 @@ export const SHARED_STYLE = `
   * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
 `;
 
+interface SurfaceGlobals {
+  /** How many hides hold each of the recorder's surfaces, by host id: a global, since each injection of the recorder is its own module instance. */
+  __piwiSurfaceHides?: Record<string, number>;
+}
+
+function surfaceHides(): Record<string, number> {
+  const g = globalThis as SurfaceGlobals;
+  g.__piwiSurfaceHides ??= {};
+  return g.__piwiSurfaceHides;
+}
+
+/**
+ * Hides the recorder's surfaces with these host ids until the returned
+ * function is called, for a screenshot or a pick to show only the page. Hides
+ * overlap: a surface shows again once the last one holding it ends, and a host
+ * created meanwhile is mounted hidden (`mountSurface`).
+ */
+export function hideSurfaces(ids: readonly string[]): () => void {
+  const hides = surfaceHides();
+  for (const id of ids) {
+    hides[id] = (hides[id] ?? 0) + 1;
+    const host = document.getElementById(id);
+    if (host) host.style.visibility = 'hidden';
+  }
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    for (const id of ids) {
+      hides[id] = Math.max(0, (hides[id] ?? 1) - 1);
+      const host = document.getElementById(id);
+      if (hides[id] === 0 && host) host.style.visibility = 'initial';
+    }
+  };
+}
+
+/** Adds a host of the recorder's to the page, hidden while a hide holds its id. */
+export function mountSurface(host: HTMLElement): void {
+  if ((surfaceHides()[host.id] ?? 0) > 0) host.style.visibility = 'hidden';
+  document.documentElement.appendChild(host);
+}
+
 /** Whether an element belongs to the recorder's own UI rather than to the page. */
 export function isOwnHost(element: Element): boolean {
   return OWN_HOST_IDS.has(element.id);
 }
 
 export async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-/** Save a file through the page's own download handling. */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.style.display = 'none';
-  document.documentElement.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  await copyWithFeedback(text, btn);
 }
 
 /** `2026-09-27-14-03`, for file names. */

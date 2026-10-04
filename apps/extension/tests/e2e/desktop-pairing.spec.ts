@@ -1,7 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions, optionsReady } from './fixtures.js';
+import { localStorageText, storedSecret } from './secrets.js';
 
 /**
  * Pairing with the desktop app from the settings: Pair asks the app, whose
@@ -74,15 +75,18 @@ test.beforeEach(() => {
 
 /** Answers the settings page's host-permission requests as granted: the prompt cannot be clicked from a test. */
 async function openSettings(page: Page, extensionId: string): Promise<void> {
-  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  await openOptions(page, extensionId);
   await page.evaluate(() => {
     chrome.permissions.request = (async () => true) as typeof chrome.permissions.request;
     chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
   });
 }
 
-const storedDesktop = (page: Page) =>
-  page.evaluate(async () => (await chrome.storage.local.get('piwiDesktop')).piwiDesktop ?? null);
+/** The pairing kept: in the extension's IndexedDB, never where a content script reads. */
+async function storedDesktop(page: Page): Promise<unknown> {
+  expect(await localStorageText(page)).not.toContain(TOKEN);
+  return storedSecret(page, 'desktop');
+}
 
 test.describe('Pair with the desktop app', () => {
   test('Pair shows the code the app’s window shows, and Allow there pairs it', async ({ context, extensionId }) => {
@@ -111,6 +115,7 @@ test.describe('Pair with the desktop app', () => {
 
     // Opening the settings again says so; Unpair forgets it.
     await page.reload();
+    await optionsReady(page);
     await expect(card.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
     await page.evaluate(() => {
       chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
@@ -120,6 +125,23 @@ test.describe('Pair with the desktop app', () => {
     await expect(card.locator('#desktop-pill')).toHaveText('Not paired');
     await expect(card.getByRole('button', { name: 'Unpair' })).toBeHidden();
     expect(await storedDesktop(page)).toBeNull();
+  });
+
+  test('a double click on Pair asks the app once', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await page.getByLabel('Address of the desktop app').fill(desktop);
+    const pair = page.locator('#desktop-card').getByRole('button', { name: 'Pair', exact: true });
+    await pair.dblclick();
+    await expect(page.locator('#desktop-pair-panel code')).toHaveText(CODE);
+    // Long enough for a second pairing to have asked the app too.
+    await page.waitForTimeout(500);
+    expect(starts).toHaveLength(1);
+    await expect(pair).toBeDisabled();
+    answer = 'allow';
+    await expect(page.locator('#desktop-status')).toHaveText(`Paired with the desktop app at ${desktop}.`);
+    await expect(pair).toBeEnabled();
+    expect(tokenHandedOut).toBe(1);
   });
 
   test('Deny in the app’s window pairs nothing, and says so', async ({ context, extensionId }) => {

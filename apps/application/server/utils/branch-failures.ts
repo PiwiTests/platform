@@ -1,17 +1,25 @@
 /**
- * The latest run on a branch and its failed executions at their failing
- * lines: what an editor shows in its Problems panel and status bar.
+ * The latest complete run on a branch and its failed executions at their
+ * failing lines: what an editor shows in its Problems panel and status bar.
  */
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { extractStackFrames, stripAnsi, withoutStackFrames } from '@piwitests/core/error-parse';
 import { files, testCases, testRuns, testRunsCases } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { caseHeadline } from '#shared/failure-verdict';
 import { isScreenshotFileRow } from '#shared/file-classify';
 import { extractErrorLocation } from './locator-healing';
 import { lastAttempts } from '#shared/status-classify';
+import { CI_RUN_ORIGINS, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
 
 /** Failed executions listed per run. */
 export const MAX_BRANCH_FAILURES = 200;
+
+/** The error message of a failure is cut after this many lines, then after this many characters. */
+const MESSAGE_MAX_LINES = 12;
+const MESSAGE_MAX_CHARS = 1000;
+/** Stack frames listed per failure. */
+const MAX_FRAMES = 10;
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
@@ -42,6 +50,10 @@ export interface BranchFailure {
   headline: string | null;
   /** The failing call in the error's first frame outside `node_modules`, `file:line:col`; null when the error names none. */
   location: string | null;
+  /** The error without its stack trace (call log, expected and received included), shortened; null without an error. */
+  message: string | null;
+  /** The error's frames outside `node_modules`, innermost first, `file:line:col`: the failing call, then its callers. */
+  frames: string[];
   /** Stored trace paths, downloadable from `/api/files/<path>`. */
   traces: string[];
   /** The failure screenshot's stored path; null without one. */
@@ -53,6 +65,25 @@ export interface BranchFailures {
   failures: BranchFailure[];
 }
 
+/** An error as an editor quotes it: without ANSI codes and stack frames, at most {@link MESSAGE_MAX_LINES} lines. */
+export function errorMessage(error: string | null): string | null {
+  if (!error) return null;
+  const lines = withoutStackFrames(stripAnsi(error).replace(/\r\n?/g, '\n'))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .split('\n');
+  let text = lines.slice(0, MESSAGE_MAX_LINES).join('\n');
+  if (text.length > MESSAGE_MAX_CHARS) text = text.slice(0, MESSAGE_MAX_CHARS).trimEnd();
+  return !text ? null : text.length < lines.join('\n').length ? `${text}\n…` : text;
+}
+
+/** An error's frames outside `node_modules` as `file:line:col`, innermost first, without repeats. */
+export function errorFrames(error: string | null): string[] {
+  if (!error) return [];
+  const frames = extractStackFrames(stripAnsi(error)).map((f) => `${f.file}:${f.line}:${f.column}`);
+  return [...new Set(frames)].slice(0, MAX_FRAMES);
+}
+
 function iso(value: Date | number | string | null | undefined): string {
   if (value == null) return new Date(0).toISOString();
   const d = value instanceof Date ? value : new Date(typeof value === 'number' && value < 1e12 ? value * 1000 : value);
@@ -60,32 +91,44 @@ function iso(value: Date | number | string | null | undefined): string {
 }
 
 /**
- * The newest run of a project on `branch` (any branch when null) and the tests
- * whose last attempt in it failed, one execution per test and browser project.
+ * The newest complete run of a project on `branch` (any branch when null) and
+ * the tests whose last attempt in it failed, one execution per test and browser
+ * project. A complete run ran the whole suite and finished: a filtered or
+ * selection run and a run still in progress are passed over, as is every run
+ * the `branch-failures` use leaves out. A CI run is preferred: a local run
+ * stands in only while the branch has no CI run.
  */
 export async function getBranchFailures(
   db: DrizzleDB,
   projectId: number,
   branch: string | null,
 ): Promise<BranchFailures> {
-  const [run] = await db
-    .select({
-      id: testRuns.id,
-      status: testRuns.status,
-      branch: testRuns.branch,
-      startTime: testRuns.startTime,
-      totalTests: testRuns.totalTests,
-      passedTests: testRuns.passedTests,
-      failedTests: testRuns.failedTests,
-      flakyTests: testRuns.flakyTests,
-      skippedTests: testRuns.skippedTests,
-    })
-    .from(testRuns)
-    .where(
-      branch ? and(eq(testRuns.projectId, projectId), eq(testRuns.branch, branch)) : eq(testRuns.projectId, projectId),
-    )
-    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-    .limit(1);
+  const newest = (ciOnly: boolean) =>
+    db
+      .select({
+        id: testRuns.id,
+        status: testRuns.status,
+        branch: testRuns.branch,
+        startTime: testRuns.startTime,
+        totalTests: testRuns.totalTests,
+        passedTests: testRuns.passedTests,
+        failedTests: testRuns.failedTests,
+        flakyTests: testRuns.flakyTests,
+        skippedTests: testRuns.skippedTests,
+      })
+      .from(testRuns)
+      .where(
+        and(
+          eq(testRuns.projectId, projectId),
+          branch ? eq(testRuns.branch, branch) : undefined,
+          eligibleRunSql('branch-failures'),
+          ciOnly ? runOriginIn(testRuns.metadata, CI_RUN_ORIGINS) : undefined,
+        ),
+      )
+      .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+      .limit(1);
+  const ciRuns = await newest(true);
+  const [run] = ciRuns.length ? ciRuns : await newest(false);
   if (!run) return { run: null, failures: [] };
 
   // Every attempt of each test that failed at least once, so a pass on a retry drops the test.
@@ -187,6 +230,8 @@ export async function getBranchFailures(
         status: r.status,
         headline: caseHeadline(r)?.headline ?? null,
         location: r.error ? extractErrorLocation(r.error) : null,
+        message: errorMessage(r.error),
+        frames: errorFrames(r.error),
         traces: (traces.get(r.executionId) ?? []).reverse(),
         screenshot: screenshots.get(r.executionId) ?? null,
       }),

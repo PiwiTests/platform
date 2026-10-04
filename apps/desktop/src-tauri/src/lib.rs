@@ -10,6 +10,7 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod ide_launcher;
 mod inspect;
 mod interrupt;
 mod mcp_clients;
@@ -21,6 +22,7 @@ mod taskbar_win;
 mod updates;
 mod worktree;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -43,7 +45,10 @@ use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
-use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
+use mcp_clients::{
+    desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal, desktop_skills_read,
+    desktop_skills_write,
+};
 use updates::{
     desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
     desktop_set_update_notification,
@@ -54,7 +59,9 @@ use runner::{
     desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
 };
 use repro::desktop_run_repro;
-use worktree::{desktop_bisect_here, desktop_flake_lab_here, desktop_reproduce_here};
+use worktree::{
+    desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
+};
 
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
@@ -117,10 +124,19 @@ struct DebugMode(bool);
 #[derive(Default)]
 struct PendingOpenFiles(Mutex<Vec<String>>);
 
-/// Keep only arguments that are real `.zip` files on disk; relative paths are
+/// The files the app opens: Playwright archives (`.zip`) and Piwi Picker's
+/// bug reports (`.piwibug`). The dashboard tells them apart by their content.
+const OPENED_EXTENSIONS: [&str; 2] = [".zip", ".piwibug"];
+
+fn is_opened_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    OPENED_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Keep only arguments that are real files the app opens; relative paths are
 /// resolved against the directory the launching process ran from.
-fn collect_zip_args<'a>(args: impl Iterator<Item = &'a str>, cwd: Option<&Path>) -> Vec<String> {
-    args.filter(|a| a.to_lowercase().ends_with(".zip"))
+fn collect_open_args<'a>(args: impl Iterator<Item = &'a str>, cwd: Option<&Path>) -> Vec<String> {
+    args.filter(|a| is_opened_file(a))
         .filter_map(|a| {
             let p = PathBuf::from(a);
             let abs = if p.is_absolute() { p } else { cwd?.join(p) };
@@ -450,16 +466,56 @@ fn load_or_create_token(app_data_dir: &PathBuf) -> String {
 /// back when 3000 is taken) and removed on quit, so the file's presence means
 /// "this app is up at this address". Mode 0600: the token is a full-access local
 /// credential, and `$HOME` itself is world-readable on most systems.
-fn write_discovery_file(home: &Path, port: u16, token: &str) -> std::io::Result<PathBuf> {
+fn write_discovery_file(
+    home: &Path,
+    port: u16,
+    token: &str,
+    links: &HashMap<String, runner::LinkRecord>,
+) -> std::io::Result<PathBuf> {
     let dir = home.join(DISCOVERY_DIR);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(DISCOVERY_FILE);
-    // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
-    // localhost resolves to ::1 first on some systems.
-    let body = json!({ "url": format!("http://127.0.0.1:{port}"), "token": token }).to_string();
-    std::fs::write(&path, body)?;
+    std::fs::write(&path, discovery_body(port, token, links).to_string())?;
     restrict_to_owner(&path);
     Ok(path)
+}
+
+/// The discovery file's content: the address and token, and the projects linked
+/// to a folder on this machine, so an editor opened on one of those folders
+/// connects to its project with no setup, and the bundled server reads a
+/// project's git history from its folder. Readers ignore fields they do not know.
+fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRecord>) -> serde_json::Value {
+    let mut projects: Vec<(i64, &str)> = links
+        .iter()
+        .filter_map(|(id, link)| id.parse::<i64>().ok().map(|id| (id, link.path.as_str())))
+        .collect();
+    projects.sort();
+    // 127.0.0.1 rather than localhost: the server binds v4 loopback only, and
+    // localhost resolves to ::1 first on some systems.
+    json!({
+        "url": format!("http://127.0.0.1:{port}"),
+        "token": token,
+        "projects": projects.iter().map(|(id, path)| json!({ "id": id, "path": path })).collect::<Vec<_>>(),
+    })
+}
+
+/// Rewrite the discovery file after a folder link changes, while this app
+/// publishes one.
+pub(crate) fn refresh_discovery_file(app: &AppHandle) {
+    let (Some(file), Some(info)) = (
+        app.try_state::<DiscoveryFile>(),
+        app.try_state::<mcp_clients::ServerInfo>(),
+    ) else {
+        return;
+    };
+    // Removed on quit: never bring it back for a server that is going away.
+    if !file.0.exists() {
+        return;
+    }
+    let body = discovery_body(info.port, &info.token, &runner::read_links(app));
+    if std::fs::write(&file.0, body.to_string()).is_ok() {
+        restrict_to_owner(&file.0);
+    }
 }
 
 /// Convert a path to a string Node can consume as a CLI arg / env value. On
@@ -828,9 +884,10 @@ fn ide_launcher_args(
     }
 }
 
-/// A launcher command the webview may spawn: a bare executable name resolved on
-/// the PATH. No path separators, whitespace or shell metacharacters, so a stray
-/// call can neither point at an arbitrary binary nor smuggle in extra arguments.
+/// A launcher command the webview may spawn: a bare executable name, looked up on
+/// the PATH and in the IDEs' install folders. No path separators, whitespace or
+/// shell metacharacters, so a stray call can neither name a binary by path nor
+/// smuggle in extra arguments; any bare name found in those places passes.
 fn is_safe_launcher_command(command: &str) -> bool {
     !command.is_empty()
         && command.len() <= 64
@@ -845,14 +902,16 @@ fn is_safe_launcher_command(command: &str) -> bool {
 
 /// Open a source file in a local IDE by spawning its command-line launcher
 /// (`code --goto …`, `rider --line …`). The desktop shell does this natively, so
-/// it works without a `vscode://`/`jetbrains://` protocol handler, JetBrains
-/// Toolbox, an open-project name to match or "allow unsigned requests" — the
-/// reasons the URL schemes are unreliable, on Rider especially.
+/// it needs no `vscode://`/`jetbrains://` protocol handler, JetBrains Toolbox,
+/// open-project name to match or "allow unsigned requests", which the URL
+/// schemes depend on.
 ///
-/// Resolves `true` when the launcher started, `false` when it is not on the PATH
-/// (so the webview can fall back to a URL scheme), and errors on a bad command,
-/// a non-absolute path or a file that does not exist. The command is restricted
-/// to a bare PATH-resolved name; the path must be an existing file.
+/// Resolves `true` when the launcher started, `false` when no IDE installed it
+/// where the shell looks (so the webview can fall back to a URL scheme), and
+/// errors on a bad command, a non-absolute path or a file that does not exist.
+/// The command is restricted to a bare name, found on the PATH or in the folders
+/// the IDEs install their launchers to (`ide_launcher`); the path must be an
+/// existing file.
 #[tauri::command]
 fn desktop_open_in_ide(
     app: tauri::AppHandle,
@@ -874,12 +933,18 @@ fn desktop_open_in_ide(
     }
     let args = ide_launcher_args(&family, &path, line, column)?;
 
-    // A missing launcher (not on the PATH) is reported as `false`, not raised, so
-    // the caller can still try a URL scheme. On a successful spawn the child is
-    // held on a background task until it exits: the launcher hands the file off
-    // to the running IDE and returns in well under a second, but dropping the
-    // handle immediately could cut that handoff short.
-    match app.shell().command(command.as_str()).args(args).spawn() {
+    // A missing launcher is reported as `false`, not raised, so the caller can
+    // still try a URL scheme. On a successful spawn the child is held on a
+    // background task until it exits: the launcher hands the file off to the
+    // running IDE and returns in well under a second, but dropping the handle
+    // immediately could cut that handoff short.
+    let roots = ide_launcher::SearchRoots::from_env(app.path().home_dir().ok());
+    let Some(launcher) =
+        ide_launcher::resolve_launcher(&roots, ide_launcher::Os::current(), &family, &command)
+    else {
+        return Ok(false);
+    };
+    match app.shell().command(launcher).args(args).spawn() {
         Ok((mut rx, child)) => {
             tauri::async_runtime::spawn(async move {
                 let _child = child;
@@ -1213,7 +1278,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // A second launch just focuses the running window (never a 2nd
             // server) — and forwards any archives it was asked to open.
-            queue_open_files(app, collect_zip_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
+            queue_open_files(app, collect_open_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
             if let Some(w) = app.get_webview_window("main") {
                 bring_to_front(&w);
             }
@@ -1273,6 +1338,7 @@ pub fn run() {
             desktop_reproduce_here,
             desktop_bisect_here,
             desktop_flake_lab_here,
+            desktop_flake_lab_job,
             desktop_check_local_specs,
             desktop_check_local_env,
             desktop_take_pending_open_files,
@@ -1280,6 +1346,8 @@ pub fn run() {
             desktop_mcp_connect,
             desktop_mcp_disconnect,
             desktop_mcp_reveal,
+            desktop_skills_read,
+            desktop_skills_write,
             desktop_check_update,
             desktop_install_update,
             desktop_restart_app,
@@ -1332,7 +1400,7 @@ pub fn run() {
 
             // --- publish connection details for the Playwright reporter ---
             match app.path().home_dir().map_err(|e| e.to_string()).and_then(|home| {
-                write_discovery_file(&home, port, &token).map_err(|e| e.to_string())
+                write_discovery_file(&home, port, &token, &runner::read_links(app.handle())).map_err(|e| e.to_string())
             }) {
                 Ok(path) => {
                     append_log(&log_path, &format!("reporter discovery file: {}", path.display()));
@@ -1472,9 +1540,7 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Piwi Dashboard (click to open)")
                 .menu(&menu)
-                // Left-click opens the window; right-click shows the menu. Without
-                // this a left-click did nothing, so the tray looked inert (and on
-                // Windows the icon hides in the overflow area by default).
+                // Left-click opens the window; right-click shows the menu.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -1564,7 +1630,7 @@ pub fn run() {
             let launch_cwd = std::env::current_dir().ok();
             queue_open_files(
                 app.handle(),
-                collect_zip_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
+                collect_open_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
             );
 
             // e2e builds: grant the Playwright plugin's result-callback command to
@@ -1617,7 +1683,7 @@ pub fn run() {
                     .iter()
                     .filter_map(|u| u.to_file_path().ok())
                     .map(|p| p.to_string_lossy().to_string())
-                    .filter(|p| p.to_lowercase().ends_with(".zip"))
+                    .filter(|p| is_opened_file(p))
                     .collect();
                 queue_open_files(app_handle, paths);
                 if let Some(w) = app_handle.get_webview_window("main") {
@@ -1631,18 +1697,35 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_log_line, compose_tooltip, debug_mode_requested, ide_launcher_args,
-        is_safe_launcher_command, is_truthy_flag, progress_bar_status, render_status_dot,
-        status_dot_color, write_new_download,
+        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
+        ide_launcher_args, is_safe_launcher_command, is_truthy_flag, progress_bar_status,
+        render_status_dot, status_dot_color, write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
 
     #[test]
+    fn discovery_lists_the_linked_projects_by_id() {
+        let mut links = std::collections::HashMap::new();
+        let link = |path: &str| crate::runner::LinkRecord { path: path.into(), ..Default::default() };
+        links.insert("12".to_string(), link("/work/shop"));
+        links.insert("3".to_string(), link("/work/admin"));
+        links.insert("not-an-id".to_string(), link("/work/other"));
+        assert_eq!(
+            discovery_body(3001, "pd_x", &links),
+            serde_json::json!({
+                "url": "http://127.0.0.1:3001",
+                "token": "pd_x",
+                "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
+            })
+        );
+    }
+
+    #[test]
     fn tooltip_composes_run_progress_unread_and_idle() {
         // Idle: nothing to say.
         assert_eq!(compose_tooltip(0, None, None), "Piwi Dashboard (click to open)");
-        // Unread only, matching the pre-run-progress behaviour.
+        // Unread only, no run in flight.
         assert_eq!(compose_tooltip(2, None, None), "Piwi Dashboard — 2 unread");
         assert_eq!(
             compose_tooltip(2, Some("acme-web: failure"), None),
@@ -1851,6 +1934,31 @@ mod tests {
         let _ = write_new_download(&dir, "a.txt", b"2").unwrap();
         let p3 = write_new_download(&dir, "a.txt", b"3").unwrap();
         assert_eq!(p3.file_name().unwrap(), "a (2).txt");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn opens_archives_and_bug_reports_that_exist() {
+        let dir = std::env::temp_dir().join(format!("piwi-open-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for name in ["run.zip", "bug.PIWIBUG", "notes.txt"] {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        let args = [
+            "--devtools",
+            "run.zip",
+            "bug.PIWIBUG",
+            "notes.txt",
+            "missing.piwibug",
+        ];
+        let opened = collect_open_args(args.into_iter(), Some(dir.as_path()));
+        assert_eq!(
+            opened,
+            [
+                dir.join("run.zip").to_string_lossy().to_string(),
+                dir.join("bug.PIWIBUG").to_string_lossy().to_string(),
+            ]
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

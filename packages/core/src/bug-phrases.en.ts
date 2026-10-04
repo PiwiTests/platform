@@ -97,6 +97,8 @@ const STATES: Record<BugState, string> = {
   disabled: 'disabled',
 };
 
+/** A zoom factor as a percentage, such as `125%`. */
+const percent = (zoom: number): string => `${Math.round(zoom * 100)}%`;
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 const ofTotal = (shown: number, total: number | null): string => `${shown}${total != null ? ` of ${total}` : ''}`;
@@ -141,6 +143,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
   evidence: (c) =>
     [
       c.screenshots > 0 ? plural(c.screenshots, 'screenshot') : 'no screenshot',
+      ...(c.stepShots > 0 ? [plural(c.stepShots, 'step screenshot')] : []),
       ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'console error')] : []),
       ...(c.consoleWarnings > 0 ? [plural(c.consoleWarnings, 'console warning')] : []),
       ...(c.failedRequests > 0 ? [plural(c.failedRequests, 'failed request')] : []),
@@ -155,6 +158,7 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
     noSteps: 'No steps were recorded.',
     actual: (v) => `Actual: ${v}`,
     note: (text) => `Note: ${text}`,
+    viewport: (size, zoom) => `Viewport from this step: ${size}${zoom != null ? `, at ${percent(zoom)} zoom` : ''}`,
     expectedHeading: 'Expected and actual',
     nothingMarked: 'Nothing was marked as wrong.',
     expectedLine: (step, expectation, actual) =>

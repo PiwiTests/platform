@@ -8,7 +8,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { getBranchFailures } = await import('../../server/utils/branch-failures');
+const { errorFrames, errorMessage, getBranchFailures } = await import('../../server/utils/branch-failures');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -83,6 +83,9 @@ describe('getBranchFailures', () => {
         status: 'failed',
         headline: expect.stringContaining('Pay now'),
         location: '/ci/work/tests/pages/checkout.page.ts:12:19',
+        message:
+          "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay now' })",
+        frames: ['/ci/work/tests/pages/checkout.page.ts:12:19', '/ci/work/tests/checkout.spec.ts:8:3'],
         traces: ['traces/10-a.zip'],
         screenshot: 'shots/10-failure.png',
       },
@@ -106,5 +109,33 @@ describe('getBranchFailures', () => {
 
   test('a branch without a run has no run', async () => {
     expect(await getBranchFailures(db as never, 1, 'nope')).toEqual({ run: null, failures: [] });
+  });
+});
+
+describe('errorMessage', () => {
+  test('drops ANSI codes and the stack, and marks a message it shortens', () => {
+    expect(errorMessage('\u001b[31mError: boom\u001b[39m\n\n\n\nExpected: 1\n    at /a.ts:1:1')).toBe(
+      'Error: boom\n\nExpected: 1',
+    );
+    const long = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+    expect(errorMessage(long)?.split('\n')).toHaveLength(13);
+    expect(errorMessage(long)?.endsWith('\n…')).toBe(true);
+    expect(errorMessage('x'.repeat(5000))).toHaveLength(1002);
+    expect(errorMessage(null)).toBeNull();
+    expect(errorMessage('    at /a.ts:1:1')).toBeNull();
+  });
+});
+
+describe('errorFrames', () => {
+  test('lists each frame outside node_modules once, innermost first', () => {
+    const error = [
+      'Error: boom',
+      '    at f (/a.ts:1:2)',
+      '    at /node_modules/x.js:1:1',
+      '    at f (/a.ts:1:2)',
+      '    at /b.ts:3:4',
+    ];
+    expect(errorFrames(error.join('\n'))).toEqual(['/a.ts:1:2', '/b.ts:3:4']);
+    expect(errorFrames(null)).toEqual([]);
   });
 });

@@ -1,5 +1,14 @@
 import { initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { startTool, endTool, installEscapeToCancel, teardownToolSurfaces } from '../shared/tool-session.js';
+import {
+  bindToTool,
+  endTool,
+  installEscapeToCancel,
+  isToolActive,
+  startTool,
+  teardownToolSurfaces,
+  toolIsCurrent,
+  waitForGlobal,
+} from '../shared/tool-session.js';
 import {
   installPickerOverlay,
   removePickerOverlay,
@@ -11,8 +20,11 @@ import { derivePattern, type PatternResult } from './multi-pick-derive.js';
 import { TAG_TO_ROLE, INPUT_TYPE_TO_ROLE } from '@piwitests/core/locator-generation';
 import { COPY_MODES, copyModeLabel, renderCopyMode } from '../shared/copy-modes.js';
 import { getLastCopyMode, setLastCopyMode } from '../shared/storage.js';
-import { installDescribeHook } from './verified-locators.js';
+import { createPageEngine, installDescribeHook } from './verified-locators.js';
 import { attachPanelShadow } from './panel-root.js';
+import { pickerOverlayStrings } from './picker-strings.js';
+import { holdFocus } from './modal-panel.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 
 const ROLE_MAPS = { tagRoles: TAG_TO_ROLE, inputRoles: INPUT_TYPE_TO_ROLE };
 const MIN_PICKS = 2;
@@ -25,26 +37,13 @@ function clearPickGlobals(): void {
   for (const key of PICK_GLOBALS) delete (globalThis as any)[key];
 }
 
-/** Poll for a global the picker overlay sets, mirroring `pick.ts`'s own helper — multi-pick only ever needs the element-pick step, never the anchors step. */
-function waitForGlobal<T>(key: string): Promise<T> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const value = (globalThis as any)[key];
-      if (value !== undefined) {
-        resolve(value as T);
-        return;
-      }
-      setTimeout(check, 120);
-    };
-    check();
-  });
-}
-
-async function pickOne(): Promise<Element | null> {
+/** One element-pick step (multi-pick never needs the anchors step); null when skipped, or once the tool has ended. */
+async function pickOne(toolEpoch: number): Promise<Element | null> {
   clearPickGlobals();
-  const overlayArg: PickerOverlayArg = { transport: 'global', failing: null };
+  const overlayArg: PickerOverlayArg = { transport: 'global', failing: null, strings: pickerOverlayStrings() };
   installPickerOverlay(overlayArg);
-  const state = await waitForGlobal<string>('__piwiPickState');
+  const state = await waitForGlobal<string>('__piwiPickState', toolEpoch);
+  if (!toolIsCurrent(toolEpoch)) return null;
   const el = state === 'picked' ? ((globalThis as any).__piwiPickedElement as Element) : null;
   // A pick (as opposed to a skip) leaves the banner/highlight mounted — fine
   // for pick.ts's single-shot flow, but this runs the overlay 2-3 times in a
@@ -55,7 +54,7 @@ async function pickOne(): Promise<Element | null> {
 }
 
 /** A dismissible bottom bar shown between mandatory picks, once the 2-pick minimum is met: derive now, pick a 3rd, or cancel. Not shown while a pick itself is in progress, so it never contends with the picker overlay's own key handling. */
-function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'cancel'> {
+function showBetweenPicksBar(count: number, toolEpoch: number): Promise<'pick-more' | 'derive' | 'cancel'> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.id = 'piwi-multi-pick-bar-host';
@@ -107,11 +106,7 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
     bar.append(label, moreBtn, deriveBtn, closeBtn);
     root.appendChild(bar);
 
-    const finish = (result: 'pick-more' | 'derive' | 'cancel') => {
-      document.removeEventListener('keydown', onKeyDown, true);
-      host.remove();
-      resolve(result);
-    };
+    let result: 'pick-more' | 'derive' | 'cancel' = 'cancel';
     // Escape is the only global shortcut — Enter is deliberately *not*
     // hijacked here: deriveBtn is focused by default, so Enter/Space already
     // activates it natively, and Tab must still reach moreBtn/closeBtn and
@@ -125,6 +120,15 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
+    const close = bindToTool(toolEpoch, () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      host.remove();
+      resolve(result);
+    });
+    const finish = (chosen: typeof result) => {
+      result = chosen;
+      close();
+    };
     deriveBtn.addEventListener('click', () => finish('derive'));
     moreBtn.addEventListener('click', () => finish('pick-more'));
     closeBtn.addEventListener('click', () => finish('cancel'));
@@ -133,7 +137,7 @@ function showBetweenPicksBar(count: number): Promise<'pick-more' | 'derive' | 'c
 }
 
 /** A transient, auto-dismissing message — used only for "no common pattern found" today. */
-function showMessage(text: string): Promise<void> {
+function showMessage(text: string, toolEpoch: number): Promise<void> {
   return new Promise((resolve) => {
     const host = document.createElement('div');
     host.id = 'piwi-multi-pick-message-host';
@@ -160,12 +164,7 @@ function showMessage(text: string): Promise<void> {
     bar.textContent = text;
     root.appendChild(bar);
 
-    const finish = () => {
-      document.removeEventListener('keydown', onKeyDown, true);
-      clearTimeout(timer);
-      host.remove();
-      resolve();
-    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -173,25 +172,27 @@ function showMessage(text: string): Promise<void> {
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
+    const finish = bindToTool(toolEpoch, () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      clearTimeout(timer);
+      host.remove();
+      resolve();
+    });
     bar.addEventListener('click', finish);
-    const timer = setTimeout(finish, 4000);
+    timer = setTimeout(finish, 4000);
   });
 }
 
-async function copyToClipboard(text: string, btn: HTMLButtonElement): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    return;
-  }
-  const original = btn.textContent;
-  btn.textContent = t('common_copied');
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
+/** The panel's title, its `$base$` placeholder filled by the highlighted base locator. */
+function titleNodes(count: number, base: Node): Array<Node | string> {
+  const slot = '\u{F8FF}';
+  const [before = '', after = ''] = tn('multipick_title', count, { base: slot }).split(slot);
+  return [before, base, after].filter((part) => part !== '');
 }
 
-async function renderPatternPanel(result: PatternResult): Promise<void> {
+async function renderPatternPanel(result: PatternResult, toolEpoch: number): Promise<void> {
+  const activeMode = await getLastCopyMode().catch(() => 'bare' as const);
+  if (!toolIsCurrent(toolEpoch)) return;
   document.getElementById(PANEL_HOST_ID)?.remove();
 
   const host = document.createElement('div');
@@ -258,7 +259,10 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
   const titleWrap = document.createElement('div');
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = tn('multipick_title', result.rows.length, { base: result.baseLocator ?? '' });
+  const base = document.createElement('span');
+  base.className = 'piwi-loc';
+  base.innerHTML = highlightLocator(result.baseLocator ?? '');
+  title.append(...titleNodes(result.rows.length, base));
   const sub = document.createElement('div');
   sub.className = 'sub';
   sub.textContent = t('common_escToClose');
@@ -270,17 +274,8 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
   header.append(titleWrap, closeBtn);
   panel.appendChild(header);
 
-  let activeMode = await getLastCopyMode();
-
   return new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      document.removeEventListener('keydown', onKeyDown, true);
-      host.remove();
-      resolve();
-    };
+    let releaseFocus = () => {};
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -289,6 +284,12 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
+    const finish = bindToTool(toolEpoch, () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      host.remove();
+      releaseFocus();
+      resolve();
+    });
     closeBtn.addEventListener('click', finish);
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) finish();
@@ -315,14 +316,14 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
         const btn = document.createElement('button');
         btn.className = 'copy';
         btn.type = 'button';
+        btn.dataset.mode = mode;
         btn.dataset.active = String(mode === activeMode);
         btn.textContent = copyModeLabel(mode);
         btn.addEventListener('click', () => {
-          void copyToClipboard(renderCopyMode({ locator: row.locator }, mode), btn);
-          activeMode = mode;
+          void copyWithFeedback(renderCopyMode({ locator: row.locator }, mode), btn);
           void setLastCopyMode(mode);
-          for (const sibling of copyRow.querySelectorAll('button.copy')) {
-            (sibling as HTMLElement).dataset.active = String(sibling === btn);
+          for (const other of panel.querySelectorAll<HTMLElement>('button.copy[data-mode]')) {
+            other.dataset.active = String(other.dataset.mode === mode);
           }
         });
         copyRow.appendChild(btn);
@@ -333,53 +334,55 @@ async function renderPatternPanel(result: PatternResult): Promise<void> {
 
     backdrop.appendChild(panel);
     root.appendChild(backdrop);
-    panel.focus();
+    releaseFocus = holdFocus(panel);
   });
 }
 
 /**
- * Runs the multi-pick flow (A7): pick 2-3 similar items, then derive a
+ * Runs the multi-pick flow: pick 2-3 similar items, then derive a
  * shared list-locator pattern. Requires the mandatory first two picks, then
- * offers a 3rd (stronger sample) or deriving now — Escape during any
- * individual pick cancels the whole session, and Escape/close on the
- * between-picks bar or results panel each cancel just that step.
+ * offers a 3rd (stronger sample) or deriving now — Escape at any step
+ * cancels the whole session, as closing the between-picks bar or the results
+ * panel does. Injected again while a session runs, it leaves that session be.
  */
 async function runMultiPick(): Promise<void> {
-  const g = globalThis as any;
-  if (g.__piwiMultiPicking) return;
-  g.__piwiMultiPicking = true;
+  if (isToolActive('multi-pick')) return;
   const toolEpoch = startTool('multi-pick', teardownToolSurfaces);
   installEscapeToCancel();
-  const removeDescribeHook = installDescribeHook();
-  // The catalog loads while the first picks run; the tool's own text comes after them.
-  const i18nReady = initI18n();
+  const removeDescribeHook = bindToTool(toolEpoch, installDescribeHook());
   try {
+    // The overlay, the bar and the panel speak the language chosen in the settings.
+    await initI18n();
+    if (!toolIsCurrent(toolEpoch)) return;
     const picked: Element[] = [];
     for (let i = 0; i < MIN_PICKS; i++) {
-      const el = await pickOne();
+      const el = await pickOne(toolEpoch);
       if (!el) return;
       picked.push(el);
     }
 
-    await i18nReady;
     while (picked.length < MAX_PICKS) {
-      const action = await showBetweenPicksBar(picked.length);
+      if (!toolIsCurrent(toolEpoch)) return;
+      const action = await showBetweenPicksBar(picked.length, toolEpoch);
       if (action === 'cancel') return;
       if (action === 'derive') break;
-      const el = await pickOne();
+      const el = await pickOne(toolEpoch);
       if (!el) return;
       picked.push(el);
     }
 
-    const result = derivePattern(picked, ROLE_MAPS);
+    const engine = createPageEngine(document);
+    const result = derivePattern(picked, ROLE_MAPS, {
+      elements: engine.elements(),
+      isHidden: (el) => engine.model.isHiddenForAria(el),
+    });
     if (result.rows.length === 0) {
-      await showMessage(t('multipick_noPattern'));
+      await showMessage(t('multipick_noPattern'), toolEpoch);
       return;
     }
-    await renderPatternPanel(result);
+    await renderPatternPanel(result, toolEpoch);
   } finally {
     removeDescribeHook();
-    g.__piwiMultiPicking = false;
     endTool(toolEpoch);
   }
 }

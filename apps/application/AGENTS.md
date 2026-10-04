@@ -98,6 +98,10 @@ export default eventHandler(async (event) => {
 - `requireAuth(event, roles)` still exists as an **explicit override** for handlers computing their own authorization
   (e.g. `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
 - Streaming endpoints (`start`, `events`, `finish`, `case-files`) use **stream-token** auth instead of `requireAuth`.
+- **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
+  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
+  `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin
+  pages or Piwi Picker's background worker; everything else (reporter, CLI, MCP, IDE clients) sends no browser metadata.
 
 ### Project-level permissions
 
@@ -307,13 +311,20 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   bold frozen header) and save them with `useDesktopDownload().saveBlob`, since a download link does nothing in
   the desktop shell. CSV stays only for machine consumers (the API `format=csv`, `/api/rollups`, the CLI).
   Page code imports the renderer lazily (`await import(...)`).
+- **Test lists search and order one way.** A list of tests searches with `TestSearchInput` and the language in
+  `#shared/test-search` (in memory with `compileTestSearch`, in SQL with `testSearchConditions` from
+  `#shared/utils/test-search-sql`), marks matches with `SearchHighlight`, and orders and groups its rows with
+  `app/utils/test-list-order.ts` (run order, file order, File + Describe). Never add a second search syntax, a separate
+  tag / lock / browser filter control next to it, or another describe-tree builder. A new qualifier is an entry in
+  `TEST_SEARCH_FIELD_DEFS` plus its row in `apps/docs/reference/test-search.md` (the drift test checks the page).
 - Add a `title` attribute to any control whose purpose is not obvious from its label.
 - **Clickable source paths**: render any repo-relative path or `file:line[:col]` with `OpenInIdeLink`, never a bare
   `<span>`/`<code>`. Pass `filePath` (+ `line`/`column`) or `location`, and thread `projectKey` (the Piwi project **id**)
   and `projectName` when in scope so per-project workspace overrides resolve. IDE preferences are a **per-browser client
   preference** (`useOpenInIde`, `piwi-ide-prefs`) — deliberately not in `SETTINGS_PAGES` and with no `PIWI_*` var, since
-  the source lives on the user's machine. Only the JetBrains local-server method is detectable; `vscode://` /
-  `jetbrains://` launches are fire-and-forget, so never report a confirmed "opened".
+  the source lives on the user's machine. Only the Piwi JetBrains plugin (`/api/piwi/open`, `PiwiOpenHandler.kt` in
+  `apps/jetbrains`) confirms a file opened. The IDE Remote Control probe only shows an IDE is listening, and
+  `vscode://` / `jetbrains://` launches are fire-and-forget, so never report a confirmed "opened" for those.
 - **Data fetching in tab children**: for self-contained components rendered conditionally, use `watch` + `$fetch` with
   reactive triggers rather than `useFetch({ lazy: true })`, which may not fire before mount. Use `v-if` on tab-switched
   components for clean mount/unmount. Pass props from the page only for data already fetched at page level.
@@ -381,17 +392,17 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 
 Where to add things in subsystems whose wiring spans several files:
 
-| Change                        | Touch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `server/utils/flaky-classify.ts`; `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                                                                                                                                                                                                                                                                                                             |
-| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                                                                                                                                                                                                                                              |
-| Finish-time side effects      | Every complete-run ingest path (`finish`, `upload` new-and-attach, `submit`) routes finalization through the one probe-aware `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): regression signals, auto markers, AI diagnosis, notifications, PR feedback, auto-heal. A probe-stamped run stays silent everywhere                                                                                                                                                                                                                   |
-| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                                                                                                                                                                                                                                                                                                  |
-| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                                                                                                                                                                                                                                  |
-| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                 |
-| Quality report language       | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only |
+| Change                        | Touch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Flaky root-cause category     | `classifyFlakyRootCause()` + keyword arrays in `shared/flaky-classify.ts`; persistence and triggers in `shared/handlers/flaky-classify.ts` (`classifyRunFlakyTests`, called from `runFinalizeSideEffects`; `withFlakyRootCauses`, called by the flaky-tests read on the server and in the demo); `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map                                                                                                                                                                                                                                                                                                       |
+| Flaky impact scoring          | `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Regression signals            | `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Finish-time side effects      | Every complete-run ingest path (`finish`, `upload` new-and-attach, `submit`) routes finalization through the one probe-aware `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): the environment-incident check first (`recordRunHealth`, `shared/handlers/run-health.ts`; a flagged run sends one `environment.incident` in place of the verdicts), then regression signals, auto markers, flaky root causes, AI diagnosis, notifications, PR feedback, auto-heal. A `finalizing` run reaches it through `settleFinalizingRun` (`server/utils/finalizing-runs.ts`), from its report upload or the stale-run sweep. A probe-stamped run stays silent everywhere |
+| A computed AI-context section | Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Sharding behaviour            | See the sharding invariants below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Quality report language       | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
 
 ## Subsystem invariants
 
@@ -406,6 +417,12 @@ from `createScmProvider` / `scmProviderForUrl` (or the pure link helpers from `#
 `ScmProviderName` union from `#shared/scm-urls`; never re-declare `'github' | 'gitlab' | 'bitbucket'`.
 `tests/unit/scm-single-source.test.ts` scans `server`, `shared`, `app` and `types` for provider host literals and the
 union outside an explicit allow-list, so a new home for either is a visible diff to that list.
+
+On the desktop app with no SCM token, `createScmProvider` returns a `LocalGitProvider` (`server/utils/scm/local-git.ts`)
+for a project linked to a clone of the repository: it reads history with git in that folder and wraps the host's own
+provider for the rest. A method added to `ScmProvider` must be added there too — a read tries git first and falls back
+to the host, anything else is passed to the host. The base class's no-op defaults compile without it, and would
+silently turn the feature off on the desktop app.
 
 ### Failure clustering & fingerprints
 
@@ -479,19 +496,34 @@ re-positions each drawn one. Keep every interaction proportional to what changed
   fresh `[]` or `{}` per render re-renders every bar.
 - A test's hook sections are drawn by the test's own `TimelineBar`, not as bars of their own; only bars inside the
   viewport's `renderRange` are drawn.
+- The resource tracks (`TimelineResourceBand`) and the strips under each worker (`TimelineWorkerStrips`) build each
+  path once in milliseconds and take the zoom from their group's `scale()` transform, so a zoom never rebuilds them.
+  Their hover lives in its own reactive object, read only by `TimelineResourceTooltip` and `TimelineResourceCursor`.
+  Where every lane, band and strip sits comes from one `layOutTimelineRows` (`app/utils/resource-tracks.ts`), which
+  the viewport reads through `laneOffset`; anything new drawn between the lanes is added there, never offset by hand.
 
 ### Sharding
 
-- **runLabel** is detected from CI env vars by `MetadataCollector.detectCiRunLabel()` (reporter) and `detectCiRunLabel()`
-  (helpers); users override via `PiwiDashboardOptions.runLabel`; `createGlobalSetup` applies it too.
+- **runLabel** comes from `resolveRunLabel` (`packages/reporter/src/internal/support/ci.ts`), used by the reporter and
+  `createGlobalSetup` alike: `PiwiDashboardOptions.runLabel` as is, else the CI pipeline id from env vars (GitHub adds
+  the run attempt), plus the CI job id for a run that is not sharded, so parallel jobs of a pipeline stay apart.
 - When `runLabel` is set, `computeInstanceId(projectName, runLabel)` replaces the `hostname|projectName` key so all
   shards share one instanceId.
-- Each shard gets its own stream token, stored in `RunEventBus.runStates[id].shardTokens`. **Any new streaming endpoint
-  MUST validate shard tokens alongside the primary one** — check `cachedState.shardTokens?.has(body.streamToken)` as a
-  fallback, via `validateAndReviveRun()` with the `isShardToken` callback.
+- A shard's identity is Playwright's `config.shard`, or the `i/n` in `PIWI_SHARD` that `piwi run --shard` sets because it
+  narrows the tests itself and gives Playwright no `--shard`; the reporter reads both through `resolveShardInfo`
+  (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A run with no shard
+  identity starts non-sharded and cancels every running run of its `instanceId`.
+- Each shard gets its own stream token, kept as its digest (`shardTokenDigest`) in `RunEventBus.runStates[id].shardTokens`
+  and in the run's `metadata.shardTokens`, which project members can read. **Any new streaming endpoint MUST validate
+  shard tokens alongside the primary one** — check `matchesShardToken(cachedState.shardTokens, body.streamToken)` as a
+  fallback, via `validateAndReviveRun()` with the `isShardToken` callback; never compare against the set directly.
+- **A run's shard tokens are merged, never replaced** — in the cache or in `metadata`. Every shard's setup token stays
+  valid until that shard calls `/begin`, which swaps it for the shard's stream token; read the set with
+  `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.
 - Server-side merge: `/start`, `/setup` and `/submit` reuse an existing run when `shardTotal > 1` and an active run with
-  the same `instanceId` exists; `/finish` accumulates counters with SQL `+` and only sets the final status when
-  `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
+  the same `instanceId` exists, and `/begin` on a run another shard already began joins it (a stream token of its own,
+  its planned tests added to `totalTests`); `/finish` accumulates counters with SQL `+` and only sets the final status
+  when `shardsFinished === shardTotal`. `cancelInstanceRuns()` skips sharded runs when `isShardedRun: true`.
 
 ### Trace storage compression
 
@@ -663,7 +695,9 @@ app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--ur
   (`reuseExistingServer: !process.env.CI`), and Nuxt's HMR picks up your edits, so you iterate without re-booting
   a server per test run. Watch `dev-server.log` for compile errors (a template error shows up there, not in the
   browser); restart only when the server crashes or you touch `nuxt.config`/server plugins. The feature-screenshot
-  harness reuses the same server (`--url`).
+  harness reuses the same server (`--url`). A cold server compiles each page on its first visit, which can take 20 s:
+  a spec's first test timing out on a page that renders is that compile, so rerun it against the warm server before
+  reading it as a regression.
 
 - **Do NOT use `PIWI_DEMO_MODE=true` for the dev server.** Demo mode builds the static SPA; it is not a `nuxt dev` flag.
   To verify a change _in the demo_, build it and drive the build:

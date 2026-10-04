@@ -17,7 +17,6 @@ import { SPANISH_BUG_PHRASES } from './bug-phrases.es';
 import { PORTUGUESE_BUG_PHRASES } from './bug-phrases.pt';
 
 export { markdownCode } from './markdown-code';
-export { keyCombo } from './key-combo';
 
 export type NounGender = 'masculine' | 'feminine' | 'neuter';
 
@@ -53,8 +52,10 @@ export type BugExpectation =
   | { matcher: 'state'; state: BugState };
 
 /** What a report holds besides its steps, counted for its one-line summary. */
-export interface BugEvidenceCounts {
+interface BugEvidenceCounts {
   screenshots: number;
+  /** Screenshots of the page as each step began. */
+  stepShots: number;
   consoleErrors: number;
   consoleWarnings: number;
   failedRequests: number;
@@ -62,7 +63,7 @@ export interface BugEvidenceCounts {
 }
 
 /** The labels and lines of the Markdown report. Arguments arrive formatted: quoted, in code, or as times. */
-export interface BugReportPhrases {
+interface BugReportPhrases {
   /** The title of a report nobody titled, and of one made from its page. */
   untitled: string;
   titleOnPage(pageKey: string): string;
@@ -76,6 +77,8 @@ export interface BugReportPhrases {
   actual(value: string): string;
   /** Under a step: the reporter's note. */
   note(text: string): string;
+  /** Under a step: the viewport size the page has from that step on, such as `390×844`, and the browser's zoom when not 100% (`1.25`). */
+  viewport(size: string, zoom: number | null): string;
   expectedHeading: string;
   nothingMarked: string;
   /** A line of "Expected and actual": step number, the expectation, and what the page showed when known. */
@@ -153,9 +156,4 @@ export const BUG_PHRASES: Readonly<Record<string, BugPhrases>> = {
 export function bugPhrases(language: string | null | undefined = 'en'): BugPhrases {
   const primary = (language ?? 'en').split(/[-_]/)[0]!.toLowerCase();
   return BUG_PHRASES[primary] ?? ENGLISH_BUG_PHRASES;
-}
-
-/** A role in a language's everyday words, lower case; an unknown role is returned as it is. */
-export function roleWord(role: string, phrases: BugPhrases = ENGLISH_BUG_PHRASES): string {
-  return phrases.roles[role]?.noun ?? role;
 }

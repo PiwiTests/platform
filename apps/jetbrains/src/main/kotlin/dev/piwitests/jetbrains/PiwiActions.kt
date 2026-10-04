@@ -13,13 +13,15 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.guessProjectDir
-import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.ui.SimpleListCellRenderer
 import java.awt.datatransfer.StringSelection
+import javax.swing.JList
 
-private fun fileUri(file: VirtualFile): String = file.toNioPath().toUri().toString()
+/** The file's URI, or null for a file that is not on disk. */
+private fun fileUri(file: VirtualFile): String? =
+    if (file.isInLocalFileSystem) runCatching { file.toNioPath().toUri().toString() }.getOrNull() else null
 
 /** Piwi: Connect — the instance, a key for it (browser sign-in or pasted) and the project. */
 class ConnectAction : AnAction() {
@@ -31,26 +33,22 @@ class ConnectAction : AnAction() {
     }
 }
 
-/** Piwi: Disconnect — forget this project's instance, project and the key saved for that instance. */
+/**
+ * Piwi: Disconnect — forget this project's saved instance and project, the key saved for that
+ * instance, and the choice of the desktop app.
+ */
 class DisconnectAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        val project = e.project
-        e.presentation.isEnabled = project != null && project.service<PiwiProjectService>().settings().serverUrl.isNotBlank()
+        val service = e.project?.service<PiwiProjectService>()
+        val settings = service?.settings()
+        e.presentation.isEnabled = settings != null &&
+            Glue.disconnectQuestion(settings.serverUrl, settings.project, service.local().desktop) != null
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return
-        val service = project.service<PiwiProjectService>()
-        val url = service.settings().serverUrl.ifBlank { return }
-        val answer = Messages.showYesNoDialog(
-            project,
-            "Forget $url, the project, and the API key saved for it?",
-            "Piwi: Disconnect",
-            null,
-        )
-        if (answer == Messages.YES) service.disconnect()
+        PiwiConnectFlow.disconnect(e.project ?: return)
     }
 }
 
@@ -73,6 +71,8 @@ class RefreshAction : AnAction() {
             project.service<PiwiProjectService>().server()?.refresh()?.orNull()
             project.service<PiwiProjectService>().refreshStatus()
         }
+        // A Playwright config added since the project opened shows the tool window and starts the service.
+        project.service<PiwiProjectService>().findPlaywright()
     }
 }
 
@@ -88,7 +88,7 @@ class RunTestsForFileAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        val uri = fileUri(file)
+        val uri = fileUri(file) ?: return
         ApplicationManager.getApplication().executeOnPooledThread {
             val tests = project.service<PiwiProjectService>().server()?.testsForFile(UriParams(uri))?.orNull()?.tests.orEmpty()
             if (tests.isEmpty()) PiwiCommands.notify(project, "No test reaches this file yet.")
@@ -106,13 +106,13 @@ class OpenInDashboardAction : AnAction() {
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = project.service<PiwiProjectService>()
-            val tests = file?.let { service.server()?.testsForFile(UriParams(fileUri(it)))?.orNull()?.tests }.orEmpty()
+            val tests = file?.let { fileUri(it) }?.let { service.server()?.testsForFile(UriParams(it))?.orNull()?.tests }.orEmpty()
             ApplicationManager.getApplication().invokeLater {
                 when {
                     tests.size == 1 -> tests[0].url?.let { BrowserUtil.browse(it) }
                     tests.size > 1 -> JBPopupFactory.getInstance()
                         .createPopupChooserBuilder(tests)
-                        .setRenderer(com.intellij.ui.SimpleListCellRenderer.create("") { "${it.title} · ${it.file}" })
+                        .setRenderer(textRenderer<EditorTest> { "${it.title} · ${it.file}" })
                         .setTitle("Open which test in the dashboard?")
                         .setItemChosenCallback { t -> t.url?.let { BrowserUtil.browse(it) } }
                         .createPopup()
@@ -130,7 +130,9 @@ class RunSelectionAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val uri = (e.getData(CommonDataKeys.VIRTUAL_FILE) ?: project.guessProjectDir())?.let { fileUri(it) } ?: ""
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) }
+            ?: project.service<PiwiProjectService>().searchRoots().firstOrNull()?.toUri()?.toString()
+            ?: ""
         ApplicationManager.getApplication().executeOnPooledThread {
             val server = project.service<PiwiProjectService>().server()
             val items = server?.selections(SelectionsParams(uri))?.orNull()?.items.orEmpty()
@@ -142,7 +144,7 @@ class RunSelectionAction : AnAction() {
                 JBPopupFactory.getInstance()
                     .createPopupChooserBuilder(items)
                     .setRenderer(
-                        com.intellij.ui.SimpleListCellRenderer.create("") {
+                        textRenderer<SelectionItem> {
                             "${it.name ?: it.key} · ${it.count} tests" + if (it.includesFile) " · includes this file" else ""
                         },
                     )
@@ -150,7 +152,7 @@ class RunSelectionAction : AnAction() {
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
                             val command = server?.runSelection(RunSelectionParams(uri, picked.key))?.orNull()
-                            if (command?.cwd != null && command.command != null) PiwiCommands.run(project, command.cwd, command.command)
+                            if (command?.cwd != null && command.command != null) PiwiCommands.run(project, command.cwd, command.command, command.env)
                         }
                     }
                     .createPopup()
@@ -201,5 +203,12 @@ class CopyMcpConfigurationAction : AnAction() {
         }
 
         private const val OFFERED = "piwi.mcpOffered"
+    }
+}
+
+/** A popup list's cell: the text `label` gives its item. */
+private fun <T> textRenderer(label: (T) -> String): SimpleListCellRenderer<T> = object : SimpleListCellRenderer<T>() {
+    override fun customize(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = value?.let(label) ?: ""
     }
 }

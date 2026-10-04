@@ -113,7 +113,7 @@ export function locatorStabilityRule(id: LocatorStabilityRuleId): LocatorStabili
   return RULES_BY_ID.get(id)!;
 }
 
-export interface LocatorStabilityFinding {
+interface LocatorStabilityFinding {
   rule: LocatorStabilityRuleId;
   level: Exclude<LocatorStabilityLevel, 'stable'>;
   /** The part of the locator the rule caught: `nth(1)`, `.btn-primary`, `//div[2]`, `'Cart (3)'`. */

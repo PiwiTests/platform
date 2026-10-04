@@ -380,14 +380,14 @@ function stepDiffs(failSteps: AttemptStep[], passSteps: AttemptStep[]): AttemptD
   const passByLabel = new Map<string, AttemptStep>();
   for (const s of passSteps) {
     const label = stepLabel(s);
-    const key = `${label} ${paramsSig(s)}`;
+    const key = `${label}\x00${paramsSig(s)}`;
     if (!passByKey.has(key)) passByKey.set(key, s);
     if (!passByLabel.has(label)) passByLabel.set(label, s);
   }
   const out: AttemptDiffEntry[] = [];
   for (const s of failSteps) {
     const label = stepLabel(s);
-    const twin = passByKey.get(`${label} ${paramsSig(s)}`) ?? passByLabel.get(label);
+    const twin = passByKey.get(`${label}\x00${paramsSig(s)}`) ?? passByLabel.get(label);
     const failed = Boolean(s.failed || s.error?.message);
     if (failed && !(twin && (twin.failed || twin.error?.message))) {
       out.push({

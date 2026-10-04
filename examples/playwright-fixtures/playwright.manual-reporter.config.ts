@@ -9,4 +9,6 @@ import { baseConfig, piwiOptions } from './playwright.shared';
  */
 export default defineConfig(baseConfig, {
   reporter: [['list'], ['@piwitests/reporter', piwiOptions]],
+  // `wrapConfig` sets these when the config leaves them unset; a reporter added by hand sets nothing.
+  use: { screenshot: 'only-on-failure', trace: 'retain-on-failure' },
 });

@@ -45,7 +45,7 @@ export type { ErrorSignature, ErrorType };
  * `fingerprintSample` on startup (see shared/handlers/failure-cluster-recluster.ts),
  * so triage status, notes and diagnoses survive an algorithm change.
  */
-export const FINGERPRINT_VERSION = 3;
+export const FINGERPRINT_VERSION = 4;
 
 export interface ErrorFingerprint extends ErrorSignature {
   /** SHA-256 hex over version + error type + normalized message + masked selector */

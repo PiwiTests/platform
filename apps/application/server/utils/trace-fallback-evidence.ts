@@ -22,7 +22,8 @@ import { resolveCaseTraceBlobPath, loadTraceEvidenceStreams, getTraceFallbackAri
 import { inferResourceType, type TraceResourceSnapshot } from './trace-insights';
 import { consoleLogsFromTrace, parseErrorContext } from './import-evidence';
 import { buildNetworkRequestItems } from './network-request-helpers';
-import { capConsoleLogs, sanitizeConsoleLogs, capText } from './sanitize';
+import { capConsoleLogs, countDroppedConsoleEntries, sanitizeConsoleLogs, capText } from './sanitize';
+import { recordIngestHealth } from './ingest-health';
 import { resolveIngestLimits } from './ingest-limits';
 import type { DbClient as DB } from '../database';
 
@@ -124,6 +125,7 @@ export async function deriveTraceEvidence(db: DB, testRunsCaseId: number): Promi
 
   const limits = resolveIngestLimits();
   const derived: EvidenceSources = {};
+  let consoleEntriesDropped = 0;
   const rowUpdate: Partial<typeof testRunsCases.$inferInsert> = {};
 
   // Console and network come from the trace's own streams.
@@ -134,9 +136,11 @@ export async function deriveTraceEvidence(db: DB, testRunsCaseId: number): Promi
         const entries = consoleLogsFromTrace(streams.parsed, row.startedAt ?? null) as Array<
           Record<string, unknown>
         > | null;
-        const capped = capConsoleLogs(sanitizeConsoleLogs(entries), limits);
+        const sanitized = sanitizeConsoleLogs(entries);
+        const capped = capConsoleLogs(sanitized, limits);
         if (capped && capped.length > 0) {
           rowUpdate.consoleLogs = capped;
+          consoleEntriesDropped = countDroppedConsoleEntries(sanitized, limits);
           derived.console = 'trace';
         }
       }
@@ -167,13 +171,16 @@ export async function deriveTraceEvidence(db: DB, testRunsCaseId: number): Promi
 
   if (Object.keys(derived).length === 0) return null;
 
-  const merged: EvidenceSources = {
-    ...((row.evidenceSources as EvidenceSources | null) ?? {}),
-    ...derived,
-  };
+  const previous = (row.evidenceSources as EvidenceSources | null) ?? {};
+  const merged: EvidenceSources = { ...previous, ...derived };
   rowUpdate.evidenceSources = merged;
 
   await db.update(testRunsCases).set(rowUpdate).where(eq(testRunsCases.id, testRunsCaseId));
+  // An execution counts once, the first time any of its evidence comes from the trace.
+  await recordIngestHealth(db, row.testRunId, {
+    evidenceFromTrace: Object.keys(previous).length === 0 ? 1 : 0,
+    consoleEntriesDropped,
+  });
 
   return derived;
 }

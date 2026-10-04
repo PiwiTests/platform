@@ -10,7 +10,7 @@ import * as path from 'node:path';
  */
 
 /** A declared route: method, pattern, optional handler file and documented codes. */
-export interface ReporterManifestRoute {
+interface ReporterManifestRoute {
   method: string;
   pattern: string;
   handler?: string | null;
@@ -18,7 +18,7 @@ export interface ReporterManifestRoute {
 }
 
 /** A declared page: pattern and optional name. */
-export interface ReporterManifestPage {
+interface ReporterManifestPage {
   pattern: string;
   name?: string | null;
 }
@@ -30,16 +30,16 @@ export interface ReporterManifest {
 }
 
 /** The committed manifest file the reporter looks for next to the Playwright config. */
-export const COMMITTED_MANIFEST_FILE = 'piwi.manifest.json';
+const COMMITTED_MANIFEST_FILE = 'piwi.manifest.json';
 
 /** The instrumentation route-manifest path, served outside production. */
-export const INSTRUMENTATION_MANIFEST_PATH = '/__piwi/manifest';
+const INSTRUMENTATION_MANIFEST_PATH = '/__piwi/manifest';
 
 /**
  * Response headers the instrumentation packages emit on every response, used as
  * the signal that the app under test is instrumented before fetching its manifest.
  */
-export const INSTRUMENTATION_HEADERS = ['x-piwi-logs', 'x-piwi-trace'];
+const INSTRUMENTATION_HEADERS = ['x-piwi-logs', 'x-piwi-trace'];
 
 /** Parse and validate a manifest JSON string into a {@link ReporterManifest}, or null. */
 export function parseManifestJson(text: string): ReporterManifest | null {
@@ -122,7 +122,7 @@ export type FetchLike = (
 ) => Promise<{ ok: boolean; status: number; headers: Record<string, unknown> | Headers; text(): Promise<string> }>;
 
 /** How long each instrumentation-manifest request may run before it is aborted. */
-export const INSTRUMENTATION_FETCH_TIMEOUT_MS = 5000;
+const INSTRUMENTATION_FETCH_TIMEOUT_MS = 5000;
 
 /**
  * Fetch the instrumentation manifest from a base URL: probe the base URL once,

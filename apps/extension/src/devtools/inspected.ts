@@ -1,3 +1,5 @@
+import { clearRecordIntent } from '../shared/recording-storage.js';
+
 /**
  * The tab DevTools inspects, as the extension's DevTools pages reach it:
  * `chrome.devtools.inspectedWindow.eval` in the page's world or, with
@@ -52,21 +54,19 @@ export async function inspectedOrigin(): Promise<string | null> {
 }
 
 /** The host permission pattern for a web origin; null for any other page (`chrome://`, `about:`, a file). */
-export function sitePattern(origin: string | null): string | null {
-  if (!origin) return null;
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    return `${url.origin}/*`;
-  } catch {
-    return null;
-  }
-}
+export { originPattern as sitePattern } from '../shared/web-origin.js';
 
-/** Asks for the origin's optional host permission. Call it inside a click: the browser requires the gesture. */
+/**
+ * Asks for the origin's optional host permission. Call it inside a click: the
+ * browser requires the gesture. Its grant is not a recording's: a "Record
+ * actions" intent still parked is cleared with the request, or the grant would
+ * start that recording.
+ */
 export async function requestSiteAccess(pattern: string): Promise<boolean> {
   try {
-    return await chrome.permissions.request({ origins: [pattern] });
+    const granted = chrome.permissions.request({ origins: [pattern] });
+    void clearRecordIntent().catch(() => undefined);
+    return await granted;
   } catch {
     return false;
   }

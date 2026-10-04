@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
-import { notificationEventLabel } from '#shared/notification-events';
+import {
+  describeSubscriptionFilters,
+  notificationEventLabel,
+  type SubscriptionFilters,
+} from '#shared/notification-events';
 
 const toast = useToast();
 const config = useRuntimeConfig();
@@ -120,7 +124,7 @@ interface Subscription {
   userId: number | null;
   projectId: number | null;
   events: string[] | null;
-  filters: Record<string, unknown> | null;
+  filters: SubscriptionFilters | null;
   mode: string;
   digestAt: string | null;
   mutedUntil: string | null;
@@ -365,6 +369,13 @@ PIWI_SMTP_PASS=secret"
                 <span v-if="isMuted(sub)" class="text-warning-500"
                   >Muted until {{ new Date(sub.mutedUntil!).toLocaleDateString() }}</span
                 >
+                <span
+                  v-for="part in describeSubscriptionFilters(sub.filters)"
+                  :key="part"
+                  data-testid="subscription-filter"
+                >
+                  {{ part }}
+                </span>
               </div>
               <div class="flex flex-wrap gap-1 mt-1">
                 <UBadge v-for="e in sub.events ?? []" :key="e" size="xs" variant="soft" color="neutral">

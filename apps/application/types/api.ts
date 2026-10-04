@@ -4,7 +4,16 @@ import type { Serialize, Simplify } from 'nitropack/types';
  * These types are used by both the server API and the app frontend
  */
 
-import type { Role, FilterDetails, KeepSource, TestMetadata, TestSourceFrame, TestStepEventHook } from '#shared/types';
+import type { IngestHealth } from '#shared/ingest-health';
+import type {
+  Role,
+  FilterDetails,
+  KeepSource,
+  TestMetadata,
+  TestSourceFrame,
+  TestStepEventHook,
+  WireExecutionResources,
+} from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
@@ -58,6 +67,8 @@ export interface TestRunMetadata {
   relatedIssue?: string | null;
   tags?: string[];
   customData?: Record<string, unknown>;
+  /** What ingest left out or rebuilt for the run; absent when it was stored whole. */
+  ingestHealth?: IngestHealth;
   [key: string]: unknown;
 }
 
@@ -343,6 +354,16 @@ export interface OpenFailureCluster {
   /** Snooze state — hidden from queues while snoozed; cleared/marked on wake. */
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
+  /** Set when the cluster first appeared in a run flagged as an environment incident. */
+  incidentRun: InboxIncidentRun | null;
+}
+
+/** The environment-incident run a cluster first appeared in, as the failure inbox groups it. */
+export interface InboxIncidentRun {
+  runId: number;
+  reason: string;
+  host: string | null;
+  startedAt: string | Date | null;
 }
 
 /**
@@ -358,8 +379,22 @@ export interface ProjectWithTestRuns {
   createdAt: Date;
   updatedAt: Date;
   testRuns: TestRunSummary[];
+  diagnosisInstructions?: string | null;
+  aiLanguage?: string | null;
+  hasScmToken?: boolean;
+  defaultBranch?: string | null;
+  openApiUrl?: string | null;
+  serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
+  /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
+  ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
+  quarantineFailsStatus?: boolean;
+  /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
+  gateStatus?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
+  /** Per-project targets on catalog metrics. */
+  targets?: import('#shared/analytics/targets').ProjectTargets | null;
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -379,6 +414,10 @@ export interface ProjectDetails {
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
+  /** True: a quarantined failure turns the run's commit status red. False: the status ignores it. */
+  quarantineFailsStatus?: boolean;
+  /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
+  gateStatus?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -452,6 +491,8 @@ export interface TestRunDetails {
   shardTotal?: number | null;
   shardsFinished?: number;
   isFullRun?: boolean;
+  /** A reporter sent what the run cost and left open: the Resources tab has something to show. */
+  hasResources?: boolean;
   filterDetails?: FilterDetails | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
@@ -490,22 +531,6 @@ export interface TestRunDetails {
   wastedWaitPatterns?: string[];
   /** Nearest timeline marker at or before this run's start (matching env or global), if any. */
   precedingMarker?: MarkerInfo | null;
-}
-
-/**
- * Lightweight test run summary for comparison pages — omits heavy JSON blobs
- * returned by GET /api/test-runs/[id]/summary
- */
-export interface TestRunForCompare {
-  id: number;
-  status: string;
-  totalTests: number;
-  testCases: Array<{
-    title: string;
-    status: string;
-    duration?: number | null;
-    location?: string;
-  }>;
 }
 
 /**
@@ -909,6 +934,8 @@ export interface TestCaseResult {
   wastedTimeMs?: number | null;
   networkRequests?: NetworkRequest[] | null;
   webVitals?: WebVitals | null;
+  /** What the test cost its worker and browser processes, and what it found open or left open. */
+  resources?: WireExecutionResources | null;
   /** AI-step usage manifest: replayed artifacts + the prompts their locators compile from. */
   aiUsage?: { entries: string[]; intents?: AiStepIntent[] } | null;
   consoleLogs?: ConsoleEntry[] | null;
@@ -1018,6 +1045,8 @@ export interface ClusterResolutionFields {
   fixCommit: string | null;
   timeToResolutionMs: number | null;
   fixVerification: FixVerification | null;
+  /** The latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix. */
+  flakeEvidenceRunId?: number | null;
 }
 
 /**
@@ -1133,6 +1162,9 @@ export interface TestCaseWithStats {
   avgDuration: number | null;
   lastRun: number | null;
   lastStatus: string | null;
+  /** Where the test is declared, as its latest execution reported it; null before it ever ran. */
+  line: number | null;
+  column: number | null;
 }
 
 /**
@@ -1416,50 +1448,6 @@ export interface AttachmentInfo {
   size: number | null;
 }
 
-// ============================================================================
-// Regression context types (Pillar 2)
-// ============================================================================
-
-/**
- * Commit range between last passing run and this run
- */
-export interface RegressionContextCommitRange {
-  fromSha: string;
-  toSha: string;
-  fromShort: string;
-  toShort: string;
-  repositoryUrl: string | null;
-  compareUrl: string | null;
-  gitCommand: string;
-}
-
-/**
- * A single field that changed between the last passing run and this run
- */
-export interface RegressionContextMetaDiff {
-  key: string;
-  label: string;
-  before: string | null;
-  after: string | null;
-}
-
-/**
- * Regression context for a test run — returned by GET /api/test-runs/[id]/regression-context.
- * hasGreen: false means no prior passing run exists for this project.
- */
-export interface RegressionContext {
-  hasGreen: boolean;
-  lastGreenRunId?: number;
-  lastGreenRunAt?: string | Date | null;
-  lastGreenCommit?: string | null;
-  lastGreenBranch?: string | null;
-  currentCommit?: string | null;
-  currentBranch?: string | null;
-  commitRange?: RegressionContextCommitRange | null;
-  metadataDiff?: RegressionContextMetaDiff[];
-  newFailures?: number;
-}
-
 /**
  * Slow test entry - returned by GET /api/projects/[id]/slow-tests
  */
@@ -1533,6 +1521,8 @@ export interface DiagnosisContextCoverage {
     gitCommand?: string | null;
     /** Whether a repository access token is set for the project or the instance. */
     hasToken?: boolean;
+    /** The commits were read with git in the folder the desktop app links to the project, not from the host. */
+    localGit?: boolean;
   } | null;
   /** True when the last passing run is newer than the cluster's lastSeen — test may already be fixed. */
   alreadyGreen?: boolean;
@@ -1805,6 +1795,15 @@ export interface AiUsageModelRow {
   inputTokens: number;
   outputTokens: number;
   avgDurationMs: number | null;
+  /** Completed diagnoses rated helpful, and rated at all (helpful or unhelpful). */
+  helpful: number;
+  rated: number;
+  /** Suggested patches checked against the source files, and those that apply. */
+  patchesChecked: number;
+  patchesApplying: number;
+  /** Diagnoses a fix confirmed in the window (it changed the diagnosed files), and those whose cause failed again. */
+  verified: number;
+  regressed: number;
 }
 
 /**
@@ -1812,6 +1811,8 @@ export interface AiUsageModelRow {
  */
 export interface AiUsageSummary {
   days: number;
+  /** The fewest ratings a helpful share is given over. */
+  minRatings: number;
   totals: { diagnoses: number; inputTokens: number; outputTokens: number };
   byModel: AiUsageModelRow[];
 }

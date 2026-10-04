@@ -66,11 +66,6 @@ export function parseProbeTrace(traceHeader: string | undefined): ProbeTraceInfo
   }
 }
 
-/** True when the trace proves the server honored a signed fault (any fault). */
-export function traceMarksProbeApplied(traceHeader: string | undefined): boolean {
-  return parseProbeTrace(traceHeader).appliedFault != null;
-}
-
 /**
  * The headers to fulfill a mutated response with: the real response's headers,
  * so `Set-Cookie`, `Location` and the rest survive, minus the framing headers

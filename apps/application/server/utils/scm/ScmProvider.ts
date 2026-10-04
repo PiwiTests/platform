@@ -5,6 +5,25 @@ import {
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
 import type { CiRerunSettings } from '#shared/ci-rerun';
+
+/** What a CI re-run dispatch carries besides the Playwright arguments. */
+export interface RerunDispatchRequest {
+  /** The branch to run on; the target's configured ref when absent. */
+  ref?: string | null;
+  /** The dispatch's id, sent where the target names an input for it. */
+  dispatchId?: string;
+}
+
+/** What a provider answers to a CI re-run dispatch. */
+export interface RerunDispatchResult {
+  url: string;
+  /** The branch the pipeline runs on. */
+  ref?: string;
+  /** GitLab's pipeline id. */
+  pipelineId?: string;
+  /** Bitbucket's build number. */
+  buildNumber?: string;
+}
 import { commitUrl, compareUrl, fileUrl, type ScmProviderName } from '#shared/scm-urls';
 
 export interface ChangedFile {
@@ -17,7 +36,10 @@ export interface ChangedFile {
 
 export interface ScmCommit {
   sha: string;
+  /** The subject: the message's first line. */
   message: string;
+  /** The whole message, trailers included, where the host returns it ({@link ScmProvider.fetchChanges} does). */
+  fullMessage?: string;
 }
 
 export interface ScmCommitDetail {
@@ -107,6 +129,12 @@ export interface ScmEntityRef {
   updatedAt: string | null;
 }
 
+/** The comment Piwi posted on a pull request. */
+export interface ScmPostedComment {
+  /** The host's id of the comment, or null when it returned none. */
+  id: string | null;
+}
+
 /** A commit status (GitHub "status", GitLab "commit status", Bitbucket "build status"). */
 export interface ScmCommitStatus {
   state: 'success' | 'failure' | 'error' | 'pending';
@@ -177,6 +205,10 @@ export abstract class ScmProvider {
 
   abstract listBranches(limit?: number): Promise<string[]>;
   abstract listCommits(limit?: number, branch?: string): Promise<ScmCommitDetail[]>;
+  /**
+   * The commits in `fromSha..toSha`, oldest first, each with its full message,
+   * and the files changed between the two.
+   */
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
   /**
@@ -236,6 +268,15 @@ export abstract class ScmProvider {
     return false;
   }
 
+  /**
+   * {@link upsertPullRequestComment} that also returns the host's id of the
+   * comment, for the run's PR feedback record. Null when nothing was posted;
+   * `id` is null when the host did not say.
+   */
+  async postPullRequestComment(prNumber: number, marker: string, body: string): Promise<ScmPostedComment | null> {
+    return (await this.upsertPullRequestComment(prNumber, marker, body)) ? { id: null } : null;
+  }
+
   /** Attach a status to a commit. Returns true when it was accepted. */
   async postCommitStatus(_sha: string, _status: ScmCommitStatus): Promise<boolean> {
     return false;
@@ -289,11 +330,17 @@ export abstract class ScmProvider {
 
   /**
    * Dispatch a CI re-run of the given Playwright arguments, using this
-   * provider's target in `settings`. Returns the runs/pipeline URL to watch.
+   * provider's target in `settings`, on `request.ref` when given (else the
+   * target's own ref). Returns the runs/pipeline URL to watch and the
+   * provider's id for the pipeline it created, when it answers with one.
    * Throws when the provider is unsupported, has no configured target, or the
    * dispatch request fails.
    */
-  async dispatchRerun(_settings: CiRerunSettings, _playwrightArgs: string): Promise<{ url: string }> {
+  async dispatchRerun(
+    _settings: CiRerunSettings,
+    _playwrightArgs: string,
+    _request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     throw new Error(`${this.provider} does not support CI re-run`);
   }
 

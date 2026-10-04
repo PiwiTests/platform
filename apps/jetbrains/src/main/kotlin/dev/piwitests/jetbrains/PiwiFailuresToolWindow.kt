@@ -73,7 +73,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             model.clear()
             service.failures.forEach { model.addElement(it) }
             toolWindow.stripeTitle = if (service.failures.isEmpty()) "Piwi" else "Piwi (${service.failures.size})"
-            connection.text = Glue.connectionSummary(service.status)
+            connection.text = Glue.connectionSummary(service.status, service.local().desktop)
             val connected = service.status?.contexts.orEmpty().any { it.connected }
             list.emptyText.clear()
             when {
@@ -112,5 +112,9 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         service.onChange(content, render)
         render()
         service.refreshStatus()
+    }
+
+    companion object {
+        const val ID = "Piwi"
     }
 }

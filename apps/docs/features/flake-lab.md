@@ -33,27 +33,18 @@ of the latest failure, and a bisect of a reproduced flake runs its arm at each s
 It runs, one after the other:
 
 1. **The control**: the test alone, 10 times, with no condition.
-2. **One arm per suspect**, most likely first: the test under that suspect's condition, up to 10 times, stopping at
-   3 failures with the same error as in CI.
+2. **One arm per suspect**: the test under that suspect's condition, up to 10 times, stopping at 3 failures with the
+   same error as in CI. Suspects no experiment tested run first, most likely first; one that did not reproduce runs
+   last, never dropped.
 
 Every run has retries off and runs the checkout you are in. Before it starts, it prints an estimate from the test's
 median duration; `--budget` (15 minutes by default) stops it from starting another arm once spent.
 
 ```text
-piwi flake · checkout › pays with a saved card · 12 failures in 30 days
-
-Suspects from history                                    condition
-  1  GET /api/cart slower (≥1.6 s)            7/8 failures · 3/44 passes    delay to 1.8 s
-  2  admin › resets catalog alongside         5/8 failures · 4/44 passes    run together
-     both write /api/products
-
-Estimate: up to 4 min · budget 15 min
-Lab · dev-laptop · HEAD 9f2c1e0 · chromium · retries off
   control                            0/10
   1  delay GET /api/cart 1.8 s       3/4    stopped at 3 · same error as in CI          reproduced
-  2  run with admin › resets catalog 1/10   same error as in CI · 1 different error (counted apart)  not reproduced
+  2  run with admin › resets catalog 1/10   same error as in CI                         not reproduced
 Verdict: reproduced by delay GET /api/cart 1.8 s (3/4 against 0/10, p = 0.011)
-Saved to the test's Flakiness tab. After your fix: npx @piwitests/reporter flake verify 1842
 ```
 
 ## The conditions
@@ -81,13 +72,12 @@ as a delay that trips a timeout the test never hit in CI, is shown apart and has
 | **Amplified** | p < 0.05, but under half the runs failed |
 | **Not reproduced** | anything else |
 
-An arm stops at 3 matching failures. Playwright's `--max-failures` counts every failure, so the command runs an arm
-in batches of up to five repeats and cuts its count after the third matching failure: the result is the one a run
-that stopped there would give. The control never stops early.
-
 The command prints the commit it tested next to the commit of the test's latest failure, and warns when they
 differ: a condition that reproduces on today's code says little about last month's failure. The control catches a
 test that simply fails on this machine.
+
+**Not reproduced is not ruled out.** Ten clean runs only show the condition fails in under about 26% of runs (95%
+confidence): a one-in-twenty flake can still come from it, so the next experiment runs it after the untested ones.
 
 ## Verify a fix
 
@@ -104,29 +94,37 @@ test reads [verified fixed](./flaky-tests#verified-fixed): off the flaky ranking
 quarantined test is proposed for release at once.
 
 **Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it
-still fails, or too few runs passed to say) · `2` error. Every flag is on the [CLI reference](/reference/cli#flake).
+still fails, or too few runs passed to say) · `2` error.
 
 ## Where results show
 
 - The project's **Flake Lab** tab lists every flaky or tested test with where it stands (not tested, reproduced, fix
   verified) and the command it needs next, then the project's newest experiments.
-- The test's **Flakiness** tab lists its experiments and each suspect's latest result ("reproduced 3/4 · 2 days
-  ago"), with buttons that copy both commands.
+- The test's **Flakiness** tab lists its experiments and each suspect's latest result, with buttons that copy both
+  commands.
 - The **flaky list** marks a test whose latest experiment reproduced it.
-- The [clue](/reference/clues) `known-flake-suspect` turns strong on a failure showing a suspect an experiment
-  reproduced.
-- Over [MCP](/features/mcp), `get_flake_profile` returns the experiments, and `plan_flake_experiment` gives an agent
-  the commands and arms to run itself. The `stabilize-flaky-tests` [agent skill](/features/agent-skills) follows
-  this loop.
+- The [clue](/reference/clues) `known-flake-suspect` turns strong on a failure showing a reproduced suspect.
+- Over [MCP](/features/mcp), `get_flake_profile` and `plan_flake_experiment` give an agent the experiments and the
+  arms to run; the `stabilize-flaky-tests` [agent skill](/features/agent-skills) follows this loop.
 
-The lab's own runs are stamped as flake-lab runs: the reporter still sends them, and the dashboard keeps them out of
-the flaky score, regression signals, clusters, notifications, quarantine and the suspects.
+The lab's own runs are stamped as flake-lab runs, kept out of the flaky score, clusters, notifications, quarantine,
+the suspects, the editor's CI failures and every other comparison between runs.
+
+## From the editor and the failure pages
+
+- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows its flaky rate and top suspect
+  ("flaky 18% · top suspect: GET /api/cart slower (reproduced 7 of 10)"), with **Reproduce this flake** and, once
+  reproduced, **Verify the flake fix**, run in a terminal against the instance the editor reads. Beside a team
+  instance, **Reproduce this flake in the desktop app** (also on a failure with an untested suspect) runs the
+  instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you confirm it; **Share on …** records
+  the results on the instance, as run from `desktop`.
+- **On a flaky failure's page**, the next step reproduces it under the top untested suspect, then verifies the fix.
+- **Home** lists the tests waiting for a verify, then those whose top suspect is untested.
 
 ## Run it in CI
 
 A local machine is not CI: a delay reproduces a race anywhere, but load and interference depend on the machine. To
-run the lab where the flake lives, add a manual workflow and start it with the test case id. It is not run on every
-push, since it spends minutes:
+run the lab where the flake lives, add a manual workflow and start it with the test case id:
 
 ```yaml
 # .github/workflows/flake-lab.yml
@@ -157,6 +155,10 @@ jobs:
 The experiment is recorded with the source `ci`. Exit code 1 (nothing reproduced) fails the job; add
 `continue-on-error: true` to the step when you only want the result on the tab.
 
+To start it from a failure's next step (**Reproduce in CI**, **Verify in CI**), make the input the command's arguments
+(<code v-pre>npx @piwitests/reporter ${{ inputs.piwi_flake }}</code>) and name the workflow as the **Flake Lab** target in the project's
+[CI re-run](./pr-feedback#re-run-from-the-dashboard) settings. It receives `flake 1842` or `flake verify 1842`.
+
 ## Without the dashboard
 
 `--no-upload` keeps the results off the dashboard, but the plan still comes from it. When the dashboard cannot be
@@ -165,7 +167,6 @@ reached, pass a plan saved earlier with `--plan <file>`: the response of the pla
 
 ## Limits
 
-- The lab runs where tests run: your machine or a CI job. The dashboard only plans and records.
 - `cpu` needs Chromium; on another browser the arm reports the condition as skipped.
 - A failure that depends on another team's run on a shared environment has no condition; it stays context on the
   Flakiness tab.

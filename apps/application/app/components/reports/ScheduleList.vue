@@ -1,21 +1,30 @@
 <script setup lang="ts">
 /**
- * The report schedules on the Reports page: when each fires, where it goes,
- * and its actions (run now, edit, mute, pause, delete). A card list, so it
- * reads the same at 375 px as on a wide screen.
+ * The report schedules on the Reports page: when each fires, whose it is, who
+ * receives it through which channel, and its actions (run now, edit, mute,
+ * pause, delete). A card list, so it reads the same at 375 px as on a wide screen.
  */
 import { describeCadence } from '#shared/reports/schedule';
 import type { ReportScheduleView } from '#shared/handlers/reports';
 
 const props = defineProps<{ schedules: ReportScheduleView[] }>();
-const emit = defineEmits<{ changed: []; edit: [schedule: ReportScheduleView]; ran: [snapshotId: number] }>();
+const emit = defineEmits<{ changed: []; edit: [schedule: ReportScheduleView] }>();
 
 const toast = useToast();
 const busy = ref<number | null>(null);
-const demoMode = !!useRuntimeConfig().public.demoMode;
+const config = useRuntimeConfig();
+const demoMode = !!config.public.demoMode;
+const authEnabled = !!config.public.authEnabled;
 
 function isMuted(s: ReportScheduleView): boolean {
   return !!s.mutedUntil && new Date(s.mutedUntil).getTime() > Date.now();
+}
+
+/** Whose schedule it is, when not the reader's: global, or its owner's name. */
+function ownerLabel(s: ReportScheduleView): string | null {
+  if (s.global) return 'global';
+  if (s.mine || !authEnabled) return null;
+  return `by ${s.ownerName ?? 'another user'}`;
 }
 
 function stateLabel(s: ReportScheduleView): string | null {
@@ -51,7 +60,6 @@ async function runNow(s: ReportScheduleView) {
         ? 'Kept as a snapshot; the schedule is muted, so nothing was sent.'
         : `Queued for ${result.queued} ${result.queued === 1 ? 'channel' : 'channels'}.`;
     toast.add({ title: 'Quality report generated', description: sent, color: 'success' });
-    emit('ran', result.snapshotId);
     emit('changed');
   } catch (error) {
     toast.add({ title: "Couldn't run the schedule", description: errorMessage(error), color: 'error' });
@@ -108,12 +116,19 @@ const sorted = computed(() => [...props.schedules].sort((a, b) => a.name.localeC
           <span v-if="stateLabel(s)" class="text-xs font-normal text-muted"> · {{ stateLabel(s) }}</span>
         </p>
         <p class="text-xs text-muted">
-          {{ s.dashboardName }} · {{ describeCadence(s) }}<template v-if="s.global"> · global</template>
+          {{ s.dashboardName }} · {{ describeCadence(s)
+          }}<template v-if="ownerLabel(s)"> · {{ ownerLabel(s) }}</template>
         </p>
         <p v-if="s.inactiveReason" class="text-xs text-muted" data-testid="schedule-inactive-reason">
           {{ s.inactiveReason }}
         </p>
-        <p class="text-xs text-muted break-words">To {{ s.channels.map((c) => c.name).join(', ') || 'no channel' }}</p>
+        <ChannelRecipientList
+          v-if="s.channels.length > 0"
+          :channels="s.channels"
+          :show-owner="authEnabled"
+          :data-testid="`schedule-recipients-${s.id}`"
+        />
+        <p v-else class="text-xs text-muted">To no channel</p>
         <p v-if="s.active && s.nextRunAt" class="text-xs text-muted">
           Next: <ClientDate :date="s.nextRunAt" />
           <ClientOnly v-if="s.lastRunAt"> · last {{ formatRelativeTime(s.lastRunAt) }}</ClientOnly>

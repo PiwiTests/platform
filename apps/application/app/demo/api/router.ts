@@ -22,6 +22,7 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { Role } from '#shared/types';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
+import { subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import {
   getUserAssignments,
@@ -93,6 +94,7 @@ import {
   getProjectAiStepCoverage,
   getProjectPerformance,
   getProjectTestCases,
+  getProjectTestCaseFacets,
   parseTestCasesQuery,
   getProjectSlowTests,
   getProjectTimeoutOpportunities,
@@ -123,10 +125,13 @@ import { validateExtractedFunction } from '#shared/test-function-extract-prompt'
 import { createTestFunctionSchema, updateTestFunctionSchema } from '#shared/test-function-schemas';
 import {
   addQuarantine,
+  dismissQuarantineProposal,
   listQuarantine,
+  markDismissedProposals,
   releaseQuarantine,
   RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
+import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
   listSelections,
   getSelection,
@@ -142,7 +147,7 @@ import {
   computeScenarioGaps,
   listScenarioGaps,
   triageGap,
-  draftScenario,
+  issueScenarioDraft,
   listAcceptedUnwritten,
 } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
@@ -187,12 +192,21 @@ import {
   getFlakyListSuspects,
   getProjectFlakeLab,
   listFlakeExperiments,
+  listFlakeLabInbox,
   recordFlakeResults,
   resolveTestCaseByLocation,
   type FlakeResultsInput,
 } from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
+import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
+import { parseFixAttempt } from '#shared/fix-attempts';
+import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
+import { getClusterActivity } from '#shared/handlers/cluster-activity';
+import { isRunOriginKind } from '@piwitests/core/wire';
 import { getVerifiedFixes } from '#shared/handlers/flake-verified';
+import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
 import {
   getFailureCluster,
   getOpenFailureClusters,
@@ -202,6 +216,7 @@ import {
   quarantineClusterTests,
   bulkTriageClusters,
   patchClusterBaseCommit,
+  recordClusterBisect,
   extractClusterCases,
   getClusterDiagnosis,
   getExecutionDiagnosis,
@@ -277,7 +292,7 @@ import { parseAnalyticsScope } from '#shared/analytics/scope';
 import { collectRollupExport, rollupCsvHeader, rollupCsvRows } from '#shared/handlers/analytics/rollup-export';
 import { WidgetOptionsError, widgetOptionsFromQuery } from '#shared/analytics/registry';
 import { getAnalyticsScopeSummary } from '#shared/handlers/analytics/scope-summary';
-import { classifyAndPersistFlakyRootCause } from '#shared/handlers/flaky-classify';
+import { classifyAndPersistFlakyRootCause, withFlakyRootCauses } from '#shared/handlers/flaky-classify';
 import {
   listUsers,
   createUserRecord,
@@ -332,6 +347,8 @@ import {
   type UrlPatternWriteResult,
 } from '#shared/handlers/url-patterns';
 import { apiDeleteTestRun } from './test-runs';
+import { setRunIncident } from '#shared/handlers/run-health';
+import { parseSetRunIncident } from '#shared/run-incident';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -668,6 +685,15 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/test-cases\/facets$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const maxAgeDays = Math.max(0, Math.floor(Number(q?.get('maxAgeDays')) || 0));
+      return getProjectTestCaseFacets(await getDemoDb(), +m[1]!, { maxAgeDays });
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/slow-tests$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -751,24 +777,34 @@ const routes: RouteEntry[] = [
       const priority = (TEST_PRIORITIES as readonly string[]).includes(priorityRaw)
         ? (priorityRaw as (typeof TEST_PRIORITIES)[number])
         : undefined;
-      // CODEOWNERS resolution needs an SCM client the browser cannot reach —
-      // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
-      return getProjectFlakyTestsWithVerified(
-        await getDemoDb(),
+      const db = await getDemoDb();
+      const { items, verifiedFixed } = await getProjectFlakyTestsWithVerified(
+        db,
         +m[1]!,
         runs,
         environment,
         { tags, owner, priority },
         branch,
       );
+      // CODEOWNERS resolution needs an SCM client the browser cannot reach —
+      // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
+      return { items: await withFlakyRootCauses(db, +m[1]!, items), verifiedFixed };
     },
   },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/latest-run$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return getProjectLatestRun(await getDemoDb(), +m[1]!);
+      const origin = q?.get('origin');
+      if (origin != null && (!isRunOriginKind(origin) || q?.get('ref') == null)) {
+        throw demoHttpError(400, 'origin needs a known run origin and a ref');
+      }
+      return getProjectLatestRun(
+        await getDemoDb(),
+        +m[1]!,
+        isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
+      );
     },
   },
   {
@@ -892,6 +928,25 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/incident$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const input = parseSetRunIncident(body);
+      if (typeof input === 'string') throw demoHttpError(400, input);
+      const db = await getDemoDb();
+      const by = ctx?.actingUserId
+        ? ((await db.select({ name: users.name }).from(users).where(eq(users.id, ctx.actingUserId)))[0]?.name ?? null)
+        : null;
+      try {
+        return await setRunIncident(db, +m[1]!, { ...input, by });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Test run not found') throw demoHttpError(404, err.message);
+        throw err;
+      }
+    },
+  },
+  {
     method: 'DELETE',
     pattern: /^\/api\/test-runs\/(\d+)$/,
     handler: async (m, _b, _q, ctx) => {
@@ -956,7 +1011,30 @@ const routes: RouteEntry[] = [
       return computeRunInsights(await getDemoDb(), +m[1]!, {
         baselineId: baselineId != null && Number.isFinite(baselineId) ? baselineId : null,
         baseBranch,
+        failedFallback: true,
       });
+    },
+  },
+
+  // Run resources
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/resources$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const resources = await getRunResources(await getDemoDb(), +m[1]!);
+      if (!resources) throw demoHttpError(404, 'Run not found');
+      return resources;
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/resource-timeline$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const timeline = await getRunResourceTimeline(await getDemoDb(), +m[1]!);
+      if (!timeline) throw demoHttpError(404, 'Run not found');
+      return timeline;
     },
   },
 
@@ -1072,6 +1150,62 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/bisect$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseBisectResultBody(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const bisectedCommit = await recordClusterBisect(await getDemoDb(), +m[1]!, parsed.value);
+      if (!bisectedCommit) throw demoHttpError(404, 'Failure cluster not found');
+      return { ok: true, bisectedCommit };
+    },
+  },
+  // The demo bundles no skill files; the desktop app is the one that installs them.
+  {
+    method: 'GET',
+    pattern: /^\/api\/agent-skills$/,
+    handler: async () => ({ version: '', items: [] }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/agent-diagnosis$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseAgentDiagnosis(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const result = await recordAgentDiagnosis(await getDemoDb(), +m[1]!, parsed.value, {
+        actor: { channel: parsed.value.channel ?? 'ui', userId: ctx?.actingUserId ?? null },
+      });
+      if (!result.ok) throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], AGENT_DIAGNOSIS_ERRORS[result.error]);
+      return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/fix-attempts$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      const parsed = parseFixAttempt(body);
+      if (!parsed.ok) throw demoHttpError(400, parsed.message);
+      const result = await reportFixAttempt(await getDemoDb(), +m[1]!, parsed.value, {
+        channel: parsed.value.channel ?? 'ui',
+        userId: ctx?.actingUserId ?? null,
+      });
+      if (!result.ok)
+        throw demoHttpError(FIX_ATTEMPT_ERRORS[result.error].status, FIX_ATTEMPT_ERRORS[result.error].message);
+      return { ok: true, recorded: result.recorded, attempt: result.attempt };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/failure-clusters\/(\d+)\/activity$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
+      return { items: await getClusterActivity(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
     method: 'GET',
     pattern: /^\/api\/failure-clusters\/(\d+)\/branches$/,
     handler: async (m, _b, _q, ctx) => {
@@ -1183,6 +1317,15 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+    },
+  },
+  {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to run the lab in.
+    pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'case', +m[1]!);
+      return { ok: false, demo: true, message: 'Flake Lab in CI is not available in the demo.' };
     },
   },
   {
@@ -1318,6 +1461,7 @@ const routes: RouteEntry[] = [
         environment: q?.get('environment')?.trim() || null,
         branch: q?.get('branch')?.trim() || null,
         limit: int('limit'),
+        suspects: q?.get('suspects') === 'true' || q?.get('suspects') === '1',
       });
     },
   },
@@ -1833,8 +1977,11 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/quarantine$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const db = await getDemoDb();
+      const { entries, debt } = await listQuarantine(db, +m[1]!);
       return {
-        ...(await listQuarantine(await getDemoDb(), +m[1]!)),
+        entries: (await markDismissedProposals(db, +m[1]!, entries, [])).entries,
+        debt,
         candidates: [],
         releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
       };
@@ -1868,6 +2015,34 @@ const routes: RouteEntry[] = [
       const result = await releaseQuarantine(await getDemoDb(), +m[1]!, +m[2]!, reason);
       if (!result.released) throw demoHttpError(404, 'No active quarantine for this test');
       return { success: true, ...result };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/quarantine\/(\d+)\/dismiss$/,
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const b = (body ?? {}) as { proposal?: unknown; reason?: unknown };
+      if (!isQuarantineProposal(b.proposal)) throw demoHttpError(400, 'proposal must be quarantine or release');
+      const proposal = b.proposal;
+      const reason = normalizeDismissReason(b.reason);
+      let dismissed: boolean;
+      try {
+        dismissed = await dismissQuarantineProposal(
+          await getDemoDb(),
+          +m[1]!,
+          +m[2]!,
+          proposal,
+          { channel: 'ui', userId: ctx?.actingUserId ?? null },
+          reason,
+        );
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Test case not found in this project')
+          throw demoHttpError(404, e.message);
+        throw e;
+      }
+      if (!dismissed) throw demoHttpError(404, `No ${proposal} proposal for this test`);
+      return { success: true, proposal, dismissed };
     },
   },
 
@@ -2038,6 +2213,13 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/flake-lab\/inbox$/,
+    handler: async (_m, _b, _q, ctx) => ({
+      items: await listFlakeLabInbox(await getDemoDb(), !ctx || ctx.scope === 'all' ? 'all' : [...ctx.scope]),
+    }),
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/gaps\/precision$/,
     handler: async () => {
       const db = await getDemoDb();
@@ -2076,7 +2258,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/gaps\/(\d+)\/draft$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const draft = await draftScenario(await getDemoDb(), +m[1]!, +m[2]!);
+      const draft = await issueScenarioDraft(await getDemoDb(), +m[1]!, +m[2]!, { channel: 'ui' });
       if (!draft) throw demoHttpError(404, 'Gap not found');
       return draft;
     },
@@ -2546,10 +2728,10 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/bug-reports\/intake$/,
-    // The demo has no tracker connection: a send files nowhere.
+    // The demo has no tracker connection: a send files nowhere, and it keeps no step screenshots.
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false };
+      return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false, stepShots: 0 };
     },
   },
   {
@@ -2653,7 +2835,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/url-patterns\/suggestions$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { items: await suggestUrlPatterns(await getDemoDb(), +m[1]!) };
+      return suggestUrlPatterns(await getDemoDb(), +m[1]!);
     },
   },
   {
@@ -2898,6 +3080,8 @@ routes.push(
       if (events.length === 0 || events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
         throw demoHttpError(400, 'events must contain at least one valid event');
       }
+      const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
+      if (!filters.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
       const digestAt = typeof b.digestAt === 'string' && /^\d{1,2}:\d{2}$/.test(b.digestAt) ? b.digestAt : null;
       const sub: DemoSubscription = {
@@ -2906,7 +3090,7 @@ routes.push(
         channelId: b.channelId ?? 1,
         projectId: b.projectId ?? null,
         events,
-        filters: b.filters ?? null,
+        filters: filters.data ?? null,
         mode,
         digestAt,
         mutedUntil: null,
@@ -2933,7 +3117,11 @@ routes.push(
         sub.events = b.events;
       }
       if (b.mode !== undefined) sub.mode = b.mode === 'digest' ? 'digest' : 'realtime';
-      if (b.filters !== undefined) sub.filters = b.filters;
+      if (b.filters !== undefined) {
+        const filters = subscriptionFiltersSchema.nullable().safeParse(b.filters);
+        if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+        sub.filters = filters.data;
+      }
       if (b.digestAt !== undefined) sub.digestAt = b.digestAt;
       if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
       if (b.active !== undefined) sub.active = b.active;
@@ -2955,7 +3143,13 @@ routes.push(
 // Report schedules and snapshots — stored in the in-browser database; the demo
 // has no scheduler, so a schedule never fires by itself.
 const demoReportChannels = () => [
-  { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type, userId: DEMO_CHANNEL.userId },
+  {
+    id: DEMO_CHANNEL.id,
+    name: DEMO_CHANNEL.name,
+    type: DEMO_CHANNEL.type,
+    userId: DEMO_CHANNEL.userId,
+    address: DEMO_CHANNEL.config.address,
+  },
 ];
 
 routes.push(

@@ -2,7 +2,7 @@
   "name": "piwi",
   "displayName": "Piwi",
   "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
-  "version": "0.41.0",
+  "version": "0.45.0",
   "publisher": "piwitests",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -94,6 +94,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.openScreenshot",
+        "title": "Open the failure screenshot",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.runCommand",
         "title": "Run a command",
         "category": "Piwi"
@@ -101,6 +106,36 @@
       {
         "command": "piwi.copyText",
         "title": "Copy text",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.desktopJob",
+        "title": "Reproduce, bisect or run Flake Lab in the desktop app",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.record",
+        "title": "Record here",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.recordFile",
+        "title": "Record a new test file",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.stopRecording",
+        "title": "Stop recording",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.pauseRecording",
+        "title": "Pause recording",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.resumeRecording",
+        "title": "Resume recording",
         "category": "Piwi"
       }
     ],
@@ -115,12 +150,36 @@
           "when": "false"
         },
         {
+          "command": "piwi.openScreenshot",
+          "when": "false"
+        },
+        {
           "command": "piwi.runCommand",
           "when": "false"
         },
         {
           "command": "piwi.copyText",
           "when": "false"
+        },
+        {
+          "command": "piwi.desktopJob",
+          "when": "false"
+        },
+        {
+          "command": "piwi.record",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/"
+        },
+        {
+          "command": "piwi.stopRecording",
+          "when": "piwi.recording"
+        },
+        {
+          "command": "piwi.pauseRecording",
+          "when": "piwi.recording && !piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.resumeRecording",
+          "when": "piwi.recordingPaused"
         }
       ],
       "editor/context": [
@@ -128,6 +187,31 @@
           "command": "piwi.runTestsForFile",
           "group": "piwi@1",
           "when": "piwi.active"
+        },
+        {
+          "command": "piwi.record",
+          "group": "piwi@2",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
+        },
+        {
+          "command": "piwi.recordFile",
+          "group": "piwi@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
+        },
+        {
+          "command": "piwi.stopRecording",
+          "group": "piwi@2",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording"
+        },
+        {
+          "command": "piwi.pauseRecording",
+          "group": "piwi@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording && !piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.resumeRecording",
+          "group": "piwi@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
         }
       ]
     },
@@ -137,15 +221,47 @@
         "piwi.serverUrl": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The Piwi instance, used when `PIWI_DASHBOARD_URL` in the environment, the workspace `.env` and the desktop app name none. Run **Piwi: Connect** to sign in with the browser: the API key goes to the editor's secret storage, saved for this instance only."
+          "markdownDescription": "The Piwi instance. `PIWI_DASHBOARD_URL` in the environment or the workspace `.env` comes first; then this setting; then the Piwi desktop app while it runs. Run **Piwi: Connect** to sign in with the browser: the API key goes to the editor's secret storage, saved for this instance only. Choosing the desktop app with **Piwi: Connect** puts it first while it runs, on this machine only, and keeps this setting for when it does not."
         },
         "piwi.project": {
           "type": "string",
           "default": "",
-          "description": "The project's name or id on the instance."
+          "description": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder."
         }
       }
     },
+    "colors": [
+      {
+        "id": "piwi.failingTestBackground",
+        "description": "The background of a test that failed in the latest run Piwi reads.",
+        "defaults": {
+          "dark": "#f8514926",
+          "light": "#f851491a",
+          "highContrast": "#f8514940",
+          "highContrastLight": "#f8514926"
+        }
+      },
+      {
+        "id": "piwi.failingLineBackground",
+        "description": "The background of the line a failing test failed at, over the test's own.",
+        "defaults": {
+          "dark": "#f8514940",
+          "light": "#f8514933",
+          "highContrast": "#f8514966",
+          "highContrastLight": "#f8514940"
+        }
+      },
+      {
+        "id": "piwi.recordingBlockBackground",
+        "description": "The background of the block a recording writes, while it records.",
+        "defaults": {
+          "dark": "#2f81f726",
+          "light": "#0969da1a",
+          "highContrast": "#2f81f740",
+          "highContrastLight": "#0969da26"
+        }
+      }
+    ],
     "mcpServerDefinitionProviders": [
       {
         "id": "piwi.mcp",

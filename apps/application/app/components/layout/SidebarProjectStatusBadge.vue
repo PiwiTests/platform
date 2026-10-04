@@ -18,10 +18,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{ navigate: [] }>();
 
+// How long ago the run started moves between the server render and hydration,
+// so the tooltip names it once the badge is mounted.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+
 const title = computed(() => {
   const run = props.run;
   if (!run) return undefined;
-  const lines = [`Open latest run #${run.id}: ${run.status}, ${formatRelativeTime(run.startTime)}`];
+  const ago = mounted.value ? `, ${formatRelativeTime(run.startTime)}` : '';
+  const lines = [`Open latest run #${run.id}: ${run.status}${ago}`];
   const counts = [`${run.passedTests} passed`];
   if (run.failedTests) counts.push(`${run.failedTests} failed`);
   if (run.flakyTests) counts.push(`${run.flakyTests} flaky`);
@@ -30,8 +38,8 @@ const title = computed(() => {
   lines.push(`${run.totalTests} tests: ${counts.join(', ')}`);
   if (run.duration != null) lines.push(`Duration: ${formatLongDuration(run.duration)}`);
   const scm = run.metadata?.scm;
-  const ref = [scm?.branch, scm?.commit?.substring(0, 7)].filter(Boolean).join(' @ ');
-  if (ref) lines.push(ref);
+  const revision = [scm?.branch, scm?.commit?.substring(0, 7)].filter(Boolean).join(' @ ');
+  if (revision) lines.push(revision);
   return lines.join('\n');
 });
 

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.js';
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
 
@@ -67,7 +67,7 @@ test.describe('in an English browser', () => {
     const english = readCatalog('en');
     const list = calls(english);
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     const fromBrowser = await browserMessages(page, list);
     const fromOverride = list.map(({ key, substitutions }) => substitutePlaceholders(english[key]!, substitutions));
     expect(fromOverride).toEqual(fromBrowser);
@@ -87,7 +87,7 @@ test.describe('in an English browser', () => {
     extensionId,
   }) => {
     const options = await context.newPage();
-    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(options, extensionId);
     const language = options.getByLabel('Language');
     await expect(language.locator('option')).toHaveText([
       'Same as the browser (English)',
@@ -125,7 +125,7 @@ test.describe('in an English browser', () => {
     extensionId,
   }) => {
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     await page.getByLabel('Language').selectOption('fr');
     await expect(page.locator('#language-status')).toHaveText('Langue enregistrée.');
 
@@ -190,7 +190,7 @@ test.describe('in a French browser', () => {
 
   test('the options page is in French', async ({ context, extensionId }) => {
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     await expect(page).toHaveTitle('Réglages de Piwi Picker');
     await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
     await expect(page.getByLabel('Langue').locator('option')).toHaveText([
@@ -216,6 +216,7 @@ test.describe('in a French browser', () => {
       chrome.storage.local.set({ piwiConnection: { instanceUrl: 'http://127.0.0.1:9', apiKey: 'k' } }),
     );
     await page.reload();
+    await optionsReady(page);
     await expect(page.locator('#instance-pill')).toHaveText('Connecté');
     await expect(page.locator('#mappings .empty-mappings')).toHaveText(
       'Aucune ligne pour l’instant : ajoutez-en une ci-dessous.',
@@ -236,7 +237,7 @@ test.describe('in a French browser', () => {
     const french = readCatalog('fr');
     const list = calls(french);
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     expect(list.map(({ key, substitutions }) => substitutePlaceholders(french[key]!, substitutions))).toEqual(
       await browserMessages(page, list),
     );
@@ -257,7 +258,7 @@ test.describe('in a German browser', () => {
 
   test('the settings say German is a draft, and where to suggest a correction', async ({ context, extensionId }) => {
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/options.html`);
+    await openOptions(page, extensionId);
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
     const note = page.locator('#language-draft');
     await expect(note).toBeVisible();

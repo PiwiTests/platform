@@ -11,9 +11,12 @@
  *   0  policy satisfied
  *   1  policy violated
  *   2  the gate could not be evaluated (bad arguments, unreachable dashboard)
+ *   3  inconclusive: the run is an environment incident, so it cannot say
+ *      whether the change is good
  *
  * A gate that cannot run exits 2 rather than 0, so a misconfigured pipeline
- * fails loudly instead of silently waving every merge through.
+ * fails loudly instead of silently waving every merge through. An inconclusive
+ * run is non-zero for the same reason, and distinct so a pipeline can re-run.
  */
 import * as fs from 'node:fs';
 import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/core/gate';
@@ -21,6 +24,7 @@ import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/c
 const EXIT_OK = 0;
 const EXIT_VIOLATED = 1;
 const EXIT_ERROR = 2;
+const EXIT_INCONCLUSIVE = 3;
 
 interface GateArgs {
   serverUrl: string;
@@ -56,6 +60,8 @@ Policy (at least one is required):
   --fail-on-new-cluster    Fail when this run introduced a new failure cluster
   --fail-on-flaky          Fail when this run contains any flaky test
   --require-selection <key>  Fail when a test the named selection matches did not run or failed
+  --max-leaks <n>          Fail when the run left more than n browsers, contexts or pages open (per opening line)
+  --max-new-leaks <n>      Fail when more than n of those were never seen on the base branch
 
 Warn-only (reported, never fails the build):
   --max-uncovered-changes <n>  Warn when more than n changed files have no observed test reach
@@ -64,7 +70,7 @@ Other:
   --json                   Print the raw result as JSON instead of a summary
   -h, --help               Show this help
 
-Exit codes: 0 satisfied, 1 violated, 2 could not evaluate.
+Exit codes: 0 satisfied, 1 violated, 2 could not evaluate, 3 inconclusive (an environment incident).
 `.trim();
 
 /** Read `--flag value` / `--flag=value`, or undefined when absent. */
@@ -125,6 +131,8 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
     failOnNewCluster: argv.includes('--fail-on-new-cluster'),
     failOnFlaky: argv.includes('--fail-on-flaky'),
     requireSelection: readOption(argv, '--require-selection'),
+    maxLeaks: readCount(argv, '--max-leaks'),
+    maxNewLeaks: readCount(argv, '--max-new-leaks'),
   };
 
   return {
@@ -137,7 +145,8 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
 }
 
 async function requestGate(args: GateArgs): Promise<GateResult> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // `X-Piwi-Client: cli` names this command as the evaluation's source.
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-Piwi-Client': 'cli' };
   if (args.apiKey) headers['X-API-Key'] = args.apiKey;
 
   // `maxUncoveredChanges` is a warn-only body field the server reads outside the
@@ -185,5 +194,6 @@ export async function runGate(argv: string[], env: NodeJS.ProcessEnv = process.e
     console.log(formatGateResult(result));
   }
 
+  if (result.verdict === 'inconclusive') return EXIT_INCONCLUSIVE;
   return result.passed ? EXIT_OK : EXIT_VIOLATED;
 }

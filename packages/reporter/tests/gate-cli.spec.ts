@@ -96,6 +96,9 @@ describe('parseGateArgs', () => {
         '2',
         '--fail-on-new-cluster',
         '--fail-on-flaky',
+        '--max-leaks',
+        '4',
+        '--max-new-leaks=0',
       ],
       EMPTY_ENV,
     );
@@ -105,6 +108,8 @@ describe('parseGateArgs', () => {
       maxNewFlaky: 2,
       failOnNewCluster: true,
       failOnFlaky: true,
+      maxLeaks: 4,
+      maxNewLeaks: 0,
     });
   });
 
@@ -200,6 +205,26 @@ describe('runGate against a responding dashboard', () => {
     }
   });
 
+  it('exits 3 when the run is an environment incident', async () => {
+    const incident = {
+      ...gateResult(false),
+      passed: false,
+      verdict: 'inconclusive',
+      violations: [],
+      facts: {
+        ...gateResult(false).facts,
+        incident: { rule: 'host-unreachable', reason: '9 of 10 tests failed', host: 'staging.example.test' },
+      },
+    };
+    const stub = stubFetch({ ok: true, json: () => incident });
+    try {
+      expect(await runGate(PASSING_ARGS, EMPTY_ENV)).toBe(3);
+      expect(await runGate([...PASSING_ARGS, '--json'], EMPTY_ENV)).toBe(3);
+    } finally {
+      stub.restore();
+    }
+  });
+
   it('posts the policy to the run being gated', async () => {
     const stub = stubFetch({ ok: true, json: () => gateResult(true) });
     try {
@@ -220,6 +245,17 @@ describe('runGate against a responding dashboard', () => {
       await runGate([...PASSING_ARGS, '--api-key', 'secret'], EMPTY_ENV);
       const headers = stub.calls[0]?.init?.headers as Record<string, string> | undefined;
       expect(headers?.['X-API-Key']).toBe('secret');
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('names itself as the evaluation source', async () => {
+    const stub = stubFetch({ ok: true, json: () => gateResult(true) });
+    try {
+      await runGate(PASSING_ARGS, EMPTY_ENV);
+      const headers = stub.calls[0]?.init?.headers as Record<string, string> | undefined;
+      expect(headers?.['X-Piwi-Client']).toBe('cli');
     } finally {
       stub.restore();
     }

@@ -52,8 +52,8 @@ export async function matchAndEnqueue(
   const now = new Date();
 
   // Re-check project access at delivery time so a subscription never leaks a
-  // project the subscriber can no longer reach — whether it predates
-  // creation-time scoping or the user was since removed from the project.
+  // project the subscriber cannot reach, including one the user was removed
+  // from after subscribing.
   const accessByUser = new Map<number, boolean>();
   const subscriberCanAccess = async (userId: number): Promise<boolean> => {
     const cached = accessByUser.get(userId);

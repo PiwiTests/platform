@@ -22,9 +22,9 @@ const MIN_DEFLATE_BYTES = 64;
  * expand its input by up to ~1000×, so an attacker-supplied trace archive
  * (uploads are open when auth is disabled) could pair a few kilobytes of
  * compressed data with gigabytes of output and exhaust server memory. Real
- * trace files — events, network log, screenshots — never approach this ceiling,
- * so it stops decompression bombs without affecting legitimate traces. zlib
- * throws ERR_BUFFER_TOO_LARGE once output would exceed the cap.
+ * trace files — events, network log, screenshots — never approach this ceiling.
+ * zlib throws ERR_BUFFER_TOO_LARGE once one entry's output would exceed the
+ * cap; the sum across entries is not bounded here.
  */
 const MAX_ENTRY_BYTES = 512 * 1024 * 1024; // 512 MiB
 

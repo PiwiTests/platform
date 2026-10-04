@@ -3,9 +3,9 @@
  *
  * Storage: the `ai` app-setting holds `{ autoDiagnose, roles }` where each role
  * (`diagnosis` | `research` | `embedding`) has its own provider config, or a
- * `reuse` pointer to inherit another role's provider/key/baseUrl. Installs saved
- * before this refactor used flat fields (`provider`, `model`, `researchModel`,
- * …) — `storedRoles()` migrates those on read so nothing breaks.
+ * `reuse` pointer to inherit another role's provider/key/baseUrl. A stored
+ * setting may instead hold flat fields (`provider`, `model`, `researchModel`,
+ * …); `storedRoles()` maps those onto roles on read.
  */
 
 import { eq } from 'drizzle-orm';
@@ -70,36 +70,41 @@ export interface RawStoredAi {
   researchApiKey?: string;
 }
 
+/**
+ * Parse a `PIWI_AI_*_TEMPERATURE` value into a finite number, or undefined when unset or invalid.
+ * The runtime config hands over a number when the value was overridden through `NUXT_AI_*_TEMPERATURE`.
+ */
+export function parseEnvTemperature(raw?: string | number | null): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** Map legacy flat storage (or env vars in the same shape) onto the role map. */
 export function rolesFromLegacy(flat: {
   provider?: string;
   apiKey?: string;
   model?: string;
   baseUrl?: string;
-  temperature?: string;
+  temperature?: string | number;
   researchModel?: string;
   researchProvider?: string;
   researchBaseUrl?: string;
   researchApiKey?: string;
-  researchTemperature?: string;
+  researchTemperature?: string | number;
   embeddingProvider?: string;
   embeddingModel?: string;
   embeddingBaseUrl?: string;
   embeddingApiKey?: string;
 }): Partial<Record<AiModelRole, RawStoredRole>> {
   const roles: Partial<Record<AiModelRole, RawStoredRole>> = {};
-  const parseTemp = (raw?: string): number | undefined => {
-    if (!raw) return undefined;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : undefined;
-  };
   if (flat.provider) {
     roles.diagnosis = {
       provider: flat.provider,
       model: flat.model,
       baseUrl: flat.baseUrl,
       apiKey: flat.apiKey,
-      temperature: parseTemp(flat.temperature),
+      temperature: parseEnvTemperature(flat.temperature),
     };
   }
   if (flat.researchModel) {
@@ -109,9 +114,9 @@ export function rolesFromLegacy(flat: {
           model: flat.researchModel,
           baseUrl: flat.researchBaseUrl,
           apiKey: flat.researchApiKey || flat.apiKey,
-          temperature: parseTemp(flat.researchTemperature),
+          temperature: parseEnvTemperature(flat.researchTemperature),
         }
-      : { reuse: 'diagnosis', model: flat.researchModel, temperature: parseTemp(flat.researchTemperature) };
+      : { reuse: 'diagnosis', model: flat.researchModel, temperature: parseEnvTemperature(flat.researchTemperature) };
   }
   if (flat.embeddingModel) {
     // Provider/baseUrl/key default to the main role's (mirrors resolveAiConfig).
@@ -130,6 +135,36 @@ export function storedRoles(stored: RawStoredAi | null | undefined): Partial<Rec
   if (!stored) return {};
   if (stored.roles) return stored.roles;
   return rolesFromLegacy(stored);
+}
+
+/**
+ * The roles in effect while the environment manages AI: the roles the env vars
+ * define, with the stored per-role settings laid over them. The environment
+ * owns each role's provider, key and base URL; a stored model or temperature
+ * replaces the environment's, and a role the environment leaves out is added
+ * when it reuses a role that is set. `readAiSettings` (what Settings shows) and
+ * `resolveAiConfig` (what every AI call uses) both apply it.
+ */
+export function overlayStoredRoles(
+  envRoles: Partial<Record<AiModelRole, RawStoredRole>>,
+  stored: RawStoredAi | null | undefined,
+): Partial<Record<AiModelRole, RawStoredRole>> {
+  const roles = { ...envRoles };
+  for (const role of AI_ROLES) {
+    const override = stored?.roles?.[role];
+    if (!override) continue;
+    const env = envRoles[role];
+    if (env) {
+      roles[role] = {
+        ...env,
+        ...(override.model ? { model: override.model } : {}),
+        ...(override.temperature != null ? { temperature: override.temperature } : {}),
+      };
+    } else if (override.reuse && roles[override.reuse]) {
+      roles[role] = { reuse: override.reuse, model: override.model, temperature: override.temperature };
+    }
+  }
+  return roles;
 }
 
 /** Client-facing settings for one role (omits the secret). */
@@ -165,34 +200,9 @@ export async function readAiSettings(db: DbClient): Promise<AiSettings> {
   let autoDiagnose: boolean;
 
   if (envManaged) {
-    roleMap = rolesFromLegacy(envAi as Parameters<typeof rolesFromLegacy>[0]);
-    autoDiagnose = String(envAi!.autoDiagnose) === 'true';
-
-    // Merge any DB-stored overrides on top of env config.
     const stored = await getAppSetting<RawStoredAi>(db, 'ai');
-    if (stored?.roles) {
-      for (const role of AI_ROLES) {
-        const override = stored.roles[role];
-        if (!override) continue;
-        if (roleMap[role]) {
-          // Role exists from env vars — override model.
-          roleMap[role] = { ...roleMap[role]!, ...override };
-        } else if (override.reuse) {
-          // Role doesn't exist in env vars but has a stored reuse — inherit from reused role.
-          const base = roleMap[override.reuse];
-          if (base) {
-            roleMap[role] = {
-              provider: base.provider,
-              model: override.model || base.model,
-              baseUrl: base.baseUrl,
-            };
-          }
-        } else if (override.model) {
-          // Standalone model override without reuse — set as-is.
-          roleMap[role] = override;
-        }
-      }
-    }
+    roleMap = overlayStoredRoles(rolesFromLegacy(envAi as Parameters<typeof rolesFromLegacy>[0]), stored);
+    autoDiagnose = String(envAi!.autoDiagnose) === 'true';
   } else {
     const stored = await getAppSetting<RawStoredAi>(db, 'ai');
     roleMap = storedRoles(stored);

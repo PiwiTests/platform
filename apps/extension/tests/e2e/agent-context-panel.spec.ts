@@ -1,11 +1,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
+
+const activeTool = (page: Page) =>
+  page.evaluate(() => (globalThis as { __piwiActiveTool?: { id: string } }).__piwiActiveTool?.id ?? null);
 
 /**
  * Drives the real built `agent-context-panel.js`, the same way
@@ -35,8 +39,9 @@ test.describe('agent-context-panel.js', () => {
     const page = await context.newPage();
     await page.setContent(`<!doctype html><html><body><button id="x">X</button></body></html>`);
     await page.addScriptTag({ path: path.join(DIST, 'agent-context-panel.js') });
+    await expect.poll(() => activeTool(page)).toBe('agent-context-panel');
     await page.keyboard.press('Escape');
-    await expect.poll(() => page.evaluate(() => (globalThis as any).__piwiPicking)).toBe(false);
+    await expect.poll(() => activeTool(page)).toBeNull();
     expect(await page.evaluate(() => !!document.getElementById('piwi-agent-context-host'))).toBe(false);
   });
 

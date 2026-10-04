@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import type { TestCasesPage, TestCaseWithStats } from '~~/types/api';
+import type { ApiResponse, TestCasesPage, TestCaseWithStats } from '~~/types/api';
 import type { TestCasesSort } from '#shared/handlers/projects';
+import {
+  CATALOG_SEARCH_FIELDS,
+  formatTestSearchTerm,
+  parseTestSearch,
+  testSearchHighlights,
+  type TestSearchValues,
+} from '#shared/test-search';
+import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
+import { splitSuitePath } from '#shared/utils/suites';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
+import { fileGroupRows, type TestPosition } from '~/utils/test-list-order';
 
 const props = defineProps<{
   projectId: string | number;
@@ -16,18 +26,22 @@ const emit = defineEmits<{ total: [total: number] }>();
 const route = useRoute();
 const router = useRouter();
 
-// Group by File shows the spec-health numbers as headers; None is the flat list.
-const GROUP_OPTIONS = ['none', 'file'] as const;
+// Group by File (and File + Describe) shows each file's numbers as headers;
+// None is the flat, paged list.
+const GROUP_OPTIONS = ['none', 'file', 'file-describe'] as const;
 type GroupBy = (typeof GROUP_OPTIONS)[number];
 const { raw: groupByRaw, set: setGroupBy } = useGroupByCookie('project-test-cases', GROUP_OPTIONS);
 const groupBy = computed<GroupBy>({
   get: () => (groupByRaw.value as GroupBy) ?? 'none',
   set: (v) => setGroupBy(v),
 });
-const grouped = computed(() => groupBy.value === 'file');
+const grouped = computed(() => groupBy.value !== 'none');
+/** The describe blocks are on the row unless the grouping shows them as headers. */
+const showSuitePath = computed(() => groupBy.value !== 'file-describe');
 const GROUP_BY_ITEMS = [
-  { label: 'None', value: 'none' },
   { label: 'File', value: 'file' },
+  { label: 'File + Describe', value: 'file-describe' },
+  { label: 'None', value: 'none' },
 ];
 
 const GROUP_LIMIT = 1000;
@@ -53,25 +67,66 @@ const STATUS_OPTIONS = [
   { label: "Didn't run", value: 'didnotrun' },
 ] as const;
 
+// File order is where each test is declared: file, then line — the order
+// Playwright lists and runs them. Each sort starts in its useful direction.
+const DEFAULT_SORT: TestCasesSort = 'file';
+const SORT_DIRECTIONS: Record<TestCasesSort, 'asc' | 'desc'> = {
+  file: 'asc',
+  lastRun: 'desc',
+  title: 'asc',
+  status: 'asc',
+  totalRuns: 'desc',
+  passRate: 'asc',
+  avgDuration: 'desc',
+};
+const SORT_OPTIONS: { label: string; value: TestCasesSort }[] = [
+  { label: 'File order', value: 'file' },
+  { label: 'Last run', value: 'lastRun' },
+  { label: 'Test', value: 'title' },
+  { label: 'Status', value: 'status' },
+  { label: 'Runs', value: 'totalRuns' },
+  { label: 'Pass rate', value: 'passRate' },
+  { label: 'Avg duration', value: 'avgDuration' },
+];
+
 // The public demo's seed data is anchored at a fixed past date, so an age
 // window would render the catalog empty there — default to all time instead.
 const defaultAge = useRuntimeConfig().public.demoMode ? 0 : 30;
 
 const init = props.syncQuery ? route.query : {};
+
+/**
+ * The `tags`, `locks` and `owner` URL parameters, as search qualifiers: links
+ * that filter the catalog by them keep working and show up in the search box.
+ */
+function qualifiersFromUrl(query: Record<string, unknown>): string {
+  const str = (value: unknown) => (typeof value === 'string' ? value : undefined);
+  const terms = [
+    ...parseTagFilter(str(query.tags)).map((tag) => formatTestSearchTerm('tag', tag)),
+    ...parseLockFilter(str(query.locks)).map((lock) => formatTestSearchTerm('lock', lock)),
+  ];
+  const owner = str(query.owner)?.trim();
+  if (owner) terms.push(formatTestSearchTerm('owner', owner));
+  return terms.join(' ');
+}
+
 const page = ref(Math.max(1, Number(init.page) || 1));
-const q = ref(typeof init.q === 'string' ? init.q : '');
+const q = ref([typeof init.q === 'string' ? init.q.trim() : '', qualifiersFromUrl(init)].filter(Boolean).join(' '));
 const searchInput = ref(q.value);
 const statuses = ref<string[]>(typeof init.status === 'string' ? init.status.split(',').filter(Boolean) : []);
 const age = ref(typeof init.age === 'string' && init.age !== '' ? Math.max(0, Number(init.age) || 0) : defaultAge);
-const tagsFilter = ref(typeof init.tags === 'string' ? init.tags : '');
-const tagsInput = ref(tagsFilter.value);
-const locksFilter = ref(typeof init.locks === 'string' ? init.locks : '');
-const locksInput = ref(locksFilter.value);
-// Owner filter — deep-linked from a cluster's "Owner" line; set only via the URL,
-// cleared with its chip. Narrows to tests declared to / derived for that owner.
-const ownerFilter = ref(typeof init.owner === 'string' ? init.owner : '');
-const sort = ref<TestCasesSort>(typeof init.sort === 'string' ? (init.sort as TestCasesSort) : 'lastRun');
-const dir = ref<'asc' | 'desc'>(init.dir === 'asc' ? 'asc' : 'desc');
+const sort = ref<TestCasesSort>(
+  SORT_OPTIONS.some((o) => o.value === init.sort) ? (init.sort as TestCasesSort) : DEFAULT_SORT,
+);
+const dir = ref<'asc' | 'desc'>(init.dir === 'asc' || init.dir === 'desc' ? init.dir : SORT_DIRECTIONS[sort.value]);
+/** Picking a sort starts it in its own direction. */
+const sortModel = computed<TestCasesSort>({
+  get: () => sort.value,
+  set: (value) => {
+    sort.value = value;
+    dir.value = SORT_DIRECTIONS[value];
+  },
+});
 const initialPageSize = Number(init.pageSize);
 const pageSize = ref(PAGE_SIZE_OPTIONS.some((o) => o.value === initialPageSize) ? initialPageSize : DEFAULT_PAGE_SIZE);
 
@@ -81,19 +136,7 @@ watch(
     q.value = value.trim();
   }, 300),
 );
-watch(
-  tagsInput,
-  useDebounceFn((value: string) => {
-    tagsFilter.value = value.trim();
-  }, 300),
-);
-watch(
-  locksInput,
-  useDebounceFn((value: string) => {
-    locksFilter.value = value.trim();
-  }, 300),
-);
-watch([q, statuses, tagsFilter, locksFilter, ownerFilter, age, sort, dir, pageSize, grouped], () => {
+watch([q, statuses, age, sort, dir, pageSize, grouped], () => {
   page.value = 1;
 });
 
@@ -102,9 +145,6 @@ const query = computed(() => ({
   offset: grouped.value ? 0 : (page.value - 1) * pageSize.value,
   ...(q.value ? { q: q.value } : {}),
   ...(statuses.value.length > 0 ? { status: statuses.value.join(',') } : {}),
-  ...(tagsFilter.value ? { tags: tagsFilter.value } : {}),
-  ...(locksFilter.value ? { locks: locksFilter.value } : {}),
-  ...(ownerFilter.value ? { owner: ownerFilter.value } : {}),
   maxAgeDays: age.value,
   sort: sort.value,
   dir: dir.value,
@@ -123,22 +163,28 @@ watch(
 );
 
 if (props.syncQuery) {
-  watch([q, statuses, tagsFilter, locksFilter, ownerFilter, age, sort, dir, page, pageSize], () => {
+  const syncUrl = () => {
     router.replace({
       query: {
         ...route.query,
         q: q.value || undefined,
         status: statuses.value.length > 0 ? statuses.value.join(',') : undefined,
-        tags: tagsFilter.value || undefined,
-        locks: locksFilter.value || undefined,
-        owner: ownerFilter.value || undefined,
+        // Folded into the search above.
+        tags: undefined,
+        locks: undefined,
+        owner: undefined,
         age: age.value !== defaultAge ? String(age.value) : undefined,
-        sort: sort.value !== 'lastRun' ? sort.value : undefined,
-        dir: dir.value !== 'desc' ? dir.value : undefined,
+        sort: sort.value !== DEFAULT_SORT ? sort.value : undefined,
+        dir: dir.value !== SORT_DIRECTIONS[sort.value] ? dir.value : undefined,
         page: page.value > 1 ? String(page.value) : undefined,
         pageSize: pageSize.value !== DEFAULT_PAGE_SIZE ? String(pageSize.value) : undefined,
       },
     });
+  };
+  watch([q, statuses, age, sort, dir, page, pageSize], syncUrl);
+  // A link that filtered by tags, locks or owner shows them as search terms, in the URL too.
+  onMounted(() => {
+    if (route.query.tags != null || route.query.locks != null || route.query.owner != null) syncUrl();
   });
 }
 
@@ -148,18 +194,39 @@ function toggleStatus(value: string) {
     : [...statuses.value, value];
 }
 
-const SORT_OPTIONS: { label: string; value: TestCasesSort }[] = [
-  { label: 'Last run', value: 'lastRun' },
-  { label: 'Test', value: 'title' },
-  { label: 'Status', value: 'status' },
-  { label: 'Runs', value: 'totalRuns' },
-  { label: 'Pass rate', value: 'passRate' },
-  { label: 'Avg duration', value: 'avgDuration' },
-];
-
 function toggleDir() {
   dir.value = dir.value === 'asc' ? 'desc' : 'asc';
 }
+
+// ── Search completion and highlighting ─────────────────────────────────────────
+// The values each qualifier can take (files, describe blocks, tags…) come from
+// the whole catalog, fetched the first time the search box is focused.
+type FacetsResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/test-cases/facets.get').default>;
+const searchValues = ref<TestSearchValues | null>(null);
+let facetsAge: number | null = null;
+async function loadFacets() {
+  if (facetsAge === age.value) return;
+  const forAge = age.value;
+  facetsAge = forAge;
+  try {
+    const response = await $fetch<FacetsResponse>(`/api/projects/${props.projectId}/test-cases/facets`, {
+      query: { maxAgeDays: forAge },
+    });
+    if (facetsAge === forAge) searchValues.value = response.values as TestSearchValues;
+  } catch {
+    // Completion falls back to the qualifiers alone.
+    facetsAge = null;
+  }
+}
+watch(age, () => {
+  if (facetsAge !== null) loadFacets();
+});
+
+/** What the applied search matched, marked in each row. */
+const searchHighlights = computed(() => {
+  const parsed = parseTestSearch(q.value, CATALOG_SEARCH_FIELDS);
+  return parsed.terms.length > 0 ? testSearchHighlights(parsed) : null;
+});
 
 /** Tags and ownership metadata rendered as the row's badges. */
 function catalogBadges(tc: TestCaseWithStats) {
@@ -174,6 +241,11 @@ function catalogBadges(tc: TestCaseWithStats) {
   });
 }
 
+/** `file:line:column` when a run reported where the test is, so the IDE opens at it. */
+function catalogLocation(tc: TestCaseWithStats): string | null {
+  return tc.line != null ? `${tc.filePath}:${tc.line}:${tc.column ?? 1}` : null;
+}
+
 const items = computed(() => data.value?.items ?? []);
 const total = computed(() => data.value?.total ?? 0);
 const showingFrom = computed(() => (total.value === 0 ? 0 : (page.value - 1) * pageSize.value + 1));
@@ -181,40 +253,21 @@ const showingTo = computed(() =>
   grouped.value ? items.value.length : Math.min(page.value * pageSize.value, total.value),
 );
 
-// ── Group by File: spec-health numbers as headers ─────────────────────────────
-// The spec-file prefix matches the spec-health endpoint (first two path segments)
-// so each group's header can carry that file's pass rate, flaky rate and timing.
-interface SpecHealth {
-  prefix: string;
-  passRate: number;
-  flakyRate: number;
-  failureCount: number;
-  testCount: number;
-  avgDuration: number;
+// ── Group by File / File + Describe ──────────────────────────────────────────
+// The rows keep the server's sort inside each group; under file order the
+// describe blocks sit among the tests where they are declared.
+const suitePathCache = new WeakMap<TestCaseWithStats, string[]>();
+function suitePathOf(tc: TestCaseWithStats): string[] {
+  let path = suitePathCache.get(tc);
+  if (!path) {
+    path = splitSuitePath(tc.suitePath);
+    suitePathCache.set(tc, path);
+  }
+  return path;
 }
 
-const { data: specHealth, execute: loadSpecHealth } = useFetch<{ specs: SpecHealth[] }>(
-  () => `/api/projects/${props.projectId}/spec-health?days=90`,
-  { lazy: true, server: false, immediate: false },
-);
-
-// Fetch the spec-health numbers the first time the file grouping is shown.
-watch(
-  grouped,
-  (isGrouped) => {
-    if (isGrouped && !specHealth.value) loadSpecHealth();
-  },
-  { immediate: true },
-);
-
-const specHealthByPrefix = computed(() => {
-  const map = new Map<string, SpecHealth>();
-  for (const s of specHealth.value?.specs ?? []) map.set(s.prefix, s);
-  return map;
-});
-
-function specPrefix(filePath: string): string {
-  return filePath.split(/[\\/]/).slice(0, 2).join('/');
+function positionOf(tc: TestCaseWithStats): TestPosition {
+  return { filePath: tc.filePath, suitePath: suitePathOf(tc), line: tc.line, column: tc.column, startedAt: null };
 }
 
 function formatMs(ms: number): string {
@@ -222,69 +275,75 @@ function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** A group's numbers, from the rows under it: the same window as the rows themselves. */
+function groupMetrics(rows: TestCaseWithStats[]) {
+  let passed = 0;
+  let failed = 0;
+  let flaky = 0;
+  let runs = 0;
+  let durationTotal = 0;
+  let timedRuns = 0;
+  for (const row of rows) {
+    passed += row.passedRuns;
+    failed += row.failedRuns;
+    flaky += row.flakyRuns;
+    runs += row.totalRuns;
+    const executed = row.totalRuns - row.skippedRuns - row.didNotRunRuns;
+    if (row.avgDuration != null && executed > 0) {
+      durationTotal += row.avgDuration * executed;
+      timedRuns += executed;
+    }
+  }
+  const executed = passed + failed;
+  const passRate = executed > 0 ? passed / executed : null;
+  return [
+    {
+      label: 'Pass',
+      value: passRate != null ? `${Math.round(passRate * 100)}%` : '—',
+      // A group whose executions were all skipped has no pass rate to judge.
+      tone: passRate != null ? passRateTone(passRate * 100) : ('muted' as const),
+    },
+    { label: 'Flaky', value: executed > 0 ? `${Math.round((flaky / executed) * 100)}%` : '—', tone: 'muted' as const },
+    { label: 'Failures', value: String(failed), tone: failed > 0 ? ('poor' as const) : ('muted' as const) },
+    { label: 'Executions', value: String(runs), tone: 'muted' as const },
+    { label: 'Avg', value: timedRuns > 0 ? formatMs(durationTotal / timedRuns) : '—', tone: 'muted' as const },
+  ];
+}
+
 const collapsedGroups = ref<Set<string>>(new Set());
-function toggleGroup(prefix: string) {
+function toggleGroup(key: string) {
   const next = new Set(collapsedGroups.value);
-  if (next.has(prefix)) next.delete(prefix);
-  else next.add(prefix);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
   collapsedGroups.value = next;
 }
 
-const fileGroups = computed(() => {
-  const groups = new Map<string, TestCaseWithStats[]>();
-  for (const item of items.value) {
-    const prefix = specPrefix(item.filePath);
-    if (!groups.has(prefix)) groups.set(prefix, []);
-    groups.get(prefix)!.push(item);
-  }
-  return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([prefix, rows]) => {
-      const health = specHealthByPrefix.value.get(prefix);
-      const metrics = health
-        ? [
-            {
-              label: 'Pass',
-              value: `${Math.round(health.passRate * 100)}%`,
-              // A file whose executions were all skipped has no pass rate to judge.
-              tone:
-                health.passRate > 0 || health.failureCount > 0
-                  ? passRateTone(health.passRate * 100)
-                  : ('muted' as const),
-            },
-            { label: 'Flaky', value: `${Math.round(health.flakyRate * 100)}%`, tone: 'muted' as const },
-            {
-              label: 'Failures',
-              value: String(health.failureCount),
-              tone: health.failureCount > 0 ? ('poor' as const) : ('muted' as const),
-            },
-            { label: 'Tests', value: String(health.testCount), tone: 'muted' as const },
-            { label: 'Avg', value: formatMs(health.avgDuration), tone: 'muted' as const },
-          ]
-        : null;
-      return { prefix, rows, metrics, open: !collapsedGroups.value.has(prefix) };
-    });
-});
-const hasSearchOrStatusFilter = computed(
-  () =>
-    q.value !== '' ||
-    statuses.value.length > 0 ||
-    tagsFilter.value !== '' ||
-    locksFilter.value !== '' ||
-    ownerFilter.value !== '',
-);
+const hasSearchOrStatusFilter = computed(() => q.value !== '' || statuses.value.length > 0);
 const hasAnyFilter = computed(() => hasSearchOrStatusFilter.value || age.value !== 0);
+
+// A search or status filter opens every group, so no match hides behind a closed header.
+function isOpen(key: string): boolean {
+  return hasSearchOrStatusFilter.value || !collapsedGroups.value.has(key);
+}
+
+const groupRows = computed(() => {
+  if (!grouped.value) return [];
+  const serverOrder = new Map(items.value.map((tc, index) => [tc.id, index]));
+  return fileGroupRows(items.value, {
+    describe: groupBy.value === 'file-describe',
+    position: positionOf,
+    compare: (a, b) => serverOrder.get(a.id)! - serverOrder.get(b.id)!,
+    positional: sort.value === 'file',
+    isOpen,
+    testKey: (tc) => `t${tc.id}`,
+  }).map((row) => (row.kind === 'group' ? { ...row, metrics: groupMetrics(row.tests) } : row));
+});
 
 /** Clears every filter but the age window, which has its own "Show all time". */
 function clearFilters() {
   searchInput.value = '';
   q.value = '';
   statuses.value = [];
-  tagsInput.value = '';
-  tagsFilter.value = '';
-  locksInput.value = '';
-  locksFilter.value = '';
-  ownerFilter.value = '';
 }
 const initialLoading = computed(() => status.value === 'pending' && !data.value);
 
@@ -311,45 +370,20 @@ defineExpose({ refresh });
       />
     </template>
 
-    <!-- Filters, in two rows: text and the catalog's dimensions, then outcomes.
-         How the rows are grouped and sorted sits on the list's own header. -->
+    <!-- Filters, in two rows: the search (words and file:, describe:, tag:…
+         qualifiers) with the age window, then outcomes. How the rows are
+         grouped and sorted sits on the list's own header. -->
     <div class="mb-3 space-y-2">
-      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <UInput
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <TestSearchInput
           v-model="searchInput"
-          placeholder="Search title or file…"
-          icon="i-lucide-search"
-          size="sm"
-          class="w-full sm:w-auto sm:flex-1 sm:min-w-44"
-          aria-label="Search tests"
+          :fields="CATALOG_SEARCH_FIELDS"
+          :values="searchValues"
+          placeholder="Search tests, or filter with file:, describe:, tag:…"
+          class="w-full sm:flex-1"
+          @focus="loadFacets"
         />
-        <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-          <UInput
-            v-model="tagsInput"
-            placeholder="Tags: smoke, api…"
-            icon="i-lucide-tag"
-            size="sm"
-            class="w-full sm:w-40"
-            aria-label="Filter by tag"
-            title="Comma-separated; show only cases carrying every listed tag. A leading @ is optional."
-          />
-          <UInput
-            v-model="locksInput"
-            placeholder="Locks: db, auth…"
-            icon="i-lucide-lock"
-            size="sm"
-            class="w-full sm:w-40"
-            aria-label="Filter by lock"
-            title="Comma-separated; show only cases carrying every listed lock name."
-          />
-          <USelect
-            v-model="age"
-            :items="AGE_OPTIONS"
-            size="sm"
-            class="w-full sm:w-36"
-            aria-label="Last run age filter"
-          />
-        </div>
+        <USelect v-model="age" :items="AGE_OPTIONS" size="sm" class="w-full sm:w-36" aria-label="Last run age filter" />
       </div>
 
       <div class="flex flex-wrap items-center gap-1">
@@ -361,19 +395,6 @@ defineExpose({ refresh });
           :pressed="statuses.includes(opt.value)"
           @click="toggleStatus(opt.value)"
         />
-        <UButton
-          v-if="ownerFilter"
-          size="xs"
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-users"
-          trailing-icon="i-lucide-x"
-          class="ml-1"
-          :title="`Clear owner filter: ${ownerFilter}`"
-          @click="ownerFilter = ''"
-        >
-          Owner: {{ ownerFilter }}
-        </UButton>
         <UButton
           v-if="hasSearchOrStatusFilter"
           size="xs"
@@ -436,7 +457,7 @@ defineExpose({ refresh });
               <div class="flex items-center gap-1.5 min-w-0">
                 <span class="text-xs text-muted">Sort</span>
                 <USelect
-                  v-model="sort"
+                  v-model="sortModel"
                   :items="SORT_OPTIONS"
                   size="xs"
                   class="min-w-0 flex-1 sm:w-32 sm:flex-none"
@@ -455,34 +476,41 @@ defineExpose({ refresh });
             </div>
           </div>
 
-          <!-- Group by File: a header row carries the spec-health numbers per spec file -->
+          <!-- Group by File (+ Describe): a header per file and describe block, with its numbers -->
           <template v-if="grouped">
-            <template v-for="group in fileGroups" :key="group.prefix">
+            <template v-for="row in groupRows" :key="row.key">
               <TestRowGroup
-                :label="group.prefix"
-                :count="group.rows.length"
-                :open="group.open"
-                :metrics="group.metrics"
-                icon="i-lucide-folder"
-                @toggle="toggleGroup(group.prefix)"
+                v-if="row.kind === 'group'"
+                :label="row.label"
+                :count="row.tests.length"
+                :open="isOpen(row.key)"
+                :depth="row.depth"
+                :metrics="row.metrics"
+                :icon="row.isFile ? 'i-lucide-file-code-2' : 'i-lucide-folder'"
+                :file-path="row.isFile ? row.filePath : null"
+                :highlight="row.isFile ? searchHighlights?.file : searchHighlights?.describe"
+                :project-key="projectId"
+                :project-name="projectName"
+                @toggle="toggleGroup(row.key)"
               />
-              <template v-if="group.open">
-                <TestRow
-                  v-for="tc in group.rows"
-                  :key="tc.id"
-                  :href="`/test-cases/${tc.id}`"
-                  :title="tc.title"
-                  :status="tc.status"
-                  :file-path="tc.filePath"
-                  :badges="catalogBadges(tc)"
-                  :project-key="projectId"
-                  :project-name="projectName"
-                >
-                  <template #metrics>
-                    <CatalogRowFacts :tc="tc" />
-                  </template>
-                </TestRow>
-              </template>
+              <TestRow
+                v-else
+                :href="`/test-cases/${row.test.id}`"
+                :title="row.test.title"
+                :status="row.test.status"
+                :location="catalogLocation(row.test)"
+                :file-path="catalogLocation(row.test) ? null : row.test.filePath"
+                :suite-path="showSuitePath ? suitePathOf(row.test) : null"
+                :highlight="searchHighlights"
+                :badges="catalogBadges(row.test)"
+                :indent="row.depth * 16"
+                :project-key="projectId"
+                :project-name="projectName"
+              >
+                <template #metrics>
+                  <CatalogRowFacts :tc="row.test" />
+                </template>
+              </TestRow>
             </template>
           </template>
 
@@ -494,7 +522,10 @@ defineExpose({ refresh });
               :href="`/test-cases/${tc.id}`"
               :title="tc.title"
               :status="tc.status"
-              :file-path="tc.filePath"
+              :location="catalogLocation(tc)"
+              :file-path="catalogLocation(tc) ? null : tc.filePath"
+              :suite-path="suitePathOf(tc)"
+              :highlight="searchHighlights"
               :badges="catalogBadges(tc)"
               :project-key="projectId"
               :project-name="projectName"

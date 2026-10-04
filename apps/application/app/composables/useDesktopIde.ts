@@ -16,7 +16,7 @@
  */
 import type { IdeFamily } from '~/utils/ide-links';
 
-export interface DesktopIdeOpenResult {
+interface DesktopIdeOpenResult {
   /** The launcher opened the file. */
   ok: boolean;
   /**

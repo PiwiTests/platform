@@ -12,13 +12,18 @@ interface DomSnapshotResponse {
   html?: string;
   snapshotName?: string;
   viewport?: { width: number; height: number };
+  /** `dom` for the trace's DOM, `aria` for the page rendered from the ARIA tree when no trace DOM exists. */
+  source?: 'dom' | 'aria';
 }
 
 /**
  * An execution's DOM snapshot: whether one exists, its viewport and its lean
- * HTML (`dom-snapshot`), and where the rendered page loads from. The served app
- * (web and desktop) loads it from `dom-snapshot-frame`, which embeds the trace's
- * stylesheets and images and carries its own `sandbox allow-scripts` CSP; a
+ * HTML (`dom-snapshot`), and where the rendered page loads from. `hasDom` is
+ * the trace's DOM only; `hasSnapshot` also counts the page the endpoint renders
+ * from the ARIA tree when there is no trace DOM, which the locator picker can
+ * pick from too. The served app (web and desktop) loads it from
+ * `dom-snapshot-frame`, which embeds the trace's stylesheets and images and
+ * carries its own `sandbox allow-scripts` CSP; a
  * `srcdoc` frame would inherit the desktop page's `strict-dynamic` policy, which
  * blocks the inline measure script. The demo has no server, so it renders the
  * HTML through `srcdoc`. `at` names one trace action's snapshot to render first
@@ -56,7 +61,8 @@ export function useDomSnapshot(
     if (toValue(ready)) void execute();
   });
   const html = computed(() => snapshot.value?.html ?? null);
-  const hasDom = computed(() => snapshot.value?.status === 'ok' && !!html.value);
+  const hasSnapshot = computed(() => snapshot.value?.status === 'ok' && !!html.value);
+  const hasDom = computed(() => hasSnapshot.value && snapshot.value?.source !== 'aria');
   const viewport = computed(() => snapshot.value?.viewport ?? null);
 
   const frameSrc = computed(() => {
@@ -68,5 +74,5 @@ export function useDomSnapshot(
     isDemo && import.meta.client && html.value ? buildReadonlyDocument(html.value) : undefined,
   );
 
-  return { snapshot, pending, html, hasDom, viewport, frameSrc, srcDoc };
+  return { snapshot, pending, html, hasSnapshot, hasDom, viewport, frameSrc, srcDoc };
 }

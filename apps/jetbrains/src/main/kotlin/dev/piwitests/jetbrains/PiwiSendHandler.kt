@@ -1,7 +1,6 @@
 package dev.piwitests.jetbrains
 
 import com.google.gson.Gson
-import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.generateServiceName
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -35,7 +34,7 @@ import java.util.concurrent.CompletableFuture
 
 /** The pairing token Piwi Picker sends with each request, kept in the password safe. */
 object PiwiSendToken {
-    private val attributes = CredentialAttributes(generateServiceName("Piwi", "sendToken"))
+    private val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
 
     @Volatile private var cached: String? = null
 
@@ -89,19 +88,25 @@ class PiwiSendHandler : HttpRequestHandler() {
         return true
     }
 
-    /** Render a recorded flow through the editor service, then insert at the caret; completes with the file's path. */
+    /**
+     * Render a recorded flow through the editor service, for the page expression at the caret and with its imports
+     * apart, then insert it at the caret; completes with the file's path.
+     */
     private fun insert(payload: Glue.SendPayload): CompletableFuture<String?> {
         val result = CompletableFuture<String?>()
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val project = targetProject() ?: throw IllegalStateException("no project is open")
-                val editorFile = editorFileOf(project)
+                val caret = caretOf(project)
+                var imports = emptyList<String>()
                 val text = when (payload) {
                     is Glue.SendPayload.Locator -> payload.text
                     is Glue.SendPayload.Steps -> {
                         val server = project.service<PiwiProjectService>().server()
                             ?: throw IllegalStateException("the Piwi editor service is not running in this project")
-                        val rendered = server.renderSteps(RenderStepsParams(editorFile ?: "", payload.steps)).orNull()
+                        val params = RenderStepsParams(caret?.uri ?: "", payload.steps, caret?.line, caret?.character, "separate")
+                        val rendered = server.renderSteps(params).orNull()
+                        imports = rendered?.imports.orEmpty()
                         rendered?.code?.takeIf { it.isNotBlank() }
                             ?: throw IllegalStateException(rendered?.warnings?.joinToString("; ") ?: "nothing to insert")
                     }
@@ -109,7 +114,7 @@ class PiwiSendHandler : HttpRequestHandler() {
                 }
                 ApplicationManager.getApplication().invokeLater {
                     try {
-                        result.complete(insertAtCaret(project, text, payload is Glue.SendPayload.Locator))
+                        result.complete(insertAtCaret(project, text, imports, payload is Glue.SendPayload.Locator))
                     } catch (e: Exception) {
                         result.completeExceptionally(e)
                     }
@@ -125,17 +130,27 @@ class PiwiSendHandler : HttpRequestHandler() {
         IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
             ?: ProjectManager.getInstance().openProjects.firstOrNull { !it.isDefault }
 
-    /** The URI of the file open in the project's editor, when it is on disk. */
-    private fun editorFileOf(project: Project): String? {
-        val future = CompletableFuture<String?>()
+    /** The file open in the project's editor (its URI, when it is on disk) and its caret, 0-based. */
+    private data class Caret(val uri: String?, val line: Int, val character: Int)
+
+    private fun caretOf(project: Project): Caret? {
+        val future = CompletableFuture<Caret?>()
         ApplicationManager.getApplication().invokeLater {
-            val file = FileEditorManager.getInstance(project).selectedTextEditor?.virtualFile
-            future.complete(file?.let { runCatching { it.toNioPath().toUri().toString() }.getOrNull() })
+            val editor = FileEditorManager.getInstance(project).selectedTextEditor
+            future.complete(
+                editor?.let {
+                    val offset = it.caretModel.offset
+                    val line = it.document.getLineNumber(offset)
+                    val uri = it.virtualFile?.let { file -> runCatching { file.toNioPath().toUri().toString() }.getOrNull() }
+                    Caret(uri, line, offset - it.document.getLineStartOffset(line))
+                },
+            )
         }
         return future.get(10, java.util.concurrent.TimeUnit.SECONDS)
     }
 
-    private fun insertAtCaret(project: Project, text: String, locator: Boolean): String? {
+    /** Inserts `text` at the caret, and the `imports` the file lacks after its imports, as one command. */
+    private fun insertAtCaret(project: Project, text: String, imports: List<String>, locator: Boolean): String? {
         val editor = FileEditorManager.getInstance(project).selectedTextEditor
             ?: throw IllegalStateException("no editor is open in ${project.name}")
         val document = editor.document
@@ -147,6 +162,7 @@ class PiwiSendHandler : HttpRequestHandler() {
             val start = caret.selectionStart
             document.replaceString(start, caret.selectionEnd, block)
             caret.moveToOffset(start + block.length)
+            Glue.importInsertion(document.immutableCharSequence, imports)?.let { document.insertString(it.offset, it.text) }
         })
         PiwiCommands.notify(project, if (locator) "Inserted the locator from Piwi Picker." else "Inserted the recorded steps from Piwi Picker.")
         return editor.virtualFile?.path

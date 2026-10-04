@@ -1,10 +1,13 @@
+import { moveLegacySecret, secretArea, type SecretArea } from './secret-store.js';
+
 /**
  * The optional pairing with the Piwi Dashboard desktop app: its loopback
  * address and access token, which **Pair** receives once the developer allows
  * it in the app's window, or which are pasted from the app's **Connect Piwi
- * Picker** (the extension cannot read `~/.piwi/desktop.json`).
- * `chrome.storage.local`, like the instance connection. Used only by the
- * background worker, for **Run with Playwright**, and by the options page.
+ * Picker** (the extension cannot read `~/.piwi/desktop.json`). Kept together in
+ * the secret area (`secret-store.ts`), so the token only goes to the address it
+ * was paired with. Used only by the background worker, for **Run with
+ * Playwright**, and by the options page.
  */
 export interface DesktopSettings {
   /** The app's origin, such as `http://127.0.0.1:4318`. */
@@ -45,15 +48,25 @@ export function coerceDesktopSettings(value: unknown): DesktopSettings | null {
   return url && token ? { url, token } : null;
 }
 
-export async function getDesktopSettings(): Promise<DesktopSettings | null> {
-  const stored = await chrome.storage.local.get(DESKTOP_KEY);
-  return coerceDesktopSettings(stored[DESKTOP_KEY]);
+export async function getDesktopSettings(area: SecretArea = secretArea()): Promise<DesktopSettings | null> {
+  await moveLegacyDesktopSettings(area);
+  return coerceDesktopSettings(await area.get('desktop'));
 }
 
-export async function setDesktopSettings(settings: DesktopSettings): Promise<void> {
-  await chrome.storage.local.set({ [DESKTOP_KEY]: settings });
+export async function setDesktopSettings(settings: DesktopSettings, area: SecretArea = secretArea()): Promise<void> {
+  await area.set('desktop', settings);
 }
 
-export async function clearDesktopSettings(): Promise<void> {
+export async function clearDesktopSettings(area: SecretArea = secretArea()): Promise<void> {
+  await area.remove('desktop');
   await chrome.storage.local.remove(DESKTOP_KEY);
+}
+
+/** Moves the pairing an older version kept in `chrome.storage.local` (`piwiDesktop`) into the secret area. */
+export async function moveLegacyDesktopSettings(area: SecretArea = secretArea()): Promise<void> {
+  const stored = await chrome.storage.local.get(DESKTOP_KEY);
+  if (stored[DESKTOP_KEY] === undefined) return;
+  await moveLegacySecret(area, 'desktop', coerceDesktopSettings(stored[DESKTOP_KEY]), () =>
+    chrome.storage.local.remove(DESKTOP_KEY),
+  );
 }

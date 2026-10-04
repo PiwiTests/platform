@@ -6,12 +6,10 @@
  */
 import { createHash } from 'node:crypto';
 import { apiError } from './api-error';
-import { eq } from 'drizzle-orm';
 import { getDatabase } from '../database';
-import { projects } from '../database/schema';
-import type { Project } from '../database/schema';
 import { getStorage } from '../storage';
-import { getProjectScope, scopeAllows } from './project-access';
+import { getProjectScope } from './project-access';
+import { resolveIngestProject } from './ingest-project';
 import { resolveMaxUploadBytes } from './upload-limits';
 import { sanitizeFilename } from './sanitize-filename';
 import { persistRunCases } from './persist-run-cases';
@@ -65,21 +63,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
 
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, projectName));
-  let project: Project | undefined = existingProjects[0];
-
-  if (project) {
-    if (!scopeAllows(scope, project.id)) {
-      throw apiError({ statusCode: 403, message: 'No access to this project' });
-    }
-  } else {
-    if (scope !== 'all') {
-      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-    }
-    const created = await db.insert(projects).values({ name: projectName }).returning();
-    project = created[0];
-  }
-  if (!project) throw apiError({ statusCode: 500, message: 'Failed to create or retrieve project' });
+  const project = await resolveIngestProject(db, scope, projectName);
 
   const duplicate = await findImportedRun(db, project.id, importHash);
   if (duplicate) return duplicate;
@@ -160,8 +144,8 @@ function createServerImportPort(): ImportPort {
   const storage = getStorage();
 
   return {
-    persistRunCases: (db, projectId, testRunId, cases) =>
-      persistRunCases(db as never, projectId, testRunId, cases as never),
+    persistRunCases: (db, projectId, testRunId, cases, options) =>
+      persistRunCases(db as never, projectId, testRunId, cases as never, options),
 
     async storeFile({
       projectId,

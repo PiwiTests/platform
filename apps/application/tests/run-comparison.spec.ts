@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect, type APIRequestContext } from './fixtures';
 import { waitForHydration } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
@@ -177,5 +177,95 @@ test.describe.serial('Run Comparison', () => {
     // "dashboard loads" passed in run 1 and failed in run 2, so it is a new failure.
     await expect(page.getByText('New failures')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('dashboard loads')).toBeVisible();
+  });
+});
+
+/**
+ * A project whose runs never passed: the first run has nothing to compare
+ * with, a run whose only earlier run was interrupted offers that run to pick,
+ * and a later run is compared with the last failed run, which the note says.
+ */
+test.describe.serial('Changes tab without a passing run', () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const testCase = (title: string, status: 'passed' | 'failed', line: number) => ({
+    title,
+    status,
+    duration: 400,
+    location: `tests/cart.spec.ts:${line}:3`,
+    retries: 0,
+    ...(status === 'failed' ? { error: 'Error: expect(received).toBe(expected)' } : {}),
+  });
+
+  async function submit(
+    request: APIRequestContext,
+    status: string,
+    minutes: number,
+    cases: ReturnType<typeof testCase>[],
+  ): Promise<number> {
+    const failed = cases.filter((c) => c.status === 'failed').length;
+    const res = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.RUN_CHANGES_FALLBACK,
+        status,
+        startTime: minutesAgo(minutes),
+        duration: 1000,
+        totalTests: cases.length,
+        passedTests: cases.length - failed,
+        failedTests: failed,
+        skippedTests: 0,
+        metadata: { scm: { branch: 'main' } },
+        testCases: cases,
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    return (await res.json()).runId;
+  }
+
+  let interrupted = 0;
+  let firstFailed = 0;
+  let latest = 0;
+
+  test('seeds an interrupted run, then two failed runs', async ({ request }) => {
+    interrupted = await submit(request, 'interrupted', 30, [testCase('cart total', 'passed', 5)]);
+    firstFailed = await submit(request, 'failed', 20, [
+      testCase('cart total', 'passed', 5),
+      testCase('coupon applies', 'failed', 12),
+    ]);
+    latest = await submit(request, 'failed', 10, [
+      testCase('cart total', 'failed', 5),
+      testCase('coupon applies', 'passed', 12),
+    ]);
+  });
+
+  test('the first run has no earlier run to compare with', async ({ page }) => {
+    await page.goto(`/test-runs/${interrupted}?tab=changes`);
+    await waitForHydration(page);
+    await expect(page.getByText('No earlier run to compare with')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('with only an interrupted run before it, a run offers that run to pick', async ({ page }) => {
+    await page.goto(`/test-runs/${firstFailed}?tab=changes`);
+    await waitForHydration(page);
+    await expect(page.getByText('No baseline run found')).toBeVisible({ timeout: 15000 });
+
+    await page.getByTitle('Compare against one earlier run').click();
+    const option = page.getByRole('option', { name: new RegExp(`Run #${interrupted}\\b`) });
+    await expect(option).toContainText('interrupted');
+    await option.click();
+
+    await page.waitForURL(new RegExp(`[?&]baseline=${interrupted}\\b`));
+    await expect(page.getByText('The run you picked.')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('a later run is compared with the last failed run, and the note says so', async ({ page }) => {
+    await page.goto(`/test-runs/${latest}?tab=changes`);
+    await waitForHydration(page);
+
+    await expect(page.getByRole('link', { name: `Run #${firstFailed}` })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('No earlier full run passed; the last failed run on')).toBeVisible();
+    await expect(page.getByText('Passed in the baseline, failing here')).toBeVisible();
+    await expect(page.getByText('cart total')).toBeVisible();
+    await expect(page.getByText('Failed in the baseline, passing here')).toBeVisible();
+    await expect(page.getByText('coupon applies')).toBeVisible();
   });
 });

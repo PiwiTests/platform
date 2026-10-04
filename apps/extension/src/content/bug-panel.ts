@@ -1,33 +1,41 @@
 import { installPickerOverlay, removePickerOverlay, highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import {
   normalizeSteps,
+  sessionFromEvents,
+  stepViews,
   VALUE_MATCHERS,
   type AssertionMatcher,
+  type RawCaptureEvent,
   type RecordedStep,
   type RecordedTarget,
   type StepAssertion,
 } from '@piwitests/core/recording';
 import {
+  BUG_REPORT_EXTENSION,
+  BUG_REPORT_MEDIA_TYPE,
   bugContextFrom,
   describeStepInWords,
   emptyBugEvidence,
   expectedSteps,
   renderBugSpec,
   summarizeEvidence,
-  type BugConsoleEntry,
   type BugContext,
-  type BugFailedRequest,
 } from '@piwitests/core/bug-report';
 import { parseLocatorChain, renderLocatorChain } from '@piwitests/core/locator-chain';
 import { suggestAssertions } from './assertion-suggest.js';
+import { isSensitiveField } from './sensitive-fields.js';
+import { pickerOverlayStrings } from './picker-strings.js';
 import { DomModel } from './engine-aria.js';
 import { createLocatorEngine } from './locator-engine.js';
 import { buildOutline, outlineRoot } from './bug-outline.js';
 import {
   assembleBugReport,
+  bugReportArchive,
   bugReportMarkdown,
-  bugReportZip,
   NO_SCREENSHOT_TAKEN,
+  stepShotsOf,
+  stepViewIds,
+  withoutStepShots,
   type ReportLanguage,
 } from './bug-report-files.js';
 import { codegenWarningText, interfacePhrases } from '../shared/core-words.js';
@@ -38,21 +46,31 @@ import {
   PANEL_HOST_ID,
   SHARED_STYLE,
   copyToClipboard,
-  downloadBlob,
   fileStamp,
+  hideSurfaces,
   isOwnHost,
+  mountSurface,
 } from './record-ui.js';
+import { downloadBlob } from '../shared/download.js';
 import {
   addBugScreenshot,
-  appendBugEntries,
   getBugEvidence,
   getBugScreenshots,
   setBugEvidenceFields,
+  type ScreenshotFailure,
   type StoredBugEvidence,
 } from '../shared/bug-storage.js';
-import { BUG_RELAY, ownOrigin, readRelayedEntry } from '../shared/bug-relay.js';
-import { t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
+import {
+  endTool,
+  installEscapeToCancel,
+  startTool,
+  teardownToolSurfaces,
+  toolIsCurrent,
+  waitForGlobal,
+} from '../shared/tool-session.js';
+import { formatNumber, t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
 import type { RecordingState } from '../shared/recording-storage.js';
+import type { StoredStepView } from '../shared/step-views.js';
 import { attachPanelShadow } from './panel-root.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { activePathPrefixes } from '../shared/active-project.js';
@@ -62,9 +80,10 @@ import { openSendPreview, SEND_DIALOG_HOST_ID, sendTarget } from './bug-send-pan
  * The bug recording's page UI: its HUD, the three ways to say what is wrong
  * (a picked element's expected value or state, an element that is missing,
  * the page the flow should have reached), its screenshots and page outline,
- * the relay that receives the main-world evidence script's entries, and the
- * finish panel that exports the report. `record-panel.ts` does the recording
- * itself and calls into this module when the recording is a bug report.
+ * and the finish panel that exports the report. `record-panel.ts` does the
+ * recording itself, relays the main-world evidence script's entries
+ * (`shared/bug-relay.ts`), and calls into this module when the recording is a
+ * bug report.
  */
 
 /** What `record-panel.ts` lends this module to record an assertion. */
@@ -77,17 +96,45 @@ export interface BugRecorderHooks {
 }
 
 /**
- * Why a report has no screenshot, as the report stores it. The panels show
+ * Why a report has no screenshot, as the report stores it: the browser takes
+ * one only under the `activeTab` grant. The panels show
  * {@link screenshotNoteText} instead, in the interface language.
  */
-export const NO_SCREENSHOT_NOTE =
+const NO_SCREENSHOT_NOTE =
   'Chrome lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose Take a screenshot.';
+/** The same in Firefox, whose grant is the same. */
+const NO_SCREENSHOT_NOTE_FIREFOX =
+  'Firefox lets Piwi Picker take a screenshot only after you open it on this tab. Open Piwi Picker and choose Take a screenshot.';
+
+/** Why a report has no screenshot when its tab was in the background, as the report stores it. */
+const TAB_NOT_IN_FRONT_NOTE = 'The tab was not the one in front, and the browser captures only the tab on screen.';
+
+/** Why a report has no screenshot when the browser gave none for another reason, as the report stores it. */
+const SCREENSHOT_FAILED_NOTE = 'The browser could not take the screenshot.';
+
+/** Why a report has no screenshot when session storage had no room for the last one, as the report stores it. */
+const SCREENSHOT_NOT_KEPT_NOTE = 'The screenshot was too large to keep in this browser’s storage.';
 
 /** A stored screenshot note in the interface language; a note this module does not know stays as it is. */
 function screenshotNoteText(note: string): string {
   if (note === NO_SCREENSHOT_NOTE) return t('bug_screenshotBlocked', { action: t('popup_takeScreenshot') });
+  if (note === NO_SCREENSHOT_NOTE_FIREFOX) {
+    return t('bug_screenshotBlockedFirefox', { action: t('popup_takeScreenshot') });
+  }
+  if (note === TAB_NOT_IN_FRONT_NOTE) return t('bug_screenshotNotInFront');
+  if (note === SCREENSHOT_FAILED_NOTE) return t('bug_screenshotFailed');
+  if (note === SCREENSHOT_NOT_KEPT_NOTE) return t('bug_screenshotNotKept');
   if (note === NO_SCREENSHOT_TAKEN) return t('bug_noScreenshotNone');
   return note;
+}
+
+/** The note for a screenshot the worker could not take, by the reason it gave. */
+function screenshotFailureNote(reason: ScreenshotFailure | undefined): string {
+  if (reason === 'not-granted') {
+    return navigator.userAgent.includes('Firefox/') ? NO_SCREENSHOT_NOTE_FIREFOX : NO_SCREENSHOT_NOTE;
+  }
+  if (reason === 'not-in-front') return TAB_NOT_IN_FRONT_NOTE;
+  return SCREENSHOT_FAILED_NOTE;
 }
 
 /** The report's Markdown in the interface language. */
@@ -132,14 +179,21 @@ const PANEL_CSS = `
   .evidence { font-size: 12px; color: #9ca3af; }
   .warn { color: #fca5a5; font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
   .local { color: #9ca3af; font-size: 11px; margin-top: 10px; }
+  label.keep { display: flex; align-items: center; gap: 6px; font-size: 12px; color: inherit; margin: 8px 0 2px; }
+  label.keep input { width: auto; margin: 0; }
   @media (prefers-color-scheme: light) {
     .sub, label, .step-idx, .evidence, .local { color: #6b7280; }
+    label.keep { color: inherit; }
     .message, .warn, .step-actual { color: #b91c1c; }
   }
 `;
 
 interface BugPanelGlobals {
   __piwiBugFlow?: boolean;
+  /** Ends the pick of the flow on screen, as a cancel: see {@link cancelBugPick}. */
+  __piwiBugPickCancel?: () => void;
+  /** The HUD on screen, its shadow root and its evidence line: see {@link updateBugHudEvidence}. */
+  __piwiBugHud?: { host: HTMLElement; root: ShadowRoot; summary: HTMLElement };
   __piwiPickState?: string;
   __piwiPickedElement?: Element;
 }
@@ -155,45 +209,64 @@ function clearPickGlobals(): void {
   delete g.__piwiPickedElement;
 }
 
-function waitForPick(): Promise<string> {
-  return new Promise((resolve) => {
-    const check = () => {
-      const state = panelGlobals().__piwiPickState;
-      if (state !== undefined) resolve(state);
-      else setTimeout(check, 100);
-    };
-    check();
-  });
+/**
+ * Ends Mark what's wrong's pick, if one is on screen, as Escape does: its
+ * overlay goes and the flow records nothing. Capture stopping calls it; a
+ * global, since each injection of the recorder is its own module instance.
+ */
+export function cancelBugPick(): void {
+  panelGlobals().__piwiBugPickCancel?.();
+}
+
+/**
+ * Picks an element as a pick tool of its own (`tool-session.ts`): a Pick
+ * started meanwhile leaves it be, any other tool, Escape or
+ * {@link cancelBugPick} ends it. Answers the element picked, or null.
+ */
+export async function pickElement(): Promise<Element | null> {
+  const g = panelGlobals();
+  const epoch = startTool('pick', teardownToolSurfaces);
+  installEscapeToCancel();
+  const cancel = () => endTool(epoch);
+  g.__piwiBugPickCancel = cancel;
+  try {
+    clearPickGlobals();
+    installPickerOverlay({ transport: 'global', failing: null, strings: pickerOverlayStrings() });
+    const state = await waitForGlobal<string>('__piwiPickState', epoch);
+    // Another tool took over: the overlay and the pick globals are its own.
+    if (!toolIsCurrent(epoch)) return null;
+    const element = g.__piwiPickedElement;
+    return state === 'picked' && element ? element : null;
+  } finally {
+    if (g.__piwiBugPickCancel === cancel) delete g.__piwiBugPickCancel;
+    if (toolIsCurrent(epoch)) {
+      removePickerOverlay();
+      clearPickGlobals();
+    }
+    endTool(epoch);
+  }
 }
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-/** Hides a host until the returned function is called. */
-function hide(host: HTMLElement | null): () => void {
-  if (!host) return () => undefined;
-  const previous = host.style.visibility;
-  host.style.visibility = 'hidden';
-  return () => {
-    host.style.visibility = previous;
-  };
-}
-
-/** Hides the recorder's own surfaces for the duration of `run`, so a screenshot or a pick shows only the page. */
+/** Hides the recorder's own surfaces for the duration of `run`, so a screenshot shows only the page. */
 async function withSurfacesHidden<T>(run: () => Promise<T>): Promise<T> {
-  const restore = [HUD_HOST_ID, FRAME_HOST_ID, BUG_DIALOG_HOST_ID].map((id) => hide(document.getElementById(id)));
+  const show = hideSurfaces([HUD_HOST_ID, FRAME_HOST_ID, BUG_DIALOG_HOST_ID]);
   try {
     return await run();
   } finally {
-    for (const show of restore) show();
+    show();
   }
 }
 
 /**
- * Asks the background worker for a screenshot of this tab and keeps it. Chrome
- * allows one only under the `activeTab` grant; without it the report notes why
- * there is none instead of asking for a wider permission.
+ * Asks the background worker for a screenshot of this tab and keeps it.
+ * Without the debugging session the browser allows one only under the
+ * `activeTab` grant; when the worker gets none, the report notes why, by the
+ * reason the worker gives, instead of asking for a wider permission. Never
+ * rejects: a screenshot session storage has no room for leaves a note saying so.
  */
 export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', step: number | null): Promise<boolean> {
   const response = await withSurfacesHidden(async () => {
@@ -202,18 +275,65 @@ export async function takeBugScreenshot(moment: 'marked' | 'finish' | 'manual', 
     try {
       return (await chrome.runtime.sendMessage({ type: 'piwi-bug-screenshot' })) as
         | { ok: true; dataUrl: string }
-        | { ok: false; error?: string }
+        | { ok: false; error?: string; reason?: ScreenshotFailure }
         | undefined;
     } catch {
       return undefined;
     }
   });
-  if (response?.ok && typeof response.dataUrl === 'string' && response.dataUrl.startsWith('data:image/')) {
-    await addBugScreenshot({ moment, step, takenAt: Date.now(), dataUrl: response.dataUrl });
-    return true;
+  try {
+    if (response?.ok && typeof response.dataUrl === 'string' && response.dataUrl.startsWith('data:image/')) {
+      await addBugScreenshot({ moment, step, takenAt: Date.now(), dataUrl: response.dataUrl });
+      return true;
+    }
+    await setBugEvidenceFields({ screenshotNote: screenshotFailureNote(response?.ok ? undefined : response?.reason) });
+  } catch {
+    await setBugEvidenceFields({ screenshotNote: SCREENSHOT_NOT_KEPT_NOTE }).catch(() => undefined);
   }
-  await setBugEvidenceFields({ screenshotNote: NO_SCREENSHOT_NOTE });
   return false;
+}
+
+/**
+ * Asks the background worker for a screenshot of the page as the next step
+ * begins, kept under `id` (see `background/step-views.ts`). With `hide`, the
+ * recorder's own surfaces are hidden until the screenshot is taken; an action
+ * that asks as it starts leaves them, rather than delay the page.
+ */
+export async function captureStepView(
+  id: string,
+  viewport: { width: number; height: number },
+  hide: boolean,
+): Promise<void> {
+  const ask = async () => {
+    try {
+      await chrome.runtime.sendMessage({ type: 'piwi-bug-step-view', id, viewport });
+    } catch {
+      // No screenshot for this step: the report goes without it.
+    }
+  };
+  if (!hide) return ask();
+  await withSurfacesHidden(async () => {
+    await nextFrame();
+    await nextFrame();
+    await ask();
+  });
+}
+
+/** The screenshots of the page as each step began that the worker kept for this recording. */
+async function keptStepViews(events: RawCaptureEvent[]): Promise<StoredStepView[]> {
+  const ids = stepViewIds(events);
+  if (ids.length === 0) return [];
+  try {
+    const views = (await chrome.runtime.sendMessage({ type: 'piwi-bug-step-views', ids })) as unknown;
+    return Array.isArray(views)
+      ? views.filter(
+          (v): v is StoredStepView =>
+            typeof v?.id === 'string' && typeof v?.dataUrl === 'string' && v.dataUrl.startsWith('data:image/jpeg;'),
+        )
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /** The context of this page for the report, its page keyed through the path prefixes of the site's URL mapping. */
@@ -245,53 +365,6 @@ export function outlineAround(element: Element | null): string {
 }
 
 // ---------------------------------------------------------------------------
-// Evidence relay
-
-/**
- * Receives the main-world script's entries for this recording and stores them
- * in batches. Listens until `signal` aborts, which is when capture stops.
- */
-export function startEvidenceRelay(token: string, signal: AbortSignal, onStored: () => void): () => Promise<void> {
-  const pendingConsole: BugConsoleEntry[] = [];
-  const pendingRequests: BugFailedRequest[] = [];
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  const flush = async (): Promise<void> => {
-    if (timer != null) clearTimeout(timer);
-    timer = null;
-    if (pendingConsole.length === 0 && pendingRequests.length === 0) return;
-    const entries = { console: pendingConsole.splice(0), requests: pendingRequests.splice(0) };
-    try {
-      await appendBugEntries(entries);
-      onStored();
-    } catch {
-      // Storage full: the recording itself matters more than its evidence.
-    }
-  };
-
-  const hello = () => window.postMessage({ source: BUG_RELAY.HELLO, token }, ownOrigin());
-  window.addEventListener(
-    'message',
-    (e: MessageEvent) => {
-      if (e.source !== window) return;
-      const data = e.data as { source?: unknown } | null;
-      if (data?.source === BUG_RELAY.READY) {
-        hello();
-        return;
-      }
-      const item = readRelayedEntry(data, token);
-      if (!item) return;
-      if (item.kind === 'console') pendingConsole.push(item.entry);
-      else pendingRequests.push(item.entry);
-      timer ??= setTimeout(() => void flush(), 250);
-    },
-    { signal },
-  );
-  hello();
-  return flush;
-}
-
-// ---------------------------------------------------------------------------
 // Dialogs
 
 interface DialogParts {
@@ -304,17 +377,21 @@ interface DialogParts {
 /**
  * A modal dialog over the page, in its own closed shadow root. `build` fills
  * the form and answers the element to focus and a submit function: its value
- * closes the dialog, and null keeps it open (after `say` explained why).
+ * closes the dialog, and null keeps it open (after `say` explained why). A
+ * dialog removed from the page (capture stopped, the page replaced its
+ * content) answers null, as Cancel does. Its main button reads `submitLabel`.
+ * Shared by the bug report's dialogs and a test recording's checks.
  */
-function openBugDialog<T>(
+export function openRecordDialog<T>(
   title: string,
   build: (parts: DialogParts) => { focus: HTMLElement; submit: () => T | null | Promise<T | null> },
+  submitLabel: string = t('bug_addToReport'),
 ): Promise<T | null> {
   document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = BUG_DIALOG_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = PANEL_CSS;
@@ -352,7 +429,7 @@ function openBugDialog<T>(
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
   addBtn.className = 'action primary';
-  addBtn.textContent = t('bug_addToReport');
+  addBtn.textContent = submitLabel;
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'action';
@@ -365,11 +442,16 @@ function openBugDialog<T>(
 
   return new Promise<T | null>((resolve) => {
     const controller = new AbortController();
+    const removed = new MutationObserver(() => {
+      if (!host.isConnected) close(null);
+    });
     const close = (value: T | null) => {
       controller.abort();
+      removed.disconnect();
       host.remove();
       resolve(value);
     };
+    removed.observe(document, { childList: true, subtree: true });
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       void Promise.resolve(submit()).then((value) => {
@@ -395,7 +477,7 @@ function openBugDialog<T>(
   });
 }
 
-function input(value = '', placeholder = ''): HTMLInputElement {
+export function input(value = '', placeholder = ''): HTMLInputElement {
   const el = document.createElement('input');
   el.type = 'text';
   el.value = value;
@@ -431,12 +513,18 @@ const STATE_MATCHERS = new Set<AssertionMatcher>(['toBeVisible', 'toBeHidden', '
 /** What `actual` holds for an element named in Something is missing. */
 const MISSING_ACTUAL = 'not on the page';
 
-/** What can be said to be wrong about an element: its value, text or name, or the opposite of each state it is in. */
+/**
+ * What can be said to be wrong about an element: its value, text or name, or
+ * the opposite of each state it is in. A field that holds a secret
+ * (`isSensitiveField`) offers its states only, so what it holds is never shown
+ * or kept.
+ */
 function expectedChoices(element: Element): { locator: string | null; choices: ExpectedChoice[] } {
   const suggestion = suggestAssertions(element);
   const choices: ExpectedChoice[] = [];
+  const secret = isSensitiveField(element);
   for (const c of suggestion.candidates) {
-    if (c.detail == null) continue;
+    if (c.detail == null || secret) continue;
     if (c.method === 'toHaveValue') choices.push({ matcher: c.method, label: t('bug_itsValue'), actual: c.detail });
     if (c.method === 'toHaveText') choices.push({ matcher: c.method, label: t('bug_itsText'), actual: c.detail });
     if (c.method === 'toHaveAccessibleName')
@@ -456,7 +544,7 @@ function expectedChoices(element: Element): { locator: string | null; choices: E
 /** The expected-value dialog for a picked element. */
 function expectedDialog(element: Element): Promise<StepAssertion | null> {
   const { locator, choices } = expectedChoices(element);
-  return openBugDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
+  return openRecordDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
     if (locator) {
       const sub = document.createElement('div');
       sub.className = 'sub';
@@ -554,7 +642,7 @@ function roleLocator(role: string, name: string): string {
 }
 
 function missingDialog(): Promise<{ target: RecordedTarget; note: string | null } | null> {
-  return openBugDialog(t('bug_missing'), ({ field, say }) => {
+  return openRecordDialog(t('bug_missing'), ({ field, say }) => {
     const role = document.createElement('select');
     for (const kind of MISSING_KINDS) {
       const option = document.createElement('option');
@@ -605,7 +693,7 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
 
 function wrongPageDialog(): Promise<StepAssertion | null> {
   const here = `${location.pathname}${location.search}`;
-  return openBugDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
+  return openRecordDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
     const sub = document.createElement('div');
     sub.className = 'sub';
     sub.textContent = t('bug_youAreOn', { path: here });
@@ -631,7 +719,8 @@ function wrongPageDialog(): Promise<StepAssertion | null> {
 // ---------------------------------------------------------------------------
 // Flows started from the HUD
 
-async function exclusive(run: () => Promise<void>): Promise<void> {
+/** Runs one flow of the recorder's at a time: a flow started while another is on screen does nothing. */
+export async function exclusive(run: () => Promise<void>): Promise<void> {
   const g = panelGlobals();
   if (g.__piwiBugFlow) return;
   g.__piwiBugFlow = true;
@@ -647,24 +736,18 @@ export function runMarkFlow(hooks: BugRecorderHooks): Promise<void> {
   return exclusive(async () => {
     hooks.setPaused(true);
     // Out of the way while picking, so the HUD itself cannot be picked.
-    let showHud = hide(document.getElementById(HUD_HOST_ID));
+    let showHud = hideSurfaces([HUD_HOST_ID]);
     try {
-      clearPickGlobals();
-      installPickerOverlay({ transport: 'global', failing: null });
-      const state = await waitForPick();
-      removePickerOverlay();
-      const element = panelGlobals().__piwiPickedElement;
-      clearPickGlobals();
+      const element = await pickElement();
       showHud();
       showHud = () => undefined;
-      if (state !== 'picked' || !element) return;
+      if (!element) return;
       const assertion = await expectedDialog(element);
       if (!assertion) return;
       const step = await hooks.addAssert(hooks.targetFor(element), assertion);
       await setBugEvidenceFields({ outline: outlineAround(element) });
       await takeBugScreenshot('marked', step);
     } finally {
-      removePickerOverlay();
       showHud();
       hooks.setPaused(false);
     }
@@ -784,9 +867,33 @@ function actualInWords(matcher: AssertionMatcher, actual: string): string {
 }
 
 /**
+ * Writes the evidence line of the HUD on screen again, leaving the rest of it,
+ * and the focus in it, as it is: what the page relays changes nothing else.
+ * False when there is no HUD to update.
+ */
+export function updateBugHudEvidence(evidence: StoredBugEvidence): boolean {
+  const shown = shownBugHud();
+  if (!shown) return false;
+  shown.summary.textContent = evidenceSummary(evidence);
+  return true;
+}
+
+function shownBugHud(): BugPanelGlobals['__piwiBugHud'] | null {
+  const shown = panelGlobals().__piwiBugHud;
+  return shown && document.getElementById(HUD_HOST_ID) === shown.host ? shown : null;
+}
+
+/** The action of the HUD button that has the focus, or null when the focus is not in the HUD. */
+function focusedHudAction(): string | null {
+  const focused = shownBugHud()?.root.activeElement;
+  return focused instanceof HTMLElement ? (focused.dataset.action ?? null) : null;
+}
+
+/**
  * The HUD of a bug recording: the last steps, the three ways to mark what is
  * wrong, Finish, and what evidence has been collected. Its shadow root
- * delegates focus, so focusing the host reaches its first button.
+ * delegates focus, so focusing the host reaches its first button. A redraw
+ * keeps the focus in the HUD, on the button that had it when it is still there.
  */
 export function renderBugHud(
   state: RecordingState,
@@ -794,11 +901,12 @@ export function renderBugHud(
   captureError: string | null,
   handlers: BugHudHandlers,
 ): void {
+  const focusedAction = focusedHudAction();
   document.getElementById(HUD_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:auto 16px 16px auto;z-index:2147483647;';
-  document.documentElement.appendChild(host);
+  mountSurface(host);
   const root = attachPanelShadow(host, { mode: 'closed', delegatesFocus: true });
   const style = document.createElement('style');
   style.textContent = `
@@ -857,27 +965,28 @@ export function renderBugHud(
 
   const buttons = document.createElement('div');
   buttons.className = 'row';
-  const button = (label: string, onClick: () => void, className = '') => {
+  const button = (action: keyof BugHudHandlers, label: string, className = '') => {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
+    b.dataset.action = action;
     if (className) b.className = className;
-    b.addEventListener('click', onClick);
+    b.addEventListener('click', () => handlers[action]());
     buttons.appendChild(b);
     return b;
   };
-  button(t('bug_mark'), handlers.mark).title = t('bug_markHint');
-  button(t('bug_missing'), handlers.missing).title = t('bug_missingHint');
-  button(t('bug_wrongPage'), handlers.wrongPage).title = t('bug_wrongPageHint');
-  if (evidence.debugging?.state === 'on')
-    button(t('bug_screenshot'), handlers.screenshot).title = t('bug_screenshotHint');
-  button(t('bug_finish'), handlers.finish, 'finish');
+  button('mark', t('bug_mark')).title = t('bug_markHint');
+  button('missing', t('bug_missing')).title = t('bug_missingHint');
+  button('wrongPage', t('bug_wrongPage')).title = t('bug_wrongPageHint');
+  if (evidence.debugging?.state === 'on') button('screenshot', t('bug_screenshot')).title = t('bug_screenshotHint');
+  button('finish', t('bug_finish'), 'finish');
   bar.appendChild(buttons);
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
   summary.textContent = evidenceSummary(evidence);
   bar.appendChild(summary);
+  panelGlobals().__piwiBugHud = { host, root, summary };
 
   const note = debuggingNote(evidence);
   if (note) {
@@ -896,6 +1005,7 @@ export function renderBugHud(
   }
 
   root.append(style, bar);
+  if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();
 }
 
 // ---------------------------------------------------------------------------
@@ -911,18 +1021,34 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
   document.getElementById(PANEL_HOST_ID)?.remove();
   document.getElementById(FRAME_HOST_ID)?.remove();
 
-  const [evidence, screenshots] = await Promise.all([getBugEvidence(), getBugScreenshots()]);
+  const [evidence, screenshots, views] = await Promise.all([
+    getBugEvidence(),
+    getBugScreenshots(),
+    keptStepViews(state.events),
+  ]);
   const context = evidence.context ?? (await currentBugContext());
+  const startedAt = state.startedAt ?? state.events[0]?.timestamp ?? Date.now();
   let title = evidence.title ?? '';
-  const report = () =>
-    assembleBugReport({
+  /** The reporter keeps the step screenshots unless they leave them out. */
+  let keepStepShots = true;
+  const report = () => {
+    const assembled = assembleBugReport({
       events: state.events,
-      startedAt: state.startedAt ?? state.events[0]?.timestamp ?? Date.now(),
+      startedAt,
       evidence: { ...evidence, title },
       screenshots,
       context,
+      views,
     });
+    return keepStepShots ? assembled : withoutStepShots(assembled);
+  };
   const initial = report();
+  const stepImages = new Map(
+    stepShotsOf(sessionFromEvents(state.events, startedAt).steps, views).map(({ shot, dataUrl }) => [
+      shot.file,
+      dataUrl,
+    ]),
+  );
 
   const host = document.createElement('div');
   host.id = PANEL_HOST_ID;
@@ -970,8 +1096,26 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
-  summary.textContent = t('bug_attached', { summary: summarizeEvidence(initial.evidence, interfacePhrases()) });
+  const summarize = () => t('bug_attached', { summary: summarizeEvidence(report().evidence, interfacePhrases()) });
+  summary.textContent = summarize();
   panel.appendChild(summary);
+
+  if (stepImages.size > 0) {
+    const keep = document.createElement('label');
+    keep.className = 'keep';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = true;
+    box.addEventListener('change', () => {
+      keepStepShots = box.checked;
+      summary.textContent = summarize();
+    });
+    keep.append(box, t('bug_stepShots', { count: formatNumber(stepImages.size) }));
+    const hint = document.createElement('div');
+    hint.className = 'evidence';
+    hint.textContent = t('bug_stepShotsHint');
+    panel.append(keep, hint);
+  }
 
   const notes: string[] = [];
   if (expectedSteps(initial).length === 0) {
@@ -1008,13 +1152,15 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
     t('bug_copyTestHint');
   action(t('bug_copyReport'), '', (b) => void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b)).title =
     t('bug_copyReportHint');
-  action(t('bug_downloadZip'), '', () => {
+  action(t('bug_downloadReport'), '', () => {
     const current = report();
     downloadBlob(
-      new Blob([bugReportZip(current, screenshots, reportLanguage()) as BlobPart], { type: 'application/zip' }),
-      `piwi-bug-${fileStamp(current.context.time)}.zip`,
+      new Blob([bugReportArchive(current, screenshots, reportLanguage(), stepImages) as BlobPart], {
+        type: BUG_REPORT_MEDIA_TYPE,
+      }),
+      `piwi-bug-${fileStamp(current.context.time)}.${BUG_REPORT_EXTENSION}`,
     );
-  }).title = t('bug_downloadZipHint');
+  }).title = t('bug_downloadReportHint');
 
   const controller = new AbortController();
   const closePanel = () => {
@@ -1034,6 +1180,8 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
           origin: location.origin,
           stepMode: false,
           inject: true,
+          // The replay shows a step it hands to the person as the recording saw it.
+          recordingViews: stepViews(sessionFromEvents(state.events, startedAt).steps),
         });
       } catch (e) {
         response = { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -1054,6 +1202,7 @@ export async function renderBugFinishPanel(state: RecordingState, onDiscard: () 
       openSendPreview({
         report: report(),
         screenshots,
+        stepImages,
         target: { ...target, project: target.project },
         css: PANEL_CSS,
       });

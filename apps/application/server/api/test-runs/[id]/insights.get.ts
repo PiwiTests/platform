@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Run insights',
     description:
-      'Returns comparison insights for a test run: new regressions, recurrences, recovered tests, performance changes, worker imbalance, and new clusters',
+      'Returns comparison insights for a test run: new regressions, recurrences, recovered tests, performance changes, worker imbalance, and new clusters. The automatic baseline is the last passing full run (same environment first, then the same branch, the base branch, any branch); when no earlier full run passed, it is the last failed one, and `baselineMatch.outcome` says so. `earlierRuns` lists the runs before this one that can be passed as `baseline`.',
     'x-required-roles': ['administrator', 'reporter', 'user'],
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
@@ -23,7 +23,7 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string' },
         description:
-          'Take the baseline from this branch only (its last passing run, same environment first) instead of the automatic ladder.',
+          'Take the baseline from this branch only (its last passing run, else its last failed run, same environment first) instead of the automatic ladder.',
       },
     ],
   },
@@ -42,6 +42,7 @@ export default eventHandler(async (event) => {
     return await computeRunInsights(db, runId, {
       baselineId: baselineId != null && Number.isFinite(baselineId) ? baselineId : null,
       baseBranch,
+      failedFallback: true,
     });
   } catch (e: any) {
     if (e?.message === 'Run not found') {

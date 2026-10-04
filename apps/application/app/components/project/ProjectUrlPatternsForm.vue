@@ -6,7 +6,7 @@
  * were reported with.
  */
 import { parsePathPrefix } from '@piwitests/core/page-key';
-import type { UrlPatternItem, UrlPatternSuggestion } from '#shared/handlers/url-patterns';
+import type { UrlPatternItem, UrlPatternSuggestion, UrlPatternSuggestions } from '#shared/handlers/url-patterns';
 
 const props = defineProps<{ projectId: number }>();
 
@@ -23,12 +23,15 @@ const toast = useToast();
 const rows = ref<Row[]>([]);
 const saved = ref('');
 const suggestions = ref<UrlPatternSuggestion[]>([]);
+const covered = ref(0);
 const loading = ref(true);
 const saving = ref(false);
 let nextKey = 1;
 
 const SOURCE_LABELS: Record<UrlPatternSuggestion['sources'][number], string> = {
   'base-url': 'base URL',
+  navigation: 'page.goto calls',
+  network: 'network requests',
   'test-map': 'Test Map pages',
   'locator-pages': 'locator pages',
 };
@@ -111,11 +114,12 @@ async function load() {
   try {
     const [list, suggested] = await Promise.all([
       $fetch<{ items: UrlPatternItem[] }>(`/api/projects/${props.projectId}/url-patterns`),
-      $fetch<{ items: UrlPatternSuggestion[] }>(`/api/projects/${props.projectId}/url-patterns/suggestions`),
+      $fetch<UrlPatternSuggestions>(`/api/projects/${props.projectId}/url-patterns/suggestions`),
     ]);
     rows.value = toRows(list.items);
     saved.value = snapshot(rows.value);
     suggestions.value = suggested.items;
+    covered.value = suggested.covered;
   } catch (error) {
     toast.add({ title: 'Couldn’t load the URL patterns', description: errorMessage(error), color: 'error' });
   } finally {
@@ -189,17 +193,20 @@ watch(() => props.projectId, load, { immediate: true });
   >
     <LoadingState v-if="loading" text="Loading…" />
 
-    <UForm v-else :state="{ rows }" class="space-y-4" @submit="save">
-      <p v-if="rows.length === 0" class="text-sm text-muted">No pattern yet. Add one, or pick a suggestion below.</p>
+    <!-- A container, so each row's layout follows the card's width rather than the window's. -->
+    <UForm v-else :state="{ rows }" class="@container space-y-4" @submit="save">
+      <p v-if="rows.length === 0" class="text-sm text-muted">
+        No pattern yet. Add one{{ shownSuggestions.length > 0 ? ', or pick a suggestion below' : '' }}.
+      </p>
 
       <ol v-else class="space-y-3">
         <li
           v-for="(row, index) in rows"
           :key="row.key"
-          class="grid gap-2 rounded-lg border border-default p-3 md:grid-cols-[1fr_7rem_7rem_6.5rem_6.5rem_auto] md:items-start md:border-0 md:p-0"
+          class="grid gap-2 rounded-lg border border-default p-3 @2xl:grid-cols-[repeat(4,minmax(0,1fr))_auto] @2xl:items-start"
           data-testid="url-pattern-row"
         >
-          <UFormField :error="patternError(row.pattern)" :name="`pattern-${row.key}`">
+          <UFormField :error="patternError(row.pattern)" :name="`pattern-${row.key}`" class="@2xl:col-span-4">
             <UInput
               v-model="row.pattern"
               placeholder="https://staging.example.com/**"
@@ -227,7 +234,7 @@ watch(() => props.projectId, load, { immediate: true });
               class="w-full font-mono"
             />
           </UFormField>
-          <div class="flex gap-1 justify-end">
+          <div class="flex gap-1 justify-end @2xl:col-start-5 @2xl:row-start-1">
             <UButton
               icon="i-lucide-chevron-up"
               color="neutral"
@@ -310,6 +317,16 @@ watch(() => props.projectId, load, { immediate: true });
           </ul>
         </section>
       </div>
+
+      <p v-else-if="suggestions.length === 0" class="text-xs text-muted" data-testid="url-pattern-no-suggestions">
+        <template v-if="covered > 0">Every site the suite visited already has a pattern.</template>
+        <template v-else>
+          Nothing to suggest: no recent run recorded a Playwright <span class="font-mono">baseURL</span>, opened a full
+          address with <span class="font-mono">page.goto</span> or kept the network requests of a page it loaded. Set
+          <span class="font-mono">use.baseURL</span> in your Playwright config to get suggestions. Runs merged from blob
+          reports never carry it: Playwright leaves it out of them.
+        </template>
+      </p>
 
       <div class="flex flex-wrap justify-between gap-2">
         <UButton label="Add a pattern" color="neutral" variant="outline" @click="addRow()" />

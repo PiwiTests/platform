@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
  * A tag pill for a user-picked color (hex from the tag editor, but any CSS
- * color works). Styling is derived with CSS `color-mix` instead of JS hex
- * parsing: the old parser returned NaN for named colors ("yellow", "blue")
- * and silently fell back to white text — unreadable on light colors.
+ * color works). Styling is derived with CSS `color-mix`, so named colors
+ * ("yellow", "blue") style the same way hex does.
  *
  * The look is GitHub-label-like: a soft tint of the color as background, a
  * translucent border, and the color itself pushed toward black (light mode)

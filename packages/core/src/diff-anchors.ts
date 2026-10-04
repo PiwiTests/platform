@@ -20,7 +20,7 @@
 // ── Unified diff ─────────────────────────────────────────────────────────────
 
 /** One changed line: its number in the old file (removed) or the new file (added). */
-export interface DiffLine {
+interface DiffLine {
   line: number;
   text: string;
 }
@@ -130,7 +130,7 @@ export function diffFileFromPatch(path: string, patch: string, status: DiffFile[
 
 // ── Anchors ──────────────────────────────────────────────────────────────────
 
-export type DiffAnchorKind = 'attribute' | 'text' | 'literal' | 'translation';
+type DiffAnchorKind = 'attribute' | 'text' | 'literal' | 'translation';
 
 /** A string a change removed, or renamed into another. */
 export interface DiffAnchor {
@@ -151,7 +151,7 @@ export interface DiffAnchor {
 }
 
 /** Looks up a translation key's value on one side of the change. */
-export type TranslationLookup = (key: string, side: 'old' | 'new') => string | undefined;
+type TranslationLookup = (key: string, side: 'old' | 'new') => string | undefined;
 
 export interface DiffAnchorOptions {
   /** The attributes `getByTestId` reads (Playwright's `testIdAttribute`); `data-testid` by default. */
@@ -171,13 +171,10 @@ export interface DiffAnchorOptions {
 }
 
 /** Where translation files live unless configured otherwise. */
-export const DEFAULT_TRANSLATION_GLOBS: readonly string[] = [
-  '**/{locales,locale,i18n,lang,translations}/**',
-  '**/*.resx',
-];
+const DEFAULT_TRANSLATION_GLOBS: readonly string[] = ['**/{locales,locale,i18n,lang,translations}/**', '**/*.resx'];
 
 /** The attributes locators read, besides the test id attributes. */
-export const ANCHOR_ATTRIBUTES: readonly string[] = [
+const ANCHOR_ATTRIBUTES: readonly string[] = [
   'id',
   'name',
   'aria-label',
@@ -203,7 +200,7 @@ function expandBraces(glob: string): string[] {
 }
 
 /** A glob (`**`, `*`, `?`, `{a,b}`) as an anchored regex over a POSIX path. */
-export function pathGlobToRegExp(glob: string): RegExp {
+function pathGlobToRegExp(glob: string): RegExp {
   const parts = expandBraces(glob).map((g) => {
     let re = '';
     for (let i = 0; i < g.length; i++) {

@@ -10,18 +10,17 @@ lang: en-US
 
 The desktop app runs the **entire dashboard on your machine**, with no Docker, no `npx` and no server to set up. It
 bundles the same server as the Docker image in a native window, keeps your data in a local folder, and adds what only
-a local app can do: run your tests from the window, reproduce a failure in a clean checkout, bisect to the commit that
-broke it, and wire your AI assistants in one click.
+a local app can do.
 
 ## What it does
 
 - **Receives your local runs** with no URL or token in your Playwright config.
 - **Links a project to its checkout**, so a run page can re-run the failed tests here.
-- **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, leaving your working tree alone.
+- **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, also for your editor.
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config for them.
 
-Everything binds to `127.0.0.1`, so nothing is exposed to the network. For a shared, always-on server, run the [Docker image](/operate/deployment).
+Everything binds to `127.0.0.1`, so nothing is exposed to the network.
 
 ## Where it is
 
@@ -42,8 +41,7 @@ on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data lo
 folder** show it. Back up the parent folder while the app is closed; its `secret.key` decrypts stored AI keys and SCM
 tokens.
 
-The window navigates like a browser, with back and forward buttons at the top of the sidebar. Closing the window quits the app unless you turn on **Run in background** in the
-tray menu; **Start on login** launches it hidden into the tray. While the window is in the background, your
+Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches it hidden into the tray. While the window is in the background, your
 [notifications](/features/notifications) arrive as OS notifications, with an unread count on the dock icon or in the
 tray tooltip.
 
@@ -66,9 +64,10 @@ A dashboard link opened in your browser opens in the app instead.
 **Projects → New project → Choose folder…** creates a project from a checkout on this machine. The app detects the
 name it would report under and checks the setup (a Playwright config, Playwright installed, the reporter wired in);
 anything missing is a warning, and `npx @piwitests/reporter init` in the folder fixes it. The link to the folder
-stays on this machine, under **project page → Edit → Local folder**, with the same checks and **Change** and
-**Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders, and
-[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set.
+stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
+**Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders;
+[Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
+of the repository serves its git history without an [SCM token](/guide/source-control#on-the-desktop-app).
 
 ## Running tests from the app
 
@@ -78,15 +77,13 @@ Playwright and the app's bundled Node. The first time, it asks you to link the p
 - **The arrow next to the button** holds the options: headless, headed, the Playwright inspector or UI mode; tests
   by `file:line`, title or file; a forced trace; `--repeat-each` up to 100 times (1,000 in **Run with
   options…**, which shows the command). The last choice becomes the project's one-click default.
-- **Runs keep going while you browse.** Output streams into the **Local runs** tray, a sidebar pill keeps it one
-  click away, and stopping is always explicit.
+- **Runs keep going while you browse.** Output streams into the **Local runs** tray; stopping is always explicit.
 - **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run locally**
   on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   sent from Piwi Picker.
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the dialog to fix the link.
 
-The run uses your project's own Playwright config, so its results come here like a run from your terminal, and the
-tray links to the new run. The **Local folder** checks show whether Playwright and the reporter are set up.
+The run uses your project's Playwright config, so its results come here, and the tray links to the new run.
 
 ### Reproducing a failure and finding the breaking commit
 
@@ -104,6 +101,15 @@ It needs `git` and your package manager on this machine, and bisects one reposit
 to build from the same checkout: a Playwright `webServer` starts it at each commit, or set a **start command** and a
 readiness URL under **Reproduce and bisect**.
 
+### Jobs from your editor
+
+On a failure of a team instance, the [editor extensions](/features/editors#ci-failures-in-the-problems-panel) offer
+**Reproduce in the desktop app** and **Find the breaking commit in the desktop app**; on a flaky test, or a failure
+whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
+the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
+gets the verdict and can share a first bad commit, or the lab's results, on the team instance with its own key, which
+the app never holds.
+
 ### Reproducing a flake
 
 On a flaky test's Flakiness tab, **Reproduce this flake** runs the [Flake Lab](/features/flake-lab) here: it checks
@@ -118,34 +124,32 @@ enough clean runs, which tells when a flake started.
 ## Importing local files
 
 Drop a Playwright blob report or trace (`.zip`) on the window, or open one with **Open with → Piwi Dashboard**, and
-pick the project: the file is imported from disk, and several traces can form one run. Imports behave as on the [import page](/guide/importing-runs).
+pick the project: it is imported as on the [import page](/guide/importing-runs), several traces forming one run. A
+[`.piwibug`](/reference/bug-report-file) becomes a [bug report](./bug-reports).
 
 ## Connecting AI assistants
 
 The app serves the [MCP server](/features/mcp) with three local tools a hosted instance cannot offer:
-`import_local_report` (a local `.zip` into a project), `read_local_source` (the file on disk now, not at failure
-time) and `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default). It registers as
-`piwi-desktop`, so it sits beside a hosted Piwi in the same client.
+`import_local_report` (a local `.zip` into a project), `read_local_source` (the file on disk now) and `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default). It registers as
+`piwi-desktop`, beside a hosted Piwi in the same client.
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click by writing a `piwi-desktop` entry, with the address and token, into the client's own config file.
-It keeps a backup, touches only that entry, shows the snippet instead for a config that is not plain JSON, and
-rewrites the entry at each launch if the port changed. Claude Desktop, which takes only local
+It keeps a backup and rewrites only that entry, at each launch if the port changed. Claude Desktop, which takes only local
 commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app has to be
-running for it. Restart the client after connecting.
+running for it. Restart the client after connecting. The page also installs the
+[agent skills](/features/agent-skills) into a linked folder.
 
 ## Updates
 
-**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart. It also
-checks at startup, which that card can turn off. The `.exe`
-updates silently, without admin rights; the `.msi` asks for them. Downloads are verified against the project's signing
+**Settings → About → Updates** checks for a newer release, downloads it and applies it on restart, and checks at
+startup unless turned off. The `.exe` updates silently, without admin rights; the `.msi` asks for them. Downloads are verified against the project's signing
 key; a dev build without it says so.
 
 ## Limits
 
 - **One machine, one user.** The app accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Unsigned installers**: the first launch needs the steps above.
 - **Local runs need the checkout**: a linked folder with Playwright installed, and `git` for reproduce, bisect and
   the lab.
 

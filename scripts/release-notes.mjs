@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deterministic release-notes tooling shared by CI (.github/workflows/changelog-polish.yml)
+// Deterministic release-notes tooling shared by CI (.github/workflows/release-notes.yml)
 // and the release-notes skill (.claude/skills/release-notes/).
 //
 // Commands:

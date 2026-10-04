@@ -15,6 +15,12 @@ import {
 type Row = Record<string, unknown>;
 type Query = (sql: string, params?: unknown[]) => Promise<Row[]>;
 
+const sqliteExists = async (query: Query, type: string, name: string) =>
+  (await query('SELECT 1 FROM sqlite_master WHERE type = ? AND name = ? COLLATE NOCASE', [type, name])).length > 0;
+
+const postgresTableExists = async (query: Query, table: string) =>
+  (await query('SELECT 1 FROM pg_tables WHERE schemaname = current_schema() AND tablename = $1', [table])).length > 0;
+
 // ── SQLite ────────────────────────────────────────────────────────────────
 
 export function sqliteMigrationTarget(client: Client, migrate: () => Promise<void>): MigrationTarget {
@@ -26,6 +32,7 @@ export function sqliteMigrationTarget(client: Client, migrate: () => Promise<voi
       'stop the server and delete the database file (PIWI_DATABASE_PATH, .data/piwi.db by default); ' +
       'in development, npm run app:seed:dev reloads the sample data',
     migrate,
+    tableExists: (table) => sqliteExists(query, 'table', table),
     async readApplied() {
       const table = await query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'");
       if (!table.length) return [];
@@ -54,12 +61,10 @@ export function sqliteMigrationTarget(client: Client, migrate: () => Promise<voi
 }
 
 function sqliteSession(query: Query): RepairSession {
-  const exists = async (type: string, name: string) =>
-    (await query('SELECT 1 FROM sqlite_master WHERE type = ? AND name = ? COLLATE NOCASE', [type, name])).length > 0;
   return {
     run: async (sql) => void (await query(sql)),
-    tableExists: (table) => exists('table', table),
-    indexExists: (index) => exists('index', index),
+    tableExists: (table) => sqliteExists(query, 'table', table),
+    indexExists: (index) => sqliteExists(query, 'index', index),
     // SQLite has no named constraints to add after the fact.
     constraintExists: async () => false,
     columns: (table) => sqliteColumns(query, table),
@@ -189,6 +194,8 @@ export function postgresMigrationTarget(
     dialect: 'postgres',
     resetHint: 'drop and recreate the database',
     migrate,
+    tableExists: (table) =>
+      postgresTableExists((sql, params = []) => client.unsafe(sql, params as never[]) as Promise<Row[]>, table),
     async readApplied() {
       const [table] = await client.unsafe('SELECT to_regclass($1) IS NOT NULL AS present', [migrationsTable]);
       if (!table?.present) return [];
@@ -229,9 +236,7 @@ function postgresSession(query: Query, migrationsTable: string): RepairSession {
   };
   return {
     run: async (sql) => void (await query(sql)),
-    tableExists: async (table) =>
-      (await query('SELECT 1 FROM pg_tables WHERE schemaname = current_schema() AND tablename = $1', [table])).length >
-      0,
+    tableExists: (table) => postgresTableExists(query, table),
     indexExists: async (index) =>
       (
         await query('SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1', [

@@ -39,8 +39,9 @@ export async function compareMetricPeriods(
     getAnalyticsContext(db, { ...scope, period: periodB, comparison: { kind: 'none' } }, access),
     resolveCiCost(db),
   ]);
+  const samples = new Map<MetricId, number>();
   const [valuesA, valuesB] = await Promise.all([
-    computeMetricValues(db, ctxA, metrics, ctxA.period.from.getTime(), ctxA.period.to.getTime(), { cost }),
+    computeMetricValues(db, ctxA, metrics, ctxA.period.from.getTime(), ctxA.period.to.getTime(), { cost, samples }),
     computeMetricValues(db, ctxB, metrics, ctxB.period.from.getTime(), ctxB.period.to.getTime(), { cost }),
   ]);
   const summary = (p: { from: Date; to: Date; label: string }) => ({
@@ -51,6 +52,8 @@ export async function compareMetricPeriods(
   return {
     a: summary(ctxA.period),
     b: summary(ctxB.period),
-    tiles: metrics.map((id) => metricValue(id, valuesA.get(id) ?? null, valuesB.get(id) ?? null, cost)),
+    tiles: metrics.map((id) =>
+      metricValue(id, valuesA.get(id) ?? null, valuesB.get(id) ?? null, cost, samples.get(id)),
+    ),
   };
 }

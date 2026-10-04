@@ -40,7 +40,7 @@ Code:
   --test-import <mod>   Module test and expect come from (default @playwright/test)
   --absolute-urls       Keep recorded URLs instead of paths for your baseURL
   --no-url-checks       Do not wait for each new page's URL
-  --env-values          Read typed values from PIWI_TEST_VALUE_<n> variables
+  --env-values          Read typed values from variables named after their fields (E2E_EMAIL)
   --fail                Mark the test as expected to fail (test.fail())
   --fail-reason <text>  The reason written beside test.fail()
   --tag <tag>           Add a tag; repeat for more
@@ -145,7 +145,7 @@ export interface ProjectContext {
 }
 
 /** The converter's options for these arguments. */
-export function codegenOptions(args: CodegenArgs, steps: PiwiSteps, project: ProjectContext | null): CodegenOptions {
+function codegenOptions(args: CodegenArgs, steps: PiwiSteps, project: ProjectContext | null): CodegenOptions {
   return {
     title: args.title ?? steps.title ?? undefined,
     testImport: args.testImport ?? undefined,

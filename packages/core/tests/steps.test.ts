@@ -1,6 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import { renderSpec } from '../src/codegen';
-import { buildSession, type RecordedStep, type RecordedTarget } from '../src/recording';
+import {
+  buildSession,
+  sessionFromEvents,
+  viewportsForSteps,
+  type RawCaptureEvent,
+  type RecordedStep,
+  type RecordedTarget,
+} from '../src/recording';
 import { STEPS_LIMITS, parseSteps, sessionFromSteps, toStepsDocument, type PiwiSteps } from '../src/steps';
 
 const ORIGIN = 'https://staging.acme.test';
@@ -228,5 +235,111 @@ describe('parseSteps', () => {
       ok: false,
       errors: [`steps[2].target.alternatives: holds more than ${STEPS_LIMITS.alternatives}`],
     });
+  });
+});
+
+describe('viewports', () => {
+  function sized(timestamp: number, width: number, height: number): RawCaptureEvent {
+    return {
+      kind: 'viewport',
+      target: null,
+      value: null,
+      checked: null,
+      inputType: null,
+      isPasswordField: false,
+      pageUrl: `${ORIGIN}/cart`,
+      timestamp,
+      viewport: { width, height },
+    };
+  }
+  const timed = (): RecordedStep[] => recording().map((s, i) => ({ ...s, timestamp: 10 * (i + 1) }));
+
+  test('places each size on the first step recorded at or after it, the last of several and no repeat', () => {
+    const steps = timed();
+    const events = [
+      sized(5, 1280, 800),
+      sized(12, 1280, 800),
+      sized(21, 600, 800),
+      sized(25, 390, 844),
+      sized(99, 800, 600),
+    ];
+    expect(viewportsForSteps(steps, events)).toEqual([
+      { step: 0, width: 1280, height: 800 },
+      { step: 2, width: 390, height: 844 },
+    ]);
+  });
+
+  test('keeps the browser zoom with a size when it was not 100%, and a zoom change as a change', () => {
+    const steps = timed();
+    const zoomed = (timestamp: number, zoom: number) => ({
+      ...sized(timestamp, 1024, 640),
+      viewport: { width: 1024, height: 640, zoom },
+    });
+    expect(viewportsForSteps(steps, [zoomed(5, 1.25), zoomed(15, 1), zoomed(25, 1)])).toEqual([
+      { step: 0, width: 1024, height: 640, zoom: 1.25 },
+      { step: 1, width: 1024, height: 640 },
+    ]);
+    const doc = toStepsDocument({
+      ...buildSession(recording(), 100),
+      viewports: [{ step: 0, width: 1024, height: 640, zoom: 1.25 }],
+    });
+    const parsed = parseSteps(JSON.stringify(doc));
+    expect(parsed.ok && parsed.steps.viewports).toEqual([{ step: 0, width: 1024, height: 640, zoom: 1.25 }]);
+    expect(parseSteps({ ...doc, viewports: [{ step: 0, width: 10, height: 10, zoom: 9 }] })).toEqual({
+      ok: false,
+      errors: ['viewports[0].zoom: must be a zoom factor from 0.25 to 5'],
+    });
+    // The size already holds the zoom: the spec sets it as it is.
+    expect(renderSpec(sessionFromSteps(doc)).code).toContain(
+      'await page.setViewportSize({ width: 1024, height: 640 });',
+    );
+  });
+
+  test('a session from events keeps them, and none when the recording took no size', () => {
+    const navigate = { ...sized(10, 0, 0), kind: 'navigate' as const, viewport: undefined, value: `${ORIGIN}/cart` };
+    const events = [sized(9, 1280, 800), navigate];
+    expect(sessionFromEvents(events, 1).viewports).toEqual([{ step: 0, width: 1280, height: 800 }]);
+    expect(sessionFromEvents([navigate], 1)).not.toHaveProperty('viewports');
+  });
+
+  test('travel through a steps document, and a spec sets them before the steps they start at', () => {
+    const viewports = [
+      { step: 0, width: 1280, height: 800 },
+      { step: 2, width: 390, height: 844 },
+    ];
+    const doc = toStepsDocument({ ...buildSession(recording(), 100), viewports });
+    expect(doc.viewports).toEqual(viewports);
+    const parsed = parseSteps(JSON.stringify(doc));
+    expect(parsed.ok && parsed.steps.viewports).toEqual(viewports);
+    const { code, stepLines } = renderSpec(sessionFromSteps(doc), { urls: 'relative' });
+    const lines = code.split('\n');
+    expect(lines.filter((l) => l.includes('setViewportSize'))).toEqual([
+      '  await page.setViewportSize({ width: 1280, height: 800 });',
+      '  await page.setViewportSize({ width: 390, height: 844 });',
+    ]);
+    expect(lines.findIndex((l) => l.includes('width: 1280'))).toBeLessThan(lines.findIndex((l) => l.includes('goto')));
+    expect(lines[stepLines[2]! - 2]).toContain('width: 390');
+    expect(lines[stepLines[2]! - 1]).toContain(`getByRole('button', { name: 'Apply' }).click()`);
+  });
+
+  test('a document without them reads as before, and one with wrong ones is refused', () => {
+    const doc = toStepsDocument(buildSession(recording(), 100));
+    expect(doc).not.toHaveProperty('viewports');
+    const bad = (viewports: unknown) => parseSteps({ ...doc, viewports });
+    expect(bad([{ step: 9, width: 10, height: 10 }])).toEqual({
+      ok: false,
+      errors: ['viewports[0].step: must be the index of a step'],
+    });
+    expect(bad([{ step: 0, width: 0, height: 10 }])).toEqual({
+      ok: false,
+      errors: [`viewports[0].width: must be a whole number of pixels from 1 to ${STEPS_LIMITS.viewportSize}`],
+    });
+    expect(
+      bad([
+        { step: 1, width: 10, height: 10 },
+        { step: 1, width: 20, height: 10 },
+      ]),
+    ).toEqual({ ok: false, errors: ['viewports[1].step: must come after the step before it'] });
+    expect(bad('wide')).toEqual({ ok: false, errors: ['viewports: must be a list'] });
   });
 });

@@ -23,6 +23,7 @@ export interface ImpactResolution extends SelectionResolution {
     changedFiles: number;
     mappedFiles: number;
     widened: boolean;
+    /** Changed files that forced the full suite: mapped to no test, or only through failure frames. */
     unmappedSourceFiles: string[];
   };
 }
@@ -120,7 +121,7 @@ export async function fetchLocatorIndex(
 }
 
 /** A project's code index: the source files its tests reach, when code reach or an instrumented backend recorded any. */
-export interface CodeIndex {
+interface CodeIndex {
   files: string[];
   tests: LocatorIndexTest[];
   reach: Array<{ file: number; tests: number[]; origin: 'client' | 'server' }>;

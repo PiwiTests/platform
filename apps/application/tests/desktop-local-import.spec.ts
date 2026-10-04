@@ -75,11 +75,46 @@ test.describe('Desktop local import', () => {
     expect(res.ok()).toBeTruthy();
   });
 
-  test('the local import route is desktop-only and 404s on the server build', async ({ request }) => {
+  test('the local import routes are desktop-only and 404 on the server build', async ({ request }) => {
     const res = await request.post('/api/desktop/import-local', {
       data: { path: '/tmp/trace.zip', projectName: PROJECT.DESKTOP_LOCAL_IMPORT },
     });
     expect(res.status()).toBe(404);
+    const bug = await request.post('/api/desktop/import-bug-report', {
+      data: { path: '/tmp/bug.piwibug', projectName: PROJECT.DESKTOP_LOCAL_IMPORT },
+    });
+    expect(bug.status()).toBe(404);
+  });
+
+  test('a dropped .piwibug imports as a bug report and links to it', async ({ page }) => {
+    await installFakeBridge(page);
+
+    const bugBodies: Record<string, unknown>[] = [];
+    await page.route('**/api/desktop/import-bug-report', async (route) => {
+      bugBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 4321, url: '/bug-reports/4321' }),
+      });
+    });
+    await page.route('**/api/desktop/import-local', (route) => route.abort());
+
+    await page.goto('/');
+    await waitForHydration(page);
+
+    await page.evaluate(() => {
+      window.__piwiEmit('tauri://drag-drop', { paths: ['/home/dev/coupon.piwibug'], position: { x: 0, y: 0 } });
+    });
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('coupon.piwibug', { exact: true })).toBeVisible();
+    await dialog.getByText('Select a project…').click();
+    await page.getByRole('option', { name: PROJECT.DESKTOP_LOCAL_IMPORT }).click();
+    await dialog.getByRole('button', { name: 'Import', exact: true }).click();
+
+    await expect(dialog.getByRole('link', { name: 'View report' })).toHaveAttribute('href', '/bug-reports/4321');
+    expect(bugBodies).toEqual([{ path: '/home/dev/coupon.piwibug', projectName: PROJECT.DESKTOP_LOCAL_IMPORT }]);
   });
 
   test('dropped archives open the dialog and import by path', async ({ page }) => {

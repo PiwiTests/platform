@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
-import { resolveOptions } from '../src/internal/config/env.js';
+import { originEnv, resolveOptions } from '../src/internal/config/env.js';
 
 const PIWI_KEYS = [
   'PIWI_DASHBOARD_URL',
@@ -18,6 +18,7 @@ const PIWI_KEYS = [
   'PIWI_STREAMING_BATCH_SIZE',
   'PIWI_STREAMING_BATCH_DELAY',
   'PIWI_MAX_STREAM_BUFFER_BYTES',
+  'PIWI_SUBMIT_TIMEOUT',
   'PIWI_LIVE_FILE_UPLOADS',
   'PIWI_UPLOAD_TRACES',
   'PIWI_UPLOAD_REPORT',
@@ -64,6 +65,7 @@ describe('resolveOptions', () => {
     expect(opts.streamingBatchSize).toBe(5);
     expect(opts.streamingBatchDelay).toBe(2000);
     expect(opts.maxStreamBufferBytes).toBe(100 * 1024 * 1024);
+    expect(opts.submitTimeout).toBe(15 * 60 * 1000);
     expect(opts.verbose).toBe(false);
     expect(opts.apiKey).toBe(null);
     expect(opts.username).toBe(null);
@@ -154,6 +156,14 @@ describe('resolveOptions', () => {
     expect(resolveOptions({ maxStreamBufferBytes: 4096 }).maxStreamBufferBytes).toBe(4096);
   });
 
+  it('reads PIWI_SUBMIT_TIMEOUT from env, including 0 for no limit, and a user option wins over it', () => {
+    process.env.PIWI_SUBMIT_TIMEOUT = '0';
+    expect(resolveOptions({}).submitTimeout).toBe(0);
+    process.env.PIWI_SUBMIT_TIMEOUT = '60000';
+    expect(resolveOptions({}).submitTimeout).toBe(60000);
+    expect(resolveOptions({ submitTimeout: 5000 }).submitTimeout).toBe(5000);
+  });
+
   it('PIWI_VERBOSE env wins over user option (preserved quirk)', () => {
     const opts1 = resolveOptions({ verbose: false });
     expect(opts1.verbose).toBe(false);
@@ -172,5 +182,12 @@ describe('resolveOptions', () => {
     process.env.PIWI_OUTPUT_FILE = 'piwi-run.json';
     expect(resolveOptions({}).outputFile).toBe('piwi-run.json');
     expect(resolveOptions({ outputFile: 'explicit.json' }).outputFile).toBe('explicit.json');
+  });
+});
+
+describe('originEnv', () => {
+  it('names the launcher, and what it ran for when there is one', () => {
+    expect(originEnv('preflight')).toEqual({ PIWI_ORIGIN: 'preflight' });
+    expect(originEnv('bug', 37)).toEqual({ PIWI_ORIGIN: 'bug', PIWI_ORIGIN_REF: '37' });
   });
 });

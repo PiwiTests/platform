@@ -110,6 +110,17 @@ test.describe.serial('MCP server', () => {
     expect(names).toContain('search');
     expect(names).toContain('explain_failure');
     expect(names).toContain('set_cluster_status');
+    expect(names).toContain('triage_cluster');
+    expect(names).toContain('triage_gap');
+    expect(names).toContain('decide_merge_suggestion');
+    expect(names).toContain('dismiss_quarantine_proposal');
+    expect(names).toContain('set_bug_report_status');
+    expect(names).toContain('rerun_cluster_in_ci');
+    expect(names).toContain('link_issue');
+    expect(names).toContain('set_cluster_bisect');
+    expect(names).toContain('record_diagnosis');
+    expect(names).toContain('report_fix_attempt');
+    expect(names).toContain('set_run_incident');
     expect(names).toContain('list_open_clusters');
     expect(names).toContain('get_fix_plan');
     expect(names).toContain('create_test_function');
@@ -129,6 +140,16 @@ test.describe.serial('MCP server', () => {
     expect(setup).toBeDefined();
     expect(setup!.description.length).toBeGreaterThan(20);
     expect(Array.isArray(setup!.arguments)).toBe(true);
+  });
+
+  test('prompts/get investigate_failure — serves the bundled workflow skill', async ({ request }) => {
+    const list = await mcp(request, 'prompts/list');
+    const names = (list.result.prompts as { name: string }[]).map((p) => p.name);
+    expect(names).toContain('investigate_failure');
+    const body = await mcp(request, 'prompts/get', { name: 'investigate_failure', arguments: { focus: 'cluster 1' } });
+    const text: string = body.result.messages[0].content.text;
+    expect(text).toContain('Work on: cluster 1');
+    expect(text).toContain('report_fix_attempt');
   });
 
   test('prompts/get setup_piwi — returns server-aware setup messages', async ({ request }) => {
@@ -289,7 +310,7 @@ test.describe.serial('MCP server', () => {
       (await mcp(request, 'tools/call', { name: 'get_test_case_context', arguments: { executionId: execId } })).result
         .content[0].text,
     );
-    // Previously execution scope produced an empty coverage stub with 0 sections.
+    // Execution scope carries evidence: context sections or the raw execution.
     const hasEvidence = (ctx.sections?.length ?? 0) > 0 || !!ctx.rawExecution;
     expect(hasEvidence).toBe(true);
   });

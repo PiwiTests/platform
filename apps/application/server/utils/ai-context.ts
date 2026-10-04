@@ -1,4 +1,5 @@
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import type { SQL } from 'drizzle-orm';
 import {
   testRunsCases,
@@ -8,6 +9,7 @@ import {
   networkRequests,
   files,
   failureDiagnoses,
+  failureDiagnosisVersions,
   failureClusters,
 } from '../database/schema';
 import type { FailureCluster } from '../database/schema';
@@ -19,10 +21,12 @@ import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
+import { eligibleRunSql } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
 import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
@@ -346,7 +350,7 @@ async function browserDistributionSection(db: DbClient, cluster: FailureCluster)
   const browserRows = await db
     .select({
       browser: testRunsCases.browser,
-      count: sql<number>`COUNT(*)`,
+      count: sql<number>`COUNT(*)`.mapWith(Number),
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.failureClusterId, cluster.id))
@@ -452,7 +456,7 @@ function loadExecutionById(db: DbClient, testRunsCaseId: number) {
 
 type RepresentativeRow = NonNullable<Awaited<ReturnType<typeof loadExecutionRow>>>;
 
-/** Build a CI/run header string from the representative execution's run metadata (D4). */
+/** Build a CI/run header string from the representative execution's run metadata. */
 function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   const lines: string[] = [];
   const meta = rep.runMetadata as RunMetadata | null;
@@ -486,7 +490,7 @@ function stepParamsLine(step: TestStepInfo): string | null {
 const FAILED_STEP_RANK: Record<StepFailureRole, number> = { failing: 0, enclosing: 1, failed: 2, recovered: 2 };
 
 /**
- * Extract steps that have an error attached (D6): the step that failed the
+ * Extract steps that have an error attached: the step that failed the
  * test first, then the steps around it (same error, not repeated), then the
  * other errored steps in order — another error the test ended with, or one the
  * test caught and went on from, labeled so.
@@ -525,7 +529,7 @@ function testAnnotationsSection(rep: RepresentativeRow): string | null {
  * worker/shard (race hint), describe-block path, and any pre-classified flaky
  * root cause. All from data already stored — no extra collection.
  */
-function runContextSection(rep: RepresentativeRow): string | null {
+export function runContextSection(rep: RepresentativeRow): string | null {
   const lines: string[] = [];
 
   if (rep.runIsFullRun === 0) {
@@ -537,7 +541,7 @@ function runContextSection(rep: RepresentativeRow): string | null {
   }
 
   const sp = rep.testSuitePath;
-  if (sp) lines.push(`- Describe path: ${sp.split('').join(' › ')}`);
+  if (sp) lines.push(`- Describe path: ${sp.split('\x1f').join(' › ')}`);
 
   if (rep.workerIndex != null) {
     const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
@@ -548,6 +552,14 @@ function runContextSection(rep: RepresentativeRow): string | null {
 
   if (rep.flakyRootCause) {
     lines.push(`- Pre-classified flaky root cause (heuristic): ${rep.flakyRootCause}`);
+  }
+
+  // What ingest left out of the run: a step or console line absent here may have been dropped, not skipped.
+  const ingestNotes = describeIngestHealth(readIngestHealth(rep.runMetadata));
+  if (ingestNotes.length > 0) {
+    lines.push(
+      `- Stored incomplete — absent steps, console lines or evidence may have been left out at ingest, not missing from the test: ${ingestNotes.join('; ')}`,
+    );
   }
 
   if (lines.length === 0) return null;
@@ -597,11 +609,12 @@ function compareVitals(fail: WebVitals | null, pass: WebVitals | null): string[]
 /**
  * Compare the failing execution to the same test's recent passing runs:
  * duration vs baseline, web-vitals deltas, console-error delta, how far the
- * run got (steps executed), and whether the last pass is newer than the
- * cluster's last seen (already-green reconciliation).
- * All from data already stored — no extra collection.
+ * run got (steps executed), and whether the test has passed since the
+ * cluster's last seen run on that run's branch (already-green reconciliation).
+ * Only runs eligible as a baseline count as a pass: a lab arm, a bisect step or
+ * a reproduction does not. All from data already stored — no extra collection.
  */
-async function baselineComparisonSection(
+export async function baselineComparisonSection(
   db: DbClient,
   rep: RepresentativeRow,
   clusterLastSeenRunId?: number,
@@ -616,10 +629,13 @@ async function baselineComparisonSection(
       steps: testRunsCases.steps,
       runId: testRunsCases.testRunId,
       startTime: testRuns.startTime,
+      branch: testRuns.branch,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed')))
+    .where(
+      and(eq(testRunsCases.testCaseId, rep.testCaseId), eq(testRunsCases.status, 'passed'), eligibleRunSql('baseline')),
+    )
     .orderBy(desc(testRuns.startTime))
     .limit(20);
 
@@ -628,15 +644,24 @@ async function baselineComparisonSection(
   const last = passings[0]!;
   const lines: string[] = [];
 
-  // Check if the last passing run is NEWER than the cluster's lastSeen run
-  let alreadyGreen = false;
-  if (clusterLastSeenRunId != null && last.runId > clusterLastSeenRunId) {
-    alreadyGreen = true;
-    const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
+  // A pass after the cluster's last seen run, on that run's branch.
+  const [lastSeen] =
+    clusterLastSeenRunId != null
+      ? await db
+          .select({ startTime: testRuns.startTime, branch: testRuns.branch })
+          .from(testRuns)
+          .where(eq(testRuns.id, clusterLastSeenRunId))
+      : [];
+  const newerPass = lastSeen
+    ? passings.find((p) => p.startTime > lastSeen.startTime && p.branch === lastSeen.branch)
+    : undefined;
+  const alreadyGreen = newerPass !== undefined;
+  if (newerPass) {
+    const when = newerPass.startTime instanceof Date ? relativeDays(newerPass.startTime) : null;
     lines.push(
-      `⚠️ This test has PASSED on a newer commit (run #${last.runId} > failing #${clusterLastSeenRunId}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
+      `⚠️ This test has PASSED since the failure (run #${newerPass.runId}, after failing run #${clusterLastSeenRunId}${newerPass.branch ? ` on ${newerPass.branch}` : ''}). The cluster may already be resolved; diagnose the historical failure, or re-triage as fixed.`,
     );
-    if (when) lines.push(`- Last passing run: #${last.runId} (${when})`);
+    if (when) lines.push(`- Last passing run: #${newerPass.runId} (${when})`);
   }
 
   const when = last.startTime instanceof Date ? relativeDays(last.startTime) : null;
@@ -786,7 +811,7 @@ async function retryProgressionSection(db: DbClient, rep: RepresentativeRow): Pr
   return `## Retry Progression\n${insight}\n${lines.join('\n')}`;
 }
 
-/** Tests in the same file that passed in the representative execution's run (D5). */
+/** Tests in the same file that passed in the representative execution's run. */
 async function passedPeersSection(
   db: DbClient,
   rep: RepresentativeRow,
@@ -843,7 +868,7 @@ async function passedPeersSection(
   };
 }
 
-/** Trace file URLs for the representative execution (D12). */
+/** Trace file URLs for the representative execution. */
 async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promise<string | null> {
   const traceFiles = await db
     .select({ path: files.path, label: files.label })
@@ -855,7 +880,7 @@ async function tracePointersSection(db: DbClient, rep: RepresentativeRow): Promi
   return `## Trace Files\n${lines.join('\n')}`;
 }
 
-/** Parse the Playwright trace ZIP for the failing action context (B1). */
+/** Parse the Playwright trace ZIP for the failing action context. */
 async function failingActionSection(
   db: DbClient,
   rep: RepresentativeRow,
@@ -1072,7 +1097,7 @@ async function resolveErrorContextAria(db: DbClient, rep: RepresentativeRow): Pr
   }
 }
 
-/** Auto-resolve screenshots for the representative execution (D1). */
+/** Auto-resolve screenshots for the representative execution. */
 async function resolveScreenshots(
   db: DbClient,
   rep: RepresentativeRow,
@@ -1107,18 +1132,34 @@ async function resolveScreenshots(
   return images;
 }
 
-/** Recurrence pattern + flakiness analysis for the cluster (D2/D3). */
-async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
-  const recentRuns = await db
+/**
+ * The ids of the tests that have failed into a cluster. Passed executions carry
+ * no cluster id, so retry passes are found through these tests.
+ */
+function clusterTestCaseIds(db: DbClient, clusterId: number) {
+  return db
+    .selectDistinct({ id: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+}
+
+/**
+ * Recurrence pattern + flakiness analysis for the cluster, over the executions
+ * of its tests in the project's 30 most recent runs. A run is affected when it
+ * holds a failure in the cluster or a retry pass of one of its tests.
+ */
+export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const rows = await db
     .select({
       runId: testRunsCases.testRunId,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
     .where(
       and(
-        eq(testRunsCases.failureClusterId, cluster.id),
+        inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         inArray(
           testRunsCases.testRunId,
           db
@@ -1130,6 +1171,7 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
         ),
       ),
     );
+  const recentRuns = rows.filter((r) => r.clusterId === cluster.id || (r.status === 'passed' && (r.retries ?? 0) > 0));
 
   if (recentRuns.length === 0) return null;
 
@@ -1183,9 +1225,12 @@ async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster)
   return lines.join('\n');
 }
 
-/** Prior diagnosis + triage note + user feedback (D10). */
-async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
-  const prev = await db
+/**
+ * The cluster's last completed diagnosis: the stored row when it is completed,
+ * otherwise the newest completed version snapshotted before a re-run reset it.
+ */
+async function lastCompletedDiagnosis(db: DbClient, clusterId: number) {
+  const [current] = await db
     .select({
       status: failureDiagnoses.status,
       category: failureDiagnoses.category,
@@ -1196,11 +1241,37 @@ async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Pro
       feedbackNote: failureDiagnoses.feedbackNote,
     })
     .from(failureDiagnoses)
-    .where(eq(failureDiagnoses.clusterId, cluster.id))
+    .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')))
     .limit(1);
+  if (current?.status === 'completed') return current;
 
-  const d = prev[0];
-  if (!d || d.status !== 'completed') return null;
+  const [version] = await db
+    .select({
+      status: failureDiagnosisVersions.status,
+      category: failureDiagnosisVersions.category,
+      confidence: failureDiagnosisVersions.confidence,
+      summary: failureDiagnosisVersions.summary,
+      rootCause: failureDiagnosisVersions.rootCause,
+      feedback: failureDiagnosisVersions.feedback,
+      feedbackNote: failureDiagnosisVersions.feedbackNote,
+    })
+    .from(failureDiagnosisVersions)
+    .where(
+      and(
+        eq(failureDiagnosisVersions.clusterId, clusterId),
+        eq(failureDiagnosisVersions.scope, 'cluster'),
+        eq(failureDiagnosisVersions.status, 'completed'),
+      ),
+    )
+    .orderBy(desc(failureDiagnosisVersions.createdAt), desc(failureDiagnosisVersions.id))
+    .limit(1);
+  return version ?? null;
+}
+
+/** Prior diagnosis + triage note + user feedback. */
+async function priorDiagnosisSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+  const d = await lastCompletedDiagnosis(db, cluster.id);
+  if (!d) return null;
 
   const lines: string[] = ['## Prior Assessment (from last diagnosis)'];
   if (d.category) lines.push(`- Previous category: ${d.category}`);
@@ -1634,9 +1705,8 @@ async function locatorHealingSection(
 
 /**
  * Header + error/source/steps/console/network/server-logs/web-vitals/ARIA
- * sub-sections from one execution, each tagged with its `SectionId`. Returning
- * ids (rather than a positional array) keeps every element self-labeling — the
- * assembler no longer has to guess which slot holds which evidence.
+ * sub-sections from one execution, each tagged with its `SectionId`, so the
+ * assembler places each piece of evidence by id, not by position.
  */
 export function representativeExecutionSections(
   rep: RepresentativeRow,
@@ -1660,7 +1730,7 @@ export function representativeExecutionSections(
     `- Duration: ${rep.duration != null ? `${rep.duration}ms` : 'unknown'}`,
   ];
 
-  // D4: CI/env/OS metadata
+  // CI/env/OS metadata
   headerLines.push(...ciRunHeaderLines(rep));
 
   out.push({ id: 'representativeExecution', markdown: headerLines.join('\n') });
@@ -1682,7 +1752,7 @@ export function representativeExecutionSections(
     }
   }
 
-  // D7: Test source — keep failing test body full, truncate surrounding
+  // Test source — keep failing test body full, truncate surrounding
   if (rep.testSource) {
     let source = rep.testSource;
     const isTruncated = source.length > limits.testSourceChars;
@@ -1751,7 +1821,7 @@ export function representativeExecutionSections(
     });
   }
 
-  // D8: Console — dedupe consecutive identical lines (SPA test failures
+  // Console — dedupe consecutive identical lines (SPA test failures
   // routinely repeat one error dozens of times, eating the window).
   const consoleLogs = (rep.consoleLogs as ConsoleLogEntry[] | null) ?? [];
   const windowLogs = consoleLogs.slice(-limits.maxConsoleWindow);
@@ -1780,7 +1850,7 @@ export function representativeExecutionSections(
     });
   }
 
-  // D9: Network — correlate with the failure when timing data allows
+  // Network — correlate with the failure when timing data allows
   const nrItems = (rep as any).nrItems ?? [];
   const networkLines: string[] = [];
   // Time anchor: the case's startedAt and the request's stored startTime are
@@ -1898,15 +1968,16 @@ const REP_SECTION_TITLES: Partial<Record<SectionId, string>> = {
   ariaSnapshot: 'ARIA Snapshot',
 };
 
-async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
+export async function retryBehaviorSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const retryPassRows = await db
     .select({ count: testRunsCases.id })
     .from(testRunsCases)
     .where(
       and(
-        eq(testRunsCases.failureClusterId, cluster.id),
+        inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         eq(testRunsCases.testRunId, cluster.lastSeenRunId),
         eq(testRunsCases.status, 'passed'),
+        sql`${testRunsCases.retries} > 0`,
       ),
     )
     .limit(1);
@@ -2391,6 +2462,7 @@ async function scmInvestigationSections(
         scmCov.provider = detectScmProvider(regression.commitRange.repositoryUrl);
         try {
           const provider = await createScmProvider(regression.commitRange.repositoryUrl, db, cluster.projectId);
+          scmCov.localGit = provider instanceof LocalGitProvider;
           const fromSha = baseCommitOverride ?? regression.commitRange.fromSha;
           if (baseCommitOverride) scmCov.baseCommitUsed = baseCommitOverride;
           const changes = provider ? await provider.fetchChanges(fromSha, regression.commitRange.toSha) : null;
@@ -2463,6 +2535,7 @@ async function scmInvestigationSections(
 
         try {
           const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+          scmCov.localGit = provider instanceof LocalGitProvider;
           const changes = provider ? await provider.fetchChanges(baseCommitOverride, currentCommit) : null;
           if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
             // Score and sort files by relevance
@@ -2548,6 +2621,7 @@ async function scmInvestigationSections(
 
           try {
             const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+            scmCov.localGit = provider instanceof LocalGitProvider;
             const changes = provider ? await provider.fetchChanges(lastPassCommit, currentCommit) : null;
             if (changes && (changes.commits.length > 0 || changes.files.length > 0)) {
               const scored = scoreFilesByRelevance(changes.files, signals);
@@ -2660,8 +2734,8 @@ export async function buildClusterDiagnosisContext(
 // ── Scope-aware diagnosis context builder ────────────────────────────────────
 
 /**
- * Build the full diagnosis context per the §7.0 contract. Scope-aware:
- * - `cluster` scope: evidence from a failure cluster (existing behavior + all §4 improvements).
+ * Build the full diagnosis context. Scope-aware:
+ * - `cluster` scope: evidence from a failure cluster.
  * - `execution` scope: evidence from a single test-runs-case, with optional cluster context.
  *
  * Returns a structured `BuiltDiagnosisContext` with sectioned markdown, coverage,
@@ -2743,7 +2817,7 @@ export async function buildDiagnosisContext(
     // them as evidence to confirm or refute, each with its [section] citation.
     push(section('clues', 'Clues', await cluesSection(db, rep, limits)));
 
-    // Failing steps (D6)
+    // Failing steps
     push(section('failingSteps', 'Failed Steps', failingStepsSection(rep, limits)));
 
     // Run context (partial run, parallelism, describe path, flaky class)
@@ -2793,8 +2867,8 @@ export async function buildDiagnosisContext(
     // Retry progression (per-attempt error evolution)
     push(section('retryProgression', 'Retry Progression', await retryProgressionSection(db, rep)));
 
-    // D2/D3: Recurrence & flakiness (cluster-scoped) — the retry-behavior one-liner
-    // is folded in here rather than mislabeled as its own section.
+    // Recurrence & flakiness (cluster-scoped), with the retry-behavior one-liner
+    // folded into this section.
     if (cluster) {
       let flakinessText = await recurrenceFlakinessSection(db, cluster);
       const retryText = await retryBehaviorSection(db, cluster);
@@ -2807,10 +2881,10 @@ export async function buildDiagnosisContext(
       }
     }
 
-    // D12: Trace pointers
+    // Trace pointers
     push(section('tracePointers', 'Trace Files', await tracePointersSection(db, rep)));
 
-    // B1: Failing action from trace parsing
+    // Failing action from trace parsing
     push(section('failingAction', 'Failing Action (from Trace)', await failingActionSection(db, rep, limits)));
 
     // Failure-time DOM snapshot rendered from the same trace blob
@@ -2838,7 +2912,7 @@ export async function buildDiagnosisContext(
     // Attachments & artifacts (video, HAR, custom files) — pointers only
     push(section('artifacts', 'Attachments & Artifacts', await artifactsSection(db, rep)));
 
-    // D1: Auto-resolve screenshots. `chars` reflects the markdown reference only;
+    // Auto-resolve screenshots. `chars` reflects the markdown reference only;
     // the base64 image payload is billed as vision tokens, estimated separately.
     images = await resolveScreenshots(db, rep, limits);
     if (images.length > 0) {
@@ -2920,7 +2994,7 @@ export async function buildDiagnosisContext(
     }
   }
 
-  // D10: Prior diagnosis + triage note (cluster-scoped)
+  // Prior diagnosis + triage note (cluster-scoped)
   if (cluster) {
     push(section('priorDiagnosis', 'Prior Assessment', await priorDiagnosisSection(db, cluster)));
     // A previously fixed similar failure — the resolved cluster this one most

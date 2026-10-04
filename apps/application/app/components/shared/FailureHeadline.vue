@@ -20,8 +20,10 @@ const props = withDefaults(
     truncate?: boolean;
     /** The locator sits in a highlighted code chip — for a headline used as a heading. */
     chip?: boolean;
+    /** Search values to mark in the headline's words (`testSearchHighlights(…).error`). */
+    highlight?: readonly string[] | null;
   }>(),
-  { parts: null, error: null, steps: null, truncate: false, chip: false },
+  { parts: null, error: null, steps: null, truncate: false, chip: false, highlight: null },
 );
 
 const resolvedParts = computed<HeadlinePart[]>(() => {
@@ -36,7 +38,12 @@ const title = computed(() => (props.error ? stripAnsi(props.error).trim() : unde
   <span :class="truncate ? 'block truncate min-w-0' : 'break-words'" :title="title">
     <template v-for="(part, i) in resolvedParts" :key="i">
       <LocatorCode v-if="part.kind === 'locator'" :locator="part.text" :chip="chip" class="text-[0.92em]" />
-      <span v-else-if="part.kind === 'value'" :class="chip ? '' : 'font-medium text-highlighted'">{{ part.text }}</span>
+      <span v-else-if="part.kind === 'value'" :class="chip ? '' : 'font-medium text-highlighted'"
+        ><SearchHighlight v-if="highlight?.length" :text="part.text" :patterns="highlight" /><template v-else>{{
+          part.text
+        }}</template></span
+      >
+      <SearchHighlight v-else-if="highlight?.length" :text="part.text" :patterns="highlight" />
       <template v-else>{{ part.text }}</template>
     </template>
   </span>

@@ -1,9 +1,26 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/api';
+import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
-import { lockColorHex, TIMELINE_HOOK_COLORS } from '~/utils/timeline';
+import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT } from '~/utils/timeline';
+import {
+  ALL_RESOURCE_TRACKS,
+  RESOURCE_TRACK_KINDS,
+  WORKER_METRICS,
+  availableWorkerMetrics,
+  buildResourceBands,
+  buildWorkerStrips,
+  layOutTimelineRows,
+  shownTracks,
+  type ResourceBand,
+  type ResourceTrackKind,
+  type ResourceTrackVisibility,
+  type WorkerMetricKind,
+  type WorkerStrip,
+  type WorkerStripSet,
+} from '~/utils/resource-tracks';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -12,6 +29,10 @@ const props = defineProps<{
   live?: boolean;
   /** Allowlist of glob patterns classifying which waits count as wasted time. */
   wastedPatterns?: string[] | null;
+  /** The run, for its resources over time. */
+  runId?: number | null;
+  /** Whether a reporter of the run sent resources; the tracks are fetched only then, once the run ended. */
+  hasResources?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -47,7 +68,133 @@ const modelInput = {
   },
 };
 
-const { timelineData, workerRows, laneCount, maxTime, runLocks } = useTimelineModel(modelInput);
+const { timelineData, workerRows, laneCount, maxTime, origin, runLocks } = useTimelineModel(modelInput);
+
+// The resources each reporter measured over time, and what each execution
+// cost, fetched once the run ended.
+const resourceParts = ref<RunResourceTimelinePart[]>([]);
+const executionCosts = ref<RunExecutionCost[]>([]);
+async function loadResources(): Promise<void> {
+  if (!props.runId || props.live || !props.hasResources) {
+    resourceParts.value = [];
+    executionCosts.value = [];
+    return;
+  }
+  try {
+    const res = await $fetch<RunResourceTimeline>(`/api/test-runs/${props.runId}/resource-timeline`);
+    resourceParts.value = res.parts ?? [];
+    executionCosts.value = res.executions ?? [];
+  } catch {
+    resourceParts.value = [];
+    executionCosts.value = [];
+  }
+}
+onMounted(loadResources);
+watch(() => [props.runId, props.live, props.hasResources], loadResources);
+
+const sharded = computed(() => (props.shardTotal ?? 0) > 1);
+
+// Which tracks are shown above the rows, and which metric the strip under each
+// worker draws: per-browser preferences, every track and no strip until changed.
+const trackVisibility = useLocalStorage<ResourceTrackVisibility>(
+  'piwi-timeline-resource-tracks',
+  { ...ALL_RESOURCE_TRACKS },
+  { initOnMounted: true, mergeDefaults: true, writeDefaults: false },
+);
+const workerMetric = useLocalStorage<WorkerMetricKind | 'none'>('piwi-timeline-worker-strip', 'none', {
+  initOnMounted: true,
+  writeDefaults: false,
+});
+
+const resourceBands = computed<ResourceBand[]>(() =>
+  origin.value === null || resourceParts.value.length === 0
+    ? []
+    : buildResourceBands(resourceParts.value, workerRows.value, origin.value, sharded.value),
+);
+
+/** The tracks the header offers: those some band has data for, with whether they are shown. */
+const resourceTrackOptions = computed(() =>
+  RESOURCE_TRACK_KINDS.filter(({ kind }) => resourceBands.value.some((band) => band.tracks[kind])).map((k) => ({
+    kind: k.kind,
+    label: k.menuLabel,
+    shown: trackVisibility.value[k.kind] !== false,
+  })),
+);
+
+function toggleTrack(kind: ResourceTrackKind): void {
+  trackVisibility.value = { ...trackVisibility.value, [kind]: trackVisibility.value[kind] === false };
+}
+
+/** The metrics the strip under each worker can draw for this run, with the one chosen. */
+const workerMetricOptions = computed(() => {
+  const available = availableWorkerMetrics(resourceBands.value, executionCosts.value);
+  return WORKER_METRICS.filter((m) => available.includes(m.kind)).map((m) => ({
+    kind: m.kind,
+    label: m.menuLabel,
+    shown: workerMetric.value === m.kind,
+  }));
+});
+
+const testItems = computed(() => timelineData.value.filter((item) => item.kind === 'test'));
+
+const workerStrips = computed<WorkerStripSet | null>(() => {
+  const kind = workerMetric.value;
+  if (kind === 'none' || !workerMetricOptions.value.some((m) => m.kind === kind)) return null;
+  return buildWorkerStrips(kind, {
+    rows: workerRows.value,
+    bands: resourceBands.value,
+    tests: testItems.value,
+    costs: executionCosts.value,
+    sharded: sharded.value,
+  });
+});
+
+/** Each band with the tracks it draws and its height; a band whose tracks are all off takes no room. */
+const bandLayout = computed(() =>
+  resourceBands.value
+    .map((band) => {
+      const tracks = shownTracks(band, trackVisibility.value);
+      const { trackHeight, trackGap, bandGap } = TIMELINE_LAYOUT;
+      return { band, tracks, height: tracks.length > 0 ? tracks.length * (trackHeight + trackGap) + bandGap : 0 };
+    })
+    .filter((entry) => entry.height > 0),
+);
+
+/** Where each lane, band and strip sits. */
+const rowsLayout = computed(() =>
+  layOutTimelineRows(workerRows.value, {
+    bandHeights: new Map(bandLayout.value.map((entry) => [entry.band.firstLane, entry.height])),
+    strips: workerStrips.value !== null,
+    stripHeight: TIMELINE_LAYOUT.stripHeight,
+    rowHeight: TIMELINE_LAYOUT.rowHeight,
+    rowGap: TIMELINE_LAYOUT.rowGap,
+    axisHeight: TIMELINE_LAYOUT.axisHeight,
+  }),
+);
+
+/** Height of what sits above a lane besides the lanes before it: the bands and strips. */
+function laneOffset(lane: number): number {
+  const top = rowsLayout.value.laneTop[lane];
+  return top === undefined ? 0 : top - (lane * TIMELINE_LAYOUT.rowHeight + TIMELINE_LAYOUT.axisHeight);
+}
+const extraHeight = computed(
+  () => rowsLayout.value.height - (laneCount.value * TIMELINE_LAYOUT.rowHeight + TIMELINE_LAYOUT.axisHeight),
+);
+
+function bandTop(entry: { band: ResourceBand }): number {
+  return rowsLayout.value.bandTop.get(entry.band.firstLane) ?? TIMELINE_LAYOUT.axisHeight;
+}
+
+/** Y of the strip under the row whose first lane is `lane`. */
+function stripTop(lane: number): number | null {
+  const index = workerRows.value.findIndex((row) => row.baseLane === lane);
+  return index < 0 ? null : (rowsLayout.value.rows[index]?.stripTop ?? null);
+}
+
+/** The tracks a band draws, for the readout. */
+function tracksFor(band: ResourceBand) {
+  return bandLayout.value.find((entry) => entry.band.key === band.key)?.tracks ?? [];
+}
 
 const expandedCount = computed(() => expandedExecutions.value.size);
 
@@ -151,7 +298,15 @@ const {
   onPointerUp,
   resetView,
   zoomToRange,
-} = useTimelineViewport({ containerRef, maxTime, rowCount, hasData, live: () => props.live });
+} = useTimelineViewport({
+  containerRef,
+  maxTime,
+  rowCount,
+  hasData,
+  live: () => props.live,
+  laneOffset,
+  extraHeight,
+});
 
 // Header counts: tests, hook sections that failed, wasted waits.
 const testCount = computed(() => timelineData.value.filter((d) => d.kind === 'test').length);
@@ -244,6 +399,45 @@ function onBarMove(event: MouseEvent) {
 function onBarLeave() {
   hover.item = null;
 }
+
+// The moment under the pointer in a resource band, read only by the readout
+// and the line across the rows, like the bars' hover state.
+const resourceHover = reactive<{
+  band: ResourceBand | null;
+  strip: { set: WorkerStripSet; strip: WorkerStrip } | null;
+  t: number;
+  pos: { x: number; y: number };
+}>({ band: null, strip: null, t: 0, pos: { x: 0, y: 0 } });
+
+watch([bandLayout, workerStrips], ([layout, strips]) => {
+  if (resourceHover.band && !layout.some((entry) => entry.band.key === resourceHover.band!.key)) {
+    resourceHover.band = null;
+  }
+  if (resourceHover.strip && resourceHover.strip.set !== strips) resourceHover.strip = null;
+});
+
+function moveResourceHover(t: number, event: MouseEvent): void {
+  resourceHover.t = Math.max(0, Math.min(maxTime.value, t));
+  resourceHover.pos = { x: event.clientX, y: event.clientY };
+}
+
+function onResourceHover(band: ResourceBand, t: number, event: MouseEvent): void {
+  resourceHover.band = band;
+  resourceHover.strip = null;
+  moveResourceHover(t, event);
+}
+
+function onStripHover(strip: WorkerStrip, t: number, event: MouseEvent): void {
+  if (!workerStrips.value) return;
+  resourceHover.band = null;
+  resourceHover.strip = { set: workerStrips.value, strip };
+  moveResourceHover(t, event);
+}
+
+function onResourceLeave(): void {
+  resourceHover.band = null;
+  resourceHover.strip = null;
+}
 </script>
 
 <template>
@@ -263,9 +457,13 @@ function onBarLeave() {
       :lock-count="runLocks.length"
       :expanded-count="expandedCount"
       :live="live"
+      :resource-tracks="resourceTrackOptions"
+      :worker-metrics="workerMetricOptions"
       @toggle-hooks="showHooks = $event"
       @toggle-waits="showWaits = $event"
       @toggle-locks="showLocks = $event"
+      @toggle-resource="toggleTrack"
+      @select-worker-metric="workerMetric = $event ?? 'none'"
       @collapse-all="collapseAll"
       @reset="resetView"
     />
@@ -328,6 +526,29 @@ function onBarLeave() {
           :tick-marks="tickMarks"
           :content-width="contentWidth"
           :shard-total="shardTotal"
+          :layout="rowsLayout"
+        />
+
+        <TimelineResourceBand
+          v-for="entry in bandLayout"
+          :key="entry.band.key"
+          :band="entry.band"
+          :tracks="entry.tracks"
+          :y="bandTop(entry)"
+          :px-per-ms="pxPerMs"
+          :plot-width="maxTime * pxPerMs"
+          @hover="onResourceHover"
+          @leave="onResourceLeave"
+        />
+
+        <TimelineWorkerStrips
+          v-if="workerStrips"
+          :set="workerStrips"
+          :strip-top="stripTop"
+          :px-per-ms="pxPerMs"
+          :plot-width="maxTime * pxPerMs"
+          @hover="onStripHover"
+          @leave="onResourceLeave"
         />
 
         <TimelineBar
@@ -361,10 +582,13 @@ function onBarLeave() {
           :hooks="hooksFor"
           :hook-geometry="hookGeometry"
         />
+
+        <TimelineResourceCursor :state="resourceHover" :px-per-ms="pxPerMs" :content-height="contentHeight" />
       </svg>
     </div>
 
     <TimelineTooltip :state="hover" :lock-color-map="lockColorMap" />
+    <TimelineResourceTooltip :state="resourceHover" :tracks-for="tracksFor" />
   </div>
   <EmptyState v-else icon="i-lucide-rows-3" text="No worker data available for this run." />
 </template>

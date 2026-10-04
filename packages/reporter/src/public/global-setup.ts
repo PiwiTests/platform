@@ -1,16 +1,18 @@
 import * as path from 'node:path';
 import { errorMessage } from '../internal/support/errors.js';
 import * as fs from 'node:fs';
-import type { PiwiDashboardOptions, ShardInfo } from './options.js';
+import type { PiwiDashboardOptions } from './options.js';
 import { resolveOptions } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
-import { detectCiRunLabel } from '../internal/support/ci.js';
+import { resolveRunLabel } from '../internal/support/ci.js';
+import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
+import { checkBaseUrls } from '../internal/support/base-url-check.js';
 import {
   readCommittedManifest,
   fetchInstrumentationManifest,
@@ -25,6 +27,10 @@ import {
  *
  * The server-run ID and a one-time token are written to a temp file so the
  * reporter instance can pick them up during the streaming handshake.
+ *
+ * With `checkBaseUrl`, every `baseURL` the run's projects use is checked first,
+ * and the setup throws, stopping the run before any worker starts, when one
+ * does not answer.
  *
  * @param options   Piwi Dashboard options (uses `serverUrl`, `projectName`, …).
  * @param userSetup An existing global setup to chain after the Piwi registration.
@@ -83,6 +89,12 @@ export function createGlobalSetup(
       return;
     }
 
+    // Before the run is registered, so a run stopped here leaves none behind.
+    if (opts.checkBaseUrl === true) {
+      const checked = await checkBaseUrls(config ?? {});
+      for (const target of checked) logger.debug(`Base URL answered: ${target.url}`);
+    }
+
     if (opts.enabled === false || !opts.serverUrl) {
       logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       if (userSetup) return userSetup(config);
@@ -112,12 +124,9 @@ export function createGlobalSetup(
 
     try {
       const auth = await httpClient.resolveAuth(opts);
-      const runLabel = opts.runLabel || detectCiRunLabel();
 
-      // Detect shard info from Playwright config (--shard=1/3)
-      const pwShard = (config as any).shard as ShardInfo | null | undefined;
-      const shardIndex = pwShard?.current;
-      const shardTotal = pwShard?.total;
+      // The shard from Playwright's --shard=1/3, or the one `piwi run --shard` set
+      const shard = resolveShardInfo(config);
 
       const response = await httpClient.postJSON(
         '/api/test-runs/setup',
@@ -128,9 +137,9 @@ export function createGlobalSetup(
           label: opts.label || null,
           keep: opts.keep === true,
           startTime: new Date().toISOString(),
-          instanceId: computeInstanceId(opts.projectName!, runLabel),
-          shardIndex,
-          shardTotal,
+          instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
+          shardIndex: shard?.current,
+          shardTotal: shard?.total,
         },
         auth,
       );

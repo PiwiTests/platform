@@ -1,17 +1,14 @@
 import { describe, test, expect } from 'vitest';
 import * as core from '@piwitests/core/locator-generation';
 import { LOCATOR_BUILDER_METHODS } from '@piwitests/core/locator-methods';
-import * as coreSteps from '@piwitests/core/step-analysis';
 // Imported from the reporter's *source* (vitest transpiles it), not dist/.
 import * as reporter from '../../../../packages/reporter/src/internal/capture/locator-healing';
-import * as reporterSteps from '../../../../packages/reporter/src/internal/collect/step-analyzer';
 
 /**
- * Replaces the old reporter↔shared drift-guard test. The reporter now bundles
- * `@piwitests/core` instead of hand-mirroring it, so the guarantee we want is
- * *identity*: the reporter re-exports the exact core functions, with no local
- * copy that could drift. If someone re-implements one of these in the reporter,
- * the reference stops matching and this fails.
+ * The reporter bundles `@piwitests/core` rather than hand-mirroring it, so the
+ * guarantee we want is *identity*: the reporter re-exports the exact core
+ * functions, with no local copy that could drift. If someone re-implements one
+ * of these in the reporter, the reference stops matching and this fails.
  */
 describe('reporter re-exports @piwitests/core (no local re-implementation)', () => {
   test('locator-generation helpers are the same references as core', () => {
@@ -28,15 +25,5 @@ describe('reporter re-exports @piwitests/core (no local re-implementation)', () 
 
   test('the reporter method surface derives from the shared builder-method list', () => {
     expect(reporter.LOCATOR_METHODS).toEqual([...LOCATOR_BUILDER_METHODS]);
-  });
-
-  test('step-analysis helpers are the same references as core', () => {
-    expect(reporterSteps.categorizeStep).toBe(coreSteps.categorizeStep);
-    expect(reporterSteps.flattenSteps).toBe(coreSteps.flattenSteps);
-    expect(reporterSteps.stepLabel).toBe(coreSteps.stepLabel);
-    expect(reporterSteps.collectStepMetrics).toBe(coreSteps.collectStepMetrics);
-    expect(reporterSteps.extractTestStepEvents).toBe(coreSteps.extractTestStepEvents);
-    expect(reporterSteps.extractWaitEvents).toBe(coreSteps.extractWaitEvents);
-    expect(reporterSteps.computePerformanceSummary).toBe(coreSteps.computePerformanceSummary);
   });
 });

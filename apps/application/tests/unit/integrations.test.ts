@@ -20,7 +20,6 @@ const {
   listConnections,
   getConnectionRow,
   createTracker,
-  defaultTrackerConnection,
   ensureEnvManagedConnections,
   testConnection,
   credentialsForCheck,
@@ -251,6 +250,30 @@ describe('connections and link resolution', () => {
     expect(tracker).not.toBeNull();
   });
 
+  test('moving a connection to another site keeps none of the stored credentials', async () => {
+    const created = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+
+    const moved = await updateConnection(dbc, created.id, { baseUrl: 'https://attacker.example' });
+    expect(moved?.credentialValues.email).toBeUndefined();
+    expect(moved?.status).toBe('unverified');
+    expect(await createTracker(dbc, created.id)).toBeNull();
+
+    // Resubmitting the same site keeps them.
+    const again = await createConnection(dbc, {
+      provider: 'jira',
+      name: 'Team Jira 2',
+      baseUrl: 'https://team.atlassian.net',
+      credentials: { email: 'me@team.io', apiToken: 'secret-token' },
+    });
+    const same = await updateConnection(dbc, again.id, { baseUrl: 'https://team.atlassian.net/' });
+    expect(same?.credentialValues.email).toBe('me@team.io');
+  });
+
   test('correcting only the account email keeps the stored API token', async () => {
     const created = await createConnection(dbc, {
       provider: 'jira',
@@ -313,26 +336,6 @@ describe('connections and link resolution', () => {
     delete process.env.PIWI_JIRA_EMAIL;
     delete process.env.PIWI_JIRA_API_TOKEN;
     expect(await listConnections(dbc)).toHaveLength(0);
-  });
-
-  test('defaultTrackerConnection returns the sole tracker, else null', async () => {
-    expect(await defaultTrackerConnection(dbc)).toBeNull();
-    const created = await createConnection(dbc, {
-      provider: 'jira',
-      name: 'Only',
-      baseUrl: 'https://only.atlassian.net',
-      credentials: { email: 'a@b.io', apiToken: 't' },
-    });
-    const sole = await defaultTrackerConnection(dbc);
-    expect(sole?.id).toBe(created.id);
-
-    await createConnection(dbc, {
-      provider: 'jira',
-      name: 'Second',
-      baseUrl: 'https://second.atlassian.net',
-      credentials: { email: 'a@b.io', apiToken: 't' },
-    });
-    expect(await defaultTrackerConnection(dbc)).toBeNull();
   });
 
   test('detectProviderWithConnections recognizes a self-hosted Jira once connected', async () => {

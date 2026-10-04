@@ -76,7 +76,12 @@ const periodItems = computed(() =>
   !PERIODS.some((p) => p.value === period.value) ? [...PERIODS, { label: period.value, value: period.value }] : PERIODS,
 );
 
-const metricItems = WIDGET_METRIC_IDS.map((id) => ({ label: getMetric(id).label, value: id }));
+const { state: capabilityState } = await useInstanceCapabilities();
+// A metric whose capability this instance declined is not offered.
+const metricItems = WIDGET_METRIC_IDS.filter((id) => {
+  const capability = getMetric(id).capability;
+  return !capability || capabilityState(capability) !== 'declined';
+}).map((id) => ({ label: getMetric(id).label, value: id }));
 const DISPLAY_LABELS: Record<(typeof METRIC_DISPLAYS)[number], string> = {
   stat: 'Number',
   line: 'Line',

@@ -23,6 +23,8 @@ import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
+import { parseRunOriginRef, type RunOriginKind } from '@piwitests/core/wire';
+import { runOrigin, runOriginIs, runOriginRef } from '#shared/run-eligibility';
 import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
@@ -30,21 +32,43 @@ import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { notLabRun } from './probes';
+import { isPassiveCapabilityDeclined } from './capabilities';
+import { hasResourceReport } from './resource-reports';
 import { describeRunBaseline } from '#shared/run-baseline';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 
 type ProjectScope = 'all' | Set<number>;
 
-/** The most recent test run for a project (id + status only), or null if none. */
-export async function getProjectLatestRun(db: DrizzleDB, projectId: number) {
+/**
+ * The most recent test run for a project (id + status only), or null if none.
+ * With `origin`, the most recent one its launcher stamped with that kind and
+ * ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a local
+ * process of its own produced.
+ */
+export async function getProjectLatestRun(
+  db: DrizzleDB,
+  projectId: number,
+  origin: { kind: RunOriginKind; ref: string } | null = null,
+) {
+  if (origin) {
+    const ref = parseRunOriginRef(origin.ref);
+    if (!ref) return null;
+    const rows = await db
+      .select({ id: testRuns.id, status: testRuns.status, metadata: testRuns.metadata })
+      .from(testRuns)
+      .where(and(eq(testRuns.projectId, projectId), runOriginIs(testRuns.metadata, origin.kind, ref)))
+      .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+      .limit(20);
+    const found = rows.find((r) => runOrigin(r.metadata) === origin.kind && runOriginRef(r.metadata) === ref);
+    return found ? { id: found.id, status: found.status } : null;
+  }
   const rows = await db
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, projectId))
-    // Rank by start_time (id as a deterministic tiebreaker), not MAX(id), so
-    // "latest" stays correct when rows are ingested out of chronological order —
-    // historical uploads on the server, or the demo seed which inserts runs
-    // newest-first (MAX(id) would be the oldest run). Matches `listProjects`.
+    // Rank by start_time (id as a deterministic tiebreaker): rows can be
+    // ingested out of chronological order (historical uploads on the server;
+    // the demo seed inserts runs newest-first). Matches `listProjects`.
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   return rows[0] ?? null;
@@ -174,7 +198,7 @@ export async function getTestRun(
     // With custom patterns configured, wasted time is recomputed from the
     // stored wait events so the new allowlist re-classifies existing runs.
     // With the defaults in effect the stored column is authoritative
-    // (recomputed only for legacy rows that predate it).
+    // (recomputed only for a row where it is null).
     wastedTimeMs: wastedPatterns
       ? tc.stepEvents != null
         ? computeWastedMs(tc.stepEvents as TestStepEvent[], wastedPatterns)
@@ -268,6 +292,8 @@ export async function getTestRun(
     keptByName,
     precedingMarker,
     isFullRun: testRun.isFullRun === 1,
+    hasResources:
+      (await hasResourceReport(db, id)) && !(await isPassiveCapabilityDeclined(db, testRun.projectId, 'resources')),
     project: projectPublic,
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
@@ -316,18 +342,21 @@ const RECENT_FIELDS = {
 };
 
 export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'all') {
+  if (scope !== 'all' && scope.size === 0) return [];
+  // Filtered before the limit, so runs of other projects never crowd out the caller's.
+  const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
   const [activeRuns, recentRuns] = await Promise.all([
     db
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))))
+      .where(and(or(...ACTIVE_STATUSES.map((s) => eq(testRuns.status, s))), inScope))
       .orderBy(desc(testRuns.startTime)),
     db
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.metadata)))
+      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.metadata), inScope))
       .orderBy(desc(testRuns.startTime))
       .limit(30),
   ]);
@@ -340,9 +369,7 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
       result.push(run);
     }
   }
-  if (scope === 'all') return result;
-  if (scope.size === 0) return [];
-  return result.filter((run) => scope.has(run.projectId));
+  return result;
 }
 
 /**

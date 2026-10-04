@@ -212,7 +212,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_cluster',
     module: 'core',
     description:
-      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
+      'Get full details for a failure cluster including all affected test cases, a compact diagnosis summary, and locator healing suggestions for up to 5 affected cases. Each healing entry includes the failing locator, the recommended fix, and the number of alternatives available. `mergeSuggestions` lists the pending suggestions to merge it with another cluster (suggestionId, otherClusterId), to decide with decide_merge_suggestion. Use get_cluster_diagnosis for the full diagnosis text, or get_cluster_context for the raw AI evidence.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -384,7 +384,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_run_insights',
     module: 'core',
     description:
-      'Compare a run to its baseline: pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, biggest perf improvements/regressions, worker imbalance, and newly opened clusters. The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any; `baseline` names why it was chosen. Use this to answer "what changed?" and "did my fix work?".',
+      'Compare a run to its baseline: pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, biggest perf improvements/regressions, worker imbalance, and newly opened clusters. The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any; when no earlier full run passed, the last failed run, found the same way. `baseline` names why it was chosen. Use this to answer "what changed?" and "did my fix work?".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -392,7 +392,7 @@ export const MCP_TOOL_DEFS = [
         baseBranch: {
           type: 'string',
           description:
-            'Optional: take the baseline from this branch only (its last passing run, same environment first) instead of the automatic choice',
+            'Optional: take the baseline from this branch only (its last passing run, else its last failed run, same environment first) instead of the automatic choice',
         },
       },
       required: ['runId'],
@@ -402,7 +402,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_spec_health',
     module: 'core',
     description:
-      'Per-spec-file health for a project: pass rate, flaky rate, failure count, test count, and average duration grouped by spec-file prefix over the last N days. Use to find which areas of the suite are unhealthy.',
+      'Per-spec-file health for a project: pass rate, flaky rate, failure count, execution count (`testCount`), and average duration grouped by spec-file prefix over the last N days. Use to find which areas of the suite are unhealthy.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -490,6 +490,39 @@ export const MCP_TOOL_DEFS = [
     capability: 'fixtures',
     description:
       "A run's network requests aggregated by method + normalized route, sorted by average duration: request count, average, p90 and max duration, error rate, and the tests that made them. Use to pin a UI failure on a slow or failing endpoint; the backend logs of one failing test are in explain_failure and get_test_case_context.",
+    inputSchema: {
+      type: 'object',
+      properties: { runId: { type: 'number', description: 'Test run ID' } },
+      required: ['runId'],
+    },
+  },
+  {
+    name: 'list_resource_findings',
+    module: 'workflow',
+    capability: 'resources',
+    description:
+      'A project’s resource findings across runs, the most recently seen first: browsers, contexts, pages and API contexts left open past the test or describe block that opened them (leaked), pages opened and never used (idle), pages, listeners or route handlers growing on a long-lived page (piling), Node servers or file watchers a test left running in its worker (handle), and leaks counted from steps without the capture fixtures (probable). Each has where it was opened (`site` is the `file:line` to edit), the run it was first and last seen in, how many runs showed it, and its status: `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back). `last` is what it held the last time it showed: objects, tests, how long it stayed open, page CPU after its test. Use it before touching a suite’s fixtures or teardown, or to check a leak fix held.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID' },
+        status: { type: 'string', enum: ['open', 'fixed', 'all'], description: 'Which findings (default open)' },
+        verdict: {
+          type: 'string',
+          enum: ['leaked', 'idle', 'piling', 'handle', 'probable'],
+          description: 'Only findings with this verdict',
+        },
+        limit: { type: 'number', description: 'Max findings (default 50, max 200)' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'get_resource_profile',
+    module: 'workflow',
+    capability: 'resources',
+    description:
+      'What one run cost and left open, from its reporters’ resource reports (one per shard): the findings, each with whether its base branch (the pull request’s target, else the default branch) had shown it before (`isNew`); the machine each shard ran on (cores, memory, how busy its CPUs were, the share of time a task waited for a CPU, CPU time by process role, peak memory and the largest process, disk); the busiest open pages per worker; and the costliest tests by the CPU of their worker and browser processes, with the pages each found already open. Null fields were not measured on that platform. Use it to explain a slow or timing-out run, or to find which tests a leak slows down.',
     inputSchema: {
       type: 'object',
       properties: { runId: { type: 'number', description: 'Test run ID' } },
@@ -634,7 +667,11 @@ export const MCP_TOOL_DEFS = [
         projectId: { type: 'number', description: 'Project ID' },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
         offset: { type: 'number', description: 'Row offset for paging (default 0)' },
-        query: { type: 'string', description: 'Optional case-insensitive substring filter on title or file path' },
+        query: {
+          type: 'string',
+          description:
+            'Optional search, as in the catalog search box: words match the title, describe blocks or file path; qualifiers match one field (file:, describe:, title:, tag:, lock:, owner:, priority:, feature:); a leading - excludes; * is a wildcard in text fields',
+        },
         tags: {
           type: 'string',
           description: 'Comma-separated tags; a test must carry every one of them. A leading @ is optional.',
@@ -779,7 +816,10 @@ export const MCP_TOOL_DEFS = [
       properties: {
         clusterId: { type: 'number', description: 'Cluster ID' },
         status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'New triage status' },
-        triageNote: { type: 'string', description: 'Optional note explaining the status change' },
+        triageNote: {
+          type: 'string',
+          description: 'Optional note replacing the triage note; omitted keeps the current one',
+        },
       },
       required: ['clusterId', 'status'],
     },
@@ -828,6 +868,238 @@ export const MCP_TOOL_DEFS = [
         baseCommit: { type: 'string', description: 'Optional baseline commit SHA for SCM-diff context' },
       },
       required: ['clusterId'],
+    },
+  },
+  {
+    name: 'triage_cluster',
+    module: 'core',
+    description:
+      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterIds: { type: 'array', items: { type: 'number' }, description: 'Cluster IDs (1 to 200)' },
+        action: {
+          type: 'string',
+          enum: ['status', 'assign', 'snooze', 'quarantine', 'release'],
+          description: 'The triage action applied to every cluster',
+        },
+        status: {
+          type: 'string',
+          enum: ['open', 'resolved', 'ignored'],
+          description: 'With action status: the new status',
+        },
+        note: { type: 'string', description: 'With action status: the triage note saved on each cluster' },
+        assignee: { type: 'string', description: 'With action assign: a name or email (empty to unassign)' },
+        snooze: {
+          type: 'string',
+          enum: ['1-day', '1-week', 'until-recurs'],
+          description: 'With action snooze: how long to hide the clusters from the inbox (omit to unsnooze)',
+        },
+        reason: { type: 'string', description: 'With action quarantine or release: why, kept on each test' },
+      },
+      required: ['clusterIds', 'action'],
+    },
+  },
+  {
+    name: 'triage_gap',
+    module: 'workflow',
+    capability: 'test-map',
+    description:
+      'Give a verdict on a scenario gap, as the gap inbox does: `accept` (queue its draft, optionally for someone), `snooze` (1-day, 1-week, or until the node changes), `dismiss` with a reason (not-worth-testing, covered-elsewhere with the covering test, wrong), or `covered-by` (record the test that covers it without dismissing). A verdict counts for or against the detector that raised the gap. Pass the gap id from list_scenario_gaps. Returns the gap’s new status. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        gapId: { type: 'number', description: 'The gap id from list_scenario_gaps' },
+        verb: { type: 'string', enum: ['accept', 'snooze', 'dismiss', 'covered-by'], description: 'The verdict' },
+        snooze: {
+          type: 'string',
+          enum: ['1-day', '1-week', 'until-node-changes'],
+          description: 'With snooze: how long (default 1-week)',
+        },
+        reason: {
+          type: 'string',
+          enum: ['not-worth-testing', 'covered-elsewhere', 'wrong'],
+          description: 'With dismiss: why (default wrong)',
+        },
+        coveringTestCaseId: {
+          type: 'number',
+          description: 'With covered-by, or dismiss covered-elsewhere: the testCaseId of the test that covers it',
+        },
+        assignedTo: { type: 'string', description: 'With accept: who writes the test' },
+      },
+      required: ['projectId', 'gapId', 'verb'],
+    },
+  },
+  {
+    name: 'decide_merge_suggestion',
+    module: 'core',
+    description:
+      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters, or a suggestionId from get_cluster’s mergeSuggestions; when a cluster has more than one pending suggestion, pass suggestionId. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'A cluster with a pending merge suggestion' },
+        suggestionId: { type: 'number', description: 'The suggestion, when the cluster has several' },
+        decision: {
+          type: 'string',
+          enum: ['approve', 'reject'],
+          description: 'Merge the clusters, or keep them apart',
+        },
+      },
+      required: ['decision'],
+    },
+  },
+  {
+    name: 'dismiss_quarantine_proposal',
+    module: 'workflow',
+    capability: 'quarantine',
+    description:
+      'Dismiss what Piwi proposed for a test, as the dashboard’s Dismiss does: the proposal to quarantine it, or the proposed release of it from quarantine. `quarantine` applies to a quarantine candidate (one of the costliest flaky tests, by the CI minutes their flakiness wastes, which the flaky list marks proposed); `release` to a quarantined test whose passing streak or verified fix earned its way out (list_open_clusters with queue quarantine-ready finds their clusters). Records the proposal as rejected, with your optional reason; nothing else changes, so the test stays out of, or in, quarantine. Dismissing the same proposal again records nothing more; a dismissed quarantine proposal counts again once a newer run arrives. Fails when the test has no such proposal. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        testCaseId: { type: 'number', description: 'The test (testCaseId)' },
+        proposal: {
+          type: 'string',
+          enum: ['quarantine', 'release'],
+          description: 'Which proposal: quarantining the test, or releasing it from quarantine',
+        },
+        reason: { type: 'string', description: 'Why you dismiss it (up to 500 characters)' },
+      },
+      required: ['projectId', 'testCaseId', 'proposal'],
+    },
+  },
+  {
+    name: 'set_bug_report_status',
+    module: 'workflow',
+    capability: 'bug-reports',
+    description:
+      'Set a bug report’s status by hand: `dismissed` (not a bug, or not worth a test), `open` (reopen it) or `closed`. The other statuses (test-committed, looks-fixed) follow the runs of the test that names the report. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Bug report id from list_bug_reports' },
+        status: { type: 'string', enum: ['open', 'dismissed', 'closed'], description: 'The new status' },
+      },
+      required: ['id', 'status'],
+    },
+  },
+  {
+    name: 'rerun_cluster_in_ci',
+    module: 'core',
+    capability: 'scm',
+    description:
+      "Re-run exactly a failure cluster's affected tests in CI, as the cluster page's Re-run in CI button does: dispatches the project's configured workflow or pipeline with the project's SCM token. Returns the provider and the URL to watch the runs (the re-run's own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: { clusterId: { type: 'number', description: 'Cluster ID' } },
+      required: ['clusterId'],
+    },
+  },
+  {
+    name: 'set_cluster_bisect',
+    module: 'core',
+    description:
+      'Record the first bad commit a `git bisect` found for a failure cluster, as the desktop app does when its bisect ends: the commit then shows in the fix plan (get_fix_plan) next to the regression window. Pass the SHA (7 to 40 hex characters) and, when known, its subject, author and ISO date. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        sha: { type: 'string', description: 'The first bad commit (7 to 40 hex characters)' },
+        subject: { type: 'string', description: "The commit's subject line" },
+        author: { type: 'string', description: "The commit's author" },
+        date: { type: 'string', description: 'ISO date the commit was authored' },
+      },
+      required: ['clusterId', 'sha'],
+    },
+  },
+  {
+    name: 'record_diagnosis',
+    module: 'agents',
+    capability: 'agent-diagnoses',
+    description:
+      "Record the diagnosis you wrote for a failure cluster as its current diagnosis, written by an agent: pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for (summary; confidenceScore 0-100; severity blocker|high|medium|low; affectedArea or null; hypotheses, ranked, each with category app-bug|test-bug|flaky-test|infrastructure|environment|unknown, rootCause, likelihood 0-100 and evidence; suggestedFix with description, file, code and patch, each null when unknown; investigationSteps; preventionTips). The previous diagnosis is kept in the cluster's history. Your patch (a unified diff) is validated against the source the cluster failed at when source control is connected; the answer says whether it applies. Works without an AI provider on this instance. Returns the diagnosisId to pass to report_fix_attempt. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        model: { type: 'string', description: 'The model you run on, e.g. claude-opus-5-5' },
+        diagnosis: {
+          type: 'object',
+          description: 'The diagnosis, in the schema Piwi asks a model for (see the description)',
+        },
+      },
+      required: ['clusterId', 'model', 'diagnosis'],
+    },
+  },
+  {
+    name: 'report_fix_attempt',
+    module: 'core',
+    description:
+      "Record that you changed the code to fix a failure cluster, after making the change: `kind` is patch, locator-edit or fix-plan; pass the `commit` (7 to 40 hex characters) or the `branch` the change is on, the `patch` you applied (stored as its hash) or its `patchHash`, the `edit` for a locator edit (filePath, line, from, to), and the `diagnosisId` you followed (from get_fix_plan or record_diagnosis). It is recorded as applied; when the cluster's tests pass on a later commit, Piwi records it verified (tied by the commit, a `Piwi-Cluster: <clusterId>` trailer in the commit message, or the branch) and shows it on the cluster's timeline; a later failure records it regressed. Add the trailer get_fix_plan suggests (verify.commitTrailer) to your commit message. Reporting the same change twice records it once. Requires reporter or administrator access.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        kind: { type: 'string', enum: ['patch', 'locator-edit', 'fix-plan'], description: 'What you changed' },
+        commit: { type: 'string', description: 'The commit the change is in' },
+        branch: { type: 'string', description: 'The branch the change is on, when not committed yet' },
+        patch: { type: 'string', description: 'The unified diff you applied' },
+        patchHash: { type: 'string', description: 'A hash of the patch, instead of the patch' },
+        edit: {
+          type: 'object',
+          description: 'For a locator edit: the file, the line, the old and the new locator',
+          properties: {
+            filePath: { type: 'string' },
+            line: { type: 'number' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['filePath'],
+        },
+        diagnosisId: { type: 'number', description: 'The diagnosis the change followed' },
+        note: { type: 'string', description: 'One line on what you changed' },
+      },
+      required: ['clusterId', 'kind'],
+    },
+  },
+  {
+    name: 'set_run_incident',
+    module: 'core',
+    description:
+      'Mark a test run as an environment incident (its failures come from the environment under test being down, not from the tests or the code), or clear the flag, as the run page does. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'number', description: 'Test run ID' },
+        incident: { type: 'boolean', description: 'true marks the run; false clears the flag' },
+        reason: { type: 'string', description: 'What happened (up to 500 characters), with incident: true' },
+      },
+      required: ['runId', 'incident'],
+    },
+  },
+  {
+    name: 'link_issue',
+    module: 'workflow',
+    capability: 'integrations',
+    description:
+      'Link an existing ticket or pull request (any http(s) URL) to a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does. A URL from a connected tracker is matched to its connection and shows its live status. Use create_issue to file a new Jira issue instead. Returns the stored link. Requires reporter or administrator access.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entityType: {
+          type: 'string',
+          enum: ['failure_cluster', 'test_runs_case', 'test_case', 'test_run', 'bug_report'],
+          description: 'Which entity to link the URL to',
+        },
+        entityId: { type: 'number', description: 'The entity ID matching entityType' },
+        url: { type: 'string', description: 'The ticket or pull request URL (http or https)' },
+        title: { type: 'string', description: 'Optional title (at most 200 characters)' },
+      },
+      required: ['entityType', 'entityId', 'url'],
     },
   },
   {
@@ -1069,7 +1341,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_metric_trend',
     module: 'core',
     description:
-      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt.',
+      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt, and the hand-back metrics heal-adoption, heal-pr-merge-rate, diagnosis-helpful-rate, diagnosis-verified-rate, gate-blocked-merges, gate-overrides, flakes-verified-fixed (a rate is null with a `sample` under its floor until enough items count; a metric whose capability is declined is refused).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1278,74 +1550,6 @@ export type DesktopMcpToolName = (typeof DESKTOP_MCP_TOOL_DEFS)[number]['name'];
 // [] values are omitted from the JSON). These are the shapes agents receive, not
 // the shapes the DB queries return.
 
-/** Run summary returned by list_runs, get_project.runs, list_projects.latestRun. */
-export interface McpRunSummary {
-  id: number;
-  status: string;
-  startedAt: string;
-  duration?: number;
-  total?: number;
-  passed?: number;
-  failed?: number;
-  flaky?: number;
-  skipped?: number;
-  didNotRun?: number;
-  env?: string;
-  label?: string;
-  branch?: string;
-  commit?: string;
-}
-
-/** Per-execution case record returned by get_run.cases, list_failed_cases, get_test_case.recentExecutions. */
-export interface McpCaseSummary {
-  executionId: number;
-  testCaseId: number;
-  title: string;
-  filePath: string;
-  status: string;
-  duration?: number;
-  retries?: number;
-  /** One-line explanation of the failure, derived from the error text. */
-  headline?: string | null;
-  error?: string | null;
-  clusterId?: number;
-  browser?: string;
-  worker?: number;
-  line?: number;
-  runId?: number;
-  runStatus?: string;
-  startedAt?: string;
-  /** Lock names this execution held (best effort; none from blob imports). */
-  locks?: string[] | null;
-}
-
-/** Project summary returned by list_projects. */
-export interface McpProjectSummary {
-  id: number;
-  name: string;
-  label?: string;
-  description?: string;
-  totalRuns?: number;
-  totalTestCases?: number;
-  tags?: string[];
-  latestRun?: Partial<McpRunSummary> | null;
-}
-
-/** Failure cluster summary returned by list_clusters. */
-export interface McpClusterSummary {
-  id: number;
-  signature: string;
-  errorType?: string;
-  selector?: string;
-  status: string;
-  occurrences: number;
-  affectedTests?: number;
-  firstSeenRunId?: number;
-  lastSeenRunId?: number;
-  lastSeenStatus?: string;
-  sampleError?: string;
-}
-
 /** Flaky test item returned by list_flaky_tests. */
 export interface McpFlakyTestItem {
   testCaseId: number;
@@ -1374,20 +1578,5 @@ export interface McpAffectedTestCase {
   title: string;
   filePath: string;
   runCount: number;
-  testRunsCaseId?: number;
-}
-
-/** Locator healing entry in get_cluster.locatorHealing. */
-export interface McpLocatorHealingEntry {
-  testCaseId: number;
-  title: string;
-  testRunsCaseId: number;
-  source: string;
-  failingLocator?: { method: string; args: Record<string, unknown> };
-  recommendation?: unknown; // LocatorFixRecommendation with dropNulls applied
-  alternativesCount: number;
-  /** True when the stored name-derived alternatives look broken by a rename (see LocatorHealingResult). */
-  priorNameMayBeStale?: boolean;
-  /** When the recommended fix now passes at this call site, that later run's id (see LocatorHealingResult). */
-  healedInRunId?: number;
+  executionId?: number;
 }

@@ -12,6 +12,8 @@ import {
   releaseDebugger,
   sendCommand,
 } from './debugger.js';
+import { emulateCssViewport, onTabZoomChange, replayViewports } from './viewport-emulation.js';
+import { sessionArea } from '../shared/session-area.js';
 
 /**
  * Slow down or fail a request, and throttle the whole page, through the
@@ -135,8 +137,8 @@ export async function releaseConditionsDebugger(tabId: number): Promise<void> {
 }
 
 /**
- * The viewports set on tabs from the popup, one per tab id, in session storage
- * so the popup can say so and offer to undo it.
+ * The viewports set on tabs from the DevTools panel, one per tab id, in session
+ * storage so the panel can say so and offer to undo it.
  */
 export const TAB_VIEWPORT_KEY = 'piwiTabViewport';
 
@@ -153,11 +155,11 @@ let viewportWrites: Promise<unknown> = Promise.resolve();
 /** Changes the stored viewports one write at a time, so two tabs set at once both stay. */
 function updateViewports(change: (current: TabViewports) => TabViewports): Promise<void> {
   const run = viewportWrites.then(async () => {
-    const stored = (await chrome.storage.session.get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewports | undefined;
+    const stored = (await sessionArea().get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewports | undefined;
     const next = change({ ...stored });
     if (JSON.stringify(next) === JSON.stringify(stored ?? {})) return;
-    if (Object.keys(next).length > 0) await chrome.storage.session.set({ [TAB_VIEWPORT_KEY]: next });
-    else await chrome.storage.session.remove(TAB_VIEWPORT_KEY);
+    if (Object.keys(next).length > 0) await sessionArea().set({ [TAB_VIEWPORT_KEY]: next });
+    else await sessionArea().remove(TAB_VIEWPORT_KEY);
   });
   viewportWrites = run.catch(() => undefined);
   return run;
@@ -168,12 +170,7 @@ export async function setTabViewport(viewport: TabViewport): Promise<{ ok: true 
   const attached = await acquireDebugger(viewport.tabId, 'viewport');
   if (!attached.ok) return { ok: false, error: attached.error || attached.reason };
   try {
-    await sendCommand(viewport.tabId, 'Emulation.setDeviceMetricsOverride', {
-      width: viewport.width,
-      height: viewport.height,
-      deviceScaleFactor: 0,
-      mobile: false,
-    });
+    await emulateCssViewport(viewport.tabId, viewport);
     await updateViewports((current) => ({ ...current, [viewport.tabId]: viewport }));
     return { ok: true };
   } catch (err) {
@@ -182,10 +179,28 @@ export async function setTabViewport(viewport: TabViewport): Promise<{ ok: true 
   }
 }
 
-/** The tab back to its window's size, and the session let go when nothing else holds it. */
+/**
+ * Sets the viewport the DevTools panel set on the tab again, when one is set:
+ * another feature that sized the tab meanwhile, such as a replay, hands it
+ * back. Answers whether one was set.
+ */
+export async function restoreTabViewport(tabId: number): Promise<boolean> {
+  const stored = (await sessionArea().get(TAB_VIEWPORT_KEY))[TAB_VIEWPORT_KEY] as TabViewports | undefined;
+  const viewport = stored?.[tabId];
+  if (!viewport || !holdsDebugger(tabId, 'viewport')) return false;
+  await emulateCssViewport(tabId, viewport).catch(() => undefined);
+  return true;
+}
+
+/**
+ * The tab back to its window's size, and the session let go when nothing else
+ * holds it. A replay that sized the tab keeps its own size.
+ */
 export async function clearTabViewport(tabId: number): Promise<void> {
   if (holdsDebugger(tabId, 'viewport')) {
-    await sendCommand(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => undefined);
+    const replaySize = holdsDebugger(tabId, 'replay') ? replayViewports.get(tabId) : undefined;
+    if (replaySize) await emulateCssViewport(tabId, replaySize).catch(() => undefined);
+    else await sendCommand(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => undefined);
   }
   await releaseDebugger(tabId, 'viewport');
   await updateViewports((current) => {
@@ -199,9 +214,10 @@ onDebuggerLost((tabId, purposes) => {
   if (purposes.includes('viewport')) void clearTabViewport(tabId);
 });
 
-export function conditionsThroughDebugger(tabId: number): boolean {
-  return holdsDebugger(tabId, 'conditions');
-}
+// The size set on a tab stays the same in CSS pixels when its zoom changes, unless a replay sizes it meanwhile.
+onTabZoomChange((tabId) => {
+  if (!holdsDebugger(tabId, 'replay')) void restoreTabViewport(tabId);
+});
 
 /** Called when the conditions' session ends without being released: the person cancelled the bar. */
 export function onConditionsDebuggerLost(fallback: (tabId: number, reason: 'canceled' | 'lost') => void): void {

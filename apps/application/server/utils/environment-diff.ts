@@ -12,6 +12,7 @@ import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baselin
 import { resolveRunBranch } from './run-branch';
 import type { BrowserConfig } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { eligibleRunSql } from '#shared/run-eligibility';
 
 /** Passing executions inspected when choosing the baseline. */
 const BASELINE_CANDIDATES = 20;
@@ -103,7 +104,11 @@ export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number):
   const failing = await loadExecutionEnvironment(db, and(eq(testRunsCases.id, testRunsCaseId)));
   if (!failing || failing.testCaseId == null) return { status: 'not-found' };
 
-  const baselineConds = [eq(testRunsCases.testCaseId, failing.testCaseId), eq(testRunsCases.status, 'passed')];
+  const baselineConds = [
+    eq(testRunsCases.testCaseId, failing.testCaseId),
+    eq(testRunsCases.status, 'passed'),
+    eligibleRunSql('baseline'),
+  ];
   if (failing.browserName) baselineConds.push(eq(testRunsCases.browserName, failing.browserName));
 
   const candidates = await selectExecutionEnvironment(db, and(...baselineConds)).limit(BASELINE_CANDIDATES);

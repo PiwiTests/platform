@@ -4,11 +4,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Purity boundary for @piwitests/core. This replaces the old reporter↔shared
- * drift-guard tests: instead of pinning two hand-mirrored copies, we now assert
- * the single copy stays clean enough to be safely bundled into the reporter and
- * inlined into the browser/server app — zero dependencies, and no imports of
- * Node built-ins or the consuming packages.
+ * Purity boundary for @piwitests/core: the package stays clean enough to be
+ * safely bundled into the reporter and inlined into the browser/server app —
+ * zero dependencies, and no imports of Node built-ins or the consuming
+ * packages.
  */
 
 const coreRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -23,8 +22,9 @@ function srcFiles(dir: string): string[] {
   });
 }
 
-// Captures the specifier of `import ... from 'x'`, `export ... from 'x'`, and bare `import 'x'`.
-const IMPORT_RE = /\bfrom\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]/g;
+// Captures the specifier of `import ... from 'x'`, `export ... from 'x'`, and bare `import 'x'` at the start of a line
+// (so a string literal such as `'import'` is not read as one).
+const IMPORT_RE = /\bfrom\s*['"]([^'"]+)['"]|^\s*import\s*['"]([^'"]+)['"]/gm;
 
 describe('@piwitests/core boundary', () => {
   test('declares no dependencies or devDependencies', () => {

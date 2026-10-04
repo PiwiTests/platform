@@ -1,6 +1,7 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
+import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
@@ -13,8 +14,18 @@ plugins {
 group = "dev.piwitests"
 version = providers.gradleProperty("pluginVersion").get()
 
-// The editor service every client ships, built by `npm run editor:build`.
-val languageServer = layout.projectDirectory.file("../../packages/editor/dist/piwi-language-server.cjs")
+// The editor service every client ships, built by `npm run editor:build`: the language server, and beside it the
+// launcher that opens a recording's browser, the reporter that prints a Playwright project's options, and the
+// recorder's IDE bundle with its messages.
+val editorDist = layout.projectDirectory.dir("../../packages/editor/dist")
+val languageServer = editorDist.file("piwi-language-server.cjs")
+val serverFiles = listOf(
+    "piwi-language-server.cjs",
+    "piwi-recorder-launcher.cjs",
+    "piwi-use-reporter.cjs",
+    "record-ide.js",
+    "record-ide-messages.json",
+).map { editorDist.file(it) }
 
 repositories {
     mavenCentral()
@@ -28,9 +39,12 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
-        // The oldest supported platform (2023.3) bundles Kotlin 1.9.
+        // The oldest supported platform (2024.1) bundles Kotlin 1.9.
         apiVersion.set(KotlinVersion.KOTLIN_1_9)
         languageVersion.set(KotlinVersion.KOTLIN_1_9)
+        // The platform's interfaces have default methods: a class implementing one needs no bridge to each of them,
+        // which the Plugin Verifier would count as a use of every experimental or deprecated one.
+        jvmDefault.set(JvmDefaultMode.NO_COMPATIBILITY)
     }
 }
 
@@ -39,7 +53,7 @@ dependencies {
     intellijPlatform {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
         bundledPlugin("JavaScript")
-        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Platform, providers.gradleProperty("platformTestFrameworkVersion").get())
     }
 }
 
@@ -73,6 +87,8 @@ intellijPlatform {
         }
     }
     buildSearchableOptions = false
+    // Kotlin sources and no GUI forms: nothing for the bytecode instrumenter to add.
+    instrumentCode = false
 }
 
 tasks {
@@ -82,12 +98,28 @@ tasks {
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile> {
         compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
     }
+    // The plugin's `server/` holds the editor service's files; a build (buildPlugin, runIde, verifyPlugin) fails
+    // without one of them. The tests start the language server from the editor's `dist/` and need none of the others.
     prepareSandbox {
-        from(languageServer) {
+        val files = serverFiles.map { it.asFile }
+        doFirst {
+            val missing = files.filterNot { it.isFile }
+            if (missing.isNotEmpty()) {
+                throw GradleException(
+                    "The editor service is not built: ${missing.joinToString { it.name }} missing from " +
+                        "${missing.first().parentFile}. Run `npm run editor:build -w packages/editor` from the repository root.",
+                )
+            }
+        }
+        from(serverFiles) {
             into(pluginName.map { "$it/server" })
         }
     }
     test {
         systemProperty("piwi.editor.server", languageServer.asFile.absolutePath)
+    }
+    // WebStorm 2024.1's Swagger plugin declares a test service whose class ships with its own tests only.
+    prepareTestSandbox {
+        disabledPlugins.add("com.intellij.swagger")
     }
 }

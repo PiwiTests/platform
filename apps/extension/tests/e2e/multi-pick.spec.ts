@@ -2,6 +2,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from './fixtures.js';
 import type { Page } from '@playwright/test';
+import { openShadowRoots } from './shadow.js';
+import { stubChromeI18n } from './i18n-stub.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(here, '..', '..', 'dist');
@@ -22,6 +24,9 @@ async function waitForFreshPickBanner(page: Page): Promise<void> {
     .poll(() => page.evaluate(() => document.getElementById('__piwi_picker_foot')?.textContent))
     .toBe('↑ parent · ↓ child · Esc skip');
 }
+
+const activeTool = (page: Page) =>
+  page.evaluate(() => (globalThis as { __piwiActiveTool?: { id: string } }).__piwiActiveTool?.id ?? null);
 
 /**
  * The between-picks bar, the "no pattern found" message, and the results
@@ -111,7 +116,7 @@ test.describe('multi-pick.js', () => {
 
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-bar-host'))).toBe(false);
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-panel-host'))).toBe(false);
-    await expect.poll(() => page.evaluate(() => (globalThis as any).__piwiMultiPicking)).toBe(false);
+    await expect.poll(() => activeTool(page)).toBeNull();
   });
 
   test('Escape at the between-picks bar cancels the session with no results panel', async ({ context }) => {
@@ -133,7 +138,35 @@ test.describe('multi-pick.js', () => {
 
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-bar-host'))).toBe(false);
     expect(await page.evaluate(() => !!document.getElementById('piwi-multi-pick-panel-host'))).toBe(false);
-    await expect.poll(() => page.evaluate(() => (globalThis as any).__piwiMultiPicking)).toBe(false);
+    await expect.poll(() => activeTool(page)).toBeNull();
+  });
+
+  test('another tool started at the between-picks bar ends the session, and multi-pick starts again', async ({
+    context,
+  }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <li id="row1">Alice</li><li id="row2">Bob</li>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+
+    await waitForFreshPickBanner(page);
+    await page.hover('#row1');
+    await page.click('#row1');
+    await waitForFreshPickBanner(page);
+    await page.hover('#row2');
+    await page.click('#row2');
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+
+    await page.addScriptTag({ path: path.join(DIST, 'lint-overlay.js') });
+    await expect.poll(() => activeTool(page)).toBe('lint-overlay');
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toHaveCount(0);
+    await expect(page.locator('#piwi-lint-overlay-host')).toBeAttached();
+
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    await expect.poll(() => activeTool(page)).toBe('multi-pick');
+    await waitForFreshPickBanner(page);
+    await expect(page.locator('#piwi-lint-overlay-host')).toHaveCount(0);
   });
 
   test('shows a dismissible message and no panel when the picks share no common pattern', async ({ context }) => {
@@ -161,6 +194,61 @@ test.describe('multi-pick.js', () => {
 
     await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-multi-pick-message-host'))).toBe(false);
+  });
+
+  test('counts the position among the rows Playwright finds, a hidden copy aside', async ({ context }) => {
+    await openShadowRoots(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <ul>
+        <li style="display:none">Loading…</li>
+        <li id="row1">Loading…</li>
+        <li id="row2">Loading…</li>
+      </ul>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    for (const row of ['#row1', '#row2']) {
+      await waitForFreshPickBanner(page);
+      await page.hover(row);
+      await page.click(row);
+    }
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+    await page.keyboard.press('Enter');
+
+    const locators = page.locator('#piwi-multi-pick-panel-host .row code');
+    await expect(locators).toHaveText([`getByRole('listitem').nth(0)`, `getByRole('listitem').nth(1)`]);
+    await expect(page.getByRole('listitem').nth(0)).toHaveAttribute('id', 'row1');
+    await expect(page.getByRole('listitem').nth(1)).toHaveAttribute('id', 'row2');
+  });
+
+  test('the panel shows the base locator as code, and marks the copy mode chosen in every row', async ({ context }) => {
+    await openShadowRoots(context);
+    await stubChromeI18n(context);
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <ul><li id="row1">Alice - active</li><li id="row2">Bob - active</li></ul>
+    </body></html>`);
+    await page.addScriptTag({ path: path.join(DIST, 'multi-pick.js') });
+    for (const row of ['#row1', '#row2']) {
+      await waitForFreshPickBanner(page);
+      await page.hover(row);
+      await page.click(row);
+    }
+    await expect(page.locator('#piwi-multi-pick-bar-host')).toBeAttached();
+    await page.keyboard.press('Enter');
+
+    const panel = page.locator('#piwi-multi-pick-panel-host .panel');
+    const title = panel.locator('.title');
+    await expect(title).toHaveText("2 locators built on getByRole('listitem')");
+    await expect(title.locator('.piwi-loc')).toHaveText("getByRole('listitem')");
+    await expect(title.locator('.piwi-loc .piwi-tok-fn')).toHaveText('getByRole');
+    await expect(panel).toHaveAttribute('aria-modal', 'true');
+
+    const rows = panel.locator('.row');
+    await rows.nth(1).getByRole('button', { name: 'Action', exact: true }).click();
+    for (const row of await rows.all()) {
+      await expect(row.getByRole('button', { name: 'Action', exact: true })).toHaveAttribute('data-active', 'true');
+    }
   });
 
   test('re-injecting while a session is already in progress does not start a second one', async ({ context }) => {

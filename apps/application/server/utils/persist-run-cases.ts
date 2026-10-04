@@ -8,6 +8,8 @@ import {
 import {
   capArray,
   capSteps,
+  countDroppedSteps,
+  countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
   capSourceFrames,
@@ -31,11 +33,14 @@ import {
   sanitizeTestMetadata,
   type TestMetadata,
 } from '@piwitests/core/test-meta';
+import { matchInsertedRunCases } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
-import { getOrCreateFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
+import { assignFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
 import { upsertLocatorSnapshots } from './locator-healing';
+import { executionCreatedAt, type PersistRunCasesOptions } from './persist-options';
+import { recordIngestHealth, storedDrops, type ExecutionDrops } from './ingest-health';
 import {
   ingestRunGraph,
   ingestRequestGraph,
@@ -48,10 +53,12 @@ import {
 } from './graph-ingest';
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isLabRun } from '#shared/handlers/probes';
+import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
 import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
+import { sanitizeExecutionResources } from '#shared/resource-report';
 import type { DbClient as DB } from '../database';
 
 /** Apply the canonical per-case status spelling to each attempt entry. */
@@ -106,6 +113,8 @@ export interface RunCaseInput {
   locatorPages?: unknown;
   /** The source files the test executed — stored through case_payloads, and per test in `code_reach`. */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers (`piwi-resources`). */
+  resources?: unknown;
   aiUsage?: unknown;
   consoleLogs?: unknown;
   dialogs?: unknown;
@@ -305,30 +314,11 @@ async function syncTestCaseMetadata(db: DB, incoming: Map<number, CaseMetaSnapsh
 }
 
 /**
- * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
- * `test_runs_cases` rows in a single statement. Network requests, web vitals and
- * console logs are sanitised here (stripping query strings from URLs). Failed
- * cases with error text are fingerprinted and linked to a `failure_clusters`
- * row so failures sharing a root cause can be grouped.
- *
- * Shared by the submit, upload and streaming-events endpoints. Returns the
- * inserted junction rows in input order so callers can link attachments (e.g.
- * trace files) by index. Each entry also carries the index of the input case
- * that produced it, so the streaming endpoint can attach the persisted
- * execution id to the right `test-completed` event even when duplicates were
- * skipped.
- *
- * Deduplication is enforced by a DB unique index on
- * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
- * clause silently skips rows that would violate it. This naturally handles both
- * batch retries and same-test-different-browser scenarios.
- */
-/**
  * Drop redundant green ARIA samples before they reach storage. A passing
  * execution's snapshot is kept only when the test has no other green snapshot
  * from the last {@link GREEN_SAMPLE_MAX_AGE_MS} — both against snapshots already
- * stored and against duplicates within this same batch. Failing snapshots are
- * never touched. Mutates `payloads[i].aria` in place; the rows keep their other
+ * stored by runs eligible for shared state and against duplicates within this same
+ * batch. Failing snapshots are never touched. Mutates `payloads[i].aria` in place; the rows keep their other
  * evidence, they just stop carrying a duplicate green page.
  */
 async function dedupeGreenSamples(
@@ -359,7 +349,7 @@ async function dedupeGreenSamples(
   const existing = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
-      latest: sql<number>`max(${testRunsCases.createdAt})`,
+      latest: sql<Date>`max(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
     })
     .from(testRunsCases)
     .where(
@@ -367,11 +357,12 @@ async function dedupeGreenSamples(
         inArray(testRunsCases.testCaseId, caseIds),
         eq(testRunsCases.status, 'passed'),
         or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
+        eligibleExecutionSql('shared-state', testRunsCases.testRunId),
       ),
     )
     .groupBy(testRunsCases.testCaseId);
 
-  const freshById = new Map(existing.map((r) => [r.testCaseId, Number(r.latest)]));
+  const freshById = new Map(existing.map((r) => [r.testCaseId, r.latest.getTime()]));
   for (const { index, caseId } of greenRows) {
     const latest = freshById.get(caseId);
     if (latest != null && latest >= cutoff) {
@@ -381,11 +372,30 @@ async function dedupeGreenSamples(
   }
 }
 
+/**
+ * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
+ * `test_runs_cases` rows in a single statement. Network requests, web vitals and
+ * console logs are sanitized here (stripping query strings from URLs). Failed
+ * cases with error text are fingerprinted and linked to a `failure_clusters`
+ * row so failures sharing a root cause can be grouped.
+ *
+ * Shared by the submit, upload, import and streaming-events endpoints. Returns
+ * one entry per inserted junction row, each carrying the index of the input
+ * case that produced it. A skipped duplicate has no entry, so callers link
+ * attachments (e.g. trace files) and events to executions by `inputIndex`,
+ * never by position in the returned array.
+ *
+ * Deduplication is enforced by a DB unique index on
+ * `(test_run_id, test_case_id, retries, browser)` — the `ON CONFLICT DO NOTHING`
+ * clause silently skips rows that would violate it. This naturally handles both
+ * batch retries and same-test-different-browser scenarios.
+ */
 export async function persistRunCases(
   db: DB,
   projectId: number,
   testRunId: number,
   cases: RunCaseInput[],
+  options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
   if (cases.length === 0) return [];
 
@@ -429,6 +439,8 @@ export async function persistRunCases(
   }> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
+  // What the caps left out of each row, recorded on the run for the rows stored.
+  const rowDrops: ExecutionDrops[] = [];
   const pendingClusters = new Map<string, PendingCluster>();
   // Locator snapshots to upsert, grouped by resolved test case id; the shared
   // helper handles row building, upsert, and stale-location purge after insert.
@@ -492,6 +504,10 @@ export async function persistRunCases(
     // A use missing from a passed execution whose steps were all kept has left
     // the test; any other execution only adds.
     const cappedSteps = capSteps(c.steps, limits);
+    rowDrops.push({
+      steps: countDroppedSteps(c.steps, limits),
+      consoleEntries: countDroppedConsoleEntries(c.consoleLogs, limits),
+    });
     const locatorPages = sanitizeLocatorPages(c.locatorPages);
     perCaseUsages.push({
       caseId,
@@ -553,6 +569,7 @@ export async function persistRunCases(
       slowestStepDuration: c.slowestStepDuration ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
+      resources: sanitizeExecutionResources(c.resources),
       pageState: sanitizePageState(c.pageState),
       aiUsage: sanitizeAiUsage(c.aiUsage),
       consoleLogs:
@@ -577,6 +594,7 @@ export async function persistRunCases(
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus: resolveExpectedStatus(c.expectedStatus, c.testAnnotations),
       blockedBy: c.blockedBy ?? null,
+      ...(options.datedFrom ? { createdAt: executionCreatedAt(c.startedAt, options.datedFrom) } : {}),
     });
     rowInputIndices.push(i);
 
@@ -585,6 +603,20 @@ export async function persistRunCases(
   }
 
   if (runCasesRows.length === 0) return [];
+
+  // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
+  // run, so it forms no clusters (exactly as imports are silent). The tests' stored state (locator
+  // snapshots, the locator index, code reach, tags and locks) is written only by runs eligible for it.
+  const [probeCheck] = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, testRunId));
+  const probeRun = isLabRun(probeCheck?.metadata);
+  const sharedState = isEligibleRun({ metadata: probeCheck?.metadata }, 'shared-state');
+  const writesTestState = isEligibleRun(
+    { metadata: probeCheck?.metadata, historicalImport: options.keepTestState },
+    'shared-state',
+  );
 
   // Keep at most one green ARIA sample per test per day: a passing snapshot is
   // dropped when the test already has a recent one, so many runs a day stay bounded.
@@ -607,58 +639,39 @@ export async function persistRunCases(
     row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
   });
 
-  // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
-  // run, so it forms no clusters (exactly as imports are silent).
-  const [probeCheck] = await db
-    .select({ metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.id, testRunId));
-  const probeRun = isLabRun(probeCheck?.metadata);
   if (!probeRun) {
-    const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pendingClusters);
-    runCasesRows.forEach((row, i) => {
-      const fingerprint = rowFingerprints[i];
-      if (fingerprint) row.failureClusterId = clusterIds.get(fingerprint.fingerprint) ?? null;
+    await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
+      wakeSnoozed: !options.keepSnoozed,
     });
   }
 
-  const insertedCases = await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
-    id: testRunsCases.id,
-    status: testRunsCases.status,
-    testCaseId: testRunsCases.testCaseId,
-    retries: testRunsCases.retries,
-    browserName: testRunsCases.browserName,
-  });
+  const insertedCases = matchInsertedRunCases(
+    runCasesRows,
+    await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+      id: testRunsCases.id,
+      status: testRunsCases.status,
+      testCaseId: testRunsCases.testCaseId,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+    }),
+  );
 
-  // The unique (run, case, retries, browser) index makes this tuple unique
-  // within a batch, so each inserted row maps back to exactly one input entry
-  // even when ON CONFLICT DO NOTHING skipped duplicates in between.
-  const tupleToInputIndex = new Map<string, number>();
-  runCasesRows.forEach((row, k) => {
-    const tuple = `${row.testCaseId}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
-    tupleToInputIndex.set(tuple, rowInputIndices[k]!);
-  });
-
-  const result = insertedCases.map((r) => {
-    const tuple = `${r.testCaseId}\x00${r.retries ?? 0}\x00${r.browserName ?? ''}`;
-    return {
-      id: r.id,
-      status: r.status,
-      testCaseId: r.testCaseId,
-      inputIndex: tupleToInputIndex.get(tuple) ?? -1,
-    };
-  });
+  const result = insertedCases.map((r) => ({
+    id: r.id,
+    status: r.status,
+    testCaseId: r.testCaseId,
+    inputIndex: rowInputIndices[r.rowIndex]!,
+  }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
   if (nrValues.length > 0) {
     await db.insert(networkRequests).values(nrValues);
   }
 
-  await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
-  // A lab run replays tests with injected faults or conditions; it stays silent here too.
+  if (writesTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
   // The index is derived data: a failure to update it degrades to a warning and
   // never fails the ingest.
-  if (!probeRun) {
+  if (sharedState) {
     await upsertLocatorUsages(db, projectId, perCaseUsages).catch((err) =>
       console.warn('[locator-usages] failed to index the locators of this batch', err),
     );
@@ -666,7 +679,15 @@ export async function persistRunCases(
       console.warn('[code-reach] failed to store the code reach of this batch', err),
     );
   }
-  await syncTestCaseMetadata(db, caseMetaSnapshots);
+  if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
+  await recordIngestHealth(
+    db,
+    testRunId,
+    storedDrops(
+      rowDrops,
+      insertedCases.map((r) => r.rowIndex),
+    ),
+  );
 
   // Feed the feature graph from the same rows: route nodes from the network
   // requests (own-origin only), page nodes from page state, and a `reaches` edge

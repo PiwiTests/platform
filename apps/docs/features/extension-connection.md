@@ -44,7 +44,7 @@ A URL pattern is a glob over a page's whole address: `*` matches within one part
 `https://staging.shop.example/**` covers every page of that site, and `https://shop.example/admin/*` the pages one
 level under `/admin`. A pattern starts with `http://`, `https://` or a wildcard.
 
-Each project keeps its own list in its **Settings** tab, under **Browser extension URLs**. A pattern can name:
+Each project keeps its own list in the **Browser extension** section of its **Settings** tab. A pattern can name:
 
 - an **environment**, a label shown beside the project in Piwi Picker (`staging`, `production`);
 - a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows;
@@ -58,20 +58,27 @@ Each project keeps its own list in its **Settings** tab, under **Browser extensi
   path; the site's root becomes `/app`. With both set, the one replaces the other (`/app` on the site, `/v2` in the
   tests), and a page outside the path prefix is left as it is.
 
-The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, the pages of the
-[Test Map](./scenario-gaps) and the absolute pages its locators ran on. A `baseURL` comes with the environment its runs
-were reported with (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), and the suggestions
-are grouped by it. The newest few runs of every environment are read, so a nightly production suite is suggested beside
-a staging one that runs on every push. **Add** puts a suggestion in the list with its environment, **Add all** every
-suggestion of that environment; **Save patterns** stores them. Editing the list takes the administrator role, like the
-rest of the project's settings.
+The editor suggests one pattern per site your suite already visited: the `baseURL` of recent runs, and for a run that
+recorded none, the full addresses its tests opened with `page.goto` and the pages it loaded (its `document` network
+requests), then the pages of the [Test Map](./scenario-gaps) and the absolute pages its locators ran on. A run merged
+from blob reports (`npx playwright merge-reports`, or a blob report imported in the dashboard) never records the
+`baseURL`, which Playwright leaves out of them; its tests' `page.goto('/cart')` names no site either, so its sites come
+from the page loads: the network requests the [capture fixtures](/guide/capture-fixtures) record for every test, or
+those read from the trace of a failed test. A site a run visited comes with the environment the run was reported with
+(the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), and the suggestions are grouped by it.
+The newest few runs of every environment are read, so a nightly production suite is suggested beside a staging one that
+runs on every push. **Add** puts a suggestion in the list with its environment, **Add all** every suggestion of that
+environment; **Save patterns** stores them. When there is nothing to suggest, the editor says why: every site already
+has a pattern, or no recent run recorded a `baseURL`, opened a full address or kept the network requests of a page it
+loaded. Editing the list takes the administrator role, like the rest of the project's settings.
 
 ### Which project applies
 
 Piwi Picker reads the patterns of every project you can see when it connects and each time its settings open, and
 keeps a copy, so a page's project is known with the instance out of reach. For a page it decides in this order:
 
-1. the project chosen in the popup's **Active project**, for the rest of the browser session;
+1. the project chosen in the popup's **Active project** on that site, for the rest of the browser session or until you
+   disconnect;
 2. the patterns under **This browser only**, the first that matches;
 3. the instance's patterns, by project, in each project's order, the first that matches.
 

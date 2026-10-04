@@ -29,10 +29,10 @@ const TEXT_METHODS = new Set(['append', 'prepend', 'replaceChildren', 'createTex
 
 const LETTER = /\p{L}/u;
 
-/** A stylesheet written into a `<style>`: rules in braces. */
+/** A stylesheet written into a `<style>`: a selector, then a declaration ended by `;` in braces. */
 function isStylesheet(node: ts.Expression): boolean {
   const text = staticText(node);
-  return text !== null && /\{[^}]*:[^}]*\}/.test(text);
+  return text !== null && /[^{}\s][^{}]*\{\s*[-a-zA-Z]+\s*:[^{};]*;/.test(text);
 }
 
 function sourceFiles(dir: string): string[] {

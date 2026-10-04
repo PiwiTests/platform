@@ -514,8 +514,6 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches
 const testCaseSearch = ref('');
 const testCaseActiveStatuses = ref<string[]>([]);
-const testCaseBrowserFilter = ref('all');
-const testCaseTagFilter = ref<string[]>([]);
 
 // The count-bar segments toggle into the same set the Tests list chips use, and
 // switch to the Tests tab so the filtered rows are on screen.
@@ -618,6 +616,9 @@ const tabItems = computed(() => [
     value: 'workers',
     slot: 'workers',
   },
+  ...(testRun.value?.hasResources
+    ? [{ label: 'Resources', icon: 'i-lucide-cpu', value: 'resources', slot: 'resources' }]
+    : []),
 ]);
 
 const tabPanelClass: Record<string, string> = {
@@ -640,9 +641,9 @@ if (route.query.tab === 'failure-groups') {
   }
 }
 
-// The former Insights, Since last pass and Compare tabs are one Changes tab;
-// the former Slow endpoints tab moved to the project page. Redirect their
-// deep-links so shared URLs and older links still land somewhere sensible.
+// Deep-links naming the insights, regression or compare tab open the Changes
+// tab, and endpoints opens the Tests tab (slow endpoints are on the project
+// page), so shared URLs land somewhere sensible.
 const LEGACY_TAB_REDIRECTS: Record<string, string> = {
   insights: 'changes',
   regression: 'changes',
@@ -818,8 +819,6 @@ const moreMenuItems = computed(() => {
             data-shot="failure-clusters"
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
-            v-model:browser-filter="testCaseBrowserFilter"
-            v-model:tag-filter="testCaseTagFilter"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"
@@ -852,6 +851,8 @@ const moreMenuItems = computed(() => {
               :shard-total="testRun?.shardTotal ?? null"
               :live="isLive"
               :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
+              :run-id="Number(runId)"
+              :has-resources="testRun?.hasResources ?? false"
               @select-test-case="handleSelectTestCase"
             />
             <RunTimelineExtras
@@ -862,6 +863,16 @@ const moreMenuItems = computed(() => {
               :project-name="testRun?.project?.name"
             />
           </div>
+        </template>
+
+        <template #tab-resources>
+          <RunResources
+            :run-id="Number(runId)"
+            :project-key="testRun?.projectId"
+            :project-name="testRun?.project?.name"
+            :refresh-key="runRefreshKey"
+            @open-timeline="activeTab = 'workers'"
+          />
         </template>
       </DetailPageLayout>
     </template>

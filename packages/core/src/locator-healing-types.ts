@@ -19,6 +19,8 @@ export interface RankedLocator {
    * surfaced distinctly and preferred as the recommended fix.
    */
   pickedByUser?: boolean;
+  /** When the pick was saved from the dashboard's snapshot picker, ISO 8601. */
+  pickedAt?: string;
 }
 
 /**
@@ -64,11 +66,11 @@ export interface SelectorCounts {
   id?: number;
   name?: number;
   classes?: Record<string, number>;
-  /** How many elements share this element's role *and* accessible name — what `getByRole(role, { name })` would really match. Absent when unknown (an older capture, or a probe run without the structural pass). */
+  /** How many elements share this element's role *and* exact accessible name (`getByRole(role, { name })` without `exact` also matches names that contain it). Absent when unknown (an older capture, or a probe run without the structural pass). */
   roleName?: number;
   /** Of the `roleName` matches, how many are visible (a laid-out box, or an `offsetParent`) — what `getByRole(role, { name }).visible()` would match. Absent when unknown. */
   visibleRoleName?: number;
-  /** How many role-bearing elements share this element's exact text. Absent when unknown. */
+  /** How many elements `getByText` would match on this element's text, counted no further than 2. Absent when unknown. */
   text?: number;
   /** How many elements share this element's `placeholder` — what `getByPlaceholder` would really match. Absent when unknown. */
   placeholder?: number;
@@ -211,7 +213,7 @@ export type LocatorHealingSource =
   | 'none';
 
 /** The rename behind a `diff-rename` healing result: "`Pay now` became `Pay` in CheckoutButton.vue:14". */
-export interface DiffRenameEvidence {
+interface DiffRenameEvidence {
   before: string;
   after: string;
   /** The changed application file, repository-relative. */

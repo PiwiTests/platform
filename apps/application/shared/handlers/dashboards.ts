@@ -73,7 +73,7 @@ function isAdmin(actor: DashboardActor): boolean {
 }
 
 /** Sharing needs the reporter or administrator role; with authentication off everything is shared. */
-export function canShareDashboards(actor: DashboardActor): boolean {
+function canShareDashboards(actor: DashboardActor): boolean {
   return !actor.authEnabled || actor.role === Role.ADMINISTRATOR || actor.role === Role.REPORTER;
 }
 
@@ -82,25 +82,25 @@ export function canShareDashboards(actor: DashboardActor): boolean {
 /** A dashboard reference: a built-in key or a saved dashboard id. */
 export type DashboardRef = { kind: 'builtin'; key: BuiltinDashboardKey } | { kind: 'saved'; id: number };
 
-export function parseDashboardRef(raw: unknown): DashboardRef | null {
+function parseDashboardRef(raw: unknown): DashboardRef | null {
   const value = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : '';
   if (isBuiltinDashboardKey(value)) return { kind: 'builtin', key: value };
   if (/^\d+$/.test(value) && Number(value) > 0) return { kind: 'saved', id: Number(value) };
   return null;
 }
 
-export function dashboardRefString(ref: DashboardRef): string {
+function dashboardRefString(ref: DashboardRef): string {
   return ref.kind === 'builtin' ? ref.key : String(ref.id);
 }
 
 /** Whether the instance declined the Test Map, which hides the gaps digest dashboard. */
-export async function isTestMapHidden(db: DrizzleDB): Promise<boolean> {
+async function isTestMapHidden(db: DrizzleDB): Promise<boolean> {
   const state = (await getInstanceCapabilities(db)).items.find((c) => c.id === 'test-map')?.state;
   return state === 'declined' || state === 'not-applicable';
 }
 
 /** The built-in dashboards a page lists: the team dashboard needs an owner test filter, so it is a report-only one. */
-export function listedBuiltins(testMapHidden: boolean) {
+function listedBuiltins(testMapHidden: boolean) {
   return BUILTIN_DASHBOARDS.filter((d) => d.requires !== 'owner' && (d.requires !== 'test-map' || !testMapHidden));
 }
 
@@ -322,11 +322,7 @@ export async function reportDashboardFor(
  * The projects of a scope the viewer cannot open: the scope's project filter
  * (or every project, when it has none), narrowed by its project tags.
  */
-export async function countHiddenProjects(
-  db: DrizzleDB,
-  scope: AnalyticsScope,
-  access: ProjectAccess,
-): Promise<number> {
+async function countHiddenProjects(db: DrizzleDB, scope: AnalyticsScope, access: ProjectAccess): Promise<number> {
   if (access === 'all') return 0;
   let covered = resolveAllowedProjects(scope, 'all');
   if (scope.projectTags && scope.projectTags.length > 0)

@@ -82,7 +82,7 @@ function serve() {
       } catch {
         // Headers are only written once the read succeeds, so a missing file
         // can still answer 404 (on Windows a read can fail after a successful
-        // stat, e.g. a locked file — the old double writeHead crashed the server).
+        // stat, e.g. a locked file, and a second writeHead would crash the server).
         if (!res.headersSent) res.writeHead(404);
         res.end('not found');
       }

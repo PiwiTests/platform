@@ -13,9 +13,9 @@ change. Everything under **`src/internal/`** is private plumbing — change it f
 |---|---|---|
 | `PiwiDashboardReporter` (default + named) | `public/reporter.ts` | the Playwright reporter |
 | `wrapConfig` | `public/config-wrapper.ts` | injects reporter + global setup into a PW config |
-| `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup` |
+| `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup`, after checking each `baseURL` answers when `checkBaseUrl` is on |
 | `resolveSelection` | `public/selection.ts` | resolves `PIWI_SELECTION` from an ESM config, returns a grep and stamps the run |
-| `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures type (types) |
+| `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures`, `PiwiWorkerFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures types (types) |
 | `piwiFixtures`, `extendPiwiFixtures` | `internal/capture/capture-fixtures.ts` → re-exported by `index.ts` | capture fixtures (imported from `@piwitests/reporter`) |
 
 Two **external contracts** beyond the npm API:
@@ -31,7 +31,14 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/capture-fixtures.ts`) so a capture ships a stub call rather
   than the probe's source, and the boxed stack prefix `internal/capture/quiet-capture.ts`
   adds for this package's `dist/` in each worker (so a wrapped action is located at the
-  test's line).
+  test's line), and the resource ledger's listener on each worker's Playwright
+  instrumentation, with its wrappers on the browser types' `launch`/`connect`
+  (`internal/capture/resource-ledger.ts`). On Linux each worker writes `5` to
+  `/proc/<pid>/clear_refs` of the processes it started at each test's start,
+  which resets their peak RSS for the test (`internal/capture/worker-metrics.ts`),
+  and in Chromium it opens a DevTools session on each page that outlives its test.
+  The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
+  unref'd timer (`internal/collect/process-sampler.ts`).
 
 ## Two processes, two paths
 
@@ -47,12 +54,26 @@ worker. They never share memory — they communicate through `piwi-*` testInfo a
   │  • console / aria snapshot │  ments     │     │ collects CollectedTestCase   │
   │  • locator snapshots       │ ─────────► │     ▼                              │
   │    (locator-healing.ts)    │            │ internal/submit/serializer.ts      │
-  └───────────────────────────┘            │   → WireTestCase / run body        │
+  │  • resource census         │            │   → WireTestCase / run body        │
+  │    (resource-ledger.ts)    │            │                                    │
+  └───────────────────────────┘            │                                    │
                                            │     ▼                              │
                                            │ internal/submit/run-submitter.ts   │
                                            │   the fallback ladder ▼            │
                                            └──────────────────────────────────┘
 ```
+
+The resource ledger also writes one file, as the lab modes do: a worker's last
+census, taken as its `piwiResources` worker fixture tears down, belongs to no test.
+The reporter names a temp file in `PIWI_RESOURCES_RESULTS` in `onBegin`, before
+any worker starts; each worker appends that census to it, and `onEnd` reads it
+back. `internal/collect/resource-verdicts.ts` stitches every census per worker
+into the findings the reporter prints. The machine panel needs no worker: the
+run sampler reads the processes under the runner from the reporter's own
+process. `internal/collect/resource-wire.ts` projects what the server receives:
+each test's cost on its wire test case, and the bounded run report (findings,
+the run's profile, each worker's open pages) with the finish or the whole-run
+submit.
 
 ## The submit/fallback ladder (`internal/submit/run-submitter.ts`)
 
@@ -62,6 +83,14 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 2. **multipart `/upload`** — when there are reports or traces to attach,
 3. **plain JSON `/submit`** — last resort,
 4. **crash recovery** — on total failure, persist the payload to disk for the next run.
+
+The ladder, including the stream drain and the remaining file uploads, runs within
+the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
+in flight and every later one, so the ladder falls through to crash recovery.
+
+A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
+(`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
+so the dashboard can say how the run arrived.
 
 All HTTP goes through `internal/transport/http-client.ts`, which throws `HttpError`
 (carrying `status`) so callers branch on `error.status`, never the message text.
@@ -79,19 +108,29 @@ src/
     submit/     run-submitter, uploader, serializer
     transport/  http-client (+ HttpError)
     streaming/  stream-manager, stream-buffer, crash-recovery
-    collect/    metadata-collector, step-analyzer, skip-classify, error-text
+    collect/    metadata-collector, error-text, resource-verdicts (the censuses
+                stitched into leaked, idle, piling-up and handle findings),
+                process-sampler (the run's processes and the machine, sampled
+                from the reporter), machine-panel (the end-of-run CPU, memory
+                and disk lines), resource-wire (what the server receives)
     files/      file-handler, compression
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
                 trace and stack locations — Playwright internals, feature-detected)
+                resource-ledger (the browsers, contexts, pages and API request
+                contexts each worker opens, and the census per test),
+                worker-metrics (what a test cost the worker and its browsers,
+                and CDP reads of pages that outlive their test)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first
                 page, the results file
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
+                system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, source-snippet, worker-index, errors,
-                selection-client, selection-env
+                selection-client, selection-env, shard-info,
+                base-url-check (the `checkBaseUrl` check the global setup runs)
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model

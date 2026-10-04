@@ -255,6 +255,7 @@ describe('toWireTestCase', () => {
       'networkRequests',
       'pageInventory',
       'pageState',
+      'resources',
       'retries',
       'shardIndex',
       'slowestStep',

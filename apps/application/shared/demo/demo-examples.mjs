@@ -10,18 +10,29 @@
  * against the seed, so a seed change that moves an id fails there, naming the
  * example. The vocabulary is closed:
  *
- * - `testCase: { id, title }`, `project: { id, name }`, `cluster: { id, story }`:
- *   the entity the route opens (its id is the one in the route), by id and by
- *   what identifies it in the seed (a test title, a project name, a failure
- *   story key).
+ * - `testCase: { id, title }`, `project: { id, name }`, `cluster: { id, story }`,
+ *   `run: { id, project }`: the entity the route opens (its id is the one in the
+ *   route), by id and by what identifies it in the seed (a test title, a
+ *   project name, a failure story key, the run's project name).
  * - `diagnosis: 'with-patch' | 'none'`: the cluster has a completed stored AI
  *   diagnosis with a suggested patch, or no stored diagnosis at all.
  * - `fixLanded: true`: the cluster's fix has landed.
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
+ * - `resources: 'leaky'`: the run's resource report names at least one leak.
+ * - `incident: true`: the run is flagged as an environment incident.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
 export const DEMO_EXAMPLES = [
+  {
+    id: 'environment-incident-run',
+    doc: 'features/environment-incidents',
+    title: 'E2E Checkout › a run against staging while it was down',
+    shows:
+      'Ten of eleven tests failed navigating to staging, so the run is an environment incident: not counted, with one incident marker.',
+    route: '/test-runs/14',
+    expect: { run: { id: 14, project: 'e2e-checkout' }, incident: true },
+  },
   {
     id: 'ai-diagnosis-stored',
     doc: 'features/ai-diagnosis',
@@ -64,6 +75,24 @@ export const DEMO_EXAMPLES = [
     shows: 'Where each flaky test of the project stands in the lab, and the command it needs next.',
     route: '/projects/3?tab=flake-lab',
     expect: { project: { id: 3, name: 'ui-components' } },
+  },
+  {
+    id: 'resources-leaky-run',
+    doc: 'features/resource-leaks',
+    title: 'Web Dashboard › the newest run’s Resources tab',
+    shows:
+      'A login fixture leaves a context open per test: each worker’s open pages climb test after test, and the machine runs short of CPU.',
+    route: '/test-runs/62?tab=resources',
+    expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
+  },
+  {
+    id: 'resources-leaky-timeline',
+    doc: 'features/cpu-memory-disk',
+    title: 'Web Dashboard › the newest run’s Timeline tab',
+    shows:
+      'Above the worker rows, the machine’s CPU and the run’s memory climb with the pages its login fixture leaves open; hover them for the values at each moment.',
+    route: '/test-runs/62?tab=workers',
+    expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
   },
 ];
 

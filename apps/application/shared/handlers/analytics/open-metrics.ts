@@ -11,6 +11,7 @@ import type { DrizzleDB } from '../db';
 import { getMetric, type MetricDef, type MetricId } from '../../analytics/metrics';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { CiCost } from '../../ci-cost';
+import { resolveInstanceStates } from '../setup-status';
 import { getAnalyticsContext, type ProjectAccess } from './common';
 import { computeMetricValues, EVALUATED_METRIC_IDS } from './metric-values';
 
@@ -76,14 +77,22 @@ export function renderOpenMetrics(
   return `${lines.join('\n')}\n`;
 }
 
-/** The catalog's values per project the caller can open, over the scope's period. */
+/**
+ * The catalog's values per project the caller can open, over the scope's
+ * period. A metric whose capability the instance declined has no family, and
+ * a project that declined it has no sample.
+ */
 export async function collectProjectMetrics(
   db: DrizzleDB,
   scope: AnalyticsScope,
   access: ProjectAccess,
   cost: CiCost | null,
 ): Promise<{ samples: ProjectMetricSample[]; ids: MetricId[]; periodLabel: string }> {
-  const ids = EVALUATED_METRIC_IDS.filter((id) => id !== 'wasted-ci-cost' || cost !== null);
+  const states = await resolveInstanceStates(db);
+  const ids = EVALUATED_METRIC_IDS.filter((id) => {
+    const capability = getMetric(id).capability;
+    return (id !== 'wasted-ci-cost' || cost !== null) && (!capability || states[capability] !== 'declined');
+  });
   const ctx = await getAnalyticsContext(db, scope, access);
   const periodLabel = ctx.period.label.toLowerCase();
   if (ctx.allowed !== 'all' && ctx.allowed.length === 0) return { samples: [], ids, periodLabel };

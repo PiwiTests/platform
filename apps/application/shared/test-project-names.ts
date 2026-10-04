@@ -150,6 +150,7 @@ export const PROJECT = {
   REPORT_SHARE_LINKS: 'report-share-links-test',
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
+  RUN_CHANGES_FALLBACK: 'run-changes-fallback-test',
   RUN_COMPARE: 'run-compare',
   RUN_DELETE_MANY: 'run-delete-many-test',
   RUN_KEEP_OTHER: 'run-keep-other-test',
@@ -160,6 +161,7 @@ export const PROJECT = {
   RUN_SKIP_KINDS: 'run-skip-kinds-test',
   RUN_SUMMARY_TEST: 'run-summary-test',
   RUN_TIMELINE_HOOKS: 'run-timeline-hooks-test',
+  RUN_TIMELINE_RESOURCES: 'run-timeline-resources-test',
   SCENARIO_GAPS: 'scenario-gaps-e2e-test',
   SCENARIO_GAPS_DECLINE: 'scenario-gaps-decline-test',
   SHARDING_TEST: 'sharding-test',
@@ -190,6 +192,7 @@ export const PROJECT = {
   UNRELATED: 'unrelated',
   UPLOAD_TEST: 'upload-test-project',
   URL_PATTERNS_AUTH: 'url-patterns-auth-test',
+  URL_PATTERNS_GOTO: 'url-patterns-goto-test',
   URL_PATTERNS: 'url-patterns-test',
 } as const;
 

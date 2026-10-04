@@ -10,7 +10,8 @@ import {
   verdictText,
   type Observation,
 } from '../../src/content/replay-core.js';
-import { readStepsFile } from '../../src/content/steps-file.js';
+import { readReportFile, readStepsFile } from '../../src/content/steps-file.js';
+import { BUG_REPORT_MEDIA_TYPE, emptyBugEvidence } from '@piwitests/core/bug-report';
 import { createZip } from '../../src/shared/zip.js';
 import { setBrowserLanguage } from './setup-i18n.js';
 
@@ -174,11 +175,118 @@ describe('replayVerdict', () => {
     });
   });
 
+  it('says a page reached as reported when it is the address the report gives, on the replay’s origin', () => {
+    const page: RecordedStep = {
+      ...click,
+      action: 'assert',
+      assertion: { matcher: 'toHaveURL', expected: '/thanks', actual: '/cart?step=2', negated: false, note: null },
+    };
+    const found = (url: string) => [
+      { status: 'done' as const, detail: null },
+      { status: 'failed' as const, detail: null, found: url },
+    ];
+    expect(replayVerdict([click, page], found(`${ORIGIN}/cart?step=2`), false)).toEqual({
+      kind: 'reproduced',
+      step: 1,
+      found: `${ORIGIN}/cart?step=2`,
+      sameAsReported: true,
+    });
+    expect(replayVerdict([click, page], found(`${ORIGIN}/cart`), false)).toMatchObject({ sameAsReported: false });
+  });
+
   it('is stopped when the replay was stopped before the end', () => {
     expect(replayVerdict([click, check], [{ status: 'done', detail: null }], true)).toEqual({
       kind: 'stopped',
       step: 1,
     });
+  });
+});
+
+describe('readReportFile', () => {
+  const doc = toStepsDocument({
+    steps: [
+      {
+        action: 'goto',
+        target: null,
+        value: 'https://staging.test/cart',
+        redacted: false,
+        pageUrl: 'https://staging.test/cart',
+        timestamp: 0,
+      },
+      {
+        action: 'press',
+        target: null,
+        value: 'Enter',
+        redacted: false,
+        pageUrl: 'https://staging.test/cart',
+        timestamp: 1,
+      },
+    ],
+    startedAt: 0,
+    startUrl: 'https://staging.test/cart',
+  });
+  const shot = {
+    step: 1,
+    file: 'steps/002.jpg',
+    box: { x: 1, y: 2, width: 3, height: 4 },
+    viewport: { width: 800, height: 600 },
+    takenAt: 5,
+  };
+
+  it('reads the screenshot of each step a .piwibug holds, and none from a steps.json', async () => {
+    const archive = createZip([
+      { name: 'mimetype', data: BUG_REPORT_MEDIA_TYPE },
+      { name: 'steps.json', data: JSON.stringify(doc) },
+      {
+        name: 'evidence.json',
+        data: JSON.stringify({ v: 1, context: {}, evidence: { ...emptyBugEvidence(), stepShots: [shot] } }),
+      },
+      { name: 'steps/002.jpg', data: new Uint8Array([0xff, 0xd8, 0xff]) },
+    ]);
+    expect(await readReportFile('bug.piwibug', archive)).toEqual({
+      steps: doc,
+      views: [{ step: 1, dataUrl: 'data:image/jpeg;base64,/9j/', box: shot.box, viewport: shot.viewport }],
+    });
+    const json = new TextEncoder().encode(JSON.stringify(doc));
+    expect(await readReportFile('steps.json', json)).toEqual({ steps: doc, views: [] });
+  });
+
+  /** The archive with its first entry marked as deflated, its bytes left as stored: data no inflater reads. */
+  function inflatesNothing(zip: Uint8Array): Uint8Array {
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    view.setUint16(8, 8, true);
+    view.setUint16(view.getUint32(zip.length - 22 + 16, true) + 10, 8, true);
+    return zip;
+  }
+
+  it('says, in the interface language, that an archive whose steps cannot be inflated cannot be read', async () => {
+    const broken = inflatesNothing(createZip([{ name: 'steps.json', data: new Uint8Array([0xff, 0xff, 0xff, 0xff]) }]));
+    await expect(readReportFile('bug.zip', broken)).rejects.toThrow(/^bug\.zip cannot be read/);
+    setBrowserLanguage('fr');
+    await expect(readReportFile('bug.zip', broken)).rejects.toThrow(/^Impossible de lire bug\.zip/);
+  });
+
+  it('reads the steps alone when the evidence cannot be inflated', async () => {
+    const archive = inflatesNothing(
+      createZip([
+        { name: 'evidence.json', data: new Uint8Array([0xff, 0xff, 0xff, 0xff]) },
+        { name: 'steps.json', data: JSON.stringify(doc) },
+      ]),
+    );
+    expect(await readReportFile('bug.zip', archive)).toEqual({ steps: doc, views: [] });
+  });
+
+  it('reads the steps alone when the evidence cannot be read or an image is missing', async () => {
+    const noImage = createZip([
+      { name: 'steps.json', data: JSON.stringify(doc) },
+      { name: 'evidence.json', data: JSON.stringify({ v: 1, context: {}, evidence: { stepShots: [shot] } }) },
+    ]);
+    expect((await readReportFile('bug.zip', noImage)).views).toEqual([]);
+    const badEvidence = createZip([
+      { name: 'steps.json', data: JSON.stringify(doc) },
+      { name: 'evidence.json', data: '{' },
+    ]);
+    expect(await readReportFile('bug.zip', badEvidence)).toEqual({ steps: doc, views: [] });
   });
 });
 
@@ -234,7 +342,7 @@ describe('readStepsFile', () => {
   it("says it in French, the file checker's own message kept in English", async () => {
     setBrowserLanguage('fr');
     await expect(readStepsFile('other.zip', createZip([{ name: 'a.txt', data: 'x' }]))).rejects.toThrow(
-      /^other\.zip ne contient pas de steps\.json\u00a0: choisissez le \.zip enregistré par Piwi Picker/,
+      /^other\.zip ne contient pas de steps\.json\u00a0: choisissez le \.piwibug enregistré par Piwi Picker/,
     );
     await expect(readStepsFile('notes.json', new TextEncoder().encode('{"a":1}'))).rejects.toThrow(
       /^notes\.json n’est pas un fichier d’étapes\u00a0: \S/,
@@ -279,6 +387,44 @@ describe('createWaker', () => {
     void fresh.wait().then(() => (freshThrough = true));
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(freshThrough).toBe(false);
+  });
+
+  it('ends at the other answer when it comes first, and keeps a wake that comes after it', async () => {
+    // The person answered a hand-over, then clicked Next while the loop was still busy.
+    const waker = createWaker();
+    await expect(waker.until(Promise.resolve('done'))).resolves.toEqual({ woken: false, value: 'done' });
+    waker.wake();
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('keeps a wake that comes in the same moment as the other answer', async () => {
+    const waker = createWaker();
+    let answer!: (value: string) => void;
+    const answered = waker.until(new Promise<string>((resolve) => (answer = resolve)));
+    answer('done');
+    waker.wake();
+    await expect(answered).resolves.toEqual({ woken: false, value: 'done' });
+    await expect(waker.wait()).resolves.toBeUndefined();
+  });
+
+  it('ends at a wake that comes first', async () => {
+    const waker = createWaker();
+    const answered = waker.until(new Promise<string>(() => undefined));
+    waker.wake();
+    await expect(answered).resolves.toEqual({ woken: true });
+  });
+
+  it('lets a wait in progress through on a wake of a waiting loop, and keeps nothing when none waits', async () => {
+    // Pause and Continue: the loop reads them from the state, so a busy loop needs no wake from them.
+    const waker = createWaker();
+    const waiting = waker.wait();
+    waker.wakeWaiting();
+    await expect(waiting).resolves.toBeUndefined();
+    waker.wakeWaiting();
+    let through = false;
+    void waker.wait().then(() => (through = true));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(through).toBe(false);
   });
 });
 

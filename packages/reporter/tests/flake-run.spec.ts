@@ -160,8 +160,12 @@ describe('a flake-lab run', () => {
       expect(line.startedAt).toBeGreaterThan(0);
       expect(typeof line.workerIndex).toBe('number');
     }
-    // Only the companion's own requests are untouched: its line took far less than the delay.
-    expect(Math.min(...companion.map((l) => l.duration))).toBeLessThan(800);
+    // Only the target's request is delayed: the companion does the same page load and fetch, so it
+    // finishes well ahead of the target however slow the machine is (half the 800 ms delay of margin).
+    const target = lines.filter((l) => l.role === 'target');
+    expect(Math.min(...companion.map((l) => l.duration))).toBeLessThan(
+      Math.min(...target.map((l) => l.duration)) - 400,
+    );
   });
 
   it('writes whole lines from several workers into one file, and none for other tests', () => {

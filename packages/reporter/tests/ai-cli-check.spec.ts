@@ -72,6 +72,23 @@ describe('checkAiTree', () => {
     expect(findings.filter((f) => f.kind === 'duplicate-template')).toHaveLength(2);
     expect(findings.some((f) => f.severity === 'error')).toBe(true);
   });
+
+  it('names a command that rewrites a non-canonical entry, never the unavailable prune', async () => {
+    fs.writeFileSync(specFile, "page.piwiLocator('the submit button');");
+    const file = entryPath({ specFile, testTitle: 'logs in', template: 'the submit button' });
+    writeEntryFile(file, JSON.stringify(locatorEntry('the submit button')));
+
+    const [finding] = checkAiTree(root);
+    expect(finding!.kind).toBe('non-canonical');
+    expect(finding!.message).toContain('`piwi ai resolve --update-ai`');
+    expect(finding!.message).not.toContain('prune');
+
+    // The prune stub points to the same commands.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await runAi(['prune'], {})).toBe(2);
+    expect(error.mock.calls.flat().join(' ')).toContain('piwi ai resolve --update-ai');
+    error.mockRestore();
+  });
 });
 
 describe('runCheck / runAi', () => {

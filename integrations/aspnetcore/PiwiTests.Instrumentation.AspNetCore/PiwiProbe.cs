@@ -8,10 +8,10 @@ using System.Text.Json.Serialization;
 namespace PiwiTests.Instrumentation.AspNetCore;
 
 /// <summary>
-/// A fault a probe run asks the server to apply to one request (Piwi Test Map,
-/// level two). In this release the header is only parsed and verified — nothing
-/// is applied unless a project turns server probes on, which stays off by
-/// default. See the README for the header format and guards.
+/// A fault a probe run asks the server to apply to one request. The header is
+/// always parsed and verified; the fault is applied only when
+/// PIWI_SERVER_PROBES=true, which is off by default. See the README for the
+/// header format and guards.
 /// </summary>
 public sealed class PiwiProbeSpec
 {

@@ -157,3 +157,269 @@ export interface WireNetworkRequest {
   /** Why the request failed, as Playwright reports it (`net::ERR_CONNECTION_RESET`); absent when it finished. */
   failure?: string;
 }
+
+// ── Resources ──────────────────────────────────────────────────────────────────
+
+/** What a process is for the run, from its command line. */
+export type ProcessRole =
+  | 'runner'
+  | 'worker'
+  | 'browser'
+  | 'renderer'
+  | 'gpu'
+  | 'utility'
+  | 'ffmpeg'
+  | 'webServer'
+  | 'other';
+
+/** The kinds of files tests attach, by Playwright's attachment names. */
+export type ArtifactKind = 'trace' | 'video' | 'screenshot' | 'other';
+
+/** What the processes of one role used during a test. */
+export interface RoleCost {
+  cpuMs: number;
+  /** Time runnable but waiting for a CPU. */
+  runWaitMs: number | null;
+  /** The largest process of the role during the test (its peak RSS). */
+  peakRssMb: number | null;
+  processes: number;
+}
+
+/**
+ * What one execution cost its worker and the browsers the worker started, and
+ * what it found and left open, as the capture fixtures measured it at the
+ * test's start and end.
+ */
+export interface WireExecutionResources {
+  /** CPU of the worker process. */
+  workerCpuMs: number;
+  /** The processes the worker started (its browsers), by role; Linux only. */
+  roles?: Partial<Record<ProcessRole, RoleCost>> | null;
+  /** Share of the test's time the worker's event loop was busy. */
+  loopUtilization: number;
+  loopDelayP99Ms: number;
+  involuntarySwitches: number;
+  heapUsedMb: number;
+  /** Contexts and pages already open in the worker when the test started. */
+  openAtStart?: { contexts: number; pages: number } | null;
+  /** Objects the test opened itself and left open. */
+  leftOpen?: number | null;
+  /** Bytes of the files the test attached, by kind. */
+  artifactBytes?: Partial<Record<ArtifactKind, number>> | null;
+}
+
+export type ResourceVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probable';
+
+/** One finding of the end-of-run resource report: leaked objects, idle pages, piling handlers, Node handles. */
+export interface WireResourceFinding {
+  verdict: ResourceVerdict;
+  /** The object kind, `handle` for a Node handle. */
+  kind: 'browser' | 'context' | 'page' | 'request' | 'handle';
+  /** Where it was opened: `file:line`, a fixture, or a popup's trigger. */
+  where: string;
+  /** The line that opened it, `file:line`, when one is known. */
+  site?: string | null;
+  /** Leaked: the scope it outlived. */
+  scope?: 'test' | 'describe';
+  tests: number;
+  /** The objects (or the leaks, for handles) grouped in this finding. */
+  count: number;
+  /** Leaked: how long the longest one stayed open past its scope, in ms. */
+  heldMs?: number;
+  /** Leaked: at least one was still open when its worker shut down. */
+  untilWorkerEnd?: boolean;
+  /** Leaked contexts and browsers: the open pages that went with them. */
+  pages?: number;
+  /** Leaked: closed by `PIWI_LEAK_CHECK=close`. */
+  closedByPiwi?: boolean;
+  /** Leaked past its test: main-thread CPU its pages used after the test (Chromium). */
+  afterTestCpuMs?: number;
+  /** Piling: what grew, from how many to how many, over how many tests. */
+  growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
+  /** The describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
+  detail?: string;
+}
+
+/** What the processes of one role used over the run. */
+export interface RoleUsage {
+  cpuMs: number;
+  /** Time runnable but waiting for a CPU; null where the platform cannot tell. */
+  runWaitMs: number | null;
+  processes: number;
+}
+
+/** What a run cost the machine it ran on, sampled by the reporter. */
+export interface WireRunProfile {
+  platform: string;
+  wallMs: number;
+  machine: {
+    cores: number;
+    memoryBytes: number;
+    /** The container's memory limit, when it is below the machine's memory. */
+    memoryLimitBytes: number | null;
+    /** The container's CPU quota in cores, when it has one. */
+    cpuQuotaCores: number | null;
+  };
+  cpu: {
+    busyPct: number | null;
+    iowaitPct: number | null;
+    stealPct: number | null;
+    /** Share of the run's wall time some task waited for a CPU (PSI). */
+    pressurePct: number | null;
+    /** Machine busy share per sample, in order. */
+    series: number[];
+    byRole: Partial<Record<ProcessRole, RoleUsage>> | null;
+    throttledMs: number | null;
+  };
+  memory: {
+    kind: 'pss' | 'rss' | null;
+    peakBytes: number | null;
+    /** When the peak was sampled, ms after the run started. */
+    peakAtMs: number | null;
+    largest: { role: ProcessRole; bytes: number } | null;
+    rssFallbacks: number;
+    pressurePct: number | null;
+    lowestAvailableBytes: number | null;
+    /** The container's peak, when the run raised it. */
+    containerPeakBytes: number | null;
+    oomKills: number | null;
+  };
+  disk: {
+    peakInUseBytes: number | null;
+    peakInUseIsLowerBound: boolean;
+    lowestFreeBytes: number | null;
+    leftoverBytes: number | null;
+  };
+  /** Metrics the machine could not read. */
+  notMeasured: string[];
+}
+
+/** The workers' health over the run's tests, from their censuses. */
+export interface WorkerHealth {
+  tests: number;
+  /** Mean share of each test's time the worker's event loop was busy. */
+  loopUtilization: number;
+  /** The worst test's p99 event-loop delay. */
+  loopDelayP99Ms: number;
+  /** Mean involuntary context switches of the worker per test. */
+  involuntarySwitchesPerTest: number;
+}
+
+/** One point of a series over time: milliseconds after the series' `startedAt`, and the value then. */
+export type SeriesPoint = [atMs: number, value: number];
+
+/**
+ * What the run used over time, on the clock of the reporter's machine, which
+ * the tests' start times use too. Each series is in time order and bounded.
+ */
+export interface WireResourceTimeline {
+  /** Epoch milliseconds every point counts from. */
+  startedAt: number;
+  /** The machine's busy CPU share, 0 to 100, over the interval ending at each point. Empty without the run sampler. */
+  cpuPct: SeriesPoint[];
+  /** Bytes the run's processes held in memory, as `profile.memory.kind` measures them. */
+  memoryBytes: SeriesPoint[];
+  /** Pages open in each worker, one point at each change. Empty without the capture fixtures. */
+  pages: Array<{ worker: number; points: SeriesPoint[] }>;
+  /**
+   * Each worker process with the browsers it started: the cores they used
+   * over the interval ending at each point, and the bytes they held, measured
+   * as `profile.memory.kind` says. Needs the run sampler, and the capture
+   * fixtures to tell which process is which worker; absent from reporters
+   * before it.
+   */
+  workers?: Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
+}
+
+/**
+ * One reporter's resource report, sent with the run's end: the findings, what
+ * the run cost its machine, and the pages open in each worker test after test.
+ * A sharded run sends one per shard, each from its own machine.
+ */
+export interface WireResourceReport {
+  v: 1;
+  shardIndex?: number | null;
+  findings: WireResourceFinding[];
+  counts: Record<ResourceVerdict, number>;
+  profile: WireRunProfile | null;
+  /** Open pages in each worker at the end of each of its tests, in order. */
+  workers: Array<{ worker: number; openPages: number[] }>;
+  artifactBytes: Partial<Record<ArtifactKind, number>>;
+  workerHealth: WorkerHealth | null;
+  /** CPU, memory and open pages over time; absent from reporters before it. */
+  timeline?: WireResourceTimeline | null;
+}
+
+/**
+ * What launched a run. The launcher sets `PIWI_ORIGIN` (and `PIWI_ORIGIN_REF`)
+ * on the Playwright process; the reporter stamps the run's metadata with it
+ * under {@link RUN_ORIGIN_METADATA_KEY}, and the dashboard decides from it
+ * which analyses the run may feed.
+ *
+ * - `ci`: a CI pipeline, the default when a CI provider is detected;
+ * - `ci-rerun`: a CI pipeline the dashboard dispatched to re-run a cluster;
+ * - `local`: a developer's machine, the default otherwise;
+ * - `desktop`, `editor`: a run started from the desktop app or an editor;
+ * - `preflight`, `bug`: `piwi preflight --run` and `piwi bug --write`;
+ * - `flake-lab`, `probe`: runs replaying tests under injected conditions;
+ * - `bisect`, `reproduce`: steps of a bisect and reproductions of a failure
+ *   at an older commit;
+ * - `import`: a report imported into the dashboard, stamped by the server.
+ */
+export const RUN_ORIGIN_KINDS = [
+  'ci',
+  'ci-rerun',
+  'local',
+  'desktop',
+  'editor',
+  'preflight',
+  'bug',
+  'flake-lab',
+  'probe',
+  'bisect',
+  'reproduce',
+  'import',
+] as const;
+
+export type RunOriginKind = (typeof RUN_ORIGIN_KINDS)[number];
+
+/** A run's origin: its kind, and what it was launched for (a dispatch, a cluster, a bug report). */
+export interface RunOrigin {
+  kind: RunOriginKind;
+  ref?: string;
+}
+
+/** The run-metadata key holding the {@link RunOrigin}. */
+export const RUN_ORIGIN_METADATA_KEY = 'piwiOrigin';
+
+/** The longest `ref` kept. */
+export const RUN_ORIGIN_REF_MAX_LENGTH = 200;
+
+const RUN_ORIGIN_REF = /^[A-Za-z0-9._:/#@-]+$/;
+
+/** True for one of the {@link RUN_ORIGIN_KINDS}. */
+export function isRunOriginKind(value: unknown): value is RunOriginKind {
+  return typeof value === 'string' && (RUN_ORIGIN_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * A `ref` as stored: trimmed, at most {@link RUN_ORIGIN_REF_MAX_LENGTH}
+ * characters of letters, digits and `._:/#@-`. Anything else is dropped.
+ */
+export function parseRunOriginRef(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const ref = String(value).trim();
+  return ref && ref.length <= RUN_ORIGIN_REF_MAX_LENGTH && RUN_ORIGIN_REF.test(ref) ? ref : undefined;
+}
+
+/**
+ * A {@link RunOrigin} read from untrusted input, rebuilt as `{ kind, ref? }`,
+ * or null when its kind is not one of the {@link RUN_ORIGIN_KINDS}.
+ */
+export function parseRunOrigin(value: unknown): RunOrigin | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { kind, ref } = value as { kind?: unknown; ref?: unknown };
+  if (!isRunOriginKind(kind)) return null;
+  const parsedRef = parseRunOriginRef(ref);
+  return parsedRef === undefined ? { kind } : { kind, ref: parsedRef };
+}

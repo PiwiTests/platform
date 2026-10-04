@@ -14,6 +14,8 @@
 import type { FlakeProfile, FlakeSuspect } from '#shared/handlers/flake-profile';
 import {
   flakeCommand,
+  flakeSuspectLabNote,
+  flakeSuspectLabShort,
   latestSuspectResults,
   type FlakeExperimentRecord,
   type FlakeSuspectResult,
@@ -76,10 +78,10 @@ async function copyCommand(command: string) {
   copiedCommand.value = command;
 }
 
-/** "reproduced 3/4 · 2 days ago". */
+/** "reproduced 3 of 4 · 2 days ago", "not reproduced 0 of 10 (below 26%) · 2 days ago". */
 function labLine(r: FlakeSuspectResult): string {
   const when = r.finishedAt ? ` · ${formatRelativeTime(r.finishedAt)}` : '';
-  return `${flakeVerdictWord(r.verdict)} ${r.matchingFailures}/${r.runs}${when}`;
+  return `${flakeSuspectLabShort(r)}${when}`;
 }
 
 const summaryLine = computed(() => {
@@ -183,7 +185,11 @@ function detailLine(s: FlakeSuspect): string | null {
             <p class="col-span-2 md:col-span-1 text-sm text-highlighted">
               <span class="md:hidden text-xs text-muted">Condition </span>{{ s.conditionLabel }}
             </p>
-            <p class="col-span-2 md:col-span-1 text-sm text-highlighted tabular-nums" data-testid="flake-suspect-lab">
+            <p
+              class="col-span-2 md:col-span-1 text-sm text-highlighted tabular-nums"
+              :title="flakeSuspectLabNote(results.get(s.id)) ?? undefined"
+              data-testid="flake-suspect-lab"
+            >
               <span class="md:hidden text-xs text-muted">Lab </span>
               <template v-if="results.get(s.id)">{{ labLine(results.get(s.id)!) }}</template>
               <span v-else class="text-muted">not tested</span>

@@ -22,6 +22,7 @@ import {
   type BranchFailure,
   type EntityLink,
   type FixPlan,
+  type FlakeLabEntry,
   type FlakyTest,
   type QuarantinedTest,
 } from './piwi-client.js';
@@ -51,49 +52,126 @@ function readDotEnv(dir: string): Record<string, string> {
   }
 }
 
+/** Where the desktop app publishes its address, token and folder links while it runs. */
+export function desktopConfigPath(env: Record<string, string | undefined>): string {
+  return env.PIWI_DESKTOP_CONFIG || path.join(os.homedir(), '.piwi', 'desktop.json');
+}
+
+export interface DesktopDiscovery {
+  url: string;
+  token: string;
+  /** The projects linked to a folder on this machine in the desktop app. */
+  projects: Array<{ id: number; path: string }>;
+}
+
+/** The running desktop app, from its discovery file; null when it does not run. */
+export function readDesktopDiscovery(env: Record<string, string | undefined>): DesktopDiscovery | null {
+  const discovery = readJson(desktopConfigPath(env)) as { url?: unknown; token?: unknown; projects?: unknown } | null;
+  if (!discovery || typeof discovery.url !== 'string' || typeof discovery.token !== 'string') return null;
+  const projects = Array.isArray(discovery.projects)
+    ? discovery.projects.flatMap((p: { id?: unknown; path?: unknown }) =>
+        typeof p?.id === 'number' && typeof p.path === 'string' && p.path ? [{ id: p.id, path: p.path }] : [],
+      )
+    : [];
+  return { url: discovery.url.replace(/\/+$/, ''), token: discovery.token, projects };
+}
+
+function isInside(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
 /**
- * The connection of a context: the environment, then the workspace `.env`
- * (the config's directory, then the repository root), then the desktop app's
- * discovery file, then the editor's own settings.
+ * The project the desktop app links to this context's folder: the linked folder
+ * that holds the Playwright config, or one inside it; the deepest wins.
+ */
+export function linkedDesktopProject(desktop: DesktopDiscovery | null, root: string): number | null {
+  const matches = (desktop?.projects ?? [])
+    .filter((p) => isInside(root, p.path) || isInside(p.path, root))
+    .sort((a, b) => b.path.length - a.path.length);
+  return matches[0]?.id ?? null;
+}
+
+function linkedProject(desktop: DesktopDiscovery | null, root: string): string {
+  const id = linkedDesktopProject(desktop, root);
+  return id === null ? '' : String(id);
+}
+
+type ContextConnection = PiwiConnection & { source: ConnectionSource };
+
+/**
+ * The instance the environment, the workspace `.env` (the config's directory,
+ * then the repository root) or the instance saved with Connect in the editor
+ * name, in that order; null when none does.
+ */
+export function namedInstance(
+  root: string,
+  repoRoot: string,
+  env: Record<string, string | undefined>,
+  editor: EditorCredentials,
+  desktop: DesktopDiscovery | null = readDesktopDiscovery(env),
+): ContextConnection | null {
+  const dotEnv = { ...readDotEnv(repoRoot), ...readDotEnv(root) };
+  if (env.PIWI_DASHBOARD_URL || dotEnv.PIWI_DASHBOARD_URL) {
+    const found = resolvePiwiConnection({ env, dotEnv, desktop })!;
+    // The key saved in the editor belongs to the server it was saved for: a URL
+    // from the environment or a workspace `.env` never gets another's.
+    const editorUrl = editor.serverUrl?.replace(/\/+$/, '');
+    return {
+      serverUrl: found.serverUrl,
+      apiKey: found.apiKey ?? (editorUrl === found.serverUrl ? (editor.apiKey ?? null) : null),
+      project:
+        found.project || editor.project || (desktop?.url === found.serverUrl ? linkedProject(desktop, root) : ''),
+      source: env.PIWI_DASHBOARD_URL ? 'environment' : 'dotenv',
+    };
+  }
+  if (editor.serverUrl) {
+    return {
+      serverUrl: editor.serverUrl.replace(/\/+$/, ''),
+      apiKey: editor.apiKey ?? null,
+      project: editor.project || env.PIWI_PROJECT_NAME || dotEnv.PIWI_PROJECT_NAME || '',
+      source: 'editor',
+    };
+  }
+  return null;
+}
+
+/**
+ * The connection of a context: the desktop app running on this machine when
+ * the editor chose it with Connect, else the named instance (`namedInstance`),
+ * else the desktop app while it runs. The editor's choice of the app comes
+ * first: it is made on this machine, and the app is this machine's own.
+ *
+ * With the app chosen, the project is the one picked with Connect, else the one
+ * the app links to this folder, else `PIWI_PROJECT_NAME`, which names the
+ * project of the instance the reporter sends to. Reached because nothing else
+ * names an instance, the app is where the reporter sends too: the project is the
+ * one `PIWI_PROJECT_NAME` or the editor names, else the linked one.
  */
 export function resolveContextConnection(
   root: string,
   repoRoot: string,
   env: Record<string, string | undefined>,
   editor: EditorCredentials,
-): (PiwiConnection & { source: ConnectionSource }) | null {
-  const discovery = readJson(env.PIWI_DESKTOP_CONFIG || path.join(os.homedir(), '.piwi', 'desktop.json')) as {
-    url?: unknown;
-    token?: unknown;
-  } | null;
-  const desktop =
-    discovery && typeof discovery.url === 'string' && typeof discovery.token === 'string'
-      ? { url: discovery.url, token: discovery.token }
-      : null;
+): ContextConnection | null {
+  const desktop = readDesktopDiscovery(env);
+  const named = namedInstance(root, repoRoot, env, editor, desktop);
+  if (!desktop || (named && !editor.desktop)) return named;
   const dotEnv = { ...readDotEnv(repoRoot), ...readDotEnv(root) };
-  const found = resolvePiwiConnection({ env, dotEnv, desktop });
-  if (found) {
-    // The key saved in the editor belongs to the server it was saved for: a URL
-    // from the environment, a workspace `.env` or the desktop app never gets it.
-    const editorUrl = editor.serverUrl?.replace(/\/+$/, '');
-    return {
-      serverUrl: found.serverUrl,
-      apiKey: found.apiKey ?? (editorUrl === found.serverUrl ? (editor.apiKey ?? null) : null),
-      project: found.project || editor.project || '',
-      source: env.PIWI_DASHBOARD_URL ? 'environment' : dotEnv.PIWI_DASHBOARD_URL ? 'dotenv' : 'desktop',
-    };
-  }
-  if (!editor.serverUrl) return null;
+  const namedProject = env.PIWI_PROJECT_NAME || dotEnv.PIWI_PROJECT_NAME || '';
+  const linked = linkedProject(desktop, root);
   return {
-    serverUrl: editor.serverUrl.replace(/\/+$/, ''),
-    apiKey: editor.apiKey ?? null,
-    project: editor.project ?? '',
-    source: 'editor',
+    serverUrl: desktop.url,
+    apiKey: desktop.token,
+    project: editor.desktop
+      ? editor.desktopProject || linked || namedProject
+      : namedProject || editor.project || linked,
+    source: 'desktop',
   };
 }
 
 /** The owners a repository's CODEOWNERS file names: `@team`, `@user`, emails. */
-export function codeOwners(repoRoot: string): string[] {
+function codeOwners(repoRoot: string): string[] {
   const owners = new Set<string>();
   for (const file of ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS']) {
     let text: string;
@@ -110,11 +188,31 @@ export function codeOwners(repoRoot: string): string[] {
   return [...owners].sort();
 }
 
+/**
+ * A `piwi` command line that reports to `serverUrl` when run from `root`: the
+ * command itself when it would find that instance there on its own (the
+ * environment, the `.env` beside the config, the desktop app), whose key it
+ * then reads too; else with `--server-url`.
+ */
+export function withServerUrl(
+  command: string,
+  serverUrl: string,
+  root: string,
+  env: Record<string, string | undefined>,
+  desktop: DesktopDiscovery | null = readDesktopDiscovery(env),
+): string {
+  const own = resolvePiwiConnection({ env, dotEnv: readDotEnv(root), desktop });
+  const target = serverUrl.replace(/\/+$/, '');
+  return own?.serverUrl === target ? command : `${command} --server-url ${target}`;
+}
+
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
   /** Where the client's instance came from; null without one. */
   source: ConnectionSource | null = null;
+  /** The instance the environment, the `.env` or the editor's settings name, in use or not. */
+  instance: { serverUrl: string; source: ConnectionSource } | null = null;
   project: { id: number; name: string } | null = null;
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
@@ -122,8 +220,13 @@ export class PiwiContext {
   codeIndex: CodeIndex | null = null;
   /** Why the context has no data, in one sentence; null when it has. */
   problem: string | null = null;
-  /** The branch whose latest run is read: the checked-out one, else the default branch. */
+  /**
+   * The branch whose latest run is read: the checked-out one, else, while it has no run, the
+   * project's default branch, else null for the newest run of any branch.
+   */
   runBranch: string | null = null;
+  /** The branch checked out in the workspace; null on a detached head. */
+  checkedOutBranch: string | null = null;
   /** Quarantined tests by test case id, and the passing streak that releases one. */
   quarantined = new Map<number, QuarantinedTest>();
   releaseAfter = 0;
@@ -133,6 +236,8 @@ export class PiwiContext {
   timeouts = new Map<number, TimeoutAdvice>();
   /** The project's flaky tests on the branch the indexes describe, by test case id. */
   flaky = new Map<number, FlakyTest>();
+  /** The project's Flake Lab tests on that branch, with their top suspect, by test case id. */
+  flakeLab = new Map<number, FlakeLabEntry>();
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
@@ -167,7 +272,11 @@ export class PiwiContext {
       this.committedFiles = new Map();
     }
     this.translations = { head: null };
+    const named = namedInstance(this.root, this.repoRoot, env, editor);
+    this.instance = named && { serverUrl: named.serverUrl, source: named.source };
     const connection = resolveContextConnection(this.root, this.repoRoot, env, editor);
+    // What was read from another instance is not this one's: its ids name other things.
+    if (connection?.serverUrl !== this.client?.connection.serverUrl) this.forget();
     if (!connection) {
       this.client = null;
       this.source = null;
@@ -178,7 +287,10 @@ export class PiwiContext {
     this.source = connection.source;
     try {
       if (!connection.project) {
-        this.problem = 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.';
+        this.problem =
+          connection.source === 'desktop'
+            ? "No project linked to this folder in the Piwi desktop app: link it on the project's page there, or run Piwi: Connect."
+            : 'No project chosen: set PIWI_PROJECT_NAME or run Piwi: Connect.';
         return;
       }
       if (!this.project || this.project.name !== connection.project) {
@@ -199,6 +311,8 @@ export class PiwiContext {
       this.codeIndex = await this.client.codeIndex(this.project.id, this.branch).catch(() => null);
       const flaky = await this.client.flakyTests(this.project.id, this.branch).catch(() => null);
       if (flaky) this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]));
+      const flakeLab = await this.client.flakeLab(this.project.id, this.branch).catch(() => null);
+      if (flakeLab) this.flakeLab = new Map(flakeLab.map((t) => [t.testCaseId, t]));
       const quarantine = await this.client.quarantine(this.project.id).catch(() => null);
       if (quarantine) {
         this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
@@ -244,16 +358,59 @@ export class PiwiContext {
     }
   }
 
+  /** Drop everything read from the instance: the project, its indexes, the latest run and the per-file answers. */
+  private forget(): void {
+    this.project = null;
+    this.branch = null;
+    this.index = null;
+    this.codeIndex = null;
+    this.quarantined = new Map();
+    this.releaseAfter = 0;
+    this.selections = [];
+    this.timeouts = new Map();
+    this.flaky = new Map();
+    this.flakeLab = new Map();
+    this.failures = null;
+    this.runBranch = null;
+    this.checkedOutBranch = null;
+    this.functions = null;
+    this.words = null;
+    for (const cache of [
+      this.issues,
+      this.fixPlans,
+      this.fixPlanTexts,
+      this.healings,
+      this.catalog,
+      this.alternatives,
+    ]) {
+      cache.clear();
+    }
+  }
+
   /**
    * Fetch the latest run on the checked-out branch (the default branch on a
-   * detached head). Returns whether the run or its failures changed.
+   * detached head); while that branch has no run, the default branch's, else the
+   * newest of any branch. Returns whether the run or its failures changed.
    */
   async refreshRun(): Promise<boolean> {
     if (!this.client || !this.project) return false;
-    const branch = (await currentBranch(this.repoRoot)) ?? this.index?.defaultBranch ?? null;
+    const checkedOut = await currentBranch(this.repoRoot);
+    // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
+    const branches = [
+      ...new Set([checkedOut ?? this.index?.defaultBranch ?? null, this.index?.defaultBranch ?? null, null]),
+    ];
     try {
-      const next = await this.client.branchFailures(this.project.id, branch);
-      const changed = branch !== this.runBranch || JSON.stringify(next) !== JSON.stringify(this.failures);
+      let branch: string | null = branches[0] ?? null;
+      let next = await this.client.branchFailures(this.project.id, branch);
+      for (const other of branches.slice(1)) {
+        if (next.run) break;
+        branch = other;
+        next = await this.client.branchFailures(this.project.id, other);
+      }
+      const changed =
+        branch !== this.runBranch ||
+        checkedOut !== this.checkedOutBranch ||
+        JSON.stringify(next) !== JSON.stringify(this.failures);
       if (next.run?.id !== this.failures?.run?.id) {
         this.healings.clear();
         this.issues.clear();
@@ -261,6 +418,7 @@ export class PiwiContext {
         this.fixPlanTexts.clear();
       }
       this.runBranch = branch;
+      this.checkedOutBranch = checkedOut;
       this.failures = next;
       return changed;
     } catch {
@@ -345,7 +503,9 @@ export class PiwiContext {
     let found = this.downloads.get(key);
     if (!found) {
       const dir = path.join(os.tmpdir(), 'piwi-editor', createHash('sha256').update(key).digest('hex').slice(0, 16));
-      const target = path.join(dir, path.basename(storedPath) || 'file');
+      // The name comes from the server and ends up in a `show-trace "<path>"` command: keep it to plain characters.
+      const name = path.basename(storedPath).replace(/[^\w.-]/g, '_');
+      const target = path.join(dir, name && name !== '.' && name !== '..' ? name : 'file');
       found = (async () => {
         if (fs.existsSync(target)) return target;
         try {

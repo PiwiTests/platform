@@ -126,6 +126,18 @@ write(
   ].join('\n'),
 );
 write('tests/checkout.spec.ts', "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n");
+write(
+  'tests/admin.spec.ts',
+  [
+    "import { test } from './fixtures';",
+    '',
+    "test('approves an order', async ({ page, adminPage }) => {",
+    "  await adminPage.goto('/admin/orders');",
+    '',
+    '});',
+    '',
+  ].join('\n'),
+);
 const git = (...args) =>
   execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
     cwd: workspace,

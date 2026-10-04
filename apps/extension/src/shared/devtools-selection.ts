@@ -62,6 +62,29 @@ export const HIGHLIGHT_MESSAGE = 'piwi-devtools-highlight';
 export const MARK_MATCH_MESSAGE = 'piwi-devtools-mark';
 export const REVEAL_MARK = 'data-piwi-devtools-reveal';
 
+/**
+ * Run in the page's world by the DevTools page, where `inspect()` exists:
+ * selects the element marked with {@link REVEAL_MARK} in the Elements panel,
+ * found in the document or an open shadow root, and takes the mark off. True
+ * when one was found.
+ */
+export const REVEAL_EXPRESSION = `(() => {
+  const find = (root) => {
+    const hit = root.querySelector('[${REVEAL_MARK}]');
+    if (hit) return hit;
+    for (const el of root.querySelectorAll('*')) {
+      const inside = el.shadowRoot && find(el.shadowRoot);
+      if (inside) return inside;
+    }
+    return null;
+  };
+  const el = find(document);
+  if (!el) return false;
+  el.removeAttribute('${REVEAL_MARK}');
+  inspect(el);
+  return true;
+})()`;
+
 /** One element a locator finds, as the Locators tab lists it. */
 export interface LocatorMatch {
   tag: string;

@@ -264,7 +264,9 @@ export function parsePeriod(raw: string | null | undefined): PeriodSpec | null {
   m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(text);
   if (m && isValidDay(m[1]!) && isValidDay(m[2]!)) {
     const [from, to] = m[1]! <= m[2]! ? [m[1]!, m[2]!] : [m[2]!, m[1]!];
-    return { kind: 'range', from, to };
+    // A range spans at most "all time": the widgets bucket it day by day.
+    const earliest = new Date(Date.parse(`${to}T00:00:00Z`) - ALL_TIME_DAYS * DAY_MS).toISOString().slice(0, 10);
+    return { kind: 'range', from: from < earliest ? earliest : from, to };
   }
   m = /^since-marker-(\d+)$/.exec(text);
   if (m) return { kind: 'since-marker', markerId: Number(m[1]) };
@@ -296,7 +298,7 @@ export function parseGranularity(raw: string | null | undefined): Granularity | 
   return raw && (GRANULARITIES as string[]).includes(raw) ? (raw as Granularity) : null;
 }
 
-/** The rolling period a legacy `days` value stands for (3650 is All time). */
+/** The rolling period a `days` value stands for (3650 is All time). */
 export function periodFromDays(days: number): PeriodSpec {
   const clamped = clampDays(days);
   return clamped >= ALL_TIME_DAYS ? { kind: 'all' } : { kind: 'rolling', days: clamped };

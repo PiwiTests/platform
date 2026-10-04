@@ -126,7 +126,7 @@ export function detectTimeoutOpportunity(
   const p95 = percentile(sorted, 95);
   const maxDuration = sorted[sorted.length - 1] ?? 0;
 
-  // Treat 0 (unbounded) and null (legacy) alike: no usable numeric budget.
+  // Treat 0 (unbounded) and null (not recorded) alike: no usable numeric budget.
   const timeout = agg.timeout != null && agg.timeout > 0 ? agg.timeout : null;
 
   const base = {

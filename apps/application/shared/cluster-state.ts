@@ -42,6 +42,8 @@ export interface ClusterStateCluster {
   fixVerification?: string | null;
   fixCommit?: string | null;
   fixLandedRunId?: number | null;
+  /** A run that passed every affected test at the commit the cluster last failed at. */
+  flakeEvidenceRunId?: number | null;
   lastSeenRunId: number;
   lastSeenAt?: string | Date | number | null;
   updatedAt?: string | Date | number | null;
@@ -164,18 +166,29 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('quarantined', 'release');
   }
 
+  // A pass at the failing commit proves no fix: say so after the state.
+  const flakeEvidence = () => {
+    const id = cluster.flakeEvidenceRunId;
+    if (id == null || id <= cluster.lastSeenRunId) return;
+    t(' Passed again at the same commit in ');
+    run(id);
+    t(', which is flake evidence, not a fix.');
+  };
+
   // Still failing, or quiet-but-open.
   if (isFailing) {
     if (cluster.assignee?.trim()) {
       const since = relativeTimeAgo(cluster.updatedAt, now);
       const sinceDur = since && since !== 'just now' ? ` since ${since.replace(/ ago$/, '')}` : '';
       t(`Still failing — ${cluster.assignee.trim()} is on it${sinceDur}.`);
+      flakeEvidence();
       return done('failing-assigned', null);
     }
     const rel = relativeTimeAgo(cluster.lastSeenAt, now);
     t(`Still failing — last seen${rel ? ` ${rel}` : ''} in `);
     run(cluster.lastSeenRunId);
     t(', open, unassigned.');
+    flakeEvidence();
     return done('failing', null);
   }
 
@@ -184,5 +197,6 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
   t(
     `Not seen for ${runsSinceLastSeen} run${runsSinceLastSeen === 1 ? '' : 's'}${span ? ` (${span})` : ''}, still open.`,
   );
+  flakeEvidence();
   return done('quiet', 'mark-resolved');
 }

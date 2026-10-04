@@ -4,7 +4,8 @@
  * hover and summary lines; this file starts it, draws the summary lines as
  * CodeLens and the latest run in the status bar, runs the commands those
  * lines name, keeps the API key in the secret store, hands Piwi's MCP
- * server to the editor's agent, and inserts what Piwi Picker sends.
+ * server to the editor's agent, inserts what Piwi Picker sends, and records
+ * tests (`recording.ts`).
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -15,6 +16,19 @@ import {
   type ServerOptions,
 } from 'vscode-languageclient/node';
 import {
+  DESKTOP_JOB_NOTIFICATION,
+  DESKTOP_JOB_REQUEST,
+  PAGE_CANDIDATES_REQUEST,
+  SHARE_DESKTOP_JOB_REQUEST,
+  type DesktopJobParams,
+  type DesktopJobResult,
+  type DesktopJobUpdate,
+  type PageCandidatesParams,
+  type PageCandidatesResult,
+  type RenderStepsParams,
+  type ShareDesktopJobResult,
+} from '@piwitests/editor/protocol';
+import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   REFRESH_REQUEST,
@@ -22,12 +36,16 @@ import {
   RUN_ARGS_REQUEST,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
+  DESKTOP_REQUEST,
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
+  STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  SCREENSHOT_REQUEST,
   TRACE_REQUEST,
+  type DesktopResult,
   type EditorCredentials,
   type FileSummary,
   type McpServersResult,
@@ -38,7 +56,10 @@ import {
   type RunTestsArgs,
   type SelectionsResult,
   type StatusResult,
+  type SummaryLine,
   type TestsForFile,
+  type ScreenshotParams,
+  type ScreenshotResult,
   type TraceParams,
   type TraceResult,
 } from '@piwitests/editor/protocol';
@@ -55,15 +76,34 @@ import {
   waitForSignIn,
   type ProjectItem,
 } from './connect';
-import { DOCUMENT_PATTERN, indentBlock, mcpConfiguration, sourceLabel, statusBarView } from './glue';
+import {
+  DOCUMENT_PATTERN,
+  connectChoices,
+  desktopJobNotice,
+  testDecorations,
+  disconnectQuestion,
+  importInsertion,
+  indentBlock,
+  mcpConfiguration,
+  sourceLabel,
+  statusBarView,
+} from './glue';
+import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
-/** The key every instance shared before keys were kept per instance; removed once. */
+/** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
+/**
+ * The desktop app chosen with Connect, its project, and whether it was offered:
+ * workspace state, on this machine only, never in a file the team shares.
+ */
+const DESKTOP_CHOSEN = 'piwi.desktop';
+const DESKTOP_PROJECT = 'piwi.desktopProject';
+const DESKTOP_OFFERED = 'piwi.desktopOffered';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -79,8 +119,18 @@ type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers
 
 let client: LanguageClient | null = null;
 let sendListener: SendListener | null = null;
+let recording: Recording | null = null;
 
-/** The connection saved in the editor: the workspace's instance and project, and that instance's key. */
+/** The extension's API, which its integration suite reads: answers of the editor service. */
+export interface PiwiApi {
+  /** `piwi/pageCandidates`: the page expressions the steps written at a position could run on. */
+  pageCandidates(params: PageCandidatesParams): Promise<PageCandidatesResult>;
+}
+
+/**
+ * The connection saved in the editor: the workspace's instance and project, that instance's key,
+ * and whether this machine reads the desktop app first.
+ */
 async function credentials(context: vscode.ExtensionContext): Promise<EditorCredentials> {
   const settings = vscode.workspace.getConfiguration('piwi');
   const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl')) ?? null;
@@ -88,12 +138,20 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     serverUrl,
     project: settings.get<string>('project') || null,
     apiKey: serverUrl ? ((await context.secrets.get(apiKeySecret(serverUrl))) ?? null) : null,
+    desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
+    desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
   };
 }
 
+/** Hand the saved connection to the service and have it read everything again. */
+async function applyCredentials(context: vscode.ExtensionContext, lc: LanguageClient): Promise<void> {
+  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
+  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+}
+
 /**
- * Earlier versions kept one key for every instance, which a workspace naming another
- * instance would have sent there. It is removed once: connect again to save it per instance.
+ * Deletes the key shared by every instance, once: a workspace naming another
+ * instance would send it there. Connect again to save a key per instance.
  */
 async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> {
   if (context.globalState.get(SHARED_KEY_FORGOTTEN)) return;
@@ -101,7 +159,7 @@ async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> 
   await context.globalState.update(SHARED_KEY_FORGOTTEN, true);
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(context: vscode.ExtensionContext): Promise<PiwiApi> {
   await forgetSharedKey(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
   const serverOptions: ServerOptions = {
@@ -115,6 +173,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
 
+  // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails, stronger on
+  // the line it failed at (the service's hover there says why).
+  const gutterIcons = new Map(
+    (['failed', 'flaky', 'passed', 'skipped'] as const).map((status) => [
+      status,
+      vscode.window.createTextEditorDecorationType({
+        gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
+        gutterIconSize: 'contain',
+      }),
+    ]),
+  );
+  const failingBackground = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('piwi.failingTestBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+  });
+  const failingLine = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    backgroundColor: new vscode.ThemeColor('piwi.failingLineBackground'),
+    overviewRulerColor: new vscode.ThemeColor('piwi.failingLineBackground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+  });
+  context.subscriptions.push(failingBackground, failingLine, ...gutterIcons.values());
+  const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
+    const tests = testDecorations(lines);
+    for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
+      for (const [status, type] of gutterIcons) {
+        editor.setDecorations(
+          type,
+          tests
+            .filter((t) => t.status === status && t.line < document.lineCount)
+            .map((t) => {
+              const hover = new vscode.MarkdownString(
+                t.dashboardUrl
+                  ? `${t.hover}\n\n[Open in dashboard](command:piwi.openInDashboard?${encodeURIComponent(JSON.stringify([t.dashboardUrl]))})`
+                  : t.hover,
+              );
+              hover.isTrusted = { enabledCommands: ['piwi.openInDashboard'] };
+              return { range: document.lineAt(t.line).range, hoverMessage: hover };
+            }),
+        );
+      }
+      editor.setDecorations(
+        failingBackground,
+        tests
+          .filter((t) => t.failingUntil !== null && t.line < document.lineCount)
+          .map((t) => new vscode.Range(t.line, 0, Math.min(t.failingUntil!, document.lineCount - 1), 0)),
+      );
+      editor.setDecorations(
+        failingLine,
+        tests
+          .filter((t) => t.failingLine !== null && t.failingLine < document.lineCount)
+          .map((t) => document.lineAt(t.failingLine!).range),
+      );
+    }
+  };
+
   const lensesChanged = new vscode.EventEmitter<void>();
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
@@ -126,7 +242,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const updateStatus = async (runs?: RunStatusResult) => {
     const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
     const runStatus = runs ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
-    const view = statusBarView(status, runStatus);
+    const view = statusBarView(status, runStatus, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
     statusItem.text = view.text;
     statusItem.tooltip = view.tooltip;
     statusUrl = view.url;
@@ -136,6 +252,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusItem.show();
     void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
     lensesChanged.fire();
+    if (status) void offerDesktop(context, lc, status);
     const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
     const serialized = JSON.stringify(servers?.servers ?? []);
     if (serialized !== lastServers) {
@@ -145,20 +262,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
 
-  // The terminal of each directory tests run in, reused while it is open.
+  // The terminal of each directory and environment tests run in, reused while it is open.
   const terminals = new Map<string, vscode.Terminal>();
-  const runInTerminal = (cwd: string, command: string) => {
-    let terminal = terminals.get(cwd);
+  const runInTerminal = (cwd: string, command: string, env?: Record<string, string>) => {
+    const key = `${cwd}\0${JSON.stringify(env ?? {})}`;
+    let terminal = terminals.get(key);
     if (!terminal || terminal.exitStatus) {
-      terminal = vscode.window.createTerminal({ name: 'Piwi', cwd });
-      terminals.set(cwd, terminal);
+      terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
+      terminals.set(key, terminal);
     }
     terminal.show();
     terminal.sendText(command);
   };
   context.subscriptions.push(
     vscode.window.onDidCloseTerminal((t) => {
-      for (const [cwd, terminal] of terminals) if (terminal === t) terminals.delete(cwd);
+      for (const [key, terminal] of terminals) if (terminal === t) terminals.delete(key);
     }),
   );
 
@@ -168,7 +286,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return;
     }
-    runInTerminal(command.cwd, command.command);
+    runInTerminal(command.cwd, command.command, command.env);
   };
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
@@ -220,7 +338,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               .then((p) => p?.t);
       if (picked) await vscode.env.openExternal(vscode.Uri.parse(picked.url));
     }),
-    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) => runInTerminal(args.cwd, args.command)),
+    vscode.commands.registerCommand('piwi.runCommand', (args: RunCommandArgs) =>
+      runInTerminal(args.cwd, args.command, args.env),
+    ),
     vscode.commands.registerCommand('piwi.copyText', async (text: string) => {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage('Piwi: copied. Paste it to your agent.');
@@ -243,7 +363,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       );
       if (!picked) return;
       const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, { uri, key: picked.key });
-      if (command) runInTerminal(command.cwd, command.command);
+      if (command) runInTerminal(command.cwd, command.command, command.env);
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
@@ -258,6 +378,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       runInTerminal(trace.cwd, trace.command);
+    }),
+    vscode.commands.registerCommand('piwi.openScreenshot', async (params: ScreenshotParams) => {
+      const shot = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Piwi: downloading the screenshot…' },
+        () => lc.sendRequest<ScreenshotResult | null>(SCREENSHOT_REQUEST, params),
+      );
+      if (!shot) {
+        void vscode.window.showWarningMessage('Piwi: this failure has no screenshot to open.');
+        return;
+      }
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(shot.path), {
+        preview: true,
+        viewColumn: vscode.ViewColumn.Beside,
+      });
     }),
     vscode.commands.registerCommand('piwi.copyMcpConfiguration', async () => {
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
@@ -278,8 +412,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const summary = await lc
             .sendRequest<FileSummary>(FILE_SUMMARY_REQUEST, { uri: document.uri.toString() })
             .catch(() => null);
+          decorateTests(document, summary?.lines ?? []);
           if (!summary) return [];
-          return [...(summary.file ? [summary.file] : []), ...summary.lines].map((line) => {
+          // A test's line is drawn in the gutter and its hover, not as a lens above it.
+          return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
             return new vscode.CodeLens(range, {
               title: line.title,
@@ -348,33 +484,93 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (runs: RunStatusResult) => void updateStatus(runs)),
+    lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
   );
+  context.subscriptions.push(...registerDesktopJobs(lc));
+  recording = registerRecording(context, lc);
+  context.subscriptions.push(recording);
   await lc.start();
   await updateStatus();
+  return {
+    pageCandidates: (params) => lc.sendRequest<PageCandidatesResult>(PAGE_CANDIDATES_REQUEST, params),
+  };
 }
 
-/** Insert what Piwi Picker sent at the cursor of the active editor, or in a new editor when none is open. */
+/**
+ * Jobs passed to the desktop app: `piwi.desktopJob` (a quick fix on a failure from the team instance, or a flaky
+ * test's lens) sends one, each update of it shows as a notification, and its share button records the verdict on the
+ * instance.
+ */
+function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
+  const show = (severity: 'information' | 'warning', text: string, ...actions: string[]) =>
+    severity === 'warning'
+      ? vscode.window.showWarningMessage(text, ...actions)
+      : vscode.window.showInformationMessage(text, ...actions);
+  return [
+    vscode.commands.registerCommand('piwi.desktopJob', async (params: DesktopJobParams) => {
+      const result = await lc.sendRequest<DesktopJobResult>(DESKTOP_JOB_REQUEST, params);
+      void show(result.ok ? 'information' : 'warning', `Piwi: ${result.message}`);
+    }),
+    lc.onNotification(DESKTOP_JOB_NOTIFICATION, async (update: DesktopJobUpdate) => {
+      const notice = desktopJobNotice(update);
+      const picked = await show(notice.severity, notice.text, ...notice.actions);
+      if (!picked) return;
+      const shared = await lc.sendRequest<ShareDesktopJobResult>(SHARE_DESKTOP_JOB_REQUEST, { jobId: update.jobId });
+      const open = 'Open in the dashboard';
+      const next = await show(
+        shared.ok ? 'information' : 'warning',
+        `Piwi: ${shared.message}`,
+        ...(shared.url ? [open] : []),
+      );
+      if (next === open && shared.url) await vscode.env.openExternal(vscode.Uri.parse(shared.url));
+    }),
+  ];
+}
+
+/**
+ * Insert what Piwi Picker sent at the cursor of the active editor, or in a new editor when none is open. A recorded
+ * flow is rendered for the cursor's place, and the import lines it needs that the file lacks go after the file's
+ * imports, in the same edit.
+ */
 async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
   const active = vscode.window.activeTextEditor;
   let text: string;
+  let imports: string[] = [];
   if (payload.kind === 'locator') {
     text = payload.text;
   } else {
+    const caret = active?.selection.active;
     const rendered = await lc.sendRequest<RenderStepsResult>(RENDER_STEPS_REQUEST, {
       uri: active?.document.uri.toString() ?? '',
       steps: payload.steps,
-    });
+      line: caret?.line ?? null,
+      character: caret?.character ?? null,
+      imports: 'separate',
+    } satisfies RenderStepsParams);
     if (!rendered.code) throw new Error(rendered.warnings.join('; ') || 'nothing to insert');
     text = rendered.code;
+    imports = rendered.imports ?? [];
   }
   if (!active) {
-    const document = await vscode.workspace.openTextDocument({ language: 'typescript', content: text });
+    const content = imports.length ? `${imports.join('\n')}\n\n${text}` : text;
+    const document = await vscode.workspace.openTextDocument({ language: 'typescript', content });
     await vscode.window.showTextDocument(document);
     return { inserted: true, file: null };
   }
-  const line = active.document.lineAt(active.selection.active.line).text;
+  const { document, selection } = active;
+  const line = document.lineAt(selection.active.line).text;
   const indent = line.slice(0, line.length - line.trimStart().length);
-  const inserted = await active.edit((edit) => edit.replace(active.selection, indentBlock(text, indent)));
+  const lines = Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
+  const insertion = importInsertion(lines, imports);
+  const inserted = await active.edit((edit) => {
+    if (insertion) {
+      const at = new vscode.Position(insertion.range.start.line, insertion.range.start.character);
+      // Inside the selection the code replaces, the imports go at the start of its first line.
+      const within = selection.start.isBefore(at) && at.isBefore(selection.end);
+      edit.insert(within ? new vscode.Position(selection.start.line, 0) : at, insertion.text);
+    }
+    edit.replace(selection, indentBlock(text, indent));
+  });
   if (inserted) {
     void vscode.window.showInformationMessage(
       payload.kind === 'locator'
@@ -409,6 +605,23 @@ async function offerMcp(context: vscode.ExtensionContext, servers: McpServersRes
  */
 async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
+  await context.workspaceState.update(DESKTOP_OFFERED, true);
+  // The desktop app running on this machine needs no address or sign-in: offer it first,
+  // beside the instance the workspace names, so either is one pick away.
+  const desktop = await lc
+    .sendRequest<DesktopResult>(DESKTOP_REQUEST)
+    .then((d) => (d.url ? d : null))
+    .catch(() => null);
+  if (desktop) {
+    const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
+    const choice = await vscode.window.showQuickPick(
+      connectChoices(status, desktop, normalizeServerUrl(settings.get<string>('serverUrl')) ?? null),
+      { title: 'Piwi: Connect', placeHolder: 'Read this workspace from', ignoreFocusOut: true },
+    );
+    if (!choice) return false;
+    if (choice.target === 'desktop') return useDesktop(context, lc, desktop);
+    if (choice.target === 'instance' && choice.serverUrl) return useInstance(context, lc, choice.serverUrl);
+  }
   const input = await vscode.window.showInputBox({
     title: 'Piwi: Connect',
     prompt: "The Piwi instance's address",
@@ -418,6 +631,7 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   });
   const base = normalizeServerUrl(input);
   if (!base) return false;
+  if (desktop && base === desktop.url) return useDesktop(context, lc, desktop);
   let apiKey: string | null = null;
   let projects: ProjectItem[];
   try {
@@ -464,10 +678,13 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   await settings.update('project', project || undefined, vscode.ConfigurationTarget.Workspace);
   if (apiKey) await context.secrets.store(apiKeySecret(base), apiKey);
   else await context.secrets.delete(apiKeySecret(base));
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
-  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  await context.workspaceState.update(DESKTOP_CHOSEN, undefined);
+  await applyCredentials(context, lc);
   const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
-  const first = status?.contexts.find((c) => c.source && c.source !== 'editor' && c.serverUrl !== base);
+  // The environment and a workspace `.env` come before the settings.
+  const first = status?.contexts.find(
+    (c) => (c.source === 'environment' || c.source === 'dotenv') && c.serverUrl !== base,
+  );
   if (first) {
     void vscode.window.showWarningMessage(
       `Piwi: saved, but ${sourceLabel(first.source)} names ${first.serverUrl}, which comes before the settings.`,
@@ -482,25 +699,100 @@ async function connect(context: vscode.ExtensionContext, lc: LanguageClient): Pr
   return true;
 }
 
-/** Piwi: Disconnect — forget the workspace's instance and project, and the key saved for that instance. */
+/**
+ * Use the desktop app on this machine: it comes first while it runs, and the instance the
+ * workspace names stays saved for when it does not. The project is the one linked there to
+ * this folder, else the one picked.
+ */
+async function useDesktop(
+  context: vscode.ExtensionContext,
+  lc: LanguageClient,
+  desktop: DesktopResult,
+): Promise<boolean> {
+  let project: string | undefined;
+  if (!desktop.linked && desktop.projects.length) {
+    const picked = await vscode.window.showQuickPick(
+      desktop.projects.map((p) => ({ label: p.name, description: `#${p.id}` })),
+      {
+        title: 'Piwi: Connect',
+        placeHolder: 'The project this workspace reports to (link this folder in the desktop app to skip this step)',
+        ignoreFocusOut: true,
+      },
+    );
+    if (!picked) return false;
+    project = picked.label;
+  }
+  await context.workspaceState.update(DESKTOP_CHOSEN, true);
+  await context.workspaceState.update(DESKTOP_PROJECT, project);
+  await context.workspaceState.update(DESKTOP_OFFERED, true);
+  await applyCredentials(context, lc);
+  const name = desktop.linked?.name ?? project;
+  void vscode.window.showInformationMessage(
+    name
+      ? `Piwi: connected to the desktop app, project ${name}${desktop.linked ? ' (linked to this folder)' : ''}.`
+      : "Piwi: the desktop app has no project yet. Import or send a run to it, then link this folder on the project's page there.",
+  );
+  return true;
+}
+
+/** Read the instance the environment, the `.env` or the settings name again, rather than the desktop app. */
+async function useInstance(context: vscode.ExtensionContext, lc: LanguageClient, serverUrl: string): Promise<boolean> {
+  await context.workspaceState.update(DESKTOP_CHOSEN, undefined);
+  await applyCredentials(context, lc);
+  void vscode.window.showInformationMessage(`Piwi: connected to ${serverUrl}.`);
+  return true;
+}
+
+let offeringDesktop = false;
+
+/**
+ * Once per workspace: when the desktop app runs while another instance is in use, offer to read
+ * the workspace from the app. The other instance stays saved, one Piwi: Connect away.
+ */
+async function offerDesktop(context: vscode.ExtensionContext, lc: LanguageClient, status: StatusResult): Promise<void> {
+  if (!status.desktopUrl || offeringDesktop || context.workspaceState.get<boolean>(DESKTOP_OFFERED)) return;
+  const current = status.contexts.find((c) => c.connected) ?? status.contexts[0];
+  if (!current?.serverUrl || current.source === 'desktop') return;
+  offeringDesktop = true;
+  try {
+    await context.workspaceState.update(DESKTOP_OFFERED, true);
+    const choice = await vscode.window.showInformationMessage(
+      `Piwi: the desktop app runs on this machine. Read this workspace from it rather than ${current.serverUrl}? ` +
+        'Piwi: Connect switches back.',
+      'Use the desktop app',
+    );
+    if (!choice) return;
+    const desktop = await lc.sendRequest<DesktopResult>(DESKTOP_REQUEST).catch(() => null);
+    if (desktop?.url) await useDesktop(context, lc, desktop);
+  } finally {
+    offeringDesktop = false;
+  }
+}
+
+/**
+ * Piwi: Disconnect — forget the workspace's instance and project, the key saved for that instance,
+ * and the choice of the desktop app.
+ */
 async function disconnect(context: vscode.ExtensionContext, lc: LanguageClient): Promise<boolean> {
   const settings = vscode.workspace.getConfiguration('piwi');
   const serverUrl = normalizeServerUrl(settings.get<string>('serverUrl'));
-  if (!serverUrl) {
-    void vscode.window.showInformationMessage('Piwi: no instance is saved in the settings.');
+  const question = disconnectQuestion(
+    serverUrl,
+    settings.get<string>('project') || null,
+    !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN),
+  );
+  if (!question) {
+    void vscode.window.showInformationMessage('Piwi: nothing is saved in the settings.');
     return false;
   }
-  const answer = await vscode.window.showWarningMessage(
-    `Piwi: forget ${serverUrl}, the project, and the API key saved for it?`,
-    { modal: true },
-    'Disconnect',
-  );
+  const answer = await vscode.window.showWarningMessage(`Piwi: ${question}`, { modal: true }, 'Disconnect');
   if (answer !== 'Disconnect') return false;
-  await context.secrets.delete(apiKeySecret(serverUrl));
+  if (serverUrl) await context.secrets.delete(apiKeySecret(serverUrl));
   await settings.update('serverUrl', undefined, vscode.ConfigurationTarget.Workspace);
   await settings.update('project', undefined, vscode.ConfigurationTarget.Workspace);
-  await lc.sendNotification(SET_CREDENTIALS_NOTIFICATION, await credentials(context));
-  await lc.sendRequest(REFRESH_REQUEST).catch(() => null);
+  await context.workspaceState.update(DESKTOP_CHOSEN, undefined);
+  await context.workspaceState.update(DESKTOP_PROJECT, undefined);
+  await applyCredentials(context, lc);
   return true;
 }
 
@@ -569,6 +861,8 @@ function osName(): string {
 export async function deactivate(): Promise<void> {
   await sendListener?.close();
   sendListener = null;
+  await recording?.stopAll();
+  recording = null;
   await client?.stop();
   client = null;
 }

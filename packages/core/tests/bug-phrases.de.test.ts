@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { BUG_PHRASES, bugPhrases, roleWord, type BugPhrases } from '../src/bug-phrases';
+import { BUG_PHRASES, bugPhrases, type BugPhrases } from '../src/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   describeExpectation,
@@ -116,7 +116,7 @@ describe('German', () => {
   test('is the phrasebook of every German tag', () => {
     expect(bugPhrases('de')).toBe(german);
     expect(bugPhrases('de-AT')).toBe(german);
-    expect(roleWord('combobox', german)).toBe('Auswahlliste');
+    expect(german.roles.combobox?.noun).toBe('Auswahlliste');
   });
 
   test('writes the steps of the plan’s table, page texts kept as they are', () => {
@@ -207,8 +207,17 @@ describe('German', () => {
     );
     expect(summarizeEvidence(emptyBugEvidence(), german)).toBe('kein Screenshot');
     expect(
-      german.evidence({ screenshots: 1, consoleErrors: 1, consoleWarnings: 2, failedRequests: 1234, outline: false }),
-    ).toBe('1 Screenshot · 1 Konsolenfehler · 2 Konsolenwarnungen · 1.234 fehlgeschlagene Anfragen');
+      german.evidence({
+        screenshots: 1,
+        stepShots: 12,
+        consoleErrors: 1,
+        consoleWarnings: 2,
+        failedRequests: 1234,
+        outline: false,
+      }),
+    ).toBe(
+      '1 Screenshot · 12 Schritt-Screenshots · 1 Konsolenfehler · 2 Konsolenwarnungen · 1.234 fehlgeschlagene Anfragen',
+    );
   });
 
   test('writes a whole report in German, with no English template left', () => {

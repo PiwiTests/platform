@@ -3,7 +3,8 @@
  * `metric` and `verdict` widgets, the quality report and the MCP metric tools
  * show. Rollup metrics are summed from the scalar rows (the daily rollups, or
  * the matching executions under a test filter); live metrics read the failure
- * clusters, the quarantine and the stored executions.
+ * clusters, the quarantine and the stored executions; the hand-back metrics
+ * read the outcome counts (`handbacks.ts`).
  */
 
 import { and, countDistinct, eq, gte, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
@@ -24,6 +25,14 @@ import {
 } from './common';
 import { emptyRollupTotals, type RollupTotals } from './rollups';
 import { groupRows, loadScalarRows } from './scalar-rows';
+import {
+  HANDBACK_METRIC_IDS,
+  handbackMetricSeries,
+  handbackMetricValue,
+  hasHandbackSeries,
+  isHandbackMetric,
+  loadHandbackCounts,
+} from './handbacks';
 
 /** The metrics summed from the scalar rows. */
 const ROLLUP_VALUE: Partial<Record<MetricId, (t: RollupTotals, cost: CiCost | null) => number | null>> = {
@@ -56,6 +65,7 @@ const SERIES_METRICS = new Set<MetricId>([
   ...(Object.keys(ROLLUP_VALUE) as MetricId[]),
   'failure-causes-opened',
   'failure-causes-fixed',
+  ...HANDBACK_METRIC_IDS.filter(hasHandbackSeries),
 ]);
 
 /**
@@ -63,7 +73,12 @@ const SERIES_METRICS = new Set<MetricId>([
  * until the scenario-gaps widget reads them.
  */
 export const EVALUATED_METRIC_IDS = METRICS.map((m) => m.id).filter(
-  (id) => id in ROLLUP_VALUE || CLUSTER_METRICS.has(id) || id === 'flaky-tests' || id === 'quarantine-debt',
+  (id) =>
+    id in ROLLUP_VALUE ||
+    CLUSTER_METRICS.has(id) ||
+    id === 'flaky-tests' ||
+    id === 'quarantine-debt' ||
+    isHandbackMetric(id),
 ) as MetricId[];
 
 export function isEvaluatedMetric(id: MetricId): boolean {
@@ -244,6 +259,8 @@ async function countQuarantine(db: DrizzleDB, ctx: AnalyticsContext, toMs: numbe
 
 export interface MetricValueOptions {
   cost: CiCost | null;
+  /** Filled with the sample size of each rate that has a sample floor. */
+  samples?: Map<MetricId, number>;
 }
 
 /** The value of each metric over `[fromMs, toMs)`; null where the metric has nothing to count. */
@@ -260,12 +277,14 @@ export async function computeMetricValues(
   // Flaky tests need the rows too: with no run in the range there is nothing to compare, not zero.
   const needsRows = wanted.some((id) => id in ROLLUP_VALUE || id === 'flaky-tests');
   const needsClusters = wanted.some((id) => CLUSTER_METRICS.has(id));
+  const needsHandbacks = wanted.some(isHandbackMetric);
 
-  const [rows, clusters, flaky, quarantine] = await Promise.all([
+  const [rows, clusters, flaky, quarantine, handbacks] = await Promise.all([
     needsRows ? loadScalarRows(db, ctx, fromMs, toMs) : Promise.resolve([]),
     needsClusters ? loadClusters(db, ctx, fromMs) : Promise.resolve([]),
     wanted.includes('flaky-tests') ? countFlakyTests(db, ctx, fromMs, toMs) : Promise.resolve(null),
     wanted.includes('quarantine-debt') ? countQuarantine(db, ctx, toMs) : Promise.resolve(null),
+    needsHandbacks ? loadHandbackCounts(db, ctx, fromMs, toMs) : Promise.resolve(null),
   ]);
   const totals = groupRows(rows, () => 'all').get('all') ?? emptyRollupTotals();
 
@@ -276,7 +295,11 @@ export async function computeMetricValues(
     else if (CLUSTER_METRICS.has(id)) out.set(id, clusterValue(id, clusters, fromMs, toMs, ctx.now));
     else if (id === 'flaky-tests') out.set(id, flaky);
     else if (id === 'quarantine-debt') out.set(id, quarantine);
-    else out.set(id, null);
+    else if (isHandbackMetric(id) && handbacks) {
+      const { value, sample } = handbackMetricValue(id, handbacks);
+      out.set(id, value);
+      if (sample !== null) options.samples?.set(id, sample);
+    } else out.set(id, null);
   }
   return out;
 }
@@ -291,6 +314,7 @@ export async function computeMetricSeries(
   options: MetricValueOptions,
 ): Promise<AnalyticsSeriesPoint[] | null> {
   if (!SERIES_METRICS.has(id)) return null;
+  if (isHandbackMetric(id)) return handbackMetricSeries(db, ctx, id, fromMs, toMs);
   const buckets = makeTimeBuckets(fromMs, toMs, ctx.scope.granularity);
   const rollup = ROLLUP_VALUE[id];
   if (rollup) {
@@ -313,7 +337,7 @@ export async function computeMetricSeries(
 }
 
 /** Whether a change reads as better, worse or neither for this metric. */
-export function metricTrend(def: MetricDef, delta: number | null): AnalyticsMetricValue['trend'] {
+function metricTrend(def: MetricDef, delta: number | null): AnalyticsMetricValue['trend'] {
   if (delta === null || delta === 0 || def.betterWhen === 'neutral') return delta === null ? null : 'same';
   const up = delta > 0;
   return (def.betterWhen === 'higher') === up ? 'better' : 'worse';
@@ -322,13 +346,14 @@ export function metricTrend(def: MetricDef, delta: number | null): AnalyticsMetr
 /**
  * A metric's value with its comparison: the change in points for a percentage,
  * in the metric's unit otherwise, and the relative change when the previous
- * value is not zero.
+ * value is not zero. A rate with a sample floor carries the size of its sample.
  */
 export function metricValue(
   id: MetricId,
   value: number | null,
   previous: number | null,
   cost: CiCost | null,
+  sampleSize?: number,
 ): AnalyticsMetricValue {
   const def = getMetric(id);
   const delta = value !== null && previous !== null ? round(value - previous, def.precision) : null;
@@ -350,5 +375,6 @@ export function metricValue(
     deltaPct,
     trend: metricTrend(def, delta),
     currency: def.unit === 'money' ? (cost?.currency ?? null) : null,
+    ...(def.minSample ? { sample: sampleSize === undefined ? null : { size: sampleSize, min: def.minSample } } : {}),
   };
 }

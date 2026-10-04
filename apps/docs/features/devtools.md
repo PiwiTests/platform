@@ -101,7 +101,8 @@ verdict.
 **Save login for tests**, in the Piwi panel's toolbar, saves the site's login as the
 file Playwright's `storageState` reads: the site's cookies, `httpOnly` ones included, which a page's scripts cannot
 read, and its `localStorage`. IndexedDB is left out. **Save login file** asks, the first time, for permission to read
-that one site's cookies, then downloads `user.json`:
+that one site's cookies, on any of its ports and on its parent domains, where a login cookie is often set, then
+downloads `user.json`:
 
 ```ts
 test.use({ storageState: 'playwright/.auth/user.json' });

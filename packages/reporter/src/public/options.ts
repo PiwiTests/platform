@@ -29,6 +29,15 @@ export interface PiwiDashboardOptions {
   projectName?: string;
   /** Optional description of the project */
   projectDescription?: string;
+  /**
+   * Time budget (ms) for the reporter's end-of-run work: delivering the last
+   * live events, uploading the remaining traces and attachments, and submitting
+   * the run. When it runs out, the reporter stops waiting for the dashboard and
+   * saves the run's results locally; the next run for the project uploads them,
+   * without traces or attachments. Defaults to `900000` (15 minutes). Set to `0`
+   * for no limit. Can also be set with `PIWI_SUBMIT_TIMEOUT`.
+   */
+  submitTimeout?: number;
 
   // ── What gets uploaded ─────────────────────────────────────────────────────
   /** Upload trace files to the dashboard. Defaults to `true`. */
@@ -110,6 +119,35 @@ export interface PiwiDashboardOptions {
    */
   captureServerTraces?: boolean;
   /**
+   * Keep a ledger of the browsers, contexts, pages and API request contexts each
+   * test opens, and list at the end of the run the ones left open after the
+   * scope that created them ended (a context a test never closed, a `beforeAll`
+   * context no `afterAll` closes, a browser a test launched itself), the pages
+   * opened and never used, and the pages, listeners and route handlers piling up
+   * on a page or context that lives across tests. Each finding names the line or
+   * the fixture that opened the object. Rides the capture fixtures and costs a
+   * few bookkeeping steps per test. Also samples the run's processes and the
+   * machine, with or without the fixtures, and prints what the run cost: CPU by
+   * process, time spent waiting for a CPU, peak memory and disk. The findings,
+   * the run's cost and each test's go to the dashboard with the run, on its
+   * Resources tab. Defaults to `true`. Set to `false` (or
+   * `PIWI_CAPTURE_RESOURCES=false`) to turn both off.
+   */
+  captureResources?: boolean;
+  /**
+   * What the capture fixtures do when a test leaves open a browser, context,
+   * page or API request context that the test itself opened (its body or its
+   * `beforeEach`/`afterEach` hooks; a fixture's objects are the fixture's):
+   * `'report'` lists it in the end-of-run summary, `'fail'` also fails the test
+   * with the line that opened it, and `'close'` closes it when the test ends and
+   * still lists it. A `beforeAll` object left open is only ever reported. Each
+   * test is judged when it ends, so a test that hands what it opened to the next
+   * one fails under `'fail'` and loses it under `'close'`: open such objects in
+   * `beforeAll` and close them in `afterAll`. Defaults to `'report'`. Can also
+   * be set with `PIWI_LEAK_CHECK`.
+   */
+  leakCheck?: 'report' | 'fail' | 'close';
+  /**
    * Sample the ARIA snapshot at the end of a *passing* test, so a later failure
    * can be diffed against the page as it last looked when green. Rate-limited by
    * the server: at run start the reporter asks which tests are due a fresh
@@ -145,6 +183,22 @@ export interface PiwiDashboardOptions {
    * to opt out and let Playwright's own defaults stand.
    */
   defaultCapture?: boolean;
+
+  // ── App under test ─────────────────────────────────────────────────────────
+  /**
+   * Check that each `baseURL` the run's projects use answers before any worker
+   * starts, and stop the run with a message naming the ones that do not, so a
+   * suite never runs against an environment that is down. Any HTTP answer
+   * counts (a redirect or a 404 included) except a 502, 503 or 504 from a
+   * gateway; each base URL gets three tries of 10 seconds, 2 seconds apart,
+   * sent with the project's `ignoreHTTPSErrors` and `proxy`. A stopped run
+   * runs no test and reaches no dashboard. The check runs in the reporter's
+   * global setup, after `webServer` has started and before the config's own
+   * `globalSetup`, so leave it off when that setup is what starts the app. Only
+   * the projects `--project` selects are checked. **Defaults to `false`**. Can
+   * also be set with `PIWI_CHECK_BASE_URL=true`.
+   */
+  checkBaseUrl?: boolean;
 
   // ── Local debugging aids (headed runs only, never under CI) ────────────────
   /**
@@ -213,7 +267,12 @@ export interface PiwiDashboardOptions {
   // ── Run metadata ───────────────────────────────────────────────────────────
   /** Additional report types to upload. Each entry can specify `type`, optional `dir`, and optional `label`. */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
-  /** Stable label that ties shards together (e.g. CI run ID). Auto-detected from CI env; override if needed. */
+  /**
+   * Stable label that ties shards together (e.g. CI run ID). Auto-detected from
+   * CI env, with the CI job's id added for a run that is not sharded; a label
+   * set here is used as it is. Override it when your CI is not detected, or to
+   * keep matrix legs that report to one project apart.
+   */
   runLabel?: string;
   /** Deployment environment for this run, e.g. `"production"`, `"staging"`, `"integration"` */
   environment?: string;

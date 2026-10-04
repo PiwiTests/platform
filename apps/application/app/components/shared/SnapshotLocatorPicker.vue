@@ -6,7 +6,8 @@
  * its attributes, ranked alternative locators are generated client-side, and
  * the user confirms one — which is saved back to the server. Without a failing
  * locator (a failure that was not about one) it is an inspector: any element's
- * locators, to copy.
+ * locators, to copy. `at` names the trace action snapshot to open on, so the
+ * picker shows the same page as the view it was opened from.
  */
 import {
   generateAlternatives,
@@ -18,19 +19,25 @@ import {
 import type { LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
 import { locatorExpression, recommendLocatorFix } from '#shared/locator-healing';
 import { buildPickerDocument, deriveHighlightHints } from '~/utils/snapshot-picker-script';
+import type { DomSnapshotMoment } from '~/composables/useDomSnapshot';
 import LocatorAlternativeRow from './LocatorAlternativeRow.vue';
 
 const props = defineProps<{
-  runId: number;
   testRunsCaseId: number;
   /** The locator that failed; null opens the picker as an inspector. */
   failingLocator: { method: string; args: Record<string, unknown> } | null;
   /** The healing result — its candidate names pre-highlight the likely element. */
   healing?: LocatorHealingResult | null;
+  /** The trace action snapshot to open on; the failure-time snapshot when absent. */
+  at?: DomSnapshotMoment | null;
 }>();
 
+// The `at` moment as query parameters, shared by the snapshot request and the frame.
+function momentParams(): Record<string, string> {
+  return props.at ? { callId: props.at.callId, phase: props.at.phase } : {};
+}
+
 const emit = defineEmits<{
-  close: [];
   confirmed: [pick: RankedLocator];
 }>();
 
@@ -64,10 +71,11 @@ async function fetchSnapshot() {
     // viewport and the available views. The served frame comes from
     // `dom-snapshot-frame`, which embeds the trace's stylesheets and images
     // itself; only the demo builds the frame from this HTML.
-    const query = viewSource.value ? `?source=${viewSource.value}` : '';
-    snapshot.value = await $fetch<DomSnapshotResponse>(
-      `/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot${query}`,
-    );
+    const query: Record<string, string> = momentParams();
+    if (viewSource.value) query.source = viewSource.value;
+    snapshot.value = await $fetch<DomSnapshotResponse>(`/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot`, {
+      query,
+    });
     // Reflect what the server actually rendered so the toggle stays in sync.
     if (snapshot.value?.source) viewSource.value = snapshot.value.source;
   } catch (err: unknown) {
@@ -147,7 +155,7 @@ function reloadFrame() {
 // this only forces a fresh navigation rather than defeating a cache).
 const frameSrc = computed(() => {
   if (isDemo || snapshot.value?.status !== 'ok' || !snapshot.value.html) return undefined;
-  const params = new URLSearchParams({ mode: 'pick' });
+  const params = new URLSearchParams({ mode: 'pick', ...momentParams() });
   if (viewSource.value) params.set('source', viewSource.value);
   params.set('r', String(renderKey.value));
   return `${apiBase}/api/test-run-cases/${props.testRunsCaseId}/dom-snapshot-frame?${params.toString()}`;
@@ -250,7 +258,7 @@ watch([fitZoom, viewport], () => {
 
 // The iframe's full content height arrives over postMessage from the in-iframe
 // ResizeObserver (see `piwiContentHeight` in handleMessage) — the opaque-origin
-// sandbox means the host can no longer read the iframe's document to measure it.
+// sandbox keeps the host from reading the iframe's document to measure it.
 
 // Track the pane width for the fit calculation.
 let stageObserver: ResizeObserver | null = null;

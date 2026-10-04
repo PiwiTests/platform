@@ -1,5 +1,7 @@
 import {
   ScmProvider,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
   truncatePatch,
   MAX_SCM_FILES,
   MAX_SCM_FILES_TOTAL,
@@ -19,6 +21,7 @@ import type {
   ScmCommitStatus,
   ScmFileEdit,
   CreatePullRequestInput,
+  ScmPostedComment,
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
@@ -137,6 +140,7 @@ export class GitHubProvider extends ScmProvider {
         commits = (data.commits ?? []).map((c) => ({
           sha: c.sha.slice(0, 7),
           message: c.commit.message.split('\n')[0] ?? '',
+          fullMessage: c.commit.message,
         }));
       }
       const pageFiles = data.files ?? [];
@@ -401,7 +405,15 @@ export class GitHubProvider extends ScmProvider {
   }
 
   override async upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
-    if (!this.token) return false;
+    return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
+  }
+
+  override async postPullRequestComment(
+    prNumber: number,
+    marker: string,
+    body: string,
+  ): Promise<ScmPostedComment | null> {
+    if (!this.token) return null;
     try {
       // A PR comment is an issue comment; list the most recent page and look
       // for one we previously wrote. Only a comment carrying the marker is ever
@@ -429,16 +441,19 @@ export class GitHubProvider extends ScmProvider {
         body: JSON.stringify({ body }),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      return res.ok;
+      if (!res.ok) return null;
+      const posted = (await res.json().catch(() => null)) as { id?: number } | null;
+      const id = posted?.id ?? existingId;
+      return { id: id != null ? String(id) : null };
     } catch {
-      return false;
+      return null;
     }
   }
 
   override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
-    if (!this.token || !sha) return false;
+    if (!this.token || !isValidGitRef(sha)) return false;
     try {
-      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/statuses/${sha}`, {
+      const res = await fetch(`https://api.github.com/repos/${this.repoPath}/statuses/${encodeGitRef(sha)}`, {
         method: 'POST',
         headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -546,16 +561,23 @@ export class GitHubProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+  override async dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     const target = settings.github;
     if (!target) throw new Error('No GitHub workflow configured for CI re-run');
+    const ref = request.ref || target.ref;
+    const inputs: Record<string, string> = { [target.inputName]: playwrightArgs };
+    if (target.dispatchIdInput && request.dispatchId) inputs[target.dispatchIdInput] = request.dispatchId;
 
     const res = await fetch(
       `https://api.github.com/repos/${this.repoPath}/actions/workflows/${encodeURIComponent(target.workflow)}/dispatches`,
       {
         method: 'POST',
         headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref: target.ref, inputs: { [target.inputName]: playwrightArgs } }),
+        body: JSON.stringify({ ref, inputs }),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       },
     );
@@ -564,7 +586,7 @@ export class GitHubProvider extends ScmProvider {
     // workflow_dispatch answers 204 with no run id, so link to the workflow's
     // runs page filtered to the branch instead of a specific run.
     const runs = new URL(`https://github.com/${this.repoPath}/actions/workflows/${target.workflow}`);
-    runs.searchParams.set('query', `branch:${target.ref}`);
-    return { url: runs.toString() };
+    runs.searchParams.set('query', `branch:${ref}`);
+    return { url: runs.toString(), ref };
   }
 }

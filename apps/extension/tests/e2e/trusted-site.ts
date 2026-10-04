@@ -4,10 +4,10 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test as base, expect, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import { test as base, expect, type BrowserContext, type CDPSession, type Page, type Worker } from '@playwright/test';
 import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
 import type { PiwiSteps } from '@piwitests/core/steps';
-import { extensionWorker, launchWithExtension } from './fixtures.js';
+import { extensionWorker, launchWithExtension, openOptions } from './fixtures.js';
 
 /**
  * The real extension on a local site, granted the site's origin as a person
@@ -24,6 +24,8 @@ export interface Fixtures {
   /** The site's origin, `http://127.0.0.1:<port>`; `pages` maps a path to its HTML. */
   site: string;
   pages: Record<string, string>;
+  /** How long the site takes to answer a path, in milliseconds. */
+  delays: Record<string, number>;
   context: BrowserContext;
   worker: Worker;
   /** An extension page, whose messages reach the worker as the popup's do. */
@@ -32,9 +34,12 @@ export interface Fixtures {
 
 export const test = base.extend<Fixtures>({
   pages: [{}, { option: true }],
-  site: async ({ pages }, use) => {
-    const server = http.createServer((request, response) => {
+  delays: [{}, { option: true }],
+  site: async ({ pages, delays }, use) => {
+    const server = http.createServer(async (request, response) => {
       const url = new URL(request.url ?? '/', 'http://x');
+      const delay = delays[url.pathname];
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       if (url.pathname.startsWith('/api/')) {
         if (url.pathname.includes('fail')) response.statusCode = 500;
         response.setHeader('content-type', 'application/json');
@@ -85,7 +90,7 @@ export const test = base.extend<Fixtures>({
   },
   control: async ({ context, worker }, use) => {
     const page = await context.newPage();
-    await page.goto(`chrome-extension://${new URL(worker.url()).host}/options.html`);
+    await openOptions(page, new URL(worker.url()).host);
     await use(page);
   },
 });
@@ -124,9 +129,14 @@ export interface StoredReplay {
   position: number;
   results: Array<{ status: string; detail: string | null; driver?: string }>;
   driver?: { driver: string; reason: string | null } | null;
+  viewport?: { width: number; height: number; set: boolean } | null;
+  handOver?: { step: number; reason: string } | null;
 }
 
-/** Starts a replay on `site` as the popup does, then loads `path` in a tab, where the registered script runs it. */
+/**
+ * Starts a replay on `site` as the popup does, then loads `path` in `page` (by
+ * default a new tab), where the registered script runs it.
+ */
 export async function startReplay(
   control: Page,
   context: BrowserContext,
@@ -134,6 +144,7 @@ export async function startReplay(
   doc: PiwiSteps,
   path: string,
   stepMode = false,
+  page?: Page,
 ): Promise<Page> {
   const started = await control.evaluate(
     ({ steps, origin, stepMode }) =>
@@ -141,7 +152,7 @@ export async function startReplay(
     { steps: doc, origin: site, stepMode },
   );
   expect(started).toEqual({ ok: true });
-  const page = await context.newPage();
+  page ??= await context.newPage();
   await page.goto(`${site}${path}`);
   return page;
 }
@@ -169,4 +180,102 @@ export async function debuggerAttached(worker: Worker, tabId: number): Promise<b
 
 export async function tabIdOf(worker: Worker, url: string): Promise<number> {
   return worker.evaluate(async (u) => (await chrome.tabs.query({ url: `${u}*` }))[0]!.id!, url);
+}
+
+export interface DomNode {
+  backendNodeId: number;
+  nodeName: string;
+  nodeValue?: string;
+  attributes?: string[];
+  children?: DomNode[];
+  shadowRoots?: DomNode[];
+}
+
+/** The first node of the page, closed shadow roots included, that `match` accepts. */
+export async function panelNode(page: Page, match: (node: DomNode) => boolean): Promise<number | null> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = (await cdp.send('DOM.getDocument', { depth: -1, pierce: true })) as { root: DomNode };
+    const find = (node: DomNode): number | null => {
+      if (match(node)) return node.backendNodeId;
+      for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+        const found = find(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    return find(root);
+  } finally {
+    await cdp.detach();
+  }
+}
+
+async function buttonNode(page: Page, label: string): Promise<number> {
+  const backendNodeId = await panelNode(
+    page,
+    (node) => node.nodeName === 'BUTTON' && (node.children ?? []).some((c) => c.nodeValue === label),
+  );
+  expect(backendNodeId, `a button reading "${label}"`).not.toBeNull();
+  return backendNodeId!;
+}
+
+/** The answers of the debugging protocol for a node no longer in the page. */
+const GONE = /Could not compute box model|No node with given id|Node is detached/;
+
+/**
+ * Runs `use` on the button reading `label`, in the page or one of the extension's closed shadow roots. The
+ * extension's panels are drawn again on every change, so the button found can be gone by the time `use` reaches
+ * it: `use` then answers null, or the protocol says the node is gone, and the button is found again.
+ */
+async function withButton<T>(
+  page: Page,
+  label: string,
+  use: (cdp: CDPSession, backendNodeId: number) => Promise<T | null>,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    const backendNodeId = await buttonNode(page, label);
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      const result = await use(cdp, backendNodeId);
+      if (result !== null) return result;
+    } catch (error) {
+      if (!GONE.test(String(error))) throw error;
+    } finally {
+      await cdp.detach();
+    }
+    expect(attempt, `the button reading "${label}" stays laid out on the page long enough to be used`).toBeLessThan(50);
+  }
+}
+
+/** Runs `action` (on `this`) on the button reading `label`, in the page or one of the extension's closed shadow roots. */
+async function callOnButton(page: Page, label: string, action: string): Promise<void> {
+  await withButton(page, label, async (cdp, backendNodeId) => {
+    const { object } = await cdp.send('DOM.resolveNode', { backendNodeId });
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: object.objectId!,
+      functionDeclaration: `function () { if (!this.isConnected) return false; ${action}; return true; }`,
+      returnByValue: true,
+    });
+    return result.value === true ? true : null;
+  });
+}
+
+/** Clicks the button reading `label`, in the page or one of the extension's closed shadow roots. */
+export function clickInShadow(page: Page, label: string): Promise<void> {
+  return callOnButton(page, label, 'this.click()');
+}
+
+/** Moves focus to the button reading `label`, as a person tabbing to it does. */
+export function focusInShadow(page: Page, label: string): Promise<void> {
+  return callOnButton(page, label, 'this.focus()');
+}
+
+/** Clicks the button reading `label` with the mouse, as a person does: pressed and released at its middle. */
+export async function mouseClickInShadow(page: Page, label: string): Promise<void> {
+  const border = await withButton(page, label, async (cdp, backendNodeId) => {
+    const { model } = (await cdp.send('DOM.getBoxModel', { backendNodeId })) as { model: { border: number[] } };
+    return model.border;
+  });
+  const [left, top, , , right, bottom] = border as [number, number, number, number, number, number];
+  await page.mouse.click((left + right) / 2, (top + bottom) / 2);
 }

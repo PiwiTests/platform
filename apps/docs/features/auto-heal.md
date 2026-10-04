@@ -28,7 +28,21 @@ strongest thing the dashboard does, so the posture is conservative by design.
   page is skipped unless you confirmed the pick.
 - Before committing, Piwi re-reads each file at the branch head and only writes lines it can still match exactly. A
   line that has drifted is dropped, not guessed.
-- One PR per run, batching every qualifying edit. A duplicate run never opens a second PR.
+- One PR per run, batching every qualifying edit. A duplicate run never opens a second PR for the same edits while
+  their PR is open, however long it stays open; an attempt that failed or was skipped is retried by the next run that
+  qualifies.
+
+## After the PR opens
+
+- **Closed without merging** — Piwi takes that as a no. An edit the closed PR carried (the same file, failing locator
+  and replacement) is not proposed again, unless someone picks that replacement in the
+  [locator picker](./locator-healing#use-it) after the PR was closed.
+- **A run on the heal branch** — CI runs reported from the PR's branch are linked to the heal action. The first one
+  in which every healed test passes is recorded as verified on the branch, and Piwi comments on the PR once to say so.
+  It never marks a draft ready for review: that stays your call.
+- **Merged** — the heal commit carries a `Piwi-Heal` trailer. When [fix verification](./failure-clusters#did-the-fix-work)
+  finds it among the commits since the cluster last failed, the fix names the PR: in the pull-request comment, and as
+  `healPr` on the [`cluster.fixed` event](/reference/notification-events). Keep the trailer when you squash.
 
 ## Requirements
 
@@ -52,7 +66,9 @@ Settings → Auto-heal (administrator only):
 - **Projects** — the explicit allowlist. Auto-heal ignores any project not listed.
 - **Minimum score** — the stability score an edit needs (default 80). A confirmed pick is always eligible.
 - **Open as draft** — open PRs as drafts (default on; ignored on Bitbucket).
-- **Max open PRs** — a per-project ceiling on simultaneously-open auto-heal PRs (default 3).
+- **Max open PRs** — a per-project ceiling on auto-heal PRs still open on your repository (default 3). Piwi checks
+  the SCM for each PR it opened every ten minutes, and whenever the ceiling is reached, so a merged or closed PR
+  stops counting.
 - **Branch prefix** / **commit message** — the branch namespace (default `piwi/heal/`) and the commit subject
   (default `test: heal broken locators`, a conventional-commit subject so your commit lint accepts it).
 

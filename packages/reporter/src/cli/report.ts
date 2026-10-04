@@ -7,7 +7,7 @@
  * command reads the exact same outcomes a person sees in the terminal.
  */
 
-export type StepStatus =
+type StepStatus =
   /** A file that did not exist was written. */
   | 'created'
   /** An existing file was edited in place. */

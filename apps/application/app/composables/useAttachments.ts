@@ -8,13 +8,13 @@ import type { DiagnoseImage } from './useClusterDiagnosis';
  * so that component stays focused on rendering.
  */
 
-export interface AttachedFile {
+interface AttachedFile {
   name: string;
   content: string;
   size: number;
 }
 
-export interface AttachedImage extends DiagnoseImage {
+interface AttachedImage extends DiagnoseImage {
   preview: string;
   size: number;
 }

@@ -14,7 +14,7 @@
  * transition whose screen requires a field the project gives no value for —
  * fails the action at once instead of retrying it for hours.
  */
-import { and, eq, lt, lte } from 'drizzle-orm';
+import { and, eq, inArray, lt, lte } from 'drizzle-orm';
 import { bugReports, integrationActions } from '../../database/schema';
 import { getStorage } from '../../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
@@ -28,7 +28,13 @@ import type { IssueTracker } from './types';
 import { createTracker } from './connections';
 import { JiraError } from './jira/client';
 import { writeCreatedIssueLink } from './entity-links';
-import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import {
+  claimOutboxRows,
+  nextAttempt,
+  OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_PROCESSING,
+  OUTBOX_SWEEPABLE_STATUSES,
+} from '../outbox';
 import {
   fieldPayload,
   missingRequiredFields,
@@ -129,6 +135,7 @@ export async function enqueueAction(db: DbClient, input: EnqueueInput): Promise<
       payload: input.payload as never,
       requestedBy: input.requestedBy ?? null,
     })
+    .onConflictDoNothing({ target: integrationActions.dedupeKey })
     .returning();
   // A racing insert can still lose the unique-key contest — fall back to the winner.
   if (!row) {
@@ -151,8 +158,9 @@ export async function findActionByKey(db: DbClient, dedupeKey: string): Promise<
  * Enqueue an action, or give an earlier one with the same dedupe key a new
  * payload when it has already failed: a person who changes the request after a
  * refusal (another issue type, a filled-in field) sends the new request, not
- * the one that was refused. An action that succeeded, or that is queued and has
- * not been tried yet, is returned as it is.
+ * the one that was refused. An action that succeeded, that is queued and has
+ * not been tried yet, or that an attempt holds (even one claimed while this
+ * runs) is returned as it is.
  */
 export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput): Promise<IntegrationAction> {
   const action = await enqueueAction(db, input);
@@ -169,7 +177,7 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
       finishedAt: null,
       requestedBy: input.requestedBy ?? action.requestedBy,
     })
-    .where(eq(integrationActions.id, action.id))
+    .where(and(eq(integrationActions.id, action.id), eq(integrationActions.status, action.status)))
     .returning();
   return replaced ?? action;
 }
@@ -307,7 +315,7 @@ async function applyAttach(tracker: IssueTracker, action: IntegrationAction): Pr
   await tracker.attach(payload.issueKey, { name: payload.name, bytes: new Uint8Array(bytes), mime: payload.mime });
 }
 
-/** Perform one comment against the tracker (used from the sync milestone). */
+/** Perform one comment against the tracker (queued by the comment policies). */
 async function applyComment(tracker: IssueTracker, action: IntegrationAction): Promise<void> {
   const payload = action.payload as CommentActionPayload;
   await tracker.addComment(payload.issueKey, payload.document);
@@ -346,9 +354,10 @@ export type ActionOutcome =
   | { status: 'failed'; error: string; final?: boolean; fieldErrors?: Record<string, string> };
 
 /**
- * Run one action once. Marks the row terminal on success or skip; on failure
- * bumps attempts and reschedules with backoff (honoring a 429 `Retry-After`)
- * until the cap turns it `failed`. Returns the outcome for the caller.
+ * Run one action once, after the caller has claimed its row. Marks the row
+ * terminal on success or skip; on failure bumps attempts and reschedules with
+ * backoff (honoring a 429 `Retry-After`) until the cap turns it `failed`.
+ * Returns the outcome for the caller.
  */
 export async function runAction(db: DbClient, action: IntegrationAction): Promise<ActionOutcome> {
   const now = new Date();
@@ -419,19 +428,29 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
   }
 }
 
-/** Run one action immediately by id (the click path), regardless of its schedule. */
+/**
+ * Run one action immediately by id (the click path), regardless of its schedule.
+ * Null when there is no such action, or when another attempt holds it.
+ */
 export async function runActionNow(db: DbClient, id: number): Promise<ActionOutcome | null> {
   const [action] = await db.select().from(integrationActions).where(eq(integrationActions.id, id));
   if (!action) return null;
   if (action.status !== 'pending') {
     if (action.status === 'done') return { status: 'done', result: action.result };
     if (action.status === 'skipped') return { status: 'skipped', reason: action.error ?? '' };
+    if (action.status === OUTBOX_PROCESSING) return null;
     return { status: 'failed', error: action.error ?? '' };
   }
+  const claimed = await claimOutboxRows(db, integrationActions, [action.id], { anySchedule: true });
+  if (!claimed.has(action.id)) return null;
   return runAction(db, action);
 }
 
-/** Process queued integration actions that are due now. Mirrors the heal sweeper. */
+/**
+ * Process queued integration actions that are due now, including a claimed one
+ * whose lease ran out. Each is claimed first and skipped when another attempt
+ * holds it. Mirrors the heal sweeper.
+ */
 export async function sweepIntegrationActions(
   db: DbClient,
 ): Promise<{ done: number; failed: number; skipped: number }> {
@@ -445,13 +464,15 @@ export async function sweepIntegrationActions(
     .from(integrationActions)
     .where(
       and(
-        eq(integrationActions.status, 'pending'),
+        inArray(integrationActions.status, OUTBOX_SWEEPABLE_STATUSES),
         lte(integrationActions.scheduledFor, now),
         lt(integrationActions.attempts, OUTBOX_MAX_ATTEMPTS),
       ),
     );
 
   for (const action of due) {
+    const claimed = await claimOutboxRows(db, integrationActions, [action.id]);
+    if (!claimed.has(action.id)) continue;
     const outcome = await runAction(db, action);
     if (outcome.status === 'done') done++;
     else if (outcome.status === 'skipped') skipped++;

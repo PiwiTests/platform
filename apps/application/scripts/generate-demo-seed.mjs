@@ -42,6 +42,8 @@ import {
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
+import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
+import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Overridable so concurrent callers (e.g. two unit test files regenerating in
@@ -978,6 +980,17 @@ for (const proj of DEMO_PROJECTS) {
             },
           }
         : {}),
+      // One run that came in over the ingest caps through the batch upload,
+      // so the run page shows what ingest left out.
+      ...(proj.id === 1 && i === 3
+        ? {
+            ingestHealth: {
+              stepsDropped: 1240,
+              consoleEntriesDropped: 312,
+              submitFallback: { path: 'upload', reason: 'finish-failed' },
+            },
+          }
+        : {}),
     };
 
     TEST_RUNS.push({
@@ -1649,6 +1662,256 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   }
 }
 
+// ── Resources: a leaky run and its history (post-processing, rng-free) ──────
+// Web Dashboard's newest run is a leaky one: its login fixture opens a browser
+// context per test and never closes it, so every test after the first finds
+// the earlier tests' pages still open in its worker. The three runs before it
+// close what they open, but one of their tests has left a server running in its
+// worker for a while. The run before the newest ran as two CI shards, each on
+// its own machine with its own workers, so it carries one report per shard.
+// Each run carries what its executions cost and its report, as the reporter
+// sends them, and the findings' history is written as the server records it
+// on finish.
+const TEST_RUN_RESOURCE_REPORTS = [];
+const RESOURCE_FINDINGS = [];
+const RESOURCE_OCCURRENCES = [];
+{
+  const webRuns = TEST_RUNS.filter((run) => run.project_id === 5).sort((a, b) => b.start_time - a.start_time);
+  const reportByRun = new Map();
+  for (const [index, run] of webRuns.slice(0, 4).entries()) {
+    const leaky = index === 0;
+    const rows = TEST_RUNS_CASES.filter(
+      (row) => row.test_run_id === run.id && row.worker_index !== null && row.status !== 'didnotrun',
+    );
+    if (index === 1) {
+      // Two shards: the first half of the workers ran on shard 1, the rest on
+      // shard 2, each shard numbering its own workers from 0 as Playwright does.
+      const workers = [...new Set(rows.map((row) => row.worker_index))].sort((a, b) => a - b);
+      const half = Math.ceil(workers.length / 2);
+      for (const row of rows) {
+        const position = workers.indexOf(row.worker_index);
+        row.shard_index = position < half ? 1 : 2;
+        row.worker_index = position < half ? position : position - half;
+      }
+      run.shard_total = 2;
+      run.shard_index = 1;
+      run.shards_finished = 2;
+    }
+    const shards = new Map();
+    for (const row of rows) {
+      const shard = row.shard_index ?? null;
+      const lanes = shards.get(shard) ?? new Map();
+      const lane = lanes.get(row.worker_index) ?? [];
+      lane.push(row);
+      lanes.set(row.worker_index, lane);
+      shards.set(shard, lanes);
+    }
+    const parts = [];
+    for (const [shard, lanes] of [...shards.entries()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))) {
+      let artifactBytes = 0;
+      for (const lane of lanes.values()) {
+        lane.sort((a, b) => a.started_at - b.started_at);
+        lane.forEach((row, position) => {
+          row.resources = demoExecutionResources({
+            seq: row.id,
+            durationMs: row.duration ?? 0,
+            openAtStart: position,
+            leaky,
+          });
+          artifactBytes += Object.values(row.resources.artifactBytes).reduce((sum, n) => sum + n, 0);
+        });
+      }
+      const report = demoResourceReport({
+        leaky,
+        // The server left running belongs to one worker, so to one shard.
+        handle: shard === null || shard === 1,
+        wallMs: run.duration,
+        workers: [...lanes.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([worker, lane]) => ({
+            worker,
+            tests: lane.length,
+            spans: lane.map((row) => [row.started_at, row.started_at + (row.duration ?? 0)]),
+          })),
+        fixtureFile: 'tests/admin/fixtures.ts',
+        handleTest: { title: 'exports the monthly report as CSV', file: 'tests/admin/reports.spec.ts' },
+        artifactBytes,
+        shardIndex: shard,
+      });
+      parts.push(report);
+      TEST_RUN_RESOURCE_REPORTS.push({
+        id: TEST_RUN_RESOURCE_REPORTS.length + 1,
+        run_id: run.id,
+        shard: shard ?? 0,
+        report,
+        updated_at: run.updated_at,
+      });
+    }
+    reportByRun.set(run.id, { findings: parts.flatMap((part) => part.findings) });
+  }
+
+  // The history, oldest run first, as recordRunResourceFindings writes it.
+  const byFingerprint = new Map();
+  for (const run of webRuns.slice(0, 4).reverse()) {
+    for (const finding of reportByRun.get(run.id).findings) {
+      const fingerprint = resourceFingerprint(finding);
+      let row = byFingerprint.get(fingerprint);
+      if (!row) {
+        row = {
+          id: RESOURCE_FINDINGS.length + 1,
+          project_id: run.project_id,
+          fingerprint,
+          verdict: finding.verdict,
+          kind: finding.kind,
+          place: finding.where,
+          site: finding.site ?? null,
+          first_seen_run_id: run.id,
+          last_seen_run_id: run.id,
+          first_seen_at: run.start_time,
+          last_seen_at: run.start_time,
+          occurrences: 0,
+          status: 'open',
+          clean_runs: 0,
+          created_at: run.start_time,
+          updated_at: run.start_time,
+        };
+        byFingerprint.set(fingerprint, row);
+        RESOURCE_FINDINGS.push(row);
+      }
+      row.last_seen_run_id = run.id;
+      row.last_seen_at = run.start_time;
+      row.occurrences++;
+      row.updated_at = run.start_time;
+      RESOURCE_OCCURRENCES.push({
+        id: RESOURCE_OCCURRENCES.length + 1,
+        finding_id: row.id,
+        run_id: run.id,
+        branch: run.branch,
+        count: finding.count,
+        tests: finding.tests,
+        held_ms: finding.heldMs ?? null,
+        after_test_cpu_ms: finding.afterTestCpuMs ?? null,
+        pages: finding.pages ?? null,
+      });
+    }
+  }
+}
+
+// ── Environment incident (post-processing, rng-free) ────────────────────────
+// One checkout run against staging where the staging host refused every
+// connection: almost every test fails navigating to it, so the run carries the
+// incident flag the server's classifier writes (`metadata.incident`, rule
+// `host-unreachable`) and one auto `incident` marker, and is left out of flaky
+// scores, baselines and regression signals. Its failures join no cluster.
+const INCIDENT_HOST = 'staging.checkout.example.com';
+const INCIDENT_PASSED_CASES = 1;
+const incidentRunIds = new Set();
+const INCIDENT_MARKERS = [];
+{
+  const proj1Runs = TEST_RUNS.filter((r) => r.project_id === 1).sort((a, b) => a.id - b.id);
+  const oldestId = proj1Runs[proj1Runs.length - 1].id;
+  const rowsOf = (runId) => TEST_RUNS_CASES.filter((row) => row.test_run_id === runId);
+  const target = proj1Runs
+    .slice(3)
+    .find(
+      (r) =>
+        r.id !== oldestId &&
+        r.environment === 'staging' &&
+        r.status === 'passed' &&
+        r.flaky_tests === 0 &&
+        r.kept_at === null &&
+        r.is_full_run === 1 &&
+        rowsOf(r.id).every((row) => ['passed', 'skipped'].includes(row.status) && row.retries === 0),
+    );
+  if (!target) throw new Error('No checkout run on staging can host the incident');
+
+  const rows = rowsOf(target.id)
+    .filter((row) => row.status === 'passed')
+    .sort((a, b) => a.started_at - b.started_at);
+  const failing = rows.slice(INCIDENT_PASSED_CASES);
+  const failingIds = new Set(failing.map((row) => row.id));
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
+  for (const row of failing) {
+    const caseDef = caseById.get(row.test_case_id);
+    const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
+    const url = `https://${INCIDENT_HOST}${path}`;
+    row.status = 'failed';
+    row.duration = 120 + (row.id % 7) * 15;
+    row.error =
+      `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
+      `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
+      `    at ${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`;
+    row.attempts = JSON.stringify([{ retry: 0, status: 'failed', duration: row.duration, startedAt: row.started_at }]);
+    // The page never loaded: no steps past the navigation, no page evidence.
+    row.steps = [];
+    row.locator_pages_payload_id = null;
+    row.step_events = null;
+    row.wasted_time_ms = 0;
+    row.slowest_step = null;
+    row.slowest_step_duration = null;
+    row.web_vitals = null;
+    row.page_state = null;
+    row.ai_usage = null;
+    row.console_logs = null;
+    row.dialogs = null;
+    row.aria_snapshot = null;
+    // The network capture holds the one navigation the test tried: refused.
+    NETWORK_REQUESTS.push({
+      id: nrId++,
+      test_runs_case_id: row.id,
+      test_run_id: target.id,
+      method: 'GET',
+      url,
+      normalized_url: seedNormalizeUrl(url),
+      status: 0,
+      duration: row.duration - 20,
+      start_time: row.started_at + 10,
+      resource_type: 'document',
+      content_type: null,
+      server_logs: null,
+      server_traces: null,
+      failure: 'net::ERR_CONNECTION_REFUSED',
+    });
+  }
+
+  const executed = rows.length;
+  target.status = 'failed';
+  target.failed_tests = failing.length;
+  target.passed_tests = executed - failing.length;
+  target.label = null;
+  target.metadata.htmlReport = { projects: [{ name: 'chromium', use: { baseURL: `https://${INCIDENT_HOST}` } }] };
+  const reason =
+    `${failing.length} of ${executed} tests failed, ${failing.length} of them navigating or connecting to ` +
+    `${INCIDENT_HOST} (connection refused).`;
+  target.metadata.incident = {
+    rule: 'host-unreachable',
+    reason,
+    host: INCIDENT_HOST,
+    projects: [],
+    failedTests: failing.length,
+    executedTests: executed,
+    hostFailures: failing.length,
+    decidedBy: 'rule',
+    decidedAt: new Date((target.start_time + 600) * 1000).toISOString(),
+    firstRunId: target.id,
+  };
+  incidentRunIds.add(target.id);
+  INCIDENT_MARKERS.push({
+    project_id: 1,
+    occurred_at: target.start_time,
+    label: `Environment incident: ${INCIDENT_HOST}`,
+    description: reason,
+    category: 'incident',
+    environment: 'staging',
+    source: 'auto',
+    run_id: target.id,
+    created_at: target.start_time + 600,
+    updated_at: target.start_time + 600,
+  });
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
 // Mirror the server's computeRegressionSignals: walk each case's final
 // executions (one per run: an earlier attempt of a retried test is not one) in
@@ -1660,6 +1923,8 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   );
   const byCase = new Map();
   for (const trc of TEST_RUNS_CASES) {
+    // An environment incident gets no regression signals and is no one's baseline.
+    if (incidentRunIds.has(trc.test_run_id)) continue;
     if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
     if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
     byCase.get(trc.test_case_id).push(trc);
@@ -3352,6 +3617,284 @@ function collectAnchorSec() {
 
 const ANCHOR_SEC = collectAnchorSec();
 
+// ── Hand-back outcomes and diagnosis ratings (rng-free) ────────────────────
+// What became of what Piwi handed back over the last weeks, so the Analytics
+// page's Hand-back outcomes section and the AI usage panel have something to
+// read: locator heals adopted and verified, auto-heal pull requests merged and
+// one closed, diagnoses rated and confirmed by the fix, failed gates with one
+// pull request merged anyway that then failed again, and a flaky test Flake
+// Lab proved fixed. Every row is placed before the anchor, so the rebase lands
+// it in the past.
+const HANDBACK_OUTCOMES = [];
+{
+  const anchorMs = ANCHOR_SEC * 1000;
+  const DAY_MS = 86_400_000;
+  const daysAgo = (days, hours = 0) => anchorMs - days * DAY_MS - hours * 3_600_000;
+  const add = (row) => {
+    const key = row.suggestion_key ?? '';
+    HANDBACK_OUTCOMES.push({
+      id: HANDBACK_OUTCOMES.length + 1,
+      project_id: row.project_id ?? 1,
+      kind: row.kind,
+      subject_type: row.subject_type,
+      subject_id: row.subject_id,
+      suggestion_key: key,
+      outcome: row.outcome,
+      channel: row.channel ?? 'inferred',
+      actor_user_id: null,
+      actor_api_key_id: null,
+      run_id: null,
+      commit_sha: row.commit_sha ?? null,
+      details: row.details ?? null,
+      dedupe_key: [row.kind, `${row.subject_type}:${row.subject_id}`, key, row.outcome, ''].join('|'),
+      created_at: Math.round(row.at),
+    });
+  };
+
+  // Locator heals: 12 call sites given a replacement, 8 of them now use it, 6 passed since.
+  const shopCases = TEST_CASES.filter((c) => c.project_id === 1).slice(0, 12);
+  shopCases.forEach((testCase, i) => {
+    const key = `heal-${i + 1}`;
+    const details = {
+      location: `${testCase.file_path}:${20 + i}:5`,
+      failingLocator: "getByRole('button', { name: 'Submit' })",
+      recommendedLocator: "getByRole('button', { name: 'Place order' })",
+      recommendedSig: `demo-sig-${i + 1}`,
+      failingRunId: 0,
+    };
+    const base = 24 - i * 2;
+    add({
+      kind: 'locator-heal',
+      subject_type: 'test-case',
+      subject_id: testCase.id,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(base),
+    });
+    if (i < 8) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'applied',
+        details: { ...details, label: 'matched-recommendation' },
+        at: daysAgo(base - 1),
+      });
+    }
+    if (i < 6) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(base - 1, -6),
+      });
+    }
+  });
+
+  // Auto-heal pull requests: 5 opened, 3 merged (2 verified on main since), 1 closed.
+  for (let n = 1; n <= 5; n++) {
+    const details = { prNumber: 40 + n, testCaseIds: [shopCases[n - 1].id] };
+    const key = `heal:v1:1:demo-${n}`;
+    add({
+      kind: 'auto-heal-pr',
+      subject_type: 'heal-action',
+      subject_id: n,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(22 - n * 3),
+    });
+    if (n <= 3)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'applied',
+        details,
+        at: daysAgo(21 - n * 3),
+      });
+    if (n <= 2)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(20 - n * 3),
+      });
+    if (n === 4)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(8),
+      });
+  }
+
+  // Diagnoses: the fixes of clusters 1 and 10 changed the files their diagnosis
+  // named; cluster 1 then failed again.
+  for (const clusterId of [1, 10]) {
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const diagnosis = FAILURE_DIAGNOSES.find((d) => d.cluster_id === clusterId);
+    const details = { diagnosisId: diagnosis.id, provider: diagnosis.provider, model: diagnosis.model };
+    // The live key carries the version's start time, which the rebase would leave stale here.
+    const key = `${diagnosis.id}@demo`;
+    add({
+      kind: 'diagnosis',
+      subject_type: 'cluster',
+      subject_id: clusterId,
+      suggestion_key: key,
+      outcome: 'verified',
+      commit_sha: cluster.fix_commit,
+      details,
+      at: cluster.fix_landed_at * 1000,
+    });
+    if (cluster.fix_verification === 'regressed') {
+      add({
+        kind: 'diagnosis',
+        subject_type: 'cluster',
+        subject_id: clusterId,
+        suggestion_key: key,
+        outcome: 'regressed',
+        details,
+        at: cluster.updated_at * 1000,
+      });
+    }
+  }
+
+  // The gate: 6 failed evaluations; the pull request of the third was merged
+  // anyway, and the failure it caught came back on main.
+  for (let n = 1; n <= 6; n++) {
+    const details = { prNumber: 60 + n, verdict: 'failed', rules: ['maxNewFailures'] };
+    add({
+      kind: 'gate',
+      subject_type: 'gate-evaluation',
+      subject_id: n,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(26 - n * 4),
+    });
+    if (n === 3) {
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(13),
+      });
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'regressed',
+        details: { ...details, clusterId: 1 },
+        at: daysAgo(11),
+      });
+    }
+  }
+
+  // Flake Lab: a verify run proved one flaky test fixed (not the one whose flake the lab reproduced).
+  const verifiedFlake = TEST_CASES.filter((c) => c.project_id === 1 && c.id !== FLAKE_DEMO.caseId).at(-1);
+  add({
+    kind: 'flake-verify',
+    subject_type: 'test-case',
+    subject_id: verifiedFlake.id,
+    suggestion_key: 'verify-1',
+    outcome: 'verified',
+    channel: 'cli',
+    at: daysAgo(6),
+  });
+}
+
+// Ratings on the diagnoses, and earlier versions of them, so the AI usage
+// panel has a helpful share over enough ratings, and one version an agent
+// recorded with the model it ran on.
+{
+  const RATINGS = { 1: 'up', 3: 'up', 6: 'down', 7: 'up', 10: 'up' };
+  for (const d of FAILURE_DIAGNOSES) d.feedback = RATINGS[d.cluster_id] ?? null;
+  FAILURE_DIAGNOSIS_VERSIONS[0].feedback = 'down';
+  const stalePatch = {
+    status: 'stale-file',
+    filesChecked: 1,
+    filesInPatch: 1,
+    errors: ['The file changed since the diagnosis was written.'],
+  };
+  const EARLIER = [
+    { clusterId: 3, minutes: -720, feedback: 'up', patch: appliesPatch },
+    { clusterId: 3, minutes: -1440, feedback: 'down', patch: stalePatch },
+    { clusterId: 6, minutes: -600, feedback: 'down', patch: stalePatch },
+    { clusterId: 7, minutes: -480, feedback: 'up', patch: appliesPatch },
+    { clusterId: 7, minutes: -960, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -300, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -900, feedback: null, patch: null },
+  ];
+  for (const v of EARLIER) {
+    const current = FAILURE_DIAGNOSES.find((d) => d.cluster_id === v.clusterId);
+    FAILURE_DIAGNOSIS_VERSIONS.push({
+      id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+      diagnosis_id: current.id,
+      cluster_id: v.clusterId,
+      scope: 'cluster',
+      test_runs_case_id: null,
+      status: 'completed',
+      provider: 'demo',
+      model: 'demo-simulated',
+      category: current.category,
+      confidence: 'medium',
+      summary: `Earlier take: ${current.summary}`,
+      root_cause: current.root_cause,
+      details: JSON.stringify({ ...JSON.parse(current.details), patchValidation: v.patch }),
+      error: null,
+      input_tokens: 900,
+      output_tokens: 260,
+      duration_ms: 2100,
+      context_sha: null,
+      feedback: v.feedback,
+      created_at: diagnosisTs(v.clusterId, v.minutes),
+    });
+  }
+  const agentBase = FAILURE_DIAGNOSES.find((d) => d.cluster_id === 3);
+  const agentDetails = JSON.parse(agentBase.details);
+  FAILURE_DIAGNOSIS_VERSIONS.push({
+    id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+    diagnosis_id: agentBase.id,
+    cluster_id: 3,
+    scope: 'cluster',
+    test_runs_case_id: null,
+    status: 'completed',
+    provider: 'agent',
+    model: 'demo-agent',
+    category: agentBase.category,
+    confidence: 'high',
+    summary: `Recorded by an agent: ${agentBase.summary}`,
+    root_cause: agentBase.root_cause,
+    details: JSON.stringify({
+      ...agentDetails,
+      patchValidation: undefined,
+      suggestedFix: { ...agentDetails.suggestedFix, patchValidation: appliesPatch },
+      recordedBy: { channel: 'mcp', userId: null, apiKeyId: null },
+    }),
+    error: null,
+    input_tokens: null,
+    output_tokens: null,
+    duration_ms: null,
+    context_sha: null,
+    feedback: 'up',
+    created_at: diagnosisTs(3, -200),
+  });
+}
+
 // ── Flake-lab experiment (rng-free) ─────────────────────────────────────────
 // Two days before the anchor, someone ran `piwi flake` on the checkout
 // project's flaky test: the control stayed clean in 10 runs and delaying
@@ -3593,6 +4136,8 @@ const REBASE_SQL = [
   `UPDATE case_payloads SET created_at = created_at + ${D};`,
   // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
   `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
+  `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
   `UPDATE failure_diagnoses SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE failure_diagnosis_versions SET created_at = created_at + ${D};`,
@@ -3605,6 +4150,7 @@ const REBASE_SQL = [
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
   // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
   // candidates to it; they are all stamped at BASE_START_MS, which the run
@@ -3615,6 +4161,11 @@ const REBASE_SQL = [
   `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
   '',
+  '-- ISO timestamps embedded in JSON columns',
+  `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
+    `strftime('%Y-%m-%dT%H:%M:%fZ', json_extract(metadata, '$.incident.decidedAt'), '+' || ${D} || ' seconds')) ` +
+    `WHERE json_valid(metadata) AND json_extract(metadata, '$.incident.decidedAt') IS NOT NULL;`,
+  '',
   '-- Millisecond timestamps embedded in JSON columns',
   shiftJsonMs('test_runs_cases', 'steps', 'startTime'),
   shiftJsonMs('test_runs_cases', 'step_events', 'startedAt'),
@@ -3622,6 +4173,9 @@ const REBASE_SQL = [
   shiftJsonMs('test_runs_cases', 'dialogs', 'closedAt'),
   shiftJsonMs('test_runs_cases', 'attempts', 'startedAt'),
   shiftJsonMs('network_requests', 'server_logs', 'timestamp'),
+  `UPDATE test_run_resource_reports SET report = json_set(report, '$.timeline.startedAt', ` +
+    `json_extract(report, '$.timeline.startedAt') + ${D_MS}) ` +
+    `WHERE json_valid(report) AND json_extract(report, '$.timeline.startedAt') IS NOT NULL;`,
   '',
   'DROP TABLE _rebase;',
 ];
@@ -4454,6 +5008,13 @@ const lines = [
   '-- Release markers linked to a run (they keep that run forever)',
   insert('markers', RELEASE_MARKERS),
   insert('markers', EARLIER_RELEASES),
+  insert(
+    'markers',
+    INCIDENT_MARKERS.map((m, i) => ({
+      id: MARKERS.length + RELEASE_MARKERS.length + EARLIER_RELEASES.length + i + 1,
+      ...m,
+    })),
+  ),
   '',
   '-- Test selections',
   insert('test_selections', SELECTIONS),
@@ -4475,6 +5036,9 @@ const lines = [
   '',
   '-- Diagnosis version history (references failure_diagnoses + failure_clusters)',
   insert('failure_diagnosis_versions', FAILURE_DIAGNOSIS_VERSIONS),
+  '',
+  '-- Hand-back outcomes (references projects)',
+  insert('handback_outcomes', HANDBACK_OUTCOMES),
   '',
   '-- Content-addressed case payloads (referenced by test_runs_cases, so must come first)',
   insert('case_payloads', CASE_PAYLOADS),
@@ -4506,6 +5070,9 @@ const lines = [
   '-- Flake-lab experiments and their arms (references test_cases)',
   insert('flake_experiments', FLAKE_EXPERIMENTS),
   insert('flake_arms', FLAKE_ARMS),
+  insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
+  insert('resource_findings', RESOURCE_FINDINGS),
+  insert('resource_occurrences', RESOURCE_OCCURRENCES),
   '',
   '-- Feature graph nodes (Test Map)',
   insert('graph_nodes', GRAPH_NODES),

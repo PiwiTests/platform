@@ -21,11 +21,13 @@ vi.mock('../../server/utils/notifications/emit', () => ({
 }));
 
 let changedFiles: string[] = [];
+let changedCommits: Array<{ sha: string; message: string; fullMessage?: string }> = [];
 let commitAuthor: { name: string; email: string } | null = null;
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
-    fetchChanges: async () => ({ files: changedFiles.map((filename) => ({ filename })) }),
+    fetchChanges: async () => ({ commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) }),
     getCommitAuthor: async () => commitAuthor,
+    getDefaultBranch: async () => 'main',
   }),
 }));
 
@@ -33,7 +35,8 @@ vi.mock('../../server/utils/scm', () => ({
 // import time when PIWI_DATABASE_URL is set, so clear it before the module
 // under test (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { verifyClusterFixes, appendTriageNote } = await import('../../server/utils/fix-verification');
+const { verifyClusterFixes, appendTriageNote, classifyQuietRun, healKeysFromCommits } =
+  await import('../../server/utils/fix-verification');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -42,15 +45,25 @@ let clusterSeq = 0;
 
 const REMOTE = 'https://github.com/acme/shop.git';
 
-async function insertRun(status: 'passed' | 'failed', commit: string, opts: { isFullRun?: boolean } = {}) {
+async function insertRun(
+  status: 'passed' | 'failed',
+  commit: string,
+  opts: { isFullRun?: boolean; branch?: string; origin?: string } = {},
+) {
   const id = ++runSeq;
+  const branch = opts.branch ?? 'main';
   await db.insert(schema.testRuns).values({
     id,
     projectId: 1,
     status,
     startTime: new Date(Date.UTC(2026, 0, 1) + id * 3_600_000),
     isFullRun: opts.isFullRun === false ? 0 : 1,
-    metadata: { scm: { commit, remoteUrl: REMOTE, branch: 'main' } },
+    environment: 'staging',
+    branch,
+    metadata: {
+      scm: { commit, remoteUrl: REMOTE, branch },
+      ...(opts.origin ? { piwiOrigin: { kind: opts.origin } } : {}),
+    },
   });
   return id;
 }
@@ -108,6 +121,7 @@ beforeAll(async () => {
 beforeEach(() => {
   emitted.length = 0;
   changedFiles = [];
+  changedCommits = [];
   commitAuthor = null;
 });
 
@@ -148,6 +162,8 @@ describe('verifyClusterFixes — status transitions', () => {
       projectId: 1,
       projectName: 'Shop',
       runId: green,
+      branch: 'main',
+      environment: 'staging',
       verification: 'diagnosis-verified',
       commit: 'bbb222',
       resolved: true,
@@ -225,6 +241,8 @@ describe('verifyClusterFixes — status transitions', () => {
       clusterId,
       projectName: 'Shop',
       runId: red,
+      branch: 'main',
+      environment: 'staging',
       fixLandedRunId: green,
       reopened: true,
     });
@@ -301,5 +319,211 @@ describe('verifyClusterFixes — status transitions', () => {
     const mine = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
     expect(mine?.event).toBe('cluster.fixed');
     expect(mine?.payload).toMatchObject({ fixAuthor: { name: 'Ada Lovelace', email: 'ada@example.com' } });
+  });
+});
+
+describe('classifyQuietRun', () => {
+  const base = { runBranch: 'main', runCommit: 'b', failedBranch: 'main', failedCommit: 'a', defaultBranch: 'main' };
+
+  test('a new commit on the failing branch is a fix', () => {
+    expect(classifyQuietRun(base)).toBe('fix');
+  });
+
+  test('the failing commit is flake evidence, whatever the branch', () => {
+    expect(classifyQuietRun({ ...base, runCommit: 'a' })).toBe('same-commit');
+  });
+
+  test('another branch counts only when it is the default branch', () => {
+    expect(classifyQuietRun({ ...base, runBranch: 'feature/x' })).toBe('other-branch');
+    expect(classifyQuietRun({ ...base, failedBranch: 'feature/x' })).toBe('fix');
+    expect(classifyQuietRun({ ...base, runBranch: null })).toBe('other-branch');
+  });
+
+  test('unknown commits and branches on both sides are not compared', () => {
+    expect(classifyQuietRun({ ...base, runCommit: null })).toBe('fix');
+    expect(classifyQuietRun({ ...base, runBranch: null, failedBranch: null, defaultBranch: null })).toBe('fix');
+  });
+});
+
+describe('verifyClusterFixes — which quiet runs count', () => {
+  test('a pass at the failing commit is flake evidence; a pass at a new default-branch commit is the fix', async () => {
+    const failing = await insertRun('failed', 'c0ffee1');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+
+    const rerun = await insertRun('passed', 'c0ffee1');
+    await insertCase(rerun, 'passed', null);
+    expect(await verifyClusterFixes(db, rerun)).toEqual([]);
+    let row = await cluster(clusterId);
+    expect(row.fixLandedRunId).toBeNull();
+    expect(row.status).toBe('open');
+    expect(row.flakeEvidenceRunId).toBe(rerun);
+    expect(emitted.filter((e) => e.event === 'cluster.fixed')).toEqual([]);
+
+    const next = await insertRun('passed', 'c0ffee2');
+    await insertCase(next, 'passed', null);
+    const fixed = await verifyClusterFixes(db, next);
+    expect(fixed.map((f) => f.clusterId)).toEqual([clusterId]);
+    row = await cluster(clusterId);
+    expect(row.fixLandedRunId).toBe(next);
+    expect(row.fixCommit).toBe('c0ffee2');
+  });
+
+  test('a pass on another branch records nothing; a pass on the cluster’s own branch records the fix', async () => {
+    const failing = await insertRun('failed', 'dd00001', { branch: 'feature/cart' });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+
+    const elsewhere = await insertRun('passed', 'dd00002', { branch: 'feature/other' });
+    await insertCase(elsewhere, 'passed', null);
+    expect(await verifyClusterFixes(db, elsewhere)).toEqual([]);
+    expect((await cluster(clusterId)).fixLandedRunId).toBeNull();
+
+    const sameBranch = await insertRun('passed', 'dd00003', { branch: 'feature/cart' });
+    await insertCase(sameBranch, 'passed', null);
+    expect((await verifyClusterFixes(db, sameBranch)).map((f) => f.clusterId)).toEqual([clusterId]);
+  });
+
+  test.each(['bisect', 'reproduce'])('a %s run at a new commit records no fix and no regression', async (origin) => {
+    const failing = await insertRun('failed', `ee0000${origin.length}`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+
+    const step = await insertRun('passed', `ee1111${origin.length}`, { origin });
+    await insertCase(step, 'passed', null);
+    expect(await verifyClusterFixes(db, step)).toEqual([]);
+    const row = await cluster(clusterId);
+    expect(row.fixLandedRunId).toBeNull();
+    expect(row.flakeEvidenceRunId).toBeNull();
+
+    const local = await insertRun('passed', `ee2222${origin.length}`, { origin: 'local' });
+    await insertCase(local, 'passed', null);
+    expect((await verifyClusterFixes(db, local)).map((f) => f.clusterId)).toEqual([clusterId]);
+  });
+});
+
+describe('verifyClusterFixes — diagnosis outcomes', () => {
+  const diagnosisOutcomes = async (clusterId: number) =>
+    (await db.select().from(schema.handbackOutcomes))
+      .filter((o) => o.kind === 'diagnosis' && o.subjectId === clusterId)
+      .map((o) => ({ outcome: o.outcome, key: o.suggestionKey, runId: o.runId, channel: o.channel }));
+
+  test('a diagnosis-verified fix verifies the diagnosis version current when it landed, and a regression regresses it', async () => {
+    const failing = await insertRun('failed', 'd1a000');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    const [diagnosis] = await db
+      .select()
+      .from(schema.failureDiagnoses)
+      .where(eq(schema.failureDiagnoses.clusterId, clusterId));
+    const key = `${diagnosis!.id}@${diagnosis!.createdAt.getTime()}`;
+    changedFiles = ['src/checkout.ts'];
+
+    const green = await insertRun('passed', 'd1b000');
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    expect(await diagnosisOutcomes(clusterId)).toEqual([
+      { outcome: 'verified', key, runId: green, channel: 'inferred' },
+    ]);
+
+    // A re-verified diagnosis is a new version: it starts again, so it carries a new key.
+    await db
+      .update(schema.failureDiagnoses)
+      .set({ createdAt: new Date(diagnosis!.createdAt.getTime() + 60_000) })
+      .where(eq(schema.failureDiagnoses.id, diagnosis!.id));
+
+    const red = await insertRun('failed', 'd1c000');
+    await insertCase(red, 'failed', clusterId);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    expect(await diagnosisOutcomes(clusterId)).toEqual([
+      { outcome: 'verified', key, runId: green, channel: 'inferred' },
+      { outcome: 'regressed', key, runId: red, channel: 'inferred' },
+    ]);
+  });
+
+  test('a stopped-failing fix and its regression record no diagnosis outcome', async () => {
+    const failing = await insertRun('failed', 'd2a000');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['README.md'];
+
+    const green = await insertRun('passed', 'd2b000');
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    const red = await insertRun('failed', 'd2c000');
+    await insertCase(red, 'failed', clusterId);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+
+    expect(await diagnosisOutcomes(clusterId)).toEqual([]);
+  });
+});
+
+describe('verifyClusterFixes — the auto-heal PR that landed the fix', () => {
+  async function insertHealAction(dedupeKey: string, clusterId: number, prNumber: number, status = 'merged') {
+    await db.insert(schema.healActions).values({
+      projectId: 1,
+      dedupeKey,
+      status,
+      payload: { repositoryUrl: REMOTE, branch: `piwi/heal/1-${prNumber}`, edits: [{ clusterId, executionId: 1 }] },
+      result: { prNumber, prUrl: `https://github.com/acme/shop/pull/${prNumber}`, commitSha: 'h', branch: 'b' },
+    });
+  }
+
+  test('a Piwi-Heal trailer in the commits since the last failure names the PR on the fix and the event', async () => {
+    const failing = await insertRun('failed', 'b1aaaa');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertHealAction('heal:v1:1:trailer1', clusterId, 41);
+    changedCommits = [
+      { sha: 'c1', message: 'chore: unrelated' },
+      {
+        sha: 'c2',
+        message: 'test: heal broken locators',
+        fullMessage: 'test: heal broken locators\n\nPiwi-Heal: heal:v1:1:trailer1',
+      },
+    ];
+
+    const green = await insertRun('passed', 'b1bbbb');
+    await insertCase(green, 'passed', null, 2);
+    const fixed = await verifyClusterFixes(db, green);
+
+    const mine = fixed.find((f) => f.clusterId === clusterId);
+    expect(mine?.verification).toBe('stopped-failing');
+    expect(mine?.healPr).toMatchObject({ number: 41, url: 'https://github.com/acme/shop/pull/41' });
+    const event = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
+    expect(event?.event).toBe('cluster.fixed');
+    expect(event?.payload).toMatchObject({ verification: 'stopped-failing', healPr: { number: 41 } });
+  });
+
+  test('a trailer naming a heal PR whose edits are about another cluster names no PR', async () => {
+    const failing = await insertRun('failed', 'b2aaaa');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertHealAction('heal:v1:1:trailer2', clusterId + 1000, 42);
+    changedCommits = [{ sha: 'c3', message: 'x', fullMessage: 'x\n\nPiwi-Heal: heal:v1:1:trailer2' }];
+
+    const green = await insertRun('passed', 'b2bbbb');
+    await insertCase(green, 'passed', null, 2);
+    const fixed = await verifyClusterFixes(db, green);
+
+    const mine = fixed.find((f) => f.clusterId === clusterId);
+    expect(mine).toBeDefined();
+    expect(mine?.healPr).toBeUndefined();
+    const event = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
+    expect(event?.payload.healPr).toBeUndefined();
+  });
+
+  test('reads the keys from full messages, falling back to the subject', () => {
+    expect(
+      healKeysFromCommits([
+        { sha: 'a', message: 'fix: a', fullMessage: 'fix: a\n\nPiwi-Heal: k1\nCo-authored-by: Ada <a@b.c>' },
+        { sha: 'b', message: 'fix: b' },
+        { sha: 'c', message: 'fix: c', fullMessage: 'fix: c\n\npiwi-heal: k1' },
+      ]),
+    ).toEqual(['k1']);
   });
 });

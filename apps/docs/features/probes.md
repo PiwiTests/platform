@@ -38,9 +38,14 @@ changed since its last probe, and each test gets one fault per run, up to a budg
 `--budget` to change it). Quarantined tests and tests whose last run failed are left out. A fault that did not change
 the response records the pair as *inconclusive*, and an inconclusive pair waits a week before it returns to the plan.
 
+A test counts as changed when the source lines its steps run from differ from those of its passing runs before the
+probe: an added assertion, an edited helper or a moved line. A new tag or owner does not count, and neither does a
+change to the route's handler alone.
+
 A probe run is stamped as one, with retries off. It never counts as a real run: no failure clusters, no regression
 signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
-compared with, and nothing in the Test Map but the probe outcomes.
+compared with, and nothing in the Test Map but the probe outcomes. It never moves a pass rate, a duration or the
+`failed` selection either, and leaves a test's tags, owner, locks and locator snapshots as they are.
 A probed test that notices its fault fails, so a non-zero Playwright exit is expected. The
 [CLI reference](/reference/cli#probe) lists every flag.
 
@@ -81,8 +86,9 @@ It needs:
   `PIWI_SERVER_PROBES=true`. Both apply faults only outside production. The ASP.NET Core package applies throw,
   status, delay and extreme-value faults; its data and dependency probes record as *inconclusive*;
 - the same `PIWI_PROBE_SECRET` where `piwi probe` runs;
-- **Server probes** turned on in the project's edit page, where the fault classes and routes are allow-listed.
-  Dependency faults on state-changing routes (`POST`, `PUT`, `PATCH`, `DELETE`) stay off unless you allow them.
+- **Server probes** turned on under **Scenario gaps** in the **Capabilities** section of the project's **Settings** tab,
+  where the fault classes and routes are allow-listed. Dependency faults on state-changing routes (`POST`, `PUT`,
+  `PATCH`, `DELETE`) stay off unless you allow them.
 
 With server probes on, half of the budget goes to server faults.
 

@@ -5,9 +5,11 @@ import {
   extractLeafSelector,
   extractSelector,
   extractMessageHead,
+  extractStackFrames,
   extractTopFrame,
   extractTopFrameFile,
   stripAnsi,
+  withoutStackFrames,
   type ParsedPlaywrightError,
 } from '../src/error-parse';
 import { ERRORS, type ErrorKey } from './fixtures/playwright-errors';
@@ -452,13 +454,27 @@ describe('locator and frame helpers', () => {
     expect(extractTopFrame('Error: boom\n    at /app/node_modules/x.js:1:1')).toBeNull();
   });
 
+  test('extractStackFrames lists every frame outside node_modules, innermost first', () => {
+    const text = [
+      'Error: boom',
+      '    at CheckoutPage.pay (C:\\ci\\tests\\pages\\checkout.page.ts:12:19)',
+      '    at /app/node_modules/@playwright/test/lib.js:5:5',
+      '    at /ci/tests/checkout.spec.ts:8:3',
+    ].join('\n');
+    expect(extractStackFrames(text)).toEqual([
+      { file: 'C:/ci/tests/pages/checkout.page.ts', line: 12, column: 19 },
+      { file: '/ci/tests/checkout.spec.ts', line: 8, column: 3 },
+    ]);
+    expect(withoutStackFrames(text)).toBe('Error: boom');
+  });
+
   test('extractMessageHead stops at the call log and the stack and keeps five lines', () => {
     expect(extractMessageHead('a\n\nb\nCall log:\n  - x\n    at f:1:1')).toBe('a\nb');
     expect(extractMessageHead('1\n2\n3\n4\n5\n6\n7')).toBe('1\n2\n3\n4\n5');
   });
 
   test('stripAnsi removes SGR codes only', () => {
-    expect(stripAnsi('[31mred[39m text [0m')).toBe('red text ');
+    expect(stripAnsi('\x1b[31mred\x1b[39m text \x1b[0m')).toBe('red text ');
     expect(stripAnsi('plain')).toBe('plain');
   });
 });

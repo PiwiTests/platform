@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { projects, testRuns } from '../../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { testRuns } from '../../database/schema';
+import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken } from '../../utils/shard-tokens';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
+import { getProjectScope } from '../../utils/project-access';
+import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
 
@@ -15,7 +16,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs.',
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId.',
     'x-required-roles': ['administrator', 'reporter'],
     requestBody: {
       content: {
@@ -55,41 +56,15 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
 
-  // Get or create project
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
-  let project = existingProjects[0];
-
-  if (project) {
-    if (!scopeAllows(scope, project.id)) {
-      throw apiError({ statusCode: 403, message: 'No access to this project' });
-    }
-  } else {
-    if (scope !== 'all') {
-      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-    }
-    const result = await db
-      .insert(projects)
-      .values({
-        name: body.projectName,
-        description: body.projectDescription || null,
-      })
-      .returning();
-    project = result[0];
-  }
-
-  if (!project) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create or retrieve project',
-    });
-  }
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
   const instanceId = body.instanceId || null;
   const shardTotal = body.shardTotal as number | undefined;
   const isSharded = !!(shardTotal && shardTotal > 1);
 
   if (isSharded && instanceId) {
-    // Sharded setup: look for existing initializing run with same instanceId
+    // Sharded setup: join the run another shard of the same instanceId set up,
+    // whether it is still initializing or that shard already began it
     const existingRuns = await db
       .select()
       .from(testRuns)
@@ -97,7 +72,7 @@ export default eventHandler(async (event) => {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          eq(testRuns.status, 'initializing'),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -143,7 +118,7 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
+        metadata: { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>,
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,

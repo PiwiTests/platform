@@ -128,7 +128,7 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
             >
               Stop
             </UButton>
-            <UTooltip v-else text="Run again with the same options">
+            <UTooltip v-else-if="run.kind !== 'flake' || run.flake" text="Run again with the same options">
               <UButton
                 size="xs"
                 color="neutral"

@@ -1,5 +1,7 @@
 import {
   ScmProvider,
+  type RerunDispatchRequest,
+  type RerunDispatchResult,
   truncatePatch,
   MAX_SCM_FILES,
   MAX_SCM_FILES_TOTAL,
@@ -17,6 +19,7 @@ import type {
   ScmCommitStatus,
   ScmFileEdit,
   CreatePullRequestInput,
+  ScmPostedComment,
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef } from './refs';
@@ -139,7 +142,11 @@ export class GitLabProvider extends ScmProvider {
     };
     const allDiffs = data.diffs ?? [];
     const result: ScmChanges = {
-      commits: (data.commits ?? []).map((c) => ({ sha: c.id.slice(0, 7), message: c.message.split('\n')[0] ?? '' })),
+      commits: (data.commits ?? []).map((c) => ({
+        sha: c.id.slice(0, 7),
+        message: c.message.split('\n')[0] ?? '',
+        fullMessage: c.message,
+      })),
       files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map((f) => {
         const { additions, deletions } = countDiffLines(f.diff ?? '');
         return {
@@ -413,7 +420,15 @@ export class GitLabProvider extends ScmProvider {
   }
 
   override async upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
-    if (!this.token) return false;
+    return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
+  }
+
+  override async postPullRequestComment(
+    prNumber: number,
+    marker: string,
+    body: string,
+  ): Promise<ScmPostedComment | null> {
+    if (!this.token) return null;
     try {
       const base = `https://${this.hostname}/api/v4/projects/${this.projectPath()}/merge_requests/${prNumber}/notes`;
 
@@ -436,9 +451,12 @@ export class GitLabProvider extends ScmProvider {
         body: JSON.stringify({ body }),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      return res.ok;
+      if (!res.ok) return null;
+      const posted = (await res.json().catch(() => null)) as { id?: number } | null;
+      const id = posted?.id ?? existingId;
+      return { id: id != null ? String(id) : null };
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -534,15 +552,20 @@ export class GitLabProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(settings: CiRerunSettings, playwrightArgs: string): Promise<{ url: string }> {
+  override async dispatchRerun(
+    settings: CiRerunSettings,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
     const target = settings.gitlab;
     if (!target) throw new Error('No GitLab pipeline configured for CI re-run');
+    const ref = request.ref || target.ref;
 
     const res = await fetch(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/pipeline`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ref: target.ref,
+        ref,
         variables: [{ key: target.variableName, value: playwrightArgs }],
       }),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -550,6 +573,6 @@ export class GitLabProvider extends ScmProvider {
     if (!res.ok) throw await gitlabError(res, 'trigger pipeline');
     const pipeline = (await res.json()) as { id?: number; web_url?: string };
     const url = pipeline.web_url ?? `https://${this.hostname}/${this.repoPath}/-/pipelines/${pipeline.id ?? ''}`;
-    return { url };
+    return { url, ref, ...(pipeline.id != null ? { pipelineId: String(pipeline.id) } : {}) };
   }
 }

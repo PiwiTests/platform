@@ -33,26 +33,28 @@ export async function setUserAssignments(
   data: UserAssignments,
   createdBy?: number,
 ): Promise<void> {
-  // Remove all existing assignments
-  await db.delete(projectAssignments).where(eq(projectAssignments.userId, userId));
+  const projectIds = [...new Set(data.projectIds)];
+  await db.transaction(async (tx) => {
+    await tx.delete(projectAssignments).where(eq(projectAssignments.userId, userId));
 
-  if (data.global) {
-    // Single global assignment row
-    await db.insert(projectAssignments).values({
-      userId,
-      projectId: null,
-      createdBy: createdBy ?? null,
-    });
-  } else if (data.projectIds.length > 0) {
-    // One row per project
-    await db.insert(projectAssignments).values(
-      data.projectIds.map((projectId) => ({
+    if (data.global) {
+      // Single global assignment row
+      await tx.insert(projectAssignments).values({
         userId,
-        projectId,
+        projectId: null,
         createdBy: createdBy ?? null,
-      })),
-    );
-  }
+      });
+    } else if (projectIds.length > 0) {
+      // One row per project
+      await tx.insert(projectAssignments).values(
+        projectIds.map((projectId) => ({
+          userId,
+          projectId,
+          createdBy: createdBy ?? null,
+        })),
+      );
+    }
+  });
 }
 
 export interface ProjectMember {
@@ -130,19 +132,21 @@ export async function setProjectMembers(
   userIds: number[],
   createdBy?: number,
 ): Promise<void> {
-  // Remove all explicit (non-global) assignments for this project
-  await db.delete(projectAssignments).where(and(eq(projectAssignments.projectId, projectId)));
+  const uniqueUserIds = [...new Set(userIds)];
+  await db.transaction(async (tx) => {
+    // Remove all explicit (non-global) assignments for this project
+    await tx.delete(projectAssignments).where(eq(projectAssignments.projectId, projectId));
 
-  // Insert new assignments
-  if (userIds.length > 0) {
-    await db.insert(projectAssignments).values(
-      userIds.map((userId) => ({
-        userId,
-        projectId,
-        createdBy: createdBy ?? null,
-      })),
-    );
-  }
+    if (uniqueUserIds.length > 0) {
+      await tx.insert(projectAssignments).values(
+        uniqueUserIds.map((userId) => ({
+          userId,
+          projectId,
+          createdBy: createdBy ?? null,
+        })),
+      );
+    }
+  });
 }
 
 /** Every user with the project access they hold, and every project — the permission grid. */
@@ -217,37 +221,62 @@ export async function setProjectAccess(
     .onConflictDoNothing();
 }
 
-/** `app_settings` key claimed by the first `backfillProjectAssignments` run on a database. */
+/**
+ * `app_settings` key recording the backfill's state on a database: `'owed'` while
+ * the grant is still to be made, `'granting'` while a startup makes it, `true`
+ * once it is settled.
+ */
 export const PROJECT_ASSIGNMENTS_BACKFILL_KEY = 'project_assignments_backfilled';
+const BACKFILL_OWED = 'owed';
+const BACKFILL_GRANTING = 'granting';
 
 /**
  * Give every USER/REPORTER global access when a database first meets project
- * access: runs once per database, and grants only while `project_assignments` is
- * still empty. From then on a user without any assignment has no access, so a
- * user whose last project an administrator revokes stays without access across
- * restarts. The key is claimed atomically, so concurrent startups run it once.
+ * access, so the upgrade that introduces it takes nothing away. The grant is
+ * owed only when `tableIsNew`: this startup's migrations created
+ * `project_assignments`. A database that already had the table was already
+ * enforcing project access, so an empty table there means nobody holds a
+ * project, and that stays true. From then on a user without any assignment has
+ * no access, so a user whose last project an administrator revokes, or who was
+ * never given one, stays without access across restarts and upgrades.
+ *
+ * The decision is recorded before anything is granted, so a grant that fails is
+ * retried at the next startup, when the table is no longer new. A startup takes
+ * the owed grant with one atomic update, so concurrent startups make it once.
  */
-export async function backfillProjectAssignments(db: DrizzleDB): Promise<void> {
-  const claimed = await db
+export async function backfillProjectAssignments(
+  db: DrizzleDB,
+  { tableIsNew }: { tableIsNew: boolean },
+): Promise<void> {
+  const key = eq(appSettings.key, PROJECT_ASSIGNMENTS_BACKFILL_KEY);
+  await db
     .insert(appSettings)
-    .values({ key: PROJECT_ASSIGNMENTS_BACKFILL_KEY, value: true, updatedAt: new Date() })
-    .onConflictDoNothing({ target: appSettings.key })
+    .values({ key: PROJECT_ASSIGNMENTS_BACKFILL_KEY, value: tableIsNew ? BACKFILL_OWED : true, updatedAt: new Date() })
+    .onConflictDoNothing({ target: appSettings.key });
+
+  const taken = await db
+    .update(appSettings)
+    .set({ value: BACKFILL_GRANTING, updatedAt: new Date() })
+    .where(and(key, eq(appSettings.value, BACKFILL_OWED)))
     .returning({ key: appSettings.key });
-  if (claimed.length === 0) return;
+  if (taken.length === 0) return;
 
   try {
+    // Rows already there (a grant that landed before its settling failed) settle it as is.
     const anyAssignment = await db.select({ id: projectAssignments.id }).from(projectAssignments).limit(1);
-    if (anyAssignment.length > 0) return;
-
-    const members = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.role, Role.USER), eq(users.role, Role.REPORTER)));
-    if (members.length === 0) return;
-    await db.insert(projectAssignments).values(members.map((user) => ({ userId: user.id, projectId: null })));
+    if (anyAssignment.length === 0) {
+      const members = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(or(eq(users.role, Role.USER), eq(users.role, Role.REPORTER)));
+      if (members.length > 0) {
+        await db.insert(projectAssignments).values(members.map((user) => ({ userId: user.id, projectId: null })));
+      }
+    }
+    await db.update(appSettings).set({ value: true, updatedAt: new Date() }).where(key);
   } catch (err) {
-    // Release the claim so the next startup retries.
-    await db.delete(appSettings).where(eq(appSettings.key, PROJECT_ASSIGNMENTS_BACKFILL_KEY));
+    // Hand the grant back, so the next startup makes it.
+    await db.update(appSettings).set({ value: BACKFILL_OWED, updatedAt: new Date() }).where(key);
     throw err;
   }
 }

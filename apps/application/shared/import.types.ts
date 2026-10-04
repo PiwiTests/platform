@@ -17,14 +17,6 @@ export type ImportCheckStatus =
   /** Not a file this endpoint can import (wrong extension, empty, no hash). */
   | 'invalid';
 
-/** What the browser knows about a file without reading it all: name, size, digest. */
-export interface ImportCheckFile {
-  name: string;
-  size: number;
-  /** Lower-case hex SHA-256 of the file's bytes. */
-  hash: string;
-}
-
 export interface ImportCheckResult {
   name: string;
   status: ImportCheckStatus;

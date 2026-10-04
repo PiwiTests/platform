@@ -92,7 +92,9 @@ passing `staging` run on `feature/x`, then the last passing `staging` run on `ma
 has the "any branch" rung; a run with no environment label only walks the branch ladder. The Changes
 tab names the run it picked and the rung that applied ("No passing staging run exists on feature/x; the
 last passing run on the default branch main in staging"), and lets you pick a different **base branch**
-or one specific run — see [What changed in a run](/features/run-changes#the-baseline).
+or one specific run — see [What changed in a run](/features/run-changes#the-baseline). When no earlier
+full run passed, the Changes tab and the MCP `get_run_insights` tool fall back to the last failed run,
+found by the same ladder; the regression signals, the CI gate and pull-request feedback do not.
 
 The environment, visual and page diffs compare one execution against the same test's last passing
 execution on the same browser, with the same environment-first order: a `development` failure is diffed
@@ -117,6 +119,13 @@ A free-text label on a run (`production`, `staging`, a preview URL, whatever you
 reporter's `environment` option or `PIWI_ENVIRONMENT`. It's a **scoping** dimension, not a
 configuration one: flaky analysis, analytics, and timeline markers can all be narrowed to a single
 environment so a staging suite's noise doesn't blend into production's numbers.
+
+### Environment incident
+
+A **test run** whose failures come from the environment under test being down or broken (staging refusing
+connections, a host that no longer resolves, a crashing browser), not from the tests or the code. Piwi flags it when
+the run finishes, or a person marks it, and leaves it out of flaky scores, baselines, fix verification and the CI
+gate, which answers *inconclusive*. See [Environment incidents](/features/environment-incidents).
 
 ### Tags & ownership
 
@@ -207,6 +216,13 @@ applying the suspect's condition (a delayed route, another test alongside) with 
 same error as the test's failures in history count. An arm **reproduced** the flake when at least half its runs
 failed that way and it fails significantly more than the control; a **verify** experiment reruns that arm after a
 fix. See [Flake Lab](/features/flake-lab).
+
+### Fix attempt
+
+A change a person or an agent reports having made to fix a failure cluster (a patch, a locator edit, a fix plan
+carried out), on a commit or a branch. It is recorded **applied**, then **verified** when the cluster's tests pass on a
+run that carries it (its commit, a `Piwi-Cluster: <id>` trailer in a commit message, or its branch), and
+**regressed** when the cluster fails again. See [Agent skills](/features/agent-skills#what-agents-report-back).
 
 ### Locator snapshot
 

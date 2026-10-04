@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { highlightCode } from '#shared/highlight';
+import { inlineMarkdownHtml } from '~/utils/markdown-inline';
 
 const props = defineProps<{
   text: string | null;
@@ -19,22 +20,6 @@ type PreviewLine =
   | { kind: 'code-start'; lang: string }
   | { kind: 'code-block'; html: string }
   | { kind: 'code-end' };
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/** Render inline `code`, **bold** and [links] to safe HTML. Escapes first. */
-function inlineHtml(raw: string): string {
-  let h = escapeHtml(raw);
-  h = h.replace(/`([^`]+)`/g, '<code class="rounded bg-gray-200 dark:bg-gray-700 px-1 py-px">$1</code>');
-  h = h.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-gray-900 dark:text-gray-100">$1</strong>');
-  h = h.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener" class="text-primary hover:underline">$1</a>',
-  );
-  return h;
-}
 
 /** Split a Markdown table row into trimmed, unescaped cells. */
 function tableCells(line: string): string[] {
@@ -100,11 +85,11 @@ function parse(text: string): PreviewLine[] {
 
     if (line.startsWith('## ')) result.push({ kind: 'h2', text: line.slice(3) });
     else if (line.startsWith('### ')) result.push({ kind: 'h3', text: line.slice(4) });
-    else if (line.startsWith('> ')) result.push({ kind: 'note', html: inlineHtml(line.slice(2)) });
-    else if (line.startsWith('- ')) result.push({ kind: 'bullet', html: inlineHtml(line.slice(2)) });
+    else if (line.startsWith('> ')) result.push({ kind: 'note', html: inlineMarkdownHtml(line.slice(2)) });
+    else if (line.startsWith('- ')) result.push({ kind: 'bullet', html: inlineMarkdownHtml(line.slice(2)) });
     else if (line.trim() === '---') result.push({ kind: 'rule' });
     else if (line.trim() === '') result.push({ kind: 'blank' });
-    else result.push({ kind: 'text', html: inlineHtml(line) });
+    else result.push({ kind: 'text', html: inlineMarkdownHtml(line) });
     i++;
   }
 
@@ -160,7 +145,7 @@ const lines = computed<PreviewLine[]>(() => (props.text ? parse(props.text) : []
                   v-for="(h, hi) in line.headers"
                   :key="hi"
                   class="border border-default px-2 py-1 font-semibold text-gray-700 dark:text-gray-200"
-                  v-html="inlineHtml(h)"
+                  v-html="inlineMarkdownHtml(h)"
                 />
               </tr>
             </thead>
@@ -171,7 +156,7 @@ const lines = computed<PreviewLine[]>(() => (props.text ? parse(props.text) : []
                   :key="ci"
                   class="border border-default px-2 py-1 align-top text-gray-600 dark:text-gray-400"
                   :class="{ 'bg-gray-100/60 dark:bg-gray-800/40 font-medium': !line.hasHeader && ci === 0 }"
-                  v-html="inlineHtml(cell)"
+                  v-html="inlineMarkdownHtml(cell)"
                 />
               </tr>
             </tbody>

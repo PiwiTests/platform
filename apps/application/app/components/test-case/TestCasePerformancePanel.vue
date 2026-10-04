@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /**
- * Performance evidence for one execution: the performance hints, then the
+ * Performance evidence for one execution: the performance hints, what the test
+ * cost its worker and browser processes when the reporter measured it, then the
  * captured Web Vitals (navigation timing, paint, Core Web Vitals). Shows the
  * three-state empty message when no Web Vitals were recorded.
  */
 import type { WebVitals } from '~~/types/api';
+import type { WireExecutionResources } from '#shared/types';
 import type { getPerformanceHints } from '~/utils/performance-hints';
 import type { EvidenceState } from '#shared/evidence-state';
 
 defineProps<{
   performanceHints: ReturnType<typeof getPerformanceHints>;
   webVitals: WebVitals | null;
+  /** What the test cost, when the reporter measured it. */
+  resources?: WireExecutionResources | null;
   state: EvidenceState;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
@@ -59,12 +63,14 @@ defineProps<{
       </div>
     </div>
 
+    <ExecutionResourcesCard v-if="resources" :resources="resources" :embedded="embedded" help="case.resources" />
+
     <SectionCard
       v-if="webVitals"
       id="webvitals-card"
       :embedded="embedded"
       :icon="embedded ? undefined : 'i-lucide-gauge'"
-      :title="embedded ? '' : 'Browser performance (Web Vitals)'"
+      :title="embedded ? (resources ? 'Web Vitals' : '') : 'Browser performance (Web Vitals)'"
       :help="embedded ? undefined : 'case.web-vitals'"
     >
       <div class="space-y-4">
@@ -201,7 +207,7 @@ defineProps<{
       v-else
       :embedded="embedded"
       :icon="embedded ? undefined : 'i-lucide-gauge'"
-      :title="embedded ? '' : 'Browser performance (Web Vitals)'"
+      :title="embedded ? (resources ? 'Web Vitals' : '') : 'Browser performance (Web Vitals)'"
       :help="embedded ? undefined : 'case.web-vitals'"
     >
       <EvidenceEmptyState :state="state" doc="/capture-fixtures" compact />

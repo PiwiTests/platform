@@ -36,9 +36,11 @@ COPY apps/application/ ./apps/application/
 COPY integrations/ ./integrations/
 
 # The docs pages and the changelog, bundled into the server as assets for the
-# MCP describe_piwi and get_release_notes tools (.dockerignore keeps only these).
+# MCP describe_piwi and get_release_notes tools, and the workflow skills the MCP
+# server serves as prompts (.dockerignore keeps only these).
 COPY apps/docs/ ./apps/docs/
 COPY CHANGELOG.md ./
+COPY packages/reporter/templates/skills/ ./packages/reporter/templates/skills/
 
 # Build the application. The glibc-flavoured native packages are pruned from the
 # bundled output: this image is Alpine (musl), so only the *-musl* builds are ever
@@ -126,9 +128,10 @@ RUN --mount=type=cache,target=/home/nodejs/.npm,uid=1001,gid=1001 \
 # Copy built application — pure-JS deps travel in .output/server/node_modules
 COPY --chown=nodejs:nodejs --from=builder /app/apps/application/.output ./apps/application/.output
 
-# Reconciles operator-facing PIWI_AUTH_* env onto the NUXT_* runtime overrides
-# the prebuilt server reads (see the file for why). Preloaded before the entry.
-COPY --chown=nodejs:nodejs docker-server-env.mjs ./
+# Mirrors the operator-facing PIWI_* env the prebuilt server reads through its baked
+# runtime config onto the NUXT_* overrides it honors (see the file for why). It is the
+# file `npx @piwitests/server` imports too. Preloaded before the entry.
+COPY --chown=nodejs:nodejs packages/server/bin/server-env.mjs ./
 
 EXPOSE ${PORT}
 
@@ -137,4 +140,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO /dev/null "http://127.0.0.1:${PORT}/api/health" || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "--import", "./docker-server-env.mjs", "apps/application/.output/server/index.mjs"]
+CMD ["node", "--import", "./server-env.mjs", "apps/application/.output/server/index.mjs"]

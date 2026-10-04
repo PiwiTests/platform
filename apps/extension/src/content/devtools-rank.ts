@@ -1,6 +1,5 @@
-import { tryParseLocatorChain } from '@piwitests/core/locator-chain';
+import { parseLocatorChain, tryParseLocatorChain } from '@piwitests/core/locator-chain';
 import { assessLocatorChain, type LocatorStabilityRuleId } from '@piwitests/core/locator-stability';
-import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { normalizeWhiteSpace } from './engine-aria.js';
 import { attachPanelShadow } from './panel-root.js';
 import {
@@ -51,7 +50,7 @@ function toSelectionLocator(alt: CheckedLocator): SelectionLocator {
   };
 }
 
-export function rankSelected(node: unknown): SelectionRanking {
+function rankSelected(node: unknown): SelectionRanking {
   const candidate = node as Node | null | undefined;
   const el = candidate?.nodeType === Node.TEXT_NODE ? candidate.parentElement : candidate;
   if (!el || el.nodeType !== Node.ELEMENT_NODE) return { status: 'none' };
@@ -77,7 +76,7 @@ const HIGHLIGHT_HOST_ID = 'piwi-devtools-highlight';
 /** The elements the last query found, for the outline and the reveal that follow it. */
 let lastMatches: Element[] = [];
 
-export function queryLocator(expression: string): LocatorQueryResult {
+function queryLocator(expression: string): LocatorQueryResult {
   try {
     const engine = createPageEngine(document);
     lastMatches = engine.queryAll(parseLocatorChain(expression));
@@ -106,29 +105,74 @@ export function queryLocator(expression: string): LocatorQueryResult {
   }
 }
 
-/** Outlines match `index` on the page, scrolled into view; none when it is null. Whether one is outlined. */
+/** How long an outline stays at most: the DevTools page that drew it may be gone before it asks for it to go. */
+const HIGHLIGHT_MS = 5000;
+
+/** Takes the outline off the page, with its listeners and its timer. */
+let clearHighlight = (): void => document.getElementById(HIGHLIGHT_HOST_ID)?.remove();
+
+/**
+ * Outlines match `index` on the page, scrolled into view; none when it is
+ * null. The outline follows the element as the page scrolls or resizes, and
+ * goes after `HIGHLIGHT_MS`. Whether one is outlined.
+ */
 function highlight(index: number | null): boolean {
-  document.getElementById(HIGHLIGHT_HOST_ID)?.remove();
+  clearHighlight();
   const element = index === null ? undefined : lastMatches[index];
   if (!element?.isConnected) return false;
   element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  const r = element.getBoundingClientRect();
   const host = document.createElement('div');
   host.id = HIGHLIGHT_HOST_ID;
   host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
   const root = attachPanelShadow(host, { mode: 'closed' });
   const box = document.createElement('div');
-  box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;box-sizing:border-box;border:2px solid #a855f7;background:rgba(168,85,247,.16);border-radius:3px;`;
+  const place = () => {
+    const r = element.getBoundingClientRect();
+    box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;box-sizing:border-box;border:2px solid #a855f7;background:rgba(168,85,247,.16);border-radius:3px;`;
+  };
+  place();
   root.appendChild(box);
   document.documentElement.appendChild(host);
+  let frame = 0;
+  const follow = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      place();
+    });
+  };
+  window.addEventListener('scroll', follow, true);
+  window.addEventListener('resize', follow);
+  const timer = setTimeout(() => clearHighlight(), HIGHLIGHT_MS);
+  clearHighlight = () => {
+    clearTimeout(timer);
+    cancelAnimationFrame(frame);
+    window.removeEventListener('scroll', follow, true);
+    window.removeEventListener('resize', follow);
+    host.remove();
+  };
   return true;
 }
 
-/** Marks match `index` for the DevTools page, which reveals it with `inspect()` in the page's world. */
+/** The elements matching `selector` in `root` and in every open shadow root under it. */
+function queryAllDeep(root: Document | ShadowRoot, selector: string): Element[] {
+  const found = [...root.querySelectorAll(selector)];
+  for (const element of root.querySelectorAll('*')) {
+    if (element.shadowRoot) found.push(...queryAllDeep(element.shadowRoot, selector));
+  }
+  return found;
+}
+
+/**
+ * Marks match `index`, the only element marked, for the DevTools page, which
+ * reveals it with `inspect()` in the page's world. False when it has left the page.
+ */
 function markMatch(index: number): boolean {
+  for (const marked of queryAllDeep(document, `[${REVEAL_MARK}]`)) marked.removeAttribute(REVEAL_MARK);
   const element = lastMatches[index];
-  element?.setAttribute(REVEAL_MARK, '');
-  return !!element;
+  if (!element?.isConnected) return false;
+  element.setAttribute(REVEAL_MARK, '');
+  return true;
 }
 
 const g = globalThis as Record<string, unknown>;

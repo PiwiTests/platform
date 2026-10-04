@@ -1,5 +1,5 @@
 // Builds the extension into dist/ (Chrome, Edge) and dist-firefox/ (Firefox),
-// which differ only in their manifest (Firefox's has no `debugger`). Content scripts and the background
+// which differ only in their manifest (see `chromiumManifest`, `firefoxManifest`). Content scripts and the background
 // service worker are each built as a standalone IIFE (no shared chunks) via
 // Vite's library mode, since chrome.scripting.executeScript({ files: [...] })
 // injects them as plain classic scripts with no module resolution — unlike
@@ -12,7 +12,10 @@
 // Firefox reviewers rebuild the source package and diff the result against the
 // submitted add-on. `--pseudo` replaces the English catalog with a pseudo-localized
 // copy (see `pseudoLocalize`), a development aid that never goes into a release.
-import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+//
+// `buildIdeBundle` builds the recorder a second time, for the editor service: the
+// IDE bundle, which is no part of the extension (see `buildIdeBundle`).
+import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { build } from 'vite';
@@ -33,10 +36,13 @@ export function chromiumManifest(manifest) {
 
 /**
  * The manifest Firefox loads: `manifest.json` without `debugger`, which Firefox
- * does not have. Every feature that uses it falls back to what works without it.
+ * does not have (every feature that uses it falls back to what works without
+ * it), and without `minimum_chrome_version`, a Chromium key Firefox does not
+ * know: its floor is `browser_specific_settings.gecko.strict_min_version`.
  */
 export function firefoxManifest(manifest) {
-  return { ...manifest, permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger') };
+  const { minimum_chrome_version: _chromiumOnly, ...rest } = manifest;
+  return { ...rest, permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger') };
 }
 
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
@@ -71,10 +77,32 @@ const STANDALONE_ENTRIES = [
 /**
  * Values replaced in every bundle. `__PIWI_BUILD_ID__` changes on each build, so
  * the popup and the tools can tell when the background worker still runs an
- * earlier one (see `src/shared/build-id.ts`).
+ * earlier one (see `src/shared/build-id.ts`). `__PIWI_IDE__` is true in the IDE
+ * bundle alone (see `src/shared/ide-build.ts`).
  */
-function defines(buildId) {
-  return { __PIWI_BUILD_ID__: JSON.stringify(buildId) };
+function defines(buildId, { ide = false } = {}) {
+  return { __PIWI_BUILD_ID__: JSON.stringify(buildId), __PIWI_IDE__: JSON.stringify(ide) };
+}
+
+/** The stamp a release build of `version` carries instead of the build time. */
+function releaseBuildId(version) {
+  return `v${version}`;
+}
+
+/**
+ * Whether `dir` holds a release build of `version`: its background bundle
+ * carries that release's stamp, as a string literal in any of the quotes the
+ * minifier writes.
+ */
+export function isReleaseBuild(dir, version) {
+  let bundle;
+  try {
+    bundle = readFileSync(path.join(dir, 'background.js'), 'utf8');
+  } catch {
+    return false;
+  }
+  const stamp = releaseBuildId(version);
+  return ['"', "'", '`'].some((quote) => bundle.includes(`${quote}${stamp}${quote}`));
 }
 
 async function buildStandalone(name, entry, buildId) {
@@ -103,7 +131,7 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  const buildId = release ? `v${manifest.version}` : new Date().toISOString();
+  const buildId = release ? releaseBuildId(manifest.version) : new Date().toISOString();
 
   for (const [name, entry] of STANDALONE_ENTRIES) await buildStandalone(name, entry, buildId);
 
@@ -136,6 +164,75 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
   rmSync(firefoxOutDir, { recursive: true, force: true });
   cpSync(outDir, firefoxOutDir, { recursive: true });
   writeFileSync(path.join(firefoxOutDir, 'manifest.json'), JSON.stringify(firefoxManifest(manifest), null, 2));
+}
+
+/**
+ * The global the IDE bundle's `chrome` references are rewritten to, which its
+ * host installs (`src/ide/host.ts`): `IDE_CHROME_GLOBAL` of
+ * `@piwitests/core/ide-recorder`, which a unit test keeps this equal to.
+ */
+export const IDE_CHROME_GLOBAL = '__piwiIdeChrome';
+
+/**
+ * Every shipped catalog, by language, each message with its text and its
+ * placeholders' contents alone: what the editor service's launcher hands the
+ * IDE bundle in the editor's language.
+ */
+function ideCatalogs() {
+  const localesDir = path.join(root, 'public', '_locales');
+  const catalogs = {};
+  for (const code of readdirSync(localesDir).sort()) {
+    const catalog = JSON.parse(readFileSync(path.join(localesDir, code, 'messages.json'), 'utf8'));
+    catalogs[code] = Object.fromEntries(
+      Object.entries(catalog).map(([key, { message, placeholders }]) => [
+        key,
+        placeholders
+          ? {
+              message,
+              placeholders: Object.fromEntries(
+                Object.entries(placeholders).map(([name, { content }]) => [name, { content }]),
+              ),
+            }
+          : { message },
+      ]),
+    );
+  }
+  return catalogs;
+}
+
+/**
+ * The IDE bundle, for the editor service, into `outDir`: `record-ide.js`, the
+ * recorder (`src/ide/record-ide.ts`) built as one classic script whose every
+ * `chrome` reference reads {@link IDE_CHROME_GLOBAL} instead, so the page's own
+ * `chrome` is never touched, and `record-ide-messages.json`, the catalogs it
+ * shows its texts from. No part of `dist/` or `dist-firefox/`. `release`
+ * stamps the manifest's version instead of the build time, as in
+ * {@link buildExtension}.
+ */
+export async function buildIdeBundle({ outDir: ideOutDir, release = false }) {
+  mkdirSync(ideOutDir, { recursive: true });
+  const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const buildId = release ? releaseBuildId(manifest.version) : new Date().toISOString();
+  await build({
+    root,
+    configFile: false,
+    logLevel: 'warn',
+    // The extension's icons and catalogs stay out: the launcher reads the catalogs from the JSON file below.
+    publicDir: false,
+    define: { ...defines(buildId, { ide: true }), chrome: `globalThis.${IDE_CHROME_GLOBAL}` },
+    build: {
+      outDir: ideOutDir,
+      emptyOutDir: false,
+      lib: {
+        entry: path.join(root, 'src/ide/record-ide.ts'),
+        formats: ['iife'],
+        name: 'Piwi_record_ide',
+        fileName: () => 'record-ide.js',
+      },
+      rollupOptions: { output: { extend: true } },
+    },
+  });
+  writeFileSync(path.join(ideOutDir, 'record-ide-messages.json'), JSON.stringify(ideCatalogs()));
 }
 
 const ACCENTED = {

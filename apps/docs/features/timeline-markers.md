@@ -42,7 +42,10 @@ Reading markers is available to any signed-in user with access to the project. C
 
 Piwi can create markers for you when a run's tooling changes. On each finished run it compares the run against the previous run **in the same environment** and, when the **Playwright version** or **reporter version** changed, adds an `auto` marker (category `config`) at that run's time — for example _Playwright 1.49.0 → 1.50.0_. Auto markers are labeled with a small sparkle icon and can be edited or deleted like any other.
 
-This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn it off. See the [configuration reference](/reference/configuration).
+A run flagged as an [environment incident](./environment-incidents) gets an `auto` marker in the `incident`
+category, linked to the run.
+
+This is enabled by default. Set `PIWI_AUTO_MARKERS=false` to turn both off. See the [configuration reference](/reference/configuration).
 
 ## Release markers keep their run
 

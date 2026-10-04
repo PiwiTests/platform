@@ -628,7 +628,7 @@ export async function ingestRequestGraph(
 /**
  * Persist `changes` edges for a diff: the head commit and every ticket named in
  * the pull request point at each changed file. Files are edge endpoints, not
- * materialized nodes in this milestone. Upsert semantics, never truncate. Rows
+ * materialized nodes. Upsert semantics, never truncate. Rows
  * carry the run's `branch` tag, like the reach graph.
  */
 export async function ingestChangesEdges(
@@ -840,6 +840,16 @@ export async function pruneStaleBranchGraphRows(db: DB, now: Date = new Date()):
   return nodes.length + edges.length;
 }
 
+/** Whether any run of the project recorded a branch. */
+async function projectHasKnownBranch(db: DB, projectId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.projectId, projectId), sql`${testRuns.branch} is not null`, sql`${testRuns.branch} <> ''`))
+    .limit(1);
+  return row !== undefined;
+}
+
 /** How many recent canonical runs are scanned to find the window's non-probe floor. */
 const STALE_NODE_RUN_SCAN = STALE_NODE_RUNS * 10;
 
@@ -848,8 +858,8 @@ const STALE_NODE_RUN_SCAN = STALE_NODE_RUNS * 10;
  * gap, independently of `PIWI_RETENTION_DAYS` (which is opt-in and cannot be
  * relied on).
  *
- * The window counts canonical, non-lab runs only — the runs that actually bump
- * a canonical node's `last_seen_run_id`. Counting pull-request and lab runs (as
+ * The window counts default-branch, non-lab runs only — the runs that bump a
+ * canonical node's `last_seen_run_id`. Counting pull-request and lab runs (as
  * a naive "last 30 runs" does) lets thirty pull-request runs with no default-branch
  * run in between prune every canonical node, wiping the graph and closing every
  * gap built on it. A node backing any open, snoozed or accepted gap is kept so
@@ -870,13 +880,18 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       .where(eq(projects.id, projectId));
     const defaultBranch = proj ? await resolveStoredDefaultBranch(db, proj) : FALLBACK_DEFAULT_BRANCH;
 
-    // Canonical runs (on the default branch, so tagged null) that are not lab
-    // runs — the only runs that bump a canonical node's last-seen. Scan a bounded
-    // window and drop lab runs before taking the floor.
+    // Runs on the default branch that are not lab runs. Scan a bounded window
+    // and drop lab runs before taking the floor. A run whose branch is unknown
+    // counts only in a project that never recorded a branch: elsewhere it may be
+    // a pull-request run, and counting it would age canonical nodes it never saw.
+    const branchKnown = await projectHasKnownBranch(db, projectId);
+    const onDefault = branchKnown
+      ? eq(testRuns.branch, defaultBranch)
+      : or(isNull(testRuns.branch), eq(testRuns.branch, defaultBranch));
     const canonicalRuns = await db
       .select({ id: testRuns.id, metadata: testRuns.metadata })
       .from(testRuns)
-      .where(and(eq(testRuns.projectId, projectId), or(isNull(testRuns.branch), eq(testRuns.branch, defaultBranch))))
+      .where(and(eq(testRuns.projectId, projectId), onDefault))
       .orderBy(sql`${testRuns.id} desc`)
       .limit(STALE_NODE_RUN_SCAN);
     const canonical = canonicalRuns.filter((r) => !isLabRun(r.metadata)).slice(0, STALE_NODE_RUNS);

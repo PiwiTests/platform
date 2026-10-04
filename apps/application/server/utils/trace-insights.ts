@@ -20,6 +20,7 @@ import type {
   TraceSnapshotStep,
   TraceStackFrame,
 } from '../../types/api';
+import { safeStorageSegment } from './sanitize-filename';
 
 /** Reads one `resources/{name}` file of the trace — from the shared pool on the server, from the ZIP itself in the demo. */
 export type TraceResourceReader = (name: string) => Promise<Uint8Array | null>;
@@ -357,8 +358,8 @@ export function parseNetworkTexts(texts: string[]): TraceResourceSnapshot[] {
  * both spellings, exactly like `trace-events.ts` does for DOM-snapshot assets.
  */
 function resourceBodyName(carrier: { _sha1?: string; _file?: string } | undefined): string | null {
-  if (carrier?._sha1) return carrier._sha1;
-  if (carrier?._file) return carrier._file.replace(/^resources\//, '');
+  if (carrier?._sha1) return safeStorageSegment(carrier._sha1);
+  if (carrier?._file) return safeStorageSegment(carrier._file.replace(/^resources\//, ''));
   return null;
 }
 

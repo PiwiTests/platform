@@ -3,11 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { syncCron, resolveSyncMinutes } from './shared/integrations/sync-config';
 import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
-
-// The tracker status-pull cadence, derived from the env var at start time.
-const integrationsSyncCron = syncCron(resolveSyncMinutes(process.env.PIWI_INTEGRATIONS_SYNC_MINUTES));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,6 +28,9 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 // bundles nothing — the tools then point at the published copies.
 const docsDir = resolve(__dirname, '../docs');
 const changelogDir = resolve(__dirname, '../..');
+// The workflow skills `piwi skills add` installs, served by the MCP server as
+// prompts (prompts/list, prompts/get) in the version of this build.
+const skillsDir = resolve(__dirname, '../../packages/reporter/templates/skills');
 const serverAssets = [
   ...(existsSync(resolve(docsDir, 'guide'))
     ? [
@@ -47,6 +46,7 @@ const serverAssets = [
   ...(existsSync(resolve(changelogDir, 'CHANGELOG.md'))
     ? [{ baseName: 'piwi-changelog', dir: changelogDir, pattern: 'CHANGELOG.md', ignore: ['**/node_modules/**'] }]
     : []),
+  ...(existsSync(skillsDir) ? [{ baseName: 'piwi-skills', dir: skillsDir, pattern: '*/SKILL.md' }] : []),
 ];
 
 // Read the demo seed version hash at build time so it can be injected into
@@ -82,11 +82,8 @@ const demoPwaConfig = isDemo
         enabled: false,
       },
     }
-  : // The option is `disable`; `disabled` is silently ignored, which left the
-    // normal build generating a Workbox service worker nobody asked for and
-    // every page registering `/sw.js` — a 404 on the dev server (logged as a
-    // Vue Router "No match found" warning on every page load) and a live
-    // asset-caching worker on a production build.
+  : // The option is `disable` (`disabled` is ignored): the normal build
+    // generates no Workbox service worker and no page registers `/sw.js`.
     { disable: true };
 
 export default defineNuxtConfig({
@@ -103,6 +100,15 @@ export default defineNuxtConfig({
     theme: {
       colors: ['primary', 'secondary', 'success', 'info', 'warning', 'error', 'flaky'],
     },
+  },
+
+  // The light/dark/system choice lives in a cookie, read by the server for the
+  // first render and shared by every port on the host (the desktop app picks a
+  // free one when its preferred port is taken).
+  colorMode: {
+    storage: 'cookie',
+    storageKey: 'piwi-color-mode',
+    cookieAttrs: { maxAge: 60 * 60 * 24 * 365, path: '/', sameSite: 'lax' },
   },
 
   components: {
@@ -122,11 +128,11 @@ export default defineNuxtConfig({
     enabled: false,
   },
 
-  // Production builds emit no server source maps. Carrying them through the Vite
-  // SSR build and the Nitro bundle added over a gigabyte to the build's peak heap
-  // (enough to run out of memory at Node's 4 GB default in the Docker image), and
-  // nothing reads them: the server runs without --enable-source-maps and the
-  // desktop staging strips every *.map. `nuxt dev` keeps them.
+  // Production builds emit no server source maps: through the Vite SSR build and
+  // the Nitro bundle they add over a gigabyte to the build's peak heap (past
+  // Node's 4 GB default in the Docker image), and nothing reads them — the server
+  // runs without --enable-source-maps and the desktop staging strips every *.map.
+  // `nuxt dev` keeps them.
   $production: {
     sourcemap: { server: false },
   },
@@ -273,15 +279,6 @@ export default defineNuxtConfig({
   // dev servers (e.g., auth server in CI, demo build).
   buildDir: process.env.PIWI_BUILD_DIR || undefined,
 
-  routeRules: {
-    '/api/**': {
-      cors: true,
-    },
-    '/mcp': {
-      cors: true,
-    },
-  },
-
   experimental: {
     // Disable buildCache in demo mode: restoring an SSR cache when generating
     // a SPA (ssr: false) causes Rollup to look for client.precomputed.mjs
@@ -382,26 +379,27 @@ export default defineNuxtConfig({
       openAPI: true,
       // Windows-only workaround to avoid Nitro build issues caused by ESM/CJS externals
       // resolution on Windows. legacyExternals swaps the plugin that traces the externals
-      // above for Nitro's older one, which keeps dependency resolution compatible with
-      // older behavior and prevents intermittent build timeouts / failures during Nitro
-      // server bundling on Windows. `nuxi build` sets NODE_ENV=production before it
-      // loads this file.
+      // above for Nitro's older one, which avoids intermittent build timeouts / failures
+      // during Nitro server bundling on Windows. `nuxi build` sets NODE_ENV=production
+      // before it loads this file.
       // See: https://github.com/nuxt/nuxt/issues/31836
-      // Never in the demo, whose only server bundle is the prerenderer: the legacy
+      // Never in the demo, whose only server bundle is the prerenderer: the older
       // resolver resolves bare imports from the project root rather than the importing
-      // file, which hands Nitro's runtime the hoisted hookable 6 in place of its own
+      // file, which would hand Nitro's runtime the hoisted hookable 6 in place of its own
       // hookable 5 (whose callHook() always returns a promise), and every prerendered
-      // route answers 500.
+      // route would answer 500.
       legacyExternals: !isDemo && process.platform === 'win32' && process.env.NODE_ENV === 'production',
       tasks: true,
     },
     scheduledTasks: {
-      // Run the notification, auto-heal and integration outbox sweepers every minute
-      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep'],
+      // Run the notification, auto-heal and integration outbox sweepers every minute. The
+      // tracker status pull ticks here too and runs on the cadence PIWI_INTEGRATIONS_SYNC_MINUTES
+      // sets at run time (default every 15 min).
+      '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync'],
       // Fire the report schedules that are due (a missed tick fires on the next sweep)
       '*/5 * * * *': ['reports:schedule'],
-      // Pull tracker statuses back on the configured cadence (default every 15 min).
-      [integrationsSyncCron]: ['integrations:sync'],
+      // Read the final state of the pull requests a gate failed on (overrides and escapes)
+      '*/10 * * * *': ['gate:sweep'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged

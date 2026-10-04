@@ -34,7 +34,7 @@ resolution from `.piwi/selection-cache.json` when it has one): a reporting probl
 `piwi select <key>` resolves and prints the Playwright arguments instead of running them, for a two-step job. Three
 flags shape a resolution:
 
-- `--shard i/n` keeps only shard _i_ of _n_, split so each shard's summed test duration is even. The split is
+- `--shard i/n` keeps only shard _i_ of _n_ (up to 1,000 shards), split so each shard's summed test duration is even. The split is
   **lock-aware**: every test that shares a [lock](/reference/test-metadata#test-locks) goes to the same shard, because
   Playwright serializes lock holders only inside one process. Shard with `piwi run --shard` rather than Playwright's
   own `--shard`, which would split the lock; a resolution whose tests share a lock carries a `split-lock` warning.
@@ -42,8 +42,8 @@ flags shape a resolution:
   so a `--require-selection` gate still sees the whole set.
 - `--budget 5m` caps the total time for this resolution.
 
-Jobs split with `piwi run --shard` are not merged into one run, so `--require-selection` sees one job's share. Every
-flag and the output formats are in the [CLI reference](/reference/cli#select-run).
+`piwi run --shard` jobs merge into one run that still covers the whole selection. Every flag and the output formats are
+in the [CLI reference](/reference/cli#select-run).
 
 ## Built-in selections
 
@@ -146,17 +146,16 @@ get the same data from `analyze_selections`.
 
 ## Impact-from-diff
 
-`piwi run impact --base <ref>` runs only the tests your change affects. The reporter computes the working-tree diff
-against `<ref>` locally (`git diff --name-only`), and the dashboard maps those files to tests through observed edges:
+`piwi run impact --base <ref>` runs only the tests your change affects. The reporter diffs the working tree against
+`<ref>` (`git diff --name-only`), and the dashboard maps the files to tests through observed edges:
 
 - **Direct**: a changed file that _is_ a test file maps to the tests defined in it.
-- **Reach**: a changed support file (a page object, helper, or app module) maps to the tests whose most recent
-  execution ran through it, per their captured source frames.
+- **Reach**: a changed support file maps to the tests that failed inside it, per their source frames.
 - **Code reach**: a changed application file maps to the tests that executed it
   ([code reach](/features/code-reach)).
 
-It fails safe: an unmapped _source_ file widens the run to the full suite with a warning. A docs-only change runs
-nothing.
+It fails safe, widening to the full suite with a warning, when a changed file maps to no test (stylesheets too) or
+only through source frames, which miss passing tests. A docs-only change runs nothing.
 
 ## Suggestions
 

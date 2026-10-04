@@ -347,6 +347,19 @@ function repairScenarios(fixture: DialectFixture, open: () => Promise<TestDataba
       buildSnapshot(dialect),
     );
 
+  test('tells, before migrating, which tables the database already has', async () => {
+    const database = await open();
+    try {
+      const build = buildFolder();
+      const target = database.target(build);
+      expect(await target.tableExists('widgets')).toBe(false);
+      await applyMigrations(target, build, quietLog().log);
+      expect(await target.tableExists('widgets')).toBe(true);
+    } finally {
+      await database.close?.();
+    }
+  });
+
   test('applies the skipped and regenerated migrations, keeps the data and drops the orphaned record', async () => {
     const database = await open();
     try {

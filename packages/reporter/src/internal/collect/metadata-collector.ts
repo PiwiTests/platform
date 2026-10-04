@@ -4,6 +4,8 @@ import { errorMessage } from '../support/errors.js';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 import { Logger } from '../support/logger.js';
 import type { SuiteConfigEntry } from '../../types.js';
+import { isRunOriginKind, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, type RunOrigin } from '@piwitests/core/wire';
+import { PIWI_ORIGIN_ENV } from '../config/env.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -101,6 +103,37 @@ export function resolveScmBaseBranch(env: Env): string | undefined {
   return trimmed ? normalizeRef(trimmed) : undefined;
 }
 
+/**
+ * True when the environment is a CI job: one of the providers `collectCiInfo`
+ * names, or any system that sets `CI`.
+ */
+export function detectCi(env: Env): boolean {
+  return Boolean(
+    env.JENKINS_URL ||
+    env.GITHUB_ACTIONS ||
+    env.GITLAB_CI ||
+    env.CIRCLECI ||
+    env.TRAVIS ||
+    env.TF_BUILD ||
+    env.BITBUCKET_BUILD_NUMBER ||
+    (env.CI && env.CI !== 'false' && env.CI !== '0'),
+  );
+}
+
+/**
+ * What launched the run: `PIWI_ORIGIN` when it names a known kind, else `ci`
+ * in a CI job and `local` elsewhere. `PIWI_ORIGIN_REF` rides along when it is a
+ * valid ref. `warn` hears about a `PIWI_ORIGIN` that names no known kind.
+ */
+export function resolveRunOrigin(env: Env, warn?: (message: string) => void): RunOrigin {
+  const raw = env[PIWI_ORIGIN_ENV.kind]?.trim();
+  let kind: RunOrigin['kind'] = detectCi(env) ? 'ci' : 'local';
+  if (raw && isRunOriginKind(raw)) kind = raw;
+  else if (raw) warn?.(`Ignoring ${PIWI_ORIGIN_ENV.kind}=${raw}: not a known run origin, recording "${kind}"`);
+  const ref = parseRunOriginRef(env[PIWI_ORIGIN_ENV.ref]);
+  return ref === undefined ? { kind } : { kind, ref };
+}
+
 /** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */
 function normalizeRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, '');
@@ -121,7 +154,10 @@ export class MetadataCollector {
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
     // The directory spec paths are made relative to (see `testFile` in the reporter); the
     // dashboard strips it from the absolute locations Playwright gives steps.
-    const metadata: Record<string, unknown> = { workingDir: process.cwd() };
+    const metadata: Record<string, unknown> = {
+      workingDir: process.cwd(),
+      [RUN_ORIGIN_METADATA_KEY]: resolveRunOrigin(process.env, (message) => this.logger.warn(message)),
+    };
 
     if (options.projectDescription) metadata.projectDescription = options.projectDescription;
     if (options.relatedIssue) metadata.relatedIssue = options.relatedIssue;
@@ -130,7 +166,7 @@ export class MetadataCollector {
     if (options.customData) metadata.customData = options.customData;
 
     if (options.collectScmInfo) {
-      const scm = this.collectScmInfo(options);
+      const scm = this.collectScmInfo();
       if (scm) metadata.scm = scm;
     }
 
@@ -237,7 +273,7 @@ export class MetadataCollector {
     return { suitePath, suiteConfig };
   }
 
-  private collectScmInfo(_options: any): Record<string, string> | undefined {
+  private collectScmInfo(): Record<string, string> | undefined {
     const scm: Record<string, string> = {};
     let gitBranch: string | undefined;
     try {
@@ -276,7 +312,7 @@ export class MetadataCollector {
 
   private collectCiInfo(): Record<string, string | boolean | undefined> | undefined {
     // Env vars are `string | undefined`; undefined values are dropped on JSON
-    // serialization, so collecting them directly preserves the prior behavior.
+    // serialization, so they are collected as-is.
     const ci: Record<string, string | boolean | undefined> = {};
     const env = process.env;
 
@@ -324,6 +360,15 @@ export class MetadataCollector {
         ci.buildUrl = `${env.SYSTEM_TEAMFOUNDATIONSERVERURI}${env.SYSTEM_TEAMPROJECT}/_build/results?buildId=${env.BUILD_BUILDID}`;
       }
       ci.jobName = env.AGENT_JOBNAME;
+    } else if (env.BITBUCKET_BUILD_NUMBER) {
+      ci.provider = 'Bitbucket Pipelines';
+      ci.buildNumber = env.BITBUCKET_BUILD_NUMBER;
+      ci.pipelineId = env.BITBUCKET_PIPELINE_UUID;
+      ci.jobId = env.BITBUCKET_STEP_UUID;
+      ci.repository = env.BITBUCKET_REPO_FULL_NAME;
+      if (env.BITBUCKET_REPO_FULL_NAME) {
+        ci.buildUrl = `https://bitbucket.org/${env.BITBUCKET_REPO_FULL_NAME}/pipelines/results/${env.BITBUCKET_BUILD_NUMBER}`;
+      }
     } else if (env.CI) {
       ci.provider = 'Unknown CI';
       ci.detected = true;

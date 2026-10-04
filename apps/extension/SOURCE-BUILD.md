@@ -59,3 +59,7 @@ Every bundle carries a build stamp (`__PIWI_BUILD_ID__`, read by `src/shared/bui
 build stamps the build time; `--release`, which `extension:build:release` passes, stamps the version
 (`v<version>`) instead. That stamp is the only value a build takes from outside the sources, so a release
 build of the same sources always produces the same files.
+
+`build.mjs` also exports `buildIdeBundle`, which the build of the editor plugins runs and the add-on's build never
+does: it builds the recorder a second time (`src/ide/`), for a browser the editor opens. `__PIWI_IDE__` is true in that
+bundle alone and false in every bundle of the add-on.

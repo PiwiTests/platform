@@ -1,15 +1,18 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
+import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import { maskTokenLike } from '@piwitests/core/mask';
 import { capStepValue } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
+import { withoutIncidentMetadata } from '#shared/run-incident';
+import { reporterIngestHealth } from '#shared/ingest-health';
 
 /**
  * URL and network data sanitization helpers.
  *
  * These are used by both submit.post.ts and upload.post.ts to strip sensitive
  * information (query parameters, fragments) from network request URLs and web
- * vitals navigation URLs before they are persisted in the database and exposed
- * through unauthenticated GET endpoints.
+ * vitals navigation URLs before they are persisted in the database and returned
+ * by the read endpoints.
  */
 
 /**
@@ -56,13 +59,9 @@ export function sanitizeWebVitals(vitals: Record<string, unknown> | null | undef
 }
 
 /**
- * Sanitize console log entries by stripping the query string from the URL part
- * of each entry's `location` (formatted as `url:line:column`).
- */
-/**
  * Strip userinfo (username:password) from a Git remote URL.
  * Handles `https://token@host/repo` and `https://user:pass@host/repo` patterns.
- * Returns the sanitised URL, or the original string if parsing fails.
+ * Returns the sanitized URL, or the original string if parsing fails.
  */
 export function sanitizeGitRemoteUrl(url: string): string {
   try {
@@ -78,18 +77,28 @@ export function sanitizeGitRemoteUrl(url: string): string {
 }
 
 /**
- * Sanitize run-level metadata by stripping credentials from SCM remote URLs.
- * This prevents token-leakage through public GET endpoints (§1.7).
+ * Sanitize run-level metadata by stripping credentials from SCM remote URLs,
+ * so the read endpoints never return a token embedded in the remote URL. The
+ * run's origin is kept only when it names a known kind, rebuilt as
+ * `{ kind, ref? }`.
  */
 export function sanitizeMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!metadata || typeof metadata !== 'object') return null;
 
-  const meta = { ...metadata };
+  // A run's incident flag and a person's decision about it are the server's own. The
+  // reporter may name its submit fallback; the ingest counts are the server's own.
+  const meta = reporterIngestHealth(withoutIncidentMetadata(metadata));
 
   // Sanitize scm.remoteUrl
   const scm = meta.scm as Record<string, unknown> | null | undefined;
   if (scm && typeof scm.remoteUrl === 'string') {
     meta.scm = { ...scm, remoteUrl: sanitizeGitRemoteUrl(scm.remoteUrl) };
+  }
+
+  if (RUN_ORIGIN_METADATA_KEY in meta) {
+    const origin = parseRunOrigin(meta[RUN_ORIGIN_METADATA_KEY]);
+    if (origin) meta[RUN_ORIGIN_METADATA_KEY] = origin;
+    else delete meta[RUN_ORIGIN_METADATA_KEY];
   }
 
   return meta;
@@ -191,6 +200,10 @@ export function sanitizeAiUsage(usage: unknown): { entries: string[]; intents?: 
   return intents.length > 0 ? { entries, intents } : { entries };
 }
 
+/**
+ * Sanitize console log entries by stripping the query string from the URL part
+ * of each entry's `location` (formatted as `url:line:column`).
+ */
 export function sanitizeConsoleLogs(
   logs: Array<Record<string, unknown>> | null | undefined,
 ): Array<Record<string, unknown>> | null {
@@ -291,14 +304,80 @@ function capStepParams(
   return count > 0 ? out : null;
 }
 
+/** The `category` of the marker step that stands where {@link capSteps} dropped steps. */
+export const DROPPED_STEPS_CATEGORY = 'piwi:dropped';
+
+function stepFailed(step: unknown): boolean {
+  if (!step || typeof step !== 'object' || Array.isArray(step)) return false;
+  const s = step as Record<string, unknown>;
+  return s.failed === true || (s.error != null && s.error !== '');
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** How many of `steps` the step cap leaves out: all but `limit - 1` once the marker step takes a slot. */
+function droppedStepCount(length: number, limit: number): number {
+  return length <= limit ? 0 : length - Math.max(0, limit - 1);
+}
+
+/** How many steps {@link capSteps} leaves out of a stored steps array. */
+export function countDroppedSteps(value: unknown, limits: IngestLimits): number {
+  return Array.isArray(value) ? droppedStepCount(value.length, limits.steps) : 0;
+}
+
 /**
- * Cap the stored steps array (count), and re-normalize each step's `subtitle`
- * and `params` against the ingest limits, masking token-shaped strings. Applied
- * on ingest so a payload that skipped the reporter is bounded all the same.
+ * The steps kept under the count cap, in their original order: every step that
+ * failed or carries an error first (the failing step and the chain around it),
+ * then the earliest steps in the room left. A marker step stands at the first
+ * gap and names how many steps were dropped; it takes the depth and start time
+ * of the next kept step (of the first dropped one when none follows), so the
+ * stored list still rebuilds into a tree.
+ */
+function keepSteps(steps: unknown[], limit: number): unknown[] {
+  if (steps.length <= limit) return steps;
+  const room = Math.max(0, limit - 1);
+  const kept = new Set<number>();
+  steps.forEach((step, i) => {
+    if (kept.size < room && stepFailed(step)) kept.add(i);
+  });
+  for (let i = 0; i < steps.length && kept.size < room; i++) kept.add(i);
+
+  const dropped = droppedStepCount(steps.length, limit);
+  const out: unknown[] = [];
+  let marked = false;
+  steps.forEach((step, i) => {
+    if (kept.has(i)) {
+      out.push(step);
+      return;
+    }
+    if (marked) return;
+    marked = true;
+    const nextKept = steps.findIndex((_, j) => j > i && kept.has(j));
+    const anchor = (nextKept === -1 ? step : steps[nextKept]) as Record<string, unknown> | null;
+    const depth = finiteNumber(anchor?.depth);
+    const startTime = finiteNumber(anchor?.startTime);
+    out.push({
+      title: `${dropped} steps not stored`,
+      category: DROPPED_STEPS_CATEGORY,
+      duration: 0,
+      ...(depth !== null ? { depth } : {}),
+      ...(startTime !== null ? { startTime } : {}),
+    });
+  });
+  return out;
+}
+
+/**
+ * Cap the stored steps array (count), keeping the steps that failed, and
+ * re-normalize each step's `subtitle` and `params` against the ingest limits,
+ * masking token-shaped strings. Applied on ingest so a payload that skipped
+ * the reporter is bounded all the same.
  */
 export function capSteps(value: unknown, limits: IngestLimits): unknown {
   if (!Array.isArray(value)) return value ?? null;
-  return value.slice(0, limits.steps).map((step) => {
+  return keepSteps(value, limits.steps).map((step) => {
     if (!step || typeof step !== 'object' || Array.isArray(step)) return step;
     const s = step as Record<string, unknown>;
     const out: Record<string, unknown> = { ...s };
@@ -314,6 +393,11 @@ export function capSteps(value: unknown, limits: IngestLimits): unknown {
     }
     return out;
   });
+}
+
+/** How many entries {@link capConsoleLogs} leaves out of a console log. */
+export function countDroppedConsoleEntries(logs: unknown, limits: IngestLimits): number {
+  return Array.isArray(logs) ? Math.max(0, logs.length - limits.consoleEntries) : 0;
 }
 
 /**

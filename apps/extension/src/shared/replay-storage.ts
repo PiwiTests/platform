@@ -11,8 +11,12 @@ import type { FallbackReason, ReplayDriver } from './cdp-input.js';
  */
 export const REPLAY_KEY = 'piwiReplay';
 
-/** `skipped`: a step the person chose to leave out, such as a file they did not choose. */
-export type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped';
+/**
+ * `skipped`: a step the person chose to leave out, such as a file they did
+ * not choose. `manual`: a step the replay could not play, which the person
+ * did on the page.
+ */
+type ReplayStepStatus = 'done' | 'passed' | 'failed' | 'diverged' | 'skipped' | 'manual';
 
 export interface ReplayStepResult {
   status: ReplayStepStatus;
@@ -24,7 +28,7 @@ export interface ReplayStepResult {
   driver?: ReplayDriver;
 }
 
-export type ReplayStatus = 'running' | 'paused' | 'done' | 'stopped';
+type ReplayStatus = 'running' | 'paused' | 'done' | 'stopped';
 
 export interface ReplayState {
   id: string;
@@ -57,6 +61,20 @@ export interface ReplayState {
    * page's events, it stays there.
    */
   driver?: { driver: ReplayDriver; reason: FallbackReason | null } | null;
+  /**
+   * The viewport the steps were recorded at from the current step on, when
+   * they say one, and whether the replay set it on the tab (it can only with
+   * trusted input).
+   */
+  viewport?: { width: number; height: number; set: boolean } | null;
+  /** The step the replay could not play and handed to the person, waiting for them, and why. */
+  handOver?: { step: number; reason: string } | null;
+  /**
+   * Set once the replay has ended for good: its tab showed the verdict and
+   * told the worker, or the tab was closed. A replay stopped or done without
+   * it shows its verdict on the next page its tab loads.
+   */
+  finished?: boolean;
 }
 
 function isReplayState(value: unknown): value is ReplayState {
@@ -74,16 +92,41 @@ export async function setReplayState(state: ReplayState): Promise<void> {
   await sessionArea().set({ [REPLAY_KEY]: state });
 }
 
-export async function updateReplayState(change: (state: ReplayState) => ReplayState): Promise<ReplayState | null> {
+/**
+ * Changes the stored replay. With `replayId`, only that replay: a replay
+ * started meanwhile is left as it is, and the answer is null.
+ */
+export async function updateReplayState(
+  change: (state: ReplayState) => ReplayState,
+  replayId?: string,
+): Promise<ReplayState | null> {
   const state = await getReplayState();
-  if (!state) return null;
+  if (!state || (replayId !== undefined && state.id !== replayId)) return null;
   const next = change(state);
   await setReplayState(next);
   return next;
 }
 
-export async function clearReplayState(): Promise<void> {
-  await sessionArea().remove(REPLAY_KEY);
+/**
+ * The tab a replay plays in. Only the background worker writes it, apart
+ * from the replay's own state, which the replay script rewrites on every step.
+ */
+const REPLAY_TAB_KEY = 'piwiReplayTab';
+
+export interface ReplayTab {
+  replayId: string;
+  tabId: number;
+}
+
+export async function getReplayTab(): Promise<ReplayTab | null> {
+  const value = (await sessionArea().get(REPLAY_TAB_KEY))[REPLAY_TAB_KEY] as Partial<ReplayTab> | undefined;
+  return typeof value?.replayId === 'string' && typeof value.tabId === 'number'
+    ? { replayId: value.replayId, tabId: value.tabId }
+    : null;
+}
+
+export async function setReplayTab(tab: ReplayTab): Promise<void> {
+  await sessionArea().set({ [REPLAY_TAB_KEY]: tab });
 }
 
 /** A new replay of `steps` on `origin`, from its first step. */
@@ -116,7 +159,7 @@ export function newReplayState(
  * apart from the replay's state (which each step rewrites whole) under the
  * replay's evidence token: entries from an older replay are dropped.
  */
-export const REPLAY_EVIDENCE_KEY = 'piwiReplayEvidence';
+const REPLAY_EVIDENCE_KEY = 'piwiReplayEvidence';
 
 export interface ReplayEvidence {
   token: string;

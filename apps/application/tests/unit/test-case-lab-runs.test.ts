@@ -83,7 +83,7 @@ describe('test case stats leave lab runs out', () => {
       passRate: 67,
       lastExecutionId: 3,
     });
-    expect(testCase!.lastRunAt).toBe(at(30).getTime());
+    expect(testCase!.lastRunAt).toEqual(at(30));
     expect(testCase!.recentExecutions.map((e: { id: number }) => e.id)).toEqual([3, 2, 1]);
   });
 

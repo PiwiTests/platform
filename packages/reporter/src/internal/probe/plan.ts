@@ -6,6 +6,7 @@
  */
 
 import type { ProbeFault } from './faults.js';
+import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 
 /** One (test, route, fault) pair the server's plan asks this run to apply. */
 export interface ProbePlanItem {
@@ -34,10 +35,10 @@ export interface ProbePlan {
  * The run-metadata stamp that marks a probe run. Merged into the run metadata so
  * the server routes the run to its silent path (no clusters, regression signals,
  * notifications or pull-request feedback). Must match the server's
- * `PROBE_RUN_METADATA_KEY`.
+ * `PROBE_RUN_METADATA_KEY`. The run's origin says `probe` too.
  */
 export function probeRunMetadata(base: Record<string, unknown> = {}): Record<string, unknown> {
-  return { ...base, piwiProbe: true };
+  return { ...base, piwiProbe: true, [RUN_ORIGIN_METADATA_KEY]: { kind: 'probe' } };
 }
 
 /** Split a route key `METHOD /pattern` into its method and path pattern. */
@@ -121,13 +122,4 @@ export function shouldAct(state: ProbeState, match: 'all' | number): boolean {
   if (!state.navigated) return false;
   state.matches += 1;
   return match === 'all' || state.matches === Math.max(1, match);
-}
-
-/**
- * Decide whether this matching request is the one to mutate: only after the
- * first navigation, and only the Nth match (default the first). Advances the
- * match counter, so it returns true exactly once per test.
- */
-export function shouldMutate(state: ProbeState, item: { nth?: number }): boolean {
-  return shouldAct(state, item.nth ?? 1);
 }

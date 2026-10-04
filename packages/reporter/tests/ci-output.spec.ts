@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  emitResourceSummary,
   emitRunOutputs,
   ciBuildUrlFromMetadata,
   SUMMARY_MAX_FAILURES,
@@ -173,6 +174,23 @@ describe('emitRunOutputs — GitHub Actions', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
     emitRunOutputs(OUTPUT, silentLogger, undefined, { GITHUB_ACTIONS: 'true' });
     expect(stdout).toHaveBeenCalledWith('::notice title=Piwi test run::https://dash.example.com/test-runs/42\n');
+  });
+});
+
+describe('emitResourceSummary', () => {
+  const lines = ['Resources: 1 leak', '  leaked   context     tests/cart.spec.ts:4 · 1 test · open 2.0 s past its test'];
+
+  it('adds the resource summary to the GitHub job summary as preformatted text', () => {
+    const summaryFile = path.join(tmpDir, 'gh-summary');
+    emitResourceSummary(lines, silentLogger, { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summaryFile });
+    expect(fs.readFileSync(summaryFile, 'utf8')).toBe(['### Piwi resources', '', '```text', ...lines, '```', '', ''].join('\n'));
+  });
+
+  it('writes nothing outside GitHub Actions, or with nothing to report', () => {
+    const summaryFile = path.join(tmpDir, 'gh-summary');
+    emitResourceSummary(lines, silentLogger, { GITHUB_STEP_SUMMARY: summaryFile });
+    emitResourceSummary([], silentLogger, { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summaryFile });
+    expect(fs.existsSync(summaryFile)).toBe(false);
   });
 });
 

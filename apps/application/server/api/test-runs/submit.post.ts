@@ -1,18 +1,21 @@
 import { sql } from 'drizzle-orm';
 import { getDatabase } from '../../database';
-import { projects, testRuns } from '../../database/schema';
+import { testRuns } from '../../database/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
-import { parseLocation } from '../../utils/parse-location';
+import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runEventBus } from '../../utils/run-events';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { getProjectScope } from '../../utils/project-access';
+import { resolveIngestProject } from '../../utils/ingest-project';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -55,37 +58,12 @@ export default eventHandler(async (event) => {
     });
   }
 
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any);
 
-  // Get or create project
-  const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
-  let project = existingProjects[0];
-
-  if (project) {
-    if (!scopeAllows(scope, project.id)) {
-      throw apiError({ statusCode: 403, message: 'No access to this project' });
-    }
-  } else {
-    if (scope !== 'all') {
-      throw apiError({ statusCode: 403, message: 'Cannot create a new project — no global access' });
-    }
-    const result = await db
-      .insert(projects)
-      .values({
-        name: body.projectName,
-        description: body.projectDescription || null,
-      })
-      .returning();
-    project = result[0];
-  }
-
-  if (!project) {
-    throw apiError({
-      statusCode: 500,
-      message: 'Failed to create or retrieve project',
-    });
-  }
+  const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
   const shardTotal = body.shardTotal as number | undefined;
   const instanceId = body.instanceId || null;
@@ -132,6 +110,8 @@ export default eventHandler(async (event) => {
           duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${body.duration ?? 0} THEN coalesce(${testRuns.duration}, 0) ELSE ${body.duration ?? 0} END`,
         })
         .where(eq(testRuns.id, existingRun.id));
+      // This shard's resource report, in its own row next to the other shards'.
+      if (incomingResources) await saveResourceReportPart(db, existingRun.id, incomingResources);
       await applyReporterKeep(db, existingRun.id, body.keep);
 
       // Insert test cases if provided
@@ -168,6 +148,7 @@ export default eventHandler(async (event) => {
             pageInventory: testCase.pageInventory,
             locatorPages: testCase.locatorPages,
             codeReach: testCase.codeReach,
+            resources: testCase.resources ?? null,
             aiUsage: testCase.aiUsage,
             consoleLogs: testCase.consoleLogs,
             dialogs: testCase.dialogs,
@@ -269,6 +250,7 @@ export default eventHandler(async (event) => {
       message: 'Failed to create test run',
     });
   }
+  if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
   await applyReporterKeep(db, testRun.id, body.keep);
 
   // Insert test cases if provided and calculate flaky tests
@@ -298,6 +280,7 @@ export default eventHandler(async (event) => {
         pageInventory?: unknown;
         locatorPages?: unknown;
         codeReach?: unknown;
+        resources?: unknown;
         aiUsage?: unknown;
         consoleLogs?: unknown;
         dialogs?: unknown;
@@ -352,6 +335,7 @@ export default eventHandler(async (event) => {
           pageInventory: testCase.pageInventory,
           locatorPages: testCase.locatorPages,
           codeReach: testCase.codeReach,
+          resources: testCase.resources ?? null,
           aiUsage: testCase.aiUsage,
           consoleLogs: testCase.consoleLogs,
           dialogs: testCase.dialogs,

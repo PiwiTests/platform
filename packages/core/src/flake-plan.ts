@@ -29,10 +29,10 @@ export interface FlakePlanTest extends FlakeTestRef {
  * Which matching requests a route condition acts on: every one, or only the Nth
  * (1-based) after the page's first navigation, as probes count.
  */
-export type FlakeRouteMatch = 'all' | number;
+type FlakeRouteMatch = 'all' | number;
 
 /** Hold one route's responses until `ms` after each request started. */
-export interface FlakeDelayCondition {
+interface FlakeDelayCondition {
   kind: 'delay';
   /** Route key: method and normalized path (`GET /api/cart/:id`). */
   route: string;
@@ -41,18 +41,18 @@ export interface FlakeDelayCondition {
 }
 
 /** Answer one route with an error status, or reset its connection. */
-export type FlakeFailCondition =
+type FlakeFailCondition =
   | { kind: 'fail'; route: string; status: number; match: FlakeRouteMatch }
   | { kind: 'fail'; route: string; abort: true; match: FlakeRouteMatch };
 
 /** Throttle the page's CPU by `rate` (Chromium only). */
-export interface FlakeCpuCondition {
+interface FlakeCpuCondition {
   kind: 'cpu';
   rate: number;
 }
 
 /** Emulate a slow network: added latency and throughput caps (Chromium only). */
-export interface FlakeNetworkCondition {
+interface FlakeNetworkCondition {
   kind: 'network';
   latencyMs: number;
   downKbps: number;
@@ -72,7 +72,7 @@ export interface FlakeAfterCondition {
 }
 
 /** Run in one Playwright project (applied by the command line with `--project`). */
-export interface FlakeProjectCondition {
+interface FlakeProjectCondition {
   kind: 'project';
   name: string;
 }
@@ -88,7 +88,7 @@ export type FlakeCondition =
 
 export type FlakeConditionKind = FlakeCondition['kind'];
 
-export const FLAKE_CONDITION_KINDS: readonly FlakeConditionKind[] = [
+const FLAKE_CONDITION_KINDS: readonly FlakeConditionKind[] = [
   'delay',
   'fail',
   'cpu',
@@ -98,17 +98,11 @@ export const FLAKE_CONDITION_KINDS: readonly FlakeConditionKind[] = [
   'project',
 ];
 
-/** Conditions the capture fixtures apply inside the page. */
-export const PAGE_CONDITION_KINDS: readonly FlakeConditionKind[] = ['delay', 'fail', 'cpu', 'network'];
-
-/** Conditions that need a Chrome DevTools Protocol session, so Chromium only. */
-export const CHROMIUM_ONLY_CONDITION_KINDS: readonly FlakeConditionKind[] = ['cpu', 'network'];
-
 /** Conditions the command line applies through Playwright's arguments; flake mode only records them. */
 export const COMMAND_CONDITION_KINDS: readonly FlakeConditionKind[] = ['alongside', 'after', 'project'];
 
 /** One arm of an experiment: the control arm has no conditions. */
-export interface FlakeArm {
+interface FlakeArm {
   id: string;
   conditions: FlakeCondition[];
 }
@@ -127,7 +121,7 @@ export interface FlakePlan {
 }
 
 /** What happened to one condition during one attempt. */
-export type FlakeConditionOutcome =
+type FlakeConditionOutcome =
   /** It took effect at least once (a route condition matched a request; a CDP condition was set). */
   | 'applied'
   /** A route condition whose route the attempt never called. */
@@ -364,7 +358,7 @@ function durationLabel(ms: number): string {
 }
 
 /** A test in a label: its describe path and title joined with ` › `. */
-export function flakeTestLabel(test: FlakeTestRef): string {
+function flakeTestLabel(test: FlakeTestRef): string {
   return [...test.suite, test.title].join(' › ');
 }
 
@@ -397,7 +391,7 @@ export function describeFlakeArm(conditions: FlakeCondition[]): string {
 export const FLAKE_BATCH_RUNS = 5;
 
 /** A start of Playwright costs about this much on top of the tests (workers, browser). */
-export const FLAKE_SPAWN_OVERHEAD_MS = 3_000;
+const FLAKE_SPAWN_OVERHEAD_MS = 3_000;
 
 /**
  * The longest a lab session can take: every run of every arm at the test's

@@ -21,13 +21,17 @@ const DEFAULTS: PiwiDashboardOptions = {
   // Off by default: JavaScript coverage slows the page, so a scheduled job opts in.
   captureCodeReach: false,
   captureServerTraces: true,
+  captureResources: true,
+  leakCheck: 'report',
   sampleAriaOnPass: true,
   uploadManifest: true,
   defaultCapture: true,
+  checkBaseUrl: false,
   streaming: true,
   streamingBatchSize: 5,
   streamingBatchDelay: 2000,
   maxStreamBufferBytes: 100 * 1024 * 1024,
+  submitTimeout: 15 * 60 * 1000,
   failOnFlakyTests: false,
   username: null,
   password: null,
@@ -56,6 +60,7 @@ export const PIWI_ENV_KEYS = {
   streamingBatchSize: 'PIWI_STREAMING_BATCH_SIZE',
   streamingBatchDelay: 'PIWI_STREAMING_BATCH_DELAY',
   maxStreamBufferBytes: 'PIWI_MAX_STREAM_BUFFER_BYTES',
+  submitTimeout: 'PIWI_SUBMIT_TIMEOUT',
   liveFileUploads: 'PIWI_LIVE_FILE_UPLOADS',
   failOnFlakyTests: 'PIWI_FAIL_ON_FLAKY_TESTS',
   uploadTraces: 'PIWI_UPLOAD_TRACES',
@@ -66,9 +71,12 @@ export const PIWI_ENV_KEYS = {
   captureCodeReach: 'PIWI_CAPTURE_CODE_REACH',
   codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
+  captureResources: 'PIWI_CAPTURE_RESOURCES',
+  leakCheck: 'PIWI_LEAK_CHECK',
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
   uploadManifest: 'PIWI_UPLOAD_MANIFEST',
   defaultCapture: 'PIWI_DEFAULT_CAPTURE',
+  checkBaseUrl: 'PIWI_CHECK_BASE_URL',
   inspectOnFailure: 'PIWI_INSPECT_ON_FAIL',
   pickLocatorOnFailure: 'PIWI_PICK_LOCATOR_ON_FAIL',
   outputFile: 'PIWI_OUTPUT_FILE',
@@ -111,6 +119,37 @@ export const PIWI_SELECTION_ENV = {
 } as const;
 
 /**
+ * What launched the run, set by the launcher on the Playwright process: the
+ * desktop app, an editor, `piwi preflight`, `piwi bug`, a CI re-run dispatched
+ * from the dashboard. Not options — the reporter reads them once to stamp the
+ * run's `piwiOrigin` metadata:
+ *  - `kind` is one of `RUN_ORIGIN_KINDS` (`@piwitests/core/wire`); unset, the
+ *    run is `ci` when a CI provider is detected and `local` otherwise;
+ *  - `ref` names what the run was launched for: a dispatch, a cluster or a bug
+ *    report id.
+ */
+export const PIWI_ORIGIN_ENV = {
+  kind: 'PIWI_ORIGIN',
+  ref: 'PIWI_ORIGIN_REF',
+} as const;
+
+/** The environment a launcher adds to the Playwright process it starts, naming itself as the run's origin. */
+export function originEnv(kind: string, ref?: string | number): Record<string, string> {
+  return ref === undefined
+    ? { [PIWI_ORIGIN_ENV.kind]: kind }
+    : { [PIWI_ORIGIN_ENV.kind]: kind, [PIWI_ORIGIN_ENV.ref]: String(ref) };
+}
+
+/**
+ * The `i/n` shard `piwi run --shard` sets on the Playwright child process. The
+ * run's tests are already narrowed to that shard, so Playwright gets no `--shard`
+ * of its own; the reporter reads this to report the shard to the dashboard, which
+ * merges the shards of a run into one. Not an option — a `piwi select` job that
+ * shards its own command line sets it by hand.
+ */
+export const PIWI_SHARD_ENV = 'PIWI_SHARD';
+
+/**
  * Env vars a `piwi probe` run sets on the Playwright child process so the
  * capture fixtures run in probe mode. Not options — the probe CLI writes them and
  * the probe module reads them directly:
@@ -141,6 +180,14 @@ export const PIWI_FLAKE_ENV = {
   results: 'PIWI_FLAKE_RESULTS',
 } as const;
 
+/**
+ * The JSONL file each worker appends its last resource census to when it shuts
+ * down: what was still open when no test was left to attach it to. The reporter
+ * sets it in `onBegin`, before any worker starts, and reads it in `onEnd`. Not
+ * an option — without it the census of a worker's last test stands in.
+ */
+export const PIWI_RESOURCES_RESULTS_ENV = 'PIWI_RESOURCES_RESULTS';
+
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
   return val === 'true';
@@ -154,7 +201,7 @@ type EnvKind = 'string' | 'number' | 'bool';
  * of repeating ~15 near-identical merge lines, so adding an env-backed option
  * means adding one row.
  *
- * Guard semantics (preserved from the original hand-written merges):
+ * Guard semantics:
  *  - `string` / `number`: a *truthy* env value fills the option, so an empty
  *    string is ignored.
  *  - `bool`: any *defined* env value fills it (via `readBool`), so
@@ -181,6 +228,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'streamingBatchSize', env: PIWI_ENV_KEYS.streamingBatchSize, kind: 'number' },
   { option: 'streamingBatchDelay', env: PIWI_ENV_KEYS.streamingBatchDelay, kind: 'number' },
   { option: 'maxStreamBufferBytes', env: PIWI_ENV_KEYS.maxStreamBufferBytes, kind: 'number' },
+  { option: 'submitTimeout', env: PIWI_ENV_KEYS.submitTimeout, kind: 'number' },
   { option: 'liveFileUploads', env: PIWI_ENV_KEYS.liveFileUploads, kind: 'bool' },
   { option: 'failOnFlakyTests', env: PIWI_ENV_KEYS.failOnFlakyTests, kind: 'bool' },
   { option: 'uploadTraces', env: PIWI_ENV_KEYS.uploadTraces, kind: 'bool' },
@@ -190,9 +238,12 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'capturePageInventory', env: PIWI_ENV_KEYS.capturePageInventory, kind: 'bool' },
   { option: 'captureCodeReach', env: PIWI_ENV_KEYS.captureCodeReach, kind: 'bool' },
   { option: 'captureServerTraces', env: PIWI_ENV_KEYS.captureServerTraces, kind: 'bool' },
+  { option: 'captureResources', env: PIWI_ENV_KEYS.captureResources, kind: 'bool' },
+  { option: 'leakCheck', env: PIWI_ENV_KEYS.leakCheck, kind: 'string' },
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
   { option: 'uploadManifest', env: PIWI_ENV_KEYS.uploadManifest, kind: 'bool' },
   { option: 'defaultCapture', env: PIWI_ENV_KEYS.defaultCapture, kind: 'bool' },
+  { option: 'checkBaseUrl', env: PIWI_ENV_KEYS.checkBaseUrl, kind: 'bool' },
   { option: 'inspectOnFailure', env: PIWI_ENV_KEYS.inspectOnFailure, kind: 'bool' },
   { option: 'pickLocatorOnFailure', env: PIWI_ENV_KEYS.pickLocatorOnFailure, kind: 'bool' },
   { option: 'outputFile', env: PIWI_ENV_KEYS.outputFile, kind: 'string' },
@@ -219,8 +270,7 @@ export function usedDesktopDiscovery(): boolean {
  * never masks an env var (`PIWI_PROJECT_NAME` would otherwise be masked by the
  * `default-project` default).
  *
- * One preserved quirk: `PIWI_VERBOSE` wins over both the default *and* an
- * explicit user option.
+ * `PIWI_VERBOSE` wins over both the default *and* an explicit user option.
  */
 export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
   const env = process.env;
@@ -255,7 +305,7 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
 
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 
-  // Preserved quirk: PIWI_VERBOSE wins over both default and user option.
+  // PIWI_VERBOSE wins over both default and user option.
   if (env[PIWI_ENV_KEYS.verbose] !== undefined) opts.verbose = env[PIWI_ENV_KEYS.verbose] === 'true';
 
   return opts;
@@ -279,6 +329,7 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.label) env[PIWI_ENV_KEYS.label] = options.label;
   if (options.runLabel) env[PIWI_ENV_KEYS.runLabel] = options.runLabel;
   if (options.keep) env[PIWI_ENV_KEYS.keep] = 'true';
+  if (options.checkBaseUrl !== undefined) env[PIWI_ENV_KEYS.checkBaseUrl] = String(options.checkBaseUrl);
   // Locator capture is part of performance-metric collection; switch it off in
   // the worker when either flag is disabled so the fixture skips the per-action
   // cost. Only an explicit `true` overrides the unset (default-on) state.
@@ -305,6 +356,10 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.captureServerTraces === false || options.collectPerformanceMetrics === false)
     env[PIWI_ENV_KEYS.captureServerTraces] = 'false';
   else if (options.captureServerTraces === true) env[PIWI_ENV_KEYS.captureServerTraces] = 'true';
+  // The resource ledger runs in the worker fixtures; bridge only an explicit
+  // value so an unset option keeps their defaults (on, report only).
+  if (options.captureResources !== undefined) env[PIWI_ENV_KEYS.captureResources] = String(options.captureResources);
+  if (options.leakCheck !== undefined) env[PIWI_ENV_KEYS.leakCheck] = options.leakCheck;
   // Green ARIA sampling runs in the worker fixture; bridge only an explicit
   // value so an unset option keeps the fixture's default-on behavior.
   if (options.sampleAriaOnPass === false) env[PIWI_ENV_KEYS.sampleAriaOnPass] = 'false';

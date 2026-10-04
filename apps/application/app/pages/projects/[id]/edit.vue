@@ -1,7 +1,10 @@
 <script setup lang="ts">
-// The edit form folded into the project's Settings tab.
+// Redirects to the project's Settings tab, which holds the edit form.
 const route = useRoute();
-await navigateTo(`/projects/${route.params.id}?tab=settings`, { replace: true });
+await navigateTo(
+  { path: `/projects/${route.params.id}`, query: { tab: 'settings' }, hash: route.hash },
+  { replace: true },
+);
 </script>
 
 <template>

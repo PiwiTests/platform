@@ -34,6 +34,15 @@ export function contextStalenessHash(sections: Array<{ id: string; markdown?: st
   return sha256Hex(contextStalenessInput(sections));
 }
 
+/**
+ * Hash of the instructions a diagnosis was written under: the system prompt and
+ * the answer schema. Stored in the diagnosis details, so diagnoses written
+ * under different prompts can be told apart.
+ */
+export function diagnosisPromptHash(system: string, jsonSchema: unknown): Promise<string> {
+  return sha256Hex(`${system}\n\n${JSON.stringify(jsonSchema)}`);
+}
+
 export interface StalenessInput {
   /** Hash stored on the diagnosis when it ran (`failure_diagnoses.context_sha`). */
   storedContextSha: string | null | undefined;

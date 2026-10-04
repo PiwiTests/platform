@@ -1,23 +1,31 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } from '@playwright/test/reporter';
-import { resolveOptions, usedDesktopDiscovery, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
+import {
+  resolveOptions,
+  usedDesktopDiscovery,
+  PIWI_DEFAULTED_CAPTURE_ENV,
+  PIWI_RESOURCES_RESULTS_ENV,
+} from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
-import { ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
+import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
 import { MetadataCollector } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '../internal/collect/step-analyzer.js';
+import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
-import { detectCiRunLabel } from '../internal/support/ci.js';
+import { resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
+import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
@@ -32,13 +40,40 @@ import {
   expectedFailureError,
   resolveUnrunReason,
   linkBlockedTests,
-} from '../internal/collect/skip-classify.js';
+} from '@piwitests/core/status-classify';
 import { collectTestLocks, collectTestMetadata, collectTestTags } from '../internal/collect/test-meta.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
+import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
+import {
+  buildResourceReport,
+  formatResourceSummary,
+  parseResourceCensus,
+  parseResourceResults,
+  tallyLifecycleSteps,
+  userFixturesOf,
+  type LifecycleTally,
+} from '../internal/collect/resource-verdicts.js';
 import { Logger } from '../internal/support/logger.js';
+import { emitResourceSummary } from '../internal/support/ci-output.js';
+import { RunSampler } from '../internal/collect/process-sampler.js';
+import { executionResources, resourceReportWire } from '../internal/collect/resource-wire.js';
+import {
+  artifactKind,
+  emptyArtifacts,
+  formatMachinePanel,
+  workerHealthOf,
+  type ArtifactBytes,
+} from '../internal/collect/machine-panel.js';
 import { FailureLinks, failureHeadline } from '../internal/support/failure-links.js';
-import type { CollectedTestCase, StreamEvent, SetupStep, FilterDetails, TestAnnotation } from '../types.js';
+import type {
+  CollectedTestCase,
+  StreamEvent,
+  SetupStep,
+  FilterDetails,
+  TestAnnotation,
+  WireResourceReport,
+} from '../types.js';
 
 /**
  * Relative `file:line:column` location string for a test, normalized to POSIX
@@ -83,8 +118,8 @@ export class PiwiDashboardReporter {
     string,
     Array<{ retry: number; status: string; duration: number; startedAt: number | null }>
   >();
-  private instanceId: string;
-  private runLabel: string | null = null;
+  /** Derived in `onBegin`, once the shard is known. */
+  private instanceId = '';
   private shardInfo: ShardInfo | null = null;
   private metadata: Record<string, any> = {};
   private enabled: boolean;
@@ -100,6 +135,20 @@ export class PiwiDashboardReporter {
   private filterDetails: FilterDetails | null = null;
   /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
   private maxFailures = 0;
+  /** The resource censuses the capture fixtures attached, one per test attempt. */
+  private resourceCensuses: ResourceCensus[] = [];
+  /** Lifecycle steps of the tests that ran without the fixtures. */
+  private lifecycleTallies: LifecycleTally[] = [];
+  /** The user fixtures set up by the tests that left a page unused, by test id. */
+  private fixturesByTest = new Map<string, string[]>();
+  /** The file workers append their shutdown census to, set in `onBegin`. */
+  private resourcesFile: string | null = null;
+  /** Samples the run's processes and the machine from `onBegin` to `onEnd`. */
+  private sampler: RunSampler | null = null;
+  /** Bytes of the files the tests attached, by kind. */
+  private artifactBytes: ArtifactBytes = emptyArtifacts();
+  /** The run's resource report for the dashboard, built in `onEnd`. */
+  private resourceReport: WireResourceReport | null = null;
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -119,8 +168,6 @@ export class PiwiDashboardReporter {
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
-    this.runLabel = this.options.runLabel || detectCiRunLabel();
-    this.instanceId = computeInstanceId(this.options.projectName!, this.runLabel);
 
     const logger = new Logger(this.options.verbose ?? false);
     this.logger = logger;
@@ -174,6 +221,20 @@ export class PiwiDashboardReporter {
     this.startTime = new Date().toISOString();
     this.playwrightVersion = config.version;
     this.maxFailures = config.maxFailures ?? 0;
+
+    // Workers inherit the environment when they start, after this hook: the
+    // shutdown census of each one lands in this file, read back in `onEnd`.
+    if (this.options.captureResources !== false) {
+      this.resourcesFile = path.join(os.tmpdir(), `piwi-resources-${process.pid}-${Date.now()}.jsonl`);
+      process.env[PIWI_RESOURCES_RESULTS_ENV] = this.resourcesFile;
+      try {
+        this.sampler = new RunSampler({ outputDirs: (config.projects ?? []).map((project) => project.outputDir) });
+        this.sampler.start();
+      } catch (error) {
+        this.sampler = null;
+        this.logger.debug(`Run sampler not started: ${errorMessage(error)}`);
+      }
+    }
     this.logger.info(
       `Starting test run for project: ${this.options.projectName} (Playwright v${this.playwrightVersion})`,
     );
@@ -244,12 +305,15 @@ export class PiwiDashboardReporter {
     // attempts.
     this.plannedTests = suite.allTests();
 
-    // Detect Playwright shard config (--shard=1/3)
-    const pwShard = (config as any).shard as ShardInfo | null | undefined;
-    if (pwShard?.total && pwShard.total > 1) {
-      this.shardInfo = { current: pwShard.current, total: pwShard.total };
+    // Detect the shard: Playwright's --shard=1/3, or the one `piwi run --shard` set.
+    this.shardInfo = resolveShardInfo(config);
+    if (this.shardInfo) {
       this.logger.info(`Shard ${this.shardInfo.current}/${this.shardInfo.total} detected`);
     }
+    this.instanceId = computeInstanceId(
+      this.options.projectName!,
+      resolveRunLabel(this.options.runLabel, this.shardInfo !== null),
+    );
 
     this.streamManager?.start(
       this.startTime,
@@ -441,8 +505,8 @@ export class PiwiDashboardReporter {
       this.fileHandler.parsePerformanceAttachments(testCase, result.attachments);
 
       // Locator snapshots arrive pre-stamped with their call-site `location`
-      // (captured in the fixture at action call time). No index correlation
-      // with pw:api steps — that was unreliable across workers/concurrent calls.
+      // (captured in the fixture at action call time), so they are not
+      // correlated with pw:api steps by index.
       const locatorAttachment =
         this.options.captureLocators !== false
           ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locators)
@@ -467,6 +531,8 @@ export class PiwiDashboardReporter {
         }
       }
     }
+    if (this.enabled && this.options.captureResources !== false) this.collectResources(test, result, testCase);
+
     // The source files the test executed, when code reach is on.
     const reachAttachment =
       this.options.captureCodeReach === true && this.options.collectPerformanceMetrics !== false
@@ -528,6 +594,87 @@ export class PiwiDashboardReporter {
   }
 
   /**
+   * Add up the files a test attached, and keep its resource census; for a test
+   * that ran without the capture fixtures, tally the browsers and contexts its
+   * steps opened and closed.
+   */
+  private collectResources(test: TestCase, result: TestResult, testCase: CollectedTestCase): void {
+    const artifacts = emptyArtifacts();
+    for (const file of result.attachments ?? []) {
+      if (!file.path || INTERNAL_ATTACHMENT_NAMES.has(file.name)) continue;
+      try {
+        const kind = artifactKind(file.name, file.contentType);
+        const bytes = fs.statSync(file.path).size;
+        artifacts[kind] += bytes;
+        this.artifactBytes[kind] += bytes;
+      } catch {
+        // A file already moved or removed.
+      }
+    }
+    const attachment = result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.resources);
+    const census = parseResourceCensus(attachment?.body);
+    if (census) {
+      this.resourceCensuses.push(census);
+      const resources = executionResources(census, artifacts);
+      if (resources) testCase.resources = resources;
+      const leftIdle = census.closed.some((c) => c.used === false) || census.open.some((o) => o.used === false);
+      if (leftIdle) this.fixturesByTest.set(test.id, userFixturesOf(result.steps ?? []));
+      return;
+    }
+    if (!result.steps?.length) return;
+    const tally = tallyLifecycleSteps(testFile(test), result.steps);
+    if (tally.opened.length > 0 || tally.closed.context > 0 || tally.closed.browser > 0)
+      this.lifecycleTallies.push(tally);
+  }
+
+  /**
+   * Print what the run left open or opened for nothing, from the censuses and
+   * the workers' shutdown file, then what the run cost the machine.
+   */
+  private async reportResources(): Promise<void> {
+    if (this.options.captureResources === false) return;
+    const profile = this.sampler ? await this.sampler.stop() : null;
+    const samples = this.sampler?.timedSeries() ?? null;
+    this.sampler = null;
+    const censuses = [...this.resourceCensuses];
+    if (this.resourcesFile) {
+      try {
+        censuses.push(...parseResourceResults(fs.readFileSync(this.resourcesFile, 'utf8')));
+        fs.rmSync(this.resourcesFile, { force: true });
+      } catch {
+        // No worker wrote one: their last tests' censuses stand in.
+      }
+    }
+    const lines: string[] = [];
+    try {
+      const report =
+        censuses.length > 0 || this.lifecycleTallies.length > 0
+          ? buildResourceReport({ censuses, fixturesByTest: this.fixturesByTest, tallies: this.lifecycleTallies })
+          : null;
+      if (report) lines.push(...formatResourceSummary(report, readLeakCheck(this.options.leakCheck)));
+      if (profile) {
+        lines.push(
+          ...formatMachinePanel(profile, { artifacts: this.artifactBytes, workers: workerHealthOf(censuses) }),
+        );
+      }
+      if (report || profile) {
+        this.resourceReport = resourceReportWire({
+          report,
+          profile,
+          samples,
+          censuses,
+          artifacts: this.artifactBytes,
+          shardIndex: this.shardInfo?.current ?? null,
+        });
+      }
+    } catch (error) {
+      this.logger.debug(`Resource summary skipped: ${errorMessage(error)}`);
+    }
+    for (const line of lines) this.logger.info(line);
+    emitResourceSummary(lines, this.logger);
+  }
+
+  /**
    * Synthesize `didnotrun` cases for tests Playwright planned but never reported
    * (no `onTestEnd`) — typically because `maxFailures` cut the run short. These
    * carry no result, so they're emitted with zero duration and no error. In
@@ -580,6 +727,11 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when the full test run finishes */
   async onEnd(result: FullResult): Promise<void> {
     if (this.listMode || !this.enabled) return;
+    // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
+    if (this.startTime === null) {
+      this.logger.debug('The run stopped before any test began — nothing to report.');
+      return;
+    }
 
     // Tests Playwright never reported were cut off by a run-level condition —
     // the global timeout, the failure budget, or an interruption.
@@ -588,6 +740,8 @@ export class PiwiDashboardReporter {
       failures: this.failedTests + this.timedOutTests,
     });
     this.materializeUnrunTests(unrunReason);
+    // Printed before the submit, so a slow or failed upload never hides it.
+    await this.reportResources();
 
     try {
       await this.submitter.submit(
@@ -609,6 +763,7 @@ export class PiwiDashboardReporter {
           setupSteps: this.setupSteps,
           isFullRun: this.isFullRun,
           filterDetails: this.filterDetails,
+          resourceReport: this.resourceReport,
         },
         result,
       );

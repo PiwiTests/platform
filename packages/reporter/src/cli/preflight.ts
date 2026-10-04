@@ -42,6 +42,7 @@ import {
   type ImpactResolution,
 } from '../internal/support/selection-client.js';
 import { spawnPlaywrightForRun } from './select.js';
+import { originEnv } from '../internal/config/env.js';
 
 const EXIT_OK = 0;
 const EXIT_BREAKS = 1;
@@ -291,7 +292,7 @@ async function loadReach(
 // ── Edits ────────────────────────────────────────────────────────────────────
 
 /** One call site of a broken chain and what preflight can do there. */
-export interface PreflightSite {
+interface PreflightSite {
   /** The call site as the index holds it, relative to the test root. */
   callSite: string;
   /**
@@ -304,7 +305,7 @@ export interface PreflightSite {
   holders?: string[];
 }
 
-export interface PreflightBreak {
+interface PreflightBreak {
   anchor: DiffAnchor;
   locator: string;
   confidence: LocatorBreak['confidence'];
@@ -356,10 +357,7 @@ function isFixable(b: PreflightBreak): boolean {
  * Apply the planned edits of the `likely` breaks, line by line, re-reading each
  * line as edited so far. Returns the edited files.
  */
-export function applyEdits(
-  breaks: PreflightBreak[],
-  replacementsOf: Map<PreflightBreak, Array<[string, string]>>,
-): string[] {
+function applyEdits(breaks: PreflightBreak[], replacementsOf: Map<PreflightBreak, Array<[string, string]>>): string[] {
   const byFile = new Map<string, Array<{ line: number; replacements: Array<[string, string]> }>>();
   for (const b of breaks) {
     if (!isFixable(b)) continue;
@@ -391,7 +389,7 @@ export function applyEdits(
 
 // ── Output ───────────────────────────────────────────────────────────────────
 
-export interface PreflightResult {
+interface PreflightResult {
   project: string;
   branch: string;
   base: string;
@@ -417,7 +415,7 @@ function pad(text: string, width: number): string {
 }
 
 /** The human-readable report. */
-export function renderPreflight(result: PreflightResult, cwdToRoot: (file: string) => string = (f) => f): string {
+function renderPreflight(result: PreflightResult, cwdToRoot: (file: string) => string = (f) => f): string {
   const out: string[] = [];
   const cache = result.index.fromCache ? ` · cached ${result.index.fromCache}` : '';
   out.push(
@@ -638,7 +636,10 @@ export async function runPreflight(
       console.error('piwi preflight: no test reaches this change — nothing to run');
       return code;
     }
-    const runCode = await spawnPlaywrightForRun(args.pkgRunner, [...runArgs, ...args.extra], env);
+    const runCode = await spawnPlaywrightForRun(args.pkgRunner, [...runArgs, ...args.extra], {
+      ...env,
+      ...originEnv('preflight'),
+    });
     if (runCode !== 0) code = EXIT_BREAKS;
   }
   return code;

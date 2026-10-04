@@ -14,17 +14,30 @@ import { makeTimeBuckets } from './analytics/common';
 import { isLabRun } from './probes';
 
 import type { DrizzleDB } from './db';
+import type { HandbackActor } from '../handback-outcomes';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
-import { recomputeClusterOccurrences } from './failure-cluster-ops';
+import { splitFailureCluster } from './failure-cluster-ops';
 import { isTrackerLink } from './known-issues';
-import { getQuarantinedCaseIds, listQuarantine, addQuarantine } from './quarantine';
+import { readRunIncident } from '../run-incident';
+import {
+  getQuarantinedCaseIds,
+  countQuarantinedClusterTests,
+  listQuarantine,
+  addQuarantine,
+  releaseQuarantine,
+} from './quarantine';
 import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { computeClusterState, type ClusterState } from '#shared/cluster-state';
-import { computeNextStep, type NextStep } from '#shared/next-step';
+import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
+import { getFlakeLabStepFacts } from './flake-lab';
+import { mayHaveFlakeSuspects } from './flake-profile';
+import { isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
+import type { BisectResult } from '@piwitests/core/bisect';
+import type { BisectedCommit } from '#shared/reproduce';
 
 /** Whether a stored patch validation reports the patch applying to the current tree. */
 function patchApplies(status: unknown): boolean {
@@ -70,15 +83,44 @@ type ProjectScope = 'all' | Set<number>;
 
 const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
+/** Affected tests the cluster detail payload lists; `affectedTests` carries the full count. */
+export const CLUSTER_DETAIL_TESTS_LIMIT = 50;
+
 export async function getFailureCluster(
   db: DrizzleDB,
   clusterId: number,
-  // Server-only signals the next-step policy reads; the demo and MCP callers
-  // omit them (a demo instance configures neither AI nor a CI re-run).
-  opts: { aiConfigured?: boolean; ciRerunAvailable?: boolean; now?: Date } = {},
+  // `aiConfigured` and `ciRerunAvailable` are server-only signals the next-step
+  // policy reads; the demo and MCP callers omit them (a demo instance configures
+  // neither AI nor a CI re-run). `affectedTestsLimit` bounds the listed affected
+  // tests, and `null` lists every one.
+  opts: {
+    aiConfigured?: boolean;
+    ciRerunAvailable?: boolean;
+    /** Whether a Flake Lab CI target can run a test's experiment (server only). */
+    flakeLabCiAvailable?: (testCaseId: number) => Promise<boolean>;
+    now?: Date;
+    affectedTestsLimit?: number | null;
+  } = {},
 ) {
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
+
+  const { affectedTestsLimit = CLUSTER_DETAIL_TESTS_LIMIT } = opts;
+  const affectedTestsQuery = db
+    .select({
+      testCaseId: testCases.id,
+      title: testCases.title,
+      filePath: testCases.filePath,
+      owner: testCases.owner,
+      runCount: sql<number>`count(${testRunsCases.id})`,
+      recentTestRunsCaseId: sql<number>`max(${testRunsCases.id})`,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.failureClusterId, clusterId))
+    .groupBy(testCases.id, testCases.title, testCases.filePath, testCases.owner)
+    .orderBy(desc(sql`count(${testRunsCases.id})`))
+    .$dynamic();
 
   const [[countRow], [lastRun], [firstSeenRun], [diag], [project], affectedTestCases, [latestOccurrence]] =
     await Promise.all([
@@ -104,21 +146,7 @@ export async function getFailureCluster(
         .from(projects)
         .where(eq(projects.id, cluster.projectId)),
 
-      db
-        .select({
-          testCaseId: testCases.id,
-          title: testCases.title,
-          filePath: testCases.filePath,
-          owner: testCases.owner,
-          runCount: sql<number>`count(${testRunsCases.id})`,
-          recentTestRunsCaseId: sql<number>`max(${testRunsCases.id})`,
-        })
-        .from(testRunsCases)
-        .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-        .where(eq(testRunsCases.failureClusterId, clusterId))
-        .groupBy(testCases.id, testCases.title, testCases.filePath, testCases.owner)
-        .orderBy(desc(sql`count(${testRunsCases.id})`))
-        .limit(50),
+      affectedTestsLimit === null ? affectedTestsQuery : affectedTestsQuery.limit(affectedTestsLimit),
 
       // The cluster's latest occurrence: an execution in the last-seen run, so the
       // page can default its evidence and headline to the newest failure rather
@@ -179,7 +207,7 @@ export async function getFailureCluster(
     .map((r) => ({ runId: r.id, startedAt: r.startedAt, occurrences: occurrencesByRun.get(r.id) ?? 0 }))
     .reverse();
 
-  const quarantinedCount = affectedTestCases.filter((t: any) => quarantinedIds.has(t.testCaseId)).length;
+  const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
 
   const clusterState: ClusterState = computeClusterState(
     {
@@ -188,6 +216,7 @@ export async function getFailureCluster(
       fixVerification: cluster.fixVerification ?? null,
       fixCommit: cluster.fixCommit ?? null,
       fixLandedRunId: cluster.fixLandedRunId ?? null,
+      flakeEvidenceRunId: cluster.flakeEvidenceRunId ?? null,
       lastSeenRunId: cluster.lastSeenRunId,
       lastSeenAt: lastRun?.startTime ?? null,
       updatedAt: cluster.updatedAt ?? null,
@@ -206,11 +235,17 @@ export async function getFailureCluster(
   const patchFacts = await getClusterPatchFacts(db, clusterId);
   let hasHealingRecommendation = false;
   let latestErrorKind: ReturnType<typeof parsePlaywrightError>['kind'] | null = null;
+  let flakeLab: FlakeLabStepFacts | null = null;
   if (latestOccurrence?.id) {
     const [healing, [latestExec]] = await Promise.all([
       getLocatorHealing(db, latestOccurrence.id).catch(() => null),
       db
-        .select({ error: testRunsCases.error, steps: testRunsCases.steps })
+        .select({
+          error: testRunsCases.error,
+          steps: testRunsCases.steps,
+          status: testRunsCases.status,
+          retries: testRunsCases.retries,
+        })
         .from(testRunsCases)
         .where(eq(testRunsCases.id, latestOccurrence.id)),
     ]);
@@ -222,6 +257,20 @@ export async function getFailureCluster(
           latestExec.error,
         ),
       }).kind;
+    }
+    // The latest occurrence passed on a retry, or its test's history both fails and
+    // passes: the Flake Lab may hold the next step.
+    const testCaseId = latestOccurrence.testCaseId;
+    const retryPassed = latestExec?.status === 'passed' && (latestExec.retries ?? 0) > 0;
+    if (
+      testCaseId != null &&
+      (retryPassed || (await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) &&
+      !(await isPassiveCapabilityDeclined(db, cluster.projectId, 'flake-lab'))
+    ) {
+      const ciAvailable = opts.flakeLabCiAvailable
+        ? await opts.flakeLabCiAvailable(testCaseId).catch(() => false)
+        : false;
+      flakeLab = await getFlakeLabStepFacts(db, testCaseId, { ciAvailable, now: opts.now }).catch(() => null);
     }
   }
 
@@ -239,6 +288,7 @@ export async function getFailureCluster(
     errorKind: latestErrorKind,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,
+    flakeLab,
     clusterId,
     executionId: latestOccurrence?.id ?? null,
   });
@@ -305,6 +355,10 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
   return { diagnosis: diag ?? null };
 }
 
+/**
+ * Set a cluster's triage status. The triage note is kept unless one is given:
+ * a string replaces it (empty clears it), `null` clears it.
+ */
 export async function patchClusterStatus(db: DrizzleDB, clusterId: number, status: string, triageNote?: string | null) {
   if (!status || !VALID_STATUSES.includes(status)) {
     return null;
@@ -316,10 +370,10 @@ export async function patchClusterStatus(db: DrizzleDB, clusterId: number, statu
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
 
-  const note = triageNote ?? null;
+  const note = triageNote === undefined ? {} : { triageNote: triageNote?.trim() ? triageNote : null };
   await db
     .update(failureClusters)
-    .set({ status, triageNote: note, updatedAt: new Date() })
+    .set({ status, ...note, updatedAt: new Date() })
     .where(eq(failureClusters.id, clusterId));
 
   const [updated] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
@@ -410,6 +464,35 @@ export async function quarantineClusterTests(
   return { success: true, projectId: cluster.projectId, tests: rows.length, quarantined };
 }
 
+/**
+ * Release every test currently in a cluster from quarantine, through the same
+ * per-test release the project's quarantine table applies. The quarantine rows
+ * stay as history. A test that is not quarantined is left as it is.
+ */
+export async function releaseClusterTests(
+  db: DrizzleDB,
+  clusterId: number,
+  opts: { reason?: string | null; actor?: HandbackActor } = {},
+) {
+  const [cluster] = await db
+    .select({ id: failureClusters.id, projectId: failureClusters.projectId })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  if (!cluster) return null;
+
+  const rows = await db
+    .selectDistinct({ testCaseId: testRunsCases.testCaseId })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.failureClusterId, clusterId));
+
+  let released = 0;
+  for (const row of rows) {
+    const result = await releaseQuarantine(db, cluster.projectId, row.testCaseId, opts.reason ?? null, opts.actor);
+    if (result.released) released += 1;
+  }
+  return { success: true, projectId: cluster.projectId, tests: rows.length, released };
+}
+
 /** A single bulk-triage action applied to a set of already-authorized clusters. */
 export type BulkTriage =
   | { action: 'status'; status: string }
@@ -419,7 +502,8 @@ export type BulkTriage =
 /**
  * Apply one triage action to many clusters at once, sharing the validation the
  * single-cluster endpoints use. The caller has already narrowed `ids` to the
- * clusters the user may write. Returns null on an invalid status.
+ * clusters the user may write. A status change keeps each cluster's triage
+ * note. Returns null on an invalid status.
  */
 export async function bulkTriageClusters(
   db: DrizzleDB,
@@ -432,7 +516,7 @@ export async function bulkTriageClusters(
   let set: Record<string, unknown>;
   if (patch.action === 'status') {
     if (!VALID_STATUSES.includes(patch.status)) return null;
-    set = { status: patch.status, triageNote: null, updatedAt: new Date() };
+    set = { status: patch.status, updatedAt: new Date() };
   } else if (patch.action === 'assign') {
     const value = typeof patch.assignee === 'string' && patch.assignee.trim() ? patch.assignee.trim() : null;
     set = { assignee: value, updatedAt: new Date() };
@@ -462,10 +546,24 @@ export async function patchClusterBaseCommit(db: DrizzleDB, clusterId: number, c
   return { success: true, cluster: updated };
 }
 
-// NOTE: The demo SCM (commits/branches/commit-diff) and AI-context endpoints used
-// to be no-op stubs here. They now have real, data-grounded demo implementations in
-// `app/demo/api/scm.ts` and `app/demo/api/diagnosis-context.ts` (kept out of shared/
-// so the canned SCM data never leaks into the server bundle).
+/**
+ * Record the first bad commit a bisect found on a cluster, so it reaches the
+ * fix plan (its endpoint, the Markdown export and `get_fix_plan`). Null when
+ * the cluster does not exist. The commit URL is derived when the plan is read.
+ */
+export async function recordClusterBisect(
+  db: DrizzleDB,
+  clusterId: number,
+  result: BisectResult,
+): Promise<BisectedCommit | null> {
+  const bisectedCommit: BisectedCommit = { ...result, commitUrl: null };
+  const updated = await db
+    .update(failureClusters)
+    .set({ bisectResult: bisectedCommit, updatedAt: new Date() })
+    .where(eq(failureClusters.id, clusterId))
+    .returning({ id: failureClusters.id });
+  return updated.length ? bisectedCommit : null;
+}
 
 export async function extractClusterCases(
   db: DrizzleDB,
@@ -477,27 +575,31 @@ export async function extractClusterCases(
     return null;
   }
 
-  const [cluster] = await db
-    .select({ id: failureClusters.id })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, clusterId));
-  if (!cluster) return null;
+  const split = await splitFailureCluster(db, clusterId, testCaseIds, triageNote);
+  if (!split) return null;
 
-  await db
-    .update(testRunsCases)
-    .set({ failureClusterId: null })
-    .where(and(eq(testRunsCases.failureClusterId, clusterId), inArray(testRunsCases.testCaseId, testCaseIds)));
-
-  const remainingOccurrences = await recomputeClusterOccurrences(db, clusterId);
-
-  if (triageNote !== undefined) {
+  if (split.clusterId != null) {
+    const [source] = await db
+      .select({ triageNote: failureClusters.triageNote })
+      .from(failureClusters)
+      .where(eq(failureClusters.id, clusterId));
+    const line = `Moved ${split.testCount} test${split.testCount === 1 ? '' : 's'} to cluster #${split.clusterId}.`;
     await db
       .update(failureClusters)
-      .set({ triageNote, updatedAt: new Date() })
+      .set({ triageNote: source?.triageNote ? `${source.triageNote}\n${line}` : line, updatedAt: new Date() })
       .where(eq(failureClusters.id, clusterId));
   }
 
-  return { success: true, extractedCount: testCaseIds.length, remainingOccurrences };
+  const [remaining] = await db
+    .select({ occurrences: failureClusters.occurrences })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  return {
+    success: true,
+    extractedCount: split.testCount,
+    remainingOccurrences: remaining?.occurrences ?? 0,
+    clusterId: split.clusterId,
+  };
 }
 
 /**
@@ -579,7 +681,13 @@ export async function getOpenFailureClusters(
       .groupBy(testRunsCases.failureClusterId),
 
     db
-      .select({ id: testRuns.id, status: testRuns.status, startTime: testRuns.startTime, branch: testRuns.branch })
+      .select({
+        id: testRuns.id,
+        status: testRuns.status,
+        startTime: testRuns.startTime,
+        branch: testRuns.branch,
+        metadata: testRuns.metadata,
+      })
       .from(testRuns)
       .where(inArray(testRuns.id, seenRunIds)),
 
@@ -639,7 +747,10 @@ export async function getOpenFailureClusters(
   const projectById = new Map(projectRows.map((p: any) => [p.id, p]));
   const affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
   const runById = new Map(
-    seenRuns.map((r: any) => [r.id, { status: r.status, startTime: r.startTime, branch: r.branch }]),
+    seenRuns.map((r: any) => [
+      r.id,
+      { status: r.status, startTime: r.startTime, branch: r.branch, incident: readRunIncident(r.metadata) },
+    ]),
   );
 
   // Keep the most-affected test per cluster for the name fallback and owner, and
@@ -721,7 +832,9 @@ export async function getOpenFailureClusters(
   return clusters.map((c): OpenFailureCluster => {
     const project = projectById.get(c.projectId);
     const run = runById.get(c.lastSeenRunId) as { status: string; startTime: Date; branch: string | null } | undefined;
-    const firstRun = runById.get(c.firstSeenRunId) as { startTime: Date } | undefined;
+    const firstRun = runById.get(c.firstSeenRunId) as
+      | { startTime: Date; incident: ReturnType<typeof readRunIncident> }
+      | undefined;
     const rep = repByCluster.get(c.id);
 
     // A regression still failing on the default branch: last seen there, and it
@@ -773,6 +886,14 @@ export async function getOpenFailureClusters(
       mergeSuggestionPending: mergeSuggestionClusterIds.has(c.id),
       snoozedUntil: c.snoozedUntil ?? null,
       snoozeMode: c.snoozeMode ?? null,
+      incidentRun: firstRun?.incident
+        ? {
+            runId: c.firstSeenRunId,
+            reason: firstRun.incident.reason,
+            host: firstRun.incident.host,
+            startedAt: firstRun.startTime ?? null,
+          }
+        : null,
     };
   });
 }

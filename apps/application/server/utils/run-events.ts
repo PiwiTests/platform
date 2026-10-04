@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
  * In-memory pub/sub for live test run streaming.
@@ -72,8 +73,6 @@ class RunEventBus {
   private emitter = new EventEmitter();
   private globalEmitter = new EventEmitter();
   private sequences = new Map<number, number>();
-  /** Stores pending final status for runs in `finalizing` state, keyed by run ID */
-  private finalStatuses = new Map<number, string>();
   /**
    * In-memory cache of active run state (token + projectId) so the events
    * endpoint can skip a DB round-trip on every incoming batch.
@@ -125,24 +124,6 @@ class RunEventBus {
     };
   }
 
-  /**
-   * Store a final status for a run entering the `finalizing` state.
-   * The upload endpoint will consume this to transition to the actual final status.
-   */
-  setFinalStatus(runId: number, status: string): void {
-    this.finalStatuses.set(runId, status);
-  }
-
-  /**
-   * Read and remove the stored final status for a run.
-   * Returns undefined if no status was stored (e.g., the run wasn't finalizing).
-   */
-  consumeFinalStatus(runId: number): string | undefined {
-    const status = this.finalStatuses.get(runId);
-    this.finalStatuses.delete(runId);
-    return status;
-  }
-
   /** Cache the stream token and projectId for an active run. */
   cacheRunState(runId: number, state: RunState): void {
     this.runStates.set(runId, state);
@@ -158,24 +139,24 @@ class RunEventBus {
     this.runStates.delete(runId);
   }
 
-  /** Register a per-shard stream token for an active run. */
+  /** Register a per-shard stream token for an active run (kept as its digest, like the stored copy). */
   addShardToken(runId: number, token: string): void {
     const state = this.runStates.get(runId);
     if (state) {
       if (!state.shardTokens) state.shardTokens = new Set();
-      state.shardTokens.add(token);
+      state.shardTokens.add(shardTokenDigest(token));
     }
   }
 
   /** Check whether a token is a valid per-shard stream token. */
   isValidShardToken(runId: number, token: string): boolean {
-    const state = this.runStates.get(runId);
-    return state?.shardTokens?.has(token) ?? false;
+    return matchesShardToken(this.runStates.get(runId)?.shardTokens, token);
   }
 
   /** Remove a per-shard stream token when its shard has finished. */
   removeShardToken(runId: number, token: string): void {
     const state = this.runStates.get(runId);
+    state?.shardTokens?.delete(shardTokenDigest(token));
     state?.shardTokens?.delete(token);
     // Clean up the set if it's now empty
     if (state?.shardTokens?.size === 0) state.shardTokens = undefined;
@@ -207,7 +188,6 @@ class RunEventBus {
    */
   cleanup(runId: number): void {
     this.sequences.delete(runId);
-    this.finalStatuses.delete(runId);
     this.runStates.delete(runId);
     this.runningCases.delete(runId);
   }

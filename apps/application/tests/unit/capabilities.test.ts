@@ -20,7 +20,7 @@ import type { SetupCapabilityId } from '../../shared/handlers/setup-status';
 const def = CAPABILITY_BY_ID.fixtures;
 
 describe('resolveCapability precedence', () => {
-  // One row per step of §4's ordered precedence. The resolver ignores `def`, so
+  // One row per step of the resolver's ordered precedence. The resolver ignores `def`, so
   // a single representative capability drives every case.
   const cases: { name: string; input: CapabilityInput; expected: CapabilityState }[] = [
     {

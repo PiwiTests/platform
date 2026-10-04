@@ -81,7 +81,39 @@ export interface ParsedBlobReport {
   shard: { current: number; total: number } | null;
   /** Playwright project (browser) names present in the archive. */
   projectNames: string[];
+  /** The commit and branch Playwright's git info recorded in the config metadata, when it did. */
+  scm: BlobScm | null;
   cases: ImportedRunCase[];
+}
+
+/** The source revision a blob report ran against. */
+export interface BlobScm {
+  commit: string | null;
+  branch: string | null;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * The commit and branch in a blob report's `config.metadata`: Playwright's git
+ * info (`captureGitInfo`) writes `ci` (the CI provider's view: the pull
+ * request's head branch) and `gitCommit` (the checkout's), and older versions
+ * a flat `revision.id`. The CI provider's branch wins, since a CI checkout is
+ * usually a detached HEAD.
+ */
+export function readBlobScm(metadata: unknown): BlobScm | null {
+  const meta = record(metadata);
+  const ci = record(meta.ci);
+  const gitCommit = record(meta.gitCommit);
+  const commit = nonEmptyString(ci.commitHash) ?? nonEmptyString(gitCommit.hash) ?? nonEmptyString(meta['revision.id']);
+  const branch = nonEmptyString(ci.branch) ?? nonEmptyString(gitCommit.branch);
+  return commit || branch ? { commit, branch } : null;
 }
 
 /** A step being assembled from its `onStepBegin` / `onStepEnd` pair. */
@@ -558,6 +590,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     flakyTests,
     shard,
     projectNames,
+    scm: readBlobScm(config.metadata),
     cases,
   };
 }

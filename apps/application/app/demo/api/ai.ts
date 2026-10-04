@@ -12,7 +12,7 @@
  * force-refresh snapshots the previous result into the version history first.
  */
 
-import { eq, and, gte, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, isNotNull } from 'drizzle-orm';
 import {
   failureDiagnoses,
   failureDiagnosisVersions,
@@ -34,6 +34,7 @@ import type { ContextLimits } from '#shared/ai-context-limits';
 import { getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
 import { validatePatch } from '#shared/patch';
 import { buildDiagnosisVersionValues } from '#shared/handlers/diagnosis-versions';
+import { getAiUsageSummary } from '#shared/handlers/ai-usage';
 import { collectClusterEvidence } from './diagnosis-context';
 import type { ClusterEvidence } from './diagnosis-context';
 import { getDemoScmProject } from '../demo-scm';
@@ -41,6 +42,7 @@ import { storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import type { FailureStory } from '#shared/demo/failure-stories.mjs';
 import { publishDemoNotificationEvent } from '../run-events';
 import { demoHttpError } from './http-error';
+import { diagnosisFrame } from '~~/server/utils/diagnosis-stream-frames';
 
 const DEMO_MODEL = 'demo-simulated';
 
@@ -842,6 +844,9 @@ export async function apiDiagnoseExecution(
   return persistDiagnosis(null, gen, 'execution', testRunsCaseId);
 }
 
+/** How long the simulated research stage lasts before the diagnosis stage streams. */
+const RESEARCH_STAGE_MS = 900;
+
 /**
  * POST /api/failure-clusters/:id/diagnose/stream
  *
@@ -878,11 +883,10 @@ export async function apiStreamDiagnoseCluster(
       .where(eq(failureDiagnoses.clusterId, clusterId))
       .limit(1);
     if (existing?.status === 'completed') {
-      const data = JSON.stringify(existing);
       return sse(
         new ReadableStream({
           start(controller) {
-            controller.enqueue(encoder.encode(`event: result\ndata: ${data}\n\n`));
+            controller.enqueue(encoder.encode(diagnosisFrame.result(existing)));
             controller.close();
           },
         }),
@@ -899,18 +903,22 @@ export async function apiStreamDiagnoseCluster(
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        // The simulated pipeline runs a research stage, then the diagnosis stage.
+        controller.enqueue(encoder.encode(diagnosisFrame.stage('research')));
+        await new Promise((r) => setTimeout(r, RESEARCH_STAGE_MS));
+        controller.enqueue(encoder.encode(diagnosisFrame.stage('diagnosis')));
         for (const chunk of gen.thinkingChunks) {
-          controller.enqueue(encoder.encode(`event: thinking\ndata: ${JSON.stringify({ text: chunk })}\n\n`));
+          controller.enqueue(encoder.encode(diagnosisFrame.thinking(chunk)));
           await new Promise((r) => setTimeout(r, Math.max(300, Math.min(1100, chunk.length * 4))));
         }
-        controller.enqueue(encoder.encode(`event: result\ndata: ${JSON.stringify(saved)}\n\n`));
+        controller.enqueue(encoder.encode(diagnosisFrame.result(saved)));
         controller.close();
       } catch (err) {
         // Mirrors the server's stream endpoint: a failure surfaces as an
         // `error` event instead of silently closing the stream.
         const message = err instanceof Error ? err.message : String(err);
         try {
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message })}\n\n`));
+          controller.enqueue(encoder.encode(diagnosisFrame.error(message)));
           controller.close();
         } catch {
           /* ignore */
@@ -1023,46 +1031,7 @@ export async function apiPutAiLimits(body: unknown) {
 
 /** GET /api/settings/ai/usage — synthesised from stored demo diagnoses. */
 export async function apiGetAiUsage(daysParam?: string | null) {
-  const db = await getDemoDb();
   const parsed = parseInt(daysParam ?? '30', 10);
   const days = Math.min(365, Math.max(1, Number.isFinite(parsed) ? parsed : 30));
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-  // Same aggregation as the server route: per provider+model, failed included,
-  // over the requested window.
-  const rows = await db
-    .select({
-      provider: failureDiagnoses.provider,
-      model: failureDiagnoses.model,
-      diagnoses: sql<number>`count(${failureDiagnoses.id})`,
-      failed: sql<number>`sum(case when ${failureDiagnoses.status} = 'failed' then 1 else 0 end)`,
-      inputTokens: sql<number>`sum(${failureDiagnoses.inputTokens})`,
-      outputTokens: sql<number>`sum(${failureDiagnoses.outputTokens})`,
-      avgDurationMs: sql<number | null>`avg(${failureDiagnoses.durationMs})`,
-    })
-    .from(failureDiagnoses)
-    .where(and(isNotNull(failureDiagnoses.model), gte(failureDiagnoses.updatedAt, since)))
-    .groupBy(failureDiagnoses.provider, failureDiagnoses.model);
-
-  const byModel = rows
-    .map((r) => ({
-      provider: r.provider,
-      model: r.model ?? '',
-      diagnoses: Number(r.diagnoses ?? 0),
-      failed: Number(r.failed ?? 0),
-      inputTokens: Number(r.inputTokens ?? 0),
-      outputTokens: Number(r.outputTokens ?? 0),
-      avgDurationMs: r.avgDurationMs === null ? null : Math.round(Number(r.avgDurationMs)),
-    }))
-    .sort((a, b) => b.inputTokens - a.inputTokens);
-
-  return {
-    days,
-    totals: {
-      diagnoses: byModel.reduce((acc, r) => acc + r.diagnoses, 0),
-      inputTokens: byModel.reduce((acc, r) => acc + r.inputTokens, 0),
-      outputTokens: byModel.reduce((acc, r) => acc + r.outputTokens, 0),
-    },
-    byModel,
-  };
+  return getAiUsageSummary(await getDemoDb(), days);
 }

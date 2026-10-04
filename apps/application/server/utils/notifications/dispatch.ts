@@ -1,13 +1,6 @@
-import { and, eq, lte, lt } from 'drizzle-orm';
+import { and, eq, inArray, lte, lt } from 'drizzle-orm';
 import { notificationDeliveries, notificationChannels, subscriptions, users } from '../../database/schema';
-import {
-  sendEmail,
-  renderRunNotificationEmail,
-  renderNewClusterEmail,
-  renderDigestEmail,
-  isEmailConfigured,
-  type DigestItem,
-} from '../email';
+import { sendEmail, renderNotificationEmail, renderDigestEmail, isEmailConfigured, type DigestItem } from '../email';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { safeFetch } from '../safe-fetch';
 import type {
@@ -18,15 +11,17 @@ import type {
   RunFinishedPayload,
   ClusterNewPayload,
   BugLooksFixedPayload,
+  EnvironmentIncidentPayload,
 } from '#shared/notification-events';
 import {
+  clusterOutcome,
   renderEventSubject,
   notificationTargetPath,
   failureTargetPath,
   TOP_FAILURES_LIMIT,
 } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
 import {
   loadReportForDelivery,
@@ -79,37 +74,7 @@ async function resolveEmailAddress(db: Db, channel: ChannelRow): Promise<string>
 async function sendToEmail(to: string, event: NotificationEvent, payload: NotificationPayload) {
   if (!isEmailConfigured()) throw new Error('SMTP not configured');
 
-  let html: string;
-  let text: string;
-
-  if (event.startsWith('run.')) {
-    const p = payload as RunFinishedPayload;
-    ({ html, text } = renderRunNotificationEmail({
-      projectName: p.projectName,
-      runId: p.runId,
-      status: p.status,
-      totalTests: p.totalTests,
-      failedTests: p.failedTests,
-      branch: p.branch,
-      topFailures: p.topFailures,
-    }));
-  } else if (event === 'cluster.new') {
-    const p = payload as ClusterNewPayload;
-    ({ html, text } = renderNewClusterEmail({
-      projectName: p.projectName,
-      clusterId: p.clusterId,
-      signature: p.signature,
-      title: p.title,
-      sampleErrorExcerpt: p.sampleErrorExcerpt,
-      affectedCases: p.affectedCases,
-      knownIssue: p.knownIssue,
-    }));
-  } else {
-    const subject = renderEventSubject(event, payload);
-    html = `<p>${subject}</p>`;
-    text = subject;
-  }
-
+  const { html, text } = renderNotificationEmail(event, payload);
   await sendEmail({ to, subject: renderEventSubject(event, payload), html, text });
 }
 
@@ -140,11 +105,13 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   const text = renderEventSubject(event, payload);
   let emoji = ':bell:';
   if (event.startsWith('run.failed')) emoji = ':x:';
+  else if (event === 'run.interrupted') emoji = ':warning:';
   else if (event === 'cluster.new') emoji = ':bug:';
   else if (event === 'cluster.fixed') emoji = ':white_check_mark:';
   else if (event === 'cluster.regressed') emoji = ':rotating_light:';
   else if (event === 'flakiness.spike') emoji = ':game_die:';
   else if (event === 'bug.looks_fixed') emoji = ':white_check_mark:';
+  else if (event === 'environment.incident') emoji = ':construction:';
 
   const base = siteBase();
   // Slack section text is capped at 3000 chars; keep excerpts short.
@@ -174,14 +141,15 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
   } else if (event === 'cluster.fixed' || event === 'cluster.regressed') {
     const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
     const parts: string[] = [p.title || `\`${slackExcerpt(p.signature)}\``];
-    if (event === 'cluster.fixed') {
-      const fixed = p as ClusterFixedPayload;
-      if (fixed.resolved) parts.push('Triage status set to resolved.');
-    } else if ((p as ClusterRegressedPayload).reopened) {
-      parts.push('Triage status set back to open.');
-    }
+    const { triageNote } = clusterOutcome(event, p);
+    if (triageNote) parts.push(triageNote);
     if (p.knownIssue) parts.push(`Tracked in <${p.knownIssue.url}|${p.knownIssue.key}>`);
     parts.push(`<${base}/failure-clusters/${p.clusterId}|View cluster>`);
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
+  } else if (event === 'environment.incident') {
+    const p = payload as EnvironmentIncidentPayload;
+    const parts = [p.reason, 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).'];
+    parts.push(`<${base}/test-runs/${p.runId}|View run>`);
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
   } else if (event === 'bug.looks_fixed') {
     const p = payload as BugLooksFixedPayload;
@@ -337,14 +305,47 @@ async function markFailed(db: Db, rows: DeliveryRow[], message: string, now: Dat
   }
 }
 
+export interface SweepResult {
+  sent: number;
+  failed: number;
+}
+
+/** The sweep running in this process, and the one pass queued behind it. */
+let activeSweep: Promise<SweepResult> | null = null;
+let queuedSweep: Promise<SweepResult> | null = null;
+
 /**
- * Process pending deliveries that are due now (scheduledFor <= now, status = 'pending', attempts < MAX).
+ * Process the deliveries that are due now (see `sweepDue`). One sweep runs at a
+ * time in this process: a call made while one is running waits for it, then
+ * shares a single follow-up pass with every other call made meanwhile, so rows
+ * written during a sweep still go out.
+ */
+export function sweepOutbox(db: Db): Promise<SweepResult> {
+  if (!activeSweep) {
+    activeSweep = sweepDue(db).finally(() => {
+      activeSweep = null;
+    });
+    return activeSweep;
+  }
+  queuedSweep ??= activeSweep
+    .catch(() => undefined)
+    .then(() => {
+      queuedSweep = null;
+      return sweepOutbox(db);
+    });
+  return queuedSweep;
+}
+
+/**
+ * Send the deliveries that are due now (scheduledFor <= now, attempts < MAX):
+ * `pending` ones, and `processing` ones whose claim's lease has run out.
  *
  * Email and Slack deliveries queued by a digest-mode subscription batch into
  * one message per channel; every other delivery (realtime, webhook, browser)
- * sends individually. Returns per-row sent/failed counts.
+ * sends individually. Each row is claimed just before it is sent and skipped
+ * when another sweep holds it. Returns per-row sent/failed counts.
  */
-export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: number }> {
+async function sweepDue(db: Db): Promise<SweepResult> {
   const now = new Date();
   let sent = 0;
   let failed = 0;
@@ -356,7 +357,7 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
     .leftJoin(subscriptions, eq(notificationDeliveries.subscriptionId, subscriptions.id))
     .where(
       and(
-        eq(notificationDeliveries.status, 'pending'),
+        inArray(notificationDeliveries.status, OUTBOX_SWEEPABLE_STATUSES),
         lte(notificationDeliveries.scheduledFor, now),
         lt(notificationDeliveries.attempts, MAX_ATTEMPTS),
       ),
@@ -386,6 +387,8 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
   }
 
   for (const { d, c } of singles) {
+    const claimed = await claimOutboxRows(db, notificationDeliveries, [d.id]);
+    if (!claimed.has(d.id)) continue;
     try {
       await sendSingle(db, d, c);
       await markSent(db, [d], now);
@@ -397,7 +400,13 @@ export async function sweepOutbox(db: Db): Promise<{ sent: number; failed: numbe
   }
 
   for (const group of digestGroups.values()) {
-    const rows = group.map((g) => g.d);
+    const claimed = await claimOutboxRows(
+      db,
+      notificationDeliveries,
+      group.map((g) => g.d.id),
+    );
+    const rows = group.map((g) => g.d).filter((d) => claimed.has(d.id));
+    if (rows.length === 0) continue;
     try {
       await sendDigest(db, group[0]!.c, rows);
       await markSent(db, rows, now);

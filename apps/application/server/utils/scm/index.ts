@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { GitHubProvider } from './GitHubProvider';
 import { GitLabProvider } from './GitLabProvider';
 import { BitbucketProvider } from './BitbucketProvider';
+import { localGitProvider, type LocalGitProvider } from './local-git';
 import { detectScmHost, type ScmProviderName } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 
@@ -13,7 +14,29 @@ export function detectScmProvider(repositoryUrl: string | null | undefined): Scm
   return detectScmHost(repositoryUrl);
 }
 
-/** Instantiate the correct provider for the given URL with a pre-loaded token. */
+/**
+ * Self-hosted GitLab hosts a stored SCM token may be sent to, from
+ * `PIWI_SCM_GITLAB_HOSTS` (comma-separated host names). `gitlab.com` needs no entry.
+ */
+export function configuredGitlabHosts(): Set<string> {
+  return new Set(
+    (process.env.PIWI_SCM_GITLAB_HOSTS ?? '')
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+const warnedGitlabHosts = new Set<string>();
+
+/**
+ * Instantiate the correct provider for the given URL with a pre-loaded token.
+ *
+ * The repository URL usually comes from run metadata the reporter submits, so it
+ * never chooses where the token goes: GitHub and Bitbucket are called on their
+ * fixed API hosts, and GitLab only on `gitlab.com` or a host listed in
+ * `PIWI_SCM_GITLAB_HOSTS`. Any other GitLab-looking host gets no provider.
+ */
 export function scmProviderForUrl(
   repositoryUrl: string,
   token: string | null,
@@ -24,8 +47,17 @@ export function scmProviderForUrl(
     if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
       return new GitHubProvider(repoPath, token);
     }
-    if (hostname === 'gitlab.com' || hostname.includes('gitlab')) {
+    if (hostname === 'gitlab.com' || configuredGitlabHosts().has(hostname.toLowerCase())) {
       return new GitLabProvider(hostname, repoPath, token);
+    }
+    if (hostname.includes('gitlab')) {
+      if (!warnedGitlabHosts.has(hostname)) {
+        warnedGitlabHosts.add(hostname);
+        console.warn(
+          `[scm] ${hostname} is not in PIWI_SCM_GITLAB_HOSTS, so Piwi does not call it; add it to read that GitLab instance.`,
+        );
+      }
+      return null;
     }
     if (hostname === 'bitbucket.org') {
       const [workspace, repoSlug] = repoPath.split('/');
@@ -41,14 +73,22 @@ export function scmProviderForUrl(
  * Instantiate the correct provider, loading the SCM token from:
  * 1. Per-project scmToken (if projectId is provided)
  * 2. Global scm_token app setting (fallback)
+ *
+ * On the desktop app with no token, a project linked to a clone of the
+ * repository reads its history with local git in that folder, and asks the host
+ * only for what the clone does not have (see {@link localGitProvider}).
  */
 export async function createScmProvider(
   repositoryUrl: string,
   db: DbClient,
   projectId?: number,
-): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | null> {
+): Promise<GitHubProvider | GitLabProvider | BitbucketProvider | LocalGitProvider | null> {
   const token = await resolveScmToken(db, projectId);
-  return scmProviderForUrl(repositoryUrl, token);
+  const hosted = scmProviderForUrl(repositoryUrl, token);
+  if (hosted && !token && projectId) {
+    return (await localGitProvider(projectId, repositoryUrl, hosted)) ?? hosted;
+  }
+  return hosted;
 }
 
 /**

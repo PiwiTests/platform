@@ -1,37 +1,40 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
+import {
+  DESKTOP_DOWNLOAD_URL,
+  JETBRAINS_PLUGIN_URL,
+  PICKER_STORE_URL,
+  REPORTER_NPM_URL,
+} from '#shared/companion-links';
+import { DOCS_BASE_URL } from '#shared/docs';
 
 defineProps<{
   collapsed?: boolean;
 }>();
 
 const colorMode = useColorMode();
-const appConfig = useAppConfig();
+const themeColors = useThemeColors();
 const config = useRuntimeConfig();
 const { authState, logout } = useAuth();
 const settingsNav = await useSettingsNav();
 const { openSettings: openIdeSettings } = useOpenInIde();
+const isDesktop = useIsDesktop();
 
-const colors = [
-  'red',
-  'orange',
-  'amber',
-  'yellow',
-  'lime',
-  'green',
-  'emerald',
-  'teal',
-  'cyan',
-  'sky',
-  'blue',
-  'indigo',
-  'violet',
-  'purple',
-  'fuchsia',
-  'pink',
-  'rose',
+// Tailwind's own `neutral` palette lives under `--color-old-neutral-*`: Nuxt UI
+// points `--color-neutral-*` at the active gray scale.
+function chipColor(color: string): string {
+  return color === 'neutral' ? 'old-neutral' : color;
+}
+
+function colorLabel(color: string): string {
+  return color.charAt(0).toUpperCase() + color.slice(1);
+}
+
+const appearances = [
+  { label: 'System', icon: 'i-lucide-monitor', preference: 'system' },
+  { label: 'Light', icon: 'i-lucide-sun', preference: 'light' },
+  { label: 'Dark', icon: 'i-lucide-moon', preference: 'dark' },
 ];
-const neutrals = ['slate', 'gray', 'zinc', 'neutral', 'stone'];
 
 const user = computed(() => {
   if (config.public.authEnabled && authState.value.authenticated && authState.value.user) {
@@ -64,46 +67,47 @@ const items = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Theme',
         icon: 'i-lucide-palette',
+        ui: { content: 'w-auto' },
         children: [
           {
-            label: 'Primary',
+            label: 'Accent color',
+            description: 'Buttons, links, highlights',
             slot: 'chip',
-            chip: appConfig.ui.colors.primary,
+            chip: themeColors.accent.value,
             content: {
               align: 'center',
               collisionPadding: 16,
             },
-            children: colors.map((color) => ({
-              label: color,
+            children: ACCENT_COLORS.map((color) => ({
+              label: colorLabel(color),
               chip: color,
               slot: 'chip',
-              checked: appConfig.ui.colors.primary === color,
+              checked: themeColors.accent.value === color,
               type: 'checkbox',
-              onSelect: (e) => {
+              onSelect: (e: Event) => {
                 e.preventDefault();
-
-                appConfig.ui.colors.primary = color;
+                themeColors.setAccent(color);
               },
             })),
           },
           {
-            label: 'Neutral',
+            label: 'Gray tone',
+            description: 'Backgrounds, borders, text',
             slot: 'chip',
-            chip: appConfig.ui.colors.neutral === 'neutral' ? 'old-neutral' : appConfig.ui.colors.neutral,
+            chip: chipColor(themeColors.gray.value),
             content: {
               align: 'end',
               collisionPadding: 16,
             },
-            children: neutrals.map((color) => ({
-              label: color,
-              chip: color === 'neutral' ? 'old-neutral' : color,
+            children: GRAY_COLORS.map((color) => ({
+              label: colorLabel(color),
+              chip: chipColor(color),
               slot: 'chip',
               type: 'checkbox',
-              checked: appConfig.ui.colors.neutral === color,
-              onSelect: (e) => {
+              checked: themeColors.gray.value === color,
+              onSelect: (e: Event) => {
                 e.preventDefault();
-
-                appConfig.ui.colors.neutral = color;
+                themeColors.setGray(color);
               },
             })),
           },
@@ -112,33 +116,16 @@ const items = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Appearance',
         icon: 'i-lucide-sun-moon',
-        children: [
-          {
-            label: 'Light',
-            icon: 'i-lucide-sun',
-            type: 'checkbox',
-            checked: colorMode.value === 'light',
-            onSelect(e: Event) {
-              e.preventDefault();
-
-              colorMode.preference = 'light';
-            },
+        children: appearances.map(({ label, icon, preference }) => ({
+          label,
+          icon,
+          type: 'checkbox',
+          checked: colorMode.preference === preference,
+          onSelect: (e: Event) => {
+            e.preventDefault();
+            colorMode.preference = preference;
           },
-          {
-            label: 'Dark',
-            icon: 'i-lucide-moon',
-            type: 'checkbox',
-            checked: colorMode.value === 'dark',
-            onUpdateChecked(checked: boolean) {
-              if (checked) {
-                colorMode.preference = 'dark';
-              }
-            },
-            onSelect(e: Event) {
-              e.preventDefault();
-            },
-          },
-        ],
+        })),
       },
       {
         label: 'Open in IDE…',
@@ -150,6 +137,57 @@ const items = computed<DropdownMenuItem[][]>(() => {
       },
     ],
     [
+      {
+        // The tools that install outside the dashboard, for every user: the
+        // Setup page's companion-tools card is for admins only.
+        label: 'Piwi tools',
+        icon: 'i-lucide-blocks',
+        ui: { content: 'w-80' },
+        children: [
+          [
+            {
+              label: 'Piwi Picker',
+              description: 'Browser extension · Chrome Web Store',
+              icon: 'i-lucide-mouse-pointer-click',
+              to: PICKER_STORE_URL,
+              target: '_blank',
+            },
+            {
+              label: 'Piwi for JetBrains IDEs',
+              description: 'IDE plugin · JetBrains Marketplace',
+              icon: 'i-lucide-puzzle',
+              to: JETBRAINS_PLUGIN_URL,
+              target: '_blank',
+            },
+            ...(isDesktop
+              ? []
+              : [
+                  {
+                    label: 'Desktop app',
+                    description: 'Installers · GitHub Releases',
+                    icon: 'i-lucide-monitor',
+                    to: DESKTOP_DOWNLOAD_URL,
+                    target: '_blank',
+                  },
+                ]),
+            {
+              label: 'Playwright reporter',
+              description: '@piwitests/reporter · npm',
+              icon: 'i-lucide-package',
+              to: REPORTER_NPM_URL,
+              target: '_blank',
+            },
+          ],
+          [
+            {
+              label: 'Documentation',
+              icon: 'i-lucide-book-open',
+              to: DOCS_BASE_URL,
+              target: '_blank',
+            },
+          ],
+        ],
+      },
       {
         label: 'GitHub repository',
         icon: 'i-lucide-github',
@@ -185,6 +223,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
     :ui="{ content: collapsed ? 'w-48' : 'w-(--reka-dropdown-menu-trigger-width)' }"
   >
     <UButton
+      data-shot="user-menu"
       v-bind="{
         ...user,
         label: collapsed ? undefined : user?.name,

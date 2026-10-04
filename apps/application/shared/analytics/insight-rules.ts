@@ -167,11 +167,6 @@ function englishComparison(vs: InsightComparison): string {
   }
 }
 
-/** How an insight names the period a change is measured against, in English. */
-export function comparisonPhrase(scope: AnalyticsScope): string {
-  return englishComparison(insightComparison(scope));
-}
-
 /** Compact ms → human string for insight copy (e.g. 90000 → "90s"). */
 function fmtMs(ms: number): string {
   if (ms >= 1000) return `${Math.round(ms / 1000)}s`;
@@ -540,7 +535,7 @@ const targetMissed: InsightRule = {
             id: `target-missed:${t.projectId}:${t.key}`,
             // A pass rate target missed by more than 5 points is critical; the rest warn.
             severity: t.metric === 'test-pass-rate' && t.target - (t.actual ?? 0) > 5 ? 'critical' : 'warning',
-            to: `/projects/${t.projectId}?tab=settings`,
+            to: `/projects/${t.projectId}?tab=settings&section=targets`,
             projectId: t.projectId,
           },
         ),

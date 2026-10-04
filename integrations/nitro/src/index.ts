@@ -139,9 +139,8 @@ function markProbeApplied(store: RequestStore): void {
 const probeNonces = new ProbeNonceCache();
 
 // Links consola calls and recorded spans to the request being handled. The store
-// is scoped with als.run() around the whole downstream handler chain —
-// enterWith() from a request hook is not reliable here (the binding dies with
-// the hook's own async scope, so only the first request after boot would capture).
+// is scoped with als.run() around the whole downstream handler chain: a binding
+// made with enterWith() from a request hook dies with the hook's own async scope.
 const als = new AsyncLocalStorage<RequestStore>();
 
 /**
@@ -158,9 +157,9 @@ export function recordServerSpan(span: PiwiServerSpan): void {
 // The consola reporter is process-global — register it only once.
 let reporterAdded = false;
 
-// Capture and probe verification run only outside production, matching the
-// ASP.NET package's Development/Test allow-list: only an unset/empty NODE_ENV or
-// `development`/`test` is treated as non-production. Any other value
+// Capture and probe verification run only outside production (the ASP.NET
+// package's default allow-list is Development and Test): only an unset/empty
+// NODE_ENV or `development`/`test` is treated as non-production. Any other value
 // (`production`, `staging`, `prod`, …) disables capture unless
 // PIWI_TEST_LOGS_DISABLED is explicitly `false`, so a signed probe header is
 // never honored on a production-like deployment that skipped `NODE_ENV=production`.
@@ -183,10 +182,9 @@ const MANIFEST_PATH = '/__piwi/manifest';
 const observedRoutes = new Map<string, ManifestRouteEntry>();
 
 /**
- * Server probes stay off unless a project opts in. When off (the default in this
- * milestone) a signed probe header is still verified and recorded, but no fault
- * is applied — only the client-safe subset would ever be, and only once this is
- * on.
+ * Server probes stay off unless `PIWI_SERVER_PROBES=true`. When off (the
+ * default), a signed probe header is still verified and recorded, but no fault
+ * is applied.
  */
 const SERVER_PROBES_ENABLED = process.env.PIWI_SERVER_PROBES === 'true';
 

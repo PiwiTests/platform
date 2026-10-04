@@ -23,8 +23,10 @@ import { projects, testCases, testRuns, testRunsCases, networkRequests } from '.
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import { requestRouteKey } from '../utils/route';
 import { notLabRun } from './probes';
+import { eligibleRunSql } from '../run-eligibility';
 import { TERMINAL_STATUSES } from './projects';
 import type { DrizzleDB } from './db';
+import { topFlakeSuspect, type FlakeSuspectResult } from '../flake-lab';
 
 /** How far back the profile reads, in days. */
 export const FLAKE_PROFILE_WINDOW_DAYS = 30;
@@ -117,7 +119,10 @@ export interface FlakeCounts {
 }
 
 export interface FlakeSuspect {
-  /** Stable within a profile: the kind and the factor value (`slow-route:GET /api/cart`). */
+  /**
+   * Stable across profiles: the kind and the factor (`slow-route:GET /api/cart`), never a
+   * threshold, so a lab result stays attached when the threshold moves. The load suspect is `load`.
+   */
   id: string;
   kind: FlakeSuspectKind;
   /** A short name (`GET /api/cart slower (≥1.6 s)`). */
@@ -400,7 +405,7 @@ export function buildFlakeProfile(input: FlakeProfileInput): FlakeProfile {
     const counts = countWith(split, has);
     add(
       {
-        id: `load:${loadThreshold}`,
+        id: 'load',
         kind: 'load',
         label: `${loadThreshold} or more other tests running at once`,
         sentence: `${loadThreshold} or more other tests were running at once in ${countsText(counts)}.`,
@@ -594,7 +599,7 @@ function windowStart(now: Date): Date {
 
 /**
  * The attempts a profile reads, joined with their runs: the runs the flaky
- * leaderboard reads (finished, not probes, and on the default branch or no
+ * leaderboard reads (finished, eligible for the `flakiness` use, and on the default branch or no
  * branch when the project names one), passed or failed, in the window.
  */
 function windowAttempts(testCaseId: number, defaultBranch: string | null, since: Date) {
@@ -603,7 +608,7 @@ function windowAttempts(testCaseId: number, defaultBranch: string | null, since:
     gte(testRunsCases.createdAt, since),
     inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS]),
     inArray(testRuns.status, TERMINAL_STATUSES),
-    notLabRun(testRuns.metadata),
+    eligibleRunSql('flakiness'),
     defaultBranch ? or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch)) : undefined,
   );
 }
@@ -898,20 +903,25 @@ export interface TopFlakeSuspect {
   testCaseId: number;
   failures: number;
   passes: number;
-  /** The first-ranked suspect, or null when the history names none. */
+  /**
+   * The suspect it is shown with (`topFlakeSuspect`): the first-ranked one a lab run reproduced, else the
+   * first-ranked untested one, else one that did not reproduce; null when the history names none.
+   */
   suspect: FlakeSuspect | null;
 }
 
 /**
- * The top suspect of each listed test of a project, for the flaky list. Ids of
- * tests outside the project are dropped; at most {@link TOP_SUSPECTS_MAX_TESTS}
- * are read, a few at a time, each in the summary view.
+ * The top suspect of each listed test of a project, for the flaky list, picked
+ * by `topFlakeSuspect` from the test's lab `results` (a reproduced suspect
+ * first, one that did not reproduce last). Ids of tests outside the project are dropped; at most
+ * {@link TOP_SUSPECTS_MAX_TESTS} are read, a few at a time, each in the
+ * summary view.
  */
 export async function getTopFlakeSuspects(
   db: DrizzleDB,
   projectId: number,
   testCaseIds: number[],
-  opts: { now?: Date } = {},
+  opts: { now?: Date; results?: ReadonlyMap<number, ReadonlyMap<string, FlakeSuspectResult>> } = {},
 ): Promise<TopFlakeSuspect[]> {
   const wanted = [...new Set(testCaseIds)].slice(0, TOP_SUSPECTS_MAX_TESTS);
   if (wanted.length === 0) return [];
@@ -930,7 +940,8 @@ export async function getTopFlakeSuspects(
     );
     for (const p of profiles) {
       if (!p) continue;
-      out.push({ testCaseId: p.testCaseId, failures: p.failures, passes: p.passes, suspect: p.suspects[0] ?? null });
+      const suspect = topFlakeSuspect(p.suspects, opts.results?.get(p.testCaseId) ?? new Map());
+      out.push({ testCaseId: p.testCaseId, failures: p.failures, passes: p.passes, suspect });
     }
   }
   return out;

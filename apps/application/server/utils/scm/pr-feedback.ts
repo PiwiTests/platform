@@ -25,11 +25,13 @@ import { resolveRunBranch } from '../run-branch';
 import { verifyClusterFixes } from '../fix-verification';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { getProjectFlakyTests } from '#shared/handlers/projects';
+import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import {
   buildChangeCoverageStatus,
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
+  isQuietRun,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
   PR_FEEDBACK_KEY,
@@ -41,6 +43,7 @@ import {
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage } from './change-coverage';
+import { recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
@@ -53,6 +56,8 @@ import { isExpectedFailurePassed, looksFixedTests } from '#shared/status-classif
 import { errorExcerpt } from '#shared/notification-events';
 import { caseHeadline } from '#shared/failure-verdict';
 import { locksHeldAcrossShards } from '#shared/lock-overlap';
+import { runFindingsNovelty } from '#shared/handlers/resource-findings';
+import { isLeak } from '#shared/resource-fingerprint.mjs';
 
 /** Read the resolved settings, falling back to the (disabled) defaults. */
 export async function getPrFeedbackSettings(db: DbClient): Promise<PrFeedbackSettings> {
@@ -223,6 +228,8 @@ export async function buildRunPrSummary(
     (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
   );
   const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
+  const quarantinedIds = await getQuarantinedCaseIds(db, run.projectId).catch(() => new Set<number>());
+  const quarantinedFailures = failingRows.filter((row) => quarantinedIds.has(row.testCaseId)).length;
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
   // re-deriving "new versus pre-existing" with a second, divergent rule.
@@ -317,6 +324,7 @@ export async function buildRunPrSummary(
       testCount: fix.testCount,
       verification: fix.verification,
       timeToResolutionMs: fix.timeToResolutionMs,
+      ...(fix.healPr ? { healPr: { number: fix.healPr.number, url: fix.healPr.url } } : {}),
     })),
     wastedMinutes: wastedTotalMs > 0 ? wastedTotalMs / 60000 : null,
     selection: (() => {
@@ -336,6 +344,8 @@ export async function buildRunPrSummary(
       return held.length ? held : null;
     })(),
     hasBaseline: insights?.hasBaseline ?? false,
+    quarantinedFailures,
+    quarantineFailsStatus: project.quarantineFailsStatus === true,
   };
 }
 
@@ -378,48 +388,74 @@ export async function postRunPrFeedback(
   // status) are dropped when the project declined `test-map`. The graph and its
   // `changes` edges are still written on ingest — a declined capability that
   // receives data reads active — this only withholds the PR surfaces.
-  const testMapDeclined = (await resolveProjectStates(db, run.projectId))['test-map'] === 'declined';
+  const states = await resolveProjectStates(db, run.projectId);
+  const testMapDeclined = states['test-map'] === 'declined';
   const effectiveChangeCoverage = testMapDeclined ? null : changeCoverage;
   summary.changeCoverage = effectiveChangeCoverage;
   summary.locatorBreaks = testMapDeclined ? null : locatorBreaks;
+  summary.newLeaks = states.resources === 'declined' ? null : await readNewLeaks(db, runId);
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
-  // cluster is news — that is the answer somebody was waiting for.
-  const quiet = settings.onlyOnFailure && summary.failedTests === 0 && (summary.fixedClusters?.length ?? 0) === 0;
+  // cluster or opened a new leak is news. Quarantined failures follow the
+  // commit status's rule.
+  const quiet = isQuietRun(settings, summary);
 
   let commentPosted = false;
+  let prNumber = runPrNumber(run.metadata);
+  let commentId: string | null = null;
   if (settings.comment && branch && !quiet) {
     const pullRequest = await provider.findPullRequestForBranch(branch);
     if (pullRequest) {
-      commentPosted = await provider.upsertPullRequestComment(
+      prNumber = pullRequest.number;
+      const comment = await provider.postPullRequestComment(
         pullRequest.number,
         PR_COMMENT_MARKER,
         buildPrComment(summary),
       );
+      commentPosted = comment !== null;
+      commentId = comment?.id ?? null;
     }
   }
 
   // A commit status is a state rather than a message, so it is still worth
   // setting on a green run that `onlyOnFailure` silences the comment for.
   let statusPosted = false;
+  const statuses: string[] = [];
   if (settings.status && commit) {
     statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    if (statusPosted) statuses.push(settings.statusContext);
     // A second, informational status for change coverage — warn-only.
     if (effectiveChangeCoverage) {
-      await provider
-        .postCommitStatus(
-          commit,
-          buildChangeCoverageStatus(
-            effectiveChangeCoverage,
-            summary.runUrl,
-            `${settings.statusContext}/change-coverage`,
-          ),
-        )
+      const coverageContext = `${settings.statusContext}/change-coverage`;
+      const coveragePosted = await provider
+        .postCommitStatus(commit, buildChangeCoverageStatus(effectiveChangeCoverage, summary.runUrl, coverageContext))
         .catch(() => false);
+      if (coveragePosted) statuses.push(coverageContext);
     }
   }
 
+  if (commentPosted || statuses.length > 0) {
+    await recordPrFeedbackPost(db, {
+      projectId: run.projectId,
+      runId,
+      repositoryUrl,
+      prNumber,
+      commentId,
+      statuses,
+    }).catch((e) => console.error(`[pr-feedback] could not record the feedback of run #${runId}`, e));
+  }
+
   return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };
+}
+
+/** The leaks of a run that its base branch never showed, or null when the run sent no resource report. */
+async function readNewLeaks(db: DbClient, runId: number): Promise<PrSummaryInput['newLeaks']> {
+  const novelty = await runFindingsNovelty(db, runId).catch(() => null);
+  if (!novelty) return null;
+  return {
+    baseBranch: novelty.baseBranch,
+    leaks: novelty.findings.filter((f) => f.isNew && isLeak(f.finding)).map((f) => f.finding),
+  };
 }
 
 /**

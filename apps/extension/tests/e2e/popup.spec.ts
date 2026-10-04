@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js';
+import { test, expect, openOptions } from './fixtures.js';
 
 /**
  * Playwright has no API to click the browser's own toolbar icon, so this
@@ -110,13 +110,17 @@ test.describe('popup.html', () => {
         }),
     );
     await page.reload();
+    // The select's row shows once the popup has read the connection: a hidden select takes no focus.
+    const select = page.locator('#active-project');
+    await expect(select).toBeVisible();
     await page.evaluate(() => {
       (globalThis as unknown as { clicked: string[] }).clicked = [];
       for (const b of document.querySelectorAll<HTMLElement>('.actions button')) {
         b.addEventListener('click', () => (globalThis as unknown as { clicked: string[] }).clicked.push(b.id));
       }
-      document.getElementById('active-project')!.focus();
     });
+    await select.focus();
+    await expect(select).toBeFocused();
     await page.keyboard.press('2');
     expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([]);
   });
@@ -186,6 +190,80 @@ test.describe('popup.html', () => {
     const optionTexts = await page.locator('#active-project option').allTextContents();
     expect(optionTexts.filter((t) => t === 'Demo project')).toHaveLength(1);
   });
+
+  test('on a page that is not a web page, Record and Report a bug say they cannot record, and park nothing', async ({
+    context,
+    extensionId,
+  }) => {
+    // The popup opened as a tab is itself the active tab: an extension page, which no host permission covers.
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.getByRole('button', { name: /Record actions/ }).click();
+    await expect(page.getByRole('status')).toHaveText('Piwi Picker can’t record on this page.');
+    await page.evaluate(() => {
+      document.getElementById('status')!.textContent = '';
+    });
+    await page.getByRole('button', { name: /Report a bug/ }).click();
+    await expect(page.getByRole('status')).toHaveText('Piwi Picker can’t record on this page.');
+    expect(await page.evaluate(() => chrome.storage.session.get('piwiRecordIntent'))).toEqual({});
+  });
+
+  test('Replay and Tested elements wait for the tab and the connection they act on', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    // The tab is read only once the spec lets it be.
+    await page.addInitScript(() => {
+      const query = chrome.tabs.query.bind(chrome.tabs);
+      const held = new Promise<void>((resolve) => {
+        (globalThis as unknown as { releaseTabs: () => void }).releaseTabs = resolve;
+      });
+      chrome.tabs.query = ((info: chrome.tabs.QueryInfo) =>
+        held.then(() => query(info))) as unknown as typeof chrome.tabs.query;
+    });
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    const replay = page.getByRole('button', { name: /Replay a bug report/ });
+    const tested = page.getByRole('button', { name: /Tested elements/ });
+    await expect(replay).toBeDisabled();
+    await expect(tested).toBeDisabled();
+    const opened: string[] = [];
+    context.on('page', (p) => opened.push(p.url()));
+    await page.keyboard.press('r');
+    await page.keyboard.press('t');
+    await expect(page.locator('#status')).toBeEmpty();
+    expect(opened).toEqual([]);
+
+    await page.evaluate(() => (globalThis as unknown as { releaseTabs: () => void }).releaseTabs());
+    await expect(replay).toBeEnabled();
+    await expect(tested).toBeEnabled();
+    await page.keyboard.press('r');
+    await expect(page.locator('#status')).toHaveText('Piwi Picker can’t replay a report on this page.');
+  });
+
+  test('Add this site, before the instance’s projects are read, fills a line of this browser in', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.evaluate(() =>
+      chrome.storage.local.set({
+        piwiConnection: {
+          instanceUrl: 'https://piwi.invalid',
+          apiKey: '',
+          projectMappings: [{ urlPattern: 'https://elsewhere.test/**', projectId: 1, projectLabel: 'Shop' }],
+          serverSyncedAt: 0,
+        },
+      }),
+    );
+    await openOptions(page, extensionId, `#add=${encodeURIComponent('https://staging.shop.example/**')}`);
+    await expect(page.locator('#add-site')).toBeHidden();
+    const patterns = page.locator('#mappings .mapping-pattern');
+    await expect(patterns).toHaveCount(2);
+    await expect(patterns.last()).toHaveValue('https://staging.shop.example/**');
+    await expect(page.locator('#mappings .mapping-project').last()).toBeFocused();
+  });
 });
 
 test.describe('Tested elements tile', () => {
@@ -193,7 +271,7 @@ test.describe('Tested elements tile', () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     const tile = page.getByRole('button', { name: /Tested elements/ });
-    await expect(tile).toBeVisible();
+    await expect(tile).toBeEnabled();
     await expect(tile).toHaveAttribute('aria-keyshortcuts', 'T');
     await page.evaluate(() => {
       (globalThis as unknown as { clicked: string[] }).clicked = [];
@@ -244,7 +322,7 @@ test.describe('Report a bug tile', () => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
     const tile = page.getByRole('button', { name: /Report a bug/ });
-    await expect(tile).toBeVisible();
+    await expect(tile).toBeEnabled();
     await expect(tile).toHaveAttribute('aria-keyshortcuts', 'B');
     await expect(page.locator('#report-bug-hint')).toHaveText("Steps and what's wrong → a failing test");
     await page.evaluate(() => {

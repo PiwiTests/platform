@@ -45,8 +45,37 @@ When `collectCiInfo` is enabled (default), the reporter auto-detects:
 | CircleCI        | Build number, build URL, job name, workflow               |
 | Travis CI       | Build number, build URL, job number                       |
 | Azure Pipelines | Build number, build ID, build URL, job name               |
+| Bitbucket Pipelines | Build number, build URL, pipeline UUID, step UUID, repository |
 
-These six platforms get rich per-provider fields. The **run label** that ties [sharded](/guide/ci#sharding) runs together comes from the provider's build id: `GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `TRAVIS_BUILD_ID`, `BUILD_BUILDID`, `BUILD_ID`, `BUILDKITE_BUILD_ID`, `TEAMCITY_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `SEMAPHORE_WORKFLOW_ID`, `APPVEYOR_BUILD_ID` or `DRONE_BUILD_NUMBER`; set `runLabel` when your CI is not among them.
+These seven platforms get rich per-provider fields. The **run label** that ties [sharded](/guide/ci#sharding) runs together comes from the provider's build id: `GITHUB_RUN_ID`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `TRAVIS_BUILD_ID`, `BUILD_BUILDID`, `BUILD_ID`, `BUILDKITE_BUILD_ID`, `TEAMCITY_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `SEMAPHORE_WORKFLOW_ID`, `APPVEYOR_BUILD_ID` or `DRONE_BUILD_NUMBER`; set `runLabel` when your CI is not among them.
+
+### Run origin
+
+Whatever the collectors, every run records what launched it as `piwiOrigin`, so analyses that compare runs can leave
+out the ones that say nothing about the branch's current state. The reporter records `ci` when it detects a CI provider
+and `local` otherwise. A launcher names itself through two environment variables on the Playwright process:
+
+| Variable | Value |
+|---|---|
+| `PIWI_ORIGIN` | `ci`, `ci-rerun`, `local`, `desktop`, `editor`, `preflight`, `bug`, `flake-lab`, `probe`, `bisect` or `reproduce` |
+| `PIWI_ORIGIN_REF` | Optional: what the run was launched for, such as a dispatch, a cluster or a bug report id (letters, digits and `._:/#@-`, up to 200 characters) |
+
+Piwi's own launchers set them: the desktop app (`desktop`, and `reproduce` or `bisect` with the cluster id), the
+editors (`editor`), `piwi preflight --run` (`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab
+and probes. A [re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as
+`ci-rerun` once Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
+
+What each origin feeds:
+
+- **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
+- **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They notify like any run, but
+  stay out of baselines, fix verification, flaky scores, selections, change coverage, the stored locators and test
+  metadata, auto-heal and the bug-report lifecycle.
+- **`piwi bug` runs** do not move the bug report they were written for.
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, except in an editor's CI failures:
+  those come from the newest complete CI run on the branch, and a local run stands in only while the branch has none.
+- **Partial runs** (a `--grep`, a file filter, a selection) never count for change coverage, which asks whether a
+  file was reached in the recent runs.
 
 ### Playwright configuration
 
@@ -56,7 +85,7 @@ The reporter also records browser project configs, worker count, the global time
 
 The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName`, `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
 
-In the dashboard UI, the test run detail page shows a browser icon and project name as the first column of the test cases table, and you can filter by browser using the dropdown above the table.
+In the dashboard UI, every row of a run's Tests tab shows the browser icon, and `browser:chromium` in its [search](/reference/test-search) narrows the list to one project.
 
 ### Suite hierarchy (describe blocks)
 
@@ -84,8 +113,8 @@ Tags are stored twice: on the execution (`test_runs_cases.tags`, what that run s
 it was written — filter for `smoke` or `@smoke` and you get the same rows. Removing a tag from a spec clears it on the
 next run that reports the test.
 
-Tags drive the tag filter on a project's **Test cases** tab, the same filter on the flaky leaderboard, and the
-`requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
+Tags drive the `tag:` qualifier of the Tests tabs' [search](/reference/test-search), the tag filter on the flaky
+leaderboard, and the `requireTags` rule of the [CI gate](/guide/ci#blocking-a-merge).
 
 ### Test locks
 
@@ -100,8 +129,8 @@ test.describe('payments', { lock: ['database', 'external-api'] }, () => { /* eve
 
 The reporter reads the lock names and sends them as `locks`, stored on the execution (`test_runs_cases.locks`) and
 denormalized onto the test case (`test_cases.locks`, the latest declaration) — the same treatment as tags. They power
-the [Timeline tab's lock lanes and *Locks* table](/features/ui-overview#test-run-detail), the lock filter and *Group by lock*
-on the Tests tabs, lock badges on every test row, and two [clues](/features/evidence#clues) (a lock's previous holder failed;
+the [Timeline tab's lock lanes and *Locks* table](/features/ui-overview#test-run-detail), the `lock:` search qualifier on
+the Tests tabs and *Group by lock* on a run's, lock badges on every test row, and two [clues](/features/evidence#clues) (a lock's previous holder failed;
 a lock was held on two shards at once).
 
 Capture is **best effort**. Playwright exposes locks only to an in-process reporter — there is no public API property,
@@ -141,8 +170,8 @@ test(
 | `piwi:link` | An absolute `http(s)` URL; other schemes are dropped rather than stored |
 | `piwi:bug` | The id of the Piwi bug report the test reproduces (`37` or `#37`); written by the spec a [bug report](/features/report-a-bug) generates |
 
-Metadata shows as badges next to the test wherever it is listed, is filterable by owner and priority on the **Test
-cases** tab, and is carried into [pull-request feedback](/features/pr-feedback) so a failure comment names the team
+Metadata shows as badges next to the test wherever it is listed, is searchable with `owner:`, `priority:` and `feature:`
+on the Tests tabs ([test search](/reference/test-search)), and is carried into [pull-request feedback](/features/pr-feedback) so a failure comment names the team
 that owns it. Unknown `piwi:` fields and unparseable values are ignored — a typo costs you the field, not the run.
 
 The values are also re-validated server-side, because a payload can reach the ingest API without passing through the

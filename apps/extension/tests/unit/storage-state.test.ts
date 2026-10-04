@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { setupSnippet, toStorageState, type BrowserCookie } from '../../src/shared/storage-state.js';
+import {
+  cookieOriginPatterns,
+  setupSnippet,
+  toStorageState,
+  type BrowserCookie,
+} from '../../src/shared/storage-state.js';
 
 const cookie = (fields: Partial<BrowserCookie>): BrowserCookie => ({
   name: 'sid',
@@ -58,5 +63,24 @@ describe('setupSnippet', () => {
   it('saves and uses the file at the path Playwright’s guide names', () => {
     expect(setupSnippet()).toContain("await page.context().storageState({ path: 'playwright/.auth/user.json' });");
     expect(setupSnippet()).toContain("test.use({ storageState: 'playwright/.auth/user.json' });");
+  });
+});
+
+describe('cookieOriginPatterns', () => {
+  it('asks for the host for both schemes and any port', () => {
+    expect(cookieOriginPatterns('localhost')).toEqual(['*://localhost/*']);
+    expect(cookieOriginPatterns('127.0.0.1')).toEqual(['*://127.0.0.1/*']);
+    expect(cookieOriginPatterns('[::1]')).toEqual(['*://[::1]/*']);
+    expect(cookieOriginPatterns('shop.test')).toEqual(['*://shop.test/*']);
+  });
+
+  it('asks for each parent domain a cookie can be set on, never a public suffix', () => {
+    expect(cookieOriginPatterns('App.Example.com')).toEqual(['*://app.example.com/*', '*://example.com/*']);
+    expect(cookieOriginPatterns('a.b.example.co.uk')).toEqual([
+      '*://a.b.example.co.uk/*',
+      '*://b.example.co.uk/*',
+      '*://example.co.uk/*',
+    ]);
+    expect(cookieOriginPatterns('shop.example.com.au.')).toEqual(['*://shop.example.com.au/*', '*://example.com.au/*']);
   });
 });

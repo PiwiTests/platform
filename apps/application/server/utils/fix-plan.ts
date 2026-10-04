@@ -23,9 +23,10 @@ import { findFixedBefore } from './cluster-memory';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { validatePatch, type PatchValidation } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
-import { buildRetryCommand } from '#shared/retry-command';
+import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
 import { computeReproduceContext } from '#shared/handlers/reproduce';
 import type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
+import { clusterTrailerLine } from '#shared/commit-trailers';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type { BrowserConfig } from '#shared/types';
 
@@ -33,11 +34,6 @@ export type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 
 /** Executions inspected for locator suggestions — enough to cover a cluster. */
 const MAX_HEALED_CASES = 5;
-
-/** Shell-quote a title for `-g`, since test titles routinely contain spaces. */
-function quote(value: string): string {
-  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
-}
 
 /**
  * Build the plan for a cluster, or `null` when the cluster does not exist.
@@ -93,6 +89,9 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     const details = diagnosisRow.details as { suggestedFix?: { patch?: unknown; patchValidation?: unknown } } | null;
     const patch = typeof details?.suggestedFix?.patch === 'string' ? details.suggestedFix.patch : null;
     diagnosis = {
+      id: diagnosisRow.id,
+      provider: diagnosisRow.provider,
+      model: diagnosisRow.model,
       category: diagnosisRow.category,
       confidence: diagnosisRow.confidence,
       rootCause: diagnosisRow.rootCause,
@@ -145,8 +144,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     failingTests.map((test) => ({ filePath: test.filePath, title: test.title })),
     { mode: 'file' },
   );
-  const titles = failingTests.slice(0, 5).map((test) => test.title);
-  const grep = titles.length ? ` -g ${quote(titles.join('|'))}` : '';
+  const grep = buildTitleGrepFlag(failingTests.slice(0, 5).map((test) => test.title));
   const verifyCommand = `${fileCmd || 'npx playwright test'}${grep}`;
 
   // Reproduce locally and bisect the regression window: the checkout of the
@@ -189,7 +187,8 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     verify: {
       command: verifyCommand,
       expectation:
-        'Re-run the affected tests, or the whole suite. When every test in this cluster passes in one run, full or filtered, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open.',
+        'Re-run the affected tests, or the whole suite. When every test in this cluster passes in one run, full or filtered, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open. Put the commit trailer in the commit message of the fix and report the change as a fix attempt, so the fix is tied to it.',
+      commitTrailer: clusterTrailerLine(cluster.id),
     },
     reproduce,
     bisect,

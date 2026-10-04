@@ -34,13 +34,13 @@ export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
   const testCaseId = requireRouteId(event, 'testCaseId', 'test case ID');
   await requireAuth(event);
-  await requireProjectAccess(event, projectId);
+  const user = await requireProjectAccess(event, projectId);
 
   const body = (await readBody(event).catch(() => null)) as { reason?: unknown } | null;
   const reason = body && typeof body.reason === 'string' ? body.reason.slice(0, 500) : null;
 
   const db = await getDatabase();
-  const result = await releaseQuarantine(db, projectId, testCaseId, reason);
+  const result = await releaseQuarantine(db, projectId, testCaseId, reason, { channel: 'ui', userId: user.id });
   if (!result.released) throw apiError({ statusCode: 404, message: 'No active quarantine for this test' });
   return { success: true, ...result };
 });

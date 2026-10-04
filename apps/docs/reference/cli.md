@@ -68,13 +68,13 @@ npx @piwitests/reporter skills list
 npx @piwitests/reporter skills add [names...] [options]
 ```
 
-The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them.
+The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them. Each installed file is stamped with the reporter's version (`piwi-version`) and a hash (`piwi-hash`); `add` reports a skill as `outdated` when an older release installed it and it was never edited, and replaces it, and as `edited` when it changed since it was installed, and keeps it.
 
 | Flag (for `add`) | Description |
 |---|---|
 | `--dir <path>` | Directory to install into (default: `.claude/skills`) |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
-| `--force` | Overwrite a skill file that already exists |
+| `--force` | Replace a skill that was edited since it was installed (an untouched skill from an older release is always updated) |
 | `--dry-run` | Report what would be written without writing |
 | `--json` | Print the results as JSON |
 
@@ -86,7 +86,7 @@ Fail a CI job on the dashboard's analysis of a run — the [merge gate](/guide/c
 npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 ```
 
-**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate.
+**Exit codes:** `0` satisfied · `1` violated · `2` could not evaluate · `3` inconclusive: the run is an [environment incident](/features/environment-incidents), so it cannot say whether the change is good.
 
 | Flag | Description |
 |---|---|
@@ -102,6 +102,8 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--fail-on-new-cluster` | Fail when this run introduced a new failure cluster |
 | `--fail-on-flaky` | Fail when this run contains any flaky test |
 | `--require-selection <key>` | Fail when a test the named selection matches did not run or failed |
+| `--max-leaks <n>` | Fail when the run left more than *n* browsers, contexts or pages open, counted per opening line |
+| `--max-new-leaks <n>` | Fail when more than *n* of those were never seen on the base branch |
 | `--max-uncovered-changes <n>` | Warn when more than *n* changed files have no observed test reach (warn-only — never fails the gate) |
 | `--json` | Print the raw result as JSON instead of a summary |
 | `-h`, `--help` | Show help |
@@ -155,7 +157,7 @@ npx @piwitests/reporter run impact --base origin/main
 | `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
 | `--format <fmt>` | `args` (`file:line`, default) · `grep` · `files`. For the full resolution use `--json`; `run` rejects `--format json` |
 | `--budget <duration>` | Cap total time, e.g. `5m`, `90s`, `300000` (ms) |
-| `--shard <i/n>` | Keep only shard *i* of *n*, balanced by test duration and lock-aware (a lock's holders stay in one shard) |
+| `--shard <i/n>` | Keep only shard *i* of *n*, balanced by test duration and lock-aware (a lock's holders stay in one shard). `run` reports the shard to the dashboard (`PIWI_SHARD`), so the shards merge into one run |
 | `--fail-fast` | Order the least-reliable tests first |
 | `--base <ref>` | For `impact`: the ref to diff the working tree against |
 | `--strict` | Fail (exit 2) instead of falling back when unreachable |
@@ -164,6 +166,16 @@ npx @piwitests/reporter run impact --base origin/main
 | `-h`, `--help` | Show help |
 
 Pass extra Playwright arguments after `--`: `piwi run smoke -- --headed --workers=1`.
+
+When the dashboard is unreachable, `run` reuses the last good resolution from `.piwi/selection-cache.json`. An entry is
+keyed by the `--project` value as written, the selection key and the flags that shape the resolution, so a project given
+by name is found offline, and a name and an id for the same project are separate entries. With nothing cached, `run`
+runs the full suite, or exits `2` under `--strict`.
+
+`run --shard` sets `PIWI_SHARD=<i/n>` for the Playwright process, which the reporter reports as the run's shard, so the
+shard jobs of one pipeline merge into one [run](/guide/ci#sharding) and do not cancel each other's runs. Playwright gets
+no `--shard` of its own, since the resolved tests are already the shard's. A `select` job that passes the printed
+arguments to `playwright test` sets `PIWI_SHARD` itself, to the same `i/n` it gave `--shard`.
 
 When `run` spawns Playwright and the target config has **no Piwi reporter**, it appends `--add-reporter @piwitests/reporter` so the run still reaches the dashboard — provided the installed Playwright is **1.63 or later** (the version that added the flag; it appends to the configured reporters rather than replacing them). It logs one line naming what it added. On older Playwright it logs that the reporter is not configured and runs as before. This trial append gives you results, traces and screenshots but not the [capture fixtures](/guide/capture-fixtures) or [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) defaults — wire the reporter into the config (via [`init`](#init)) for the full set. A config that already lists the reporter is left untouched.
 
@@ -283,7 +295,7 @@ of a file.
 | `--test-import <mod>` | Module `test` and `expect` are imported from, such as your fixtures file (default `@playwright/test`) |
 | `--absolute-urls` | Keep the recorded URLs instead of paths |
 | `--no-url-checks` | Do not wait for each new page's URL |
-| `--env-values` | Read every typed value from a `PIWI_TEST_VALUE_<n>` environment variable instead of writing it into the spec |
+| `--env-values` | Read every typed value from an environment variable named after its field (`E2E_EMAIL` for a field labeled Email) instead of writing it into the spec |
 | `--fail` | Mark the test as expected to fail (`test.fail()`) |
 | `--fail-reason <text>` | The reason written beside `test.fail()`, such as a ticket key |
 | `--tag <tag>` | Add a tag; repeat for more (`@` is added when missing) |

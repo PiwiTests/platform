@@ -9,6 +9,7 @@
  */
 
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import {
   failureClusters,
   graphEdges,
@@ -23,11 +24,13 @@ import {
   bugReports,
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
-import { isLabRun } from './probes';
+import { notLabRun } from './probes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import type { DrizzleDB } from './db';
+import { recordOutcome } from '../../server/utils/outcomes';
+import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 
 // ── Vocabulary ───────────────────────────────────────────────────────────────
 
@@ -37,8 +40,6 @@ export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed'
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
-/** Extra recent runs fetched beyond the window so excluded lab runs don't shrink it. */
-const PROBE_RUN_WINDOW_BUFFER = 20;
 /** A route must be seen at least this many times before "always success" is a claim. */
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
 /** Each exposure factor is clamped here so a missing input can never zero a row. */
@@ -97,7 +98,7 @@ export interface ExposureInputs {
 
 // ── Exposure scoring (pure) ──────────────────────────────────────────────────
 
-export function clampFactor(value: number): number {
+function clampFactor(value: number): number {
   if (!Number.isFinite(value)) return FACTOR_FLOOR;
   return Math.max(FACTOR_FLOOR, Math.min(1, value));
 }
@@ -164,10 +165,10 @@ export function exposureFactorsFor(gap: DetectedGap, inputs: ExposureInputs): Ex
 
 /**
  * exposure = geometric mean of the four factors; gap score = exposure ×
- * confidence. The geometric mean keeps the documented factors but reads on the
- * same scale as one factor (`[0.1, 1]`), so a score no longer collapses toward
- * `0.1⁴` and `minScore` stays meaningful. It is a monotonic transform of the raw
- * product, so ranking among gaps of equal confidence is unchanged.
+ * confidence. The geometric mean reads on the same scale as one factor
+ * (`[0.1, 1]`), so a score does not collapse toward `0.1⁴` and `minScore` stays
+ * meaningful. It is a monotonic transform of the raw product, so it ranks gaps
+ * of equal confidence the same way the product would.
  */
 export function scoreGap(gap: DetectedGap, factors: ExposureFactors): number {
   const product = factors.churn * factors.age * factors.escapeHistory * factors.priority;
@@ -417,7 +418,7 @@ export function detectChangedUnreached(
   return gaps;
 }
 
-// ── M2 detectors (pure) ──────────────────────────────────────────────────────
+// ── Graph and outcome detectors (pure) ───────────────────────────────────────
 
 /** A control node and how the suite touches it. */
 export interface ControlReach {
@@ -426,16 +427,19 @@ export interface ControlReach {
   pageCount: number;
   /** Distinct tests whose locators target it. */
   reachCount: number;
+  /** Of those, the tests recorded only by hand (a covered-by), not observed. */
+  manualReachCount?: number;
 }
 
 /**
  * Control nobody exercises — a control the suite has seen on a page but no
- * locator ever targets. Blind spot. Requires the project to have some control
- * reach at all: with no test→control edge anywhere, every inventoried control
- * would flag, so the detector stays silent until reach exists to compare against.
+ * locator ever targets. Blind spot. Requires the project to have some observed
+ * control reach: with no observed test→control edge anywhere, every inventoried
+ * control would flag, so the detector stays silent until reach exists to
+ * compare against. A covering test recorded by hand does not count as observed.
  */
 export function detectControlNobodyExercises(controls: ControlReach[]): DetectedGap[] {
-  if (!controls.some((c) => c.reachCount > 0)) return [];
+  if (!controls.some((c) => c.reachCount - (c.manualReachCount ?? 0) > 0)) return [];
   const gaps: DetectedGap[] = [];
   for (const c of controls) {
     if (c.reachCount > 0) continue;
@@ -982,7 +986,7 @@ export function detectAssertionLight(pages: AssertionLightPage[]): DetectedGap[]
   return gaps;
 }
 
-// ── M2 change-time detectors (pure) ──────────────────────────────────────────
+// ── Change-time detectors (pure) ─────────────────────────────────────────────
 
 /** A commit or ticket intent and whether any test matches its words. */
 export interface IntentInput {
@@ -1130,19 +1134,16 @@ function maxPriority(
 /**
  * Ids of a project's most recent real runs, newest first. Lab runs (probes,
  * flake experiments) are excluded — their injected faults must never enter the detectors' history
- * window — so a buffer beyond the window is fetched to keep it full.
+ * window.
  */
 async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number): Promise<number[]> {
   const rows = await db
-    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
     .orderBy(desc(testRuns.id))
-    .limit(limit + PROBE_RUN_WINDOW_BUFFER);
-  return rows
-    .filter((r) => !isLabRun(r.metadata))
-    .slice(0, limit)
-    .map((r) => r.id);
+    .limit(limit);
+  return rows.map((r) => r.id);
 }
 
 /** Title + priority for a set of test cases. */
@@ -1296,7 +1297,12 @@ export async function computeScenarioGaps(
   // edges and `file` nodes (every file a test executed) stay out of the node
   // detectors: they are no surface of their own to drift or to be covered once.
   const reachRows = await db
-    .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey, fromKey: graphEdges.fromKey })
+    .select({
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      fromKey: graphEdges.fromKey,
+      origin: graphEdges.origin,
+    })
     .from(graphEdges)
     .where(
       and(
@@ -1308,6 +1314,8 @@ export async function computeScenarioGaps(
     );
 
   const reachByNode = new Map<string, Set<number>>();
+  // Node → tests whose only reach edge is a manual one (a covered-by), not observed.
+  const manualReachByNode = new Map<string, Set<number>>();
   const testIds = new Set<number>();
   for (const r of reachRows) {
     const id = Number(r.fromKey);
@@ -1317,6 +1325,11 @@ export async function computeScenarioGaps(
     const set = reachByNode.get(nodeKey) ?? new Set<number>();
     set.add(id);
     reachByNode.set(nodeKey, set);
+    if (r.origin === 'manual') {
+      const manual = manualReachByNode.get(nodeKey) ?? new Set<number>();
+      manual.add(id);
+      manualReachByNode.set(nodeKey, manual);
+    }
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
@@ -1416,7 +1429,7 @@ export async function computeScenarioGaps(
     }
   }
 
-  // Breadth edges the M2 detectors read: contains (page → control), links
+  // Breadth edges the graph detectors read: contains (page → control), links
   // (page → page), triggers/loads (into a route) and checks (probe outcomes).
   const breadthEdges = await db
     .select({
@@ -1510,7 +1523,12 @@ export async function computeScenarioGaps(
     const nodeKey = `${node.kind}\x00${node.key}`;
     const reachCount = reachByNode.get(nodeKey)?.size ?? 0;
     if (node.kind === 'control') {
-      controlReach.push({ key: node.key, pageCount: pagesByControl.get(node.key)?.size ?? 0, reachCount });
+      controlReach.push({
+        key: node.key,
+        pageCount: pagesByControl.get(node.key)?.size ?? 0,
+        reachCount,
+        manualReachCount: manualReachByNode.get(nodeKey)?.size ?? 0,
+      });
     } else if (node.kind === 'page') {
       pageLinkReach.push({
         key: node.key,
@@ -1839,6 +1857,7 @@ export async function upsertScenarioGaps(
   const now = new Date();
   const CHUNK = 100;
   let written = 0;
+  const reopens = sql`(${scenarioGaps.status} = 'closed' and ${scenarioGaps.coveredAt} is null)`;
 
   for (let i = 0; i < deduped.length; i += CHUNK) {
     const slice = deduped.slice(i, i + CHUNK);
@@ -1880,11 +1899,12 @@ export async function upsertScenarioGaps(
           testRunId: sql`excluded.test_run_id`,
           prNumber: sql`coalesce(excluded.pr_number, ${scenarioGaps.prNumber})`,
           updatedAt: sql`excluded.updated_at`,
-          // Reopen a closed gap that is detected again; every other status keeps
-          // its verdict. Clear the close bookkeeping only on that reopen.
-          status: sql`case when ${scenarioGaps.status} = 'closed' then 'open' else ${scenarioGaps.status} end`,
-          closedAt: sql`case when ${scenarioGaps.status} = 'closed' then null else ${scenarioGaps.closedAt} end`,
-          closedByRunId: sql`case when ${scenarioGaps.status} = 'closed' then null else ${scenarioGaps.closedByRunId} end`,
+          // Reopen a closed gap that is detected again, unless a person closed it
+          // with a covered-by; every other status keeps its verdict. Clear the
+          // close bookkeeping only on that reopen.
+          status: sql`case when ${reopens} then 'open' else ${scenarioGaps.status} end`,
+          closedAt: sql`case when ${reopens} then null else ${scenarioGaps.closedAt} end`,
+          closedByRunId: sql`case when ${reopens} then null else ${scenarioGaps.closedByRunId} end`,
         },
       });
     written += slice.length;
@@ -2057,6 +2077,15 @@ export type TriageVerb = 'accept' | 'snooze' | 'dismiss' | 'covered-by';
 export type SnoozeOption = '1-day' | '1-week' | 'until-node-changes';
 export type DismissReason = 'not-worth-testing' | 'covered-elsewhere' | 'wrong';
 
+/** The body of a gap triage: the verb and what it carries. */
+export const gapTriageSchema = z.object({
+  verb: z.enum(['accept', 'snooze', 'dismiss', 'covered-by']),
+  snooze: z.enum(['1-day', '1-week', 'until-node-changes']).optional(),
+  reason: z.enum(['not-worth-testing', 'covered-elsewhere', 'wrong']).optional(),
+  coveringTestCaseId: z.number().int().optional().nullable(),
+  assignedTo: z.string().optional().nullable(),
+});
+
 /** What a triage action carries beyond its verb. */
 export interface TriageInput {
   verb: TriageVerb;
@@ -2190,8 +2219,8 @@ export type TriageResult = { status: GapStatus } | { error: 'gap-not-found' | 'c
 /**
  * Apply an inbox verb to a gap: accept, snooze (1-day / 1-week / until the node
  * changes), dismiss with a reason (covered-elsewhere writes a manual reaches
- * edge from the covering test), or covered-by (writes the edge without
- * dismissing). A covering test must belong to the same project. Returns the
+ * edge from the covering test), or covered-by (closes the gap and writes the
+ * edge). A covering test must belong to the same project. Returns the
  * gap's new status, or an error when the gap or the covering test is not found.
  */
 export async function triageGap(
@@ -2250,10 +2279,13 @@ export async function triageGap(
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
     }
   } else {
-    // covered-by: record the covering test without dismissing; the manual reaches
-    // edge closes the gap on the next recompute. `coveredAt` is a durable per-gap
-    // "for" verdict, so precision credits only this gap — not every detector that
-    // happens to share the subject node.
+    // covered-by: close the gap for good (a later detection does not reopen it)
+    // and record the covering test as a manual reaches edge. `coveredAt` is a
+    // durable per-gap "for" verdict, so precision credits only this gap — not
+    // every detector that happens to share the subject node.
+    set.status = 'closed';
+    set.closedAt = now;
+    set.closedByRunId = null;
     set.coveredAt = now;
     if (input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
@@ -2294,11 +2326,7 @@ export async function reopenExpiredSnoozes(db: DrizzleDB, projectId: number, now
  * the gap is worth re-evaluating. A node merely re-observed with the same shape
  * does not wake.
  */
-export async function reopenChangedNodeSnoozes(
-  db: DrizzleDB,
-  projectId: number,
-  now: Date = new Date(),
-): Promise<number> {
+async function reopenChangedNodeSnoozes(db: DrizzleDB, projectId: number, now: Date = new Date()): Promise<number> {
   const snoozed = await db
     .select({ id: scenarioGaps.id, key: scenarioGaps.key, snoozedAtSignature: scenarioGaps.snoozedAtSignature })
     .from(scenarioGaps)
@@ -2504,7 +2532,7 @@ export function subjectFromGapKey(key: string): GapSubject {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };
   }
-  // M1 keys: a raw route key or a file path.
+  // Untyped keys: a raw route key or a file path.
   if (/^[A-Z]+\s/.test(key)) return { kind: 'route', key };
   return { kind: 'file', key };
 }
@@ -2515,6 +2543,30 @@ export function subjectFromGapKey(key: string): GapSubject {
  * page nearest the subject as the path, and the catalog methods whose url pattern
  * matches. Returns null when the gap does not exist in the project.
  */
+/**
+ * Render a gap's draft for a person or an agent, and record it as the gap's
+ * `gap-draft` hand-back (`suggested`), once per distinct draft text.
+ */
+export async function issueScenarioDraft(
+  db: DrizzleDB,
+  projectId: number,
+  gapId: number,
+  actor: HandbackActor,
+): Promise<ScenarioDraft | null> {
+  const draft = await draftScenario(db, projectId, gapId);
+  if (!draft) return null;
+  await recordOutcome(db, {
+    projectId,
+    kind: 'gap-draft',
+    subjectType: 'gap',
+    subjectId: gapId,
+    suggestionKey: suggestionHash([draft.text]),
+    outcome: 'suggested',
+    actor,
+  });
+  return draft;
+}
+
 export async function draftScenario(db: DrizzleDB, projectId: number, gapId: number): Promise<ScenarioDraft | null> {
   const [gap] = await db
     .select()

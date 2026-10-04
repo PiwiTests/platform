@@ -109,7 +109,7 @@ export const test = mergeTests(myTest, extendPiwiFixtures(base))
 
 Two rules:
 
-- The fixture name **`piwiCapture` is reserved**: a fixture of your own with that name replaces the capture teardown and silently disables the attachments.
+- The fixture names **`piwiCapture`** and **`piwiResources`** (the [resource ledger](/features/resource-leaks)) are reserved: a fixture of your own with either name replaces Piwi's.
 - If you **override `browser` or `page` yourself**, extend with `piwiFixtures` *after* your override so the capture wrapping still applies.
 
 ## Cost & opt-outs

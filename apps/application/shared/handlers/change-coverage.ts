@@ -29,6 +29,7 @@ import {
   type ConventionTarget,
 } from '../graph';
 import { HISTORY_WINDOW_RUNS } from './scenario-gaps';
+import { eligibleRunSql } from '../run-eligibility';
 
 /** A repo-relative path normalized for suffix matching. */
 function normalizePath(p: string): string {
@@ -237,7 +238,7 @@ async function loadFileReach(
  * Per-node set of test cases that reach it, from the graph's `reaches` edges.
  * Change coverage resolves a changed route handler or page file to its route or
  * page node through the file-routing convention and reads reach here, so a
- * changed application source file is no longer invisible to the join. Read across
+ * changed application source file joins to the tests that reach it. Read across
  * branches, since a pull-request run's reach is as valid as the default's.
  */
 async function loadGraphNodeReach(
@@ -308,7 +309,7 @@ export async function computeChangeCoverage(
   const recent = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), eligibleRunSql('change-coverage')))
     .orderBy(desc(testRuns.id))
     .limit(windowRuns);
   const recentIds = recent.map((r) => r.id);

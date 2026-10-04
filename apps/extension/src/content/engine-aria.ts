@@ -92,7 +92,7 @@ function enclosingShadowHost(element: Element): Element | undefined {
 }
 
 /** `closest()` that keeps climbing out through shadow hosts. */
-export function closestCrossShadow(element: Element | undefined, css: string): Element | undefined {
+function closestCrossShadow(element: Element | undefined, css: string): Element | undefined {
   let current = element;
   while (current) {
     const found = current.closest(css);

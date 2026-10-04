@@ -23,7 +23,7 @@ import {
   type TreeStepLike,
 } from './step-tree';
 
-export type HeadlinePartKind = 'text' | 'locator' | 'value';
+type HeadlinePartKind = 'text' | 'locator' | 'value';
 
 export interface HeadlinePart {
   kind: HeadlinePartKind;
@@ -232,7 +232,7 @@ function countNoun(locator: string | null, count: number): string {
 /** `getByText('Invite sent')` → `Invite sent`, for the `Text "…"` phrasing. */
 function textOfGetByText(locator: string | null): string | null {
   if (!locator) return null;
-  const m = /^getByText\(\s*(['"`])((?:\\.|(?!\1).)*)\1\s*(?:,\s*\{[^}]*\})?\s*\)$/.exec(locator);
+  const m = /^getByText\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1\s*(?:,\s*\{[^}]*\})?\s*\)$/.exec(locator);
   return m ? m[2]! : null;
 }
 
@@ -692,13 +692,4 @@ export function stepHeadlineContext(
     stepParams: failingStepParams(steps, error),
     failedIn: steps && steps.length > 0 ? failureHookContext(steps, error ?? null) : null,
   };
-}
-
-/** The headline as markdown: locators and values in code spans, the rest escaped. */
-export function headlineMarkdown(description: Pick<FailureDescription, 'parts'>): string {
-  return description.parts
-    .map((part) =>
-      part.kind === 'text' ? part.text.replace(/([\\`*_[\]<>])/g, '\\$1') : `\`${part.text.replace(/`/g, 'ˋ')}\``,
-    )
-    .join('');
 }

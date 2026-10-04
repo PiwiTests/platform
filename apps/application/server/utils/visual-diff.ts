@@ -13,6 +13,7 @@ import { getStorage } from '../storage';
 import { selectCaseScreenshots, type ScreenshotFileRow } from './case-screenshots';
 import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baseline-order';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { eligibleRunSql } from '#shared/run-eligibility';
 
 /** Passing executions inspected when choosing the baseline. */
 const BASELINE_CANDIDATES = 20;
@@ -158,7 +159,11 @@ export async function getOrComputeVisualDiff(db: DrizzleDB, testRunsCaseId: numb
   // Executions from the failing run's environment come first, then its own
   // branch (a branch that intentionally redesigns a page is diffed against its
   // own last-good state, not the pre-redesign baseline), then the most recent.
-  const conds = [eq(testRunsCases.testCaseId, failing.testCaseId), eq(testRunsCases.status, 'passed')];
+  const conds = [
+    eq(testRunsCases.testCaseId, failing.testCaseId),
+    eq(testRunsCases.status, 'passed'),
+    eligibleRunSql('baseline'),
+  ];
   if (failing.browserName) conds.push(eq(testRunsCases.browserName, failing.browserName));
   const passingRows = await db
     .select({

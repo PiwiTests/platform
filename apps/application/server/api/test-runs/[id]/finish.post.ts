@@ -4,12 +4,17 @@ import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
 import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
+import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
+import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
+import { keepIncidentMetadata } from '#shared/run-incident';
+import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
+import { sanitizeResourceReport } from '#shared/resource-report';
+import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 
 defineRouteMeta({
   openAPI: {
@@ -77,7 +82,7 @@ export default eventHandler(async (event) => {
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
   const shardTokens = isSharded ? readShardTokensFromMeta(testRun.metadata) : undefined;
-  const isShardToken = shardTokens ? (token: string) => shardTokens.has(token) : undefined;
+  const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
   await applyReporterKeep(db, id, body.keep);
 
@@ -101,6 +106,11 @@ export default eventHandler(async (event) => {
   const flakyTests = body.flakyTests ?? 0;
 
   const hasPendingUploads = body.hasPendingUploads === true;
+
+  // This reporter's resource report, in its own row: shards finishing at once
+  // each write theirs, and none overwrites another's.
+  const incomingResources = sanitizeResourceReport(body.resourceReport);
+  if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
 
   if (isSharded) {
     // Sharded run: track shardsFinished; duration is the maximum across shards.
@@ -127,6 +137,8 @@ export default eventHandler(async (event) => {
       // Postgres, so use a CASE expression that runs on both dialects.
       duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`,
       metadata: { ...currentMeta, shardDurations: allDurations },
+      // The first shard to report a branch names the run's branch.
+      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
@@ -248,12 +260,12 @@ export default eventHandler(async (event) => {
     : testRun.failedTests;
 
   if (hasPendingUploads) {
-    runEventBus.setFinalStatus(id, status);
-
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
       streamToken: null,
+      // The stale-run sweep measures the wait for the report upload from here.
+      updatedAt: new Date(),
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
       ...(body.passedTests !== undefined && { passedTests: body.passedTests }),
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
@@ -262,7 +274,15 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      // The reported status waits in the metadata, where it survives a restart,
+      // until the report upload or the stale-run sweep settles the run.
+      metadata: withPendingStatus(
+        body.metadata
+          ? keepIncidentMetadata(testRun.metadata, carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata))
+          : testRun.metadata,
+        status,
+      ),
+      ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
@@ -303,7 +323,13 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      ...(body.metadata && { metadata: sanitizeMetadata(body.metadata), branch: resolveRunBranch(body.metadata) }),
+      ...(body.metadata && {
+        metadata: keepIncidentMetadata(
+          testRun.metadata,
+          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        ),
+        branch: resolveRunBranch(body.metadata),
+      }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),

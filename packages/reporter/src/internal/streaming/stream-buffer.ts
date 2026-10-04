@@ -5,19 +5,26 @@ import { hashForProject } from '../support/instance-id.js';
 import type { StreamEvent } from '../../types.js';
 
 /**
- * Persistent JSONL buffer on disk.  Events are appended to a temp file so they
- * survive a crash and can be replayed when the reporter restarts.
+ * Persistent JSONL buffer on disk for live events that could not be delivered.
+ * The file is scoped to the project and the run, so its events are only ever
+ * replayed into the run they came from.
  */
 export class StreamBuffer {
-  private readonly filePath: string;
+  private readonly prefix: string;
+  private filePath: string | null = null;
 
   constructor(projectName: string) {
-    this.filePath = path.join(os.tmpdir(), `piwi-dashboard-stream-${hashForProject(projectName)}.jsonl`);
+    this.prefix = `piwi-dashboard-stream-${hashForProject(projectName)}`;
+  }
+
+  /** Scope the buffer to a run. Until then the buffer is empty and appends are dropped. */
+  bindRun(runId: number): void {
+    this.filePath = path.join(os.tmpdir(), `${this.prefix}-${runId}.jsonl`);
   }
 
   /** Append one or more events to the on-disk buffer */
   append(events: StreamEvent[]): void {
-    if (events.length === 0) return;
+    if (!this.filePath || events.length === 0) return;
     try {
       const lines = events.map((e) => JSON.stringify(e) + '\n').join('');
       fs.appendFileSync(this.filePath, lines, 'utf8');
@@ -26,8 +33,9 @@ export class StreamBuffer {
     }
   }
 
-  /** Load all buffered events from disk, clearing the file */
+  /** Load all buffered events of the bound run from disk */
   load(): StreamEvent[] {
+    if (!this.filePath) return [];
     try {
       if (fs.existsSync(this.filePath)) {
         const content = fs.readFileSync(this.filePath, 'utf8');
@@ -42,8 +50,9 @@ export class StreamBuffer {
     return [];
   }
 
-  /** Delete the buffer file from disk */
+  /** Delete the bound run's buffer file from disk */
   clear(): void {
+    if (!this.filePath) return;
     try {
       if (fs.existsSync(this.filePath)) fs.unlinkSync(this.filePath);
     } catch {
@@ -51,17 +60,22 @@ export class StreamBuffer {
     }
   }
 
-  /** Remove the buffer file if it is older than `maxAgeMs` (default 2 hours). Used on startup to discard orphaned data. */
+  /** Remove this project's buffer files older than `maxAgeMs` (default 2 hours). Used on startup to discard orphaned data. */
   clearStale(maxAgeMs: number = 7200000): void {
+    const dir = os.tmpdir();
+    let names: string[];
     try {
-      if (fs.existsSync(this.filePath)) {
-        const stats = fs.statSync(this.filePath);
-        if (Date.now() - stats.mtimeMs > maxAgeMs) {
-          fs.unlinkSync(this.filePath);
-        }
-      }
+      names = fs.readdirSync(dir).filter((name) => name.startsWith(this.prefix));
     } catch {
-      // Non-fatal
+      return;
+    }
+    for (const name of names) {
+      try {
+        const file = path.join(dir, name);
+        if (Date.now() - fs.statSync(file).mtimeMs > maxAgeMs) fs.unlinkSync(file);
+      } catch {
+        // Non-fatal
+      }
     }
   }
 }

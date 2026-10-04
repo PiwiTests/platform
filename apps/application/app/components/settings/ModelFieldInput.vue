@@ -2,9 +2,7 @@
 import type { ModelInfo } from '~~/types/api';
 
 const props = defineProps<{
-  provider: string;
   providerResolved: string;
-  reuse: boolean;
   models: ModelInfo[];
   loadingModels: boolean;
   placeholderAnthropic: string;

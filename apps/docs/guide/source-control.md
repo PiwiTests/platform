@@ -30,21 +30,33 @@ logged, and the feature shows nothing rather than failing a run.
 ## Set the token
 
 - **Instance-wide**: **Settings → AI → Repository access**. Every project uses it unless it has its own.
-- **Per project**: the project's edit page, field **SCM token**. It overrides the instance-wide token for that
-  project. Prefer one per project for write access: an instance-wide write token can write everywhere it reaches.
+- **Per project**: the **Source control** section of the project's **Settings** tab, field **SCM token**. It overrides
+  the instance-wide token for that project. Prefer one per project for write access: an instance-wide write token can
+  write everywhere it reaches.
 
 A token is stored encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general) and never returned by the API;
-the field shows that one is stored. Leave the field empty to keep it, or save it empty to remove it.
+the field shows that one is stored. Leave the field empty to keep it. To remove it, save the instance-wide field empty,
+or click **Remove stored token** under the project field.
 
 Public repositories work without a token for the read features, within the host's rate limit for anonymous calls.
-A private repository needs one.
+A private repository needs one, except on the desktop app with a linked folder (below).
+
+### On the desktop app
+
+The [desktop app](/features/desktop) needs no token for the read features. When a project is
+[linked to a folder](/features/desktop#projects-from-local-folders) that is a clone of the repository (one of its
+remotes points at the run's remote URL), Piwi reads the commits, diffs and files with `git` in that folder, on your
+machine. A commit or branch the clone does not have is asked of the host as above, so run `git fetch` in the folder to
+see commits pushed since your last fetch. With a token set, the host is read instead, as on a server, and the write
+features always need one.
 
 ### Which repository
 
 Piwi takes the repository from the run: the reporter records the Git remote URL, the branch and the commit of the
 checkout it runs in (see [SCM information](/reference/test-metadata#scm-information-git)). Supported hosts are
-`github.com`, `gitlab.com` and self-hosted GitLab (a host name containing `gitlab`), and `bitbucket.org`. A run
-without a remote URL has nothing to diff.
+`github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. List each self-hosted GitLab host in
+[`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): the remote URL comes from the reporter, so Piwi sends
+the token only to a host you named. A run without a remote URL has nothing to diff.
 
 ### Scopes
 
@@ -65,8 +77,8 @@ section is absent, it says why.
 - **No commits or diff.** The cluster's **What changed** line and the coverage name the cause: no commit or repository
   URL on the run (the reporter reads both from the Git checkout the tests run in, the URL from its `origin` remote), a
   host Piwi does not read, no SCM token, or the host's error. A 404 from GitHub on a private repository means the token
-  cannot see it. While the diff is missing, the line still links the range on the host's compare page and copies the
-  `git log` command for it.
+  cannot see it. On the desktop app, it says when the linked folder does not have the commits yet. While the diff is
+  missing, the line still links the range on the host's compare page and copies the `git log` command for it.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
   run falls back to the last run where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on

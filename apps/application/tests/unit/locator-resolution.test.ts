@@ -8,7 +8,7 @@ import { classifyLocatorResolution, healingNotApplicableMarkdown } from '#shared
  */
 
 const STACK = '\n    at tests/checkout.spec.ts:42:5';
-const ESC = '';
+const ESC = '\x1b';
 
 describe('classifyLocatorResolution — applicable', () => {
   test('waiting for a locator with no later "resolved to" line → never-resolved', () => {

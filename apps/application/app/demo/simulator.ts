@@ -24,6 +24,7 @@ import {
   buildWebAssertionError,
 } from '#shared/demo/failure-stories.mjs';
 import { demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
+import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
 
 export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
 
@@ -106,6 +107,13 @@ export interface DemoScenario {
   shardCount?: number;
   /** Overrides the default '1.51.0' reported to setup/begin/finish. */
   playwrightVersion?: string;
+  /**
+   * Send what each test cost and the run's resource report, as a reporter
+   * with the capture fixtures does; `leaky` is a suite whose login fixture
+   * leaves a browser context open in every test, `clean` one that closes
+   * what it opens.
+   */
+  resources?: 'leaky' | 'clean';
   metadata: () => Record<string, unknown>;
   tests: () => SimTest[];
 }
@@ -885,12 +893,13 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
   {
     id: 'sharded',
     label: 'Sharded run (2 shards)',
-    description: 'Tests split across 2 parallel CI shards that merge into one run',
+    description: 'Tests split across 2 parallel CI shards that merge into one run, each with its own machine',
     icon: 'i-lucide-layers',
     speed: 2.5,
     workers: 3,
     shardCount: 2,
     environment: 'ci',
+    resources: 'clean',
     metadata: () =>
       buildMetadata({
         branch: 'main',
@@ -951,6 +960,23 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
       ];
       return tests;
     },
+  },
+  {
+    id: 'leaky',
+    label: 'Leaky run',
+    description: 'A login fixture leaves a browser context open in every test, and the machine runs short of CPU',
+    icon: 'i-lucide-droplets',
+    speed: 2,
+    workers: 4,
+    environment: 'staging',
+    resources: 'leaky',
+    metadata: () =>
+      buildMetadata({
+        branch: 'feature/login-fixture',
+        author: 'Dana Lee',
+        commitMessage: 'test: log in through a fixture instead of the UI',
+      }),
+    tests: () => baseTests(),
   },
   {
     id: 'env-drift',
@@ -1126,8 +1152,8 @@ async function runSingleSimulation(
       setupToken: setup.setupToken,
       // Matches the real reporter (stream-manager.ts), which reports the planned
       // suite size up front so the dashboard shows the real total from the first
-      // render; the per-status counters build up from the streamed events, but
-      // the total is no longer incremented per row.
+      // render; the per-status counters build up from the streamed events, and
+      // the total is not incremented per row.
       totalTests: tests.length,
       metadata,
       playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
@@ -1147,6 +1173,23 @@ async function runSingleSimulation(
   let queueIndex = 0;
   let virtualEnd = virtualStart;
 
+  // What each execution cost, when the scenario sends it, and the tests each
+  // worker ran (their virtual spans), for the run's report.
+  const testsByWorker = new Map<number, Array<[number, number]>>();
+  let artifactBytes = 0;
+  let executionSeq = 0;
+  function executionResources(durationMs: number, openAtStart: number) {
+    if (!scenario.resources) return null;
+    const resources = demoExecutionResources({
+      seq: executionSeq++,
+      durationMs,
+      openAtStart,
+      leaky: scenario.resources === 'leaky',
+    });
+    artifactBytes += Object.values(resources.artifactBytes ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
+    return resources;
+  }
+
   async function postEvents(events: Array<Record<string, unknown>>): Promise<void> {
     await $fetch(`/api/test-runs/${runId}/events`, {
       method: 'POST',
@@ -1160,6 +1203,8 @@ async function runSingleSimulation(
   // realistic even though events stream `speed`× faster.
   async function workerLoop(workerIndex: number): Promise<void> {
     let virtualNow = virtualStart + INIT_DELAY_MS;
+    // The executions this worker ran so far: in a leaky run each left its page open.
+    let ranInWorker = 0;
 
     while (!ctl.stopped && completed < stopAfter) {
       const test = tests[queueIndex++];
@@ -1288,9 +1333,14 @@ async function runSingleSimulation(
             suitePath: test.suitePath ?? null,
             suiteConfig: test.suiteConfig ?? null,
             testAnnotations: a.testAnnotations ?? null,
+            resources: executionResources(attemptDuration, ranInWorker),
           },
         ]);
 
+        ranInWorker++;
+        const spans = testsByWorker.get(workerIndex) ?? [];
+        spans.push([startedAt, startedAt + attemptDuration]);
+        testsByWorker.set(workerIndex, spans);
         virtualNow += WORKER_GAP_MS;
         finalDuration = attemptDuration;
       }
@@ -1366,6 +1416,21 @@ async function runSingleSimulation(
       playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
       reporterVersion: '0.7.0',
       ...(shardOverride ? { shardIndex: shardOverride.shardIndex, shardTotal: shardOverride.shardTotal } : {}),
+      ...(scenario.resources
+        ? {
+            resourceReport: demoResourceReport({
+              leaky: scenario.resources === 'leaky',
+              wallMs: virtualEnd - virtualStart,
+              workers: [...testsByWorker.entries()]
+                .sort((a, b) => a[0] - b[0])
+                .map(([worker, spans]) => ({ worker, tests: spans.length, spans })),
+              fixtureFile: 'tests/checkout/fixtures.ts',
+              handleTest: { title: CHECKOUT_TESTS.at(-1)!.title, file: CHECKOUT_TESTS.at(-1)!.file },
+              artifactBytes,
+              shardIndex: shardOverride?.shardIndex ?? null,
+            }),
+          }
+        : {}),
     },
   });
 

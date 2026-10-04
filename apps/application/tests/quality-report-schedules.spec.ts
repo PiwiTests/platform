@@ -185,7 +185,9 @@ test.describe('The Reports page', () => {
     const row = page.getByTestId(`schedule-${schedule.id}`);
     // The first visit compiles the page on a dev server.
     await expect(row).toContainText('Weekly on Monday at 08:00', { timeout: 60_000 });
-    await expect(row).toContainText('Quality report schedules test');
+    await expect(page.getByTestId(`schedule-recipients-${schedule.id}`)).toContainText(
+      'Quality report schedules test: Email to reports@example.test',
+    );
     // Hydration can lag the first paint; retry the click until the snapshot shows.
     const snapshotLink = page.getByTestId('snapshot-list').getByRole('link', { name: new RegExp(name) });
     await expect(async () => {
@@ -212,8 +214,13 @@ test.describe('The Reports page', () => {
     await expect(page.getByTestId('schedule-filters')).toContainText(PROJECT.QUALITY_REPORT_SCHEDULES);
     await page.getByTestId('schedule-name').fill('From the analytics page');
     await page.getByTestId('schedule-channels').click();
-    await page.getByRole('option', { name: /Quality report schedules test/ }).click();
+    const option = page.getByRole('option', { name: /Quality report schedules test/ });
+    await expect(option).toContainText('Email to reports@example.test');
+    await option.click();
     await page.keyboard.press('Escape');
+    await expect(page.getByTestId('schedule-recipients')).toContainText(
+      'Quality report schedules test: Email to reports@example.test',
+    );
     await page.getByTestId('schedule-save').click();
     await expect(form).toBeHidden({ timeout: 15_000 });
 

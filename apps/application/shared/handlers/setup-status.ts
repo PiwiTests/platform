@@ -34,6 +34,10 @@ import {
   graphNodes,
   probes,
   bugReports,
+  testRunResourceReports,
+  failureDiagnoses,
+  mcpToolCalls,
+  prFeedbackPosts,
 } from '../../server/database/schema';
 import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
@@ -76,7 +80,10 @@ export type SetupCapabilityId =
   | 'test-map'
   | 'server-probes'
   | 'bug-reports'
-  | 'flake-lab';
+  | 'flake-lab'
+  | 'resources'
+  | 'agent-diagnoses'
+  | 'agent-write-log';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -140,6 +147,9 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     hasReportSnapshots,
     hasBugReports,
     hasRetryPass,
+    hasResourceReport,
+    hasAgentDiagnosis,
+    hasAgentWriteLog,
   ] = await Promise.all([
     exists(
       db,
@@ -245,12 +255,25 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             )
             .limit(1),
     ),
-    // Pull-request feedback and auto-heal read active from their stored settings
-    // (the `enabled` flag the full getters resolve, read here directly so this
-    // handler stays free of the SCM providers those getters pull in); issue
-    // integrations from a single connection row. None has a project dimension, so
-    // these stay instance-wide even when a project is scoped.
-    getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+    // Pull-request feedback is active while its setting is enabled (the flag
+    // the full getter resolves, read here directly so this handler stays free
+    // of the SCM providers it pulls in) and once something was posted for a run
+    // (of the project, when one is scoped). Auto-heal reads active from its
+    // setting and issue integrations from a single connection row; neither has
+    // a project dimension, so they stay instance-wide.
+    Promise.all([
+      getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: prFeedbackPosts.id })
+              .from(prFeedbackPosts)
+              .where(eq(prFeedbackPosts.projectId, pid))
+              .limit(1)
+          : db.select({ id: prFeedbackPosts.id }).from(prFeedbackPosts).limit(1),
+      ),
+    ]).then(([enabled, posted]) => enabled && posted),
     getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY).then((s) => s?.enabled === true),
     exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
     // The Test Map is active once the graph has any node for the project (a
@@ -299,6 +322,36 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
             .where(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
             .limit(1),
     ),
+    // Resources: active once a reporter sent a run's resource report.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: testRunResourceReports.id })
+            .from(testRunResourceReports)
+            .innerJoin(testRuns, eq(testRunResourceReports.runId, testRuns.id))
+            .where(eq(testRuns.projectId, pid))
+            .limit(1)
+        : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
+    ),
+    // Agent diagnoses: active once an agent recorded a diagnosis.
+    exists(
+      db,
+      scoped
+        ? db
+            .select({ id: failureDiagnoses.id })
+            .from(failureDiagnoses)
+            .innerJoin(failureClusters, eq(failureDiagnoses.clusterId, failureClusters.id))
+            .where(and(eq(failureClusters.projectId, pid), eq(failureDiagnoses.provider, 'agent')))
+            .limit(1)
+        : db
+            .select({ id: failureDiagnoses.id })
+            .from(failureDiagnoses)
+            .where(eq(failureDiagnoses.provider, 'agent'))
+            .limit(1),
+    ),
+    // The agents' write log: active once a write tool was called over MCP. It spans projects.
+    exists(db, db.select({ id: mcpToolCalls.id }).from(mcpToolCalls).limit(1)),
   ]);
 
   // AI also counts as active when pinned by environment — an env-configured
@@ -331,6 +384,9 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
     'server-probes': hasServerProbes,
     'bug-reports': hasBugReports,
     'flake-lab': hasRetryPass,
+    resources: hasResourceReport,
+    'agent-diagnoses': hasAgentDiagnosis,
+    'agent-write-log': hasAgentWriteLog,
   };
 }
 
@@ -364,6 +420,9 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'server-probes',
   'bug-reports',
   'flake-lab',
+  'resources',
+  'agent-diagnoses',
+  'agent-write-log',
 ];
 
 /**

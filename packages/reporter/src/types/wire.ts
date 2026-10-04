@@ -21,7 +21,9 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireExecutionResources,
   WireNetworkRequest,
+  WireResourceReport,
 } from '@piwitests/core/wire';
 
 export type {
@@ -34,7 +36,9 @@ export type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  WireExecutionResources,
   WireNetworkRequest,
+  WireResourceReport,
 };
 
 // ── Per-case wire shape ──────────────────────────────────────────────────────
@@ -94,6 +98,8 @@ export interface WireTestCase {
   locatorPages?: unknown;
   /** The repository-relative source files the test executed (`piwi-code-reach`). */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
+  resources?: WireExecutionResources | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
@@ -156,6 +162,8 @@ export interface CompleteStreamEvent {
   locatorPages?: unknown;
   /** The repository-relative source files the test executed (`piwi-code-reach`). */
   codeReach?: unknown;
+  /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
+  resources?: WireExecutionResources | null;
   /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */

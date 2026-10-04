@@ -14,6 +14,10 @@ import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
+import type { WireResourceFinding } from '#shared/types';
+import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
+import { runBaseUrls } from '#shared/graph';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -87,11 +91,13 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
   const corpus = [
     ...FAILURE_STORIES.flatMap((s) => s.failingCases.map((fc) => fc.error)),
     // Adversarial cases beyond the seeded stories.
-    '[31mError: expect(locator).toBeVisible() failed[39m',
+    '\x1b[31mError: expect(locator).toBeVisible() failed\x1b[39m',
     "TimeoutError: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('row', { name: 'Acme' }).getByRole('button', { name: 'Delete' })\n    at tests/x.spec.ts:1:1",
     'Error: expect(received).toBe(expected)\n\nExpected: 200\nReceived: 500\n    at tests/x.spec.ts:2:2',
     'Error: page.click: Target page, context or browser has been closed',
     "Error: strict mode violation: getByRole('button') resolved to 2 elements",
+    "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })",
+    "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Bob' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n  - waiting for getByRole('row', { name: 'Bob' })\n    at tests/x.spec.ts:3:3",
     'Some completely unstructured error with no recognizable shape at all',
   ];
 
@@ -704,11 +710,22 @@ describe('flake lab experiments', () => {
 // Every docs page's demo example opens the entity it names, in the state its
 // sentence promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
 describe('demo examples hold in the seed', () => {
-  const EXPECT_KEYS = new Set(['testCase', 'project', 'cluster', 'diagnosis', 'fixLanded', 'lab']);
+  const EXPECT_KEYS = new Set([
+    'testCase',
+    'project',
+    'cluster',
+    'run',
+    'diagnosis',
+    'fixLanded',
+    'lab',
+    'resources',
+    'incident',
+  ]);
   const ROUTE_ENTITIES = [
     { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
     { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
     { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
+    { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
   ] as const;
 
   test('ids are unique', () => {
@@ -726,7 +743,7 @@ describe('demo examples hold in the seed', () => {
     const opened = ROUTE_ENTITIES.map((r) => ({ key: r.key, match: r.pattern.exec(example.route) })).find(
       (r) => r.match,
     );
-    expect(opened, `${id}: route ${example.route} opens a test case, a project or a cluster`).toBeTruthy();
+    expect(opened, `${id}: route ${example.route} opens a test case, a project, a cluster or a run`).toBeTruthy();
     expect(want[opened!.key]?.id, `${id}: the route opens the ${opened!.key} it expects`).toBe(
       Number(opened!.match![1]),
     );
@@ -738,6 +755,27 @@ describe('demo examples hold in the seed', () => {
     if (want.project) {
       const [row] = q(`select name from projects where id = ${want.project.id}`);
       expect(row?.name, `${id}: project ${want.project.id}`).toBe(want.project.name);
+    }
+    if (want.run) {
+      const [row] = q(
+        `select p.name from test_runs r join projects p on p.id = r.project_id where r.id = ${want.run.id}`,
+      );
+      expect(row?.name, `${id}: run ${want.run.id}'s project`).toBe(want.run.project);
+    }
+    if (want.resources) {
+      expect(want.run, `${id}: resources needs a run`).toBeTruthy();
+      const parts = q(`select report from test_run_resource_reports where run_id = ${want.run!.id}`).map(
+        (row) => JSON.parse(String(row.report)) as { counts: { leaked: number } },
+      );
+      const leaks = parts.reduce((sum, part) => sum + part.counts.leaked, 0);
+      expect(leaks, `${id}: the run's report names a leak`).toBeGreaterThan(0);
+    }
+    if (want.incident) {
+      expect(want.run, `${id}: incident needs a run`).toBeTruthy();
+      const [row] = q(
+        `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
+      );
+      expect(row?.rule, `${id}: the run is flagged as an incident`).toBeTruthy();
     }
     if (want.cluster) {
       expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(
@@ -772,5 +810,111 @@ describe('demo examples hold in the seed', () => {
         : null;
       expect(flakeLabTestState(experiments, fix), `${id}: the test's lab state`).toBe(want.lab);
     }
+  });
+});
+
+// The seeded resource findings are what recordRunResourceFindings would write
+// from the seeded reports: one per identity, with the runs that showed it.
+describe('resource findings match the seeded reports', () => {
+  test('each finding is the identity of the findings its runs reported, and counts those runs', () => {
+    const runs = q(`select run_id, report from test_run_resource_reports`) as Array<{ run_id: number; report: string }>;
+    expect(runs.length).toBeGreaterThan(0);
+    const runsByFingerprint = new Map<string, number[]>();
+    for (const run of runs.map((row) => ({
+      id: row.run_id,
+      report: JSON.parse(row.report) as { findings: WireResourceFinding[] },
+    }))) {
+      for (const finding of run.report.findings) {
+        const fingerprint = resourceFingerprint(finding);
+        runsByFingerprint.set(fingerprint, [...(runsByFingerprint.get(fingerprint) ?? []), run.id]);
+      }
+    }
+    const findings = q(
+      `select id, fingerprint, occurrences, first_seen_run_id, last_seen_run_id from resource_findings`,
+    ) as Array<{
+      id: number;
+      fingerprint: string;
+      occurrences: number;
+      first_seen_run_id: number;
+      last_seen_run_id: number;
+    }>;
+    expect(findings.map((f) => f.fingerprint).sort()).toEqual([...runsByFingerprint.keys()].sort());
+    for (const finding of findings) {
+      const runIds = runsByFingerprint.get(finding.fingerprint)!;
+      expect(finding.occurrences, finding.fingerprint).toBe(runIds.length);
+      expect(finding.first_seen_run_id, finding.fingerprint).toBe(Math.max(...runIds));
+      expect(finding.last_seen_run_id, finding.fingerprint).toBe(Math.min(...runIds));
+      const occurrences = q(`select run_id from resource_occurrences where finding_id = ${finding.id}`) as Array<{
+        run_id: number;
+      }>;
+      expect(occurrences.map((o) => o.run_id).sort(), finding.fingerprint).toEqual([...runIds].sort());
+    }
+  });
+});
+
+describe('environment incidents', () => {
+  // The seeded flag is written by hand; the classifier must reach the same
+  // verdict from the seeded failures, and flag no other run.
+  // The failed requests of an execution's network capture, as the classifier reads them.
+  const failedRequestsOf = (executionId: number) =>
+    q(`select url, status, failure from network_requests where test_runs_case_id = ${executionId}
+       and (failure is not null or status in (${GATEWAY_STATUSES.join(', ')}))`).map((r) => ({
+      url: r.url as string | null,
+      status: r.status as number,
+      failure: r.failure as string | null,
+    }));
+
+  test('the classifier flags the seeded incident run, with its reason, and no other run', () => {
+    const runs = q('select id, passed_tests, failed_tests, metadata from test_runs order by id');
+    const flagged: number[] = [];
+    for (const run of runs) {
+      const rows = q(
+        `select id, test_case_id, status, error from test_runs_cases where test_run_id = ${run.id as number}`,
+      );
+      const passed = new Set(rows.filter((r) => r.status === 'passed').map((r) => r.test_case_id));
+      const failures = rows
+        .filter((r) => r.status === 'failed' && !passed.has(r.test_case_id))
+        .map((r) => ({ error: r.error as string, failedRequests: failedRequestsOf(r.id as number) }));
+      const metadata = JSON.parse((run.metadata as string) ?? 'null');
+      const verdict = classifyRunHealth({
+        runId: run.id as number,
+        executedTests: (run.passed_tests as number) + (run.failed_tests as number),
+        failedTests: run.failed_tests as number,
+        failures,
+        baseUrls: runBaseUrls(metadata),
+      });
+      if (verdict) {
+        flagged.push(run.id as number);
+        expect(metadata?.incident, `run ${run.id as number} carries the flag`).toMatchObject({
+          rule: verdict.rule,
+          reason: verdict.reason,
+          host: verdict.host,
+        });
+      } else {
+        expect(metadata?.incident, `run ${run.id as number} carries no flag`).toBeUndefined();
+      }
+    }
+    expect(flagged).toHaveLength(1);
+    const markers = q(`select run_id from markers where category = 'incident' and run_id is not null`);
+    expect(markers.map((m) => m.run_id)).toEqual(flagged);
+  });
+
+  test("the incident run's network capture holds each failing test's refused navigation", () => {
+    const rows = q(`
+      select trc.id from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
+      where json_extract(r.metadata, '$.incident') is not null and trc.status = 'failed'`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(failedRequestsOf(row.id as number), `trc ${row.id as number}`).toEqual([
+        expect.objectContaining({ status: 0, failure: 'net::ERR_CONNECTION_REFUSED' }),
+      ]);
+    }
+  });
+
+  test('the incident run gets no regression signal', () => {
+    const rows = q(`
+      select count(*) as n from test_runs_cases trc join test_runs r on r.id = trc.test_run_id
+      where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
+    expect(rows[0]!.n).toBe(0);
   });
 });

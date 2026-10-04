@@ -4,7 +4,7 @@ import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { failureClusters } from '../../database/schema';
 import { resolveOwners } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
-import { ciRerunAvailability } from '../../utils/ci-rerun';
+import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -35,6 +35,7 @@ export default eventHandler(async (event) => {
   const result = (await getFailureCluster(db, id, {
     aiConfigured: aiConfig != null,
     ciRerunAvailable: ciRerun?.available ?? false,
+    flakeLabCiAvailable: async (testCaseId) => (await flakeLabCiAvailability(db, projectId, testCaseId)).available,
   })) as Awaited<ReturnType<typeof getFailureCluster>> & {
     owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   };

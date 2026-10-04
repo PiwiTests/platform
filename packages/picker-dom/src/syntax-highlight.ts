@@ -8,7 +8,7 @@ export interface LocatorToken {
 }
 
 /** CSS class emitted for each token kind, styled by `LOCATOR_SYNTAX_CSS`. */
-export const LOCATOR_TOKEN_CLASS: Record<LocatorTokenKind, string> = {
+const LOCATOR_TOKEN_CLASS: Record<LocatorTokenKind, string> = {
   string: 'piwi-tok-str',
   method: 'piwi-tok-fn',
   option: 'piwi-tok-key',
@@ -18,7 +18,7 @@ export const LOCATOR_TOKEN_CLASS: Record<LocatorTokenKind, string> = {
 };
 
 const TOKEN_RE =
-  /('(?:\\.|[^'])*'|"(?:\\.|[^"])*")|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)(?=\s*:)|(true|false|null|\d+)|([{}(),.])/g;
+  /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")|([A-Za-z_$][\w$]*)(?=\s*\()|([A-Za-z_$][\w$]*)(?=\s*:)|(true|false|null|\d+)|([{}(),.])/g;
 
 /**
  * Split a locator expression into method names, string arguments, option keys,

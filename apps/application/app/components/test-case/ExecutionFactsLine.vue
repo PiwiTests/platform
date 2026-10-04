@@ -10,6 +10,7 @@
  * `revealRawError()` opens the raw error from a citation elsewhere on the page.
  */
 import type { AttemptOutcome, TestCaseHistoryPoint } from '~~/types/api';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   /** The fetched execution — every fact reads off this object. */
@@ -148,9 +149,9 @@ defineExpose({ revealRawError });
       <BranchLabel v-if="scmInfo?.branch" :name="scmInfo.branch" class="max-w-[12rem]" copyable />
       <a
         v-if="ciInfo?.buildUrl || ciInfo?.buildNumber"
-        :href="ciInfo?.buildUrl || undefined"
-        :target="ciInfo?.buildUrl ? '_blank' : undefined"
-        :class="ciInfo?.buildUrl ? SENTENCE_LINK_CLASS : ''"
+        :href="safeHttpUrl(ciInfo?.buildUrl) ?? undefined"
+        :target="safeHttpUrl(ciInfo?.buildUrl) ? '_blank' : undefined"
+        :class="safeHttpUrl(ciInfo?.buildUrl) ? SENTENCE_LINK_CLASS : ''"
       >
         {{ ciInfo?.buildNumber ? `Build #${ciInfo.buildNumber}` : 'View build' }}
       </a>

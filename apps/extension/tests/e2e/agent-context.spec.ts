@@ -31,7 +31,9 @@ test.describe('buildAgentContext (via the real built agent-context-panel.js)', (
     </body></html>`);
     const contextText = await pickAndBuildContext(page, '[data-testid="submit-btn"]');
 
-    expect(contextText).toContain(`Page: ${page.url()}`);
+    // A page with no web address, as a bug report writes one.
+    expect(page.url()).toBe('about:blank');
+    expect(contextText).toContain('Page: about:…');
     expect(contextText).toContain('<button>');
     expect(contextText).toContain('role: button');
     expect(contextText).toContain('accessible name: "Submit"');
@@ -39,6 +41,34 @@ test.describe('buildAgentContext (via the real built agent-context-panel.js)', (
     expect(contextText).toContain('Text: "Submit"');
     expect(contextText).toContain('Ranked locators (best first):');
     expect(contextText).toContain(`1. [100] getByTestId('submit-btn')`);
+  });
+
+  test('leaves query values and the fragment out of the page’s and a link’s address', async ({ context }) => {
+    await context.route('https://agent.test/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><html><body style="margin-top:120px">
+          <a id="reset" href="/reset/42?token=secret-value#step-2">Reset</a>
+        </body></html>`,
+      }),
+    );
+    const page = await context.newPage();
+    await page.goto('https://agent.test/orders/42?tab=details&token=abc123#access_token=xyz789');
+    const contextText = await pickAndBuildContext(page, '#reset');
+    expect(contextText).toMatch(/^Page: https:\/\/agent\.test\/orders\/:id\?tab=[^&\s]*&token=\S*$/m);
+    expect(contextText).toMatch(/href="\/reset\/:id\?token=[^"#]*"/);
+    for (const secret of ['abc123', 'xyz789', 'access_token', 'secret-value', 'step-2', 'details']) {
+      expect(contextText).not.toContain(secret);
+    }
+  });
+
+  test('keeps a link to an id on the page as written', async ({ context }) => {
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body style="margin-top:120px">
+      <a id="faq" href="#faq">FAQ</a>
+    </body></html>`);
+    const contextText = await pickAndBuildContext(page, '#faq');
+    expect(contextText).toContain('href="#faq"');
   });
 
   test('whitespace in text content is normalized (collapsed and trimmed)', async ({ context }) => {

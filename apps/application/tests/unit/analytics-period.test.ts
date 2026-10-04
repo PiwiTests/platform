@@ -43,6 +43,10 @@ describe('encodePeriod and parsePeriod', () => {
     expect(parsePeriod('')).toBeNull();
   });
 
+  test('clamps a range to all time before its end', () => {
+    expect(parsePeriod('0001-01-01..9999-12-31')).toEqual({ kind: 'range', from: '9990-01-02', to: '9999-12-31' });
+  });
+
   test('orders a reversed range', () => {
     expect(parsePeriod('2026-08-31..2026-08-01')).toEqual({ kind: 'range', from: '2026-08-01', to: '2026-08-31' });
   });

@@ -60,6 +60,7 @@ const testCasePayloadFixture = {
   testSourceFrames: [{ file: 'a.spec.ts', line: 1, snippet: '> 1 | test' }],
   didNotRunReason: null,
   blockedBy: null,
+  resources: null,
 } satisfies TestCasePayload;
 
 const streamEventPayloadFixture = {
@@ -104,6 +105,7 @@ const streamEventPayloadFixture = {
   testSourceFrames: [{ file: 'a.spec.ts', line: 1, snippet: '> 1 | test' }],
   didNotRunReason: null,
   blockedBy: null,
+  resources: null,
 } satisfies StreamEventPayload;
 
 const wireTestCaseFixture = {
@@ -148,6 +150,7 @@ const wireTestCaseFixture = {
   locatorSnapshots: null,
   didNotRunReason: null,
   blockedBy: null,
+  resources: null,
 } satisfies WireTestCase;
 
 describe('wire ↔ shared per-case contract drift guard', () => {

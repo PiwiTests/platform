@@ -143,6 +143,8 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
 
 const number = (n: number): string => new Intl.NumberFormat('fr-FR').format(n);
 /** French puts 0 and 1 in the singular. */
+/** A zoom factor as a percentage, such as `125%`. */
+const percent = (zoom: number): string => `${Math.round(zoom * 100)}${NNBSP}%`;
 const plural = (n: number, one: string, many: string): string => `${number(n)} ${n < 2 ? one : many}`;
 const ofTotal = (shown: number, total: number | null): string =>
   `${number(shown)}${total != null ? ` sur ${number(total)}` : ''}`;
@@ -188,6 +190,7 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
   evidence: (c) =>
     [
       c.screenshots > 0 ? plural(c.screenshots, 'capture d’écran', 'captures d’écran') : 'aucune capture d’écran',
+      ...(c.stepShots > 0 ? [plural(c.stepShots, 'capture d’étape', 'captures d’étapes')] : []),
       ...(c.consoleErrors > 0 ? [plural(c.consoleErrors, 'erreur de console', 'erreurs de console')] : []),
       ...(c.consoleWarnings > 0
         ? [plural(c.consoleWarnings, 'avertissement de console', 'avertissements de console')]
@@ -204,6 +207,8 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
     noSteps: 'Aucune étape n’a été enregistrée.',
     actual: (v) => `Résultat${NBSP}: ${v}`,
     note: (text) => `Note${NBSP}: ${text}`,
+    viewport: (size, zoom) =>
+      `Fenêtre à partir de cette étape${NBSP}: ${size}${zoom != null ? `, zoom à ${percent(zoom)}` : ''}`,
     expectedHeading: 'Attendu et constaté',
     nothingMarked: 'Rien n’a été marqué comme incorrect.',
     expectedLine: (step, expectation, actual) =>

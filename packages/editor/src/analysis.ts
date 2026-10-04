@@ -27,7 +27,7 @@ import {
   tryParseLocatorChain,
 } from '@piwitests/core/locator-chain';
 import type { RankedLocator } from '@piwitests/core/locator-healing-types';
-import type { CallSiteAlternatives, CodeIndex } from './piwi-client.js';
+import type { CallSiteAlternatives, CodeIndex, FlakeLabEntry } from './piwi-client.js';
 
 /** A locator the index knows at one line of a file. */
 export interface LineLocator {
@@ -538,4 +538,89 @@ export function functionSnippet(entry: TestFunctionEntry): string {
   const args = entry.params.map((p, i) => `\${${i + 1}:${p.name.replace(/[$}\\]/g, '')}}`).join(', ');
   const callee = entry.kind === 'page-object-method' && entry.receiver ? `${entry.receiver}.${entry.name}` : entry.name;
   return `await ${callee}(${args})`;
+}
+
+/**
+ * The 0-based line where the call whose `(` is at `line`/`column` ends: brackets are
+ * matched, skipping strings, template literals and comments. Null when it does not end
+ * within `maxLines` lines.
+ */
+export function callEndLine(lines: string[], line: number, column: number, maxLines = 2000): number | null {
+  // Open brackets, `` ` `` for a template literal, `$` for an expression inside one.
+  const stack: string[] = [];
+  let blockComment = false;
+  for (let l = line; l < Math.min(lines.length, line + maxLines); l++) {
+    const text = lines[l]!;
+    let i = l === line ? column : 0;
+    while (i < text.length) {
+      const c = text[i]!;
+      const top = stack[stack.length - 1];
+      if (blockComment) {
+        if (c === '*' && text[i + 1] === '/') {
+          blockComment = false;
+          i++;
+        }
+      } else if (top === '`') {
+        if (c === '\\') i++;
+        else if (c === '`') stack.pop();
+        else if (c === '$' && text[i + 1] === '{') {
+          stack.push('$');
+          i++;
+        }
+      } else if (c === '/' && text[i + 1] === '/') {
+        break;
+      } else if (c === '/' && text[i + 1] === '*') {
+        blockComment = true;
+        i++;
+      } else if (c === "'" || c === '"') {
+        i++;
+        while (i < text.length && text[i] !== c) i += text[i] === '\\' ? 2 : 1;
+      } else if (c === '`') {
+        stack.push('`');
+      } else if (c === '(' || c === '[' || c === '{') {
+        stack.push(c);
+      } else if (c === ')' || c === ']' || c === '}') {
+        stack.pop();
+        if (!stack.length) return l;
+      }
+      i++;
+    }
+  }
+  return null;
+}
+
+/** The Flake Lab states whose next step verifies a fix. */
+const FLAKE_VERIFY_STATES = new Set(['reproduced', 'still-fails', 'inconclusive']);
+
+/** The Flake Lab lens of a flaky test: what it says, and the commands it offers. */
+export interface FlakeLabLens {
+  /** `flaky 18% · top suspect: GET /api/cart slower (reproduced 7 of 10)`. */
+  title: string;
+  /** Reproduce it, then verify its fix once a condition reproduced it; each a `piwi flake` command. */
+  actions: Array<{ kind: 'reproduce' | 'verify'; title: string; command: string }>;
+}
+
+/**
+ * The lens above a flaky test: its flaky rate and the suspect it is shown with,
+ * then "Reproduce this flake", and "Verify the flake fix" once the lab
+ * reproduced it. The verify command is the instance's next command; null when
+ * the test is off the flaky ranking with nothing to verify, or its fix holds.
+ */
+export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLabLens | null {
+  const verify = FLAKE_VERIFY_STATES.has(entry.state) && entry.nextCommand?.includes(' verify ');
+  if (!entry.nextCommand || (!entry.flaky && !verify)) return null;
+  const rate = entry.flakeRate != null ? `flaky ${Math.max(1, Math.round(entry.flakeRate * 100))}%` : 'flaky';
+  const suspect = entry.suspect
+    ? `top suspect: ${entry.suspect.label} (${entry.suspect.lab})`
+    : entry.reproducedBy
+      ? `reproduced by ${entry.reproducedBy}`
+      : null;
+  const reproduce = verify ? `npx @piwitests/reporter flake ${testCaseId}` : entry.nextCommand;
+  return {
+    title: [rate, suspect].filter(Boolean).join(' · '),
+    actions: [
+      { kind: 'reproduce', title: 'Reproduce this flake', command: reproduce },
+      ...(verify ? [{ kind: 'verify' as const, title: 'Verify the flake fix', command: entry.nextCommand }] : []),
+    ],
+  };
 }

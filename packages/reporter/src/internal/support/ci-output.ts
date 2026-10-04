@@ -162,6 +162,21 @@ function emitGitLabDotenv(output: RunOutput, env: NodeJS.ProcessEnv, logger: Log
   }
 }
 
+/**
+ * GitHub Actions: the end-of-run resource summary (`formatResourceSummary`) as
+ * a section of the job summary, next to the run's. A no-op outside GitHub
+ * Actions or with nothing to report; best-effort like the run outputs.
+ */
+export function emitResourceSummary(lines: string[], logger: Logger, env: NodeJS.ProcessEnv = process.env): void {
+  if (!env.GITHUB_ACTIONS || !env.GITHUB_STEP_SUMMARY || lines.length === 0) return;
+  appendFileLines(
+    env.GITHUB_STEP_SUMMARY,
+    ['### Piwi resources', '', '```text', ...lines, '```', ''],
+    logger,
+    'step summary',
+  );
+}
+
 /** Append newline-terminated lines to a file, swallowing (but logging) failures. */
 function appendFileLines(file: string, lines: string[], logger: Logger, label: string): void {
   try {

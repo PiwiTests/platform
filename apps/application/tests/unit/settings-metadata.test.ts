@@ -5,8 +5,6 @@ import {
   buildSettingsNavSections,
   canOpenSettingsPath,
   getSettingsPage,
-  pageEnvVars,
-  pageIsOverridable,
   type SettingsNavContext,
 } from '../../app/utils/settings-metadata';
 import { Role } from '#shared/types';
@@ -48,12 +46,6 @@ describe('settings registry integrity', () => {
     }
     // @ts-expect-error — deliberately outside the union
     expect(() => getSettingsPage('nope')).toThrow(/Unknown settings page/);
-  });
-
-  test('a page is env-overridable exactly when one of its fields is', () => {
-    for (const page of SETTINGS_PAGES) {
-      expect(pageIsOverridable(page)).toBe(pageEnvVars(page).length > 0);
-    }
   });
 });
 

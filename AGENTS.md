@@ -19,6 +19,7 @@ how to run and verify things, and the conventions that apply everywhere.
 | `apps/vscode/` — the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
 | `apps/jetbrains/` — the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
+| `.github/` — the CI workflows and the action they share           | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
 
 Reference material worth opening when you need the map rather than the rules:
 [`apps/application/ARCHITECTURE.md`](apps/application/ARCHITECTURE.md) (dashboard) and
@@ -130,8 +131,13 @@ for each target framework and runs their tests (needs the .NET 10 SDK).
 
 From the repository root: `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and
 `@piwitests/reporter` tarballs from `<dir>` into a new project, starts the server with `npx @piwitests/server` and
-reports a run through it. CI's `package-smoke` job runs it on Linux, macOS and Windows; the script header shows how to
-pack the tarballs.
+reports a run through it. CI's `package-smoke` job runs it on Linux, and on macOS and Windows too on `main` and on
+pull requests that change the packages or their dependencies; the script header shows how to pack the tarballs.
+
+From the repository root: `npm run knip` lists unused files, exports, types and dependencies, and imports of packages a
+workspace does not declare, across every JS workspace. The entry points it cannot infer (the extension bundles, the demo
+service worker, the dashboard widgets imported from `#components`) are declared in [`knip.ts`](knip.ts); add a new
+standalone entry there, or knip reports its whole import tree as unused.
 
 Run typecheck, lint and tests **once at the end** before the final commit — not after every edit.
 
@@ -188,7 +194,7 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 ### Release notes
 
 release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
-cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/changelog-polish.yml`) keeps
+cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/release-notes.yml`) keeps
 every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
 polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
 narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill

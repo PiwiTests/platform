@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { applyBugReportLifecycle, isReproductionRunAllowed, listBugReports, renderBugReportSpec } =
+const { applyBugReportLifecycle, bugSpecOutcomes, isReproductionRunAllowed, listBugReports, renderBugReportSpec } =
   await import('#shared/handlers/bug-reports');
 const { loadLooksFixedTests, loadNewlyLooksFixedTests } =
   await import('../../server/utils/notifications/run-notifications');
@@ -66,6 +66,119 @@ describe('a test that runs in several browser projects', () => {
       { id: 1, status: 'test-committed' },
       { id: 2, status: 'looks-fixed' },
     ]);
+  });
+});
+
+describe('which runs move a report', () => {
+  const closingRun = async (id: number, values: Partial<typeof schema.testRuns.$inferInsert>) => {
+    await db
+      .insert(schema.testRuns)
+      .values({ id, projectId: 1, status: 'passed', startTime: new Date(id * 1000_000), ...values });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: id,
+      testCaseId: 1,
+      testMeta: { bug: '1' },
+      status: 'passed',
+      browserName: 'chromium',
+    });
+    return applyBugReportLifecycle(db as never, id);
+  };
+
+  test('a feature-branch run moves nothing', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(10, { branch: 'feature/coupon' })).toEqual([]);
+    const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 1));
+    expect(report!.status).toBe('test-committed');
+  });
+
+  test('a piwi bug --write run on the default branch moves nothing, a selection run does', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(
+      await closingRun(10, { branch: 'main', isFullRun: 0, metadata: { piwiOrigin: { kind: 'bug', ref: '1' } } }),
+    ).toEqual([]);
+    const selection = await closingRun(11, { branch: 'main', isFullRun: 0, metadata: { piwiOrigin: { kind: 'ci' } } });
+    expect(selection.map((t) => [t.id, t.to])).toEqual([[1, 'closed']]);
+  });
+
+  test('a run with no branch moves the report only when the project records no branch', async () => {
+    await db.delete(schema.testRunsCases);
+    await db.delete(schema.testRuns);
+    expect((await closingRun(10, {})).map((t) => t.to)).toEqual(['closed']);
+
+    await db.update(schema.bugReports).set({ status: 'test-committed' }).where(eq(schema.bugReports.id, 1));
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    expect(await closingRun(11, {})).toEqual([]);
+  });
+
+  test('a full run of the default branch moves the report', async () => {
+    const moved = await closingRun(10, { branch: 'main' });
+    expect(moved.map((t) => [t.id, t.from, t.to])).toEqual([[1, 'test-committed', 'closed']]);
+  });
+});
+
+describe('runs that move no report', () => {
+  test.each(['bug', 'bisect', 'reproduce', 'flake-lab'])('a %s run leaves the reports where they are', async (kind) => {
+    await db
+      .update(schema.testRuns)
+      .set({ metadata: { piwiOrigin: { kind } } })
+      .where(eq(schema.testRuns.id, 2));
+    await db
+      .insert(schema.testRunsCases)
+      .values([{ testRunId: 2, testCaseId: 2, testMeta: { bug: '2' }, ...fixedIn('chromium') }]);
+
+    expect(await applyBugReportLifecycle(db as never, 2)).toEqual([]);
+    const [report] = await db.select().from(schema.bugReports).where(eq(schema.bugReports.id, 2));
+    expect(report!.status).toBe('test-committed');
+    expect(await db.select().from(schema.handbackOutcomes)).toEqual([]);
+  });
+});
+
+describe('bug-spec outcomes', () => {
+  const outcomes = async () =>
+    (await db.select().from(schema.handbackOutcomes).orderBy(schema.handbackOutcomes.id)).map((o) => [
+      o.kind,
+      o.subjectId,
+      o.outcome,
+      o.runId,
+    ]);
+
+  test('the committed test applies the spec, closing verifies it, a failure after closing regresses it', async () => {
+    await db.update(schema.bugReports).set({ status: 'open' }).where(eq(schema.bugReports.id, 1));
+    await db.insert(schema.testRuns).values({
+      id: 4,
+      projectId: 1,
+      status: 'failed',
+      branch: 'main',
+      startTime: new Date(4000_000),
+      totalTests: 2,
+    });
+    const bug = { testCaseId: 1, testMeta: { bug: '1' }, browserName: 'chromium' };
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, status: 'failed', expectedStatus: 'passed', ...bug },
+      { testRunId: 2, status: 'passed', expectedStatus: 'passed', ...bug },
+      { testRunId: 4, status: 'failed', expectedStatus: 'passed', ...bug },
+    ]);
+
+    await applyBugReportLifecycle(db as never, 1);
+    await applyBugReportLifecycle(db as never, 2);
+    await applyBugReportLifecycle(db as never, 2);
+    await applyBugReportLifecycle(db as never, 4);
+
+    expect(await outcomes()).toEqual([
+      ['bug-spec', 1, 'applied', 1],
+      ['bug-spec', 1, 'verified', 2],
+      ['bug-spec', 1, 'regressed', 4],
+    ]);
+  });
+
+  test('which moves record which outcome', () => {
+    expect(bugSpecOutcomes('open', 'test-committed')).toEqual(['applied']);
+    expect(bugSpecOutcomes('open', 'closed')).toEqual(['applied', 'verified']);
+    expect(bugSpecOutcomes('test-committed', 'looks-fixed')).toEqual([]);
+    expect(bugSpecOutcomes('looks-fixed', 'closed')).toEqual(['verified']);
+    expect(bugSpecOutcomes('closed', 'test-committed')).toEqual(['regressed']);
+    expect(bugSpecOutcomes('looks-fixed', 'test-committed')).toEqual([]);
+    expect(bugSpecOutcomes('closed', 'closed')).toEqual([]);
   });
 });
 

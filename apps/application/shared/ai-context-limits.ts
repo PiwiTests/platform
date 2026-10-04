@@ -43,13 +43,13 @@ export interface ContextLimits {
   serverLogEntryChars: number;
   /** Max backend server spans (from X-Piwi-Trace header) included (0 disables the section). */
   serverTraceSpans: number;
-  /** Max screenshots auto-included in the diagnosis context (D1). */
+  /** Max screenshots auto-included in the diagnosis context. */
   maxImages: number;
-  /** Max peer tests in the same file listed when they passed (D5). */
+  /** Max peer tests in the same file listed when they passed. */
   maxPassedPeers: number;
-  /** Max console entries of any type in the window before failure (D8). */
+  /** Max console entries of any type in the window before failure. */
   maxConsoleWindow: number;
-  /** Network request duration (ms) threshold for flagging as slow (D9). */
+  /** Network request duration (ms) threshold for flagging as slow. */
   slowRequestMs: number;
   /** Screenshots are downscaled so their long edge is at most this many pixels before being sent. */
   imageMaxEdge: number;

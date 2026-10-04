@@ -34,8 +34,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/projects/:id/selections/impact', // impact-from-diff — needs a local git diff the browser demo cannot produce
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
+  'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
   'GET /api/desktop/live-runs', // desktop build only; reports the shell's watched runs, empty everywhere else
-  'POST /api/failure-clusters/:id/bisect', // desktop build only; the shell records a bisect result, 404 everywhere else
   'GET /api/desktop/events', // desktop build only; the desktop window's run progress and page requests, read only inside the shell
   'POST /api/desktop/repro-requests', // desktop build only; Piwi Picker asks the app to run a report, 404 everywhere else
   'GET /api/desktop/repro-requests/:id', // desktop build only; a repro request and its verdict, 404 everywhere else
@@ -85,9 +85,10 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // CSP, not JSON — the browser demo renders snapshots through its own handler.
   'GET /api/test-run-cases/:id/dom-snapshot-frame',
   // Bug reports arrive from Piwi Picker as a multipart upload with PNG
-  // screenshots kept in server storage; the demo has neither.
+  // screenshots and JPEG step screenshots kept in server storage; the demo has neither.
   'POST /api/projects/:id/bug-reports',
   'GET /api/bug-reports/:id/screenshots/:index',
+  'GET /api/bug-reports/:id/step-shots/:step',
 ]);
 
 // ── Derive all server routes from the file system ────────────────────────
@@ -148,7 +149,7 @@ while ((m = PATTERN_RE.exec(routerSrc)) !== null) {
 // We build [{ method, pattern }] by scanning the routes array lines.
 // Extract method+pattern pairs.  Use the `s` flag so that `.*?` spans
 // newlines — many route entries in the demo router write `method` and
-// `pattern` on separate lines and the old single-line regex missed them.
+// `pattern` on separate lines.
 const ROUTE_BLOCK_RE = /\{\s*method:\s*'(GET|POST|PUT|PATCH|DELETE)'.*?pattern:\s*(\/[^,]+\/)/gs;
 const demoRoutes = [];
 while ((m = ROUTE_BLOCK_RE.exec(routerSrc)) !== null) {

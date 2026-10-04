@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Spec health overview',
     description:
-      'Groups test cases by spec file prefix and computes pass rate, flaky rate, failure count, test count, and average duration over the last N days',
+      'Groups test cases by spec file prefix and computes pass rate, flaky rate, failure count, execution count (`testCount`), and average duration over the last N days',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'days', in: 'query', schema: { type: 'integer', default: 30 } },

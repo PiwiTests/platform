@@ -50,7 +50,7 @@ export interface CdpCommand {
 }
 
 /** The protocol's modifier bits. */
-export const MODIFIER_BITS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 } as const;
+const MODIFIER_BITS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 } as const;
 type Modifier = keyof typeof MODIFIER_BITS;
 
 interface KeyDefinition {

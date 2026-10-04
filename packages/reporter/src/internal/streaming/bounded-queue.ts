@@ -49,7 +49,7 @@ export class BoundedEventQueue {
 
   /**
    * @param maxBytes Byte budget for the buffered events. `<= 0` or non-finite
-   *   disables the bound (unbounded, i.e. the pre-existing behavior).
+   *   disables the bound (unbounded).
    */
   constructor(private readonly maxBytes: number) {}
 

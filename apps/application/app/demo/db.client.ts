@@ -348,10 +348,6 @@ export async function getStoredDemoVersion(): Promise<string | null> {
 }
 
 /**
- * Wipes the persisted database from IndexedDB so the next call to
- * getDemoDb() re-seeds from the original seed.sql.
- */
-/**
  * Store the bytes of a file an import brought in, under the same storage path
  * the run's `files` rows point at, so serving it is a straight lookup.
  */
@@ -371,6 +367,10 @@ export async function getDemoImportedFile(path: string): Promise<Uint8Array | nu
   return null;
 }
 
+/**
+ * Wipes the persisted database from IndexedDB so the next call to
+ * getDemoDb() re-seeds from the original seed.sql.
+ */
 export async function resetDemoDb(): Promise<void> {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = null;

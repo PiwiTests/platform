@@ -6,23 +6,26 @@
  * no database, so it is unit-testable against a fake provider. `sweepHealActions`
  * is the durable orchestration around it, mirroring the notifications outbox:
  * bounded attempts, progressive backoff, and every failure recorded on the row
- * (provider writes throw with their own message rather than swallowing it).
+ * (provider writes throw with their own message rather than swallowing it). An
+ * opened PR records the `auto-heal-pr` hand-back as `suggested`.
  *
  * Idempotency is layered: the unique dedupe key stops duplicate actions, PR
  * adoption stops duplicate PRs, and `applyLineEdit`'s already-applied result
  * makes re-running an action a no-op once its commit has landed.
  */
-import { and, eq, lt, lte } from 'drizzle-orm';
+import { and, eq, inArray, lt, lte } from 'drizzle-orm';
 import { healActions, projects } from '../../database/schema';
 import { createScmProvider } from '../scm';
 import { emitNotification } from '../notifications/emit';
+import { recordOutcome } from '../outcomes';
 import { getAutoHealSettings, resolveHealSiteUrl } from './settings';
 import { applyLineEdit } from '#shared/heal-edit';
 import { buildHealPrBody, buildHealPrTitle } from '#shared/heal-pr';
+import { HEAL_COMMIT_TRAILER } from '#shared/commit-trailers';
 import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import type { ScmProvider, ScmFileEdit } from '../scm/ScmProvider';
 import type { DbClient } from '../../database';
-import { nextAttempt, OUTBOX_MAX_ATTEMPTS } from '../outbox';
+import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 
@@ -106,12 +109,16 @@ export async function applyHealAction(
   }
 
   if (!branchHead) await provider.createBranch(p.branch, baseHead);
-  const message = `${p.commitMessage}\n\nPiwi-Heal: ${action.dedupeKey}`;
+  const message = `${p.commitMessage}\n\n${HEAL_COMMIT_TRAILER}: ${action.dedupeKey}`;
   const commitSha = await provider.commitFiles(p.branch, message, toWrite);
   return openPr(commitSha);
 }
 
-/** Process queued heal actions that are due now. Mirrors the notifications sweeper. */
+/**
+ * Process queued heal actions that are due now, including a claimed one whose
+ * lease ran out. Each is claimed first and skipped when another sweep holds it.
+ * Mirrors the notifications sweeper.
+ */
 export async function sweepHealActions(db: DbClient): Promise<{ opened: number; failed: number; skipped: number }> {
   const now = new Date();
   let opened = 0;
@@ -128,13 +135,15 @@ export async function sweepHealActions(db: DbClient): Promise<{ opened: number; 
     .from(healActions)
     .where(
       and(
-        eq(healActions.status, 'pending'),
+        inArray(healActions.status, OUTBOX_SWEEPABLE_STATUSES),
         lte(healActions.scheduledFor, now),
         lt(healActions.attempts, MAX_ATTEMPTS),
       ),
     );
 
   for (const action of due) {
+    const claimed = await claimOutboxRows(db, healActions, [action.id]);
+    if (!claimed.has(action.id)) continue;
     const payload = action.payload as HealActionPayload;
     const attempts = action.attempts + 1;
     try {
@@ -166,6 +175,17 @@ export async function sweepHealActions(db: DbClient): Promise<{ opened: number; 
           .set({ status: 'opened', result: outcome.result, error: null, attempts, updatedAt: now })
           .where(eq(healActions.id, action.id));
         opened++;
+        await recordOutcome(db, {
+          projectId: action.projectId,
+          kind: 'auto-heal-pr',
+          subjectType: 'heal-action',
+          subjectId: action.id,
+          suggestionKey: action.dedupeKey,
+          outcome: 'suggested',
+          runId: action.runId,
+          commit: outcome.result.commitSha,
+          details: { prNumber: outcome.result.prNumber, prUrl: outcome.result.prUrl },
+        }).catch((e) => console.error(`[auto-heal] PR outcome failed for action ${action.id}`, e));
         const [proj] = await db
           .select({ label: projects.label, name: projects.name })
           .from(projects)

@@ -20,6 +20,7 @@ import {
   reportSchedules,
   reportSnapshots,
   testCases,
+  users,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import {
@@ -62,6 +63,7 @@ import {
 } from '../reports/schedule';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '../notification-events';
 import { getAnalyticsContext, type ProjectAccess } from './analytics/common';
+import { channelOwnerOf, channelRecipient, type ChannelOwner } from '../notifications/channel-recipients';
 
 export class ReportScheduleError extends Error {
   constructor(
@@ -85,6 +87,22 @@ export interface ReportChannel {
   name: string;
   type: string;
   userId: number | null;
+  /** The owner's display name; null for a global channel. */
+  ownerName?: string | null;
+  /** An email channel's address, or the owner's account email for `personal_email`. */
+  address?: string | null;
+  /** A webhook channel's endpoint. */
+  url?: string | null;
+}
+
+/** A schedule's channel: its name, who receives what it sends, and whose it is. */
+export interface ReportScheduleChannel {
+  id: number;
+  name: string;
+  type: string;
+  /** Null once the channel was deleted. */
+  owner: ChannelOwner | null;
+  recipient: string;
 }
 
 // ── Input ────────────────────────────────────────────────────────────────────
@@ -190,6 +208,10 @@ export interface ReportScheduleView {
   /** Instance-wide, managed by administrators. */
   global: boolean;
   ownerId: number | null;
+  /** The owner's display name; null for a global schedule. */
+  ownerName: string | null;
+  /** The reader owns it. */
+  mine: boolean;
   /** A built-in key or a saved dashboard's id; null once its saved dashboard was deleted. */
   dashboard: string | null;
   dashboardName: string;
@@ -204,7 +226,7 @@ export interface ReportScheduleView {
   language: ReportLanguage | null;
   includeShareLink: boolean;
   includeNarrative: boolean;
-  channels: Array<{ id: number; name: string; type: string }>;
+  channels: ReportScheduleChannel[];
   active: boolean;
   mutedUntil: string | null;
   lastRunAt: string | null;
@@ -230,12 +252,32 @@ function canEdit(row: Pick<ScheduleRow, 'userId'>, actor: ReportActor): boolean 
 
 export const DASHBOARD_DELETED_REASON = 'Its saved dashboard was deleted. Pick another dashboard to reactivate it.';
 
-function toView(
-  row: ScheduleRow,
-  channels: ReportChannel[],
-  actor: ReportActor,
-  dashboardNames: Map<number, string>,
-): ReportScheduleView {
+/**
+ * A schedule's channel as the reader sees it. An address or endpoint shows to
+ * whoever could read it on the channels list (a global channel, their own) and
+ * to administrators; anyone else reads whose it is, not where it points.
+ */
+function scheduleChannel(id: number, channel: ReportChannel | undefined, actor: ReportActor): ReportScheduleChannel {
+  if (!channel)
+    return { id, name: `Channel #${id}`, type: 'unknown', owner: null, recipient: 'nobody: it was deleted' };
+  const owner = channelOwnerOf(channel.userId, actor.id, channel.ownerName);
+  const reveal = actor.isAdmin || owner.kind !== 'user';
+  return {
+    id,
+    name: channel.name,
+    type: channel.type,
+    owner,
+    recipient: channelRecipient(reveal ? channel : { type: channel.type }, owner),
+  };
+}
+
+/** The names a schedule view shows: its saved dashboard's and its owner's. */
+interface ViewNames {
+  dashboards: Map<number, string>;
+  users: Map<number, string>;
+}
+
+function toView(row: ScheduleRow, channels: ReportChannel[], actor: ReportActor, names: ViewNames): ReportScheduleView {
   const dashboard =
     row.dashboardId !== null && row.dashboardId !== undefined
       ? String(row.dashboardId)
@@ -244,7 +286,7 @@ function toView(
         : null;
   const dashboardName =
     row.dashboardId != null
-      ? (dashboardNames.get(row.dashboardId) ?? `Dashboard #${row.dashboardId}`)
+      ? (names.dashboards.get(row.dashboardId) ?? `Dashboard #${row.dashboardId}`)
       : dashboard
         ? getBuiltinDashboard(dashboard as BuiltinDashboardKey).name
         : 'Deleted dashboard';
@@ -255,6 +297,8 @@ function toView(
     name: row.name,
     global: row.userId === null,
     ownerId: row.userId,
+    ownerName: row.userId === null ? null : (names.users.get(row.userId) ?? `User #${row.userId}`),
+    mine: row.userId !== null && row.userId === actor.id,
     dashboard,
     dashboardName,
     inactiveReason: dashboard === null ? DASHBOARD_DELETED_REASON : null,
@@ -266,10 +310,7 @@ function toView(
     language: (row.language as ReportLanguage | null) ?? null,
     includeShareLink: row.includeShareLink,
     includeNarrative: row.includeNarrative,
-    channels: ids.map((id) => {
-      const c = byId.get(id);
-      return { id, name: c?.name ?? `Channel #${id}`, type: c?.type ?? 'unknown' };
-    }),
+    channels: ids.map((id) => scheduleChannel(id, byId.get(id), actor)),
     active: row.active,
     mutedUntil: iso(row.mutedUntil),
     lastRunAt: iso(row.lastRunAt),
@@ -290,22 +331,58 @@ async function savedDashboardNames(db: DrizzleDB, rows: ScheduleRow[]): Promise<
   return new Map(found.map((r) => [r.id, r.name]));
 }
 
+async function ownerNames(db: DrizzleDB, rows: ScheduleRow[]): Promise<Map<number, string>> {
+  const ids = [...new Set(rows.map((r) => r.userId).filter((id): id is number => id != null))];
+  if (ids.length === 0) return new Map();
+  const found = await db
+    .select({ id: users.id, name: users.name, username: users.username })
+    .from(users)
+    .where(inArray(users.id, ids));
+  return new Map(found.map((r) => [r.id, r.name || r.username]));
+}
+
+async function viewNames(db: DrizzleDB, rows: ScheduleRow[]): Promise<ViewNames> {
+  const [dashboards, owners] = await Promise.all([savedDashboardNames(db, rows), ownerNames(db, rows)]);
+  return { dashboards, users: owners };
+}
+
 async function viewOf(db: DrizzleDB, row: ScheduleRow, channels: ReportChannel[], actor: ReportActor) {
-  return toView(row, channels, actor, await savedDashboardNames(db, [row]));
+  return toView(row, channels, actor, await viewNames(db, [row]));
 }
 
 // ── Schedules ────────────────────────────────────────────────────────────────
 
-/** Every channel, for naming a schedule's destinations. */
+/**
+ * Every channel, for naming a schedule's destinations and who they reach: the
+ * owner's name, and the address or endpoint from the config (never a secret).
+ */
 export async function loadReportChannels(db: DrizzleDB): Promise<ReportChannel[]> {
-  return db
+  const rows = await db
     .select({
       id: notificationChannels.id,
       name: notificationChannels.name,
       type: notificationChannels.type,
       userId: notificationChannels.userId,
+      config: notificationChannels.config,
+      ownerName: users.name,
+      ownerUsername: users.username,
+      ownerEmail: users.email,
     })
-    .from(notificationChannels);
+    .from(notificationChannels)
+    .leftJoin(users, eq(users.id, notificationChannels.userId));
+  return rows.map((r) => {
+    const config = (r.config ?? {}) as Record<string, unknown>;
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+    return {
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      userId: r.userId,
+      ownerName: r.userId === null ? null : r.ownerName || r.ownerUsername || null,
+      address: r.type === 'personal_email' ? text(r.ownerEmail) : text(config.address),
+      url: text(config.url),
+    };
+  });
 }
 
 /**
@@ -320,7 +397,7 @@ export async function listReportSchedules(
   const rows = await db.select().from(reportSchedules).orderBy(desc(reportSchedules.createdAt));
   const visible =
     actor.isAdmin || !actor.authEnabled ? rows : rows.filter((r) => r.userId === null || r.userId === actor.id);
-  const names = await savedDashboardNames(db, visible);
+  const names = await viewNames(db, visible);
   return visible.map((r) => toView(r, channels, actor, names));
 }
 

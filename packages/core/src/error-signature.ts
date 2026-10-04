@@ -15,7 +15,7 @@ export interface ErrorSignature {
   errorType: ErrorType;
   /** Normalized first error line — the human-readable cluster name */
   signature: string;
-  /** Normalized message head (up to 5 lines, volatile tokens masked) — the main fingerprint input */
+  /** Normalized message head (up to 5 lines, volatile tokens and locator options masked) — the main fingerprint input */
   normalizedMessage: string;
   /** Playwright locator extracted from the error, if any (unmasked, for display) */
   selector: string | null;
@@ -36,8 +36,54 @@ const EMAIL_RE = /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/gi;
 // Dynamic values inside locator option objects: { name: '…' }, { hasText: '…' }, etc.
 // The primary positional arg (testid/text/role) is left intact so
 // getByTestId('login-button') and getByTestId('logout-button') stay distinct.
-const SELECTOR_OPTION_RE =
-  /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])(?:\\.|(?!\2)[\s\S])*?\2/gi;
+const SELECTOR_OPTION_KEY_RE = /\b(name|hasText|hasNotText|has|placeholder|label|title|alt|exact)\s*:\s*(['"`])/gi;
+
+const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029']);
+
+/**
+ * For each position of `text`, the index of the quote that closes a quoted value
+ * starting there, or -1: the answer of `(?:\\.|(?!q)[\s\S])*?q`, computed in
+ * one backward pass instead of by backtracking, which is exponential on a run of
+ * backslash pairs with no closing quote. At each position the lazy regex ends on
+ * the quote, else tries an escape pair (a backslash and any character but a line
+ * terminator), else the character alone; each position has one answer.
+ */
+function closingQuoteIndex(text: string, quote: string): Int32Array {
+  const close = new Int32Array(text.length + 1).fill(-1);
+  for (let p = text.length - 1; p >= 0; p--) {
+    const ch = text[p]!;
+    if (ch === quote) {
+      close[p] = p;
+      continue;
+    }
+    const escaped = ch === '\\' && p + 1 < text.length && !LINE_TERMINATORS.has(text[p + 1]!) ? close[p + 2]! : -1;
+    close[p] = escaped !== -1 ? escaped : close[p + 1]!;
+  }
+  return close;
+}
+
+/** Blank out the dynamic option values (row names, hasText, …) of every locator expression in `text`. */
+function maskSelectorOptions(text: string): string {
+  const closers = new Map<string, Int32Array>();
+  let out = '';
+  let copied = 0;
+  SELECTOR_OPTION_KEY_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SELECTOR_OPTION_KEY_RE.exec(text))) {
+    const quote = match[2]!;
+    let close = closers.get(quote);
+    if (!close) closers.set(quote, (close = closingQuoteIndex(text, quote)));
+    const end = close[SELECTOR_OPTION_KEY_RE.lastIndex]!;
+    if (end === -1) {
+      SELECTOR_OPTION_KEY_RE.lastIndex = match.index + 1;
+      continue;
+    }
+    out += `${text.slice(copied, match.index)}${match[1]}: <STR>`;
+    copied = end + 1;
+    SELECTOR_OPTION_KEY_RE.lastIndex = copied;
+  }
+  return out + text.slice(copied);
+}
 
 function classifyError(text: string): ErrorType {
   // Order matters: an expect() that timed out is still an assertion failure
@@ -83,14 +129,14 @@ export function maskVolatile(text: string): string {
  * volatile masking. The primary positional target is preserved.
  */
 export function maskSelector(selector: string): string {
-  return maskVolatile(selector.replace(SELECTOR_OPTION_RE, (_m, key: string) => `${key}: <STR>`));
+  return maskVolatile(maskSelectorOptions(selector));
 }
 
 /** Reduce raw error text to its {@link ErrorSignature}. */
 export function extractErrorSignature(rawError: string): ErrorSignature {
   const text = stripAnsi(rawError);
   const errorType = classifyError(text);
-  const normalizedMessage = maskVolatile(extractMessageHead(text));
+  const normalizedMessage = maskVolatile(maskSelectorOptions(extractMessageHead(text)));
   const selector = extractSelector(text);
   const topFrameFile = extractTopFrameFile(text);
   const signature = (normalizedMessage.split('\n')[0] || '').slice(0, 200) || 'Unknown error';

@@ -21,6 +21,10 @@ import {
   type FailureCluesResult,
 } from '#shared/handlers/test-cases';
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
+import { getRunResources } from '#shared/handlers/run-resources';
+import { isPassiveCapabilityDeclined } from '#shared/handlers/capabilities';
+import { latestOccurrences, listResourceFindings, runFindingsNovelty } from '#shared/handlers/resource-findings';
+import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import {
   FlakePlanUnavailable,
   flakeCommand,
@@ -28,19 +32,39 @@ import {
   latestSuspectResults,
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
+import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { AGENT_DIAGNOSIS_ERRORS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { parseFixAttempt } from '#shared/fix-attempts';
+import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
+import { clusterTrailerLine } from '#shared/commit-trailers';
+import { parseSetRunIncident } from '#shared/run-incident';
+import { recordAgentDiagnosisOnCluster } from '../agent-diagnosis';
+import { decideRunIncident } from '../run-incident-decision';
 import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
 import {
   getFailureCluster,
   getClusterDiagnosis,
   patchClusterStatus,
   patchClusterBaseCommit,
+  recordClusterBisect,
   getOpenFailureClusters,
+  bulkTriageClusters,
+  quarantineClusterTests,
+  releaseClusterTests,
 } from '#shared/handlers/failure-clusters';
-import { clusterInQueue, isInboxQueue } from '#shared/inbox-queues';
+import { BULK_TRIAGE_MAX, clusterInQueue, isInboxQueue, isSnoozeOption, parseBulkIds } from '#shared/inbox-queues';
+import {
+  getSuggestionProjectId,
+  pendingSuggestionsForCluster,
+  rejectMergeSuggestion,
+} from '#shared/handlers/cluster-merge-suggestions';
+import { approveSuggestedMerge } from '../merge-suggestion-approve';
+import { rerunClusterInCi } from '../ci-rerun';
+import { createEnrichedLink } from '../integrations/link-create';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { listTags } from '#shared/handlers/tags';
-import { listLinks, type LinkEntityType } from '#shared/handlers/links';
+import { createLinkSchema, listLinks, type LinkEntityType } from '#shared/handlers/links';
 import { resolveLinkEntityProjectId } from '../project-access';
 import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
 import { createIssue } from '../integrations/create';
@@ -84,6 +108,7 @@ import { assertDashboardScope } from '#shared/reports/request';
 import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
+import { resolveInstanceStates } from '#shared/handlers/setup-status';
 import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
 import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/scope';
 import { applyWidgetScope } from '#shared/analytics/dashboards';
@@ -123,7 +148,9 @@ import { selectCaseScreenshots } from '../case-screenshots';
 import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
-import { listScenarioGaps, draftScenario } from '#shared/handlers/scenario-gaps';
+import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
+import { dismissQuarantineProposal } from '#shared/handlers/quarantine';
+import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
@@ -133,6 +160,8 @@ import {
   listBugReports,
   renderBugReportSpec,
   renderStepsWith,
+  bugReportPatchSchema,
+  updateBugReport,
 } from '#shared/handlers/bug-reports';
 import { describeExpectation, describeStepInWords, expectedSteps, type BugReport } from '@piwitests/core/bug-report';
 import { parseSteps } from '@piwitests/core/steps';
@@ -146,6 +175,7 @@ import {
   resolveBugReportProjectId,
 } from '../project-access';
 import type { ProjectScope } from '../project-access';
+import type { HandbackActor } from '#shared/handback-outcomes';
 import type { User } from '../../database/schema';
 import { Role } from '#shared/types';
 import type { DbClient } from '../../database';
@@ -238,6 +268,13 @@ function numericCursor(raw: unknown): number | undefined {
 export interface McpContext {
   user: User | null;
   scope: ProjectScope;
+  /** The API key the request was made with; null for a session or with authentication off. */
+  apiKeyId?: number | null;
+}
+
+/** The caller of a write tool, as the reporter of a hand-back outcome. */
+function mcpActor(ctx: McpContext): HandbackActor {
+  return { channel: 'mcp', userId: ctx.user?.id ?? null, apiKeyId: ctx.apiKeyId ?? null };
 }
 
 /** Throw if the caller's scope does not include this project. */
@@ -308,15 +345,6 @@ function selectionFormatParam(raw: unknown): SelectionFormat {
   return formats.includes(raw as SelectionFormat) ? (raw as SelectionFormat) : 'args';
 }
 
-// ── Tool handlers ────────────────────────────────────────────────────────────
-//
-// Keyed by tool name. The catalog (name/description/inputSchema) lives in
-// `shared/mcp-tools.ts` so both this server and `app/pages/mcp.vue` render the
-// same list; here we attach the DB-backed behavior. `MCP_TOOLS` below merges the
-// two and throws if a declared tool has no handler (catches drift either way).
-
-// Keyed by `McpToolName` (derived from MCP_TOOL_DEFS): TypeScript now rejects a
-// handler whose name isn't a declared tool, and a declared tool with no handler.
 /**
  * A create refused over empty required fields, worded for an agent: each field's
  * id, its name and what it takes, so the next call can pass them in `fields`.
@@ -330,6 +358,13 @@ function missingFieldsForAgent(missing: { id: string; name: string }[], screen: 
   return `Jira requires ${names} for this issue type. Pass ${missing.length === 1 ? 'it' : 'them'} in \`fields\`, keyed by field id: ${each.join('; ')}. Or set a default in the project's issue tracker settings.`;
 }
 
+// ── Tool handlers ────────────────────────────────────────────────────────────
+//
+// Keyed by tool name. The catalog (name/description/inputSchema) lives in
+// `shared/mcp-tools.ts` so both this server and `app/pages/mcp.vue` render the
+// same list; here we attach the DB-backed behavior. The record is keyed by
+// `McpToolName` (derived from MCP_TOOL_DEFS), so TypeScript rejects a handler
+// whose name isn't a declared tool, and a declared tool with no handler.
 const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── list_projects ──────────────────────────────────────────────────────────
   async list_projects(db, _params, ctx) {
@@ -514,8 +549,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!run) return null;
     assertProject(ctx, run.projectId);
 
-    // Push the status filter into SQL and paginate — no more loading passed
-    // cases (and their step JSON) just to discard them.
+    // Filter by status in SQL and paginate, so passed cases (and their step
+    // JSON) are never loaded just to be discarded.
     const caseConditions = [eq(testRunsCases.testRunId, runId)];
     if (statusFilter === 'flaky') {
       caseConditions.push(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0))!);
@@ -699,7 +734,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!tc) return null;
     if (tc.project?.id != null) assertProject(ctx, tc.project.id);
 
-    // Fetch executions with cursor pagination instead of hard-coded 10
+    // Fetch executions with cursor pagination
     const execConditions = [eq(testRunsCases.testCaseId, id)];
     if (cursor) execConditions.push(lt(testRunsCases.id, cursor));
 
@@ -806,10 +841,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (cluster.project?.id != null) assertProject(ctx, cluster.project.id);
 
     const knownIssue = await getClusterKnownIssue(db, id);
+    const mergeSuggestions = await pendingSuggestionsForCluster(db, id);
 
-    // Fetch locator healing for up to 5 affected cases via a single batch
-    // query (2 DB round-trips instead of 5×2) so AI coding agents get fix
-    // suggestions without visiting the dashboard.
+    // Fetch locator healing for up to 5 affected cases in one batch (2 DB
+    // round-trips) so AI coding agents get fix suggestions without visiting
+    // the dashboard.
     const topCases = (cluster.affectedTestCases ?? []).slice(0, 5);
     const trcIds = topCases.map((t: any) => t.recentTestRunsCaseId).filter((id: any) => id != null);
     const healingMap = trcIds.length > 0 ? await getLocatorHealingBatch(db, trcIds) : new Map();
@@ -869,6 +905,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       lastSeenStatus: cluster.lastSeenRunStatus || null,
       project: cluster.project ? { id: cluster.project.id, name: cluster.project.name } : null,
       sampleError: trunc(cluster.sampleError, 400),
+      mergeSuggestions: mergeSuggestions.map((s) => ({ suggestionId: s.id, otherClusterId: s.otherClusterId })),
       diagnosis: cluster.diagnosis
         ? dropNulls({
             status: cluster.diagnosis.status,
@@ -1326,7 +1363,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
 
     const baseBranch = typeof params.baseBranch === 'string' ? params.baseBranch.trim() || null : null;
-    const r = await computeRunInsights(db, runId, { baseBranch });
+    const r = await computeRunInsights(db, runId, { baseBranch, failedFallback: true });
     const cap = <T>(a: T[]) => a.slice(0, 15);
     return dropNulls({
       runId,
@@ -1528,6 +1565,83 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const summaries = (await getNetworkRequests(db, runId)) as any[] | null;
     if (!summaries) return null;
     return { endpoints: summaries.slice(0, 30).map((e: any) => dropNulls(e)) };
+  },
+
+  // ── list_resource_findings ─────────────────────────────────────────────────
+  async list_resource_findings(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, projectId);
+    if (await isPassiveCapabilityDeclined(db, projectId, 'resources')) return { findings: [] };
+    const status = params.status === 'fixed' || params.status === 'all' ? params.status : 'open';
+    const verdict = typeof params.verdict === 'string' ? params.verdict : undefined;
+    const findings = await listResourceFindings(db, projectId, { status, verdict, limit: Number(params.limit) || 50 });
+    const last = await latestOccurrences(
+      db,
+      findings.map((f) => f.id),
+    );
+    return {
+      findings: findings.map((f) => {
+        const occurrence = last.get(f.id);
+        return dropNulls({
+          ...f,
+          fingerprint: undefined,
+          last: occurrence
+            ? dropNulls({
+                runId: occurrence.runId,
+                branch: occurrence.branch,
+                objects: occurrence.count,
+                tests: occurrence.tests,
+                heldMs: occurrence.heldMs,
+                afterTestCpuMs: occurrence.afterTestCpuMs,
+                pages: occurrence.pages,
+              })
+            : null,
+        });
+      }),
+    };
+  },
+
+  // ── get_resource_profile ───────────────────────────────────────────────────
+  async get_resource_profile(db, params, ctx) {
+    const runId = numericParam(params.runId, 'runId');
+    if ((await checkEntityScope(db, ctx, runId, resolveRunProjectId)) === 'not-found') return null;
+    const resources = await getRunResources(db, runId);
+    if (!resources) return null;
+    const novelty = resources.report ? await runFindingsNovelty(db, runId) : null;
+    const isNew = new Map((novelty?.findings ?? []).map((f) => [f.fingerprint, f.isNew]));
+    return {
+      baseBranch: novelty?.baseBranch ?? null,
+      shards: (resources.report?.parts ?? []).map((part) =>
+        dropNulls({
+          shardIndex: part.shardIndex,
+          counts: part.counts,
+          findings: part.findings.map((finding) => ({
+            ...finding,
+            isNew: isNew.get(resourceFingerprint(finding)) ?? null,
+          })),
+          machine: part.profile
+            ? {
+                platform: part.profile.platform,
+                wallMs: part.profile.wallMs,
+                ...part.profile.machine,
+                cpu: { ...part.profile.cpu, series: undefined },
+                memory: part.profile.memory,
+                disk: part.profile.disk,
+                notMeasured: part.profile.notMeasured,
+              }
+            : null,
+          openPagesByWorker: part.workers.map((w) => ({
+            worker: w.worker,
+            max: Math.max(0, ...w.openPages),
+            last: w.openPages[w.openPages.length - 1] ?? 0,
+          })),
+          artifactBytes: part.artifactBytes,
+          workerHealth: part.workerHealth,
+        }),
+      ),
+      measuredExecutions: resources.measuredExecutions,
+      costliest: resources.costliest.slice(0, 10).map((e) => dropNulls(e)),
+    };
   },
 
   // ── get_failure_groups ─────────────────────────────────────────────────────
@@ -2047,8 +2161,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         sampleError: trunc(c.sampleError, 300),
       }),
     );
-    // Cursor is the last id; ordering is (occurrences DESC, id DESC) so paging by
-    // id is approximate but monotonic enough for a triage sweep.
+    // The cursor is the last id while the order is (occurrences DESC, id DESC),
+    // so a later page skips clusters newer than the cursor and can repeat older
+    // ones already shown.
     return paginatedItems(mapped, pageSize, (c: any) => String(c.id));
   },
 
@@ -2147,7 +2262,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const note = typeof params.triageNote === 'string' ? params.triageNote : undefined;
     const result = await patchClusterStatus(db, id, status, note);
     if (!result) return null;
-    return dropNulls({ id, status, triageNote: note || null, ok: true });
+    return dropNulls({ id, status, triageNote: result.cluster?.triageNote ?? null, ok: true });
   },
 
   // ── set_cluster_base_commit ────────────────────────────────────────────────
@@ -2225,6 +2340,293 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       summary: diag.summary || null,
       rootCause: diag.rootCause || null,
       suggestedFix: det?.suggestedFix || null,
+    });
+  },
+
+  // ── triage_cluster ─────────────────────────────────────────────────────────
+  async triage_cluster(db, params, ctx) {
+    assertWriteRole(ctx);
+    const ids = parseBulkIds(params.clusterIds);
+    if (!ids) {
+      throw new Error(`clusterIds must be a non-empty array of positive integers (max ${BULK_TRIAGE_MAX})`);
+    }
+    const action = String(params.action ?? '');
+    let apply: (allowed: number[]) => Promise<{ updated: number; tests?: number; changed?: number }>;
+    if (action === 'status') {
+      const status = String(params.status ?? '');
+      if (!['open', 'resolved', 'ignored'].includes(status)) {
+        throw new Error('status must be one of: open, resolved, ignored');
+      }
+      const note = typeof params.note === 'string' && params.note.trim() ? params.note : null;
+      apply = async (allowed) => {
+        if (!note) return { updated: (await bulkTriageClusters(db, allowed, { action: 'status', status }))!.updated };
+        let updated = 0;
+        for (const id of allowed) if (await patchClusterStatus(db, id, status, note)) updated += 1;
+        return { updated };
+      };
+    } else if (action === 'assign') {
+      if (params.assignee != null && typeof params.assignee !== 'string') {
+        throw new Error('assignee must be a string (empty to unassign)');
+      }
+      const assignee = (params.assignee as string | undefined) ?? null;
+      apply = async (allowed) => (await bulkTriageClusters(db, allowed, { action: 'assign', assignee }))!;
+    } else if (action === 'snooze') {
+      const snooze = params.snooze ?? null;
+      if (snooze !== null && !isSnoozeOption(snooze)) {
+        throw new Error('snooze must be one of: 1-day, 1-week, until-recurs (omit to unsnooze)');
+      }
+      apply = async (allowed) => (await bulkTriageClusters(db, allowed, { action: 'snooze', snooze }))!;
+    } else if (action === 'quarantine' || action === 'release') {
+      const reason =
+        typeof params.reason === 'string' && params.reason.trim() ? params.reason.slice(0, 500) : undefined;
+      apply = async (allowed) => {
+        let updated = 0;
+        let tests = 0;
+        let changed = 0;
+        for (const id of allowed) {
+          const result =
+            action === 'quarantine'
+              ? await quarantineClusterTests(db, id, { createdBy: ctx.user?.id || null, reason })
+              : await releaseClusterTests(db, id, { reason, actor: mcpActor(ctx) });
+          if (!result) continue;
+          updated += 1;
+          tests += result.tests;
+          changed += 'quarantined' in result ? result.quarantined : result.released;
+        }
+        return { updated, tests, changed };
+      };
+    } else {
+      throw new Error('action must be one of: status, assign, snooze, quarantine, release');
+    }
+
+    // Like the bulk REST route, act only on the clusters this key may write.
+    const rows = await db
+      .select({ id: failureClusters.id, projectId: failureClusters.projectId })
+      .from(failureClusters)
+      .where(inArray(failureClusters.id, ids));
+    const allowed = new Set(rows.filter((r) => scopeAllows(ctx.scope, r.projectId)).map((r) => r.id));
+    const result = await apply([...allowed]);
+    return dropNulls({
+      action,
+      requested: ids.length,
+      updated: result.updated,
+      tests: result.tests ?? null,
+      quarantined: action === 'quarantine' ? result.changed : null,
+      released: action === 'release' ? result.changed : null,
+      skippedIds: ids.filter((id) => !allowed.has(id)),
+    });
+  },
+
+  // ── triage_gap ─────────────────────────────────────────────────────────────
+  async triage_gap(db, params, ctx) {
+    assertWriteRole(ctx);
+    const projectId = numericParam(params.projectId, 'projectId');
+    const gapId = numericParam(params.gapId, 'gapId');
+    const validation = gapTriageSchema.safeParse(params);
+    if (!validation.success) {
+      throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    }
+    assertProject(ctx, projectId);
+    // The auth-disabled administrator is user 0, which no row references.
+    const result = await triageGap(db, projectId, gapId, { ...validation.data, triagedByUserId: ctx.user?.id || null });
+    if ('error' in result) {
+      if (result.error === 'gap-not-found') return null;
+      throw new Error('Covering test not found in this project');
+    }
+    return { id: gapId, projectId, status: result.status };
+  },
+
+  // ── decide_merge_suggestion ────────────────────────────────────────────────
+  async decide_merge_suggestion(db, params, ctx) {
+    assertWriteRole(ctx);
+    const decision = String(params.decision ?? '');
+    if (decision !== 'approve' && decision !== 'reject') throw new Error('decision must be approve or reject');
+    let suggestionId: number;
+    if (params.suggestionId != null) {
+      suggestionId = numericParam(params.suggestionId, 'suggestionId');
+    } else if (params.clusterId != null) {
+      const clusterId = numericParam(params.clusterId, 'clusterId');
+      if ((await checkEntityScope(db, ctx, clusterId, resolveClusterProjectId)) === 'not-found') return null;
+      const pending = await pendingSuggestionsForCluster(db, clusterId);
+      if (pending.length === 0) throw new Error(`Cluster ${clusterId} has no pending merge suggestion`);
+      if (pending.length > 1) {
+        const listed = pending.map((p) => `${p.id} (with cluster ${p.otherClusterId})`).join(', ');
+        throw new Error(
+          `Cluster ${clusterId} has ${pending.length} pending merge suggestions: ${listed}; pass suggestionId`,
+        );
+      }
+      suggestionId = pending[0]!.id;
+    } else {
+      throw new Error('Pass clusterId or suggestionId');
+    }
+    if ((await checkEntityScope(db, ctx, suggestionId, getSuggestionProjectId)) === 'not-found') return null;
+
+    if (decision === 'approve') {
+      const merged = await approveSuggestedMerge(db, suggestionId, mcpActor(ctx));
+      if (!merged) throw new Error('Suggestion is not pending');
+      return { suggestionId, decision, survivorId: merged.survivorId };
+    }
+    if (!(await rejectMergeSuggestion(db, suggestionId, mcpActor(ctx)))) throw new Error('Suggestion is not pending');
+    return { suggestionId, decision, ok: true };
+  },
+
+  // ── dismiss_quarantine_proposal ────────────────────────────────────────────
+  async dismiss_quarantine_proposal(db, params, ctx) {
+    assertWriteRole(ctx);
+    const projectId = numericParam(params.projectId, 'projectId');
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    const proposal = params.proposal;
+    if (!isQuarantineProposal(proposal)) throw new Error('proposal must be quarantine or release');
+    if (params.reason != null && typeof params.reason !== 'string') throw new Error('reason must be a string');
+    assertProject(ctx, projectId);
+    const reason = normalizeDismissReason(params.reason);
+    let dismissed: boolean;
+    try {
+      dismissed = await dismissQuarantineProposal(db, projectId, testCaseId, proposal, mcpActor(ctx), reason);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'Test case not found in this project') return null;
+      throw e;
+    }
+    if (!dismissed) throw new Error(`Test ${testCaseId} has no ${proposal} proposal to dismiss`);
+    return dropNulls({ projectId, testCaseId, proposal, dismissed, reason });
+  },
+
+  // ── set_bug_report_status ──────────────────────────────────────────────────
+  async set_bug_report_status(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.id, 'id');
+    const validation = bugReportPatchSchema.safeParse({ status: params.status });
+    if (!validation.success || !validation.data.status) {
+      throw new Error('status must be one of: open, dismissed, closed');
+    }
+    if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+    const report = await updateBugReport(db, id, { status: validation.data.status });
+    if (!report) return null;
+    return { id, status: report.status };
+  },
+
+  // ── rerun_cluster_in_ci ────────────────────────────────────────────────────
+  async rerun_cluster_in_ci(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const outcome = await rerunClusterInCi(db, id, {
+      id: ctx.user?.id || null,
+      name: ctx.user?.name || ctx.user?.username || null,
+    });
+    if (!outcome.ok) {
+      if (outcome.error === 'not-found') return null;
+      throw new Error(outcome.message);
+    }
+    const { provider, url, args, at } = outcome.dispatch;
+    return dropNulls({ clusterId: id, provider, url, args, dispatchedAt: iso(at) });
+  },
+
+  // ── set_cluster_bisect ─────────────────────────────────────────────────────
+  async set_cluster_bisect(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const parsed = parseBisectResultBody(params);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const commit = await recordClusterBisect(db, id, parsed.value);
+    if (!commit) return null;
+    return dropNulls({
+      clusterId: id,
+      sha: commit.sha,
+      subject: commit.subject,
+      author: commit.author,
+      date: commit.date,
+    });
+  },
+
+  // ── record_diagnosis ───────────────────────────────────────────────────────
+  async record_diagnosis(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
+    if (!parsed.ok) throw new Error(parsed.message);
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const result = await recordAgentDiagnosisOnCluster(db, id, parsed.value, mcpActor(ctx));
+    if (!result.ok) {
+      if (result.error === 'not-found') return null;
+      throw new Error(AGENT_DIAGNOSIS_ERRORS[result.error]);
+    }
+    return dropNulls({
+      clusterId: id,
+      diagnosisId: result.diagnosisId,
+      category: parsed.value.diagnosis.category,
+      confidence: parsed.value.diagnosis.confidence,
+      patchValidation: result.patchValidation,
+      replacedPrevious: result.replacedVersion || null,
+    });
+  },
+
+  // ── report_fix_attempt ─────────────────────────────────────────────────────
+  async report_fix_attempt(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.clusterId, 'clusterId');
+    const { clusterId: _clusterId, channel: _channel, ...body } = params;
+    const parsed = parseFixAttempt(body);
+    if (!parsed.ok) throw new Error(parsed.message);
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    const result = await reportFixAttempt(db, id, parsed.value, mcpActor(ctx));
+    if (!result.ok) {
+      if (result.error === 'not-found') return null;
+      throw new Error(FIX_ATTEMPT_ERRORS[result.error].message);
+    }
+    return dropNulls({
+      clusterId: id,
+      key: result.attempt.key,
+      outcome: result.attempt.outcome,
+      recorded: result.recorded,
+      commitTrailer: clusterTrailerLine(id),
+    });
+  },
+
+  // ── set_run_incident ───────────────────────────────────────────────────────
+  async set_run_incident(db, params, ctx) {
+    assertWriteRole(ctx);
+    const id = numericParam(params.runId, 'runId');
+    const input = parseSetRunIncident({ incident: params.incident, reason: params.reason });
+    if (typeof input === 'string') throw new Error(input);
+    if ((await checkEntityScope(db, ctx, id, resolveRunProjectId)) === 'not-found') return null;
+    const by = ctx.user?.id ? ctx.user.name || ctx.user.username : null;
+    const state = await decideRunIncident(db, id, input, by);
+    return dropNulls({
+      runId: id,
+      incident: state.incident ? { rule: state.incident.rule, reason: state.incident.reason } : null,
+      decision: state.review?.decision ?? null,
+    });
+  },
+
+  // ── link_issue ─────────────────────────────────────────────────────────────
+  async link_issue(db, params, ctx) {
+    assertWriteRole(ctx);
+    const validation = createLinkSchema.safeParse({
+      entityType: params.entityType,
+      entityId: params.entityId,
+      url: params.url,
+      title: params.title,
+    });
+    if (!validation.success) {
+      throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    }
+    const { entityType, entityId } = validation.data;
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
+    const link = await createEnrichedLink(db, validation.data);
+    if (!link) throw new Error('Failed to create link');
+    return dropNulls({
+      id: link.id,
+      entityType,
+      entityId,
+      url: link.url,
+      provider: link.provider,
+      key: link.key || null,
+      title: link.title || null,
+      statusText: link.statusText || null,
     });
   },
 
@@ -2367,7 +2769,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const projectId = numericParam(params.projectId, 'projectId');
     assertProject(ctx, projectId);
     const gapId = numericParam(params.gapId, 'gapId');
-    const draft = await draftScenario(db, projectId, gapId);
+    const draft = await issueScenarioDraft(db, projectId, gapId, mcpActor(ctx));
     if (!draft) return { error: `No gap #${gapId} in project ${projectId}` };
     return {
       title: draft.gapTitle,
@@ -2499,6 +2901,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!isMetricId(metric) || !WIDGET_METRIC_IDS.includes(metric)) {
       throw new Error(`Unknown metric '${String(metric)}'. Use one of: ${WIDGET_METRIC_IDS.join(', ')}`);
     }
+    await assertMetricsOffered(db, [metric]);
     const trend = await runAnalyticsWidget(db, 'metric', toolScope(params, ctx), ctx.scope, {
       metric,
       display: 'line',
@@ -2511,6 +2914,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const raw: unknown[] = Array.isArray(params.metrics) ? params.metrics : [];
     const metrics = raw.filter((m): m is MetricId => isMetricId(m) && WIDGET_METRIC_IDS.includes(m));
     if (metrics.length !== raw.length) throw new Error('metrics must be metric ids from the catalog');
+    await assertMetricsOffered(db, metrics);
     try {
       return await compareMetricPeriods(
         db,
@@ -2636,6 +3040,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 };
 
 /** The analytics scope of a report or metric tool call, from the tool's scope properties. */
+/** Refuse a metric whose capability this instance declined, naming the capability. */
+async function assertMetricsOffered(db: DbClient, metrics: MetricId[]): Promise<void> {
+  const needed = metrics.map((id) => getMetric(id).capability).filter((c) => c !== undefined);
+  if (needed.length === 0) return;
+  const states = await resolveInstanceStates(db);
+  for (const id of metrics) {
+    const capability = getMetric(id).capability;
+    if (capability && states[capability] === 'declined') {
+      throw new Error(`Metric '${id}' needs the ${capability} capability, which this instance declined`);
+    }
+  }
+}
+
 function toolScope(params: Record<string, unknown>, ctx: McpContext) {
   return parseAnalyticsScope(toolScopeQuery(params, ctx));
 }

@@ -48,6 +48,7 @@ import {
 } from './coverage-view.js';
 import { deriveTopLocator, isPiwiElement, rankElementLocators } from './verified-locators.js';
 import { attachPanelShadow } from './panel-root.js';
+import { LOCATOR_ATTRIBUTES } from './observed-attributes.js';
 
 const HOST_ID = 'piwi-coverage-host';
 /** Wait after the last page change before rescanning. */
@@ -56,40 +57,6 @@ const MUTATION_DEBOUNCE_MS = 450;
 const MIN_SCAN_GAP_MS = 1200;
 /** Boxes drawn at most, so a page with thousands of matches stays smooth. */
 const MAX_DRAWN = 1500;
-const OBSERVED_ATTRIBUTES = [
-  'class',
-  'style',
-  'hidden',
-  'open',
-  'id',
-  'role',
-  'type',
-  'name',
-  'value',
-  'href',
-  'for',
-  'title',
-  'alt',
-  'placeholder',
-  'disabled',
-  'readonly',
-  'contenteditable',
-  'aria-label',
-  'aria-labelledby',
-  'aria-describedby',
-  'aria-hidden',
-  'aria-disabled',
-  'aria-checked',
-  'aria-selected',
-  'aria-expanded',
-  'aria-pressed',
-  'aria-level',
-  'data-testid',
-  'data-test-id',
-  'data-test',
-  'data-qa',
-  'data-cy',
-];
 
 interface CoverageGlobals {
   __piwiCoverageOff?: () => void;
@@ -141,6 +108,14 @@ function startCoverageOverlay(): void {
     else g.__piwiCoverageOff();
     return;
   }
+  // The page is claimed before the host is mounted: the tool this replaces
+  // takes its surfaces with it here. `off` is set below, before anything can
+  // call this teardown.
+  const toolEpoch = startTool('coverage-overlay', () => off());
+  installEscapeToCancel();
+  /** Set once the overlay is off, by any path: what an `await` brings back afterwards is dropped. */
+  let closed = false;
+  const live = () => !closed && toolIsCurrent(toolEpoch);
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -181,17 +156,25 @@ function startCoverageOverlay(): void {
   let context: CoverageContext | null = null;
   let scanning: { done: number; total: number } | null = null;
   let scanCount = 0;
-  /** Each element's best locator, for the current scan only: the page may change. */
+  /** Bumped by every change to the page, so a scan running meanwhile starts over. */
+  let pageVersion = 0;
+  /** Each element's best locator, until the page changes. */
   let suggestions = new WeakMap<Element, string | null>();
-  /** Replacements for brittle locators, per element and chain, for the current scan only. */
+  /** Replacements for brittle locators, per element and chain, until the page changes. */
   let replacements = new WeakMap<Element, Map<number, Replacement | null>>();
-  /** An engine over the page as the current scan saw it, to check suggestions and replacements with. */
-  let scanEngine: LocatorEngine | null = null;
+  /** An engine over the page as it is, to check suggestions and replacements with; dropped when the page changes. */
+  let checkEngine: LocatorEngine | null = null;
   const engineNow = (): LocatorEngine =>
-    (scanEngine ??= createLocatorEngine(document, {
+    (checkEngine ??= createLocatorEngine(document, {
       testIdAttributes: index?.testIdAttributes ?? undefined,
       ignore: (element) => isOwnElement(element) || isPiwiElement(element),
     }));
+  /** Forgets every locator checked against the page as it was. */
+  const dropChecks = () => {
+    suggestions = new WeakMap();
+    replacements = new WeakMap();
+    checkEngine = null;
+  };
   /** While choosing: the element that would be chosen, and the narrower ones ↑ walked out of. */
   let choosingTarget: Element | null = null;
   let choosingNarrower: Element[] = [];
@@ -403,9 +386,13 @@ function startCoverageOverlay(): void {
     return out;
   }
 
+  /** How many boxes the last redraw drew. */
+  let drawnCount = 0;
   function redraw(): void {
     layer.setContext(context);
-    layer.draw(state.choosingScope ? [] : drawables());
+    const drawn = state.choosingScope ? [] : drawables();
+    drawnCount = drawn.length;
+    layer.draw(drawn);
     layer.setFrames(frames());
     if (state.pinned) layer.showPinned(state.pinned);
     bridge();
@@ -531,24 +518,29 @@ function startCoverageOverlay(): void {
     element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
     schedulePosition();
     setTimeout(() => {
-      if (!toolIsCurrent(toolEpoch)) return;
+      if (!live()) return;
       layer.position();
       layer.flash(element);
       pin(element);
     }, 350);
   }
 
-  /** A structured copy of what is shown, for the test suite (it lives in the content script's world, never the page's). */
+  /**
+   * A structured copy of what is shown, for the test suite (it lives in the
+   * content script's world, never the page's). The At risk rows are built
+   * only when read: their replacements rank every brittle element's locators.
+   */
   function bridge(): void {
     const idx = index;
-    const view = context?.scan ?? scan;
+    const ctx = context;
+    const view = ctx?.scan ?? scan;
     g.__piwiCoverage = {
       status,
       message,
       projectLabel: project?.projectLabel ?? null,
       branch,
       scans: scanCount,
-      drawn: state.choosingScope ? 0 : drawables().length,
+      drawn: drawnCount,
       scope: state.scope ? describe(state.scope) : null,
       choosing: state.choosingScope ? (choosingTarget ? describe(choosingTarget) : '') : null,
       containers:
@@ -572,44 +564,47 @@ function startCoverageOverlay(): void {
         view?.uncovered.map((u) => ({
           description: u.description,
           eid: u.element.getAttribute('data-eid'),
-          elsewhere: context?.elsewhere.get(u.element)?.map((e) => idx!.locators[e]!.locator) ?? [],
+          elsewhere: ctx?.elsewhere.get(u.element)?.map((e) => idx!.locators[e]!.locator) ?? [],
         })) ?? [],
-      page: context?.pageKey ?? null,
-      prefixRemoved: context?.prefixRemoved ?? null,
-      prefixAdded: context?.prefixAdded ?? null,
-      pageScoped: context?.pageScoped ?? false,
+      page: ctx?.pageKey ?? null,
+      prefixRemoved: ctx?.prefixRemoved ?? null,
+      prefixAdded: ctx?.prefixAdded ?? null,
+      pageScoped: ctx?.pageScoped ?? false,
       missing:
-        context?.missing.map((row) => ({
+        ctx?.missing.map((row) => ({
           locator: idx!.locators[row.entry]!.locator,
           arrival: row.arrival,
           actions: row.actions,
           tests: row.tests.map((t) => idx!.tests[t]!.title),
         })) ?? [],
       several:
-        context?.several.map((row) => ({
+        ctx?.several.map((row) => ({
           locator: idx!.locators[row.entry]!.locator,
           count: row.count,
           actions: row.actions,
           tests: row.tests.map((t) => idx!.tests[t]!.title),
         })) ?? [],
       tests: view?.tests.map((t) => ({ title: idx!.tests[t.test]!.title, elements: t.elements.length })) ?? [],
-      brittle:
-        context?.brittle.map((row) => {
-          const replacement =
-            row.count === 1 && row.elements.length === 1 ? replacementForEntry(row.elements[0]!, row.entry) : null;
-          return {
-            locator: idx!.locators[row.entry]!.locator,
-            rules: row.stability.findings.map((f) => f.rule),
-            elements: row.elements.map((e) => describe(e)),
-            count: row.count,
-            tests: row.tests.map((t) => idx!.tests[t]!.title),
-            callSites: row.callSites,
-            replacement:
-              replacement?.kind === 'replace'
-                ? { recommended: replacement.recommended.locator, durable: replacement.durable?.locator ?? null }
-                : (replacement?.kind ?? null),
-          };
-        }) ?? [],
+      get brittle() {
+        return (
+          ctx?.brittle.map((row) => {
+            const replacement =
+              row.count === 1 && row.elements.length === 1 ? replacementForEntry(row.elements[0]!, row.entry) : null;
+            return {
+              locator: idx!.locators[row.entry]!.locator,
+              rules: row.stability.findings.map((f) => f.rule),
+              elements: row.elements.map((e) => describe(e)),
+              count: row.count,
+              tests: row.tests.map((t) => idx!.tests[t]!.title),
+              callSites: row.callSites,
+              replacement:
+                replacement?.kind === 'replace'
+                  ? { recommended: replacement.recommended.locator, durable: replacement.durable?.locator ?? null }
+                  : (replacement?.kind ?? null),
+            };
+          }) ?? []
+        );
+      },
       coveredInteractive: view?.coveredInteractive ?? 0,
       uncoveredCount: view?.uncoveredCount ?? 0,
       unmatched: scan?.unmatched ?? 0,
@@ -635,7 +630,7 @@ function startCoverageOverlay(): void {
   }
 
   async function runScan(): Promise<void> {
-    if (!index || !project) return;
+    if (closed || !index || !project) return;
     if (scanRunning) {
       scanDirty = true;
       return;
@@ -649,22 +644,21 @@ function startCoverageOverlay(): void {
     const result = await scanCoverage(scanIndex, document, {
       testIdAttributes: scanIndex.testIdAttributes ?? undefined,
       ignore: isOwnElement,
-      keepGoing: () => seq === scanSeq && toolIsCurrent(toolEpoch),
+      keepGoing: () => seq === scanSeq && live(),
+      pageVersion: () => pageVersion,
       onProgress: (done, total) => {
         scanning = { done, total };
-        renderPanelSoon();
+        panel.setProgress(scanning);
       },
     });
     scanRunning = false;
     lastScanEnd = performance.now();
     scanning = null;
-    if (!toolIsCurrent(toolEpoch)) return;
+    if (!live()) return;
     if (result && seq === scanSeq && scanIndex === index) {
       scan = result;
       scanCount++;
-      suggestions = new WeakMap();
-      replacements = new WeakMap();
-      scanEngine = null;
+      dropChecks();
       buildContext();
       const view = context!.scan;
       status = 'ready';
@@ -702,12 +696,13 @@ function startCoverageOverlay(): void {
     renderPanel();
     const asked = branch;
     const answer = await requestLocatorIndex(project.projectId, { force, branch: asked });
-    if (!toolIsCurrent(toolEpoch) || asked !== branch) return;
+    if (!live() || asked !== branch) return;
     refreshing = false;
     if (answer.ok) {
       if (answer.refreshed) useIndex(answer.index, Date.now());
       else if (!index) {
         const cached = await getCachedLocatorIndex(project.projectId, asked);
+        if (!live()) return;
         if (cached) useIndex(cached.index, cached.fetchedAt);
       }
     } else if (index) {
@@ -725,7 +720,7 @@ function startCoverageOverlay(): void {
     if (!project) return;
     const asked = branch;
     const cached = await getCachedLocatorIndex(project.projectId, asked);
-    if (!toolIsCurrent(toolEpoch) || asked !== branch) return;
+    if (!live() || asked !== branch) return;
     if (cached) useIndex(cached.index, cached.fetchedAt);
     await loadIndex(false);
   }
@@ -744,6 +739,7 @@ function startCoverageOverlay(): void {
     const next = value.trim() || null;
     if (next === branch) return;
     await setLocatorBranchOverride(project.projectId, value).catch(() => undefined);
+    if (!live()) return;
     branch = next;
     index = null;
     scan = null;
@@ -764,7 +760,7 @@ function startCoverageOverlay(): void {
       getConnectionSettings(),
       getActiveProjectOverride().catch(() => null),
     ]);
-    if (!toolIsCurrent(toolEpoch)) return;
+    if (!live()) return;
     instanceUrl = settings.instanceUrl;
     if (!isConnected(settings)) {
       status = 'not-connected';
@@ -782,6 +778,7 @@ function startCoverageOverlay(): void {
       return;
     }
     branch = resolveLocatorBranch(project, await getLocatorBranchOverride(project.projectId).catch(() => undefined));
+    if (!live()) return;
     message = loadingMessage();
     renderPanel();
     await openIndex();
@@ -793,19 +790,20 @@ function startCoverageOverlay(): void {
     childList: true,
     characterData: true,
     attributes: true,
-    attributeFilter: OBSERVED_ATTRIBUTES,
+    attributeFilter: LOCATOR_ATTRIBUTES,
   };
   const observer = new MutationObserver((records) => {
-    if (records.some((r) => !isOwnNode(r.target))) {
-      scanDirty = true;
-      requestScan(MUTATION_DEBOUNCE_MS);
-    }
+    if (closed || !records.some((r) => !isOwnNode(r.target))) return;
+    pageVersion++;
+    dropChecks();
+    scanDirty = true;
+    requestScan(MUTATION_DEBOUNCE_MS);
   });
   observer.observe(document.documentElement, observerOptions);
 
   /** Page changes inside open shadow roots and same-origin frames trigger rescans too. */
   function observeRoots(): void {
-    if (!context) return;
+    if (closed || !context) return;
     const seen = new Set<Node>();
     const watch = (root: Node) => {
       if (seen.has(root)) return;
@@ -865,8 +863,8 @@ function startCoverageOverlay(): void {
     pointer = null;
     if (!hoverFrame) hoverFrame = requestAnimationFrame(hitTest);
   };
-  // Window capture runs before the tool session's document-level Escape: an open card closes first,
-  // then the limit to an element, then the overlay.
+  // Window capture runs before the tool session's document-level Escape: the search's text clears
+  // first, then an open card closes, then the limit to an element, then the overlay.
   const onKeyDown = (e: KeyboardEvent) => {
     if (state.choosingScope) {
       const handled = ['Escape', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key);
@@ -887,7 +885,13 @@ function startCoverageOverlay(): void {
       }
       return;
     }
-    if (e.key !== 'Escape' || (!state.pinned && !state.scope)) return;
+    if (e.key !== 'Escape') return;
+    if (panel.clearSearch()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (!state.pinned && !state.scope) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (state.pinned) pin(null);
@@ -903,7 +907,7 @@ function startCoverageOverlay(): void {
         getConnectionSettings(),
         getActiveProjectOverride().catch(() => null),
       ]);
-      if (!toolIsCurrent(toolEpoch)) return;
+      if (!live()) return;
       const next = resolveActiveProject(settings, override, location.href);
       // Same project, maybe through another mapping: its path prefix follows the URL.
       if (next && next.projectId === project?.projectId) project = next;
@@ -923,6 +927,7 @@ function startCoverageOverlay(): void {
           project,
           await getLocatorBranchOverride(project.projectId).catch(() => undefined),
         );
+        if (!live()) return;
         status = 'loading';
         message = loadingMessage();
         await openIndex();
@@ -939,8 +944,8 @@ function startCoverageOverlay(): void {
   document.addEventListener('mouseout', onPointerOut, { capture: true, passive: true });
   window.addEventListener('keydown', onKeyDown, true);
 
-  let toolEpoch = 0;
   const off = () => {
+    closed = true;
     observer.disconnect();
     clearInterval(positionTimer);
     clearInterval(urlTimer);
@@ -966,8 +971,6 @@ function startCoverageOverlay(): void {
     if (state.choosingScope) stopChoosing();
     setScope(element);
   };
-  toolEpoch = startTool('coverage-overlay', off);
-  installEscapeToCancel();
   bridge();
   void boot();
 }

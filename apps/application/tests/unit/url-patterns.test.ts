@@ -12,6 +12,7 @@ const {
   listProjectUrlPatterns,
   listVisibleUrlPatterns,
   replaceProjectUrlPatterns,
+  stepNavigationUrl,
   suggestUrlPatterns,
   urlPatternInputSchema,
 } = await import('../../shared/handlers/url-patterns');
@@ -151,13 +152,16 @@ describe('suggestions', () => {
       { projectId: shop, kind: 'page', key: '/x', attrs: null },
       { projectId: shop, kind: 'route', key: 'GET /api', attrs: { url: 'https://api.shop.test/api' } },
     ]);
-    const suggestions = await suggestUrlPatterns(anyDb(), shop);
+    const { items: suggestions, covered } = await suggestUrlPatterns(anyDb(), shop);
+    expect(covered).toBe(0);
     expect(suggestions.map((s) => s.pattern)).toEqual(['https://staging.shop.test/**', 'https://pay.example.com/**']);
     expect(suggestions[0]).toMatchObject({ sources: ['base-url', 'test-map'], hits: 2, environment: null });
 
     await replaceProjectUrlPatterns(anyDb(), shop, [{ pattern: 'https://staging.shop.test/**' }]);
-    expect((await suggestUrlPatterns(anyDb(), shop)).map((s) => s.origin)).toEqual(['https://pay.example.com']);
-    expect(await suggestUrlPatterns(anyDb(), 9999)).toEqual([]);
+    const after = await suggestUrlPatterns(anyDb(), shop);
+    expect(after.items.map((s) => s.origin)).toEqual(['https://pay.example.com']);
+    expect(after.covered).toBe(1);
+    expect(await suggestUrlPatterns(anyDb(), 9999)).toEqual({ items: [], covered: 0 });
   });
 
   test('each run’s baseURL carries its environment, and every environment is read', async () => {
@@ -183,7 +187,7 @@ describe('suggestions', () => {
       .insert(schema.graphNodes)
       .values([{ projectId: shop, kind: 'page', key: '/pay', attrs: { url: 'https://pay.example.com/checkout' } }]);
 
-    const suggestions = await suggestUrlPatterns(anyDb(), shop);
+    const { items: suggestions } = await suggestUrlPatterns(anyDb(), shop);
     expect(suggestions.map((s) => [s.origin, s.environment, s.hits])).toEqual([
       // The 17 staging runs among the 20 newest, and one qa run, went there: staging wins.
       ['https://staging.shop.test', 'staging', 18],
@@ -193,5 +197,120 @@ describe('suggestions', () => {
       // Two Playwright projects of one run count once.
       ['https://shop.test', 'production', 1],
     ]);
+  });
+
+  test('a run with no baseURL is read for the full addresses its tests opened', async () => {
+    const [noBase, withBase] = await db
+      .insert(schema.testRuns)
+      .values([
+        { projectId: shop, status: 'passed', environment: 'qa', startTime: new Date(Date.now() - 60_000) },
+        {
+          projectId: shop,
+          status: 'passed',
+          startTime: new Date(),
+          metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://shop.test' } }] } },
+        },
+      ] as Array<typeof schema.testRuns.$inferInsert>)
+      .returning();
+    const testCaseId = (
+      await db.insert(schema.testCases).values({ projectId: shop, title: 'buys', filePath: 'buy.spec.ts' }).returning()
+    )[0]!.id;
+    const navigate = (params: Record<string, string> | null, subtitle?: string, title = 'Navigate') => ({
+      title,
+      category: 'navigation',
+      duration: 1,
+      ...(subtitle ? { subtitle } : {}),
+      ...(params ? { params } : {}),
+    });
+    await db.insert(schema.testRunsCases).values([
+      {
+        testRunId: noBase!.id,
+        testCaseId,
+        status: 'passed',
+        steps: [
+          navigate({ url: 'https://qa.shop.test/cart' }),
+          navigate(null, 'https://qa.shop.test/pay'),
+          navigate(null, undefined, 'page.goto(https://legacy.shop.test/)'),
+          // A path under a baseURL, a click and an API call name no site.
+          navigate({ url: '/cart' }),
+          { title: 'Click', category: 'action', params: { url: 'https://nope.test/' } },
+          { title: 'GET', category: 'api', params: { url: 'https://api.shop.test/items' } },
+        ],
+      },
+      // A run with a baseURL is not read for its steps.
+      {
+        testRunId: withBase!.id,
+        testCaseId,
+        status: 'passed',
+        steps: [navigate({ url: 'https://other.shop.test/' })],
+      },
+    ] as Array<typeof schema.testRunsCases.$inferInsert>);
+
+    const { items } = await suggestUrlPatterns(anyDb(), shop);
+    expect(items.map((s) => [s.origin, s.environment, s.sources, s.hits])).toEqual([
+      ['https://legacy.shop.test', 'qa', ['navigation'], 1],
+      ['https://qa.shop.test', 'qa', ['navigation'], 1],
+      ['https://shop.test', null, ['base-url'], 1],
+    ]);
+  });
+
+  test('a run with no baseURL is read for the pages it loaded, one vote per run and site', async () => {
+    const runs = await db
+      .insert(schema.testRuns)
+      .values([
+        { projectId: shop, status: 'passed', environment: 'qa', startTime: new Date(Date.now() - 120_000) },
+        { projectId: shop, status: 'passed', environment: 'qa', startTime: new Date(Date.now() - 60_000) },
+        {
+          projectId: shop,
+          status: 'passed',
+          startTime: new Date(),
+          metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://shop.test' } }] } },
+        },
+      ] as Array<typeof schema.testRuns.$inferInsert>)
+      .returning();
+    const testCaseId = (
+      await db.insert(schema.testCases).values({ projectId: shop, title: 'buys', filePath: 'buy.spec.ts' }).returning()
+    )[0]!.id;
+    const cases = await db
+      .insert(schema.testRunsCases)
+      .values(runs.map((run) => ({ testRunId: run.id, testCaseId, status: 'passed' })))
+      .returning();
+    const load = (index: number, url: string | null, resourceType = 'document') => ({
+      testRunsCaseId: cases[index]!.id,
+      testRunId: runs[index]!.id,
+      method: 'GET',
+      url,
+      normalizedUrl: url ?? '',
+      status: 200,
+      resourceType,
+    });
+    await db.insert(schema.networkRequests).values([
+      load(0, 'https://qa.shop.test/cart'),
+      load(0, 'https://qa.shop.test/pay'),
+      load(1, 'https://qa.shop.test/'),
+      load(1, 'https://login.shop.test/authorize'),
+      // An API call, an unknown address and a run with a baseURL name no site.
+      load(1, 'https://api.shop.test/items', 'fetch'),
+      load(1, null),
+      load(2, 'https://other.shop.test/'),
+    ]);
+
+    const { items } = await suggestUrlPatterns(anyDb(), shop);
+    expect(items.map((s) => [s.origin, s.environment, s.sources, s.hits])).toEqual([
+      ['https://qa.shop.test', 'qa', ['network'], 2],
+      ['https://login.shop.test', 'qa', ['network'], 1],
+      ['https://shop.test', null, ['base-url'], 1],
+    ]);
+  });
+
+  test('a navigation step names its site by params, subtitle or title', () => {
+    expect(stepNavigationUrl({ category: 'navigation', params: { url: 'https://a.test/x' } })).toBe('https://a.test/x');
+    expect(stepNavigationUrl({ category: 'navigation', subtitle: 'https://b.test/' })).toBe('https://b.test/');
+    expect(stepNavigationUrl({ category: 'navigation', title: 'Navigate to "https://c.test/p?q=1"' })).toBe(
+      'https://c.test/p?q=1',
+    );
+    expect(stepNavigationUrl({ category: 'navigation', params: { url: '/x' }, subtitle: '/x' })).toBeNull();
+    expect(stepNavigationUrl({ category: 'action', params: { url: 'https://a.test/' } })).toBeNull();
+    expect(stepNavigationUrl(null)).toBeNull();
   });
 });

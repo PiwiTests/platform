@@ -1,0 +1,43 @@
+name: Tidy release notes
+
+# Keep every GitHub release body non-empty and free of duplicate entries. release-please
+# emits one line per commit, so squash and cherry-pick land the same subject several times;
+# this collapses them and merges their commit links. It runs deterministically (no external
+# model), never writes an empty body, and leaves hand-authored notes (the polished
+# `## Highlights` format) untouched.
+
+on:
+  release:
+    types: [published]
+  # Re-tidy an existing release on demand — also how an already-emptied release is repaired.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)tidy, e.g. v0.29.0"
+        required: true
+
+permissions:
+  contents: write # edit the release body
+
+jobs:
+  tidy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Tidy the release body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        run: |
+          # Build the release body from the version's CHANGELOG.md section (falling back to the
+          # current release body): a polished section is published as-is, an ordinary one is
+          # de-duplicated. `apply` refuses to write an empty body and skips a release that already
+          # carries hand-authored notes.
+          node scripts/release-notes.mjs release-body "$TAG" > "$RUNNER_TEMP/body.md"
+          node scripts/release-notes.mjs apply "$TAG" --notes "$RUNNER_TEMP/body.md" --no-changelog

@@ -42,7 +42,7 @@ export interface StyleRules {
 }
 
 /** `:hover` as a pseudo-class, not inside an escaped class name such as `.group-hover\:flex`. */
-export const HOVER_PSEUDO = /(?<!\\):hover(?![\w-])/g;
+const HOVER_PSEUDO = /(?<!\\):hover(?![\w-])/g;
 const HOVER_IN_NOT = /:not\([^)]*(?<!\\):hover(?![\w-])/;
 
 /** Whether a value of `prop` hides the element. */

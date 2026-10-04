@@ -42,7 +42,7 @@ export interface MockCode {
 export const HIDDEN_VALUE = '<hidden>';
 
 /** 100 kB: above it, a body goes to a file. */
-export const MAX_INLINE_BODY = 100_000;
+const MAX_INLINE_BODY = 100_000;
 
 /** Field names that hold a credential. */
 const SECRET_FIELD =
@@ -116,11 +116,11 @@ export function mockUrlPattern(url: string): string {
   return `**${path}?${params.join('&')}`;
 }
 
-/** Replaces the values of credential fields in a JSON value, counting them. */
+/** Replaces the values of credential fields in a JSON value, counting them. Every key is kept, `__proto__` too. */
 function hideInJson(value: unknown, count: { n: number }): unknown {
   if (Array.isArray(value)) return value.map((item) => hideInJson(item, count));
   if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
+    const out: Record<string, unknown> = Object.create(null);
     for (const [key, item] of Object.entries(value)) {
       if (SECRET_FIELD.test(key) && (typeof item === 'string' || typeof item === 'number')) {
         count.n++;
@@ -163,6 +163,24 @@ function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
   } catch {
     return { ok: false };
   }
+}
+
+/** `text`, valid JSON, without the white space between its tokens. */
+function compactJson(text: string): string {
+  let out = '';
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (inString) {
+      out += c;
+      if (c === '\\') out += text[++i] ?? '';
+      else if (c === '"') inString = false;
+    } else if (c === '"') {
+      inString = true;
+      out += c;
+    } else if (c !== ' ' && c !== '\n' && c !== '\r' && c !== '\t') out += c;
+  }
+  return out;
 }
 
 /** `cart` for `/api/cart`, `orders-42` for `/api/orders/42/`, `response` when nothing is left. */
@@ -229,13 +247,16 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   let json: { ok: true; value: unknown } | { ok: false } = { ok: false };
   if (!source.base64 && (isJsonType(contentType) || /^\s*[[{]/.test(body))) json = parseJson(body);
   if (json.ok && !options.reveal) json = { ok: true, value: hideInJson(json.value, count) };
+  // With nothing hidden, a body that reading would change (an integer past 2^53, a `\u` escape) goes out as it came.
+  const asIs = json.ok && count.n === 0 && JSON.stringify(json.value) !== compactJson(body);
+  if (asIs) json = { ok: false };
   if (!json.ok && !source.base64 && !options.reveal && /x-www-form-urlencoded/i.test(contentType)) {
     body = hideInForm(body, count);
   }
 
   const text = json.ok ? JSON.stringify(json.value, null, 2) : body;
   if (text.length > maxInline) {
-    const extension = json.ok ? 'json' : source.base64 ? 'bin' : 'txt';
+    const extension = json.ok || asIs ? 'json' : source.base64 ? 'bin' : 'txt';
     const path = `mocks/${mockFileName(source.url)}.${extension}`;
     const type = contentType ? `contentType: ${literal(contentType)}, ` : '';
     return {
@@ -250,4 +271,47 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   const type = contentType ? `contentType: ${literal(contentType)}, ` : '';
   const bodyCode = source.base64 ? `Buffer.from(${literal(body)}, 'base64')` : literal(body);
   return { code: wrap(`route.fulfill({ ${status}${type}body: ${bodyCode} })`), file: null, hidden: count.n };
+}
+
+/** A response body as DevTools keeps it: text, or base64 when `base64`; null when it kept none. */
+export interface ResponseBody {
+  text: string | null;
+  base64: boolean;
+}
+
+/** An entry of DevTools' network log, as far as its body goes. */
+export interface LoggedRequest {
+  getContent?: unknown;
+  response?: { content?: { text?: string; encoding?: string } };
+}
+
+/**
+ * The body of a request DevTools logged, through its `getContent`: Chrome calls
+ * back with the content and its encoding; Firefox returns a promise of the
+ * content and its MIME type, and the entry's own `encoding` says whether it is
+ * base64. The entry's `content` is the fallback when DevTools gives none.
+ */
+export function responseBody(request: LoggedRequest): Promise<ResponseBody> {
+  const content = request.response?.content;
+  const kept = (text: unknown, encoding: unknown): ResponseBody => ({
+    text: typeof text === 'string' ? text : (content?.text ?? null),
+    base64: (typeof encoding === 'string' ? encoding : content?.encoding) === 'base64',
+  });
+  const getContent = request.getContent;
+  if (typeof getContent !== 'function') return Promise.resolve(kept(null, undefined));
+  return new Promise((resolve) => {
+    try {
+      const returned: unknown = getContent.call(request, (text: unknown, encoding: unknown) =>
+        resolve(kept(text, encoding)),
+      );
+      if (returned && typeof (returned as PromiseLike<unknown>).then === 'function') {
+        (returned as PromiseLike<unknown>).then(
+          (value) => resolve(kept(Array.isArray(value) ? value[0] : value, undefined)),
+          () => resolve(kept(null, undefined)),
+        );
+      }
+    } catch {
+      resolve(kept(null, undefined));
+    }
+  });
 }

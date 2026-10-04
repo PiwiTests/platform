@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Read a repro request (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. The request, its status (`waiting`, `running`, `done`, `declined`, `expired`) and, once done, the verdict of the Playwright run: `reproduced` at a step with the value found, `not-reproduced`, `diverged` at a step with the reason, `completed` (nothing expected) or `stopped`. Readable ten minutes after its last change.',
+      'Desktop build only — 404 on the server build. The request, its status (`waiting`, `running`, `done`, `declined`, `expired`) and, once done, the verdict of the Playwright run. For steps (`verdict`): `reproduced` at a step with the value found, `not-reproduced`, `diverged` at a step with the reason, `completed` (nothing expected) or `stopped`. For an editor’s job (`jobVerdict`): `reproduced`, `not-reproduced`, `first-bad` with the commit a bisect named, `lab` with what a Flake Lab run measured (`report`: the verdict, the reproducing arm, the commit and each arm’s counts), `error` with the reason, or `stopped`. Readable ten minutes after its last change.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
     'x-required-roles': ['administrator', 'reporter', 'user'],
   },

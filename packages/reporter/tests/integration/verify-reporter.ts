@@ -1,8 +1,32 @@
-import type { FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import type { FullConfig, FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
+import { RunSampler } from '../../src/internal/collect/process-sampler.js';
+import type { ResourceCensus } from '../../src/internal/capture/resource-ledger.js';
+import { PIWI_RESOURCES_RESULTS_ENV } from '../../src/internal/config/env.js';
+import {
+  buildResourceReport,
+  formatResourceSummary,
+  parseResourceCensus,
+  parseResourceResults,
+  type ResourceFinding,
+} from '../../src/internal/collect/resource-verdicts.js';
 
 /** Every step of a result, depth first. */
 function allSteps(steps: TestStep[]): TestStep[] {
   return steps.flatMap((step) => [step, ...allSteps(step.steps)]);
+}
+
+/** The `// site:<name>` markers of `resources.spec.ts`, as `resources.spec.ts:<line>` by name. */
+function siteMarkers(): Map<string, string> {
+  const sites = new Map<string, string>();
+  const lines = fs.readFileSync(path.join(__dirname, 'resources.spec.ts'), 'utf8').split('\n');
+  lines.forEach((line, index) => {
+    const match = /\/\/ site:([\w-]+)/.exec(line);
+    if (match) sites.set(match[1]!, `resources.spec.ts:${index + 1}`);
+  });
+  return sites;
 }
 
 /**
@@ -20,7 +44,13 @@ function allSteps(steps: TestStep[]): TestStep[] {
  *   - title starting `teardown race guard` → the teardown-race stress runs;
  *   - title starting `assertion-only` → the assertion-capture test (`_expect`);
  *   - title starting `seeded probe` → the in-page probe install (asserts in the test itself);
+ *   - title starting `resources:` → the resource ledger (`resources.spec.ts`), checked in `onEnd`;
  *   - otherwise → the main capture test (locators + network + console + web vitals).
+ *
+ * Every test, whatever its role, must attach its `piwi-resources` census. The
+ * shutdown census of each worker lands in the file `onBegin` names in
+ * `PIWI_RESOURCES_RESULTS`, as it does for the dashboard reporter, and `onEnd`
+ * reaches the findings from all of them.
  */
 export default class VerifyCaptureReporter implements Reporter {
   private failures: string[] = [];
@@ -29,12 +59,40 @@ export default class VerifyCaptureReporter implements Reporter {
   private sawAssertionCapture = false;
   private sawSeededProbe = false;
   private stressRuns = 0;
+  private resourceTests = 0;
+  private censuses: ResourceCensus[] = [];
+  private censusByTitle = new Map<string, ResourceCensus>();
+  private resourcesFile = path.join(os.tmpdir(), `piwi-resources-verify-${process.pid}.jsonl`);
+
+  private sampler: RunSampler | null = null;
+
+  onBegin(config: FullConfig): void {
+    // Workers start after this hook and inherit the variable.
+    fs.rmSync(this.resourcesFile, { force: true });
+    process.env[PIWI_RESOURCES_RESULTS_ENV] = this.resourcesFile;
+    this.sampler = new RunSampler({ outputDirs: config.projects.map((project) => project.outputDir) });
+    this.sampler.start();
+  }
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const byName = (name: string) => result.attachments.find((a) => a.name === name);
     const assert = (cond: boolean, msg: string) => {
       if (!cond) this.fail(`[${test.title}] ${msg}`);
     };
+
+    // ── Resource census: attached by every test, after its fixtures tore down ─
+    const census = parseResourceCensus(byName('piwi-resources')?.body);
+    assert(!!census, 'expected a piwi-resources census');
+    if (census) {
+      assert(census.test?.title === test.title, `the census should close this test, got "${census.test?.title}"`);
+      this.censuses.push(census);
+      this.censusByTitle.set(test.title, census);
+    }
+    if (test.title.startsWith('resources:')) {
+      assert(result.status === 'passed', `expected to pass, got ${result.status}`);
+      this.resourceTests += 1;
+      return;
+    }
 
     // ── Failure-only capture: ARIA snapshot + fresh locator suggestion ──────
     // These are produced only when a test actually fails, so this one is marked
@@ -203,6 +261,8 @@ export default class VerifyCaptureReporter implements Reporter {
     if (!this.sawAssertionCapture) this.fail('the assertion-capture test did not run — _expect capture unverified');
     if (!this.sawSeededProbe) this.fail('the seeded-probe test did not run — the in-page probe install is unverified');
     if (this.stressRuns < 1) this.fail('the teardown-race stress tests did not run');
+    this.checkResources();
+    await this.checkSampler();
 
     if (this.failures.length > 0) {
       console.error(`\n[verify-reporter] ${this.failures.length} check(s) FAILED:`);
@@ -212,6 +272,210 @@ export default class VerifyCaptureReporter implements Reporter {
       return { status: 'failed' };
     }
     console.log(`\n[verify-reporter] all capture-fixtures integration checks passed (${this.stressRuns} stress runs).`);
+  }
+
+  /**
+   * The resource ledger end to end: what each `resources:` test recorded about
+   * the objects it opened, then the findings reached from every census: the
+   * leaky tests' findings at their lines, nothing from the clean tests or from
+   * `capture.spec.ts`.
+   */
+  private checkResources(): void {
+    const check = (cond: boolean, msg: string) => {
+      if (!cond) this.fail(`[resources] ${msg}`);
+    };
+    if (this.resourceTests === 0) return check(false, 'the resources tests did not run');
+    const sites = siteMarkers();
+    const at = (name: string) => sites.get(name) ?? `<no site:${name} marker>`;
+    const born = (title: string) => this.censusByTitle.get(title)?.born ?? [];
+    const opensAt = (site: string | null, name: string) => !!site?.endsWith(at(name));
+
+    // ── Provenance, as the workers recorded it ──────────────────────────────
+    const context = born('resources: leaks a context').find((b) => b.kind === 'context');
+    check(
+      !!context && context.phase === 'test' && context.fixture === null && opensAt(context.site, 'context'),
+      `a context opened in a test body: ${JSON.stringify(context)}`,
+    );
+    const newPage = born('resources: leaks a page from browser.newPage');
+    const implicit = newPage.find((b) => b.kind === 'context');
+    const ownPage = newPage.find((b) => b.kind === 'page');
+    check(!!implicit?.implicit, `browser.newPage() should mark its context implicit: ${JSON.stringify(implicit)}`);
+    check(
+      !!ownPage && ownPage.parent === implicit?.id && opensAt(ownPage.site, 'new-page'),
+      `the page of browser.newPage(): ${JSON.stringify(ownPage)}`,
+    );
+    const api = born('resources: leaks an API request context').find((b) => b.kind === 'request');
+    check(!!api && opensAt(api.site, 'request'), `request.newContext(): ${JSON.stringify(api)}`);
+    const launched = born('resources: leaks a launched browser').find((b) => b.kind === 'browser');
+    check(
+      !!launched && launched.phase === 'test' && launched.fixture === null && opensAt(launched.site, 'launch'),
+      `chromium.launch() in a test: ${JSON.stringify(launched)}`,
+    );
+    const popupTest = born('resources: leaves a popup of a worker-scoped page open');
+    const shared = popupTest.find((b) => b.kind === 'page' && b.fixture?.title === 'sharedPage');
+    const popup = popupTest.find((b) => b.kind === 'page' && b.opener !== undefined);
+    check(
+      !!shared && shared.fixture!.worker && opensAt(shared.site, 'shared-page'),
+      `a worker fixture's page: ${JSON.stringify(shared)}`,
+    );
+    check(
+      !!popup && popup.opener === shared?.id && popup.trigger === 'locator.click' && opensAt(popup.site, 'popup'),
+      `a popup, with its opener and the click that opened it: ${JSON.stringify(popup)}`,
+    );
+    const idleTest = this.censusByTitle.get('resources: opens a page it never uses');
+    const idlePage = idleTest?.born.find((b) => b.kind === 'page');
+    check(
+      !!idlePage && idlePage.phase === 'beforeEach' && idlePage.fixture?.title === 'page' && !idlePage.fixture.worker,
+      `the page fixture, set up for a beforeEach: ${JSON.stringify(idlePage)}`,
+    );
+    check(
+      !!idleTest?.closed.some((c) => c.id === idlePage?.id && c.used === false),
+      'the page fixture of an API-only test should close unused',
+    );
+    for (const title of [
+      'resources: clean, evaluates on a page it never navigates',
+      'resources: clean, sets the content of its page',
+    ]) {
+      const page = this.censusByTitle.get(title);
+      check(!!page?.closed.some((c) => c.used === true), `[${title}] its page should close used`);
+    }
+    const beforeAll = born('resources: uses the beforeAll context').find((b) => b.kind === 'context');
+    check(
+      !!beforeAll && beforeAll.phase === 'beforeAll' && opensAt(beforeAll.site, 'before-all'),
+      `a beforeAll context: ${JSON.stringify(beforeAll)}`,
+    );
+    const closedInAfterAll = this.censuses.flatMap((census) =>
+      census.born.filter((b) => opensAt(b.site, 'before-all-closed')).map((b) => ({ worker: census.worker, id: b.id })),
+    )[0];
+    const afterAllClose = this.censuses
+      .filter((census) => census.worker === closedInAfterAll?.worker)
+      .flatMap((census) => census.closed)
+      .find((c) => c.id === closedInAfterAll?.id);
+    check(afterAllClose?.phase === 'afterAll', `a context closed in afterAll: ${JSON.stringify(afterAllClose)}`);
+
+    // ── What each test cost its worker, and the pages that outlived it ──────
+    for (const [title, census] of this.censusByTitle) {
+      const worker = census.metrics?.worker;
+      check(
+        !!worker && worker.loopUtilization >= 0 && worker.loopUtilization <= 1 && worker.cpuMs >= 0,
+        `[${title}] the census should carry the worker's metrics: ${JSON.stringify(census.metrics)}`,
+      );
+    }
+    if (process.platform === 'linux') {
+      check(
+        this.censuses.some(
+          (c) => (c.metrics?.roles?.renderer?.cpuMs ?? 0) > 0 && (c.metrics?.roles?.renderer?.peakRssMb ?? 0) > 0,
+        ),
+        'some census should carry the CPU and peak memory of the renderers the worker started',
+      );
+    }
+    const popupWorker = this.censusByTitle.get('resources: leaves a popup of a worker-scoped page open')?.worker;
+    check(
+      this.censuses.some(
+        (c) => c.worker === popupWorker && c.open.some((o) => o.id === popup?.id && (o.main?.heapMb ?? 0) > 0),
+      ),
+      'the popup that outlived its test should be read over CDP at the next censuses',
+    );
+
+    // ── Findings, from every census and each worker's shutdown census ───────
+    const shutdown = fs.existsSync(this.resourcesFile)
+      ? parseResourceResults(fs.readFileSync(this.resourcesFile, 'utf8'))
+      : [];
+    fs.rmSync(this.resourcesFile, { force: true });
+    check(shutdown.length > 0, 'expected a shutdown census from each worker');
+    const report = buildResourceReport({ censuses: [...this.censuses, ...shutdown] });
+    console.log(`\n[verify-reporter] ${formatResourceSummary(report, 'report').join('\n')}`);
+
+    const expected: Array<[string, (f: ResourceFinding) => boolean]> = [
+      [
+        'a context left open',
+        (f) =>
+          f.verdict === 'leaked' &&
+          f.kind === 'context' &&
+          f.where.endsWith(at('context')) &&
+          f.pages === 1 &&
+          (f.afterTestCpuMs ?? 0) > 0,
+      ],
+      [
+        'the page of browser.newPage()',
+        (f) => f.verdict === 'leaked' && f.kind === 'page' && f.where.endsWith(at('new-page')),
+      ],
+      [
+        'an API request context',
+        (f) => f.verdict === 'leaked' && f.kind === 'request' && f.where.endsWith(at('request')),
+      ],
+      [
+        'a launched browser, with its page',
+        (f) => f.verdict === 'leaked' && f.kind === 'browser' && f.where.endsWith(at('launch')) && f.pages === 1,
+      ],
+      [
+        'a popup',
+        (f) =>
+          f.verdict === 'leaked' && f.where.startsWith('popup after locator.click') && f.where.endsWith(at('popup')),
+      ],
+      [
+        'a beforeAll context past its describe',
+        (f) =>
+          f.verdict === 'leaked' &&
+          f.scope === 'describe' &&
+          f.where.endsWith(at('before-all')) &&
+          f.detail === 'beforeAll of "resources: a beforeAll context without afterAll"',
+      ],
+      [
+        'one listener per test on the shared page',
+        (f) =>
+          f.verdict === 'piling' &&
+          f.where.startsWith('fixture "sharedPage" at ') &&
+          f.where.endsWith(at('shared-page')) &&
+          f.growth?.what === 'listeners' &&
+          f.growth.to - f.growth.from === 3,
+      ],
+      [
+        'a server left listening',
+        (f) =>
+          f.verdict === 'handle' &&
+          f.where === 'TCPServerWrap' &&
+          !!f.detail?.includes('resources: leaves a server listening'),
+      ],
+      ['the unused page fixture', (f) => f.verdict === 'idle' && f.where === 'fixture "page"' && f.count === 1],
+    ];
+    const matched = new Set<ResourceFinding>();
+    for (const [what, matches] of expected) {
+      const finding = report.findings.find((f) => !matched.has(f) && matches(f));
+      check(!!finding, `expected a finding for ${what}`);
+      if (finding) matched.add(finding);
+    }
+    for (const finding of report.findings) {
+      check(matched.has(finding), `unexpected finding: ${JSON.stringify(finding)}`);
+    }
+  }
+
+  /** The run sampler against the run's real processes: Playwright's workers, Chromium's browser and renderers. */
+  private async checkSampler(): Promise<void> {
+    const profile = await this.sampler!.stop();
+    const check = (cond: boolean, msg: string) => {
+      if (!cond) this.fail(`[sampler] ${msg}`);
+    };
+    check(profile.machine.cores > 0 && profile.cpu.busyPct !== null, 'the machine should be measured');
+    if (process.platform !== 'linux') return;
+    const roles = profile.cpu.byRole ?? {};
+    for (const role of ['worker', 'browser', 'renderer'] as const) {
+      check((roles[role]?.cpuMs ?? 0) > 0, `the ${role} processes should have used CPU: ${JSON.stringify(roles)}`);
+    }
+    check(
+      profile.memory.kind === 'pss' && (profile.memory.peakBytes ?? 0) > 0,
+      `memory: ${JSON.stringify(profile.memory)}`,
+    );
+    check(profile.disk.lowestFreeBytes !== null, 'free space should be measured');
+    const series = this.sampler!.timedSeries();
+    check(
+      series.cpuPct.length > 0 && series.memoryBytes.length > 0,
+      `CPU and memory should be read over time: ${series.cpuPct.length} and ${series.memoryBytes.length} points`,
+    );
+    check(
+      series.workers.length > 0 && series.workers.every((w) => w.cpuCores.length > 0 && w.memoryBytes.length > 0),
+      `each worker process should be read with its browsers: ${JSON.stringify(series.workers.map((w) => [w.pid, w.cpuCores.length, w.memoryBytes.length]))}`,
+    );
   }
 
   private fail(msg: string): void {

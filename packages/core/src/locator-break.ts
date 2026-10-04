@@ -29,7 +29,7 @@ import {
 import type { LocatorIndex, LocatorIndexEntry, LocatorIndexTest, LocatorIndexUse } from './locator-index';
 import { attributeMatches, nameMatches, normalizeWhiteSpace, textMatches } from './locator-text-match';
 
-export type LocatorBreakConfidence = 'likely' | 'possible';
+type LocatorBreakConfidence = 'likely' | 'possible';
 
 export interface LocatorBreak {
   anchor: DiffAnchor;

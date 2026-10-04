@@ -29,6 +29,7 @@ const STATUS_COLOR: Record<string, 'success' | 'error' | 'warning' | 'neutral'> 
   done: 'success',
   failed: 'error',
   pending: 'warning',
+  processing: 'warning',
   skipped: 'neutral',
 };
 

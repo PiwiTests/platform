@@ -19,8 +19,8 @@ With the extension [connected to the instance](./extension-connection), the fini
 **Send to Piwi…**. It opens a preview of exactly what leaves the browser, for the project the tab's address maps to:
 
 - the title and the steps, with the values typed during the recording (never a password, which is not recorded);
-- one box per kind of evidence: the screenshots, the console errors and warnings, the failed requests (method, path and
-  status, never a body) and the outline of the page;
+- one box per kind of evidence: the screenshots, the [screenshot of each step](./report-a-bug#evidence), the console
+  errors and warnings, the failed requests (method, path and status, never a body) and the outline of the page;
 - **Leave out the values I typed**, which removes them from the steps and from the evidence that repeats them; the
   failing test then reads them from environment variables.
 
@@ -35,7 +35,8 @@ The report keeps the language it was written in; the test Piwi writes from it is
 tester expected and what the page showed instead, where the report stands, and what to do next, with four tabs:
 
 - **Steps**: the steps in words, each marked step with its expected result, the value the page showed and the note.
-- **Evidence**: the screenshots, the failed requests, the console entries and the page's outline.
+- **Evidence**: the screenshots, the page as each step began with its element outlined, the failed requests, the
+  console entries and the page's outline.
 - **Reproductions**: each time someone replayed it or ran it with Playwright and shared what they found (**Share
   result…** in Piwi Picker).
 - **Spec**: the failing test.
@@ -76,16 +77,17 @@ test('bug: coupon not applied to the total', {
 });
 ```
 
-Two project settings shape it, under **Generated specs** in the project's settings: the folder bug specs go to
-(`tests/bugs` by default) and the module `test` and `expect` are imported from, such as `../fixtures` when your tests
-use fixtures of their own.
+Two project settings shape it, under **Generated specs** in the **Source control** section of the project's **Settings**
+tab: the folder bug specs go to (`tests/bugs` by default) and the module `test` and `expect` are imported from, such as
+`../fixtures` when your tests use fixtures of their own.
 
 From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once, so you
 see the bug before you fix it.
 
 ## From report to fix
 
-Once a test naming the report (`piwi:bug 37`) runs, the report follows it:
+Once a test naming the report (`piwi:bug 37`) runs on the default branch, the report follows it (the run `piwi bug --write`
+starts moves nothing):
 
 | Status | When |
 |---|---|
@@ -140,13 +142,14 @@ result does not hold, **not reproduced** when the test passes, or **diverged** a
 ## Replaying a report from Piwi
 
 A developer with the extension connected finds the project's open reports in **Replay a bug report**, beside the file
-chooser: the report's steps play in their own tab, on their own dev server. See
-[Replaying a report](./report-a-bug#replaying-a-report).
+chooser: the report's steps play in their own tab, on their own dev server, and a step handed over shows its
+screenshot. See [Replay a bug report](./replay-a-bug-report).
 
 ## For agents
 
 The [MCP server](./mcp) has `list_bug_reports`, `get_bug_report` (the steps in words, what was expected, the evidence
-and the reproductions) and `render_steps`, which writes a report's failing test, or any steps file's.
+and the reproductions), `render_steps`, which writes a report's failing test, or any steps file's, and
+`set_bug_report_status`, which dismisses, reopens or closes a report.
 
 ## Related
 

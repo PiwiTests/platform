@@ -28,11 +28,14 @@ channel, so a per-user install pulls a per-user update.
    processes die with the shell, so every way out — closing the window, the
    tray's Quit, or an update restart — asks for confirmation first while any
    of them is still running.
-5. Archives the OS hands to the app (drag & drop, "Open with", second-launch
+5. Files the OS hands to the app (drag & drop, "Open with", second-launch
    file arguments, macOS open events) are queued shell-side and drained by the
    dashboard over IPC (`desktop_take_pending_open_files` + a `piwi:open-files`
-   poke), which imports them by path through the desktop-only
-   `/api/desktop/import-local` route.
+   poke), which imports them by path through the desktop-only routes:
+   Playwright archives (`.zip`) through `/api/desktop/import-local`, and Piwi
+   Picker's bug reports (`.piwibug`, the app's own file type, associated in
+   `tauri.conf.json` with a macOS exported type) through
+   `/api/desktop/import-bug-report`.
 6. The dashboard's /mcp page can write the `piwi-desktop` MCP entry into detected
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
@@ -77,7 +80,7 @@ npm run build               # produces the installer for this OS under src-tauri
 > The Node sidecar (`src-tauri/binaries/`), the staged server
 > (`src-tauri/resources/app-server/`), generated icons, and `src-tauri/target/` are all
 > git-ignored build artifacts — CI regenerates them (see
-> `.github/workflows/desktop-release.yml`).
+> `.github/workflows/reusable-publish-desktop.yml`).
 
 ## End-to-end tests
 
@@ -104,8 +107,9 @@ npx tauri icon ../application/public/logo.svg   # once
 npm run e2e                                      # launches `tauri dev --features e2e-testing`
 ```
 
-CI runs this on macOS (real webview, no display server needed) on desktop
-changes — see `.github/workflows/desktop-e2e.yml`.
+CI runs this on macOS (real webview, no display server needed) on pull
+requests that change the desktop app — see `.github/workflows/reusable-e2e-desktop.yml`,
+which `ci.yml` calls.
 
 This `e2e/` suite is a **shell smoke test** (the real webview calling native
 commands). To exercise the *dashboard's* full E2E suite against a running
@@ -132,7 +136,7 @@ it. To enable:
 3. Add `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as
    repository secrets.
 
-With the secret present, `desktop-release.yml` applies each leg's overlay:
+With the secret present, `reusable-publish-desktop.yml` applies each leg's overlay:
 bundles gain signed update artifacts, and the app (whose compiled config now
 contains the updater entry) exposes Check for updates in Settings → About.
 Windows ships **two update channels** so each installer updates itself in its own

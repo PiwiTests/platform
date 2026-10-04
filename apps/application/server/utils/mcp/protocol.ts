@@ -1,6 +1,6 @@
 // Latest protocol version this server implements. On `initialize` we echo the
 // client's requested version when it's one we support, otherwise we reply with
-// this. Kept broad so older clients (2024-11-05) keep working.
+// this. Older clients down to 2024-11-05 are supported.
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 

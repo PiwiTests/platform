@@ -28,6 +28,11 @@ const props = withDefaults(
   { mono: true, line: null, column: null },
 );
 
+defineSlots<{
+  /** The link's text; `label` is the path, with `:line` when there is one. */
+  default?(props: { label: string }): unknown;
+}>();
+
 const { openInIde, openInVscode, openViaJetbrainsUrl, openViaJetbrainsHttp, resolveAbsPath, openSettings } =
   useOpenInIde();
 const { copy } = useCopy();
@@ -85,7 +90,7 @@ function run(action: () => void) {
             'truncate underline decoration-dashed decoration-1 underline-offset-2 decoration-gray-400/70 dark:decoration-gray-500/70 transition-colors group-hover/ide:decoration-current',
           ]"
         >
-          <slot>{{ label }}</slot>
+          <slot :label="label">{{ label }}</slot>
         </span>
         <UIcon
           name="i-lucide-external-link"
@@ -214,7 +219,7 @@ function run(action: () => void) {
     </template>
 
     <span v-else :class="[mono ? 'font-mono' : '', 'truncate']">
-      <slot>{{ label }}</slot>
+      <slot :label="label">{{ label }}</slot>
     </span>
   </span>
 </template>

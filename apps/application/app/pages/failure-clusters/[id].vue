@@ -16,6 +16,7 @@ import { buildRetryCommand } from '~/utils/retry-command';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-time';
+import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
@@ -79,27 +80,29 @@ const selectedExecId = computed(() =>
 );
 const isLatestOccurrence = computed(() => selectedExecId.value === latestExecId.value);
 
+// Server-rendered fetches carry the viewer's session.
+const requestFetch = useRequestFetch();
 const { data: execution } = await useAsyncData<Record<string, unknown> | null>(
-  'cluster-selected-exec',
+  `cluster-selected-exec-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<Record<string, unknown>>(`/api/test-run-cases/${selectedExecId.value}`)
+      ? requestFetch<Record<string, unknown>>(`/api/test-run-cases/${selectedExecId.value}`)
       : Promise.resolve(null),
   { watch: [selectedExecId] },
 );
 const { data: execTraces } = await useAsyncData<TraceInfo[]>(
-  'cluster-selected-traces',
+  `cluster-selected-traces-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<{ items: TraceInfo[] }>(`/api/test-run-cases/${selectedExecId.value}/traces`).then((r) => r.items)
+      ? requestFetch<{ items: TraceInfo[] }>(`/api/test-run-cases/${selectedExecId.value}/traces`).then((r) => r.items)
       : Promise.resolve([]),
   { default: (): TraceInfo[] => [], watch: [selectedExecId] },
 );
 const { data: cluesData } = await useAsyncData<FailureCluesResult>(
-  'cluster-selected-clues',
+  `cluster-selected-clues-${clusterId}`,
   () =>
     selectedExecId.value
-      ? $fetch<FailureCluesResult>(`/api/test-run-cases/${selectedExecId.value}/clues`)
+      ? requestFetch<FailureCluesResult>(`/api/test-run-cases/${selectedExecId.value}/clues`)
       : Promise.resolve({ clues: [], story: null, failureAt: null }),
   { default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }), watch: [selectedExecId] },
 );
@@ -539,7 +542,7 @@ const breadcrumbItems = computed(() => [
               <span v-if="knownIssue" aria-hidden="true">·</span>
               <a
                 v-if="knownIssue"
-                :href="knownIssue.url"
+                :href="safeHttpUrl(knownIssue.url) ?? undefined"
                 target="_blank"
                 rel="noopener noreferrer"
                 :class="SENTENCE_LINK_CLASS"
@@ -550,7 +553,7 @@ const breadcrumbItems = computed(() => [
             </div>
           </template>
 
-          <!-- Actions: the More menu the header used to carry -->
+          <!-- Actions: the More menu -->
           <template #actions>
             <UDropdownMenu :items="moreMenuItems">
               <UButton
@@ -669,6 +672,9 @@ const breadcrumbItems = computed(() => [
         <!-- ── Occurrences over time, with the fix and a regression marked ── -->
         <ClusterOccurrenceTrend :cluster-id="cluster.id" />
 
+        <!-- ── Fix attempts and what agents wrote to this cluster ──────── -->
+        <ClusterActivity :cluster-id="cluster.id" />
+
         <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div class="scroll-mt-4">
           <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
@@ -712,7 +718,6 @@ const breadcrumbItems = computed(() => [
             <template #locator-fix>
               <LocatorHealingPanel
                 ref="clusterLocatorPanel"
-                :run-id="cluster.lastSeenRunId"
                 :test-runs-case-id="affectedCases[0]!.recentTestRunsCaseId"
                 :affected-count="affectedCases.length"
                 :chrome="false"

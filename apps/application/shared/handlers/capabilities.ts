@@ -49,7 +49,7 @@ export async function getInstanceCapabilities(db: DrizzleDB): Promise<Capability
 }
 
 /** Read and validate one project's stored decisions. */
-export async function getProjectDecisions(
+async function getProjectDecisions(
   db: DrizzleDB,
   projectId: number,
 ): Promise<Partial<Record<CapabilityId, ProjectDecision>>> {

@@ -28,7 +28,7 @@ export interface SourceMapLookup {
 }
 
 /** A 0-based position in generated code. */
-export interface GeneratedPosition {
+interface GeneratedPosition {
   line: number;
   column: number;
 }

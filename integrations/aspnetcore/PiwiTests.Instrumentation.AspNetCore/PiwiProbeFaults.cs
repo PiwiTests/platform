@@ -3,7 +3,7 @@ using System;
 namespace PiwiTests.Instrumentation.AspNetCore;
 
 /// <summary>
-/// Server-probe fault classes (Test Map, level two) — the pure decisions the
+/// Server-probe fault classes — the pure decisions the
 /// middleware applies to one signed request. Mirrors the Nitro package's
 /// <c>faults.ts</c>. Handler-level faults (status, auth, throw, delay, extreme)
 /// are applied here and named on the response's X-Piwi-Trace root span; data

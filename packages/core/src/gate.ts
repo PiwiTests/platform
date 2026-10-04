@@ -37,6 +37,22 @@ export interface GatePolicy {
    * file or over-narrow filter dropping a test the selection still expects.
    */
   requireSelection?: string;
+  /**
+   * Maximum browsers, contexts, pages and API contexts the run left open past
+   * the scope that opened them, counted per opening line. A run that sent no
+   * resource report is a violation, so a pipeline that lost the capture does
+   * not pass on silence.
+   */
+  maxLeaks?: number;
+  /** Maximum of those leaks that no earlier run of the base branch showed. */
+  maxNewLeaks?: number;
+}
+
+/** A leak named in a gate result: where it was opened and how many tests it spans. */
+export interface GateLeak {
+  where: string;
+  site: string | null;
+  tests: number;
 }
 
 /** What the server measured about the run, independent of any policy. */
@@ -70,9 +86,32 @@ export interface GateFacts {
     /** Matched tests that ran but failed (and are not quarantined). */
     failed: Array<{ title: string; filePath: string; executionId: number }>;
   };
+  /** Set when a leak rule was asked: what the run's resource report holds. */
+  resources?: {
+    /** False when the run sent no resource report. */
+    reported: boolean;
+    leaks: GateLeak[];
+    /** Leaks no earlier run of the base branch showed. */
+    newLeaks: GateLeak[];
+    /** The branch new leaks are read against: the pull request's target, else the default branch. */
+    baseBranch: string | null;
+  };
+  /**
+   * Set when the run is an environment incident: its failures come from the
+   * environment under test, so no policy can say whether the change is good.
+   */
+  incident?: GateIncident;
 }
 
-export interface GateViolation {
+/** Why a run is an environment incident, as the gate reports it. */
+export interface GateIncident {
+  /** The rule that flagged the run, or `person` when someone marked it. */
+  rule: string;
+  reason: string;
+  host: string | null;
+}
+
+interface GateViolation {
   /** Stable identifier, so a pipeline can branch on the kind of failure. */
   rule:
     | 'required-tag'
@@ -85,15 +124,26 @@ export interface GateViolation {
     | 'flaky'
     | 'selection-empty'
     | 'selection-not-run'
-    | 'selection-failed';
+    | 'selection-failed'
+    | 'max-leaks'
+    | 'max-new-leaks'
+    | 'no-resource-report';
   message: string;
   /** Observed value and the limit it exceeded, when the rule is a threshold. */
   actual?: number;
   limit?: number;
 }
 
+/**
+ * `passed` and `failed` answer the policy; `inconclusive` means the run cannot
+ * answer it (an environment incident). An inconclusive result has `passed:
+ * false`, so a client that reads only `passed` blocks the merge.
+ */
+export type GateVerdict = 'passed' | 'failed' | 'inconclusive';
+
 export interface GateResult {
   passed: boolean;
+  verdict: GateVerdict;
   violations: GateViolation[];
   facts: GateFacts;
   /** Warn-only notices that never fail the gate (e.g. uncovered changed files). */
@@ -110,7 +160,9 @@ export function isEmptyPolicy(policy: GatePolicy): boolean {
     policy.maxQuarantined == null &&
     !policy.failOnNewCluster &&
     !policy.failOnFlaky &&
-    !policy.requireSelection
+    !policy.requireSelection &&
+    policy.maxLeaks == null &&
+    policy.maxNewLeaks == null
   );
 }
 
@@ -229,22 +281,79 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
     }
   }
 
-  return { passed: violations.length === 0, violations, facts };
+  if ((policy.maxLeaks != null || policy.maxNewLeaks != null) && facts.resources) {
+    violations.push(...leakViolations(facts.resources, policy));
+  }
+
+  if (facts.incident) return { passed: false, verdict: 'inconclusive', violations: [], facts };
+  const passed = violations.length === 0;
+  return { passed, verdict: passed ? 'passed' : 'failed', violations, facts };
+}
+
+/** `tests/cart.spec.ts:12, fixture "adminPage" at tests/fixtures.ts:21, +2 more`. */
+function leakNames(leaks: GateLeak[]): string {
+  const names = leaks
+    .slice(0, 3)
+    .map((leak) => leak.site ?? leak.where)
+    .join(', ');
+  return leaks.length > 3 ? `${names}, +${leaks.length - 3} more` : names;
+}
+
+function leakViolations(resources: NonNullable<GateFacts['resources']>, policy: GatePolicy): GateViolation[] {
+  if (!resources.reported) {
+    return [
+      {
+        rule: 'no-resource-report',
+        message:
+          'the run sent no resource report — the reporter is older than 0.45, or captureResources is off — so its leaks are unknown',
+      },
+    ];
+  }
+  const out: GateViolation[] = [];
+  const { leaks, newLeaks } = resources;
+  if (policy.maxLeaks != null && leaks.length > policy.maxLeaks) {
+    out.push({
+      rule: 'max-leaks',
+      message: `${leaks.length} ${leaks.length === 1 ? 'leak' : 'leaks'} (limit ${policy.maxLeaks}): ${leakNames(leaks)}`,
+      actual: leaks.length,
+      limit: policy.maxLeaks,
+    });
+  }
+  if (policy.maxNewLeaks != null && newLeaks.length > policy.maxNewLeaks) {
+    const base = resources.baseBranch ? ` on ${resources.baseBranch}` : '';
+    out.push({
+      rule: 'max-new-leaks',
+      message: `${newLeaks.length} new ${newLeaks.length === 1 ? 'leak' : 'leaks'}, never seen${base} (limit ${policy.maxNewLeaks}): ${leakNames(newLeaks)}`,
+      actual: newLeaks.length,
+      limit: policy.maxNewLeaks,
+    });
+  }
+  return out;
 }
 
 /** Render a gate result for a CI log. Returns one line per fact or violation. */
 export function formatGateResult(result: GateResult): string {
   const { facts } = result;
   const lines = [
-    result.passed
-      ? `✔ Piwi gate passed — ${facts.projectName} run #${facts.runId}`
-      : `✖ Piwi gate failed — ${facts.projectName} run #${facts.runId}`,
+    result.verdict === 'inconclusive'
+      ? `? Piwi gate inconclusive — ${facts.projectName} run #${facts.runId}`
+      : result.passed
+        ? `✔ Piwi gate passed — ${facts.projectName} run #${facts.runId}`
+        : `✖ Piwi gate failed — ${facts.projectName} run #${facts.runId}`,
     `  ${facts.totalTests} tests, ${facts.failedTests} failed, ${facts.newRegressions} new, ${facts.newFlaky} newly flaky, ${facts.flakyTests} flaky`,
   ];
   if (facts.quarantinedFailures > 0) {
     lines.push(
       `  ${facts.quarantinedFailures} failing ${facts.quarantinedFailures === 1 ? 'test is' : 'tests are'} quarantined and did not count`,
     );
+  }
+  if (facts.resources?.reported) {
+    const { leaks, newLeaks } = facts.resources;
+    lines.push(`  ${leaks.length} ${leaks.length === 1 ? 'leak' : 'leaks'}, ${newLeaks.length} new`);
+  }
+  if (facts.incident) {
+    lines.push(`  ? The run is an environment incident: ${facts.incident.reason}`);
+    lines.push('  Re-run once the environment is back, or clear the flag on the run page if it is wrong.');
   }
   for (const violation of result.violations) lines.push(`  ✖ ${violation.message}`);
   for (const warning of result.warnings ?? []) lines.push(`  ⚠ ${warning}`);

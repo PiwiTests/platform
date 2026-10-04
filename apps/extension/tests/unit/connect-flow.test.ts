@@ -1,8 +1,17 @@
-import { describe, test, expect, vi, afterEach } from 'vitest';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
 import { waitForApproval, type ConnectPoll } from '../../src/shared/connect-flow';
 import { describeClient } from '../../src/shared/client-info';
 import { addServerPattern, fetchServerPatterns, pollConnect, startConnect } from '../../src/shared/piwi-client';
-import type { ConnectionSettings } from '../../src/shared/connection-settings';
+import { setInstanceApiKey, type ConnectionSettings } from '../../src/shared/connection-settings';
+import { memoryLocalStorage, memorySecretArea } from './memory-secret-area';
+import type * as SecretStore from '../../src/shared/secret-store';
+
+// The extension's IndexedDB, in memory: the client reads the key from it.
+const secrets = memorySecretArea();
+vi.mock('../../src/shared/secret-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof SecretStore>()),
+  secretArea: () => secrets,
+}));
 
 /** A fake clock: `sleep` advances it, so a ten-minute wait runs instantly. */
 function clock() {
@@ -85,6 +94,43 @@ describe('waitForApproval', () => {
     ).toEqual({ status: 'cancelled' });
     expect(poll).toHaveBeenCalledTimes(1);
   });
+
+  test('a cancel during the wait between polls ends it at once', async () => {
+    const controller = new AbortController();
+    const poll = answers();
+    const outcome = waitForApproval({
+      poll,
+      interval: 5,
+      expiresIn: 600,
+      // A real interval: never over within this test.
+      sleep: () => new Promise(() => undefined),
+      now: () => 0,
+      signal: controller.signal,
+    });
+    controller.abort();
+    expect(await outcome).toEqual({ status: 'cancelled' });
+    expect(poll).not.toHaveBeenCalled();
+  });
+
+  test('a cancel while a poll is unanswered ends the wait at once', async () => {
+    const controller = new AbortController();
+    let polled!: () => void;
+    const asked = new Promise<void>((resolve) => (polled = resolve));
+    const outcome = waitForApproval({
+      poll: () => {
+        polled();
+        return new Promise<ConnectPoll>(() => undefined);
+      },
+      interval: 5,
+      expiresIn: 600,
+      sleep: async () => undefined,
+      now: () => 0,
+      signal: controller.signal,
+    });
+    await asked;
+    controller.abort();
+    expect(await outcome).toEqual({ status: 'cancelled' });
+  });
 });
 
 describe('describeClient', () => {
@@ -117,7 +163,6 @@ function respond(status: number, body: unknown = {}) {
 
 const settings: ConnectionSettings = {
   instanceUrl: 'https://piwi.test/',
-  apiKey: 'pd_key',
   projectMappings: [],
   serverMappings: [],
   serverProjects: [],
@@ -126,6 +171,11 @@ const settings: ConnectionSettings = {
 };
 
 describe('the connect and pattern requests', () => {
+  beforeEach(async () => {
+    (globalThis as any).chrome = { storage: { local: memoryLocalStorage().local } };
+    secrets.data.clear();
+    await setInstanceApiKey(settings.instanceUrl, 'pd_key');
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   test('startConnect posts the client and reads the codes', async () => {

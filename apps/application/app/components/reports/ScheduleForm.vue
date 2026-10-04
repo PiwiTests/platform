@@ -13,6 +13,7 @@ import type { ReportScheduleView } from '#shared/handlers/reports';
 import { REPORT_LANGUAGES, type ReportLanguage } from '#shared/reports/languages';
 import { sentencesFor } from '#shared/reports/sentences';
 import type { DashboardList } from '#shared/handlers/dashboards';
+import { channelOwnerLabel, channelRecipient, type ChannelOwner } from '#shared/notifications/channel-recipients';
 import type { ProjectMenuItem } from '~~/types/api';
 
 const props = withDefaults(
@@ -43,6 +44,7 @@ interface ChannelItem {
   name: string;
   type: string;
   userId: number | null;
+  config?: Record<string, unknown>;
 }
 
 // Loaded when the form first opens: the pages render it closed for every reader.
@@ -192,25 +194,77 @@ const languageItems = [
   ...REPORT_LANGUAGES.map((code) => ({ label: sentencesFor(code).name, value: code })),
 ];
 
-/** Global schedules send to global channels; a personal one to the author's own or a global channel. */
-const channelItems = computed(() =>
-  (channelData.value?.items ?? [])
-    .filter((c) => !global.value || c.userId === null)
-    .map((c) => ({ label: `${c.name} (${channelTypeLabel(c.type)})`, value: c.id })),
-);
-
-function channelTypeLabel(type: string): string {
-  if (type === 'email' || type === 'personal_email') return 'email';
-  if (type === 'slack') return 'Slack';
-  if (type === 'teams') return 'Microsoft Teams';
-  if (type === 'webhook') return 'webhook';
-  if (type === 'browser') return 'browser';
-  return type;
+/** A channel the schedule can send to, with who receives what it sends and whose it is. */
+interface ChannelOption {
+  id: number;
+  name: string;
+  type: string;
+  owner: ChannelOwner;
+  recipient: string;
 }
 
+/**
+ * The reader's own channels and the global ones (what the channels list holds),
+ * then any other channel the edited schedule already sends to: an administrator
+ * editing someone's schedule sees that person's channels as the server names them.
+ */
+const channelOptions = computed<ChannelOption[]>(() => {
+  const listed = (channelData.value?.items ?? []).map((c) => {
+    const owner: ChannelOwner = c.userId === null ? { kind: 'global' } : { kind: 'viewer' };
+    const text = (value: unknown) => (typeof value === 'string' ? value : null);
+    const recipient = channelRecipient(
+      { type: c.type, address: text(c.config?.address), url: text(c.config?.url) },
+      owner,
+    );
+    return { id: c.id, name: c.name, type: c.type, owner, recipient };
+  });
+  const known = new Set(listed.map((c) => c.id));
+  const others = (props.schedule?.channels ?? []).flatMap((c) =>
+    !known.has(c.id) && c.owner ? [{ ...c, owner: c.owner }] : [],
+  );
+  return [...listed, ...others];
+});
+
+/** Global schedules send to global channels; a personal one to the author's own or a global channel. */
+const allowedChannels = computed(() => channelOptions.value.filter((c) => !global.value || c.owner.kind === 'global'));
+
+const OWNER_ORDER: ChannelOwner['kind'][] = ['viewer', 'global', 'user'];
+
+/**
+ * The picker's items, each described by who receives it and whose channel it
+ * is, grouped by owner: the reader's own, the global ones, anyone else's. One
+ * group with authentication off, where every channel is global.
+ */
+const channelItems = computed(() => {
+  const toItem = (c: ChannelOption) => ({
+    label: c.name,
+    value: c.id,
+    description: authEnabled ? `${c.recipient} · ${channelOwnerLabel(c.owner)}` : c.recipient,
+  });
+  return OWNER_ORDER.map((kind) => allowedChannels.value.filter((c) => c.owner.kind === kind).map(toItem)).filter(
+    (group) => group.length > 0,
+  );
+});
+
 watch(global, () => {
-  const allowed = new Set(channelItems.value.map((c) => c.value));
+  const allowed = new Set(allowedChannels.value.map((c) => c.id));
   channelIds.value = channelIds.value.filter((id) => allowed.has(id));
+});
+
+/** The picked channels, in the order picked: who each one reaches. */
+const pickedChannels = computed(() => {
+  const byId = new Map(channelOptions.value.map((c) => [c.id, c]));
+  return channelIds.value.flatMap((id) => {
+    const c = byId.get(id);
+    return c ? [c] : [];
+  });
+});
+
+/** Whose schedule it is, when the reader edits someone else's. */
+const ownerLine = computed(() => {
+  const s = props.schedule;
+  if (!s || s.global || s.mine || !authEnabled) return null;
+  return `${s.ownerName ?? 'Another user'}'s schedule. It stays theirs when you save it.`;
 });
 
 const projectNames = computed(() => new Map((projectMenu.value ?? []).map((p) => [p.id, p.label || p.name])));
@@ -266,13 +320,7 @@ function scheduleValues() {
 
 // Taken when *Preview* is pressed: the form is hidden while it shows, so nothing changes under it.
 const previewRequest = ref<Record<string, unknown>>({});
-const selectedChannels = computed(() => {
-  const byId = new Map((channelData.value?.items ?? []).map((c) => [c.id, c]));
-  return channelIds.value.flatMap((id) => {
-    const c = byId.get(id);
-    return c ? [{ name: c.name, type: c.type }] : [];
-  });
-});
+const selectedChannels = computed(() => pickedChannels.value.map((c) => ({ name: c.name, type: c.type })));
 const comparisonText = computed(() => {
   if (comparison.value === 'none') return null;
   const label = comparisonItems.find((c) => c.value === comparison.value)?.label ?? '';
@@ -346,6 +394,8 @@ async function save() {
             variant="subtle"
             description="A schedule fires while the desktop app is running."
           />
+
+          <p v-if="ownerLine" class="text-xs text-muted" data-testid="schedule-owner-line">{{ ownerLine }}</p>
 
           <UFormField label="Name" required>
             <UInput v-model="name" class="w-full" placeholder="Weekly quality report" data-testid="schedule-name" />
@@ -430,8 +480,16 @@ async function save() {
               multiple
               class="w-full"
               placeholder="Pick channels"
+              :ui="{ itemDescription: 'whitespace-normal' }"
               aria-label="Channels"
               data-testid="schedule-channels"
+            />
+            <ChannelRecipientList
+              v-if="pickedChannels.length > 0"
+              :channels="pickedChannels"
+              :show-owner="authEnabled"
+              class="mt-2"
+              data-testid="schedule-recipients"
             />
             <p v-if="channelItems.length === 0" class="text-xs text-muted mt-1">
               No channel yet: add one under

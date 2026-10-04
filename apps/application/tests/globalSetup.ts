@@ -20,10 +20,9 @@ async function preCleanup() {
 }
 
 // NOTE: Piwi run registration is handled by `wrapConfig()` in playwright.config.ts,
-// which injects the reporter's own global-setup module. We must NOT call
-// `createGlobalSetup()` here as well — doing so registered the run twice (same
-// instanceId), and the second registration cancelled the first, leaving an
-// orphaned "full"/cancelled run with no test cases alongside the real run.
+// which injects the reporter's own global-setup module. Do NOT call
+// `createGlobalSetup()` here as well: it would register the run a second time
+// (same instanceId), cancelling the first.
 export default async function globalSetup(_config: any) {
   await preCleanup();
 }
