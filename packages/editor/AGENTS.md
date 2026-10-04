@@ -48,8 +48,9 @@ clients stay thin and both editors give the same answers.
   config's folder (`sessions.ts`). The launcher (`launcher.ts`) resolves the project's Playwright at run time (never
   bundled; `playwright.ts`: in the project's own `node_modules`, the test runner's package first, as for the CLI),
   opens the browser with the project's options (`context-options.ts`: `headless: false` unless
-  `PIWI_RECORDER_HEADLESS=1`, an explicit allowlist of context options, a missing `storageState` file left out and
-  said so), exposes the binding before loading `record-ide.js` into every page, answers the recorder over it
+  `PIWI_RECORDER_HEADLESS=1`, Chromium's translation feature disabled, an explicit allowlist of context options, a
+  missing `storageState` file left out and said so), exposes the binding before loading `record-ide.js` into every
+  page, answers the recorder over it
   (`host-state.ts`: the storage areas and messages of the IDE bundle's `chrome`, every event through core's
   `parseCaptureEvent`; only the main frame of the page it opened first records, every other frame and page, such as a
   popup or a cross-origin iframe, is answered as outside a recording), and reports over its IPC channel (`ipc.ts`).

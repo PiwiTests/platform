@@ -196,7 +196,7 @@ describe('starting a recording', () => {
     expect(request).toEqual({
       cwd: ROOT,
       browserName: 'chromium',
-      launchOptions: { headless: true },
+      launchOptions: { args: ['--disable-features=Translate'], headless: true },
       contextOptions: { baseURL: `${BASE}/app/`, viewport: { width: 1024, height: 700 } },
       testIdAttribute: 'data-test',
       startUrl: `${BASE}/login`,
@@ -213,7 +213,7 @@ describe('starting a recording', () => {
   test('a headed browser unless PIWI_RECORDER_HEADLESS=1', async () => {
     const { start, launchers } = setup();
     await start();
-    expect(launchers[0]!.request.launchOptions).toEqual({ headless: false });
+    expect(launchers[0]!.request.launchOptions).toEqual({ args: ['--disable-features=Translate'], headless: false });
   });
 
   test('a config with several projects and none given asks which, then starts with the one named', async () => {
