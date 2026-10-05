@@ -1,6 +1,6 @@
 # Roles, groups and project-scoped permissions
 
-**Status:** draft, open for review (2026-10-05) · **Scope:** authorization on the server (route meta, `requireAuth`,
+**Status:** draft, decisions of 2026-10-05 applied (section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
 `requireProjectAccess`, project scope), the MCP write tools, the demo router, the dashboard UI (`useAuth`, Settings →
 Users / Permissions, project Members) and the docs (`operate/authentication.md`, `operate/project-access.md`) ·
 **Replaces:** the three global roles and the `project_assignments` table
@@ -164,7 +164,7 @@ flowchart LR
 | `link:write` | entity links (create, edit, refresh, delete) | | ✓ | ✓ | ✓ | |
 | `bug-report:write` | `PATCH /bug-reports/{id}` | | ✓ | ✓ | ✓ | |
 | `report:write` | report snapshots, report schedules | | ✓ | ✓ | ✓ | |
-| `share:create` | share links, sharing a dashboard with the instance | | ✓ | ✓ | ✓ | |
+| `share:create` | share links, sharing a dashboard with the instance | | | ✓ | ✓ | |
 | `marker:write` | timeline markers | | ✓ | ✓ | ✓ | |
 | `triage` | cluster status, assignee, snooze, base commit, bulk actions, merge suggestions, gap triage, flaky classification | | | ✓ | ✓ | |
 | `quarantine:write` | quarantine, release, dismiss | | | ✓ | ✓ | |
@@ -179,8 +179,9 @@ flowchart LR
 `Maintainer` keeps `run:submit` because developers upload local runs with their own key. Creating a project on first
 submission still requires a binding on **all projects**, as today.
 
-Two choices in this table are judgment calls to confirm (section 9): `share:create` and `marker:write` at
-`Contributor`.
+`share:create` stays at `Maintainer`: a share link opens data to people without an account, and a dashboard shared
+with the instance is seen by everyone, so neither belongs to the role whose purpose is filing and following up issues.
+Project deletion stays administrator only.
 
 ### 4.4 Groups
 
@@ -352,15 +353,21 @@ projects, then the field is removed.
 
 ---
 
-## 9. Open questions
+## 9. Decisions and open questions
 
-1. Are the five project roles the right ladder for your teams, and their names?
-2. `share:create` (public share links, sharing a dashboard with the whole instance) at `Contributor`, or reserved to
-   `Maintainer`?
-3. `marker:write` (release markers on the timeline) at `Contributor` or `Maintainer`?
-4. Should a `Project admin` be able to delete runs (`run:delete`) and manage the project's Jira binding, or keep both
-   administrator only? Project deletion stays administrator only in this draft.
+Decided on 2026-10-05:
+
+1. **Five project roles**, named as in section 4.2: `Viewer`, `Contributor`, `Maintainer`, `Project admin`,
+   `Uploader`.
+2. **`Contributor`** (product owner) gets `issue:create`, `link:write`, `bug-report:write`, `report:write` and
+   `marker:write`. **Not** `share:create`, which stays at `Maintainer`.
+3. **`Project admin`** gets `run:delete` (delete and release runs) and the project ↔ Jira binding (in
+   `project:manage`). The Jira connections themselves and project deletion stay administrator only.
+4. **Groups are managed in Piwi only.** Identity provider sync stays a phase 4 option.
+
+Still open:
+
 5. Should a group be able to grant the instance `Administrator` role (an "Admins" group), or does that stay per user?
-6. Identity provider group sync (phase 4): needed soon, and from which provider?
-7. Service accounts: keep CI as a regular user with an API key bound `Uploader`, or add a distinct "service account"
-   kind that cannot sign in?
+   Draft: per user.
+6. Service accounts: keep CI as a regular user with an API key bound `Uploader`, or add a distinct "service account"
+   kind that cannot sign in? Draft: regular user in phases 1 to 3.
