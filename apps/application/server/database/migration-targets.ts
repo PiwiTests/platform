@@ -32,7 +32,6 @@ export function sqliteMigrationTarget(client: Client, migrate: () => Promise<voi
       'stop the server and delete the database file (PIWI_DATABASE_PATH, .data/piwi.db by default); ' +
       'in development, npm run app:seed:dev reloads the sample data',
     migrate,
-    tableExists: (table) => sqliteExists(query, 'table', table),
     async readApplied() {
       const table = await query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'");
       if (!table.length) return [];
@@ -194,8 +193,6 @@ export function postgresMigrationTarget(
     dialect: 'postgres',
     resetHint: 'drop and recreate the database',
     migrate,
-    tableExists: (table) =>
-      postgresTableExists((sql, params = []) => client.unsafe(sql, params as never[]) as Promise<Row[]>, table),
     async readApplied() {
       const [table] = await client.unsafe('SELECT to_regclass($1) IS NOT NULL AS present', [migrationsTable]);
       if (!table?.present) return [];

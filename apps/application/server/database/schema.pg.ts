@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   primaryKey,
   customType,
+  check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -991,7 +992,7 @@ export const users = pgTable(
     id: serial('id').primaryKey(),
     username: text('username').notNull().unique(),
     password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
-    role: text('role').notNull(), // Role enum: 'administrator', 'reporter', 'user'
+    role: text('role').notNull(), // InstanceRole: 'administrator' | 'member'
     name: text('name'), // Display name
     email: text('email'), // Email address (nullable; OAuth callback can populate it)
     emailVerified: intBoolean('email_verified').notNull().default(INT_BOOLEAN_FALSE),
@@ -1229,26 +1230,82 @@ export const integrationActions = pgTable(
   }),
 );
 
-// Project assignments table — user-to-project access (null projectId = global access)
-export const projectAssignments = pgTable(
-  'project_assignments',
+// Groups — named sets of users. A group receives project roles through role
+// bindings, like a user does; it never carries the instance role.
+export const groups = pgTable(
+  'groups',
   {
     id: serial('id').primaryKey(),
+    name: text('name').notNull().unique(),
+    description: text('description'),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    createdByIdx: index('idx_groups_created_by').on(t.createdBy),
+  }),
+);
+
+// Group members — one row per user in a group.
+export const groupMembers = pgTable(
+  'group_members',
+  {
+    groupId: integer('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    // null = affectation GLOBALE (tous les projets, présents et futurs)
+    addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.groupId, t.userId] }),
+    userIdx: index('idx_group_members_user').on(t.userId),
+    addedByIdx: index('idx_group_members_added_by').on(t.addedBy),
+  }),
+);
+
+// Role bindings — a user or a group (exactly one) holds a ProjectRole on one
+// project, or on all projects present and future when project_id is null.
+// One role per subject per scope. SQLite and PostgreSQL both treat NULL as
+// distinct in a unique index, so the all-projects bindings are deduped by a
+// partial index over the subject, and the per-project ones by (subject, project).
+export const roleBindings = pgTable(
+  'role_bindings',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    groupId: integer('group_id').references(() => groups.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // ProjectRole: 'viewer' | 'contributor' | 'maintainer' | 'project_admin' | 'uploader'
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
   (t) => ({
-    userIdx: index('idx_project_assignments_user').on(t.userId),
-    projectIdx: index('idx_project_assignments_project').on(t.projectId),
-    userProjectUnique: uniqueIndex('idx_project_assignments_user_project').on(t.userId, t.projectId),
-    createdByIdx: index('idx_project_assignments_created_by').on(t.createdBy),
+    oneSubject: check(
+      'role_bindings_one_subject',
+      sql`(${t.userId} is not null and ${t.groupId} is null) or (${t.userId} is null and ${t.groupId} is not null)`,
+    ),
+    userAllProjectsIdx: uniqueIndex('idx_role_bindings_user_all_projects')
+      .on(t.userId)
+      .where(sql`${t.projectId} is null`),
+    userProjectIdx: uniqueIndex('idx_role_bindings_user_project').on(t.userId, t.projectId),
+    groupAllProjectsIdx: uniqueIndex('idx_role_bindings_group_all_projects')
+      .on(t.groupId)
+      .where(sql`${t.projectId} is null`),
+    groupProjectIdx: uniqueIndex('idx_role_bindings_group_project').on(t.groupId, t.projectId),
+    projectIdx: index('idx_role_bindings_project').on(t.projectId),
+    createdByIdx: index('idx_role_bindings_created_by').on(t.createdBy),
   }),
 );
 
@@ -1990,8 +2047,11 @@ export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
 export type Marker = typeof markers.$inferSelect;
 export type NewMarker = typeof markers.$inferInsert;
-export type ProjectAssignment = typeof projectAssignments.$inferSelect;
-export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
+export type Group = typeof groups.$inferSelect;
+export type NewGroup = typeof groups.$inferInsert;
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type RoleBinding = typeof roleBindings.$inferSelect;
+export type NewRoleBinding = typeof roleBindings.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
 export type IntegrationConnection = typeof integrationConnections.$inferSelect;

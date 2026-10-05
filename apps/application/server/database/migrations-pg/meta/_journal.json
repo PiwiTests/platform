@@ -736,6 +736,27 @@
       "when": 1791017179444,
       "tag": "0104_slow_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791199125134,
+      "tag": "0105_youthful_umar",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791199160369,
+      "tag": "0106_role_bindings_from_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791199216799,
+      "tag": "0107_romantic_kree",
+      "breakpoints": true
     }
   ]
 }

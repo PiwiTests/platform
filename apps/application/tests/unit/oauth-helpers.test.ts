@@ -19,7 +19,7 @@ import {
   type OAuthProfile,
   safeReturnPath,
 } from '../../server/utils/oauth-helpers';
-import { Role } from '#shared/types';
+import { InstanceRole } from '#shared/permissions';
 
 // Convenience builders -------------------------------------------------------
 
@@ -260,14 +260,14 @@ describe('resolveProvisioningAction', () => {
     expect(resolveProvisioningAction(profile({ provider: 'google' }), undefined, local)).toEqual({ kind: 'conflict' });
   });
 
-  test('create: no matches → new OAuth-only user with email populated', () => {
+  test('create: no matches → new OAuth-only member with email populated', () => {
     const action = resolveProvisioningAction(profile());
     expect(action.kind).toBe('create');
     if (action.kind === 'create') {
       expect(action.values).toMatchObject({
         username: 'alice@example.com',
         password: '',
-        role: Role.USER,
+        role: InstanceRole.MEMBER,
         email: 'alice@example.com',
         emailVerified: true,
         oauthProvider: 'google',

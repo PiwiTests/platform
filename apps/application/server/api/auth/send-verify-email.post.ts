@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Send email verification link',
     description: "Sends a verification link to the authenticated user's email address.",
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

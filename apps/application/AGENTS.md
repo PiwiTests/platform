@@ -91,7 +91,7 @@ imported by both. Exceptions only where the implementations genuinely differ (er
 
 A route's `defineRouteMeta` declares what it needs in `openAPI['x-required-permission']`, and that single literal drives
 **both** the `/docs` display and enforcement: `requireAuth(event)` reads it from the compiled route metas
-(`server/utils/route-required-roles.ts`, matched with rou3 exactly as Nitro dispatches).
+(`server/utils/route-required-permission.ts`, matched with rou3 exactly as Nitro dispatches).
 
 ```typescript
 defineRouteMeta({ openAPI: { tags: ['Failure Clusters'], summary: '…', 'x-required-permission': 'triage:write' } });

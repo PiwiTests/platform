@@ -1,4 +1,4 @@
-import { Role } from '#shared/types';
+import { InstanceRole } from '#shared/permissions';
 import { createUser, isAuthEnabled, needsInitialSetup, claimInitialSetup, releaseInitialSetup } from '../../utils/auth';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
 import { z } from 'zod';
@@ -9,7 +9,6 @@ defineRouteMeta({
     summary: 'Initial setup',
     description:
       'Creates the first administrator user. Only available when no users exist yet. Accepts username, password, and optional name in the request body.',
-    'x-required-roles': [],
     security: [],
   },
 });
@@ -64,14 +63,14 @@ export default eventHandler(async (event) => {
   }
 
   try {
-    const user = await createUser(username, password, Role.ADMINISTRATOR, name);
+    const user = await createUser(username, password, InstanceRole.ADMINISTRATOR, name);
 
     return {
       success: true,
       user: {
         id: user.id,
         username: user.username,
-        role: user.role as Role,
+        role: user.role as InstanceRole,
         name: user.name,
       },
     };

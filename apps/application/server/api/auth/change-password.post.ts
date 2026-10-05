@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { requireAuth, hashPassword, verifyPassword, revokeUserSessions, setUserSession } from '../../utils/auth';
-import { Role } from '#shared/types';
+import type { InstanceRole } from '#shared/permissions';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Change password',
     description: 'Allows an authenticated user to change their own password by verifying their current password first.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -52,7 +52,7 @@ export default eventHandler(async (event) => {
   await setUserSession(event, {
     userId: user.id,
     username: user.username,
-    role: user.role as Role,
+    role: user.role as InstanceRole,
     sessionEpoch: epoch,
   });
 

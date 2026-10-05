@@ -6,7 +6,6 @@ import type { Serialize, Simplify } from 'nitropack/types';
 
 import type { IngestHealth } from '#shared/ingest-health';
 import type {
-  Role,
   FilterDetails,
   KeepSource,
   TestMetadata,
@@ -20,6 +19,7 @@ import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
+import type { AccessSummary, InstanceRole } from '#shared/permissions';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
 export type { NextStep } from '#shared/next-step';
@@ -1182,14 +1182,16 @@ export interface TestCasesPage {
 // ============================================================================
 
 /**
- * Authenticated user
+ * Authenticated user, as `GET /api/auth/me` and `POST /api/auth/login` return it
  */
 export interface AuthUser {
   id: number;
   username: string;
-  role: Role;
+  role: InstanceRole;
   name?: string | null;
   avatarUrl?: string | null;
+  /** The instance role and the project roles held, own and through groups; `can()` in `#shared/permissions` reads it. */
+  access: AccessSummary;
 }
 
 /**
@@ -1206,7 +1208,7 @@ export interface AuthState {
 export interface UserDetails {
   id: number;
   username: string;
-  role: Role;
+  role: InstanceRole;
   name?: string | null;
   email?: string | null;
   emailVerified?: boolean;

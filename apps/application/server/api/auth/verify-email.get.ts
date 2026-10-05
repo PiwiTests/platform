@@ -8,7 +8,6 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Verify email address',
     description: 'Validates a verify token from the emailed link and marks the account email as verified.',
-    'x-required-roles': [],
     security: [],
     parameters: [{ name: 'token', in: 'query', required: true, schema: { type: 'string' } }],
   },

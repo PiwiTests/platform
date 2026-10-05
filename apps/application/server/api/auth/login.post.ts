@@ -1,5 +1,5 @@
-import { Role } from '#shared/types';
-import { verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
+import { getDatabase } from '../../database';
+import { authUserView, verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
 import {
   isRateLimited,
   rateLimitClientIp,
@@ -15,8 +15,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Login',
-    description: 'Authenticates a user with username and password credentials and creates a session.',
-    'x-required-roles': [],
+    description:
+      'Authenticates a user with username and password credentials and creates a session. Returns the user as `GET /api/auth/me` does.',
     security: [],
   },
 });
@@ -68,22 +68,18 @@ export default eventHandler(async (event) => {
 
   resetRateLimit(accountKey);
 
+  const view = await authUserView(await getDatabase(), user);
+
   // Set session
   await setUserSession(event, {
     userId: user.id,
     username: user.username,
-    role: user.role as Role,
+    role: view.role,
     sessionEpoch: user.sessionEpoch,
   });
 
   return {
     success: true,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role as Role,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-    },
+    user: view,
   };
 });
