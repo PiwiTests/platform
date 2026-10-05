@@ -6,8 +6,10 @@
  * reopen, unsnooze, release), and one Triage panel — open / resolved / ignored,
  * a note, an assignee, and a snooze.
  *
- * Every save toasts and asks the page to refresh; a viewer without write access
- * sees the sentence alone.
+ * Every save toasts and asks the page to refresh. Each control shows to the
+ * holders of the permission its route declares on the cluster's project
+ * (`issue:create`, `triage:write`, `quarantine:write` for a release); a viewer
+ * holding none sees the sentence alone.
  */
 import type { FailureClusterDetail } from '~~/types/api';
 import type { ClusterState, ClusterStateAction } from '#shared/cluster-state';
@@ -17,14 +19,22 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 const props = defineProps<{
   cluster: FailureClusterDetail;
   state: ClusterState;
-  /** Reporter/admin — whether the state can be changed. */
-  canWrite: boolean;
 }>();
 
 const emit = defineEmits<{ saved: [] }>();
 
 const toast = useToast();
 const { hasTracker } = useTrackerStatus();
+const { can } = useAuth();
+
+const projectId = computed(() => props.cluster.project?.id ?? null);
+const canCreateIssue = computed(() => can('issue:create', projectId.value));
+const canTriage = computed(() => can('triage:write', projectId.value));
+// Releasing the quarantined tests is a quarantine action; the other reconciles are triage.
+const canReconcile = computed(() =>
+  props.state.action === 'release' ? can('quarantine:write', projectId.value) : canTriage.value,
+);
+const hasControls = computed(() => canCreateIssue.value || canTriage.value || canReconcile.value);
 
 // The tracker issue this cluster is already known by, if any — a link the
 // dashboard created or a person pinned that carries a key.
@@ -71,7 +81,7 @@ const { setClusterStatus } = useClusterTriage(() => props.cluster.id, {
 });
 
 async function runReconcile() {
-  if (!props.canWrite || busy.value || !props.state.action) return;
+  if (!canReconcile.value || busy.value || !props.state.action) return;
   busy.value = true;
   try {
     switch (props.state.action) {
@@ -121,7 +131,7 @@ const STATUS_OPTIONS = [
 
 const savingTriage = ref(false);
 async function saveTriage() {
-  if (!props.canWrite || savingTriage.value) return;
+  if (!canTriage.value || savingTriage.value) return;
   savingTriage.value = true;
   try {
     const note = draftNote.value.trim() || null;
@@ -150,7 +160,7 @@ const SNOOZE_LABEL: Record<SnoozeOption, string> = {
 };
 const snoozing = ref(false);
 async function snooze(option: SnoozeOption | null) {
-  if (!props.canWrite || snoozing.value) return;
+  if (!canTriage.value || snoozing.value) return;
   snoozing.value = true;
   try {
     await patchSnooze(option);
@@ -191,15 +201,15 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
       v-if="knownIssue"
       data-shot="cluster-issue-chip"
       class="inline-flex items-center shrink-0"
-      :class="canWrite ? '' : 'ml-auto'"
+      :class="hasControls ? '' : 'ml-auto'"
     >
       <LinkChip :link="knownIssue" />
     </span>
 
-    <div v-if="canWrite" class="flex items-center gap-1.5 ml-auto shrink-0">
+    <div v-if="hasControls" class="flex items-center gap-1.5 ml-auto shrink-0">
       <!-- Create issue is the primary action while the cluster has no ticket. -->
       <UButton
-        v-if="hasTracker && !knownIssue"
+        v-if="canCreateIssue && hasTracker && !knownIssue"
         size="xs"
         icon="i-simple-icons-jira"
         data-shot="cluster-create-issue"
@@ -208,7 +218,7 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
         Create issue
       </UButton>
       <UButton
-        v-else-if="knownIssue"
+        v-else-if="canCreateIssue && knownIssue"
         size="xs"
         color="neutral"
         variant="outline"
@@ -221,7 +231,7 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
 
       <!-- The one reconcile action the state implies. -->
       <UButton
-        v-if="state.action && reconcileLabel"
+        v-if="canReconcile && state.action && reconcileLabel"
         size="xs"
         color="neutral"
         variant="outline"
@@ -232,7 +242,7 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
       </UButton>
 
       <!-- Triage: status, note and assignee. -->
-      <UPopover v-model:open="triageOpen">
+      <UPopover v-if="canTriage" v-model:open="triageOpen">
         <UButton size="xs" color="neutral" variant="ghost" trailing-icon="i-lucide-chevron-down"> Triage </UButton>
         <template #content>
           <div class="p-3 space-y-3 w-72">

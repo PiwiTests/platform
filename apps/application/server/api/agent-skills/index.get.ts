@@ -12,7 +12,7 @@ defineRouteMeta({
     summary: 'List the workflow skills this build ships',
     description:
       'The Piwi workflow skills (investigate-failure, apply-locator-healing, …) bundled into this server, each as the `SKILL.md` text `piwi skills add` would write, stamped with this version (`piwi-version`) and the hash of the stamped file (`piwi-hash`). `items` is empty when the build carries no skills.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

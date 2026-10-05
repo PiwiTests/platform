@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Returns the project’s saved selections plus the built-in ones (`failed`, `quarantine-free`). A selection is a named, declarative subset of the suite resolved on demand from run history — see the resolve endpoint to turn one into a runnable command.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

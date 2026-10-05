@@ -1,5 +1,4 @@
 import { desc, eq } from 'drizzle-orm';
-import { Role } from '#shared/types';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
 import { projects, testRuns } from '../../../../database/schema';
@@ -15,13 +14,13 @@ defineRouteMeta({
     description:
       'Rebuilds the project’s route and page nodes and reaches edges from its whole history, then recomputes the project-wide scenario gaps (success-only, single-covering-test, surface-drift). Idempotent. Change-time gaps are computed when a pull-request-stamped run finishes.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  await requireProjectAccess(event, projectId);
 
   const db = await getDatabase();
 

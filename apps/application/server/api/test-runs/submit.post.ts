@@ -23,7 +23,7 @@ defineRouteMeta({
     summary: 'Submit test results as JSON',
     description:
       'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
     requestBody: {
       content: {
         'application/json': {
@@ -45,7 +45,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // Require reporter or administrator role for submitting test results
+  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
   const body = await readBody(event);
@@ -61,7 +61,7 @@ export default eventHandler(async (event) => {
   const incomingResources = sanitizeResourceReport(body.resourceReport);
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'run:submit');
 
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 

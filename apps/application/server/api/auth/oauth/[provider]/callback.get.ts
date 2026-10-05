@@ -8,7 +8,6 @@ defineRouteMeta({
     description:
       'Handles the OAuth provider callback, exchanges the authorization code, creates or links the user, and sets the session.',
     parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': [],
     security: [],
   },
 });

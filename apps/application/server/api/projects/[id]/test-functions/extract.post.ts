@@ -3,16 +3,15 @@ import { requireProjectAccess, requireRouteId } from '../../../../utils/project-
 import { getDatabase } from '../../../../database';
 import { resolveAiConfig } from '../../../../utils/ai-provider';
 import { extractTestFunctionFromCode } from '../../../../utils/ai-function-extract';
-import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Functions'],
     summary: 'Propose a catalog entry from pasted function source (AI)',
     description:
-      'Analyzes pasted Playwright page-object-method/helper source with the configured AI provider and returns a proposed test-function catalog entry — a draft only, not saved. Requires reporter or administrator role, and a configured AI provider (see Settings → AI).',
+      'Analyzes pasted Playwright page-object-method/helper source with the configured AI provider and returns a proposed test-function catalog entry — a draft only, not saved. Requires `ai:run` (Maintainer and above on the project), and a configured AI provider (see Settings → AI).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'ai:run',
   },
 });
 
@@ -22,7 +21,7 @@ const extractSchema = z.object({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, id, [Role.ADMINISTRATOR, Role.REPORTER]);
+  await requireProjectAccess(event, id);
 
   const body = await readBody(event);
   const validation = extractSchema.safeParse(body);

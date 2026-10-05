@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Get AI context limits',
     description:
-      'Returns the effective AI diagnosis context limits (defaults ← stored settings ← env vars), their defaults, the keys pinned by environment variables, and field metadata. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Returns the effective AI diagnosis context limits (defaults ← stored settings ← env vars), their defaults, the keys pinned by environment variables, and field metadata. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

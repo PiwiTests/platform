@@ -10,8 +10,8 @@ defineRouteMeta({
     tags: ['Admin'],
     summary: 'Get admin statistics',
     description:
-      'Returns aggregate statistics about projects, test runs, test cases, files, and storage disk usage. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Returns aggregate statistics about projects, test runs, test cases, files, and storage disk usage. Requires `storage:manage` (administrators only).',
+    'x-required-permission': 'storage:manage',
   },
 });
 

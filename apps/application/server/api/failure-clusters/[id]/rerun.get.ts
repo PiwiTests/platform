@@ -11,7 +11,7 @@ defineRouteMeta({
     description:
       "Whether this cluster can be re-run in CI (feature enabled, a target configured for the repository's provider, a token present), with a reason when it cannot, plus the most recent dispatch.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

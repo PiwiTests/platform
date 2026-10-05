@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Quarantine every test currently in the cluster (the same exit-ramp quarantine the cluster page\'s "Quarantine all affected" button applies). Idempotent per test.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'quarantine:write',
   },
 });
 

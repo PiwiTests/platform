@@ -1,12 +1,12 @@
-import { Role } from '#shared/types';
-import { getCurrentUser, isAuthEnabled } from '../../utils/auth';
+import { getDatabase } from '../../database';
+import { authUserView, getCurrentUser, isAuthEnabled } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Get current user',
-    description: 'Returns the currently authenticated user details or unauthenticated status.',
-    'x-required-roles': [],
+    description:
+      'Returns the currently authenticated user details, with their access (instance role and the project roles they hold, own and through groups), or unauthenticated status.',
     security: [],
   },
 });
@@ -30,16 +30,6 @@ export default eventHandler(async (event) => {
 
   return {
     authenticated: true,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role as Role,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      email: user.email,
-      emailVerified: user.emailVerified,
-      oauthProvider: user.oauthProvider,
-      hasPassword: Boolean(user.password),
-    },
+    user: await authUserView(await getDatabase(), user),
   };
 });

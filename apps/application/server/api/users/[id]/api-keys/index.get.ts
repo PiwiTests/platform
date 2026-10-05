@@ -1,15 +1,16 @@
 import { getDatabase } from '../../../../database';
 import { listUserApiKeys } from '#shared/handlers/users';
-import { requireAuth } from '../../../../utils/auth';
-import { Role } from '#shared/types';
+import { getRequestAccess, requireAuth } from '../../../../utils/auth';
+import { can } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'List API keys for a user',
-    description: 'Returns API keys belonging to a specific user. Non-administrators can only list their own keys.',
+    description:
+      'Returns API keys belonging to a specific user. Anyone but an administrator can only list their own keys.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -22,7 +23,7 @@ export default eventHandler(async (event) => {
   }
 
   // Non-administrators can only list their own keys
-  if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
+  if (!can(await getRequestAccess(event), 'users:manage') && currentUser.id !== targetId) {
     throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 

@@ -13,9 +13,9 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, and tags. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires administrator role.',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, and tags. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:manage',
   },
 });
 
@@ -68,7 +68,7 @@ const updateProjectSchema = z.object({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
 
-  // The administrator role comes from `x-required-roles` above.
+  // `project:manage` on this project, from `x-required-permission` above.
   await requireProjectAccess(event, id);
 
   const db = await getDatabase();

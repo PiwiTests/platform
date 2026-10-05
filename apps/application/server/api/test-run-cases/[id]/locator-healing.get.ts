@@ -15,7 +15,7 @@ defineRouteMeta({
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

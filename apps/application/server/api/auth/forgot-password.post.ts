@@ -12,7 +12,6 @@ defineRouteMeta({
     summary: 'Request password reset',
     description:
       'If a non-OAuth user with the given email exists, sends a password reset link. Always returns 200 to prevent user enumeration. Rate-limited.',
-    'x-required-roles': [],
     security: [],
   },
 });

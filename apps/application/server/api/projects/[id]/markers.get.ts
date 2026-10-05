@@ -8,7 +8,7 @@ defineRouteMeta({
     summary: 'List project timeline markers',
     description: 'Returns the dated timeline markers (deploys, config changes, incidents, ...) for a project.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

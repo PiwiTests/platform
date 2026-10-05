@@ -9,7 +9,7 @@ defineRouteMeta({
     summary: 'Per-project overview with trend data',
     description:
       'Returns a compact overview per project: last 20 full runs (for trend bars), tendency badge, and key stats. Used by the home page dashboard.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

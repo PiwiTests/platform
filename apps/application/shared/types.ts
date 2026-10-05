@@ -74,12 +74,7 @@ export type TestRunStatus =
 export type TestCaseStatus = 'passed' | 'failed' | 'skipped' | 'timedout' | 'didnotrun';
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
-
-export enum Role {
-  ADMINISTRATOR = 'administrator',
-  REPORTER = 'reporter',
-  USER = 'user',
-}
+// Instance roles, project roles and permissions live in `#shared/permissions`.
 
 // ── Test case payload ─────────────────────────────────────────────────────────
 // The JSON shape exchanged between the reporter and the server APIs.

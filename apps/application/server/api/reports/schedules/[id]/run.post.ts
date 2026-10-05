@@ -22,7 +22,7 @@ defineRouteMeta({
     summary: 'Run a report schedule now',
     description:
       'Generates the schedule’s quality report over its last complete cadence, stores it as a snapshot and delivers it to the schedule’s channels (unless muted), without moving the next firing. Each call is delivered once. Returns the snapshot id and the period.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'report:write',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });
@@ -36,7 +36,7 @@ export default eventHandler(async (event) => {
     .from(reportSchedules)
     .where(eq(reportSchedules.id, id));
   const result = await reportRoute(async () =>
-    runReportScheduleNow(db as any, id, reportActor(event, user as any), {
+    runReportScheduleNow(db as any, id, await reportActor(event, user as any), {
       // The report is collected with the schedule owner's access, as a scheduled firing is.
       access: await scheduleOwnerAccess(db, row?.userId ?? null),
       timeZone: await reportScheduleTimeZone(db),

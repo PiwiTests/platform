@@ -10,7 +10,7 @@ defineRouteMeta({
     summary: 'Create an integration connection',
     description:
       'Creates an integration connection. Credentials are encrypted at rest and never returned, so a request carrying them answers HTTP 409 while `PIWI_SECRET_KEY` is unset.',
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

@@ -7,9 +7,24 @@ import { eq, sql } from 'drizzle-orm';
 import type { User } from '../database/schema';
 import { scrypt, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
-import { Role } from '#shared/types';
+import {
+  ADMIN_ACCESS,
+  InstanceRole,
+  passesEarlyCheck,
+  routePermissionList,
+  type AccessSummary,
+  type RoutePermission,
+} from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { getRouteRequiredRoles } from './route-required-roles';
+import { getUserAccess } from '#shared/handlers/role-bindings';
+import { getRouteRequiredPermissions } from './route-required-permission';
+
+declare module 'h3' {
+  interface H3EventContext {
+    /** The signed-in user's access, loaded once per request by `requireAuth` (`getRequestAccess` reads it). */
+    access?: AccessSummary;
+  }
+}
 
 const scryptAsync = promisify(scrypt);
 
@@ -34,7 +49,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 export interface SessionData {
   userId: number;
   username: string;
-  role: Role;
+  role: InstanceRole;
   // The user's session epoch at sign-in. A later bump (password/role change,
   // unlink) makes this stale, which invalidates the session server-side.
   sessionEpoch?: number;
@@ -189,7 +204,7 @@ export async function needsInitialSetup(): Promise<boolean> {
   return existing.length === 0;
 }
 
-export async function createUser(username: string, password: string, role: Role, name?: string): Promise<User> {
+export async function createUser(username: string, password: string, role: InstanceRole, name?: string): Promise<User> {
   const db = await getDatabase();
   const hashedPassword = await hashPassword(password);
 
@@ -247,14 +262,6 @@ export async function claimInitialSetup(db?: DrizzleDB): Promise<boolean> {
 export async function releaseInitialSetup(db?: DrizzleDB): Promise<void> {
   const database = db ?? (await getDatabase());
   await database.delete(appSettings).where(eq(appSettings.key, INITIAL_SETUP_KEY));
-}
-
-// Check if user has required role
-export function hasRole(user: User | null, requiredRoles: Role[]): boolean {
-  if (!user) {
-    return false;
-  }
-  return requiredRoles.includes(user.role as Role);
 }
 
 // Check if authentication is enabled.
@@ -364,31 +371,74 @@ export function extractApiKey(event: H3Event): string | null {
   return null;
 }
 
-// Require authentication - throw error if not authenticated
-export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promise<User> {
+// ---------------------------------------------------------------------------
+// Authorization
+// ---------------------------------------------------------------------------
+
+/** The user every request acts as when authentication is off: an administrator. */
+function virtualAdministrator(): User {
+  return {
+    id: 0,
+    username: 'system',
+    password: '',
+    role: InstanceRole.ADMINISTRATOR,
+    name: 'System',
+    avatarUrl: null,
+    oauthProvider: null,
+    oauthProviderId: null,
+    email: null,
+    emailVerified: false,
+    sessionEpoch: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+const accessByUser = new WeakMap<User, Promise<AccessSummary>>();
+
+/**
+ * A user's access (instance role and role bindings, own and through groups),
+ * loaded once per `User` object: `requireAuth` followed by
+ * `getProjectScope(db, user)` reads the bindings once.
+ */
+export function getUserAccessCached(db: DrizzleDB, user: User): Promise<AccessSummary> {
+  let access = accessByUser.get(user);
+  if (!access) {
+    access = getUserAccess(db, user);
+    accessByUser.set(user, access);
+    access.catch(() => accessByUser.delete(user));
+  }
+  return access;
+}
+
+/**
+ * What the current request must hold, any one being enough: `override` when
+ * given, else the route's `x-required-permission` meta. Empty means sign-in only.
+ */
+export function requiredPermissionsFor(
+  event: H3Event,
+  override?: RoutePermission | RoutePermission[],
+): RoutePermission[] {
+  return override === undefined ? getRouteRequiredPermissions(event) : routePermissionList(override);
+}
+
+/**
+ * Identify the caller (API key first, then session cookie), load their access
+ * into `event.context.access`, and refuse with 403 unless they pass the early
+ * check of the permissions the route declares in `x-required-permission`. The
+ * route meta is the single source of truth, also shown in /docs; `permission`
+ * overrides it for the rare handler computing its own authorization. A project
+ * permission is held on some project at this point; the handler checks it on
+ * the project it acts on (`requireProjectAccess`).
+ */
+export async function requireAuth(event: H3Event, permission?: RoutePermission | RoutePermission[]): Promise<User> {
   if (!isAuthEnabled(event)) {
-    // If auth is disabled, create a virtual admin user
-    return {
-      id: 0,
-      username: 'system',
-      password: '',
-      role: Role.ADMINISTRATOR,
-      name: 'System',
-      avatarUrl: null,
-      oauthProvider: null,
-      oauthProviderId: null,
-      email: null,
-      emailVerified: false,
-      sessionEpoch: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    event.context.access = ADMIN_ACCESS;
+    return virtualAdministrator();
   }
 
-  // Roles come from the route's `x-required-roles` meta (the single source of
-  // truth, also shown in /docs); an explicit `allowedRoles` argument overrides
-  // it for the rare route that computes its own authorization.
-  const roles = allowedRoles ?? getRouteRequiredRoles(event) ?? undefined;
+  const required = requiredPermissionsFor(event, permission);
+  let user: User;
 
   // 1. Try API key authentication (preferred for CI/reporter usage)
   const apiKeyValue = extractApiKey(event);
@@ -400,30 +450,24 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
         message: 'Invalid or expired API key',
       });
     }
-
-    const { user } = resolved;
-    if (roles && !hasRole(user, roles)) {
-      throw apiError({
-        statusCode: 403,
-        message: 'Insufficient permissions',
-      });
-    }
-
+    user = resolved.user;
     // The key a request was made with, for the records that name who acted (the agents' write log).
     event.context.apiKeyId = resolved.keyId;
-    return user;
+  } else {
+    // 2. Fall back to session cookie
+    const sessionUser = await getCurrentUser(event);
+    if (!sessionUser) {
+      throw apiError({
+        statusCode: 401,
+        message: 'Authentication required',
+      });
+    }
+    user = sessionUser;
   }
 
-  // 2. Fall back to session cookie
-  const user = await getCurrentUser(event);
-  if (!user) {
-    throw apiError({
-      statusCode: 401,
-      message: 'Authentication required',
-    });
-  }
-
-  if (roles && !hasRole(user, roles)) {
+  const access = await getUserAccessCached(await getDatabase(), user);
+  event.context.access = access;
+  if (!passesEarlyCheck(access, required)) {
     throw apiError({
       statusCode: 403,
       message: 'Insufficient permissions',
@@ -431,4 +475,32 @@ export async function requireAuth(event: H3Event, allowedRoles?: Role[]): Promis
   }
 
   return user;
+}
+
+/** The signed-in user as `GET /api/auth/me` and `POST /api/auth/login` return them (`AuthUser`). */
+export async function authUserView(db: DrizzleDB, user: User) {
+  const access = await getUserAccessCached(db, user);
+  return {
+    id: user.id,
+    username: user.username,
+    role: access.instanceRole,
+    name: user.name,
+    avatarUrl: user.avatarUrl,
+    email: user.email,
+    emailVerified: user.emailVerified,
+    oauthProvider: user.oauthProvider,
+    hasPassword: Boolean(user.password),
+    access,
+  };
+}
+
+/**
+ * The current request's access: the one `requireAuth` loaded, else loaded now
+ * (401 when nobody is signed in). Every permission with authentication off.
+ */
+export async function getRequestAccess(event: H3Event): Promise<AccessSummary> {
+  if (!isAuthEnabled(event)) return ADMIN_ACCESS;
+  if (event.context.access) return event.context.access;
+  const user = await requireAuth(event, []);
+  return getUserAccessCached(await getDatabase(), user);
 }

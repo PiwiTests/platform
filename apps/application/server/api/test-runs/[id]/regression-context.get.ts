@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Returns regression analysis context for a test run, comparing its failures against historical test data from the same project.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

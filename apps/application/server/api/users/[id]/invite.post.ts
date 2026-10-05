@@ -10,8 +10,8 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Send invite email',
     description:
-      'Sends an invite email to a user with a link to set their password. Requires the user to have an email address set. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Sends an invite email to a user with a link to set their password. Requires the user to have an email address set (400) and SMTP to be configured (503).',
+    'x-required-permission': 'users:manage',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });

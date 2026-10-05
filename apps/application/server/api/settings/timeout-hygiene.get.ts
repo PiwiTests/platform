@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Get timeout-hygiene thresholds',
     description:
-      'Returns the thresholds used to flag oversized per-test timeouts and stale test.slow() marks, plus the built-in defaults. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Returns the thresholds used to flag oversized per-test timeouts and stale test.slow() marks, plus the built-in defaults. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

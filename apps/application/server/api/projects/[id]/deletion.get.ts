@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Returns where a running `DELETE /api/projects/{id}` stands: the phase (`files`, `runs` or `project`) and how many of its test runs are deleted so far. `progress` is null when no deletion of the project is running on this server.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:delete',
   },
 });
 

@@ -10,14 +10,14 @@ defineRouteMeta({
     tags: ['Admin'],
     summary: 'Clean up test data',
     description:
-      'Deletes all test projects and test tags by known names. Requires the administrator role, and a non-production environment unless PIWI_TEST_CLEANUP_ENABLED is set.',
-    'x-required-roles': ['administrator'],
+      'Deletes all test projects and test tags by known names. Requires `storage:manage` (administrators only), and a non-production environment unless PIWI_TEST_CLEANUP_ENABLED is set.',
+    'x-required-permission': 'storage:manage',
   },
 });
 
 export default eventHandler(async (event) => {
   // This endpoint is only intended for test suites — guard against accidental
-  // use in production by requiring administrator role AND a non-production env
+  // use in production by requiring `storage:manage` (administrators) AND a non-production env
   await requireAuth(event);
 
   // CI drives the E2E suite against a production build, so the environment

@@ -7,7 +7,6 @@ defineRouteMeta({
     summary: 'Health check',
     description:
       'Liveness/readiness probe for containers, load balancers, and uptime monitors. Verifies the database is reachable with a lightweight query. Returns 200 when healthy, 503 when the database cannot be queried. Public.',
-    'x-required-roles': [],
     security: [],
   },
 });

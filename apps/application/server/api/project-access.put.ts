@@ -1,29 +1,34 @@
-import { eq } from 'drizzle-orm';
-import { z } from 'zod';
 import { getDatabase } from '../database';
-import { projects, users } from '../database/schema';
 import { requireAuth } from '../utils/auth';
-import { Role } from '#shared/types';
-import { getProjectAccessUser, setProjectAccess } from '#shared/handlers/project-assignments';
+import { accessRefusal, projectAccessUpdateSchema, setProjectAccessCell } from '#shared/handlers/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
-    summary: "Grant or revoke a user's access to a project",
+    summary: 'Set one cell of the permission grid',
     description:
-      "Sets one cell of the permission grid. `projectId` null targets the all-projects grant, which also covers projects created later; revoking it leaves the user with exactly the projects granted one by one. Idempotent. Returns the user's updated row. Administrators open every project and cannot be changed here (400). Requires administrator role.",
-    'x-required-roles': ['administrator'],
+      'Gives a user or a group a project role on one project, or on all projects (current and future) when `projectId` is null, replacing the role it held there; `role: null` removes the binding. The all-projects binding and the per-project ones are independent. Idempotent. Returns every binding of the subject after the change. 400 for an administrator, who opens every project; 404 for an unknown user, group or project.',
+    'x-required-permission': 'users:manage',
     requestBody: {
       content: {
         'application/json': {
           schema: {
             type: 'object',
             properties: {
-              userId: { type: 'integer' },
-              projectId: { type: 'integer', nullable: true, description: 'null for the all-projects grant' },
-              granted: { type: 'boolean' },
+              subject: {
+                type: 'object',
+                properties: { type: { type: 'string', enum: ['user', 'group'] }, id: { type: 'integer' } },
+                required: ['type', 'id'],
+              },
+              projectId: { type: 'integer', nullable: true, description: 'null for all projects' },
+              role: {
+                type: 'string',
+                nullable: true,
+                enum: ['viewer', 'contributor', 'maintainer', 'project_admin', 'uploader'],
+                description: 'null removes the binding',
+              },
             },
-            required: ['userId', 'projectId', 'granted'],
+            required: ['subject', 'projectId', 'role'],
           },
         },
       },
@@ -31,34 +36,21 @@ defineRouteMeta({
   },
 });
 
-const bodySchema = z.object({
-  userId: z.number().int().positive(),
-  projectId: z.number().int().positive().nullable(),
-  granted: z.boolean(),
-});
-
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event);
 
-  const parsed = bodySchema.safeParse(await readBody(event));
+  const parsed = projectAccessUpdateSchema.safeParse(await readBody(event));
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
-  const { userId, projectId, granted } = parsed.data;
 
-  const db = await getDatabase();
-  const user = (await db.select({ role: users.role }).from(users).where(eq(users.id, userId)))[0];
-  if (!user) throw apiError({ statusCode: 404, message: 'User not found' });
-  if ((user.role as Role) === Role.ADMINISTRATOR) {
-    throw apiError({ statusCode: 400, message: 'Administrators can open every project' });
+  try {
+    // With authentication off the caller is a virtual administrator with no users row.
+    const bindings = await setProjectAccessCell(await getDatabase(), parsed.data, currentUser.id || null);
+    return { bindings };
+  } catch (err) {
+    const refusal = accessRefusal(err);
+    if (refusal) throw apiError(refusal);
+    throw err;
   }
-  if (projectId !== null) {
-    const project = (await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)))[0];
-    if (!project) throw apiError({ statusCode: 404, message: 'Project not found' });
-  }
-
-  // With authentication off the caller is a virtual administrator with no users row.
-  await setProjectAccess(db, userId, projectId, granted, currentUser.id || null);
-
-  return { user: await getProjectAccessUser(db, userId) };
 });

@@ -10,7 +10,6 @@ defineRouteMeta({
     description:
       'Lightweight liveness ping for an active streaming run. The reporter sends this during idle gaps (when no test events are flowing) so the server can tell a still-running run apart from a crashed one. Bumps the run\'s activity timestamp; the stale-run reaper marks runs with no recent activity as "interrupted". Requires the stream token.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': [],
     requestBody: {
       content: {
         'application/json': {

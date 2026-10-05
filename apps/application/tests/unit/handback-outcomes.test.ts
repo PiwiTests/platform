@@ -95,7 +95,7 @@ beforeEach(async () => {
   });
   runSeq = 0;
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
-  await db.insert(schema.users).values({ id: 7, username: 'ada', password: 'x', role: 'reporter' });
+  await db.insert(schema.users).values({ id: 7, username: 'ada', password: 'x', role: 'member' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' },
     { id: 2, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'refunds' },

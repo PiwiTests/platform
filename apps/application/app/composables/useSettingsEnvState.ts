@@ -19,20 +19,25 @@ interface WastedSettings {
  * AI page is env-managed when its provider is env-pinned (`AiSettings.envManaged`);
  * SMTP is always env-only (read-only display); the Performance page when its
  * wasted-wait patterns or its cost of a CI minute come from env. Pages with no env-overridable fields
- * (account, users, permissions, tags) are never env-managed. Storage backend is env-only by
+ * (account, users, groups, permissions, roles, tags) are never env-managed. Storage backend is env-only by
  * design but no endpoint
  * reports it today, so it is treated as "overridable but not necessarily locked"
  * (the page shows the env-var reference card regardless).
  *
- * Fetches lazily and only on the client (these endpoints are admin-gated; in
- * demo mode they are served by the service worker).
+ * Fetches lazily and only on the client, and only what the viewer may read:
+ * most of these endpoints need an instance permission (`settings:manage`,
+ * `connections:manage`), held by an administrator alone. In demo mode they are
+ * served by the service worker.
  */
 export function useSettingsEnvState() {
+  const { can } = useAuth();
   const envManaged = ref<Record<SettingsPageId, boolean>>({
     account: false,
     localization: false,
     users: false,
+    groups: false,
     permissions: false,
+    roles: false,
     notifications: false,
     tags: false,
     storage: false,
@@ -45,35 +50,37 @@ export function useSettingsEnvState() {
   });
 
   async function refresh() {
-    // Non-admin / unauthenticated users can't read these; default to false.
+    // A page the viewer cannot read stays false; a failed read too.
     const tasks: Promise<void>[] = [];
 
-    tasks.push(
-      $fetch<AiSettings>('/api/settings/ai')
-        .then((s) => {
-          envManaged.value.ai = Boolean(s.envManaged);
-        })
-        .catch(() => {}),
-    );
+    if (can('settings:manage')) {
+      tasks.push(
+        $fetch<AiSettings>('/api/settings/ai')
+          .then((s) => {
+            envManaged.value.ai = Boolean(s.envManaged);
+          })
+          .catch(() => {}),
+      );
 
-    tasks.push(
-      $fetch<WastedSettings>('/api/settings/wasted-waits')
-        .then((s) => {
-          // Performance groups wasted-time, timeout hygiene and the CI cost; the
-          // wasted-wait patterns and the cost are its env-pinnable fields.
-          if (s.envManaged) envManaged.value.performance = true;
-        })
-        .catch(() => {}),
-    );
+      tasks.push(
+        $fetch<WastedSettings>('/api/settings/wasted-waits')
+          .then((s) => {
+            // Performance groups wasted-time, timeout hygiene and the CI cost; the
+            // wasted-wait patterns and the cost are its env-pinnable fields.
+            if (s.envManaged) envManaged.value.performance = true;
+          })
+          .catch(() => {}),
+      );
 
-    tasks.push(
-      $fetch<{ envManaged: boolean }>('/api/settings/ci-cost')
-        .then((s) => {
-          // The cost of a CI minute is the Performance page's other env-pinnable field.
-          if (s.envManaged) envManaged.value.performance = true;
-        })
-        .catch(() => {}),
-    );
+      tasks.push(
+        $fetch<{ envManaged: boolean }>('/api/settings/ci-cost')
+          .then((s) => {
+            // The cost of a CI minute is the Performance page's other env-pinnable field.
+            if (s.envManaged) envManaged.value.performance = true;
+          })
+          .catch(() => {}),
+      );
+    }
 
     tasks.push(
       $fetch<SmtpStatus>('/api/settings/smtp')
@@ -84,14 +91,16 @@ export function useSettingsEnvState() {
         .catch(() => {}),
     );
 
-    tasks.push(
-      $fetch<{ connections: { managedBy: string }[] }>('/api/integrations/connections')
-        .then((s) => {
-          // Integrations is env-managed when a connection comes from the environment.
-          envManaged.value.integrations = (s.connections ?? []).some((c) => c.managedBy === 'env');
-        })
-        .catch(() => {}),
-    );
+    if (can('connections:manage')) {
+      tasks.push(
+        $fetch<{ connections: { managedBy: string }[] }>('/api/integrations/connections')
+          .then((s) => {
+            // Integrations is env-managed when a connection comes from the environment.
+            envManaged.value.integrations = (s.connections ?? []).some((c) => c.managedBy === 'env');
+          })
+          .catch(() => {}),
+      );
+    }
 
     tasks.push(
       $fetch<{ localeEnvManaged: boolean; timeZoneEnvManaged: boolean }>('/api/settings/locale')

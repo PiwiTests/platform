@@ -61,7 +61,9 @@ const isSnoozed = (cluster: ProjectFailureCluster) => isCurrentlySnoozed(cluster
 // Multi-select the clusters and set them all to one status at once, so a
 // project's backlog doesn't have to be triaged a row at a time.
 const toast = useToast();
-const { canWrite } = useAuth();
+// Setting a cluster's status needs `triage:write` on the project.
+const { can } = useAuth();
+const canTriage = computed(() => can('triage:write', props.projectId));
 const selectedIds = ref<Set<number>>(new Set());
 const rows = computed(() => clusters.value ?? []);
 const selectedCount = computed(() => selectedIds.value.size);
@@ -121,7 +123,7 @@ async function setStatus(status: 'open' | 'resolved' | 'ignored') {
 }
 
 const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
-  ...(canWrite.value ? [{ id: 'select', header: '' } as TableColumn<ProjectFailureCluster>] : []),
+  ...(canTriage.value ? [{ id: 'select', header: '' } as TableColumn<ProjectFailureCluster>] : []),
   { accessorKey: 'signature', header: createSortHeader<ProjectFailureCluster>('Failure') },
   { accessorKey: 'errorType', header: createSortHeader<ProjectFailureCluster>('Type') },
   { accessorKey: 'status', header: createSortHeader<ProjectFailureCluster>('Triage') },
@@ -159,7 +161,7 @@ const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
 
     <!-- Bulk status bar — appears once clusters are selected. -->
     <div
-      v-if="canWrite && selectedCount > 0"
+      v-if="canTriage && selectedCount > 0"
       class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2"
     >
       <span class="text-sm font-medium" aria-live="polite"> {{ selectedCount }} selected </span>
@@ -319,7 +321,7 @@ const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
       <div v-for="cluster in rows" :key="cluster.id" class="rounded-lg border border-default p-3 space-y-2">
         <div class="flex items-start gap-2">
           <input
-            v-if="canWrite"
+            v-if="canTriage"
             type="checkbox"
             class="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary rounded"
             :checked="selectedIds.has(cluster.id)"

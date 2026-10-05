@@ -68,7 +68,7 @@ A report grants no access: it covers only the projects its reader can open.
 
 A **report schedule** sends a quality report on its own. **Schedule…** on the Analytics page or in a
 project page's menu opens the form with the filters on screen; **New schedule** on the **Quality
-reports** page starts an empty one. Reporters and administrators create schedules.
+reports** page starts an empty one. A Contributor or above on the project, or an administrator, creates schedules.
 
 ![The Quality reports page: report snapshots and schedules](/screenshots/report-schedules.png)
 
@@ -88,7 +88,7 @@ reports** page starts an empty one. Reporters and administrators create schedule
 
 **Run now** sends the last complete period straight away; **Preview**, in the form, shows that report
 before you save, as its email and as the full report, and sends nothing. **Mute** keeps the snapshots
-and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current project access. A **global**
+and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current roles. A **global**
 schedule covers every project, goes to global channels and needs an administrator.
 
 The server checks schedules every five minutes; a firing missed while it was down happens at the next

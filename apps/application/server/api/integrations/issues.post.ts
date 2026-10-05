@@ -3,7 +3,6 @@ import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { createIssue } from '../../utils/integrations/create';
-import { Role } from '#shared/types';
 import type { CreateIssueResponse } from '#shared/integrations/types';
 import { normalizeFieldValues } from '#shared/integrations/fields';
 
@@ -12,8 +11,8 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Create an issue from a failure or a bug report',
     description:
-      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed is a no-op. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request.",
-    'x-required-roles': ['administrator', 'reporter'],
+      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed is a no-op. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. Requires `issue:create` (Contributor and above on the project).",
+    'x-required-permission': 'issue:create',
   },
 });
 
@@ -46,13 +45,13 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
   }
   const input = parsed.data;
 
-  // The role gate comes before the entity lookup, so a member outside the
-  // allowed roles learns nothing about which cluster or execution ids exist.
-  const user = await requireAuth(event, [Role.ADMINISTRATOR, Role.REPORTER]);
+  // The permission gate comes before the entity lookup, so a member who holds
+  // `issue:create` on no project learns nothing about which ids exist.
+  const user = await requireAuth(event);
   const db = await getDatabase();
   const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
-  if (!(await canAccessProject(db, user, projectId))) {
+  if (!(await canAccessProject(db, user, projectId, 'issue:create'))) {
     throw apiError({ statusCode: 403, message: 'No access to this project' });
   }
 

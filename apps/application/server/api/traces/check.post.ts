@@ -11,7 +11,7 @@ defineRouteMeta({
     summary: 'Check trace blob existence',
     description:
       'Checks which trace blob SHA-256 hashes already exist in storage for a given project. Accepts projectName and hashes array in the request body.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
   },
 });
 
@@ -40,7 +40,7 @@ export default eventHandler(async (event) => {
   // this endpoint can't be used as a cross-project oracle for blob (or project)
   // existence. With auth disabled the instance is single-user, so access is
   // granted and behavior is unchanged.
-  if (!project || !(await canAccessProject(db, user, project.id))) {
+  if (!project || !(await canAccessProject(db, user, project.id, 'run:submit'))) {
     return { existing: [], missing: validHashes };
   }
 

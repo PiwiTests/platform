@@ -3,7 +3,6 @@ import { apiError } from '../../utils/api-error';
 import { requireAuth } from '../../utils/auth';
 import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { buildIssueDraft, type DraftEntityType } from '../../utils/integrations/draft';
-import { Role } from '#shared/types';
 import { toIssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 
@@ -12,8 +11,8 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Prefilled create-issue draft',
     description:
-      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it.',
-    'x-required-roles': ['administrator', 'reporter'],
+      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it. Requires `issue:create` (Contributor and above on the project).',
+    'x-required-permission': 'issue:create',
   },
 });
 
@@ -33,13 +32,13 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'entityType and entityId are required' });
   }
 
-  // The role gate comes before the entity lookup, so a member outside the
-  // allowed roles learns nothing about which cluster or execution ids exist.
-  const user = await requireAuth(event, [Role.ADMINISTRATOR, Role.REPORTER]);
+  // The permission gate comes before the entity lookup, so a member who holds
+  // `issue:create` on no project learns nothing about which ids exist.
+  const user = await requireAuth(event);
   const db = await getDatabase();
   const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
-  if (!(await canAccessProject(db, user, projectId))) {
+  if (!(await canAccessProject(db, user, projectId, 'issue:create'))) {
     throw apiError({ statusCode: 403, message: 'No access to this project' });
   }
 

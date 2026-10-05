@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'Saves a named selection. The `definition` is declarative JSON (include/exclude predicate groups, pins, budget, limit); it is validated on write, and an unknown predicate is rejected rather than silently ignored. The key must be a lowercase slug and may not shadow a built-in.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'test-assets:write',
     requestBody: {
       content: {
         'application/json': {

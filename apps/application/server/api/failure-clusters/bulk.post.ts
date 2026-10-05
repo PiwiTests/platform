@@ -12,7 +12,7 @@ defineRouteMeta({
     summary: 'Bulk-triage failure clusters',
     description:
       "Apply one triage action — set status (resolve / ignore / reopen), assign, or snooze — to many clusters at once. Clusters outside the caller's project scope are skipped; the response reports how many were requested and updated.",
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 
@@ -51,7 +51,7 @@ export default eventHandler(async (event) => {
   }
 
   // Narrow to the clusters this user may write before applying anything.
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'triage:write');
   const rows = await db
     .select({ id: failureClusters.id, projectId: failureClusters.projectId })
     .from(failureClusters)

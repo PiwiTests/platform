@@ -11,7 +11,7 @@ defineRouteMeta({
     description:
       'Desktop build only — 404 on the server build. Body: `{ allow: boolean }`. The window sends it when the developer answers the pairing it shows. 404 when the pairing is gone or already answered.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

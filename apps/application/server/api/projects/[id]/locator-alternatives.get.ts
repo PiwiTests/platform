@@ -18,7 +18,7 @@ defineRouteMeta({
         description: 'Project-relative path, or a path suffix.',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

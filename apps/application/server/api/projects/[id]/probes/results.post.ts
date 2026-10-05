@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { Role } from '#shared/types';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
 import { recordProbeResults, type ProbeResultInput } from '#shared/handlers/probes';
@@ -11,7 +10,7 @@ defineRouteMeta({
     description:
       'Writes the probe ledger and a `checks` edge per (test, route) pair from a `piwi probe` run: whether the test noticed the injected fault. Requires a reporter API key.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
   },
 });
 
@@ -38,7 +37,7 @@ const bodySchema = z.object({
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  await requireProjectAccess(event, projectId);
 
   const validation = bodySchema.safeParse(await readBody(event));
   if (!validation.success) {

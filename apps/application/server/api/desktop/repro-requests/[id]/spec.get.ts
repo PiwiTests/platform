@@ -24,7 +24,7 @@ defineRouteMeta({
         schema: { type: 'string' },
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

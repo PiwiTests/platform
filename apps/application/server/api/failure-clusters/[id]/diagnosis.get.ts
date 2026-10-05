@@ -7,7 +7,7 @@ defineRouteMeta({
     summary: 'Get stored diagnosis for a cluster',
     description: 'Returns the stored AI diagnosis result and manual base commit for a failure cluster.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

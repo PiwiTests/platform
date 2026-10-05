@@ -13,7 +13,7 @@ defineRouteMeta({
     description:
       'Returns detailed information about a failure cluster including affected tests, last seen run status, project info, and diagnosis.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

@@ -19,7 +19,7 @@ defineRouteMeta({
         schema: { type: 'integer', default: 2, maximum: MAX_GRAPH_DEPTH },
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

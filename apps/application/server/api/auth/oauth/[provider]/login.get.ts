@@ -11,7 +11,6 @@ defineRouteMeta({
       { name: 'provider', in: 'path', required: true, schema: { type: 'string' } },
       { name: 'link', in: 'query', required: false, schema: { type: 'string', enum: ['1'] } },
     ],
-    'x-required-roles': [],
     security: [],
   },
 });

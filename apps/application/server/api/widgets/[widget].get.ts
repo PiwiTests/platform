@@ -177,7 +177,7 @@ defineRouteMeta({
         description: 'Locale for the first day of the week',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

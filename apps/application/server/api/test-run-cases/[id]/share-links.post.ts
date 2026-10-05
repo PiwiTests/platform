@@ -14,7 +14,7 @@ defineRouteMeta({
     description:
       'Mints a read-only public link for this execution. The full token is returned once and stored only as a hash. Requires PIWI_SHARE_LINKS_ENABLED=true.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'share:create',
   },
 });
 

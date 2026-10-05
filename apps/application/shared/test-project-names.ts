@@ -91,6 +91,7 @@ export const PROJECT = {
   FLAKE_VERIFIED: 'flake-verified-test',
   FLAKY_BOARD: 'flaky-board-test',
   GATE_POLICY: 'gate-policy-test',
+  GROUPS: 'groups-test',
   GZIP_MIME: 'gzip-mime-test',
   GZIP_SERVE: 'gzip-serve-test-project',
   GZIP_TEST: 'gzip-test-project',
@@ -194,6 +195,7 @@ export const PROJECT = {
   URL_PATTERNS_AUTH: 'url-patterns-auth-test',
   URL_PATTERNS_GOTO: 'url-patterns-goto-test',
   URL_PATTERNS: 'url-patterns-test',
+  USER_PROJECT_ROLES: 'user-project-roles-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

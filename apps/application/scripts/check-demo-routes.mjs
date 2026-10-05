@@ -8,7 +8,9 @@
  *   node scripts/check-demo-routes.mjs
  *
  * Exits with code 1 if any server route is missing from the demo router and
- * is not on the INTENTIONALLY_EXCLUDED list below.
+ * is not on the INTENTIONALLY_EXCLUDED list below, or if a demo route does not
+ * declare the permission its server twin declares in `x-required-permission`
+ * (any but `project:read` and `signed-in`, which every acting user passes).
  */
 
 import { readdirSync, readFileSync, statSync } from 'fs';
@@ -132,6 +134,20 @@ function fileToRoute(absPath) {
 
 const serverRoutes = serverFiles.map(fileToRoute).filter(Boolean).sort();
 
+/** The permissions in a meta or route-entry literal: `'triage:write'` or `['a', 'b']`. */
+function permissionsIn(literal) {
+  return [...literal.matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+}
+
+// The permission each server route declares, by route key ([] for none).
+const serverPermissions = new Map();
+for (const file of serverFiles) {
+  const route = fileToRoute(file);
+  if (!route) continue;
+  const meta = /['"]x-required-permission['"]\s*:\s*(\[[^\]]*\]|'[^']*')/.exec(readFileSync(file, 'utf-8'));
+  serverPermissions.set(route, meta ? permissionsIn(meta[1]) : []);
+}
+
 // ── Extract demo router patterns ──────────────────────────────────────────
 
 const routerSrc = readFileSync(join(root, 'app', 'demo', 'api', 'router.ts'), 'utf-8');
@@ -151,9 +167,15 @@ while ((m = PATTERN_RE.exec(routerSrc)) !== null) {
 // newlines — many route entries in the demo router write `method` and
 // `pattern` on separate lines.
 const ROUTE_BLOCK_RE = /\{\s*method:\s*'(GET|POST|PUT|PATCH|DELETE)'.*?pattern:\s*(\/[^,]+\/)/gs;
+const PERMISSION_RE = /^,\s*permission:\s*(\[[^\]]*\]|'[^']*')/;
 const demoRoutes = [];
 while ((m = ROUTE_BLOCK_RE.exec(routerSrc)) !== null) {
-  demoRoutes.push({ method: m[1], pattern: new RegExp(m[2].slice(1, -1)) });
+  const permission = PERMISSION_RE.exec(routerSrc.slice(m.index + m[0].length));
+  demoRoutes.push({
+    method: m[1],
+    pattern: new RegExp(m[2].slice(1, -1)),
+    permissions: permission ? permissionsIn(permission[1]) : [],
+  });
 }
 
 // ── Match each server route against the demo router ───────────────────────
@@ -165,6 +187,9 @@ function routeToTestPath(route) {
 
 const missing = [];
 const excluded = [];
+const permissionMismatches = [];
+// Every acting user passes these, so a demo route may leave them out.
+const PASSED_BY_EVERYONE = new Set(['project:read', 'signed-in']);
 
 for (const route of serverRoutes) {
   const [method, path] = route.split(' ');
@@ -176,10 +201,19 @@ for (const route of serverRoutes) {
     continue;
   }
 
-  const matched = demoRoutes.some((r) => r.method === method && r.pattern.test(testPath));
+  const matched = demoRoutes.find((r) => r.method === method && r.pattern.test(testPath));
 
   if (!matched) {
     missing.push(key);
+    continue;
+  }
+
+  const expected = (serverPermissions.get(route) ?? []).filter((p) => !PASSED_BY_EVERYONE.has(p));
+  const declared = matched.permissions.filter((p) => !PASSED_BY_EVERYONE.has(p));
+  if (expected.join(',') !== declared.join(',')) {
+    permissionMismatches.push(
+      `${key}: the server declares ${expected.length ? expected.join(', ') : 'no permission to check'}, the demo route ${declared.length ? declared.join(', ') : 'none'}`,
+    );
   }
 }
 
@@ -189,7 +223,19 @@ console.log(`Server routes:  ${serverRoutes.length}`);
 console.log(`Demo patterns:  ${demoRoutes.length}`);
 console.log(`Excluded:       ${excluded.length}`);
 
+if (permissionMismatches.length > 0) {
+  console.log(`\n✗ ${permissionMismatches.length} demo route(s) do not declare their server route's permission:\n`);
+  for (const r of permissionMismatches) {
+    console.log(`  ${r}`);
+  }
+  console.log(`
+Copy the server route's \`x-required-permission\` into the demo route entry's
+\`permission\` field in app/demo/api/router.ts, and check it on the project the
+handler acts on (assertDemoScope / assertDemoEntityScope / demoCan).\n`);
+}
+
 if (missing.length === 0) {
+  if (permissionMismatches.length > 0) process.exit(1);
   console.log('\n✓ All server routes are covered by the demo router.\n');
   process.exit(0);
 } else {

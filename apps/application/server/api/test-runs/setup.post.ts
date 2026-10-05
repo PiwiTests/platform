@@ -17,7 +17,7 @@ defineRouteMeta({
     summary: 'Initialize a streaming test run in setup phase',
     description:
       'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
     requestBody: {
       content: {
         'application/json': {
@@ -40,7 +40,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // Require reporter or administrator role
+  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
   const body = await readBody(event);
@@ -54,7 +54,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'run:submit');
 
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 

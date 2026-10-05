@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'Body: `{ items: [{ pattern, environment?, branch?, pathPrefix?, testPathPrefix? }] }`, in the order Piwi Picker tries them. Each pattern starts with `http://`, `https://` or a wildcard. `pathPrefix` and `testPathPrefix` are each a plain path of at most 4 segments (`/app`), stored with a leading slash and no trailing one; 400 for a query, a hash, a full URL or a wildcard in either. 409 when a pattern appears twice.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:manage',
   },
 });
 

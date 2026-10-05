@@ -7,7 +7,7 @@ import {
   operationIsPublic,
   resolveSchema,
   schemaTypeLabel,
-  routeRoleRequirement,
+  routePermissionRequirement,
   type OpenApiSpec,
 } from '../../app/utils/openapi';
 
@@ -123,30 +123,69 @@ describe('resolveSchema', () => {
   });
 });
 
-describe('routeRoleRequirement', () => {
-  test('flags an admin-only operation as elevated', () => {
-    const req = routeRoleRequirement({ 'x-required-roles': ['administrator'] });
-    expect(req).toMatchObject({
-      roles: ['administrator'],
-      label: 'Administrator',
-      shortLabel: 'Admin',
+describe('routePermissionRequirement', () => {
+  test('names the project roles that grant a project permission, from the lowest one up', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': 'issue:create' })).toEqual({
+      permissions: ['issue:create'],
+      holders: 'Contributor and above on the project',
+      elevated: true,
+    });
+    expect(routePermissionRequirement({ 'x-required-permission': 'triage:write' })?.holders).toBe(
+      'Maintainer and above on the project',
+    );
+  });
+
+  test('lists the roles one by one when one of them stands outside the chain', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': 'run:submit' })?.holders).toBe(
+      'Maintainer, Project admin or Uploader on the project',
+    );
+  });
+
+  test('names a single granting role on its own', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': 'project:manage' })?.holders).toBe(
+      'Project admin on the project',
+    );
+  });
+
+  test('treats a permission every project role holds as readable, not elevated', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': 'project:read' })).toEqual({
+      permissions: ['project:read'],
+      holders: 'Any role on the project',
+      elevated: false,
+    });
+  });
+
+  test('gives an instance permission to the Administrator', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': 'settings:manage' })).toEqual({
+      permissions: ['settings:manage'],
+      holders: 'Administrator',
       elevated: true,
     });
   });
 
-  test('treats an all-roles operation as "any signed-in user" (not elevated)', () => {
-    const req = routeRoleRequirement({ 'x-required-roles': ['administrator', 'reporter', 'user'] });
-    expect(req).toMatchObject({ label: 'Any signed-in user', elevated: false });
+  test('treats signed-in as any signed-in user (not elevated)', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': 'signed-in' })).toEqual({
+      permissions: [],
+      holders: 'Any signed-in user',
+      elevated: false,
+    });
   });
 
-  test('joins multiple elevated roles', () => {
-    const req = routeRoleRequirement({ 'x-required-roles': ['administrator', 'reporter'] });
-    expect(req).toMatchObject({ label: 'Administrator or Reporter', shortLabel: 'Admin / Reporter', elevated: true });
+  test('merges the roles of a list, where any one permission is enough', () => {
+    expect(routePermissionRequirement({ 'x-required-permission': ['run:submit', 'run:control'] })).toEqual({
+      permissions: ['run:submit', 'run:control'],
+      holders: 'Maintainer, Project admin or Uploader on the project',
+      elevated: true,
+    });
+    expect(
+      routePermissionRequirement({ 'x-required-permission': ['connections:manage', 'project:manage'] })?.holders,
+    ).toBe('Project admin on the project');
   });
 
-  test('returns null when there is no role restriction', () => {
-    expect(routeRoleRequirement({})).toBeNull();
-    expect(routeRoleRequirement({ 'x-required-roles': [] })).toBeNull();
+  test('returns null when the route declares no permission', () => {
+    expect(routePermissionRequirement({})).toBeNull();
+    expect(routePermissionRequirement({ 'x-required-permission': [] })).toBeNull();
+    expect(routePermissionRequirement({ 'x-required-permission': 'not-a-permission' })).toBeNull();
   });
 });
 

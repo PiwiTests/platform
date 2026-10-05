@@ -9,7 +9,7 @@ defineRouteMeta({
     summary: 'List integration connections',
     description:
       'Lists every configured integration connection. Credentials are never returned. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case a new connection cannot store its token (configure it through the environment instead).',
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

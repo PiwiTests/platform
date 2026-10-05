@@ -253,7 +253,7 @@ export const HELP_TOPICS = {
   },
   'dashboards.sharing': {
     title: 'Sharing a dashboard',
-    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the reporter or administrator role, and shows nobody a project they cannot open.',
+    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the Maintainer role or above on at least one project, and shows nobody a project they cannot open.',
     doc: 'features/dashboards#sharing-and-access',
   },
   'reports.schedule': {
@@ -402,9 +402,9 @@ export const HELP_TOPICS = {
     doc: 'reference/test-search',
   },
   'project.members': {
-    title: 'Project access',
-    text: 'Who can see this project. Admins always have access; reporters and users see only the projects assigned to them.',
-    doc: 'operate/project-access',
+    title: 'Project members',
+    text: 'The users and groups holding a role on this project, granted here or on All projects. A Project admin can grant any project role here; administrators can do everything on every project.',
+    doc: 'operate/project-access#who-manages-access',
   },
   'project.ai-instructions': {
     title: 'AI diagnosis instructions',
@@ -438,7 +438,7 @@ export const HELP_TOPICS = {
   },
   'project.ci-rerun': {
     title: 'CI re-run',
-    text: 'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs piwi flake for one flaky test, from its next step.',
+    text: 'Lets a Maintainer or Project admin re-run a cluster’s affected tests in CI straight from its page — a workflow_dispatch on GitHub, a pipeline on GitLab, a custom pipeline on Bitbucket — passing each affected test’s file and line through the input/variable you name, on the branch of the cluster’s latest run. The run it starts is recognized when it finishes (by GitLab’s pipeline id, Bitbucket’s build number, or on GitHub the optional dispatch id input) and recorded as a CI re-run. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs piwi flake for one flaky test, from its next step.',
     doc: 'features/pr-feedback#re-run-from-the-dashboard',
   },
   'project.local-folder': {
@@ -465,7 +465,7 @@ export const HELP_TOPICS = {
   },
   'run.keep': {
     title: 'Kept runs',
-    text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only an administrator can release it.',
+    text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only a Project admin can release it.',
     doc: 'operate/storage#keeping-runs-forever',
     envVars: ['PIWI_RETENTION_DAYS'],
   },
@@ -780,12 +780,22 @@ export const HELP_TOPICS = {
   },
   'settings.users': {
     title: 'Users & roles',
-    text: 'Manage accounts and their role. Administrators control everything; reporters submit results; users have read-only access.',
+    text: 'Accounts and their instance role. An Administrator can do everything on every project; a Member only what the project roles granted to them or to their groups allow.',
     doc: 'operate/authentication#roles',
   },
+  'settings.groups': {
+    title: 'Groups',
+    text: 'Named sets of users, such as QA or Product owners. A group receives project roles the way a user does, and its members hold them; rights add up, and groups do not nest. A group never makes anyone an Administrator.',
+    doc: 'operate/project-access#groups',
+  },
+  'settings.roles': {
+    title: 'What each role can do',
+    text: 'The five project roles and what each one allows, read from the same definitions the server enforces. The roles are fixed: to give someone rights, grant them a role on the permission grid or in a project’s Members.',
+    doc: 'operate/project-access#what-each-role-can-do',
+  },
   'settings.permissions': {
-    title: 'Project access',
-    text: 'Which projects each reporter and user can open, one tick per project — every click saves at once. All projects also covers projects created later; administrators always open every project.',
+    title: 'Permission grid',
+    text: 'Every group and user against every project: pick a role in a cell to grant it there, or none to remove it. Each change saves at once. All projects also covers projects created later, and a role held only through a group or All projects shows faint.',
     doc: 'operate/project-access#permission-grid',
   },
   'settings.api-keys': {

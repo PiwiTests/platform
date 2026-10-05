@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'All share links minted for entities of this project — prefixes and lifecycle only, never the tokens. The audit view of what is publicly reachable right now.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:manage',
   },
 });
 

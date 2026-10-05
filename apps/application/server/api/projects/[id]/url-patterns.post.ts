@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'Body: `{ pattern, environment?, branch?, pathPrefix?, testPathPrefix? }`, appended after the project’s other patterns. Piwi Picker calls it to add the site of the current tab. `pathPrefix` and `testPathPrefix` follow the rules of the list endpoint. 409 when the project has this pattern already.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:manage',
   },
 });
 

@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Set instance capability decisions',
     description:
-      'Declines or clears optional capabilities at instance level. The body is `{ decisions }`, a map from capability id to `"declined"` or `null` to clear a stored decision. Returns the resolved states after the change. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Declines or clears optional capabilities at instance level. The body is `{ decisions }`, a map from capability id to `"declined"` or `null` to clear a stored decision. Returns the resolved states after the change. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

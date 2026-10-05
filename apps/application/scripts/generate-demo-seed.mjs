@@ -52,8 +52,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = process.env.PIWI_DEMO_SEED_OUTPUT_DIR || join(__dirname, '../public/demo');
 const OUTPUT = join(OUTPUT_DIR, 'seed.sql');
 
-// Canonical demo identities — shared with the runtime app (app/demo/demo-users.ts).
-const DEMO_USERS = JSON.parse(readFileSync(join(__dirname, '../app/demo/demo-users.json'), 'utf-8'));
+// Canonical demo identities and groups — shared with the runtime app (app/demo/demo-users.ts).
+const DEMO_ACCESS = JSON.parse(readFileSync(join(__dirname, '../app/demo/demo-users.json'), 'utf-8'));
+const DEMO_USERS = DEMO_ACCESS.users;
+const DEMO_GROUPS = DEMO_ACCESS.groups;
+/** The identity the demo opens as (`DEFAULT_DEMO_USER_ID`), an administrator. */
+const DEFAULT_DEMO_USER = DEMO_USERS.find((u) => u.id === 1);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -2307,7 +2311,7 @@ for (const story of FAILURE_STORIES) {
 {
   const clusterById = new Map(FAILURE_CLUSTERS.map((c) => [c.id, c]));
   const assignMine = clusterById.get(7);
-  if (assignMine) assignMine.assignee = DEMO_USERS[0].name;
+  if (assignMine) assignMine.assignee = DEFAULT_DEMO_USER.name;
   const snoozed = clusterById.get(9);
   if (snoozed) {
     snoozed.snoozed_until = Math.floor(Date.UTC(9999, 0, 1) / 1000);
@@ -2894,46 +2898,54 @@ const ENTITY_LINKS = [
   },
 ];
 
-// ── Users & project assignments (affectations) ─────────────────────────────
-// Seed the canonical demo identities so the project affectation feature is
-// usable in the demo (the "act as" switcher in the banner picks one of these).
-const USERS = DEMO_USERS.map((u) => ({
-  id: u.id,
-  username: u.username,
-  password: '', // demo identities are switched client-side, never logged in
-  role: u.role,
-  name: u.name,
-  email: u.email,
-  email_verified: 1,
-  created_at: ts('2025-02-01'),
-  updated_at: ts('2025-02-01'),
-}));
+// ── Users, groups & role bindings ───────────────────────────────────────────
+// Seed the canonical demo identities and groups so the access model is usable
+// in the demo (the "act as" switcher in the banner picks one of these).
+const USERS = [...DEMO_USERS]
+  .sort((a, b) => a.id - b.id)
+  .map((u) => ({
+    id: u.id,
+    username: u.username,
+    password: '', // demo identities are switched client-side, never logged in
+    role: u.instanceRole,
+    name: u.name,
+    email: u.email,
+    email_verified: 1,
+    created_at: ts('2025-02-01'),
+    updated_at: ts('2025-02-01'),
+  }));
 
-const PROJECT_ASSIGNMENTS = [];
-let assignmentId = 1;
-const assignmentCreatedAt = new Date('2025-02-10').getTime(); // timestamp_ms column
+const accessCreatedAt = new Date('2025-02-10').getTime(); // timestamp_ms columns
+const GROUPS = DEMO_GROUPS.map((g) => ({
+  id: g.id,
+  name: g.name,
+  description: g.description,
+  created_by: null,
+  created_at: accessCreatedAt,
+  updated_at: accessCreatedAt,
+}));
+const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
+  g.memberIds.map((userId) => ({ group_id: g.id, user_id: userId, added_by: null, created_at: accessCreatedAt })),
+);
+
+const ROLE_BINDINGS = [];
+let roleBindingId = 1;
+function bindRole(subject, binding) {
+  ROLE_BINDINGS.push({
+    id: roleBindingId++,
+    user_id: subject.userId ?? null,
+    group_id: subject.groupId ?? null,
+    project_id: binding.projectId,
+    role: binding.role,
+    created_by: null,
+    created_at: accessCreatedAt,
+  });
+}
+for (const g of DEMO_GROUPS) for (const b of g.bindings) bindRole({ groupId: g.id }, b);
 for (const u of DEMO_USERS) {
-  // Administrators have implicit access to all projects — no assignment rows.
-  if (u.role === 'administrator') continue;
-  if (u.assignment.global) {
-    PROJECT_ASSIGNMENTS.push({
-      id: assignmentId++,
-      user_id: u.id,
-      project_id: null,
-      created_by: null,
-      created_at: assignmentCreatedAt,
-    });
-  } else {
-    for (const projectId of u.assignment.projectIds) {
-      PROJECT_ASSIGNMENTS.push({
-        id: assignmentId++,
-        user_id: u.id,
-        project_id: projectId,
-        created_by: null,
-        created_at: assignmentCreatedAt,
-      });
-    }
-  }
+  // Administrators open every project without a binding.
+  if (u.instanceRole === 'administrator') continue;
+  for (const b of u.bindings) bindRole({ userId: u.id }, b);
 }
 
 // ── Locator healing snapshots ───────────────────────────────────────────────
@@ -3593,7 +3605,12 @@ function collectAnchorSec() {
   for (const r of ATTACHMENTS) bump(r.created_at, 's');
 
   // Millisecond-precision columns.
-  for (const r of PROJECT_ASSIGNMENTS) bump(r.created_at, 'ms');
+  for (const r of GROUPS) {
+    bump(r.created_at, 'ms');
+    bump(r.updated_at, 'ms');
+  }
+  for (const r of GROUP_MEMBERS) bump(r.created_at, 'ms');
+  for (const r of ROLE_BINDINGS) bump(r.created_at, 'ms');
   for (const r of LOCATOR_SNAPSHOTS) bump(r.last_seen_at, 'ms');
   for (const r of CODE_REACH) bump(r.last_seen_at, 'ms');
   for (const r of ENTITY_LINKS) {
@@ -4146,7 +4163,9 @@ const REBASE_SQL = [
   '-- Millisecond timestamp columns',
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
-  `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
+  `UPDATE groups SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE group_members SET created_at = created_at + ${D_MS};`,
+  `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
@@ -4977,8 +4996,10 @@ const lines = [
   '-- Users (demo identities for the "act as" switcher)',
   insert('users', USERS),
   '',
-  '-- Project assignments (affectations)',
-  insert('project_assignments', PROJECT_ASSIGNMENTS),
+  '-- Groups and role bindings (who holds which project role)',
+  insert('groups', GROUPS),
+  insert('group_members', GROUP_MEMBERS),
+  insert('role_bindings', ROLE_BINDINGS),
   '',
   '-- App settings (the `ai` key marks the demo provider as configured)',
   insert('app_settings', APP_SETTINGS),
@@ -5108,7 +5129,8 @@ console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
 console.log(`   Users      : ${USERS.length}`);
-console.log(`   Assignments: ${PROJECT_ASSIGNMENTS.length}`);
+console.log(`   Groups     : ${GROUPS.length}`);
+console.log(`   Bindings   : ${ROLE_BINDINGS.length}`);
 console.log(`   Tags       : ${TAGS.length}`);
 console.log(`   Suites     : ${TEST_SUITES.length}`);
 console.log(`   TestCases  : ${TEST_CASES.length}`);

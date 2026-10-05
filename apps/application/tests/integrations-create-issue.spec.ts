@@ -8,6 +8,8 @@ import { test, expect } from './fixtures';
 import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
+import { ProjectRole } from '#shared/permissions';
+import { createMember } from './utils/access';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -382,21 +384,19 @@ test.describe.serial('Create issue — role checks (auth server, CI only)', () =
   }
   let userCookie = '';
 
-  test('bootstrap a non-admin user', async () => {
+  test('bootstrap a member (Viewer of every project)', async () => {
     skip();
     await authApi('POST', '/api/auth/setup', { ...ADMIN, name: 'Admin' });
     const adminCookie = await loginAs(ADMIN.username, ADMIN.password);
-    await authApi(
-      'POST',
-      '/api/users',
-      { username: 'create-issue-user', password: 'userpassword123', role: 'user' },
-      adminCookie,
+    await createMember(
+      { baseUrl: AUTH_BASE, cookie: adminCookie },
+      { username: 'create-issue-user', password: 'userpassword123', role: ProjectRole.VIEWER },
     );
     userCookie = await loginAs('create-issue-user', 'userpassword123');
     expect(userCookie).toBeTruthy();
   });
 
-  test('a plain user cannot request a draft or create an issue', async () => {
+  test('a Viewer cannot request a draft or create an issue', async () => {
     skip();
     const draft = await authApi(
       'GET',

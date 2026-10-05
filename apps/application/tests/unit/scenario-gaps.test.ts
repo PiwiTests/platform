@@ -6,11 +6,12 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { MCP_TOOLS } from '../../server/utils/mcp/tools';
+import { ADMIN_ACCESS } from '#shared/permissions';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
 
-const mcpCtx = { user: null, scope: 'all' as const };
+const mcpCtx = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
 const mcpTool = (name: string) => {
   const tool = MCP_TOOLS.find((t) => t.name === name);
   if (!tool) throw new Error(`no MCP tool ${name}`);

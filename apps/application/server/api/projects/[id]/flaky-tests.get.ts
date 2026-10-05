@@ -40,7 +40,7 @@ defineRouteMeta({
         description: 'Priority declared via the `piwi:priority` annotation',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

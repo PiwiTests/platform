@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'From the project’s locator index: the tests that visit the report’s page, those whose locators reach each element the reporter marked and what they assert, a one-line `summary`, and the `owner` of the spec file whose tests visit the page most (CODEOWNERS, or its `piwi:owner`).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

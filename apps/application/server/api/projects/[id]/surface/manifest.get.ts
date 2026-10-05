@@ -11,7 +11,7 @@ defineRouteMeta({
     description:
       'Returns the declared routes and pages stored as graph nodes (origin `manifest` or `openapi`) plus the configured OpenAPI URL. Declared surface is what the application says it exposes, ahead of any test reaching it.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

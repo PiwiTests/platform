@@ -188,7 +188,12 @@ async function cancelInstanceRuns(
 }
 
 /** POST /api/test-runs/setup */
-export async function apiSetupTestRun(body: TestRunStartPayload) {
+/**
+ * `scope` is where the acting user holds `run:submit`, with the server's rules
+ * (`resolveIngestProject`): an existing project must be in it, and creating
+ * one takes it on all projects.
+ */
+export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | Set<number> = 'all') {
   if (!body?.projectName) {
     throw demoHttpError(400, 'Missing required field: projectName');
   }
@@ -198,6 +203,12 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
   let project = existingProjects[0];
 
+  if (project && scope !== 'all' && !scope.has(project.id)) {
+    throw demoHttpError(403, 'No access to this project');
+  }
+  if (!project && scope !== 'all') {
+    throw demoHttpError(403, 'Cannot create a new project — no global access');
+  }
   if (!project) {
     const result = await db
       .insert(projects)

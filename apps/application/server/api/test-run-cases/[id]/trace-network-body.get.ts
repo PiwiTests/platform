@@ -25,7 +25,7 @@ defineRouteMeta({
         description: 'Content hash of the body resource, with or without its file extension',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

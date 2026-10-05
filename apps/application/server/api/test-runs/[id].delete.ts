@@ -7,9 +7,9 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Delete a test run',
     description:
-      'Permanently delete a test run and all associated data including reports, traces, files, and failure clusters. A kept run is refused with 409 until it is released. Administrator access required.',
+      'Permanently delete a test run and all associated data including reports, traces, files, and failure clusters. A kept run is refused with 409 until it is released. Requires `run:delete` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'run:delete',
   },
 });
 

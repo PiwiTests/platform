@@ -42,7 +42,7 @@ defineRouteMeta({
         description: 'Include screenshot images in the previewed context (default false).',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

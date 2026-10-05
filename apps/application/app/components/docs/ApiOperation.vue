@@ -10,12 +10,13 @@ const open = ref(false);
 
 const requiresAuth = computed(() => operationRequiresAuth(props.item.operation, props.spec));
 const isPublic = computed(() => operationIsPublic(props.item.operation));
-const roleReq = computed(() => routeRoleRequirement(props.item.operation));
+const permissionReq = computed(() => routePermissionRequirement(props.item.operation));
+const permissionList = computed(() => permissionReq.value?.permissions.join(' or ') ?? '');
 
-// Full readable access requirement shown in the expanded body.
+// Who may call the endpoint, in words, shown in the expanded body beside the permission.
 const accessLabel = computed(() => {
   if (isPublic.value) return 'Public — no authentication required';
-  if (roleReq.value) return roleReq.value.label;
+  if (permissionReq.value) return permissionReq.value.holders;
   if (requiresAuth.value) return 'Requires authentication';
   return null;
 });
@@ -76,15 +77,15 @@ function responseColor(status: string): string {
       </code>
       <span class="text-sm text-muted truncate hidden sm:inline flex-1">{{ item.operation.summary }}</span>
       <UBadge
-        v-if="roleReq?.elevated"
+        v-if="permissionReq?.elevated"
         color="warning"
         variant="subtle"
         size="sm"
         icon="i-lucide-shield"
-        class="shrink-0 ml-auto sm:ml-0"
-        :title="`Requires role: ${roleReq.label}`"
+        class="shrink-0 ml-auto sm:ml-0 font-mono"
+        :title="`Requires ${permissionList}: ${permissionReq.holders}`"
       >
-        {{ roleReq.shortLabel }}
+        {{ permissionList }}
       </UBadge>
       <UBadge v-else-if="isPublic" color="neutral" variant="subtle" size="sm" class="shrink-0 ml-auto sm:ml-0">
         Public
@@ -104,10 +105,14 @@ function responseColor(status: string): string {
       </p>
       <p v-if="item.operation.description" class="text-sm text-muted">{{ item.operation.description }}</p>
 
-      <!-- Access / required role -->
-      <div v-if="accessLabel" class="flex items-center gap-1.5 text-xs">
-        <UIcon :name="roleReq?.elevated ? 'i-lucide-shield' : 'i-lucide-users'" class="size-3.5 text-dimmed shrink-0" />
+      <!-- Access: the permission the route declares and who holds it -->
+      <div v-if="accessLabel" class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+        <UIcon
+          :name="permissionReq?.elevated ? 'i-lucide-shield' : 'i-lucide-users'"
+          class="size-3.5 text-dimmed shrink-0"
+        />
         <span class="text-dimmed">Access</span>
+        <code v-if="permissionList" class="font-mono text-highlighted">{{ permissionList }}</code>
         <span class="text-muted font-medium">{{ accessLabel }}</span>
       </div>
 

@@ -36,7 +36,7 @@ A named container for one suite's results — usually one repository, or one sui
 are created automatically the first time results are submitted under a new `projectName`; you never
 have to pre-register one.
 
-A project carries its own tags, access assignments, SCM connection, default branch, capability
+A project carries its own tags, [role grants](#role-and-group), SCM connection, default branch, capability
 decisions, and AI-diagnosis instructions. Retention is instance-wide.
 
 ### Test run
@@ -361,6 +361,17 @@ A glob over a page's whole address (`*` within one part of the path, `**` across
 to a project, with an optional environment and branch. Each project keeps its own list, and the browser extension
 reads them to know which project the page it is on belongs to. See
 [Extension connection](/features/extension-connection#url-patterns).
+
+## Access
+
+### Role and group
+
+With [authentication](/operate/authentication) on, every account holds an **instance role**: **Administrator**, who
+can do everything, or **Member**. A Member's rights in a project come from the **project roles** they hold there
+(Viewer, Contributor, Maintainer, Project admin, Uploader), each granted on one project or on all projects. A
+**group** is a named set of users that receives project roles the way a user does. A user's rights on a project are
+the union of every role they hold there, directly or through their groups. See
+[Access, roles and groups](/operate/project-access).
 
 ## Where each concept lives in the UI
 

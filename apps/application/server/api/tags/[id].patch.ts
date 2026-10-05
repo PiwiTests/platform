@@ -7,9 +7,9 @@ defineRouteMeta({
   openAPI: {
     tags: ['Tags'],
     summary: 'Update a tag',
-    description: 'Updates the text and/or color of an existing tag. Requires administrator role.',
+    description: 'Updates the text and/or color of an existing tag. Requires `tags:manage` (administrators only).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'tags:manage',
   },
 });
 

@@ -3,7 +3,8 @@
  * AI diagnosis for a failure cluster or a single execution — one component, one
  * `scope`. The stored result renders whether or not a provider is configured, so
  * a diagnosis never disappears when the key is removed; the interactive controls
- * (diagnose, additional context, screenshots) show only when a provider is set.
+ * (diagnose, additional context, screenshots) show only when a provider is set,
+ * and running a diagnosis to the holders of `ai:run` on the project.
  *
  * Cluster scope uses the shared cluster-diagnosis store (SCM baseline, streaming,
  * version history). Execution scope has none of those server-side, so it runs the
@@ -21,6 +22,8 @@ const props = withDefaults(
     scope: 'cluster' | 'execution';
     clusterId?: number;
     executionId?: number;
+    /** The project the cluster or execution belongs to; `ai:run` there gates running a diagnosis. */
+    projectId?: number | null;
     /**
      * Keep *Show context* and *Copy prompt* out of the panel; the page renders
      * them in its own More menu and drives them via the exposed methods.
@@ -67,6 +70,8 @@ const refreshContext = clusterStore?.refreshContext ?? execStore!.refreshContext
 const currentContextSha = clusterStore?.currentContextSha ?? ref<string | null>(null);
 
 const { aiStatus } = useAiStatus();
+const { can } = useAuth();
+const canRun = computed(() => can('ai:run', props.projectId));
 
 // Streaming lives on cluster scope only; execution falls back to plain POST.
 const streaming = isCluster ? useStreamingDiagnosis(computed(() => props.clusterId ?? 0)) : null;
@@ -205,7 +210,11 @@ function isStreaming() {
 }
 
 function showDiagnoseButton() {
-  return !isStreaming() && (!diagnosis.value || diagnosis.value.status === 'failed' || isStale(diagnosis.value));
+  return (
+    canRun.value &&
+    !isStreaming() &&
+    (!diagnosis.value || diagnosis.value.status === 'failed' || isStale(diagnosis.value))
+  );
 }
 
 function showResult() {
@@ -263,7 +272,9 @@ watch(
 );
 
 // ── Re-diagnose / Copy prompt (exposed for the page's More menu) ─────────────
-const canReDiagnose = computed(() => Boolean(aiStatus.value?.configured && diagnosis.value?.status === 'completed'));
+const canReDiagnose = computed(() =>
+  Boolean(canRun.value && aiStatus.value?.configured && diagnosis.value?.status === 'completed'),
+);
 
 const promptToast = useToast();
 const { copy: copyPromptText } = useCopy();
@@ -566,6 +577,7 @@ defineExpose({
         </p>
         <div class="flex items-center gap-2 pt-1">
           <UButton
+            v-if="canRun"
             icon="i-lucide-refresh-cw"
             size="xs"
             color="warning"

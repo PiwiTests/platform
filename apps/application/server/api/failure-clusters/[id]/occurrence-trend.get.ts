@@ -12,7 +12,7 @@ defineRouteMeta({
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'days', in: 'query', schema: { type: 'integer', default: 90, minimum: 1, maximum: 3650 } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

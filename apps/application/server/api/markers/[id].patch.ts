@@ -2,15 +2,14 @@ import { z } from 'zod';
 import { requireResolvedProjectAccess, resolveMarkerProjectId, requireRouteId } from '../../utils/project-access';
 import { updateMarker } from '#shared/handlers/markers';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
-import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Markers'],
     summary: 'Update a timeline marker',
-    description: 'Updates a project timeline marker. Requires reporter or administrator role.',
+    description: 'Updates a project timeline marker. Requires `marker:write` (Contributor and above on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'marker:write',
   },
 });
 
@@ -24,10 +23,7 @@ const updateMarkerSchema = z.object({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'marker ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveMarkerProjectId, 'Marker', [
-    Role.ADMINISTRATOR,
-    Role.REPORTER,
-  ]);
+  const { db } = await requireResolvedProjectAccess(event, id, resolveMarkerProjectId, 'Marker');
 
   const body = await readBody(event);
   const validation = updateMarkerSchema.safeParse(body);

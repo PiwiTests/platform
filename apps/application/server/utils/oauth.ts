@@ -3,7 +3,7 @@ import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
-import { Role } from '#shared/types';
+import type { InstanceRole } from '#shared/permissions';
 import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
@@ -601,7 +601,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     const sessionData: SessionData = {
       userId: user.id,
       username: user.username,
-      role: user.role as Role,
+      role: user.role as InstanceRole,
       sessionEpoch: user.sessionEpoch,
     };
     await setUserSession(event, sessionData);

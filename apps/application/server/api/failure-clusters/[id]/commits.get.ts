@@ -35,7 +35,7 @@ defineRouteMeta({
         description: 'Number of commits to return (default 50, max 200).',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

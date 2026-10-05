@@ -9,9 +9,9 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Save a dashboard',
     description:
-      'Saves a saved dashboard’s `name`, `description`, `visibility` or `definition`. The body carries the `updatedAt` the edit started from: when the dashboard was saved since, the answer is HTTP 409 and nothing is written, so the editor can offer to reload or save a copy. Its owner or an administrator; sharing needs the reporter or administrator role. A built-in dashboard answers 403: duplicate it instead.',
+      'Saves a saved dashboard’s `name`, `description`, `visibility` or `definition`. The body carries the `updatedAt` the edit started from: when the dashboard was saved since, the answer is HTTP 409 and nothing is written, so the editor can offer to reload or save a copy. Its owner or an administrator; sharing needs `share:create` on at least one project (Maintainer and above). A built-in dashboard answers 403: duplicate it instead.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -24,7 +24,7 @@ export default eventHandler(async (event) => {
       db as any,
       getRouterParam(event, 'id'),
       patch,
-      dashboardActor(event, user as any),
+      await dashboardActor(event, user as any),
       await getProjectScope(db, user as any),
     ),
   );

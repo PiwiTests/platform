@@ -19,7 +19,7 @@ defineRouteMeta({
     summary: 'Import a local bug report file (desktop app)',
     description:
       'Desktop build only — 404 on the server build. Imports a bug report saved by Piwi Picker (a `.piwibug` file, or a `.zip` holding its `steps.json` and `evidence.json`) from an absolute path on the machine the app runs on, into the named project, as **Send to Piwi…** would. Answers `{ id, url }`.',
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'storage:manage',
     requestBody: {
       content: {
         'application/json': {

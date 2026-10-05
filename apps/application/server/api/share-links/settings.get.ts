@@ -7,7 +7,7 @@ defineRouteMeta({
     summary: 'Share-link settings',
     description:
       'Whether share links are enabled on this instance, and the longest allowed link lifetime in days (0 = links may be minted without an expiry).',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

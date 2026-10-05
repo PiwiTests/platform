@@ -12,7 +12,7 @@ defineRouteMeta({
     description:
       "Stores a diagnosis an agent wrote as the cluster's current diagnosis, after snapshotting the previous one into its history. The body carries the `model` the agent ran on and the `diagnosis` in the JSON schema Piwi asks a model for (summary, confidenceScore, severity, affectedArea, hypotheses, suggestedFix, investigationSteps, preventionTips). The suggested patch is validated against the source at the commit the cluster last failed at when source control is connected. Works with no AI provider configured; 403 when the `agent-diagnoses` capability is declined, 409 while a diagnosis is running. `channel` names the surface reporting it (ui, editor, desktop, cli, ci; default ui).",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'ai:run',
     requestBody: {
       content: {
         'application/json': {

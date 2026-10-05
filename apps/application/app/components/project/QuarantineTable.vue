@@ -56,7 +56,9 @@ interface QuarantineResponse {
 }
 
 const toast = useToast();
-const { canWrite } = useAuth();
+// Quarantining, releasing and dismissing need `quarantine:write` on the project.
+const { can } = useAuth();
+const canQuarantine = computed(() => can('quarantine:write', props.projectId));
 const busy = ref<number | null>(null);
 
 const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
@@ -175,13 +177,14 @@ async function release(testCaseId: number) {
                 release dismissed
               </span>
               <QuarantineDismissButton
-                v-else-if="entry.releaseProposed && canWrite"
+                v-else-if="entry.releaseProposed && canQuarantine"
                 :project-id="projectId"
                 :test-case-id="entry.testCaseId"
                 proposal="release"
                 @dismissed="refresh()"
               />
               <UButton
+                v-if="canQuarantine"
                 size="xs"
                 :color="entry.releaseProposed && !entry.releaseDismissed ? 'primary' : 'neutral'"
                 variant="soft"
@@ -224,13 +227,14 @@ async function release(testCaseId: number) {
               <td class="px-3 py-2 text-right whitespace-nowrap">
                 <span v-if="candidate.dismissed" class="text-xs text-muted mr-2">dismissed</span>
                 <QuarantineDismissButton
-                  v-else-if="canWrite"
+                  v-else-if="canQuarantine"
                   :project-id="projectId"
                   :test-case-id="candidate.testCaseId"
                   proposal="quarantine"
                   @dismissed="refresh()"
                 />
                 <UButton
+                  v-if="canQuarantine"
                   size="xs"
                   color="neutral"
                   variant="soft"

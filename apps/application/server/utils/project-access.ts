@@ -3,7 +3,6 @@ import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import type { DbClient } from '../database';
 import {
-  projectAssignments,
   testRuns,
   testCases,
   testRunsCases,
@@ -15,57 +14,67 @@ import {
   entityLinks,
 } from '../database/schema';
 import { eq } from 'drizzle-orm';
-import { requireAuth, isAuthEnabled } from './auth';
-import { Role } from '#shared/types';
+import { requireAuth, isAuthEnabled, getRequestAccess, getUserAccessCached, requiredPermissionsFor } from './auth';
+import {
+  can,
+  passesProjectCheck,
+  projectScopeFor,
+  type ProjectPermission,
+  type RoutePermission,
+} from '#shared/permissions';
 import type { User } from '../database/schema';
 
 export type DrizzleDB = DbClient;
 
 export type ProjectScope = 'all' | Set<number>;
 
-export async function getProjectScope(db: DrizzleDB, user: User | null): Promise<ProjectScope> {
+/**
+ * The projects on which `user` holds `permission`: `'all'` for an
+ * administrator or a role granted on all projects, else the project ids. With
+ * authentication off, or no user, every project.
+ */
+export async function getProjectScope(
+  db: DrizzleDB,
+  user: User | null,
+  permission: ProjectPermission = 'project:read',
+): Promise<ProjectScope> {
   if (!user || !isAuthEnabled()) {
     return 'all';
   }
-
-  if ((user.role as Role) === Role.ADMINISTRATOR) {
-    return 'all';
-  }
-
-  const rows = await db
-    .select({ projectId: projectAssignments.projectId })
-    .from(projectAssignments)
-    .where(eq(projectAssignments.userId, user.id));
-
-  if (rows.length === 0) {
-    return new Set<number>();
-  }
-
-  const hasGlobal = rows.some((r) => r.projectId === null);
-  if (hasGlobal) {
-    return 'all';
-  }
-
-  return new Set(rows.map((r) => r.projectId!).filter((id): id is number => id != null));
+  return projectScopeFor(await getUserAccessCached(db, user), permission);
 }
 
 export function scopeAllows(scope: ProjectScope, projectId: number): boolean {
   return scope === 'all' || scope.has(projectId);
 }
 
-export async function canAccessProject(db: DrizzleDB, user: User | null, projectId: number): Promise<boolean> {
-  const scope = await getProjectScope(db, user);
+export async function canAccessProject(
+  db: DrizzleDB,
+  user: User | null,
+  projectId: number,
+  permission: ProjectPermission = 'project:read',
+): Promise<boolean> {
+  const scope = await getProjectScope(db, user, permission);
   return scopeAllows(scope, projectId);
 }
 
-export async function requireProjectAccess(event: H3Event, projectId: number, roles?: Role[]): Promise<User> {
-  const user = await requireAuth(event, roles);
-  const db = await getDatabase();
-  const canAccess = await canAccessProject(db, user, projectId);
-  if (!canAccess) {
+/**
+ * Require the caller to hold, on `projectId`, one of the permissions the route
+ * declares in `x-required-permission` (or of `permission`, which overrides the
+ * meta like `requireAuth`'s argument). A route declaring none, or `signed-in`,
+ * needs `project:read` there.
+ */
+export async function requireProjectAccess(
+  event: H3Event,
+  projectId: number,
+  permission?: RoutePermission | RoutePermission[],
+): Promise<User> {
+  const user = await requireAuth(event, permission);
+  const access = await getRequestAccess(event);
+  if (!passesProjectCheck(access, requiredPermissionsFor(event, permission), projectId)) {
     throw apiError({
       statusCode: 403,
-      message: 'No access to this project',
+      message: can(access, 'project:read', projectId) ? 'Insufficient permissions' : 'No access to this project',
     });
   }
   return user;
@@ -80,20 +89,21 @@ export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): 
 
 /**
  * Resolve a child entity's project via `resolve`, 404 if the entity doesn't
- * exist, then require the caller has access to that project. Returns the
- * db/projectId/user so callers don't need a second getDatabase() call.
+ * exist, then require the caller holds the route's permission on that project
+ * (see `requireProjectAccess`). Returns the db/projectId/user so callers don't
+ * need a second getDatabase() call.
  */
 export async function requireResolvedProjectAccess(
   event: H3Event,
   id: number,
   resolve: (db: DrizzleDB, id: number) => Promise<number | null>,
   notFoundLabel: string,
-  roles?: Role[],
+  permission?: RoutePermission | RoutePermission[],
 ): Promise<{ db: DrizzleDB; projectId: number; user: User }> {
   const db = await getDatabase();
   const projectId = await resolve(db, id);
   if (!projectId) throw apiError({ statusCode: 404, message: `${notFoundLabel} not found` });
-  const user = await requireProjectAccess(event, projectId, roles);
+  const user = await requireProjectAccess(event, projectId, permission);
   return { db, projectId, user };
 }
 

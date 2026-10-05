@@ -9,9 +9,9 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Delete a project',
     description:
-      'Permanently delete a project and all its associated data including test runs, reports, traces, failure clusters, and test cases. Responds once everything is gone; `GET /api/projects/{id}/deletion` reports the progress meanwhile. A second request while the project is being deleted gets a 409. Administrator access required.',
+      'Permanently delete a project and all its associated data including test runs, reports, traces, failure clusters, and test cases. Responds once everything is gone; `GET /api/projects/{id}/deletion` reports the progress meanwhile. A second request while the project is being deleted gets a 409. Requires `project:delete` (administrators only).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:delete',
   },
 });
 

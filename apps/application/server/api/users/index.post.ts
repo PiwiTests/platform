@@ -1,34 +1,41 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
-import { createUserRecord, toPublicUser } from '#shared/handlers/users';
-import { Role } from '#shared/types';
+import { accessRefusal, createUserAccount, createUserSchema } from '#shared/handlers/project-access';
+import { requestedInstanceRole } from '#shared/project-access';
 import { hashPassword, requireAuth } from '../../utils/auth';
-import { z } from 'zod';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Create a user',
     description:
-      'Creates a new user with username, password, role (administrator, reporter, or user), and optional name. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      "Creates a user with a username, an optional password (without one, the user sets their own from an invite email), an optional name and email, an instance role and optional groups. `role` is `administrator` or `member`; a new member holds no project role until one is granted (`PUT /api/users/{id}/projects`, the permission grid, or a group in `groupIds`). Deprecated: `role: 'reporter'` and `role: 'user'`, the roles of earlier versions, are still accepted for this release and stored as `member`, with no project role. 409 when the username is taken, 400 for an unknown group.",
+    'x-required-permission': 'users:manage',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              username: { type: 'string', description: 'At least 3 characters' },
+              password: { type: 'string', description: 'At least 8 characters' },
+              name: { type: 'string' },
+              email: { type: 'string', format: 'email' },
+              role: { type: 'string', enum: ['administrator', 'member', 'reporter', 'user'] },
+              groupIds: { type: 'array', items: { type: 'integer' } },
+            },
+            required: ['username', 'role'],
+          },
+        },
+      },
+    },
   },
 });
 
-const createUserSchema = z.object({
-  username: z.string().min(3),
-  password: z.string().min(8).optional(),
-  role: z.nativeEnum(Role),
-  name: z.string().optional(),
-  email: z.string().email().optional().or(z.literal('')),
-});
-
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const currentUser = await requireAuth(event);
 
-  const body = await readBody(event);
-  const validation = createUserSchema.safeParse(body);
-
+  const validation = createUserSchema.safeParse(await readBody(event));
   if (!validation.success) {
     throw apiError({
       statusCode: 400,
@@ -36,30 +43,21 @@ export default eventHandler(async (event) => {
       data: validation.error.issues,
     });
   }
-
-  const { username, password, role, name, email } = validation.data;
+  const { username, password, role, name, email, groupIds } = validation.data;
 
   try {
-    // If no password provided, generate a random one — the user will set their own via invite email
+    // Without a password, a random one: the user sets their own from the invite email.
     const hashedPassword = await hashPassword(password ?? randomBytes(32).toString('hex'));
-    const user = await createUserRecord(await getDatabase(), {
-      username,
-      password: hashedPassword,
-      role,
-      name,
-      email: email || null,
-    });
-
-    if (!user) {
-      throw apiError({ statusCode: 500, message: 'Failed to create user' });
-    }
-
-    return { success: true, user: toPublicUser(user) };
+    const user = await createUserAccount(
+      await getDatabase(),
+      { username, password: hashedPassword, role: requestedInstanceRole(role), name, email, groupIds },
+      // With authentication off the caller is a virtual administrator with no users row.
+      currentUser.id || null,
+    );
+    return { success: true as const, user };
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to create user';
-    throw apiError({
-      statusCode: message === 'Username already exists' ? 409 : 400,
-      message,
-    });
+    const refusal = accessRefusal(err);
+    if (refusal) throw apiError(refusal);
+    throw err;
   }
 });

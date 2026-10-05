@@ -14,13 +14,13 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * for the same project share one fetch through the key.
  *
  * `state(id)` is the resolved state, `isHidden(id)` is true when declined or not
- * applicable, `canDecide` gates the controls to administrators, `decide` writes
- * one decision and `decideMany` writes several at once (`enabled` overrides an
- * instance decline; `null` clears a decision). A read failure resolves to an
- * empty list.
+ * applicable, `canDecide` gates the controls to holders of `project:manage` on
+ * the project, `decide` writes one decision and `decideMany` writes several at
+ * once (`enabled` overrides an instance decline; `null` clears a decision). A
+ * read failure resolves to an empty list.
  */
 export async function useProjectCapabilities(projectId: number) {
-  const { canSeeAdmin } = useAuth();
+  const { can } = useAuth();
   const requestFetch = useRequestFetch();
 
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
@@ -51,5 +51,7 @@ export async function useProjectCapabilities(projectId: number) {
 
   const decide = (id: CapabilityId, decision: ProjectDecision | null) => decideMany({ [id]: decision });
 
-  return { capabilities: items, state, isHidden, canDecide: canSeeAdmin, decide, decideMany };
+  const canDecide = computed(() => can('project:manage', projectId));
+
+  return { capabilities: items, state, isHidden, canDecide, decide, decideMany };
 }

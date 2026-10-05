@@ -4,19 +4,19 @@ import { requireAuth } from '../../../../utils/auth';
 import { requireRouteId } from '../../../../utils/project-access';
 import { createTracker } from '../../../../utils/integrations/connections';
 import { assignableCache } from '../../../../utils/integrations/picker-cache';
-import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'Search assignable users',
-    description: 'Assignable users for a tracker project, for the create-issue modal. Cached for five minutes.',
-    'x-required-roles': ['administrator', 'reporter'],
+    description:
+      'Assignable users for a tracker project, for the create-issue modal. Cached for five minutes. Requires `issue:create` on at least one project (Contributor and above).',
+    'x-required-permission': 'issue:create',
   },
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event, [Role.ADMINISTRATOR, Role.REPORTER]);
+  await requireAuth(event);
   const id = requireRouteId(event);
   const query = getQuery(event);
   const project = typeof query.project === 'string' ? query.project : '';

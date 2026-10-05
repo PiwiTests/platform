@@ -3,12 +3,14 @@
  *   /api/dashboards …          — CRUD, duplicate, the save precondition, widget data, preview
  *   /analytics, /analytics/d/<id>        — Overview unchanged, duplicate, edit, save, reload, rename, TV mode
  *   deletion                              — names the schedules rendering the dashboard, which go inactive
- *   access (auth server, CI only)         — a USER-role viewer of a shared dashboard sees only their projects
+ *   access (auth server, CI only)         — a Viewer of one project sees only that project on a shared dashboard
  */
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { PROJECT } from '#shared/test-project-names';
+import { ProjectRole } from '#shared/permissions';
 import type { DashboardView } from '#shared/handlers/dashboards';
+import { createMember } from './utils/access';
 
 let openProjectId = 0;
 let restrictedProjectId = 0;
@@ -303,7 +305,7 @@ async function loginAs(username: string, password: string): Promise<string> {
 test.describe.serial('Dashboards access', () => {
   test.skip(!process.env.CI, 'The auth-enabled server runs in CI only (see playwright.config.ts webServer)');
 
-  test('a USER-role viewer of a shared dashboard sees only the project they can open', async ({ browser }) => {
+  test('a Viewer of one project sees only that project on a shared dashboard', async ({ browser }) => {
     await authApi('POST', '/api/auth/setup', { ...ADMIN, name: 'Admin' });
     const admin = await loginAs(ADMIN.username, ADMIN.password);
     const ids: number[] = [];
@@ -338,15 +340,10 @@ test.describe.serial('Dashboards access', () => {
     expect(created.status).toBe(201);
     const view = (await created.json()) as DashboardView;
 
-    const user = await authApi('POST', '/api/users', { ...VIEWER, role: 'user' }, admin);
-    expect([200, 201, 400, 409]).toContain(user.status);
-    const users = (await (await authApi('GET', '/api/users', undefined, admin)).json()) as {
-      items?: Array<{ id: number; username: string }>;
-    };
-    const viewerId = (users.items ?? (users as unknown as Array<{ id: number; username: string }>)).find(
-      (u) => u.username === VIEWER.username,
-    )!.id;
-    await authApi('PUT', `/api/users/${viewerId}/projects`, { global: false, projectIds: [ids[0]] }, admin);
+    await createMember(
+      { baseUrl: AUTH_BASE, cookie: admin },
+      { ...VIEWER, role: ProjectRole.VIEWER, projectId: ids[0]! },
+    );
     const viewer = await loginAs(VIEWER.username, VIEWER.password);
 
     const seen = (await (

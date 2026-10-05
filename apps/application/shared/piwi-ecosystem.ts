@@ -266,7 +266,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       { option: 'Off', when: 'Only on localhost or in the desktop app.' },
       {
         option: 'On',
-        when: 'Anything reachable from a network: `PIWI_AUTH_ENABLED=true` and `PIWI_AUTH_SECRET`, then administrator, reporter and user roles, per-project access, `pd_` API keys for CI, agents and editors, and optional Google or GitHub sign-in. Browser sign-in then needs HTTPS (or localhost). Set `PIWI_SECRET_KEY` too, and work through the production checklist.',
+        when: 'Anything reachable from a network: `PIWI_AUTH_ENABLED=true` and `PIWI_AUTH_SECRET`, then instance and project roles granted to users or groups, `pd_` API keys for CI, agents and editors, and optional Google or GitHub sign-in. Browser sign-in then needs HTTPS (or localhost). Set `PIWI_SECRET_KEY` too, and work through the production checklist.',
       },
     ],
     doc: 'operate/authentication',

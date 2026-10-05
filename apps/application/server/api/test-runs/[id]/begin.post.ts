@@ -17,7 +17,6 @@ defineRouteMeta({
     description:
       'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': [],
     requestBody: {
       content: {
         'application/json': {

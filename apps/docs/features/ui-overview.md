@@ -122,8 +122,9 @@ actually uses, judged from the data it holds ([Choose what you use](/operate/cap
 ## Settings
 
 `/settings`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
-**Users** ([Authentication](/operate/authentication), [API keys](/operate/api-keys)) and **Permissions**
-([Permission grid](/operate/project-access#permission-grid)), **Storage**
+**Users** ([Authentication](/operate/authentication), [API keys](/operate/api-keys)), **Groups**
+([Groups](/operate/project-access#groups)), **Permissions** ([Permission grid](/operate/project-access#permission-grid)),
+**Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
 **Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
@@ -138,7 +139,7 @@ instance's own OpenAPI reference.
 
 The [live demo](https://piwitests.dev/demo/) runs entirely in your browser and adds two controls. **Simulate a test
 run** replays a reporter's stream, so you can watch a run arrive. **Acting as** switches between seeded identities to
-show how [project access](/operate/project-access) changes what each one sees, including changes made on
+show how [roles](/operate/project-access) change what each one sees and can do, including changes made on
 the [permission grid](/operate/project-access#permission-grid).
 
 ## Related

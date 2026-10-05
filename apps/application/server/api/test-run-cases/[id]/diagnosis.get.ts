@@ -11,7 +11,7 @@ defineRouteMeta({
     summary: 'Get stored execution-scoped diagnosis for a test run case',
     description: 'Returns the stored execution-scoped AI diagnosis result for a single test-run case, if one exists.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

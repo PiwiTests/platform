@@ -6,12 +6,14 @@
  * verified by a passing run comments on and transitions the ticket; a ticket
  * moved to Done offers the reconcile (policy off) then auto-resolves the cluster
  * (policy on); a reopened ticket reopens the cluster; the inbound webhook
- * refreshes one link; and the binding endpoint is admin-only. Nothing calls out.
+ * refreshes one link; and the binding endpoint needs Project admin. Nothing calls out.
  */
 import { test, expect } from './fixtures';
 import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
+import { ProjectRole } from '#shared/permissions';
+import { createMember } from './utils/access';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -356,21 +358,19 @@ test.describe.serial('Integrations sync — role checks (auth server, CI only)',
 
   let userCookie = '';
 
-  test('bootstrap a non-admin user', async () => {
+  test('bootstrap a member (Maintainer of every project)', async () => {
     skip();
     await authApi('POST', '/api/auth/setup', { ...ADMIN, name: 'Admin' });
     const adminCookie = await loginAs(ADMIN.username, ADMIN.password);
-    await authApi(
-      'POST',
-      '/api/users',
-      { username: 'sync-reporter', password: 'reporterpass123', role: 'reporter' },
-      adminCookie,
+    await createMember(
+      { baseUrl: AUTH_BASE, cookie: adminCookie },
+      { username: 'sync-reporter', password: 'reporterpass123', role: ProjectRole.MAINTAINER },
     );
     userCookie = await loginAs('sync-reporter', 'reporterpass123');
     expect(userCookie).toBeTruthy();
   });
 
-  test('a non-admin cannot read or write the binding', async () => {
+  test('a Maintainer cannot read or write the binding', async () => {
     skip();
     const get = await authApi('GET', '/api/projects/1/integrations', undefined, userCookie);
     expect(get.status).toBe(403);
@@ -378,7 +378,7 @@ test.describe.serial('Integrations sync — role checks (auth server, CI only)',
     expect(put.status).toBe(403);
   });
 
-  test('a non-admin cannot run a sync sweep', async () => {
+  test('a Maintainer cannot run a sync sweep', async () => {
     skip();
     const res = await authApi('POST', '/api/integrations/sync', undefined, userCookie);
     expect(res.status).toBe(403);

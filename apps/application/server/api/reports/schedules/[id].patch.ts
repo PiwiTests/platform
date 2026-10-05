@@ -15,7 +15,7 @@ defineRouteMeta({
     summary: 'Update a report schedule',
     description:
       'Changes a report schedule: its name, dashboard, filters, cadence, time, comparison, language, channels, `active` state or `mutedUntil` (a muted schedule keeps its snapshots and sends nothing). A new cadence or time moves the next firing. Its owner or an administrator; a global schedule, an administrator.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'report:write',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });
@@ -27,9 +27,9 @@ export default eventHandler(async (event) => {
   const patch = await reportRoute(async () => parseScheduleBody(reportSchedulePatchSchema, await readBody(event)));
   return reportRoute(async () =>
     updateReportSchedule(db as any, id, patch, {
-      actor: reportActor(event, user as any),
+      actor: await reportActor(event, user as any),
       channels: await loadReportChannels(db as any),
-      access: await getProjectScope(db, user as any),
+      access: await getProjectScope(db, user as any, 'report:write'),
       timeZone: await reportScheduleTimeZone(db),
     }),
   );

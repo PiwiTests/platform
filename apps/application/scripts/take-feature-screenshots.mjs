@@ -587,6 +587,26 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/**
+ * `prepare` for a scene that needs a signed-in viewer, such as a project's
+ * Members, which exist with authentication on only: signs in with
+ * PIWI_SCREENS_LOGIN (`<username>:<password>`) through the context's request
+ * client, whose cookies the page shares. Refuses with the way to run the scene
+ * when the server has authentication off or no login is given.
+ */
+async function signInForScene({ base, request }) {
+  const hint =
+    'this scene needs a signed-in viewer: pass --url of a server with PIWI_AUTH_ENABLED=true and set PIWI_SCREENS_LOGIN=<username>:<password>';
+  const login = process.env.PIWI_SCREENS_LOGIN ?? '';
+  const separator = login.indexOf(':');
+  if (separator < 1) throw new Error(hint);
+  const res = await request.post(`${base}/api/auth/login`, {
+    data: { username: login.slice(0, separator), password: login.slice(separator + 1) },
+  });
+  // With authentication off the server refuses any login.
+  if (!res.ok()) throw new Error(`signing in as ${login.slice(0, separator)} failed (${res.status()}): ${hint}`);
+}
+
 /** Ticks the row checkboxes of the `count` newest runs in project 1's runs list that are not kept. */
 async function selectNewestRuns(page, count) {
   const kept = await (await page.request.get(new URL('/api/projects/1/kept-runs', page.url()).href)).json();
@@ -1795,7 +1815,7 @@ const SCENES = [
   {
     name: 'permission-grid-mobile',
     description:
-      'Settings → Permissions at phone width: the user column stays pinned while the projects scroll sideways',
+      'Settings → Permissions at phone width: the group and user column stays pinned while the projects scroll sideways',
     route: '/settings/permissions',
     viewport: { width: 390, height: 1100 },
     async run({ page, shoot, settle }) {
@@ -1804,6 +1824,97 @@ const SCENES = [
       await shoot();
     },
   },
+  ...[
+    { name: 'settings-users', width: 1280, height: 900 },
+    { name: 'settings-users-mobile', width: 390, height: 2000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Users: each user's instance role and groups, changed in place, at ${width} px`,
+    route: '/settings/users',
+    viewport: { width, height },
+    of: '[data-shot="users-table"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-user-project-roles', width: 1280, height: 900 },
+    { name: 'settings-user-project-roles-mobile', width: 390, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Users → Project roles of the QA lead: All projects, one role per project, and the groups adding to them, at ${width} px`,
+    route: '/settings/users',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Project roles of quinn-qa-lead' }).filter({ visible: true }).click();
+      await page.locator('[data-shot="user-project-roles"]').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
+  ...[
+    { name: 'settings-roles', width: 1280, height: 1100 },
+    { name: 'settings-roles-mobile', width: 390, height: 2600 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Roles: what each project role can do, read-only, at ${width} px`,
+    route: '/settings/roles',
+    viewport: { width, height },
+    of: '[data-shot="roles-matrix"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="roles-matrix"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-groups', width: 1280, height: 800 },
+    { name: 'settings-groups-mobile', width: 390, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Groups: each group with its description and member count, at ${width} px`,
+    route: '/settings/groups',
+    viewport: { width, height },
+    of: '[data-shot="groups-table"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="groups-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-group-edit', width: 1280, height: 800 },
+    { name: 'settings-group-edit-mobile', width: 390, height: 900 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Groups: editing the QA group, its name, description and members, at ${width} px`,
+    route: '/settings/groups',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Edit QA' }).filter({ visible: true }).click();
+      await page.locator('[data-shot="group-form"]').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
+  ...[
+    { name: 'project-members', width: 1280, height: 1000 },
+    { name: 'project-members-mobile', width: 390, height: 1800 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Members: the groups and users holding a role on the project and where it comes from, at ${width} px. Members exist with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator or a Project admin of project 1`,
+    route: '/projects/1?tab=settings&section=members',
+    viewport: { width, height },
+    of: '[data-shot="project-members"]',
+    prepare: signInForScene,
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="project-members"] [data-member]').first().waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
@@ -1843,13 +1954,14 @@ const SCENES = [
   {
     name: 'permission-grid',
     description:
-      'Settings → Permissions: every user against every project by role, the hovered cell’s row and column highlighted',
+      'Settings → Permissions: groups above users against every project, a role in each cell, the focused cell’s row and column highlighted',
     tags: ['docs'],
     out: 'docs',
     route: '/settings/permissions',
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 1440, height: 900 },
     async run({ page, shoot, settle }) {
-      const cell = page.getByRole('checkbox', { name: 'Priya (API & UI team) — E2E Checkout' });
+      // Jordan holds Maintainer on API Integration through the QA group: a faint, inherited role.
+      const cell = page.getByRole('button', { name: 'Jordan (QA engineer) — API Integration', exact: true });
       await cell.waitFor({ timeout: 15000 });
       await settle();
       // The crosshair follows focus as well as the pointer. Focus survives the

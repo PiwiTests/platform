@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Get wasted-time settings',
     description:
-      'Returns the allowlist of glob patterns that classify wait steps as wasted time, whether it is managed by the PIWI_WASTED_WAIT_PATTERNS environment variable, and the built-in defaults. Patterns match a wait step title or its source location. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Returns the allowlist of glob patterns that classify wait steps as wasted time, whether it is managed by the PIWI_WASTED_WAIT_PATTERNS environment variable, and the built-in defaults. Patterns match a wait step title or its source location. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

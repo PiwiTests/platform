@@ -7,13 +7,18 @@ lang: en-US
 # API keys
 
 An API key is a long-lived token tied to one user account, and the recommended way to authenticate CI pipelines, the
-Playwright reporter and scripts once [authentication](./authentication) is on. A key acts with its owner's
-[role](./authentication#roles) and [project access](./project-access), so a key for a Reporter account assigned to one
-project can upload to that project and nothing else.
+Playwright reporter and scripts once [authentication](./authentication) is on. A key carries its owner's access: their
+[instance role](./authentication#roles) and the [project roles](./project-access) they hold, directly or through
+their groups. A key for a Member with the Uploader role on one project can read that project and upload to it, and
+nothing else.
 
-With authentication on, every endpoint needs a session cookie or an API key, with the role the endpoint declares
-(listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are the health and version
-endpoints, the sign-in flows themselves, and live-run streaming, which uses per-run stream tokens.
+For CI, create a dedicated account: a **Member** with the **Uploader** role on the projects CI reports to (on All
+projects if CI should create projects from a new project name), and a key for it. A leaked CI key then cannot triage,
+delete or change anything.
+
+With authentication on, every endpoint needs a session cookie or an API key whose owner holds the permission the
+endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are the
+health and version endpoints, the sign-in flows themselves, and live-run streaming, which uses per-run stream tokens.
 
 ## Security properties
 
@@ -92,7 +97,7 @@ Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-
 
 ## Using the reporter with a username and password
 
-As an alternative to API keys, give the reporter the credentials of a dedicated user with the **Reporter** role,
+As an alternative to API keys, give the reporter the credentials of a dedicated Member with the **Uploader** role,
 created in **Settings → Users**:
 
 ```typescript
@@ -116,6 +121,6 @@ round-trip, and each one can be revoked on its own.
 ## Related
 
 - [Authentication](./authentication): turning sign-in on, roles and user management
-- [Project access](./project-access): which projects a key's owner can reach
+- [Access, roles and groups](./project-access): the project roles a key's owner can hold
 - [Reporter](/guide/reporter): every reporter option
 - [Metrics and rollup export](./metrics): scraping with an API key

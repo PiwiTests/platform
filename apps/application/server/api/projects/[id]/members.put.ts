@@ -1,51 +1,74 @@
 import { getDatabase } from '../../../database';
-import { projects, users } from '../../../database/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { getRequestAccess } from '../../../utils/auth';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import { setProjectMembers } from '#shared/handlers/project-assignments';
-import { z } from 'zod';
+import {
+  accessRefusal,
+  getProjectMemberViews,
+  projectMembersUpdateSchema,
+  replaceProjectMembers,
+} from '#shared/handlers/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Projects'],
     summary: 'Update project members',
     description:
-      'Replaces the explicit (non-global) user assignments for this project. Does not affect users with global access. Requires administrator role.',
+      "Replaces the project's direct role bindings (users and groups, one role each) with `entries`; a subject listed twice keeps its last role. Bindings on all projects and the roles users hold through groups are untouched. A Project admin may grant, change and remove the roles their own role on this project lets them grant (403 otherwise); an administrator any. Returns the members in the shape of `GET`. 400 for an unknown user or group, or for an administrator, who opens every project without a binding.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:members',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              entries: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    subject: {
+                      type: 'object',
+                      properties: { type: { type: 'string', enum: ['user', 'group'] }, id: { type: 'integer' } },
+                      required: ['type', 'id'],
+                    },
+                    role: {
+                      type: 'string',
+                      enum: ['viewer', 'contributor', 'maintainer', 'project_admin', 'uploader'],
+                    },
+                  },
+                  required: ['subject', 'role'],
+                },
+              },
+            },
+            required: ['entries'],
+          },
+        },
+      },
+    },
   },
-});
-
-const schema = z.object({
-  userIds: z.array(z.number()),
 });
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
-
   const currentUser = await requireProjectAccess(event, id);
 
-  const body = await readBody(event);
-  const parsed = schema.safeParse(body);
+  const parsed = projectMembersUpdateSchema.safeParse(await readBody(event));
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
   const db = await getDatabase();
-  const projectResults = await db.select().from(projects).where(eq(projects.id, id));
-  if (!projectResults[0]) throw apiError({ statusCode: 404, message: 'Project not found' });
-
-  if (parsed.data.userIds.length > 0) {
-    const found = await db.select({ id: users.id }).from(users).where(inArray(users.id, parsed.data.userIds));
-    const foundIds = new Set(found.map((r) => r.id));
-    const missing = parsed.data.userIds.filter((uid) => !foundIds.has(uid));
-    if (missing.length > 0) {
-      throw apiError({ statusCode: 400, message: `User(s) not found: ${missing.join(', ')}` });
-    }
+  try {
+    await replaceProjectMembers(db, id, parsed.data.entries, {
+      // With authentication off the caller is a virtual administrator with no users row.
+      userId: currentUser.id || null,
+      access: await getRequestAccess(event),
+    });
+    return { success: true as const, members: await getProjectMemberViews(db, id) };
+  } catch (err) {
+    const refusal = accessRefusal(err);
+    if (refusal) throw apiError(refusal);
+    throw err;
   }
-
-  // With authentication off the caller is a virtual administrator with no users row.
-  await setProjectMembers(db, id, parsed.data.userIds, currentUser.id || undefined);
-
-  return { success: true };
 });

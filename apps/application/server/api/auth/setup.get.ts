@@ -6,7 +6,6 @@ defineRouteMeta({
     summary: 'Initial setup status',
     description:
       'Reports whether the first-admin setup form should be shown — true only when auth is enabled and the users table is empty.',
-    'x-required-roles': [],
     security: [],
   },
 });

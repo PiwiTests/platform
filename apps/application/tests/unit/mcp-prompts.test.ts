@@ -50,6 +50,7 @@ describe('buildSetupPiwiMessages', () => {
     expect(text).toContain('requires authentication');
     expect(text).toContain('PIWI_API_KEY');
     expect(text).toContain('pd_');
+    expect(text).toContain('the Uploader, Maintainer or Project admin role');
   });
 
   it('lists existing projects so the agent can reuse a name', () => {

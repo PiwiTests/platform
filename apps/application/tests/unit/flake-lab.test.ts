@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { flakeErrorSignature } from '@piwitests/core/flake-plan';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { routePermissionList } from '#shared/permissions';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -570,21 +571,25 @@ describe('what keeps and deletes experiments', () => {
   });
 });
 
-describe('the endpoints’ roles', () => {
-  const roles = (file: string) => {
+describe('the endpoints’ permissions', () => {
+  const permission = (file: string) => {
     const source = readFileSync(fileURLToPath(new URL(`../../server/api/${file}`, import.meta.url)), 'utf8');
-    return JSON.parse(/'x-required-roles': (\[[^\]]*\])/.exec(source)![1]!.replace(/'/g, '"'));
+    const value = /'x-required-permission': ('[^']*'|\[[^\]]*\])/.exec(source)![1]!;
+    return routePermissionList(JSON.parse(value.replace(/'/g, '"')));
   };
 
-  test('the plan and the results write, so they take the roles the probe results take', () => {
-    const probes = roles('projects/[id]/probes/results.post.ts');
-    expect(probes).toEqual(['administrator', 'reporter']);
-    expect(roles('projects/[id]/flake-lab/results.post.ts')).toEqual(probes);
-    expect(roles('test-cases/[id]/flake-plan.get.ts')).toEqual(probes);
+  test('the results are uploaded during a run, so they take what the probe results take', () => {
+    const probes = permission('projects/[id]/probes/results.post.ts');
+    expect(probes).toEqual(['run:submit']);
+    expect(permission('projects/[id]/flake-lab/results.post.ts')).toEqual(probes);
   });
 
-  test('reading experiments and finding a test are open to any signed-in user', () => {
-    expect(roles('test-cases/[id]/flake-experiments.get.ts')).toEqual(['administrator', 'reporter', 'user']);
-    expect(roles('projects/[id]/flake-lab/test.get.ts')).toEqual(['administrator', 'reporter', 'user']);
+  test('the plan is open to the reporter during a run and to whoever controls runs', () => {
+    expect(permission('test-cases/[id]/flake-plan.get.ts')).toEqual(['run:submit', 'run:control']);
+  });
+
+  test('reading experiments and finding a test take project:read', () => {
+    expect(permission('test-cases/[id]/flake-experiments.get.ts')).toEqual(['project:read']);
+    expect(permission('projects/[id]/flake-lab/test.get.ts')).toEqual(['project:read']);
   });
 });

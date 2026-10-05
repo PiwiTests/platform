@@ -18,7 +18,7 @@ defineRouteMeta({
         description: 'Only count cases executed within the last N days (0 = all time)',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

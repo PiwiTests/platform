@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm';
 import { users } from '~~/server/database/schema.sqlite';
 import { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
-import { Role } from '#shared/types';
+import { getUserAccess } from '#shared/handlers/role-bindings';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import {
   createDashboard,
@@ -18,6 +18,7 @@ import {
   dashboardInputSchema,
   dashboardPatchSchema,
   DashboardError,
+  dashboardActorFor,
   deleteDashboard,
   duplicateDashboard,
   getDashboard,
@@ -34,10 +35,12 @@ import {
 
 /** The "act as" identity; with nobody acting, authentication is off and everything is shared. */
 export async function demoActor(actingUserId: number | null): Promise<DashboardActor> {
-  if (!actingUserId) return { id: null, role: null, authEnabled: false };
+  if (!actingUserId) return dashboardActorFor(null, null);
   const db = await getDemoDb();
-  const [row] = await db.select({ role: users.role }).from(users).where(eq(users.id, actingUserId));
-  return { id: actingUserId, role: (row?.role as Role | undefined) ?? Role.USER, authEnabled: true };
+  const [row] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, actingUserId));
+  // An unknown identity acts as an administrator, like the rest of the demo router.
+  if (!row) return dashboardActorFor(null, null);
+  return dashboardActorFor(actingUserId, await getUserAccess(db, row));
 }
 
 export async function demoDashboard<T>(fn: () => Promise<T>): Promise<T> {

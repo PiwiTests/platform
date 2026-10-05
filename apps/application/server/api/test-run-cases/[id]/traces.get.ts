@@ -13,7 +13,7 @@ defineRouteMeta({
     summary: 'Get trace files for a test run case',
     description: 'Returns a list of trace files associated with a specific test run case (one execution).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

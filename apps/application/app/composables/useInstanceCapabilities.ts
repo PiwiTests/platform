@@ -14,9 +14,9 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  *
  * `state(id)` is the resolved state, `isHidden(id)` is true when a capability is
  * declined or not applicable (so a surface renders nothing), `canDecide` gates
- * the decline controls to administrators, `decide` writes one decision and
- * `decideMany` writes several at once (`null` clears a decision). A read failure
- * resolves to an empty list.
+ * the decline controls to administrators (`settings:manage`), `decide` writes
+ * one decision and `decideMany` writes several at once (`null` clears a
+ * decision). A read failure resolves to an empty list.
  */
 export async function useInstanceCapabilities() {
   const { canSeeAdmin } = useAuth();

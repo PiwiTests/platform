@@ -1,25 +1,47 @@
 import { getDatabase } from '../../../database';
-import { users, projects } from '../../../database/schema';
-import { eq, inArray } from 'drizzle-orm';
 import { requireAuth } from '../../../utils/auth';
-import { Role } from '#shared/types';
-import { setUserAssignments } from '#shared/handlers/project-assignments';
-import { z } from 'zod';
+import { accessRefusal, setUserProjectRoles, userProjectRolesSchema } from '#shared/handlers/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
-    summary: "Update a user's project assignments",
+    summary: "Set a user's project roles",
     description:
-      'Sets the project assignments for a user. If global is true, the user gets access to all projects. If global is false, the user gets access only to the specified project IDs. Cannot set assignments for administrators.',
+      "Replaces the user's own role bindings: `allProjects` (a project role held on every project, current and future, or null) and `projects` (one role per project; a project listed twice keeps its last role). The bindings of the user's groups are untouched. Returns the result in the shape of `GET /api/users/{id}/projects`. 400 for an administrator, who opens every project, or an unknown project; 404 for an unknown user.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'users:manage',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              allProjects: {
+                type: 'string',
+                nullable: true,
+                enum: ['viewer', 'contributor', 'maintainer', 'project_admin', 'uploader'],
+              },
+              projects: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    projectId: { type: 'integer' },
+                    role: {
+                      type: 'string',
+                      enum: ['viewer', 'contributor', 'maintainer', 'project_admin', 'uploader'],
+                    },
+                  },
+                  required: ['projectId', 'role'],
+                },
+              },
+            },
+            required: ['allProjects', 'projects'],
+          },
+        },
+      },
+    },
   },
-});
-
-const schema = z.object({
-  global: z.boolean(),
-  projectIds: z.array(z.number()),
 });
 
 export default eventHandler(async (event) => {
@@ -28,37 +50,18 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
 
-  const body = await readBody(event);
-  const parsed = schema.safeParse(body);
+  const parsed = userProjectRolesSchema.safeParse(await readBody(event));
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
-  const db = await getDatabase();
-  const userResults = await db.select().from(users).where(eq(users.id, id));
-  const user = userResults[0];
-  if (!user) throw apiError({ statusCode: 404, message: 'User not found' });
-
-  // Administrators: assignments are irrelevant
-  if (user.role === Role.ADMINISTRATOR) {
-    throw apiError({ statusCode: 400, message: 'Assignments not applicable for administrators' });
+  try {
+    // With authentication off the caller is a virtual administrator with no users row.
+    const roles = await setUserProjectRoles(await getDatabase(), id, parsed.data, currentUser.id || null);
+    return { success: true as const, ...roles };
+  } catch (err) {
+    const refusal = accessRefusal(err);
+    if (refusal) throw apiError(refusal);
+    throw err;
   }
-
-  // Validate that all supplied projectIds actually exist
-  if (!parsed.data.global && parsed.data.projectIds.length > 0) {
-    const found = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(inArray(projects.id, parsed.data.projectIds));
-    const foundIds = new Set(found.map((r) => r.id));
-    const missing = parsed.data.projectIds.filter((pid) => !foundIds.has(pid));
-    if (missing.length > 0) {
-      throw apiError({ statusCode: 400, message: `Project(s) not found: ${missing.join(', ')}` });
-    }
-  }
-
-  // With authentication off the caller is a virtual administrator with no users row.
-  await setUserAssignments(db, id, parsed.data, currentUser.id || undefined);
-
-  return { success: true };
 });

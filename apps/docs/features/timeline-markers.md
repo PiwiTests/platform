@@ -36,7 +36,7 @@ The environment field is free text, with suggestions drawn from the environments
 
 ## Who can edit markers
 
-Reading markers is available to any signed-in user with access to the project. Creating, editing, and deleting them requires the **reporter** or **administrator** role. (When authentication is disabled, everyone can edit.)
+Reading markers is available to anyone who can read the project. Creating, editing, and deleting them requires the **Contributor** role or above on the project, or an administrator ([roles](/operate/project-access#what-each-role-can-do)). (When authentication is disabled, everyone can edit.)
 
 ## Automatic markers
 

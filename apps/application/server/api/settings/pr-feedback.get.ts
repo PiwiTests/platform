@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Get pull-request feedback settings',
     description:
-      'Returns the settings controlling the run summary Piwi posts back to a pull request (comment and commit status), plus the built-in defaults. `siteUrlConfigured` reports whether PIWI_SITE_URL is set — without it the feature stays inert, because comment links would be unusable. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Returns the settings controlling the run summary Piwi posts back to a pull request (comment and commit status), plus the built-in defaults. `siteUrlConfigured` reports whether PIWI_SITE_URL is set — without it the feature stays inert, because comment links would be unusable. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

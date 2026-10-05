@@ -8,7 +8,7 @@ defineRouteMeta({
     summary: 'Get an integration connection',
     description: 'Returns a single connection. Credentials are never returned.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

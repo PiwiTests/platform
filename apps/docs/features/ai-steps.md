@@ -76,7 +76,7 @@ Point the reporter at that server and run the suite in resolve mode:
 
 ```bash
 export PIWI_DASHBOARD_URL="https://piwi.example.com"   # the authoring server
-export PIWI_API_KEY="…"                                # a reporter API key
+export PIWI_API_KEY="…"                                # a key with upload rights
 export PIWI_AI=resolve
 
 npx playwright test           # or: npx piwi ai resolve --grep "sign in"

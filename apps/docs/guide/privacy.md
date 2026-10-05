@@ -138,6 +138,6 @@ provider, SCM, SMTP, notification, OAuth, Jira and link-unfurl clients are the o
 a socket; the S3 client is in `server/storage/`.
 
 ## Related
-- [Authentication](/operate/authentication), [API keys](/operate/api-keys) and [Project access](/operate/project-access): roles, keys and project-level access
+- [Authentication](/operate/authentication), [API keys](/operate/api-keys) and [Access, roles and groups](/operate/project-access): roles, keys and project-level access
 - [Production checklist](/operate/production-checklist#before-you-expose-it) — hardening a public instance
 - [Why Piwi?](./comparison#is-my-data-safe-does-piwi-phone-home) — the same question, short form

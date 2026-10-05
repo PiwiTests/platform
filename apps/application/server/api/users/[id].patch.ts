@@ -1,76 +1,60 @@
 import { getDatabase } from '../../database';
-import { users } from '../../database/schema';
-import { eq } from 'drizzle-orm';
-import { updateUserRecord, toPublicUser } from '#shared/handlers/users';
-import { requireAuth, revokeUserSessions, isAuthEnabled } from '../../utils/auth';
-import { Role } from '#shared/types';
-import { z } from 'zod';
+import { accessRefusal, updateUserAccount, updateUserSchema } from '#shared/handlers/project-access';
+import { getRequestAccess, isAuthEnabled, requireAuth, revokeUserSessions } from '../../utils/auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Update a user',
     description:
-      "Updates a user's name, email, or role. Admins can update any user; non-admins can only update their own name and email. Demoting the last administrator is refused, and so is an email another account already uses (409). Changing the email clears its verified flag.",
+      "Updates a user's name, email, instance role (`role`: `administrator` or `member`) or groups (`groupIds`, replacing the current ones). Administrators can update any user; anyone else only their own name and email (403 otherwise). Demoting the last administrator is refused (400), and so is an email another account already uses (409). Changing the email clears its verified flag. Changing the instance role signs the user out everywhere; group changes apply on their next request.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
+    requestBody: {
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', nullable: true },
+              email: { type: 'string', format: 'email', nullable: true },
+              role: { type: 'string', enum: ['administrator', 'member'] },
+              groupIds: { type: 'array', items: { type: 'integer' } },
+            },
+          },
+        },
+      },
+    },
   },
 });
 
-const schema = z.object({
-  name: z.string().nullable().optional(),
-  email: z.string().email().nullable().optional(),
-  role: z.nativeEnum(Role).optional(),
-});
-
 export default eventHandler(async (event) => {
+  // Any signed-in user may call it for themselves; the handler decides who may change what.
   const currentUser = await requireAuth(event);
 
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
 
-  const isAdmin = currentUser.role === Role.ADMINISTRATOR;
-  const isSelf = currentUser.id === id;
-
-  if (!isAdmin && !isSelf) {
-    throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
-  }
-
-  const body = await readBody(event);
-  const parsed = schema.safeParse(body);
+  const parsed = updateUserSchema.safeParse(await readBody(event));
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
 
-  // Non-admins can only update their own name and email, not role
-  if (!isAdmin && parsed.data.role !== undefined) {
-    throw apiError({ statusCode: 403, message: 'Only administrators can change roles' });
-  }
-
-  const db = await getDatabase();
-
-  // Guard against lockout: refuse demoting the last administrator (only
-  // meaningful when authentication is enabled).
-  if (isAuthEnabled(event) && parsed.data.role !== undefined && parsed.data.role !== Role.ADMINISTRATOR) {
-    const target = (await db.select().from(users).where(eq(users.id, id)))[0];
-    if (target?.role === Role.ADMINISTRATOR) {
-      const admins = await db.select({ id: users.id }).from(users).where(eq(users.role, Role.ADMINISTRATOR));
-      if (admins.length <= 1) {
-        throw apiError({ statusCode: 400, message: 'Cannot demote the last administrator' });
-      }
-    }
-  }
-
   try {
-    const user = await updateUserRecord(db, id, parsed.data);
-    if (!user) throw apiError({ statusCode: 404, message: 'User not found' });
-    // A role change takes effect immediately by revoking the user's sessions.
-    if (parsed.data.role !== undefined) {
-      await revokeUserSessions(id);
-    }
-    return { success: true, user: toPublicUser(user) };
+    const { user, instanceRoleChanged } = await updateUserAccount(
+      await getDatabase(),
+      id,
+      parsed.data,
+      { userId: currentUser.id, access: await getRequestAccess(event) },
+      // Only meaningful when authentication is enabled.
+      { guardLastAdministrator: isAuthEnabled(event) },
+    );
+    // A new instance role takes effect immediately by revoking the user's sessions.
+    if (instanceRoleChanged) await revokeUserSessions(id);
+    return { success: true as const, user };
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to update user';
-    throw apiError({ statusCode: message === 'Email already in use' ? 409 : 400, message });
+    const refusal = accessRefusal(err);
+    if (refusal) throw apiError(refusal);
+    throw err;
   }
 });

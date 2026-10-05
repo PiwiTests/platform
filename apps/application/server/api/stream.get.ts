@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Stream'],
     summary: 'Server-sent events stream',
     description: 'Subscribes to global run events (status changes, case updates) over SSE',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

@@ -9,7 +9,7 @@ defineRouteMeta({
     summary: 'Get recent test runs',
     description:
       'Returns the 30 most recent completed test runs across all projects plus any currently active runs, sorted by start time. Used by the home page dashboard.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

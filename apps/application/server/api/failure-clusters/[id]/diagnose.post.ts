@@ -27,7 +27,7 @@ defineRouteMeta({
         description: 'Re-run the diagnosis even if one already exists (default false).',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'ai:run',
   },
 });
 

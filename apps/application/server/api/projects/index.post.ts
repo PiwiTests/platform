@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Create a new project',
     description:
-      'Creates a project with optional label, description, and tag associations. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Creates a project with optional label, description, and tag associations. Requires `project:create` (administrators only).',
+    'x-required-permission': 'project:create',
   },
 });
 

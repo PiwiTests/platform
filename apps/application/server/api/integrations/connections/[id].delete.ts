@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Deletes a connection. Linked records keep their URL and have their connection cleared. Environment-managed connections are read-only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 
