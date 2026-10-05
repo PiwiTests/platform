@@ -1,4 +1,7 @@
-# Public share links
+﻿# Public share links
+
+- Status: accepted
+- Date: 2026-09-16
 
 A design record for read-only share links: handing one investigation to someone without a dashboard account, as a
 URL instead of a file. The feature shipped behind the default-off `PIWI_SHARE_LINKS_ENABLED` flag; this document

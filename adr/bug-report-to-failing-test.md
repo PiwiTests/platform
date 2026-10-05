@@ -1,4 +1,7 @@
-# Bug reports as failing tests
+﻿# Bug reports as failing tests
+
+- Status: accepted
+- Date: 2026-09-28
 
 A plan to turn a bug report into the test that proves it, and to let the developer who receives it watch it happen.
 In Piwi Picker, **Report a bug** records the steps with the existing recorder, lets the reporter mark what is wrong
@@ -24,7 +27,7 @@ two tools and, for the first time, requests that send page data to an instance, 
 its rules require. The reporter gains one wire field (`expectedStatus`); the dashboard gains a table, pages, endpoints,
 an issue type for the Jira integration, a CLI command and MCP tools; the desktop app gains a run request. The steps
 document, the wire field, the annotation, the endpoints, the CLI command and the MCP tools freeze at 1.0 (one new D
-entry in [`1.0-stabilization.md`](1.0-stabilization.md)).
+entry in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md)).
 
 **Summary.** A bug report is prose: steps someone remembers, a screenshot, "it should say 42". The developer rebuilds
 the steps, often cannot reproduce, and when the fix lands nothing checks that it holds. Piwi Picker already records a

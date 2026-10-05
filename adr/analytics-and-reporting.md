@@ -1,4 +1,7 @@
-# Quality reports, dashboards and trends over time
+﻿# Quality reports, dashboards and trends over time
+
+- Status: accepted
+- Date: 2026-09-26
 
 A design record for two requests that keep coming back from users: **reports a stakeholder can read** (someone who
 never opens the dashboard and does not read stack traces), and **trends and analytics over time** (does the suite get
@@ -21,7 +24,7 @@ daily rollups account for runs kept forever (D35). Each milestone is built on a 
 the order of the [Rollout sketch](#rollout-sketch). · **Date:** 2026-09-24 · **Builds on:** the `/analytics` page and
 its widget registry, test selections, the notification outbox and digests, the offline export pipeline, share links,
 timeline markers, runs kept forever, the Confluence section of
-[issue-tracker-integrations.md](issue-tracker-integrations.md), the Test Map's ledger and its unwired weekly digest
+[issue-tracker-integrations.md](../proposals/issue-tracker-integrations.md), the Test Map's ledger and its unwired weekly digest
 ([scenario-gaps.md](scenario-gaps.md)), and the capability registry
 ([capabilities-opt-out.md](capabilities-opt-out.md)).
 
@@ -101,7 +104,7 @@ access, scope.days * 2)` in `shared/handlers/analytics/common.ts`), and bucket a
   it out of spec health, flaky scoring, test history and the gaps ledger, but not out of `fetchScopedRuns`,
   `getProjectsOverview`, `getProjectPerformance`, `getProjectSlowTests` or `getRecentTestRuns`. The default *Full
   runs only* hides it (a probe run is a filtered run), so the numbers go wrong exactly when someone unticks it.
-- **The default branch is not the default.** [first-class-branches.md](first-class-branches.md) shipped the branch
+- **The default branch is not the default.** [first-class-branches.md](../proposals/first-class-branches.md) shipped the branch
   filter and left open "scoping flakiness and trends to the default branch *by default*". Until then, a noisy feature
   branch moves every trend line.
 
@@ -390,7 +393,7 @@ the URL carries it.
   and in reports, with an "All branches" toggle. A run counts when its `branch` equals the project's default branch
   (`readProjectDefaultBranch` in `shared/handlers/baseline-scope.ts`) **or is unknown** (`null`), so an instance whose
   reporter never learned the branch keeps working. Setting `branches` explicitly turns the default off. This closes
-  the open Tier 2 item of [first-class-branches.md](first-class-branches.md).
+  the open Tier 2 item of [first-class-branches.md](../proposals/first-class-branches.md).
 - Full runs only.
 
 **Test filters** are answered from the stored executions (D24) and use the selection syntax (D25):

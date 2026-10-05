@@ -1,4 +1,7 @@
-# CI workflows: cost and organization
+﻿# CI workflows: cost and organization
+
+- Status: accepted
+- Date: 2026-10-03
 
 A plan to cut the runner time the GitHub Actions workflows spend and the time a pull request waits for them, and to give
 the eighteen workflow files one organization and one set of conventions. Every figure below comes from the GitHub

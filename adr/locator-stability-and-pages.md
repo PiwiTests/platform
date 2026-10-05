@@ -1,4 +1,7 @@
-# Locator stability and locator pages
+﻿# Locator stability and locator pages
+
+- Status: accepted
+- Date: 2026-09-28
 
 A plan for the next two capabilities of [Tested elements](../apps/docs/features/tested-elements.md). **Track A** shows
 which tested elements are reached through brittle locators, with a replacement checked on the live page. **Track B**
@@ -10,7 +13,7 @@ wire or schema change.
 path-prefix mapping, built on 2026-09-28 as `pathPrefix` and `testPathPrefix` on project URL patterns and local
 mappings; the other three open questions are still open. Track A is core, extension and dashboard work. Track B adds a
 capture-fixture attachment, one payload column on `test_runs_cases` and two `locator_usages` columns, and adds
-contracts that freeze at 1.0 (a new D19 in [`1.0-stabilization.md`](1.0-stabilization.md)).
+contracts that freeze at 1.0 (a new D19 in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md)).
 
 **Summary.** Tested elements answers "which tests reach this element?". These two tracks make it answer "which of
 those locators will break?", which serves two of the four aims in [`ROADMAP.md`](../ROADMAP.md): hand back a fix,

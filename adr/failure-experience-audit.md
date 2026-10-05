@@ -1,4 +1,7 @@
-# Failing-run data — an end-to-end audit
+﻿# Failing-run data — an end-to-end audit
+
+- Status: accepted
+- Date: 2026-09-05
 
 **Status:** audit — every recommendation implemented and merged to `main` (program closed 2026-09-05) · **Scope:** everything Piwi does with the data of a failing run — what the reporter captures, what the server keeps and analyzes, how the dashboard shows it, and what it hands back to fix the failure · **Date:** 2026-09-01
 

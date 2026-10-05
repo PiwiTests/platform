@@ -1,4 +1,7 @@
-# Developer tools for tests, in the browser
+﻿# Developer tools for tests, in the browser
+
+- Status: accepted
+- Date: 2026-09-27
 
 A plan for the developer tools Piwi Picker should grow, and the ones it should not. The question was whether the
 extension should also become a web developer toolbar. It should not: the browser's DevTools already disable styles,
@@ -290,7 +293,7 @@ DevTools' own page as Playwright can.
 1. **Viewports from the instance.** Settled: from the instance. The reporter already sends each project's
    `use.viewport` with the run (`htmlReport.projects[].use.viewport`, beside the `testIdAttribute` the locator index
    reads), so no new wire field is needed: the locator index gains an optional `viewports` list, frozen at 1.0 as
-   D23 in [`1.0-stabilization.md`](1.0-stabilization.md). Reading the Playwright config in the desktop app would need
+   D23 in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md). Reading the Playwright config in the desktop app would need
    the config evaluated by Node, and would leave out anyone without the desktop app. The popup also offers a size
    typed by hand, for anyone not connected.
 2. **The panel as the main UI.** Settled: both show. The in-page HUD stays for people without DevTools open, and the
