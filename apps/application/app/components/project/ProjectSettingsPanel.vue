@@ -39,9 +39,14 @@ interface Section {
   visible: boolean;
 }
 
-const { isAdmin } = useAuth();
+const { can } = useAuth();
 const runtimeConfig = useRuntimeConfig();
-const canManage = computed(() => !runtimeConfig.public.authEnabled || isAdmin.value);
+// The sections that only save with `project:manage` show to its holders; Members
+// lists the project's role bindings, which only exist with authentication on.
+const canManage = computed(() => can('project:manage', props.project.id));
+const canSeeMembers = computed(
+  () => Boolean(runtimeConfig.public.authEnabled) && can('project:members', props.project.id),
+);
 const { isHidden, canDecide } = await useProjectCapabilities(props.project.id);
 
 // The Local folder section exists in the desktop shell only; the bridge is known once mounted.
@@ -56,7 +61,7 @@ const showServerProbes = computed(() => !isHidden('server-probes'));
 
 const sections = computed<Section[]>(() => [
   { id: 'general', label: 'General', icon: 'i-lucide-settings', group: 'project', visible: true },
-  { id: 'members', label: 'Members', icon: 'i-lucide-users', group: 'project', visible: isAdmin.value },
+  { id: 'members', label: 'Members', icon: 'i-lucide-users', group: 'project', visible: canSeeMembers.value },
   { id: 'source-control', label: 'Source control', icon: 'i-lucide-git-branch', group: 'project', visible: true },
   { id: 'ai', label: 'AI diagnosis', icon: 'i-lucide-sparkles', group: 'project', visible: true },
   {

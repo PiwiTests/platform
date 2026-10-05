@@ -23,7 +23,7 @@ useHead(computed(() => ({ title: `${project.value?.label || project.value?.name 
 
 const toast = useToast();
 
-const { isAdmin, isReporter } = useAuth();
+const { can } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
 // Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
@@ -33,12 +33,15 @@ const reportOpen = ref(false);
 const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
 // *Schedule…*: a report schedule over this project.
 const scheduleOpen = ref(false);
-const { canWrite } = useAuth();
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
-const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
-const canManage = computed(() => !authEnabled.value || isAdmin.value);
-const canEditMarkers = computed(() => !authEnabled.value || isAdmin.value || isReporter.value);
+// What the viewer may do on this project; the server checks each route's permission.
+const canEditSettings = computed(() => can('project:manage', projectId));
+const canDeleteRuns = computed(() => can('run:delete', projectId));
+const canDeleteProject = computed(() => can('project:delete', projectId));
+// Importing runs from a blob report or a trace is an instance permission.
+const canImport = computed(() => can('storage:manage'));
+const canScheduleReport = computed(() => can('report:write', projectId));
 
 const showDeleteProjectModal = ref(false);
 const deleteProjectConfirmInput = ref('');
@@ -511,7 +514,7 @@ function runMenuItems(run: TestRunSummary) {
         isKeepOpen.value = true;
       },
     });
-  } else if (canRelease.value) {
+  } else if (canRelease(projectId)) {
     items.push({
       label: 'Release keep',
       icon: 'i-lucide-lock-open',
@@ -521,7 +524,7 @@ function runMenuItems(run: TestRunSummary) {
     });
   }
   // A kept run cannot be deleted until it is released.
-  if (canManage.value) {
+  if (canDeleteRuns.value) {
     items.push({
       label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
       icon: 'i-lucide-trash-2',
@@ -644,7 +647,8 @@ const clustersRefreshKey = ref(0);
 // === NAVBAR MORE MENU ===
 const moreMenuItems = computed(() => {
   const items: { label: string; icon: string; color?: 'error'; onSelect: () => void; to?: string }[] = [];
-  items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
+  if (canEditSettings.value)
+    items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
   items.push({
     label: 'Test functions',
     icon: 'i-lucide-square-function',
@@ -666,13 +670,13 @@ const moreMenuItems = computed(() => {
       icon: 'i-lucide-bug',
       onSelect: () => navigateTo(`/projects/${projectId}/bug-reports`),
     });
-  if (canWrite.value && !projCapHidden('quality-reports'))
+  if (canScheduleReport.value && !projCapHidden('quality-reports'))
     items.push({
       label: 'Schedule a quality report…',
       icon: 'i-lucide-calendar-clock',
       onSelect: () => (scheduleOpen.value = true),
     });
-  if (canManage.value)
+  if (canDeleteProject.value)
     items.push({
       label: 'Delete',
       icon: 'i-lucide-trash-2',
@@ -721,7 +725,7 @@ const moreMenuItems = computed(() => {
               @click="reportOpen = true"
             />
             <UButton
-              v-if="canManage"
+              v-if="canImport"
               label="Import"
               icon="i-lucide-import"
               size="sm"
@@ -886,7 +890,7 @@ const moreMenuItems = computed(() => {
                 Select another run to compare
               </span>
               <UButton
-                v-if="canManage"
+                v-if="canDeleteRuns"
                 icon="i-lucide-trash-2"
                 size="sm"
                 color="neutral"
@@ -1338,7 +1342,6 @@ const moreMenuItems = computed(() => {
           :project-id="Number(projectId)"
           :markers="markers"
           :environments="availableEnvironments"
-          :can-edit="canEditMarkers"
           :focus-marker-id="focusMarkerId"
           @changed="refreshMarkers"
           @clear-focus="focusMarkerId = null"

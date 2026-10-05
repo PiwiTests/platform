@@ -11,7 +11,7 @@ import { BUG_REPORT_STATUS, capitalize, reproductionPlace, verdictLabel } from '
 
 const route = useRoute();
 const toast = useToast();
-const { canWrite } = useAuth();
+const { can } = useAuth();
 const { hasTracker } = useTrackerStatus();
 const issueModalOpen = ref(false);
 function onIssueCreated() {
@@ -23,6 +23,10 @@ const reportId = Number(route.params.id);
 const { data: report, error, refresh } = await useFetch<BugReportDetail>(`/api/bug-reports/${reportId}`);
 
 useHead(computed(() => ({ title: `${report.value?.title ?? 'Bug report'} — Piwi Dashboard` })));
+
+// Filing the issue and changing the report's status, each for the holders of its permission on the project.
+const canCreateIssue = computed(() => can('issue:create', report.value?.projectId));
+const canEditReport = computed(() => can('bug-report:write', report.value?.projectId));
 
 const EDGE: Record<BugReportDetail['status'], string> = {
   open: 'var(--color-status-failed)',
@@ -135,9 +139,9 @@ async function setStatus(status: 'open' | 'dismissed') {
             <template #identity>
               <span>Bug report #{{ report.id }}</span>
             </template>
-            <template v-if="canWrite" #actions>
+            <template v-if="canCreateIssue || canEditReport" #actions>
               <UButton
-                v-if="hasTracker && !report.ticket"
+                v-if="canCreateIssue && hasTracker && !report.ticket"
                 size="xs"
                 icon="i-simple-icons-jira"
                 data-shot="bug-report-create-issue"
@@ -146,7 +150,7 @@ async function setStatus(status: 'open' | 'dismissed') {
                 Create issue
               </UButton>
               <UButton
-                v-if="report.status !== 'dismissed'"
+                v-if="canEditReport && report.status !== 'dismissed'"
                 color="neutral"
                 variant="ghost"
                 size="xs"
@@ -155,7 +159,14 @@ async function setStatus(status: 'open' | 'dismissed') {
               >
                 Dismiss
               </UButton>
-              <UButton v-else color="neutral" variant="ghost" size="xs" :loading="updating" @click="setStatus('open')">
+              <UButton
+                v-else-if="canEditReport"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :loading="updating"
+                @click="setStatus('open')"
+              >
                 Reopen
               </UButton>
             </template>

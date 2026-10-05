@@ -3,11 +3,12 @@
  *
  * Wraps `PATCH /api/test-runs/:id` so the run page and the project's runs table
  * keep and release the same way and toast the same outcome. Releasing needs
- * the administrator role; `canRelease` mirrors that rule for the UI.
+ * `run:delete` on the run's project; `canRelease(projectId)` mirrors that rule
+ * for the UI.
  */
 export function useRunKeep() {
   const toast = useToast();
-  const { canSeeAdmin } = useAuth();
+  const { can } = useAuth();
 
   async function keep(runId: number, reason: string | null): Promise<boolean> {
     try {
@@ -34,5 +35,7 @@ export function useRunKeep() {
     }
   }
 
-  return { keep, release, canRelease: canSeeAdmin };
+  const canRelease = (projectId: number | string | null | undefined) => can('run:delete', projectId);
+
+  return { keep, release, canRelease };
 }

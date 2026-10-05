@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { Role } from '#shared/types';
-
 interface ShareLinkSummary {
   id: number;
   tokenPrefix: string;
@@ -22,16 +20,21 @@ const props = withDefaults(
     kind?: 'investigation' | 'report' | 'dashboard';
     /** Render the Share button; without it the parent opens the modal through `v-model:open`. */
     trigger?: boolean;
+    /**
+     * The project the shared page belongs to: creating and revoking a link takes
+     * `share:create` there. Without one (a dashboard spanning projects), holding
+     * it on any project is enough.
+     */
+    projectId?: number | null;
   }>(),
-  { kind: 'investigation', trigger: true },
+  { kind: 'investigation', trigger: true, projectId: null },
 );
 
 const open = defineModel<boolean>('open', { default: false });
 
 const toast = useToast();
 const { copy } = useCopy();
-const { hasRole } = useAuth();
-const config = useRuntimeConfig();
+const { can, canAnywhere } = useAuth();
 
 const settings = ref<{ enabled: boolean; maxTtlDays: number } | null>(null);
 const links = ref<ShareLinkSummary[]>([]);
@@ -70,8 +73,10 @@ const markdownBadge = computed(() =>
   mintedBadgeUrl.value && mintedUrl.value ? `[![Piwi](${mintedBadgeUrl.value})](${mintedUrl.value})` : null,
 );
 
-// UI affordance only — the server enforces roles from each route's meta.
-const canManage = computed(() => !config.public.authEnabled || hasRole([Role.ADMINISTRATOR, Role.REPORTER]));
+// UI affordance only: the server checks `share:create` from each route's meta.
+const canManage = computed(() =>
+  props.projectId == null ? canAnywhere('share:create') : can('share:create', props.projectId),
+);
 
 const ttlDays = ref<number | undefined>(undefined);
 const ttlOptions = computed(() => {

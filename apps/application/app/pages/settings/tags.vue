@@ -5,15 +5,12 @@ import type { TagInfo, TagsResponse } from '~~/types/api';
 
 const { data: tagsData, refresh } = await useFetch<TagsResponse>('/api/tags');
 const toast = useToast();
-const { authState } = useAuth();
-const config = useRuntimeConfig();
+const { can } = useAuth();
 
 const allTags = computed(() => tagsData.value?.items || []);
 
-const isAdmin = computed(() => {
-  if (!config.public.authEnabled) return true;
-  return authState.value.user?.role === 'administrator';
-});
+// Creating, editing and deleting tags is the `tags:manage` instance permission.
+const canManageTags = computed(() => can('tags:manage'));
 
 const DEFAULT_TAG_COLOR = '#6366f1';
 
@@ -156,7 +153,13 @@ async function handleDeleteTag() {
       <!-- Tags table -->
       <SectionCard v-if="allTags.length > 0" title="Tags" :count="allTags.length" help="settings.tags">
         <template #actions>
-          <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" size="sm" @click="isAddTagModalOpen = true" />
+          <UButton
+            v-if="canManageTags"
+            label="Add tag"
+            icon="i-lucide-tag"
+            size="sm"
+            @click="isAddTagModalOpen = true"
+          />
         </template>
 
         <UTable :data="allTags" :columns="columns">
@@ -184,7 +187,7 @@ async function handleDeleteTag() {
           <template #actions-cell="{ row }">
             <div class="flex gap-1 justify-end">
               <UButton
-                v-if="isAdmin"
+                v-if="canManageTags"
                 icon="i-lucide-pencil"
                 color="neutral"
                 variant="ghost"
@@ -192,7 +195,7 @@ async function handleDeleteTag() {
                 @click="openEditTag(row.original)"
               />
               <UButton
-                v-if="isAdmin"
+                v-if="canManageTags"
                 icon="i-lucide-trash-2"
                 color="error"
                 variant="ghost"
@@ -212,7 +215,7 @@ async function handleDeleteTag() {
           </div>
           <h3 class="text-lg font-semibold mb-2">No tags yet</h3>
           <p class="text-muted mb-4">Create tags to categorize and filter your projects</p>
-          <UButton v-if="isAdmin" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
+          <UButton v-if="canManageTags" label="Add tag" icon="i-lucide-tag" @click="isAddTagModalOpen = true" />
         </div>
       </SectionCard>
     </div>

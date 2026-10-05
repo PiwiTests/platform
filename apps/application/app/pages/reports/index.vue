@@ -3,7 +3,9 @@ import type { ReportScheduleView, ReportSnapshotSummary } from '#shared/handlers
 
 useHead({ title: 'Quality reports - Piwi Dashboard' });
 
-const { canWrite } = useAuth();
+// Report schedules need `report:write`; the list holds every project's, so any project is enough.
+const { canAnywhere } = useAuth();
+const canSchedule = computed(() => canAnywhere('report:write'));
 const { isHidden } = await useInstanceCapabilities();
 const isDesktop = useIsDesktop();
 const demoMode = !!useRuntimeConfig().public.demoMode;
@@ -27,7 +29,7 @@ const {
 } = await useFetch<{ items: ReportScheduleView[] }>('/api/reports/schedules', {
   server: false,
   lazy: true,
-  immediate: canWrite.value,
+  immediate: canSchedule.value,
   default: () => ({ items: [] }),
 });
 
@@ -69,7 +71,7 @@ const schedulesSubtitle = computed(() => {
           <UDashboardSidebarCollapse />
           <BreadcrumbNav :items="[{ label: 'Quality reports', icon: 'i-lucide-file-chart-column', to: '/reports' }]" />
         </template>
-        <template v-if="canWrite && !isHidden('quality-reports')" #right>
+        <template v-if="canSchedule && !isHidden('quality-reports')" #right>
           <NavbarActions
             :actions="[
               {
@@ -113,7 +115,7 @@ const schedulesSubtitle = computed(() => {
         </SectionCard>
 
         <SectionCard
-          v-if="canWrite"
+          v-if="canSchedule"
           icon="i-lucide-calendar-clock"
           title="Report schedules"
           :count="schedules.items.length || undefined"

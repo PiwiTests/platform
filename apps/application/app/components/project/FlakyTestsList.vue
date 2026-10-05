@@ -15,7 +15,9 @@ const props = defineProps<{
 const emit = defineEmits<{ count: [total: number]; quarantined: [] }>();
 
 const toast = useToast();
-const { canWrite } = useAuth();
+// Quarantining and dismissing a proposal need `quarantine:write` on the project.
+const { can } = useAuth();
+const canQuarantine = computed(() => can('quarantine:write', props.projectId));
 const quarantiningId = ref<number | null>(null);
 
 const runsWindow = ref(50);
@@ -255,14 +257,14 @@ function flakyBadges(test: FlakyTest) {
           </NuxtLink>
           <span class="tabular-nums" title="Failure rate">{{ Math.round(test.failureRate * 100) }}% fail</span>
           <QuarantineDismissButton
-            v-if="canWrite && proposals.has(test.testCaseId)"
+            v-if="canQuarantine && proposals.has(test.testCaseId)"
             :project-id="projectId"
             :test-case-id="test.testCaseId"
             proposal="quarantine"
             @dismissed="loadProposals"
           />
           <UButton
-            v-if="canWrite"
+            v-if="canQuarantine"
             size="xs"
             variant="outline"
             color="warning"

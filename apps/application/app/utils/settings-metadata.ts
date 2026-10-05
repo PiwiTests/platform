@@ -1,6 +1,6 @@
 /**
  * Single source of truth for the Settings surface metadata: which pages exist,
- * their nav label/icon/route, the role required to access them, and the
+ * their nav label/icon/route, the permission required to open them, and the
  * overridable fields on each. Each field references a `HelpTopicKey` whose
  * `envVars` list the `PIWI_*` environment variable(s) that override it (env
  * always wins; the UI shows the field read-only when set).
@@ -14,7 +14,7 @@
  * (which pages are env-managed), and the settings pages themselves (page-level
  * env-var lists for banners + tooltips).
  */
-import { Role } from '#shared/types';
+import { can, type AccessSummary, type InstancePermission } from '#shared/permissions';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import type { CapabilityId } from '#shared/capabilities';
 import { helpEnvVars, type HelpTopicKey } from './help-content';
@@ -23,6 +23,7 @@ export type SettingsPageId =
   | 'account'
   | 'localization'
   | 'users'
+  | 'groups'
   | 'permissions'
   | 'notifications'
   | 'tags'
@@ -65,8 +66,11 @@ export interface SettingsPageMeta {
   to: string;
   /** Which section of the Settings nav this page belongs to. */
   group: SettingsGroupId;
-  /** Roles that may access the page; omitted = any authenticated user. */
-  roles?: Role[];
+  /**
+   * The instance permission the page's endpoints need; omitted = any signed-in
+   * user. Only an administrator holds an instance permission.
+   */
+  permission?: InstancePermission;
   /**
    * Pages that only make sense when authentication is enabled (managing your
    * own account, managing users). Hidden in the desktop build, which is
@@ -120,7 +124,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-users',
     to: '/settings/users',
     group: 'instance',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'users:manage',
     authOnly: true,
     introHelp: 'settings.users',
     fields: [
@@ -129,15 +133,26 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     ],
   },
   {
+    id: 'groups',
+    label: 'Groups',
+    icon: 'i-lucide-users-round',
+    to: '/settings/groups',
+    group: 'instance',
+    permission: 'groups:manage',
+    authOnly: true,
+    introHelp: 'settings.groups',
+    fields: [{ id: 'groups.list', label: 'Groups', help: 'settings.groups' }],
+  },
+  {
     id: 'permissions',
     label: 'Permissions',
     icon: 'i-lucide-shield-check',
     to: '/settings/permissions',
     group: 'instance',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'users:manage',
     authOnly: true,
     introHelp: 'settings.permissions',
-    fields: [{ id: 'permissions.grid', label: 'Project access', help: 'settings.permissions' }],
+    fields: [{ id: 'permissions.grid', label: 'Permission grid', help: 'settings.permissions' }],
   },
   {
     id: 'notifications',
@@ -159,7 +174,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-tags',
     to: '/settings/tags',
     group: 'analysis',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'tags:manage',
     introHelp: 'settings.tags',
     capability: 'tags',
     fields: [{ id: 'tags.list', label: 'Tags', help: 'settings.tags' }],
@@ -170,7 +185,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-plug',
     to: '/settings/integrations',
     group: 'instance',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'connections:manage',
     introHelp: 'settings.integrations',
     capability: 'integrations',
     fields: [
@@ -184,7 +199,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-hard-drive',
     to: '/settings/storage',
     group: 'instance',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'storage:manage',
     fields: [
       { id: 'storage.backend', label: 'Storage backend', help: 'settings.storage-backend', envOnly: true },
       { id: 'storage.stats', label: 'Storage analysis', help: 'settings.storage-stats' },
@@ -197,7 +212,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-gauge',
     to: '/settings/performance',
     group: 'analysis',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'settings:manage',
     fields: [
       { id: 'wasted-time.patterns', label: 'Wasted-time patterns', help: 'settings.wasted-time' },
       { id: 'timeout-hygiene.thresholds', label: 'Detection thresholds', help: 'settings.timeout-hygiene' },
@@ -210,7 +225,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-git-pull-request',
     to: '/settings/pr-feedback',
     group: 'analysis',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'settings:manage',
     introHelp: 'settings.pr-feedback',
     capability: 'pr-feedback',
     fields: [{ id: 'pr-feedback.settings', label: 'Pull-request feedback', help: 'settings.pr-feedback' }],
@@ -221,7 +236,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-bandage',
     to: '/settings/auto-heal',
     group: 'analysis',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'settings:manage',
     introHelp: 'settings.auto-heal',
     capability: 'auto-heal',
     fields: [{ id: 'auto-heal.settings', label: 'Auto-heal pull requests', help: 'settings.auto-heal' }],
@@ -232,7 +247,7 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     icon: 'i-lucide-sparkles',
     to: '/settings/ai',
     group: 'analysis',
-    roles: [Role.ADMINISTRATOR],
+    permission: 'settings:manage',
     capability: 'ai',
     fields: [
       { id: 'ai.diagnosis', label: 'Diagnosis model', help: 'settings.ai-provider' },
@@ -278,14 +293,15 @@ export function getSettingsPage(id: SettingsPageId): SettingsPageMeta {
 }
 
 /**
- * Whether a signed-in user with `role` may open `path`. Only role-restricted
- * settings pages are refused; any other path (including non-settings routes)
- * is allowed. Used by the auth middleware so a direct URL cannot reach a page
- * the nav hides — the server still enforces the roles on each page's endpoints.
+ * Whether a signed-in user with `access` may open `path`. Only settings pages
+ * that need a permission are refused to someone without it; any other path
+ * (including non-settings routes) is allowed. Used by the auth middleware so a
+ * direct URL cannot reach a page the nav hides; the server still checks the
+ * permission on each page's endpoints.
  */
-export function canOpenSettingsPath(path: string, role: Role | undefined): boolean {
+export function canOpenSettingsPath(path: string, access: AccessSummary | null | undefined): boolean {
   const page = SETTINGS_PAGES.find((p) => p.to === path.replace(/\/+$/, ''));
-  return !page?.roles || (role !== undefined && page.roles.includes(role));
+  return !page?.permission || (!!access && can(access, page.permission));
 }
 
 // ── Nav construction ───────────────────────────────────────────────────────
@@ -305,8 +321,9 @@ export interface SettingsNavItem {
 /** What the viewer is allowed to see, and which pages the environment has pinned. */
 export interface SettingsNavContext {
   /**
-   * Whether admin-only pages are visible. Callers pass `true` when auth is
-   * disabled entirely — every visitor is a virtual administrator then.
+   * Whether the pages needing an instance permission are visible (only an
+   * administrator holds one). Callers pass `true` when auth is disabled
+   * entirely: every visitor is a virtual administrator then.
    */
   canSeeAdmin: boolean;
   /** Desktop build: single-user with auth off, so `authOnly` pages are hidden. */
@@ -324,13 +341,13 @@ export interface SettingsNavContext {
  * all hidden for this viewer is dropped rather than rendered as an empty
  * separator — a non-admin, for instance, can see none of the Analysis pages.
  *
- * Kept pure (no Vue, no Nuxt composables) so the role/build/env branching is
+ * Kept pure (no Vue, no Nuxt composables) so the permission/build/env branching is
  * directly testable; `useSettingsNav` is the reactive wrapper around it.
  */
 export function buildSettingsNavSections(ctx: SettingsNavContext): SettingsNavItem[][] {
   const visible = SETTINGS_PAGES.filter(
     (page) =>
-      (!page.roles || ctx.canSeeAdmin) &&
+      (!page.permission || ctx.canSeeAdmin) &&
       !(ctx.isDesktop && page.authOnly) &&
       !(page.capability && ctx.declinedCapabilities?.has(page.capability)),
   );

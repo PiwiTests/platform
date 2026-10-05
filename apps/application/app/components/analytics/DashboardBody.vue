@@ -33,7 +33,11 @@ const { state, scope, scopeQuery, reset } = useAnalyticsScope(
   isOverview ? {} : { defaultState: stateFromScope(dashboardScope(props.view.definition)) },
 );
 const { isHidden } = await useInstanceCapabilities();
-const { canWrite } = useAuth();
+// A dashboard spans projects: scheduling its report and its live links show to
+// the holders of `report:write` and `share:create` on at least one project.
+const { canAnywhere } = useAuth();
+const canScheduleReports = computed(() => canAnywhere('report:write'));
+const canShareLinks = computed(() => canAnywhere('share:create'));
 const reportOpen = ref(false);
 const liveLinksOpen = ref(false);
 // Share links need the server; the public demo has no share-link routes.
@@ -468,7 +472,7 @@ const headerActions = computed(() => {
       title: 'Export this scope as a quality report',
       onClick: () => (reportOpen.value = true),
     });
-    if (canWrite.value) {
+    if (canScheduleReports.value) {
       actions.push({
         label: 'Schedule…',
         icon: 'i-lucide-calendar-clock',
@@ -497,7 +501,7 @@ const moreItems = computed(() => {
   const manage: Array<Record<string, any>> = [
     { label: 'Manage dashboards', icon: 'i-lucide-layout-dashboard', to: '/analytics/dashboards' },
   ];
-  if (isSaved && !isDemoMode) {
+  if (isSaved && !isDemoMode && canShareLinks.value) {
     manage.unshift({
       label: 'Live dashboard links',
       icon: 'i-lucide-cast',

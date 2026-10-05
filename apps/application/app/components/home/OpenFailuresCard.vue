@@ -15,7 +15,6 @@ import type { OpenFailureCluster } from '~~/types/api';
 
 const props = defineProps<{
   clusters: OpenFailureCluster[];
-  canWrite: boolean;
 }>();
 
 const emit = defineEmits<{ changed: [] }>();
@@ -23,8 +22,18 @@ const emit = defineEmits<{ changed: [] }>();
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
-const { authState } = useAuth();
+const { authState, can } = useAuth();
 const { hasTracker } = useTrackerStatus();
+
+// ── What the viewer may do on each cluster's project ─────────────────────────
+// Each action shows to the holders of the permission its route declares there.
+const canTriage = (c: OpenFailureCluster) => can('triage:write', c.projectId);
+const canQuarantine = (c: OpenFailureCluster) => can('quarantine:write', c.projectId);
+const canLink = (c: OpenFailureCluster) => can('link:write', c.projectId);
+const canFileIssue = (c: OpenFailureCluster) => can('issue:create', c.projectId);
+/** A row is selectable when some bulk action applies to it. */
+const canSelect = (c: OpenFailureCluster) => canTriage(c) || canQuarantine(c) || canFileIssue(c);
+const canActOn = (c: OpenFailureCluster) => canSelect(c) || canLink(c);
 
 const PREVIEW_LIMIT = 10;
 
@@ -114,6 +123,19 @@ const expanded = ref(false);
 const visibleRows = computed(() => (expanded.value ? rows.value : rows.value.slice(0, PREVIEW_LIMIT)));
 const hasMore = computed(() => rows.value.length > PREVIEW_LIMIT);
 
+// The keyboard hints name only the shortcuts the viewer can use on some row.
+const hints = computed(() => {
+  const list = rows.value;
+  return {
+    any: list.some(canActOn),
+    select: list.some(canSelect),
+    triage: list.some(canTriage),
+    quarantine: list.some(canQuarantine),
+    link: list.some(canLink),
+    issue: hasTracker.value && list.some(canFileIssue),
+  };
+});
+
 watch([visibleRows, queue], () => {
   if (selectedIndex.value >= visibleRows.value.length) selectedIndex.value = visibleRows.value.length - 1;
 });
@@ -158,6 +180,9 @@ const selectedIndex = ref(-1);
 const selectedIds = ref(new Set<number>());
 
 const selectedClusters = computed(() => rows.value.filter((c) => selectedIds.value.has(c.id)));
+const bulkCanTriage = computed(() => selectedClusters.value.every(canTriage));
+const bulkCanQuarantine = computed(() => selectedClusters.value.every(canQuarantine));
+const bulkCanFileIssues = computed(() => selectedClusters.value.every(canFileIssue));
 
 function toggleSelect(cluster: OpenFailureCluster): void {
   const next = new Set(selectedIds.value);
@@ -173,7 +198,7 @@ function extendSelection(dir: 1 | -1): void {
   const next = Math.min(list.length - 1, Math.max(0, selectedIndex.value + dir));
   selectedIndex.value = next;
   const target = list[next];
-  if (target) {
+  if (target && canSelect(target)) {
     const set = new Set(selectedIds.value);
     set.add(target.id);
     selectedIds.value = set;
@@ -209,7 +234,7 @@ function undoToast(title: string, undo: () => Promise<void>): void {
 }
 
 async function setStatus(cluster: OpenFailureCluster, status: 'resolved' | 'ignored'): Promise<void> {
-  if (!props.canWrite) return;
+  if (!canTriage(cluster)) return;
   try {
     await callPatch(`/api/failure-clusters/${cluster.id}/status`, { status });
     removedIds.value = new Set([...removedIds.value, cluster.id]);
@@ -227,7 +252,7 @@ async function setStatus(cluster: OpenFailureCluster, status: 'resolved' | 'igno
 }
 
 async function snooze(cluster: OpenFailureCluster, option: SnoozeOption): Promise<void> {
-  if (!props.canWrite) return;
+  if (!canTriage(cluster)) return;
   try {
     await callPatch(`/api/failure-clusters/${cluster.id}/snooze`, { snooze: option });
     removedIds.value = new Set([...removedIds.value, cluster.id]);
@@ -245,7 +270,7 @@ async function snooze(cluster: OpenFailureCluster, option: SnoozeOption): Promis
 }
 
 async function assign(cluster: OpenFailureCluster, assignee: string | null): Promise<void> {
-  if (!props.canWrite) return;
+  if (!canTriage(cluster)) return;
   const previous = cluster.assignee ?? null;
   try {
     assigneeOverride.value = new Map(assigneeOverride.value).set(cluster.id, assignee);
@@ -264,7 +289,7 @@ async function assign(cluster: OpenFailureCluster, assignee: string | null): Pro
 }
 
 async function quarantine(cluster: OpenFailureCluster): Promise<void> {
-  if (!props.canWrite) return;
+  if (!canQuarantine(cluster)) return;
   try {
     const res = await $fetch<{ tests: number }>(`/api/failure-clusters/${cluster.id}/quarantine`, { method: 'POST' });
     toast.add({
@@ -279,7 +304,7 @@ async function quarantine(cluster: OpenFailureCluster): Promise<void> {
 }
 
 async function linkIssue(cluster: OpenFailureCluster): Promise<void> {
-  if (!props.canWrite || !linkUrl.value.trim()) return;
+  if (!canLink(cluster) || !linkUrl.value.trim()) return;
   try {
     await $fetch('/api/links', {
       method: 'POST',
@@ -297,7 +322,7 @@ async function linkIssue(cluster: OpenFailureCluster): Promise<void> {
 // ── Bulk actions ─────────────────────────────────────────────────────────────
 
 async function bulk(action: 'status' | 'assign' | 'snooze', extra: Record<string, unknown>): Promise<void> {
-  if (!props.canWrite) return;
+  if (!bulkCanTriage.value) return;
   const ids = selectedClusters.value.map((c) => c.id);
   if (ids.length === 0) return;
   try {
@@ -312,7 +337,7 @@ async function bulk(action: 'status' | 'assign' | 'snooze', extra: Record<string
 }
 
 async function bulkQuarantine(): Promise<void> {
-  if (!props.canWrite) return;
+  if (!bulkCanQuarantine.value) return;
   const targets = [...selectedClusters.value];
   if (targets.length === 0) return;
   try {
@@ -347,14 +372,14 @@ const issueModalOpen = ref(false);
 const issueModalClusterId = ref<number | null>(null);
 
 function createIssue(cluster: OpenFailureCluster): void {
-  if (!props.canWrite || !hasTracker.value) return;
+  if (!canFileIssue(cluster) || !hasTracker.value) return;
   issueModalClusterId.value = cluster.id;
   issueModalOpen.value = true;
 }
 
 const bulkCreating = ref(false);
 async function bulkCreateIssues(): Promise<void> {
-  if (!props.canWrite || bulkCreating.value) return;
+  if (!bulkCanFileIssues.value || bulkCreating.value) return;
   const targets = selectedClusters.value.filter((c) => !c.issueLink);
   if (targets.length === 0) return;
   bulkCreating.value = true;
@@ -448,7 +473,7 @@ function onKeydown(e: KeyboardEvent): void {
       break;
     case 'x': {
       const c = sel();
-      if (c) {
+      if (c && canSelect(c)) {
         e.preventDefault();
         toggleSelect(c);
       }
@@ -464,7 +489,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'r': {
       const c = sel();
-      if (c && props.canWrite) {
+      if (c && canTriage(c)) {
         e.preventDefault();
         void setStatus(c, 'resolved');
       }
@@ -472,7 +497,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'i': {
       const c = sel();
-      if (c && props.canWrite) {
+      if (c && canTriage(c)) {
         e.preventDefault();
         void setStatus(c, 'ignored');
       }
@@ -480,7 +505,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'q': {
       const c = sel();
-      if (c && props.canWrite) {
+      if (c && canQuarantine(c)) {
         e.preventDefault();
         void quarantine(c);
       }
@@ -488,7 +513,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'a': {
       const c = sel();
-      if (c && props.canWrite) {
+      if (c && canTriage(c)) {
         e.preventDefault();
         openAssign(c);
       }
@@ -496,7 +521,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 's': {
       const c = sel();
-      if (c && props.canWrite) {
+      if (c && canTriage(c)) {
         e.preventDefault();
         snoozeMenuId.value = c.id;
       }
@@ -504,7 +529,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'l': {
       const c = sel();
-      if (c && props.canWrite) {
+      if (c && canLink(c)) {
         e.preventDefault();
         openLink(c);
       }
@@ -512,7 +537,7 @@ function onKeydown(e: KeyboardEvent): void {
     }
     case 'c': {
       const c = sel();
-      if (c && props.canWrite && hasTracker.value && !c.issueLink) {
+      if (c && canFileIssue(c) && hasTracker.value && !c.issueLink) {
         e.preventDefault();
         createIssue(c);
       }
@@ -578,30 +603,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
     <!-- Bulk bar -->
     <div
-      v-if="selectedIds.size > 0 && canWrite"
+      v-if="selectedIds.size > 0"
       class="mb-2 flex flex-wrap items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
     >
       <span class="font-medium tabular-nums">{{ selectedIds.size }} selected</span>
       <div class="ml-auto flex flex-wrap items-center gap-1">
-        <UButton
-          size="xs"
-          color="success"
-          variant="soft"
-          icon="i-lucide-check"
-          @click="bulk('status', { status: 'resolved' })"
-        >
-          Resolve
-        </UButton>
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-bell-off"
-          @click="bulk('status', { status: 'ignored' })"
-        >
-          Ignore
-        </UButton>
+        <template v-if="bulkCanTriage">
+          <UButton
+            size="xs"
+            color="success"
+            variant="soft"
+            icon="i-lucide-check"
+            @click="bulk('status', { status: 'resolved' })"
+          >
+            Resolve
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-bell-off"
+            @click="bulk('status', { status: 'ignored' })"
+          >
+            Ignore
+          </UButton>
+        </template>
         <UDropdownMenu
+          v-if="bulkCanTriage"
           :items="[
             [
               {
@@ -623,6 +651,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           </UButton>
         </UDropdownMenu>
         <UDropdownMenu
+          v-if="bulkCanTriage"
           :items="[
             [
               { label: '1 day', onSelect: () => bulk('snooze', { snooze: '1-day' }) },
@@ -635,11 +664,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             Snooze
           </UButton>
         </UDropdownMenu>
-        <UButton size="xs" color="warning" variant="soft" icon="i-lucide-shield" @click="bulkQuarantine">
+        <UButton
+          v-if="bulkCanQuarantine"
+          size="xs"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-shield"
+          @click="bulkQuarantine"
+        >
           Quarantine
         </UButton>
         <UButton
-          v-if="hasTracker"
+          v-if="hasTracker && bulkCanFileIssues"
           size="xs"
           color="neutral"
           variant="soft"
@@ -703,7 +739,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       >
         <!-- Select checkbox -->
         <UCheckbox
-          v-if="canWrite"
+          v-if="canSelect(cluster)"
           :model-value="selectedIds.has(cluster.id)"
           class="shrink-0"
           :aria-label="`Select ${describeCluster(cluster)}`"
@@ -777,29 +813,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           </div>
         </div>
 
-        <!-- Triage actions (reporter / admin) -->
+        <!-- Row actions, each for the holders of its permission on the cluster's project -->
         <div
-          v-if="canWrite"
+          v-if="canActOn(cluster)"
           class="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100"
           @click.stop
         >
+          <template v-if="canTriage(cluster)">
+            <UButton
+              size="xs"
+              color="success"
+              variant="ghost"
+              icon="i-lucide-check"
+              :title="`Resolve (r)`"
+              @click="setStatus(cluster, 'resolved')"
+            />
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-bell-off"
+              :title="`Ignore (i)`"
+              @click="setStatus(cluster, 'ignored')"
+            />
+          </template>
           <UButton
-            size="xs"
-            color="success"
-            variant="ghost"
-            icon="i-lucide-check"
-            :title="`Resolve (r)`"
-            @click="setStatus(cluster, 'resolved')"
-          />
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-bell-off"
-            :title="`Ignore (i)`"
-            @click="setStatus(cluster, 'ignored')"
-          />
-          <UButton
+            v-if="canQuarantine(cluster)"
             size="xs"
             color="warning"
             variant="ghost"
@@ -809,7 +848,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           />
 
           <!-- Assign -->
-          <UPopover :open="assignOpenId === cluster.id" @update:open="(v) => (assignOpenId = v ? cluster.id : null)">
+          <UPopover
+            v-if="canTriage(cluster)"
+            :open="assignOpenId === cluster.id"
+            @update:open="(v) => (assignOpenId = v ? cluster.id : null)"
+          >
             <UButton
               size="xs"
               color="neutral"
@@ -857,6 +900,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
           <!-- Snooze -->
           <UDropdownMenu
+            v-if="canTriage(cluster)"
             :items="snoozeItems(cluster)"
             :open="snoozeMenuId === cluster.id"
             @update:open="(v: boolean) => (snoozeMenuId = v ? cluster.id : null)"
@@ -866,7 +910,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
           <!-- Create issue (only while the cluster has no known issue) -->
           <UButton
-            v-if="hasTracker && !cluster.issueLink"
+            v-if="canFileIssue(cluster) && hasTracker && !cluster.issueLink"
             size="xs"
             color="neutral"
             variant="ghost"
@@ -876,7 +920,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           />
 
           <!-- Link to issue -->
-          <UPopover :open="linkOpenId === cluster.id" @update:open="(v) => (linkOpenId = v ? cluster.id : null)">
+          <UPopover
+            v-if="canLink(cluster)"
+            :open="linkOpenId === cluster.id"
+            @update:open="(v) => (linkOpenId = v ? cluster.id : null)"
+          >
             <UButton
               size="xs"
               color="neutral"
@@ -908,12 +956,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     </div>
 
     <!-- Keyboard hints (hidden on touch) -->
-    <p v-if="canWrite && rows.length > 0" class="mt-3 text-[11px] text-gray-400 [@media(hover:none)]:hidden">
-      <span class="font-mono">j/k</span> move · <span class="font-mono">x</span> select ·
-      <span class="font-mono">r</span> resolve · <span class="font-mono">i</span> ignore ·
-      <span class="font-mono">q</span> quarantine · <span class="font-mono">a</span> assign ·
-      <span class="font-mono">s</span> snooze · <span class="font-mono">l</span> link ·
-      <span v-if="hasTracker"><span class="font-mono">c</span> create issue · </span>
+    <p v-if="hints.any" class="mt-3 text-[11px] text-gray-400 [@media(hover:none)]:hidden">
+      <span class="font-mono">j/k</span> move ·
+      <span v-if="hints.select"><span class="font-mono">x</span> select · </span>
+      <template v-if="hints.triage">
+        <span class="font-mono">r</span> resolve · <span class="font-mono">i</span> ignore ·
+      </template>
+      <span v-if="hints.quarantine"><span class="font-mono">q</span> quarantine · </span>
+      <template v-if="hints.triage">
+        <span class="font-mono">a</span> assign · <span class="font-mono">s</span> snooze ·
+      </template>
+      <span v-if="hints.link"><span class="font-mono">l</span> link · </span>
+      <span v-if="hints.issue"><span class="font-mono">c</span> create issue · </span>
       <span class="font-mono">o</span> open
     </p>
 

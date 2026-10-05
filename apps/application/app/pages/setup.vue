@@ -28,12 +28,16 @@ const { data: reporterConfig } = await useFetch<{ url: string; token: string } |
   default: () => null,
 });
 
+// The capability ladder is `settings:manage`, an administrator's; the auth
+// middleware keeps everyone else off this page, and the demo too.
+const { can } = useAuth();
 const {
   data: status,
   status: fetchStatus,
   refresh,
 } = await useFetch<SetupStatus>('/api/setup-status', {
   lazy: true,
+  immediate: can('settings:manage'),
   default: () => ({ capabilities: [] }) as SetupStatus,
 });
 

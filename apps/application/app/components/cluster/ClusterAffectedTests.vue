@@ -22,7 +22,6 @@ interface AffectedCase {
 const props = defineProps<{
   clusterId: number;
   cases: AffectedCase[];
-  canWrite: boolean;
   /** The selected test whose evidence is shown (v-model). */
   selectedCaseId?: number;
   /** The selected test's run and execution, for its trailing links. */
@@ -40,6 +39,13 @@ const emit = defineEmits<{ changed: []; 'update:selectedCaseId': [id: number] }>
 const sortedCases = computed(() => [...props.cases].sort((a, b) => b.recentTestRunsCaseId - a.recentTestRunsCaseId));
 
 const toast = useToast();
+
+// The bulk bar's actions: moving tests out of the cluster is triage, the other
+// one quarantine; each shows to the holders of its permission on the project.
+const { can } = useAuth();
+const canMove = computed(() => can('triage:write', props.projectId));
+const canQuarantine = computed(() => can('quarantine:write', props.projectId));
+const canSelect = computed(() => canMove.value || canQuarantine.value);
 
 // A cluster is a set of same-way failures, so each affected test reads as a
 // failing row linking to its latest execution.
@@ -138,7 +144,7 @@ async function quarantineSelected() {
         :test-case="toRow(c)"
         :show-cluster="false"
         :quarantined="c.quarantined"
-        :selectable="canWrite"
+        :selectable="canSelect"
         :selected="selected.has(c.testCaseId)"
         select-on-click
         :active="c.testCaseId === selectedCaseId"
@@ -173,12 +179,13 @@ async function quarantineSelected() {
 
     <!-- Bulk bar -->
     <div
-      v-if="canWrite && selectedCount"
+      v-if="canSelect && selectedCount"
       class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5"
     >
       <span class="text-sm font-medium">{{ selectedCount }} selected</span>
       <span class="flex-1" />
       <UButton
+        v-if="canMove"
         size="xs"
         color="neutral"
         variant="outline"
@@ -189,6 +196,7 @@ async function quarantineSelected() {
         Move to a new cluster
       </UButton>
       <UButton
+        v-if="canQuarantine"
         size="xs"
         color="warning"
         variant="outline"

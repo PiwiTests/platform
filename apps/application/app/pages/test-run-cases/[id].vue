@@ -391,9 +391,16 @@ onMounted(() => {
   desktopBridge.value = !!tauriCore();
 });
 
+// ── What the viewer may do on the execution's project ───────────────────────
+const { can } = useAuth();
+const executionProjectId = computed(() => testCase.value?.testRun?.project?.id ?? null);
+const canQuarantine = computed(() => can('quarantine:write', executionProjectId.value));
+const canTriage = computed(() => can('triage:write', executionProjectId.value));
+const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
+const canEditLinks = computed(() => can('link:write', executionProjectId.value));
+
 // ── Quarantine ──────────────────────────────────────────────────────────────
-const { canWrite } = useAuth();
-const { quarantineOne, releaseOne } = useQuarantine(() => testCase.value?.testRun?.project?.id ?? null);
+const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
 const quarantineBusy = ref(false);
 async function toggleQuarantine() {
   const stableId = testCase.value?.testCaseId;
@@ -480,7 +487,7 @@ const moreMenuItems = computed(() => {
       onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
   }
-  if (canWrite.value && testCase.value?.testCaseId) {
+  if (canQuarantine.value && testCase.value?.testCaseId) {
     items.push(
       quarantined.value
         ? {
@@ -504,10 +511,12 @@ const moreMenuItems = computed(() => {
       to: knownIssue.value.url,
       target: '_blank',
     });
-  } else if (canWrite.value && hasTracker.value && failureCluster.value) {
+  } else if (canCreateIssue.value && hasTracker.value && failureCluster.value) {
     items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
   }
-  items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
+  if (canEditLinks.value) {
+    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
+  }
   if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
   return items;
@@ -666,6 +675,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <ShareLinksModal
               v-if="testCase && !isDemoMode"
               :endpoint="`/api/test-run-cases/${testCase.id}/share-links`"
+              :project-id="executionProjectId"
             />
             <ExportMenu
               v-if="testCase"
@@ -898,14 +908,19 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   Open
                 </UButton>
               </div>
-              <DiagnosisPanel v-else scope="execution" :execution-id="Number(testCaseId)" />
+              <DiagnosisPanel
+                v-else
+                scope="execution"
+                :execution-id="Number(testCaseId)"
+                :project-id="executionProjectId"
+              />
             </template>
 
             <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
             <template v-if="fixedBefore.length" #fixed-before>
               <FixedBeforeMatches
                 :matches="fixedBefore"
-                :can-write="canWrite"
+                :can-triage="canTriage"
                 :applying-id="applyingId"
                 @apply="applyTriage"
               />

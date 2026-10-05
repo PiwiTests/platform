@@ -21,6 +21,8 @@ const {
 });
 const { data: tagsData, refresh: refreshTags } = useFetch<TagsResponse>('/api/tags', { lazy: true });
 const toast = useToast();
+// Creating a project is an instance permission; editing one needs `project:manage` on it.
+const { can } = useAuth();
 
 const allTags = computed(() => tagsData.value?.items || []);
 
@@ -225,7 +227,9 @@ const columns: TableColumn<ProjectWithStats>[] = [
         <template #right>
           <NavbarActions
             :actions="[
-              { label: 'New project', icon: 'i-lucide-plus', onClick: () => (isNewProjectModalOpen = true) },
+              ...(can('project:create')
+                ? [{ label: 'New project', icon: 'i-lucide-plus', onClick: () => (isNewProjectModalOpen = true) }]
+                : []),
               { label: 'Refresh', icon: 'i-lucide-refresh-cw', variant: 'outline', onClick: () => refresh() },
             ]"
           >
@@ -356,6 +360,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
           <template #actions-cell="{ row }">
             <div class="flex justify-end gap-2">
               <UButton
+                v-if="can('project:manage', row.original.id)"
                 :to="`/projects/${row.original.id}/edit`"
                 size="sm"
                 variant="ghost"
@@ -390,6 +395,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
           >.
         </p>
         <UButton
+          v-if="can('project:create')"
           icon="i-lucide-plus"
           label="New project"
           variant="ghost"
