@@ -11,7 +11,9 @@
  */
 
 import { test, expect } from './fixtures';
+import { ProjectRole } from '#shared/permissions';
 import { readSseUntil } from './utils/sse';
+import { createMember } from './utils/access';
 
 // All tests share a single auth-enabled server — must run serially.
 test.describe.configure({ mode: 'serial' });
@@ -93,20 +95,12 @@ test.describe.serial('Setup', () => {
     expect(projectId).toBeGreaterThan(0);
   });
 
-  test('create a regular user for ownership tests', async () => {
+  test('create a member (Viewer of every project) for ownership tests', async () => {
     skip();
-    const res = await api(
-      'POST',
-      '/api/users',
-      {
-        username: 'notif-user',
-        password: 'userpassword123',
-        role: 'user',
-      },
-      adminCookie,
+    await createMember(
+      { baseUrl: BASE, cookie: adminCookie },
+      { username: 'notif-user', password: 'userpassword123', role: ProjectRole.VIEWER },
     );
-    // 200 on first run, 400/409 if already exists
-    expect([200, 400, 409]).toContain(res.status);
     userCookie = await loginAs('notif-user', 'userpassword123');
     expect(userCookie).toBeTruthy();
   });

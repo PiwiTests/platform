@@ -8,6 +8,8 @@ import { test, expect } from './fixtures';
 import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
+import { ProjectRole } from '#shared/permissions';
+import { createMember } from './utils/access';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -188,18 +190,15 @@ test.describe.serial('Integrations — role checks (auth server, CI only)', () =
   let adminCookie = '';
   let userCookie = '';
 
-  test('bootstrap admin and a non-admin user', async () => {
+  test('bootstrap admin and a member (Viewer of every project)', async () => {
     skip();
     await authApi('POST', '/api/auth/setup', { ...ADMIN, name: 'Admin' });
     adminCookie = await loginAs(ADMIN.username, ADMIN.password);
     expect(adminCookie).toBeTruthy();
-    const res = await authApi(
-      'POST',
-      '/api/users',
-      { username: 'integrations-user', password: 'userpassword123', role: 'user' },
-      adminCookie,
+    await createMember(
+      { baseUrl: AUTH_BASE, cookie: adminCookie },
+      { username: 'integrations-user', password: 'userpassword123', role: ProjectRole.VIEWER },
     );
-    expect([200, 400, 409]).toContain(res.status);
     userCookie = await loginAs('integrations-user', 'userpassword123');
     expect(userCookie).toBeTruthy();
   });

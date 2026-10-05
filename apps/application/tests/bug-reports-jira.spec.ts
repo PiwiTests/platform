@@ -8,7 +8,9 @@ import { test, expect } from './fixtures';
 import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
+import { ProjectRole } from '#shared/permissions';
 import { couponBugReport, TINY_PNG } from './utils/bug-report-sample';
+import { createMember } from './utils/access';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -229,7 +231,7 @@ test.describe.serial('Bug reports in Jira', () => {
 // ── Role checks (auth-enabled server, CI only) ───────────────────────────────
 const AUTH_BASE = 'http://localhost:3099';
 
-test.describe('Bug reports in Jira — a plain user (auth server, CI only)', () => {
+test.describe('Bug reports in Jira — a Viewer (auth server, CI only)', () => {
   test('cannot ask for an issue, and is told it cannot create one', async () => {
     test.skip(!process.env.CI, 'Role checks run against the CI-only auth server (see playwright.config.ts)');
     const api = (method: string, path: string, body?: unknown, cookie?: string) =>
@@ -243,9 +245,13 @@ test.describe('Bug reports in Jira — a plain user (auth server, CI only)', () 
       '';
     await api('POST', '/api/auth/setup', { username: 'admin', password: 'adminpassword123', name: 'Admin' });
     const admin = await login('admin', 'adminpassword123');
-    await api('POST', '/api/users', { username: 'bug-report-user', password: 'userpassword123', role: 'user' }, admin);
+    // A Viewer of every project: it files bug reports but does not hold `issue:create`.
+    await createMember(
+      { baseUrl: AUTH_BASE, cookie: admin },
+      { username: 'bug-report-user', password: 'userpassword123', role: ProjectRole.VIEWER },
+    );
     const user = await login('bug-report-user', 'userpassword123');
-    // A run creates the project; the user is given access to every project.
+    // A run creates the project.
     const submit = await api(
       'POST',
       '/api/test-runs/submit',
@@ -263,11 +269,6 @@ test.describe('Bug reports in Jira — a plain user (auth server, CI only)', () 
       admin,
     );
     const pid = ((await submit.json()) as { projectId: number }).projectId;
-    const users = (await (await api('GET', '/api/users', undefined, admin)).json()) as {
-      items?: { id: number; username: string }[];
-    };
-    const userId = (users.items ?? []).find((u) => u.username === 'bug-report-user')?.id;
-    if (userId) await api('PUT', `/api/users/${userId}/projects`, { global: true, projectIds: [] }, admin);
 
     const res = await api(
       'POST',
