@@ -324,8 +324,8 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   formatter and the resolution/validation helpers live in `#shared/i18n/locale-format`; format via `Intl`
   (`formatAbsolute`), never a hand-written `M/d/yyyy`. `en-US` output is byte-identical to the historical format, so it
   is the safe default for screenshots and tests.
-- **Page-level tab strips MUST match the Settings header**: `UDashboardToolbar` + `UNavigationMenu` with
-  `highlight` (`settings.vue` is the reference). `DetailPageLayout` already renders it — pages using
+- **Page-level tab strips MUST use one pattern**: `UDashboardToolbar` + `UNavigationMenu` with `highlight`
+  (`DetailPageLayout` is the reference). `DetailPageLayout` already renders it — pages using
   `DetailPageLayout` never touch the strip themselves, and no other page-level strip (UTabs pill, hand-rolled
   tablist) may be introduced. Content-level tab switches inside a card (e.g. an mcp code-client picker) are
   free to differ. The strip is a navigation menu, not an ARIA tablist: panels carry **no** `tabpanel` role,
@@ -334,8 +334,13 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   `:ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"` so it scrolls as one row when the
   tabs overflow instead of shrinking every label to an ellipsis, and **below `sm` it is replaced by a
   full-width `USelect`** (the strip is `hidden sm:flex`) — the horizontal row collapses to unreadable icons
-  on a phone. `DetailPageLayout` does both already; a route-driven strip like `settings.vue` binds the select
-  to the current route (grouped by the same sections, one `{ type: 'label' }` row per group).
+  on a phone. `DetailPageLayout` does both already.
+- **A settings surface with many sections uses a vertical section menu**, not a tab strip: Settings
+  (`pages/settings.vue`, one route per page) and a project's Settings tab (`ProjectSettingsPanel.vue`, one
+  `?section=` per section) put a vertical `UNavigationMenu` (`orientation="vertical"`, grouped with one
+  `{ type: 'label' }` row per group, `lg:w-52`, sticky) beside the content from `lg` up, and a full-width
+  `USelect` grouped the same way below `lg`. Add a page to the registry (`SETTINGS_PAGES`) or a section to the
+  panel's list; never add a horizontal strip back.
 - **Spreadsheet exports people click are Excel (.xlsx), never CSV**: build them with `renderXlsx` /
   `plainXlsxTable` from `#shared/reports/render-xlsx` (numbers and dates as typed cells, text never a formula,
   bold frozen header) and save them with `useDesktopDownload().saveBlob`, since a download link does nothing in

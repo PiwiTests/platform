@@ -1958,7 +1958,7 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     route: '/settings/permissions',
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 1440, height: 900 },
     async run({ page, shoot, settle }) {
       // Jordan holds Maintainer on API Integration through the QA group: a faint, inherited role.
       const cell = page.getByRole('button', { name: 'Jordan (QA engineer) — API Integration', exact: true });

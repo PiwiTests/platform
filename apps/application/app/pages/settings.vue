@@ -5,18 +5,17 @@ useHead({ title: 'Settings — Piwi Dashboard' });
 
 const { envManaged } = useSettingsEnvState();
 
-// Already grouped (Instance / Analysis / meta) and rendered as the tab bar.
+// Already grouped (Instance / Analysis / meta): the vertical menu and the select below.
 // Documentation is not a settings page — it lives in Settings → About →
 // Resources and behind every inline-help "Learn more" link.
 const navItems = await useSettingsNav(envManaged);
 
 const route = useRoute();
 
-// Mobile: a full-width select replaces the horizontal strip, which at phone
-// width shrinks to an unlabeled, horizontally scrolling row of icons. It keeps
-// the same Instance / Analysis grouping (a `label` row heads each section) and
-// is driven by the current route. Built from the registry so labels and order
-// match the strip, filtered to the pages this viewer can actually see.
+// Below `lg`: a full-width select replaces the vertical menu. It keeps the same
+// Instance / Analysis grouping (a `label` row heads each section) and is driven
+// by the current route. Built from the registry so labels and order match the
+// menu, filtered to the pages this viewer can actually see.
 type SettingsSelectItem = { label: string; type?: 'label'; icon?: string; value?: string };
 
 const selectItems = computed<SettingsSelectItem[]>(() => {
@@ -39,10 +38,21 @@ const currentPage = computed({
 });
 
 const currentIcon = computed(() => SETTINGS_PAGES.find((page) => page.to === route.path)?.icon);
+
+// From `lg` up, the same sections as a vertical menu beside the page, as in a
+// project's Settings tab: a horizontal strip no longer fits the number of pages.
+// Each section is headed by its group label (the meta group has none).
+const menuItems = computed(() =>
+  navItems.value.map((section) => {
+    const group = SETTINGS_PAGES.find((page) => page.to === section[0]?.to)?.group;
+    const label = SETTINGS_GROUPS.find((g) => g.id === group)?.label;
+    return label ? [{ type: 'label' as const, label }, ...section] : section;
+  }),
+);
 </script>
 
 <template>
-  <UDashboardPanel id="settings" :ui="{ body: 'lg:py-12' }">
+  <UDashboardPanel id="settings" :ui="{ body: 'lg:py-8' }">
     <template #header>
       <UDashboardNavbar>
         <template #leading>
@@ -50,9 +60,11 @@ const currentIcon = computed(() => SETTINGS_PAGES.find((page) => page.to === rou
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }, { label: 'Settings' }]" />
         </template>
       </UDashboardNavbar>
+    </template>
 
-      <UDashboardToolbar>
-        <!-- Phones: the strip collapses to unreadable icons, so a labelled select stands in. -->
+    <template #body>
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-8 w-full lg:max-w-6xl mx-auto">
+        <!-- Below lg: a labelled select replaces the section menu. -->
         <USelect
           v-model="currentPage"
           :items="selectItems"
@@ -60,23 +72,19 @@ const currentIcon = computed(() => SETTINGS_PAGES.find((page) => page.to === rou
           :icon="currentIcon"
           size="md"
           aria-label="Settings page"
-          class="w-full sm:hidden"
+          class="w-full lg:hidden"
         />
-        <!-- NOTE: The `-mx-1` class is used to align with the `DashboardSidebarCollapse` button here.
-             `item: shrink-0` keeps each tab at its natural width so the strip scrolls as one row
-             instead of squeezing every label down to "Acc…" when the sections overflow. -->
         <UNavigationMenu
-          :items="navItems"
-          highlight
-          class="hidden sm:flex -mx-1 flex-1"
-          :ui="{ list: 'overflow-x-auto', root: 'min-w-0', item: 'shrink-0' }"
+          orientation="vertical"
+          :items="menuItems"
+          aria-label="Settings pages"
+          class="hidden lg:flex lg:w-52 lg:shrink-0 lg:sticky lg:top-0"
+          :ui="{ separator: 'hidden' }"
+          data-shot="settings-nav"
         />
-      </UDashboardToolbar>
-    </template>
-
-    <template #body>
-      <div class="flex flex-col gap-4 sm:gap-6 lg:gap-12 w-full lg:max-w-4xl mx-auto">
-        <NuxtPage />
+        <div class="flex min-w-0 flex-1 flex-col gap-4 sm:gap-6 lg:gap-12 lg:max-w-4xl">
+          <NuxtPage />
+        </div>
       </div>
     </template>
   </UDashboardPanel>

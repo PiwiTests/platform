@@ -54,13 +54,18 @@ function patchUserRow(userId: number, patch: Partial<UserListItem>) {
 }
 
 // The table uses a fixed layout from `lg` up (see the `lg:table-fixed` UI class
-// below) so it fits the settings card instead of overflowing into a horizontal
-// scrollbar: the role, groups, created and actions columns get fixed widths and
-// the user and email columns share the rest, truncating long values. Below `md`
-// a card list replaces it.
+// below) so it fits the settings card beside the settings menu instead of
+// overflowing into a horizontal scrollbar: the role, groups, created and actions
+// columns get fixed widths and the user column takes the rest, its handle and
+// email on the line under the name (as on the phone cards). Below `md` a card
+// list replaces it.
+/** The line under a user's name: their handle (when the name is shown above it) and email. */
+function handleLine(user: UserListItem): string {
+  return [user.name ? `@${user.username}` : '', user.email ?? ''].filter(Boolean).join(' · ');
+}
+
 const columns: TableColumn<UserListItem>[] = [
   { accessorKey: 'username', header: createSortHeader<UserListItem>('User') },
-  { accessorKey: 'email', header: createSortHeader<UserListItem>('Email') },
   {
     accessorKey: 'instanceRole',
     header: createSortHeader<UserListItem>('Role'),
@@ -391,22 +396,15 @@ async function handleInviteUser(user: UserListItem) {
             <span class="block truncate text-highlighted" :title="displayName(row.original)">{{
               displayName(row.original)
             }}</span>
-            <span v-if="row.original.name" class="block truncate text-xs text-muted" :title="row.original.username"
-              >@{{ row.original.username }}</span
-            >
-          </template>
-
-          <template #email-cell="{ row }">
-            <span v-if="row.original.email" class="flex items-center gap-1 text-sm min-w-0">
-              <span class="truncate" :title="row.original.email">{{ row.original.email }}</span>
+            <span class="flex items-center gap-1 min-w-0 text-xs text-muted">
+              <span class="truncate" :title="handleLine(row.original)">{{ handleLine(row.original) }}</span>
               <UIcon
-                v-if="row.original.emailVerified"
+                v-if="row.original.email && row.original.emailVerified"
                 name="i-lucide-circle-check-big"
                 class="size-3.5 shrink-0 text-success-500"
                 title="Email verified"
               />
             </span>
-            <span v-else class="text-muted">—</span>
           </template>
 
           <template #instanceRole-cell="{ row }">
