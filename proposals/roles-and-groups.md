@@ -1,6 +1,6 @@
 # Roles, groups and project-scoped permissions
 
-**Status:** draft, decisions of 2026-10-05 applied (section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
+**Status:** accepted 2026-10-05, not started (decisions in section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
 `requireProjectAccess`, project scope), the MCP write tools, the demo router, the dashboard UI (`useAuth`, Settings →
 Users / Permissions, project Members) and the docs (`operate/authentication.md`, `operate/project-access.md`) ·
 **Replaces:** the three global roles and the `project_assignments` table
@@ -353,7 +353,7 @@ projects, then the field is removed.
 
 ---
 
-## 9. Decisions and open questions
+## 9. Decisions
 
 Decided on 2026-10-05:
 
@@ -365,9 +365,10 @@ Decided on 2026-10-05:
    `project:manage`). The Jira connections themselves and project deletion stay administrator only.
 4. **Groups are managed in Piwi only.** Identity provider sync stays a phase 4 option.
 
-Still open:
+5. **The instance `Administrator` role is granted per user only.** A group carries project roles, never the
+   instance role, so `groups` has no instance role column and becoming an administrator always shows on the user's
+   own row.
+6. **No service account kind.** CI runs as a regular user (`Member`) bound `Uploader`, through an API key. Phase 4's
+   API key cap is the way to narrow a key further.
 
-5. Should a group be able to grant the instance `Administrator` role (an "Admins" group), or does that stay per user?
-   Draft: per user.
-6. Service accounts: keep CI as a regular user with an API key bound `Uploader`, or add a distinct "service account"
-   kind that cannot sign in? Draft: regular user in phases 1 to 3.
+No question is open; the next step is phase 1.
