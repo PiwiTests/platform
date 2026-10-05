@@ -87,8 +87,9 @@ MCP; installed skills work offline. See [MCP server](/features/mcp#prompts).
   writes the fix, and you review it.
 - **Updated with the reporter.** A newer reporter ships newer skills; `skills add` updates the copies you never
   edited, and `--force` replaces the edited ones too.
-- **Reporting back needs write access.** The write-back tools ask for a reporter or administrator key; with a
-  read-only key the agent reports what it did to you instead.
+- **Reporting back needs write access.** The write-back tools need a key whose owner holds the matching
+  [project role](/operate/project-access#what-each-role-can-do) (Maintainer covers all of them); with a Viewer's key
+  the agent reports what it did to you instead.
 
 ## Related
 

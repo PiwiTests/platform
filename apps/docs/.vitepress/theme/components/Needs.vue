@@ -37,7 +37,7 @@ const CHIPS: { key: keyof typeof props; label: string; doc: string }[] = [
       ['backend', 'Backend integration'],
       ['desktop', 'Desktop app'],
       ['extension', 'Browser extension'],
-      ['admin', 'Admin'],
+      ['admin', 'Administrator'],
     ] as [FeatureNeed, string][]
   ).map(([key, label]) => ({ key, label, doc: FEATURE_NEED_DOCS[key] })),
 ]

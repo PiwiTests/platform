@@ -21,8 +21,11 @@ types/        Front-end API response types (`api.ts`)
 ## Shared types & core
 
 - `shared/types.ts` — the **wire contract**: `TestCasePayload`, `StreamEventPayload`, `TestRunSubmitPayload`,
-  `TestRunFinishPayload`, the `TestRunStatus` / `TestCaseStatus` unions, and the `Role` enum. Server endpoints import it
-  directly via `#shared/types`.
+  `TestRunFinishPayload` and the `TestRunStatus` / `TestCaseStatus` unions. Server endpoints import it directly via
+  `#shared/types`.
+- `shared/permissions.ts` holds the **authorization model**: `InstanceRole`, `ProjectRole`, `Permission`, the matrix
+  `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`).
+  Pure, imported by the server, the MCP tools, the demo and `useAuth`.
 - The small wire **leaf shapes** (`BrowserConfig`, `TestStepEvent`, `SuiteConfigEntry`, `TestAnnotation`,
   `FilterDetails`, `TestSourceFrame`) live in `@piwitests/core/wire` and are re-exported here — one source of truth
   shared with the reporter. Per-case payloads stay app-side; the reporter's `WireTestCase` stays reporter-side. The two
@@ -51,7 +54,7 @@ Tables, by area:
 | Failure analysis   | `failure_clusters`, `failure_cluster_aliases`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions` |
 | Evidence & storage | `files`, `trace_resources`, `trace_blobs`, `case_payloads`, `locator_snapshots`, `locator_usages`                             |
 | Metadata           | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`                        |
-| Identity           | `users`, `api_keys`, `account_tokens`, `project_assignments`                                                                  |
+| Identity           | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`                                             |
 | Notifications      | `notification_channels`, `subscriptions`, `notification_deliveries`                                                           |
 | Analytics          | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`                                     |
 | Resources          | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                      |
@@ -127,7 +130,7 @@ Key server utilities (`server/utils/`):
 | `locator-healing.ts`                                          | Shared `upsertLocatorSnapshots`, `getLocatorHealing`, `saveLocatorPick` (server + demo)                                                                                                                                                                                                                                                                                                    |
 | `locator-usages.ts`                                           | Shared locator index: step indexing on ingest, "Who uses this?", `getLocatorIndex` (server + demo)                                                                                                                                                                                                                                                                                         |
 | `project-access.ts`                                           | `getProjectScope`, `requireProjectAccess`, `requireResolvedProjectAccess`, entity resolvers                                                                                                                                                                                                                                                                                                |
-| `route-required-roles.ts`, `route-roles-match.ts`             | Read `x-required-roles` from compiled route metas; rou3 matching                                                                                                                                                                                                                                                                                                                           |
+| `route-required-roles.ts`, `route-roles-match.ts`             | Read `x-required-permission` from compiled route metas; rou3 matching                                                                                                                                                                                                                                                                                                                      |
 | `ai-*.ts`                                                     | Provider abstraction, diagnosis, context building + limits, research stage, embeddings, images, system prompt, function-catalog extraction from pasted code (rules/schema/prompt-builder live in `shared/test-function-extract-prompt.ts` — one source for the AI-calling endpoint, the dashboard's no-AI-credits "copy prompt" flow, and the MCP `create_test_function` tool description) |
 | `cluster-*.ts`                                                | Similarity, semantic adjudication, naming, reconciliation                                                                                                                                                                                                                                                                                                                                  |
 | `scm/`                                                        | Repo history, diffs and patch validation for AI diagnosis; on the desktop app, `local-git.ts` reads a linked clone                                                                                                                                                                                                                                                                         |
@@ -251,6 +254,6 @@ Auto-created projects on first submission · run ingest by JSON, multipart uploa
 crash recovery) · HTML reports, traces, videos and screenshots stored under `.data/storage/` with relative paths ·
 flaky detection with root-cause classification and impact scoring · failure clustering with semantic merge suggestions ·
 AI diagnosis grounded in real SCM diffs, optionally two-stage · locator healing · timeline markers · notifications
-(email, Slack, webhook, browser) · an MCP server for AI agents · optional auth with project-level permissions ·
+(email, Slack, webhook, browser) · an MCP server for AI agents · optional auth with project roles and groups ·
 retention and storage housekeeping · offline export of an execution or a cluster as self-contained HTML, a ZIP of the
 raw evidence, or a printed PDF.

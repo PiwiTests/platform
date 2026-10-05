@@ -23,7 +23,7 @@ Four ways in, all producing the same kind of entry. The paste paths stop at a re
 - **Bring your own AI** — no instance AI, or you'd rather not use it? **Copy prompt for your own AI** copies the full extraction prompt (the rules, the JSON schema, and your pasted code) to paste into any AI chat (ChatGPT, Claude.ai, an IDE assistant). Paste the reply back and it is validated against the exact same schema — no Piwi AI credits spent either way.
 - **From a coding agent (MCP)** — an MCP-connected agent (Claude Code, Cursor, …) calls the `create_test_function` [MCP tool](/reference/mcp-tools#create_test_function) directly, reading the source with its own model. No AI call happens on the server side; the tool only validates and persists.
 
-Registered entries are edited in place from the same page — the pencil button reopens the form with everything filled in. Registering, editing, deleting and both paste paths need the reporter or administrator role; any project member can view the catalog.
+Registered entries are edited in place from the same page — the pencil button reopens the form with everything filled in. Registering, editing, deleting and both paste paths need the **Maintainer** role or above on the project, or an administrator; anyone who can read the project can view the catalog.
 
 ## Object parameters
 

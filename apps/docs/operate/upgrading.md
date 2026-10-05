@@ -27,8 +27,8 @@ On boot, before any request can touch the database (requests that need it wait f
    separate migrate command and nothing to run by hand. Before migrating, Piwi compares the migrations
    the database has recorded with the ones this version ships (see
    [A database that ran another build](#a-database-that-ran-another-build)).
-2. **Project access is backfilled**, once: on the upgrade that adds project access to a database, existing Reporter
-   and User accounts get global access. It never runs again, so access you revoke stays revoked.
+2. **Project access is backfilled**, once: on the upgrade that adds project access to a database, existing accounts
+   other than administrators get access to all projects. It never runs again, so access you revoke stays revoked.
 3. **Failure clusters are re-fingerprinted** if the fingerprint algorithm changed in this release.
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
    merged rather than dropped, so your triage statuses and notes survive.
@@ -37,6 +37,10 @@ Steps 2 and 3 log an error and continue if they fail. **Step 1 does not.** If a 
 process keeps running but every database call fails with the migration error and `GET /api/health`
 returns `503`, so the container reports unhealthy — nothing is served against a half-migrated schema.
 That's deliberate: a loud failure you can restore from beats silent corruption.
+
+On the upgrade that adds project roles, each Reporter account becomes a Member with the Maintainer role on the
+projects it could open, and each User account a Member with the Viewer role, so nobody gains or loses a right (see
+[Upgrading from the three roles](./project-access#upgrading-from-the-three-roles)).
 
 ## A database that ran another build
 

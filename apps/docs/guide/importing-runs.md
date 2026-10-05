@@ -158,7 +158,7 @@ instead of failing mid-upload.
   shards are not merged. The import summary flags this when it detects one.
 - **Traces carry less than reports.** No annotations, no worker index, no `didnotrun` tests, no step subtitles or
   params, and no screenshots or videos — a trace holds only itself.
-- **Administrators only.** Importing can create projects and back-dates history, so it is not open to the reporter role.
+- **Administrators only.** Importing can create projects and back-dates history, so no project role grants it.
 - **One archive per request.** The page handles batching for you.
 
 ## Related

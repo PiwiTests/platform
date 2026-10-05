@@ -70,34 +70,52 @@ imported by both. Exceptions only where the implementations genuinely differ (er
 
 ## Authentication & authorization
 
-- **Roles are a TypeScript string enum** (`Role` in `shared/types.ts`): `ADMINISTRATOR`, `REPORTER`, `USER`. Use
-  `Role.ADMINISTRATOR` — never raw string literals. When a DB `User` has `role: string`, cast: `user.role as Role`.
-- **Auth is optional**, enabled by `PIWI_AUTH_ENABLED=true`. When disabled `requireAuth()` returns a virtual admin, so
-  every endpoint keeps working.
-- Two methods when enabled: session cookie (browser) or API key (Bearer / `X-API-Key`, `pd_` prefix).
+- **Auth is optional**, enabled by `PIWI_AUTH_ENABLED=true`. When disabled `requireAuth()` returns a virtual
+  administrator (`ADMIN_ACCESS`), so every endpoint keeps working and the UI allows everything.
+- Two methods when enabled: session cookie (browser) or API key (Bearer / `X-API-Key`, `pd_` prefix). **An API key
+  carries its owner's access** (instance role and project roles), nothing more and nothing less.
+- **The model lives in `#shared/permissions`** (pure, shared by the server, the MCP tools, the demo and the UI; design
+  record `proposals/roles-and-groups.md`): instance roles `InstanceRole` (`administrator`, `member`; stored in
+  `users.role`), project roles `ProjectRole` (`viewer`, `contributor`, `maintainer`, `project_admin`, `uploader`),
+  permissions `Permission` (`ProjectPermission` | `InstancePermission`, named `resource:action`) and the matrix
+  `ROLE_PERMISSIONS`. Use the enums and types, **never raw string literals** in code; route meta is the one exception
+  (below). Labels and one-line descriptions for the UI are `INSTANCE_ROLE_LABELS`, `PROJECT_ROLE_LABELS` and
+  `PROJECT_ROLE_DESCRIPTIONS`.
+- **Role bindings** (`role_bindings`): a user or a group (exactly one of `user_id` / `group_id`) holds one project role
+  on one project, or on all projects, present and future (`project_id` null). Groups (`groups`, `group_members`) do not
+  nest and carry project roles only, never the instance role. A user's permissions on a project are the union of every
+  role they hold there, directly or through their groups; there are no deny rules. The data layer is
+  `shared/handlers/role-bindings.ts` and `shared/handlers/groups.ts`, shared with the demo.
 
-### Per-route roles are declared once, in the route meta (MUST follow)
+### Per-route permissions are declared once, in the route meta (MUST follow)
 
-A route's `defineRouteMeta` declares who may call it via `openAPI['x-required-roles']`, and that single literal drives
-**both** the `/docs` display and enforcement — `requireAuth(event)` reads the roles from the compiled route metas
+A route's `defineRouteMeta` declares what it needs in `openAPI['x-required-permission']`, and that single literal drives
+**both** the `/docs` display and enforcement: `requireAuth(event)` reads it from the compiled route metas
 (`server/utils/route-required-roles.ts`, matched with rou3 exactly as Nitro dispatches).
 
 ```typescript
-defineRouteMeta({ openAPI: { tags: ['Projects'], summary: '…', 'x-required-roles': ['administrator', 'reporter'] } });
+defineRouteMeta({ openAPI: { tags: ['Failure Clusters'], summary: '…', 'x-required-permission': 'triage:write' } });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event); // no roles argument — the meta drives it
+  const id = requireRouteId(event, 'id', 'failure cluster ID');
+  // requireAuth runs inside; the route's permission is checked on the cluster's project
+  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 });
 ```
 
-- **It MUST be a string-literal array.** Nitro's meta extractor only folds inline `ObjectExpression` / `ArrayExpression`
-  / `Literal` nodes, so a variable, function call or `Role.ADMINISTRATOR` enum member is silently dropped. Values must
-  equal the `Role` enum's strings (`administrator` / `reporter` / `user`).
-- Conventions: sign-in-only routes declare all three roles (renders "Any signed-in user"); a subset excluding `user`
-  renders as elevated; public or token-authenticated routes omit the field — a lookup miss means "authenticated, any role".
-- `requireAuth(event, roles)` still exists as an **explicit override** for handlers computing their own authorization
-  (e.g. `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
-- Streaming endpoints (`start`, `events`, `finish`, `case-files`) use **stream-token** auth instead of `requireAuth`.
+- **Values:** one permission (`'triage:write'`); an inline array, where any one suffices; or `'signed-in'` for routes
+  any signed-in user may call (their profile, API keys, dashboards, channels, subscriptions). Omit the field only for
+  public or token-authenticated routes.
+- **It MUST be inline string literals.** Nitro's meta extractor only folds inline `ObjectExpression` /
+  `ArrayExpression` / `Literal` nodes, so a variable, a function call or an imported constant is silently dropped.
+- **`requireAuth(event)`** identifies the user, loads their `AccessSummary` once per request (`event.context.access`:
+  instance role, roles on all projects, roles per project, own and through groups) and applies the early check
+  (`passesEarlyCheck`): `signed-in` and `project:read` pass for any signed-in user, an instance permission needs an
+  administrator, any other project permission needs that permission on at least one project. It refuses with 403
+  before any database work; it is never the per-project decision.
+- `requireAuth(event, permission)` is an **explicit override** for handlers computing their own authorization (e.g.
+  `users/[id].patch.ts` self-or-admin); the meta then documents but does not drive it.
+- Streaming endpoints (`start`, `events`, `finish`, `case-files`) keep **stream-token** auth instead of `requireAuth`.
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
   `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
   `Access-Control-Allow-Origin` except trace archives for the hosted trace viewer. Browser clients are same-origin
@@ -105,19 +123,31 @@ export default eventHandler(async (event) => {
 
 ### Project-level permissions
 
-A project-assignment layer sits atop roles (`project_assignments`; per-project ids or global with `projectId = null`).
+The early check only says the user holds the permission _somewhere_. The project helpers in
+`server/utils/project-access.ts` make the real decision, with the route's permission:
 
-- `ADMINISTRATOR` → all projects, never filtered. `REPORTER` / `USER` → only assigned projects. No assignment = no access.
-- `server/utils/project-access.ts`: `getProjectScope(db, user)` → `'all' | Set<number>`; `requireProjectAccess(event, projectId, roles?)`
-  combines role + scope.
+- `requireProjectAccess(event, projectId)` and `requireResolvedProjectAccess(event, id, resolve, label)`: a project
+  the user cannot even read → 403 "No access to this project"; readable without the route's permission → 403
+  "Insufficient permissions".
 - **Route `:id` is the project id** → `requireRouteId(event, 'id', label)` then `requireProjectAccess`.
-- **Scoped by a child entity** (run, case, cluster, test-run-case, diagnosis) → `requireResolvedProjectAccess(event, id, resolveXProjectId, notFoundLabel, roles?)`.
-  It resolves the project, 404s a missing entity, then authorizes, and returns `{ db, projectId, user }` so no second
-  `getDatabase()` is needed.
-- List handlers take `scope` (`listProjects(db, scope)`, `getProjectMenu`, `getRecentTestRuns`, `searchProjectsTestRunsCases`);
-  an empty set returns `[]` immediately.
-- Write endpoints: existing project → `scopeAllows(scope, projectId)`; creating a new project → only when `scope === 'all'`.
-- Plain `requireAuth` is only for endpoints with no project scoping. Role and scope refusals both 403 with an explicit message.
+- **Scoped by a child entity** (run, case, cluster, test-run-case, diagnosis) →
+  `requireResolvedProjectAccess(event, id, resolveXProjectId, notFoundLabel)`. It resolves the project, 404s a missing
+  entity, then authorizes, and returns `{ db, projectId, user }` so no second `getDatabase()` is needed.
+- **`getProjectScope(db, user, permission = 'project:read')`** → `'all' | Set<number>`, the projects where the user
+  holds `permission`. List handlers take it (`listProjects(db, scope)`, `getProjectMenu`, `getRecentTestRuns`,
+  `searchProjectsTestRunsCases`); an empty set returns `[]` immediately.
+- **A write route that authorizes through a scope MUST pass its permission**:
+  `getProjectScope(db, user, 'triage:write')`, then `scopeAllows(scope, projectId)`. The default scope is every
+  readable project, so someone who reads project A and triages project B could otherwise triage A. Creating a project
+  on first submission needs `run:submit` on all projects (`scope === 'all'`).
+- `tests/unit/route-permissions.test.ts` checks every route's meta value and these calls.
+- Plain `requireAuth` is only for routes with no project scoping (instance permissions, `signed-in`).
+- **The UI asks `useAuth().can(permission, projectId?)` or `canAnywhere(permission)`**, built on the `AccessSummary`
+  that `/api/auth/me` returns. It is an affordance only (hide or disable a control); the server decides. With
+  authentication off everything is allowed (virtual administrator).
+- **Safety rules:** the last administrator cannot be demoted; a Project admin edits role bindings only on projects
+  where they hold `project:members`, never on all projects; changing a user's instance role bumps `sessionEpoch`,
+  while project role and group changes take effect on the next request since access is loaded per request.
 
 ### OpenAPI annotations
 
@@ -369,7 +399,7 @@ same files load unchanged in Vite, Vitest and plain Node (the generator script r
 ## Adding the usual things
 
 - **API endpoint** — a file under `server/api/` using `eventHandler()` + `getDatabase()`, with a `defineRouteMeta`
-  `openAPI` block (including `x-required-roles`) and the right access helper from the authorization rules above.
+  `openAPI` block (including `x-required-permission`) and the right access helper from the authorization rules above.
   **No address the browser requests may contain `analytics`** (a route path, a query key or value): uBlock Origin and
   other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
   `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks it.
@@ -479,8 +509,8 @@ Rules when touching it:
   client-side recommendation when that flag is set; it would resurrect the stale pick.
 - Dashboard picks persist via the shared `saveLocatorPick`: the failing locator's identity is re-derived **server-side**
   from the stored error with the same helpers the lookup ladder uses — never trust client-parsed args. A pick that
-  cannot be keyed returns `not-persisted` (surfaced as a toast) rather than being silently dropped. Any authenticated
-  project member may save one, so the endpoint deliberately carries no role list.
+  cannot be keyed returns `not-persisted` (surfaced as a toast) rather than being silently dropped. Anyone who can read
+  the project may save one, so the endpoint declares `project:read`.
 - Re-run `npm run app:seed:demo` after changing the captured or stored shape.
 
 ### Workers timeline rendering
@@ -632,10 +662,12 @@ MCP tools (`server/utils/mcp/tools.ts`, route `server/routes/mcp.post.ts`, defin
 JSON consumed by AI coding agents; consistency saves the agent from guessing.
 
 **Authorization** — every handler is `(db, params, ctx)` with `ctx: McpContext = { user, scope }` (the route resolves
-`scope = getProjectScope(db, user)` once). Every project- or entity-scoped tool MUST enforce scope: `assertProject(ctx, projectId)`
+`scope = getProjectScope(db, user)` once, the readable projects). Every project- or entity-scoped tool MUST enforce scope: `assertProject(ctx, projectId)`
 when the arg _is_ a project id, or `checkEntityScope(db, ctx, id, resolveXProjectId)` for run/case/cluster/diagnosis ids
 (`'not-found'` → return null/empty; out of scope → throws). Cross-project feeds filter by `ctx.scope`. Write/triage
-tools MUST also call `assertWriteRole(ctx)`.
+tools MUST also check, on the project they act on, the permission the same REST action declares
+(`assertPermission(ctx, permission, projectId)`, from the `#shared/permissions` matrix): reading a project is not
+enough to write to it.
 
 **Reuse** — prefer a shared handler (`#shared/handlers/*`) over re-querying. When a REST endpoint has inline logic a
 tool also needs, extract it to a shared handler and call it from both. Never duplicate.

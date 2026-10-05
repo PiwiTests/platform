@@ -106,14 +106,6 @@ A connection base URL is supplied by an administrator, so Piwi trusts it: a priv
 Jira Cloud's REST v3 only. A URL a non-administrator supplies (a pinned link) goes through the SSRF guard that blocks
 private hosts. Moving a connection to another site drops its stored credentials.
 
-## What unfurl gives today
-
-With a connection in place, a pinned or refreshed Jira link carries:
-
-- the issue **summary** as its title;
-- a **status** badge whose color follows the issue's status category (to-do, in-progress, done);
-- a refresh that reads the ticket back through the connection rather than scraping the page.
-
 ## Creating issues from a failure
 
 Once a connection exists, Piwi can **file the ticket for you** — a Jira issue whose body is the failure's fix plan,
@@ -123,6 +115,12 @@ the fields, and how the key travels back into the inbox, notifications and pull-
 A connection carries a **default language** for the tickets filed against it (a French Atlassian site can default them
 to French); a project binding overrides it, and the create modal offers a per-issue choice — see
 [Language](/features/issue-tracking#language).
+
+## Who can do what
+
+With [authentication](./authentication) on, connections are administrator-only. Binding a project to Jira takes the
+Project admin role on that project (`project:manage`), or an administrator. Filing an issue takes the
+[Contributor role](./project-access#what-each-role-can-do) or above on the project (`issue:create`).
 
 ## Status sync
 

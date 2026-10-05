@@ -15,6 +15,10 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **Project roles and groups**: five project roles (Viewer, Contributor, Maintainer, Project admin, Uploader), granted
+  to users or groups per project or on all projects, replace the three global roles, so a product owner can file an
+  issue without triage or upload rights. [proposals/roles-and-groups.md](proposals/roles-and-groups.md); see
+  [access, roles and groups](https://piwitests.dev/operate/project-access).
 - **Scenario gaps and the Test Map** — one graph per project of what the application exposes, what the suite reaches
   and what it would actually notice, turned into the tests that do not exist yet: ranked by exposure, each with a
   skeleton to start from. Surfaced as a Gaps tab with a feature map and an ego graph view, a per-ticket section in the

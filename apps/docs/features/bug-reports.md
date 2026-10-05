@@ -25,7 +25,7 @@ With the extension [connected to the instance](./extension-connection), the fini
   failing test then reads them from environment variables.
 
 Nothing is sent before **Send**, and only to the instance the extension is connected to. The first time, the preview
-explains this. Any role can send a report to a project it has access to, so a tester's own key is enough.
+explains this. Anyone who can read a project can send a report to it, so a tester's own key is enough.
 
 The report keeps the language it was written in; the test Piwi writes from it is the same in every language.
 
@@ -105,8 +105,8 @@ the run.
 When the project is bound to Jira in its [issue tracking](./issue-tracking) settings, a report becomes a ticket in
 three ways, all through the same outbox, links and attachments:
 
-- **From the Send preview**: **Also create a Jira issue in SHOP** is offered to a sender whose role may create issues
-  (administrator or reporter).
+- **From the Send preview**: **Also create a Jira issue in SHOP** is offered to a sender who may create issues
+  there (Contributor or above, or an administrator).
 - **From the report's page**: **Create issue**, with the same modal as a failure cluster.
 - **For every report**: **File every bug report**, in the project's two-way sync settings, files each report as it
   arrives, whoever sends it; the preview then says so.

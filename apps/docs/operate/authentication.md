@@ -1,6 +1,6 @@
 ---
 title: Authentication
-description: "Turn on sign-in and roles, create the first administrator, configure Google and GitHub OAuth, and manage user accounts."
+description: "Turn on sign-in and instance roles, create the first administrator, configure Google and GitHub OAuth, and manage user accounts."
 lang: en-US
 ---
 
@@ -10,13 +10,14 @@ The dashboard supports optional sign-in with role-based access control. Authenti
 
 ## Roles
 
-| Role | Description |
-|------|-------------|
-| **Administrator** | Full access to every project and feature — editing projects, managing users, and deleting runs. Never restricted by project access. |
-| **Reporter** | Submits results and can triage, but only for the **projects it's assigned to**. |
-| **User** | Read-only access to the **projects it's assigned to**. |
+Every account holds one **instance role**:
 
-Administrators always see everything. **Reporter** and **User** accounts are additionally scoped by [project access](./project-access): they only see and act on the projects assigned to them.
+| Instance role | What it can do |
+|------|-------------|
+| **Administrator** | Everything, on every project: users, groups, instance settings, AI providers, Jira connections, storage, tags, creating and deleting projects. Never restricted by project roles. |
+| **Member** | Signs in and manages their own profile, API keys, dashboards, notification channels and subscriptions. Everything else comes from their project roles. |
+
+What a Member can do inside a project comes from the **project roles** (Viewer, Contributor, Maintainer, Project admin, Uploader) granted to them or to one of their groups, on that project or on all projects: see [Access, roles and groups](./project-access). The Administrator role is granted to a user, never to a group.
 
 ## Enabling authentication
 
@@ -94,7 +95,7 @@ Users can sign in with Google or GitHub instead of a username and password.
 
 ### Restricting who can sign in (allowlists)
 
-By default any account at a configured provider can sign in (and a new **user**-role account is created). To restrict access:
+By default any account at a configured provider can sign in (and a new **Member** account with no access is created). To restrict access:
 
 - **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers — ideal for limiting Google Workspace sign-in to your company domain.
 - **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must be a member of at least one. Enabling this requests the `read:org` scope so membership (including private) can be checked.
@@ -108,7 +109,7 @@ A first sign-in with a provider either links an existing account or creates a ne
 - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
 - If the matching account is **already linked to a different provider**, the sign-in is refused: one provider is linked per account, so sign in with the original method instead.
-- Otherwise, a new user is created with the **User** role and no password, so it always signs in through its provider. GitHub accounts with no verified primary email always get a new account.
+- Otherwise, a new user is created as a **Member** with no project role and no password, so it always signs in through its provider and sees nothing until it is [granted a role](./project-access#default-is-no-access). GitHub accounts with no verified primary email always get a new account.
 
 The dashboard does not keep the provider's tokens: the access token is used once to read the profile, then discarded. OAuth is not available in demo mode.
 
@@ -122,13 +123,14 @@ Signed-in users can link a provider explicitly from **Settings → Account → C
 ## User management
 
 Administrators manage accounts under **Settings → Users** (`/settings/users`). **Add user** creates one with a
-username, password, role and optional display name.
+username, password, instance role and optional display name. Each row shows the user's instance role and the
+[groups](./project-access#groups) they belong to.
 
 ### Changing a role
 
-Each row's **Role** column is an inline selector — pick a new role to reassign it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to change an existing account's role, including accounts created through [OAuth](#oauth-google-github), which always start with the **User** role. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
+Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github), which always start as a **Member** with no access. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
 
-Which projects a Reporter or User can open is [project access](./project-access), and the keys that let CI and scripts sign in are [API keys](./api-keys).
+What a Member can do in each project is set by [project roles](./project-access), and the keys that let CI and scripts sign in are [API keys](./api-keys).
 
 ## Disabling authentication
 
@@ -137,7 +139,7 @@ without authentication.
 
 ## Related
 
-- [Project access](./project-access): which projects each Reporter and User can open
+- [Access, roles and groups](./project-access): project roles, groups and the permission grid
 - [API keys](./api-keys): authenticating the reporter, CI and scripts
 - [Production checklist](./production-checklist): the secrets, TLS and proxy settings to go with it
 - [Configuration reference](/reference/configuration#authentication): every authentication and OAuth variable
