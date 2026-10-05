@@ -1,6 +1,6 @@
 # Roles, groups and project-scoped permissions
 
-**Status:** phases 1 to 3 implemented 2026-10-05 on branch `ccr-0d4e705a-33job2`; phase 4 (API key cap, identity provider group sync, access change log) not started (decisions in section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
+**Status:** phases 1 to 3 implemented 2026-10-05 on branch `ccr-0d4e705a-33job2`; phase 4 (section 10: API key cap, access change log, identity provider group sync, custom roles) not started (decisions in section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
 `requireProjectAccess`, project scope), the MCP write tools, the demo router, the dashboard UI (`useAuth`, Settings →
 Users / Permissions, project Members) and the docs (`operate/authentication.md`, `operate/project-access.md`) ·
 **Replaces:** the three global roles and the `project_assignments` table
@@ -316,7 +316,7 @@ Administrator, Project admin, Maintainer (QA), Contributor (product owner), View
 flowchart LR
   P1["Phase 1<br/>Permission catalog<br/>no behavior change"] --> P2["Phase 2<br/>Project roles<br/>role_bindings + migration"]
   P2 --> P3["Phase 3<br/>Groups<br/>+ UI grid and members"]
-  P3 --> P4["Phase 4 (optional)<br/>API key cap, SSO group sync,<br/>access change log"]
+  P3 --> P4["Phase 4 (section 10)<br/>API key cap, access change log,<br/>group sync, custom roles"]
 ```
 
 1. **Permission catalog, no behavior change.** Add `shared/permissions.ts`, switch every route to
@@ -328,8 +328,8 @@ flowchart LR
    bind them as `Contributor`.
 3. **Groups.** `groups` and `group_members`, Settings → Groups, permission grid with role cells and group rows, project
    Members for project admins, demo personas, docs.
-4. **Optional follow-ups**, each its own decision: cap an API key to a role and a project list (a CI key limited to
-   `Uploader`), sync group membership from the identity provider (GitHub teams, OIDC claims), a log of access changes.
+4. **Follow-ups**, each its own change and its own decision, detailed in section 10: cap an API key to a role and a
+   project list, a log of access changes, group membership synced from the identity provider, and custom roles.
 
 ---
 
@@ -381,3 +381,100 @@ Decided on 2026-10-05:
    API key cap is the way to narrow a key further.
 
 No question is open; the next step is phase 1.
+
+---
+
+## 10. Phase 4: follow-ups
+
+Phases 1 to 3 cover the reported need. Phase 4 is four independent changes, in the recommended order. Each ships on
+its own, with its own migration, docs and tests, and none changes what phases 1 to 3 grant.
+
+```mermaid
+flowchart LR
+  A["4.1 API key cap<br/>(recommended next)"] --> B["4.2 Access change log"]
+  B --> C["4.3 Group sync from the<br/>identity provider (later)"]
+  B --> D["4.4 Custom roles<br/>(not decided)"]
+```
+
+### 10.1 API key cap
+
+**Problem.** A key carries all of its owner's access. An administrator who creates a key for a CI pipeline hands the
+pipeline every permission on the instance; a Maintainer's personal key used in a script can triage and spend AI
+tokens. Today the only way to limit a key is a dedicated account.
+
+**Design.**
+- Two optional limits on a key, chosen when it is created and never widened afterwards (a new key is the way to get
+  more): a **role cap** (`api_keys.role_cap`, a `ProjectRole`, null = no cap) and a **project list** (new
+  `api_key_projects (api_key_id, project_id)`, no row = every project the owner can open).
+- A key's access is the owner's access narrowed by both limits: on each project, the permissions the owner holds there
+  that the capped role also grants; projects outside the list are dropped; a capped key never carries an instance
+  permission, even when its owner is an administrator. Pure function in `shared/permissions.ts`:
+  `capAccess(access, { role, projectIds })`, applied by `requireAuth` when the request comes with a key.
+- The owner's later changes still apply: losing a role on a project removes it from the key too, since the key is
+  computed from the owner at every request.
+- UI: the API key form (Settings → Users → API keys, and the user's own keys) gets "Limit to role" and "Limit to
+  projects". The key list shows the limits.
+- Reporter, MCP and IDE clients need no change: they send the key as today.
+
+**Done when.** A key capped to `Uploader` submits a run and gets 403 on a triage route even when its owner is an
+administrator; a key limited to project A gets "No access to this project" on project B; the docs page on API keys
+recommends a capped key for CI.
+
+### 10.2 Access change log
+
+**Problem.** Nothing records who granted or removed access. With groups and delegated project admins, "why can this
+person do that, and since when" needs an answer.
+
+**Design.**
+- New table `access_events`: id, created_at, actor (user id, and API key id when the change came through a key),
+  action (`binding.set`, `binding.removed`, `group.created`, `group.renamed`, `group.deleted`,
+  `group.members.changed`, `user.created`, `user.deleted`, `user.instance_role.changed`, `api_key.created`,
+  `api_key.revoked`), subject (user or group), project id (null for all projects or the instance), `before` and `after`
+  as small JSON values.
+- Written by the shared handlers (`role-bindings.ts`, `groups.ts`, `users.ts`, the API key routes) in the same
+  transaction as the change, so the log cannot miss a change or record one that did not happen. The demo writes it too.
+- Read with `GET /api/access-events` (filters: user, group, project, date range; `users:manage`), and for one project
+  with `GET /api/projects/{id}/access-events` (`project:members`).
+- UI: a History tab on Settings → Permissions, and a History link in a project's Members; Excel export (house rule).
+- Retention: kept with no limit at first (a few rows per change); a retention setting can follow if volume shows it is
+  needed.
+
+**Done when.** Every change made from the grid, the members section, the groups page, the users page or the API
+appears once, with its actor; a project admin sees the history of their project only.
+
+### 10.3 Group membership from the identity provider (later)
+
+Decided on 2026-10-05: groups are managed in Piwi for now. This section records the design so the tables leave room
+for it.
+
+- A group gets an optional external source: `groups.external_source` (`github-team`, later `oidc-claim`) and
+  `groups.external_id` (`org/team-slug`, or the claim value).
+- At each OAuth sign-in, the user's external groups are read (GitHub: `GET /user/teams`, with the `read:org` scope
+  already requested when `PIWI_OAUTH_GITHUB_ALLOWED_ORGS` is set) and their membership of every synced group is set to
+  match. Manual groups are untouched. A synced group's members cannot be edited in Piwi; its roles can.
+- Membership changes only at sign-in, so a user removed from a team keeps the group until they sign in again or an
+  administrator removes them; the docs must say so. An optional periodic sync with an org token can close that gap.
+- Google Workspace groups need the Directory API and an administrator's consent, and a generic OIDC provider does not
+  exist yet in Piwi: both are prerequisites, not part of this change.
+
+### 10.4 Custom roles (not decided)
+
+**Question.** Today the five project roles are fixed: what each one may do is the matrix of section 4.3, defined in
+`shared/permissions.ts`. An administrator chooses *who* holds which role, not *what* a role allows. Should an
+administrator be able to define what a role allows?
+
+Two ways to do it:
+
+| | Edit the five roles | Add custom roles next to them (recommended if needed) |
+| --- | --- | --- |
+| What it is | Settings → Roles lets an administrator tick or untick permissions on Viewer, Contributor... | Settings → Roles lets an administrator create a role (name, description, ticked permissions); the five built-in roles stay as they are |
+| Docs, support, demo | "Contributor" means something different on each instance | The five roles mean the same everywhere; a custom role is visibly local |
+| Upgrade | A new permission added in a release needs a default on every edited role | A new permission goes into the built-in roles; custom roles get it only if an administrator ticks it |
+| Effort | Smaller | A `roles` table, role bindings referring to built-in or custom roles, the access loader reading definitions (cached), Settings → Roles, grid and members selectors listing custom roles |
+
+Rules for either: only project permissions can be ticked (instance permissions stay with the Administrator); a role
+in use cannot be deleted until its bindings are moved; a Project admin may grant a custom role on their projects.
+
+Until this is decided, a team that needs a different set of rights combines roles: rights add up across a user's
+roles, so a user who is Contributor on a project directly and Uploader through a group (or on all projects) holds
+both sets there. One subject holds one role per scope, so the combination comes from two bindings.
