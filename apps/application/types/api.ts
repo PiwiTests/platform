@@ -1201,29 +1201,6 @@ export interface AuthState {
   user: AuthUser | null;
 }
 
-/**
- * User details (for user management)
- */
-export interface UserDetails {
-  id: number;
-  username: string;
-  role: InstanceRole;
-  name?: string | null;
-  email?: string | null;
-  emailVerified?: boolean;
-  oauthProvider?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Users response from API
- */
-export interface UsersResponse {
-  items: UserDetails[];
-  authEnabled: boolean;
-}
-
 // ============================================================================
 // API key types
 // ============================================================================

@@ -80,19 +80,6 @@ export interface UsersListResponse {
   authEnabled: boolean;
 }
 
-/**
- * `POST /api/users`. `role` also takes the roles of earlier versions,
- * `reporter` and `user`, stored as `member` during the transition release.
- */
-export interface CreateUserRequest {
-  username: string;
-  password?: string;
-  name?: string;
-  email?: string;
-  role: InstanceRole | LegacyRole;
-  groupIds?: number[];
-}
-
 /** `PATCH /api/users/{id}`. `role` and `groupIds` are for administrators only. */
 export interface UpdateUserRequest {
   name?: string | null;
@@ -148,17 +135,6 @@ export interface GroupView extends GroupListItem {
 /** `GET /api/groups`. */
 export interface GroupsListResponse {
   groups: GroupListItem[];
-}
-
-/** `POST /api/groups`; `PATCH /api/groups/{id}` takes any of its fields. */
-export interface GroupRequest {
-  name: string;
-  description?: string | null;
-}
-
-/** `PUT /api/groups/{id}/members`: the group's members, replacing the current ones. */
-export interface GroupMembersRequest {
-  userIds: number[];
 }
 
 /** `POST`, `PATCH /api/groups/{id}` and `PUT /api/groups/{id}/members`. */

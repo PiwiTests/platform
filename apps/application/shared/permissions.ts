@@ -64,10 +64,6 @@ export const PROJECT_ROLE_DESCRIPTIONS: Record<ProjectRole, string> = {
   [ProjectRole.UPLOADER]: 'For CI: reads the project and uploads runs, nothing else.',
 };
 
-export function isInstanceRole(value: unknown): value is InstanceRole {
-  return value === InstanceRole.ADMINISTRATOR || value === InstanceRole.MEMBER;
-}
-
 export function isProjectRole(value: unknown): value is ProjectRole {
   return typeof value === 'string' && (PROJECT_ROLES as readonly string[]).includes(value);
 }
