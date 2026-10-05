@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { ADMIN_ACCESS } from '#shared/permissions';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -222,7 +223,7 @@ describe('list_bug_reports', () => {
     );
 
     const tool = MCP_TOOLS.find((t) => t.name === 'list_bug_reports')!;
-    const ctx = { user: null, scope: 'all' as const };
+    const ctx = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
     const page = (await tool.handler(db as never, { projectId: 1, pageSize: 50, cursor: '12' }, ctx)) as {
       items: Array<{ id: number }>;
       nextCursor?: string | null;

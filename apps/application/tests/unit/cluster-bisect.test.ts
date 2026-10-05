@@ -154,13 +154,13 @@ describe('POST /api/failure-clusters/:id/bisect', () => {
 });
 
 describe('set_cluster_bisect', () => {
-  const ctx = (user: User): McpContext => ({ user, scope: new Set([1]) });
+  const ctx = (caller: RouteCaller): McpContext => ({ ...caller, scope: new Set([1]) });
 
   test('records the commit through the same handler as the route', async () => {
     const result = await setClusterBisect(
       db,
       { clusterId: 1, sha: SHA.slice(0, 12), subject: 'Drop the cache' },
-      ctx(reporter),
+      ctx(robin),
     );
     expect(result).toEqual({ clusterId: 1, sha: SHA.slice(0, 12), subject: 'Drop the cache' });
     expect(await storedBisect(1)).toEqual({
@@ -173,16 +173,16 @@ describe('set_cluster_bisect', () => {
   });
 
   test('refuses a read-only key, a cluster out of scope and an invalid SHA; answers null for a missing cluster', async () => {
-    await expect(setClusterBisect(db, { clusterId: 1, sha: SHA }, ctx(viewer))).rejects.toThrow(
-      'This action requires reporter or administrator access',
+    await expect(setClusterBisect(db, { clusterId: 1, sha: SHA }, ctx(sam))).rejects.toThrow(
+      'This action requires the run:control permission on project 1',
     );
-    await expect(setClusterBisect(db, { clusterId: 2, sha: SHA }, ctx(reporter))).rejects.toThrow(
+    await expect(setClusterBisect(db, { clusterId: 2, sha: SHA }, ctx(robin))).rejects.toThrow(
       'No access to project 2',
     );
-    await expect(setClusterBisect(db, { clusterId: 1, sha: 'main' }, ctx(reporter))).rejects.toThrow(
+    await expect(setClusterBisect(db, { clusterId: 1, sha: 'main' }, ctx(robin))).rejects.toThrow(
       'A valid commit SHA is required',
     );
-    expect(await setClusterBisect(db, { clusterId: 99, sha: SHA }, ctx(reporter))).toBeNull();
+    expect(await setClusterBisect(db, { clusterId: 99, sha: SHA }, ctx(robin))).toBeNull();
     expect(await storedBisect(1)).toBeNull();
   });
 });

@@ -88,10 +88,10 @@ const onProject = (user: User, projectId: number, role: ProjectRole): RouteCalle
 });
 const robin = onProject(reporter, 1, ProjectRole.MAINTAINER);
 const sam = onProject(viewer, 1, ProjectRole.VIEWER);
-// The same people over MCP: Robin with an API key, both assigned to project 1 only.
-const reporterKey: McpContext = { user: reporter, scope: new Set([1]), apiKeyId: 9 };
-const viewerKey: McpContext = { user: viewer, scope: new Set([1]) };
-const WRITE_REFUSED = 'This action requires reporter or administrator access';
+// The same people over MCP: Robin with an API key, both holding a role on project 1 only.
+const reporterKey: McpContext = { ...robin, scope: new Set([1]), apiKeyId: 9 };
+const viewerKey: McpContext = { ...sam, scope: new Set([1]) };
+const WRITE_REFUSED = 'This action requires the quarantine:write permission on project 1';
 
 let db: TempDb;
 let close: () => Promise<void>;

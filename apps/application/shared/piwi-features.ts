@@ -38,7 +38,7 @@ export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
   backend: 'a backend integration',
   desktop: 'the desktop app',
   extension: 'the browser extension',
-  admin: 'admin',
+  admin: 'an administrator',
 };
 
 /**
@@ -510,16 +510,18 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     features: [
       {
         title: 'Authentication & roles',
-        summary: 'Optional sign-in with roles (administrator, reporter, user) and Google/GitHub OAuth.',
+        summary:
+          'Optional sign-in with Google/GitHub OAuth, the Administrator and Member instance roles, and five project roles granted to users or groups.',
         needs: ['admin'],
         where: 'Settings → Users',
         doc: 'operate/authentication',
       },
       {
-        title: 'Project access',
-        summary: 'Scope who can see and act on each project, for multi-team instances.',
+        title: 'Access, roles and groups',
+        summary:
+          'Give each person the rights their job needs, project by project, through five project roles granted to users or groups; a Project admin manages the members of their own projects.',
         needs: ['admin'],
-        where: 'Settings → Permissions; project Settings → Members',
+        where: 'Settings → Permissions, Settings → Groups; project Settings → Members',
         doc: 'operate/project-access',
       },
       {

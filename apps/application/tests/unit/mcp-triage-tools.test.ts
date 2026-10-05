@@ -4,6 +4,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import type { McpContext } from '../../server/utils/mcp/tools';
 import type { User } from '../../server/database/schema';
+import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -26,11 +27,22 @@ const tool = (name: string) => {
   return found.handler;
 };
 
-const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
-// A reporter who can open project 1 only, and a read-only user of the same project.
-const reporter: McpContext = { user: asUser(2, 'reporter', 'Robin'), scope: new Set([1]) };
-const viewer: McpContext = { user: asUser(3, 'user', 'Sam'), scope: new Set([1]) };
-const WRITE_REFUSED = 'This action requires reporter or administrator access';
+const asUser = (id: number, name: string) =>
+  ({ id, role: InstanceRole.MEMBER, name, username: name.toLowerCase() }) as User;
+const roles = (...grants: Array<[number, ProjectRole]>) =>
+  buildAccessSummary(
+    InstanceRole.MEMBER,
+    grants.map(([projectId, role]) => ({ projectId, role })),
+  );
+// A Maintainer of project 1, and a Viewer of the same project; neither holds a role on project 2.
+const maintainer: McpContext = {
+  user: asUser(2, 'Robin'),
+  access: roles([1, ProjectRole.MAINTAINER]),
+  scope: new Set([1]),
+};
+const viewer: McpContext = { user: asUser(3, 'Sam'), access: roles([1, ProjectRole.VIEWER]), scope: new Set([1]) };
+const refused = (permission: string, projectId = 1) =>
+  `This action requires the ${permission} permission on project ${projectId}`;
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -39,8 +51,8 @@ beforeEach(async () => {
   ({ db, close } = await openTempDb());
   rerun.fn.mockReset();
   await db.insert(schema.users).values([
-    { id: 2, username: 'robin', password: '', role: 'reporter', name: 'Robin' },
-    { id: 3, username: 'sam', password: '', role: 'user', name: 'Sam' },
+    { id: 2, username: 'robin', password: '', role: InstanceRole.MEMBER, name: 'Robin' },
+    { id: 3, username: 'sam', password: '', role: InstanceRole.MEMBER, name: 'Sam' },
   ]);
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop' },
@@ -80,7 +92,7 @@ describe('triage_cluster', () => {
     const result = await tool('triage_cluster')(
       db as never,
       { clusterIds: [1, 2, 3, 999], action: 'status', status: 'resolved', note: 'Fixed in #42' },
-      reporter,
+      maintainer,
     );
     expect(result).toEqual({ action: 'status', requested: 4, updated: 2, skippedIds: [3, 999] });
     const rows = await db.select().from(schema.failureClusters).orderBy(schema.failureClusters.id);
@@ -92,8 +104,12 @@ describe('triage_cluster', () => {
   });
 
   test('assigns and snoozes through the bulk triage', async () => {
-    await tool('triage_cluster')(db as never, { clusterIds: [1, 2], action: 'assign', assignee: 'robin' }, reporter);
-    await tool('triage_cluster')(db as never, { clusterIds: [1], action: 'snooze', snooze: 'until-recurs' }, reporter);
+    await tool('triage_cluster')(db as never, { clusterIds: [1, 2], action: 'assign', assignee: 'robin' }, maintainer);
+    await tool('triage_cluster')(
+      db as never,
+      { clusterIds: [1], action: 'snooze', snooze: 'until-recurs' },
+      maintainer,
+    );
     const rows = await db.select().from(schema.failureClusters).orderBy(schema.failureClusters.id);
     expect(rows.slice(0, 2).map((r) => r.assignee)).toEqual(['robin', 'robin']);
     expect(rows[0]!.snoozeMode).toBe('until-recurs');
@@ -104,10 +120,10 @@ describe('triage_cluster', () => {
     const quarantined = await tool('triage_cluster')(
       db as never,
       { clusterIds: [1], action: 'quarantine', reason: 'flaky on CI' },
-      reporter,
+      maintainer,
     );
     expect(quarantined).toEqual({ action: 'quarantine', requested: 1, updated: 1, tests: 1, quarantined: 1 });
-    const released = await tool('triage_cluster')(db as never, { clusterIds: [1], action: 'release' }, reporter);
+    const released = await tool('triage_cluster')(db as never, { clusterIds: [1], action: 'release' }, maintainer);
     expect(released).toEqual({ action: 'release', requested: 1, updated: 1, tests: 1, released: 1 });
     const [row] = await db.select().from(schema.quarantinedTests).where(eq(schema.quarantinedTests.testCaseId, 1));
     expect(row!.releasedAt).not.toBeNull();
@@ -116,17 +132,31 @@ describe('triage_cluster', () => {
   test('refuses a read-only key', async () => {
     await expect(
       tool('triage_cluster')(db as never, { clusterIds: [1], action: 'status', status: 'resolved' }, viewer),
-    ).rejects.toThrow(WRITE_REFUSED);
+    ).rejects.toThrow('This action requires the triage:write permission');
+  });
+
+  test('skips the clusters of a project the caller only reads', async () => {
+    const readsTwo: McpContext = {
+      ...maintainer,
+      access: roles([1, ProjectRole.MAINTAINER], [2, ProjectRole.VIEWER]),
+      scope: new Set([1, 2]),
+    };
+    const result = await tool('triage_cluster')(
+      db as never,
+      { clusterIds: [1, 3], action: 'status', status: 'resolved' },
+      readsTwo,
+    );
+    expect(result).toEqual({ action: 'status', requested: 2, updated: 1, skippedIds: [3] });
   });
 
   test('refuses an unknown action, a bad status and an empty id list before changing anything', async () => {
-    await expect(tool('triage_cluster')(db as never, { clusterIds: [1], action: 'delete' }, reporter)).rejects.toThrow(
-      'action must be one of',
-    );
     await expect(
-      tool('triage_cluster')(db as never, { clusterIds: [1], action: 'status', status: 'done' }, reporter),
+      tool('triage_cluster')(db as never, { clusterIds: [1], action: 'delete' }, maintainer),
+    ).rejects.toThrow('action must be one of');
+    await expect(
+      tool('triage_cluster')(db as never, { clusterIds: [1], action: 'status', status: 'done' }, maintainer),
     ).rejects.toThrow('status must be one of');
-    await expect(tool('triage_cluster')(db as never, { clusterIds: [], action: 'assign' }, reporter)).rejects.toThrow(
+    await expect(tool('triage_cluster')(db as never, { clusterIds: [], action: 'assign' }, maintainer)).rejects.toThrow(
       'clusterIds must be a non-empty array',
     );
   });
@@ -148,7 +178,7 @@ describe('triage_gap', () => {
     const result = await tool('triage_gap')(
       db as never,
       { projectId: 1, gapId: 7, verb: 'accept', assignedTo: 'robin' },
-      reporter,
+      maintainer,
     );
     expect(result).toEqual({ id: 7, projectId: 1, status: 'accepted' });
     const [gap] = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.id, 7));
@@ -157,25 +187,29 @@ describe('triage_gap', () => {
 
   test('answers null for a gap of another project, and refuses a project out of scope', async () => {
     await db.insert(schema.projects).values({ id: 3, name: 'third' });
-    const inScope: McpContext = { ...reporter, scope: new Set([1, 3]) };
+    const inScope: McpContext = {
+      ...maintainer,
+      access: roles([1, ProjectRole.MAINTAINER], [3, ProjectRole.MAINTAINER]),
+      scope: new Set([1, 3]),
+    };
     expect(await tool('triage_gap')(db as never, { projectId: 3, gapId: 7, verb: 'accept' }, inScope)).toBeNull();
-    await expect(tool('triage_gap')(db as never, { projectId: 2, gapId: 7, verb: 'accept' }, reporter)).rejects.toThrow(
-      'No access to project 2',
-    );
+    await expect(
+      tool('triage_gap')(db as never, { projectId: 2, gapId: 7, verb: 'accept' }, maintainer),
+    ).rejects.toThrow('No access to project 2');
   });
 
   test('refuses a read-only key', async () => {
     await expect(tool('triage_gap')(db as never, { projectId: 1, gapId: 7, verb: 'accept' }, viewer)).rejects.toThrow(
-      WRITE_REFUSED,
+      refused('triage:write'),
     );
   });
 
   test('refuses an unknown verb or dismiss reason', async () => {
-    await expect(tool('triage_gap')(db as never, { projectId: 1, gapId: 7, verb: 'close' }, reporter)).rejects.toThrow(
-      'verb',
-    );
     await expect(
-      tool('triage_gap')(db as never, { projectId: 1, gapId: 7, verb: 'dismiss', reason: 'meh' }, reporter),
+      tool('triage_gap')(db as never, { projectId: 1, gapId: 7, verb: 'close' }, maintainer),
+    ).rejects.toThrow('verb');
+    await expect(
+      tool('triage_gap')(db as never, { projectId: 1, gapId: 7, verb: 'dismiss', reason: 'meh' }, maintainer),
     ).rejects.toThrow('reason');
   });
 });
@@ -188,7 +222,7 @@ describe('decide_merge_suggestion', () => {
   });
 
   test('rejects the one pending suggestion of a cluster, leaving both clusters', async () => {
-    const result = await tool('decide_merge_suggestion')(db as never, { clusterId: 2, decision: 'reject' }, reporter);
+    const result = await tool('decide_merge_suggestion')(db as never, { clusterId: 2, decision: 'reject' }, maintainer);
     expect(result).toEqual({ suggestionId: 5, decision: 'reject', ok: true });
     const [row] = await db
       .select()
@@ -202,7 +236,7 @@ describe('decide_merge_suggestion', () => {
     const result = await tool('decide_merge_suggestion')(
       db as never,
       { suggestionId: 5, decision: 'approve' },
-      reporter,
+      maintainer,
     );
     expect(result).toEqual({ suggestionId: 5, decision: 'approve', survivorId: 1 });
     const ids = (await db.select().from(schema.failureClusters)).map((c) => c.id);
@@ -224,26 +258,26 @@ describe('decide_merge_suggestion', () => {
       .insert(schema.clusterMergeSuggestions)
       .values({ id: 6, projectId: 1, clusterAId: 1, clusterBId: 4, method: 'embedding' });
     await expect(
-      tool('decide_merge_suggestion')(db as never, { clusterId: 1, decision: 'approve' }, reporter),
+      tool('decide_merge_suggestion')(db as never, { clusterId: 1, decision: 'approve' }, maintainer),
     ).rejects.toThrow('2 pending merge suggestions: 5 (with cluster 2), 6 (with cluster 4); pass suggestionId');
   });
 
   test('get_cluster lists the pending suggestions to decide', async () => {
-    const cluster = (await tool('get_cluster')(db as never, { clusterId: 2 }, reporter)) as Record<string, unknown>;
+    const cluster = (await tool('get_cluster')(db as never, { clusterId: 2 }, maintainer)) as Record<string, unknown>;
     expect(cluster.mergeSuggestions).toEqual([{ suggestionId: 5, otherClusterId: 1 }]);
   });
 
   test('refuses a read-only key', async () => {
     await expect(
       tool('decide_merge_suggestion')(db as never, { suggestionId: 5, decision: 'approve' }, viewer),
-    ).rejects.toThrow(WRITE_REFUSED);
+    ).rejects.toThrow(refused('triage:write'));
   });
 
   test('refuses an unknown decision, and a call naming neither a cluster nor a suggestion', async () => {
     await expect(
-      tool('decide_merge_suggestion')(db as never, { suggestionId: 5, decision: 'maybe' }, reporter),
+      tool('decide_merge_suggestion')(db as never, { suggestionId: 5, decision: 'maybe' }, maintainer),
     ).rejects.toThrow('decision must be approve or reject');
-    await expect(tool('decide_merge_suggestion')(db as never, { decision: 'reject' }, reporter)).rejects.toThrow(
+    await expect(tool('decide_merge_suggestion')(db as never, { decision: 'reject' }, maintainer)).rejects.toThrow(
       'Pass clusterId or suggestionId',
     );
   });
@@ -263,11 +297,11 @@ describe('set_bug_report_status', () => {
   });
 
   test('dismisses a report, then reopens it', async () => {
-    expect(await tool('set_bug_report_status')(db as never, { id: 9, status: 'dismissed' }, reporter)).toEqual({
+    expect(await tool('set_bug_report_status')(db as never, { id: 9, status: 'dismissed' }, maintainer)).toEqual({
       id: 9,
       status: 'dismissed',
     });
-    expect(await tool('set_bug_report_status')(db as never, { id: 9, status: 'open' }, reporter)).toEqual({
+    expect(await tool('set_bug_report_status')(db as never, { id: 9, status: 'open' }, maintainer)).toEqual({
       id: 9,
       status: 'open',
     });
@@ -275,13 +309,13 @@ describe('set_bug_report_status', () => {
 
   test('refuses a read-only key', async () => {
     await expect(tool('set_bug_report_status')(db as never, { id: 9, status: 'dismissed' }, viewer)).rejects.toThrow(
-      WRITE_REFUSED,
+      refused('bug-report:write'),
     );
   });
 
   test('refuses a status the runs set', async () => {
     await expect(
-      tool('set_bug_report_status')(db as never, { id: 9, status: 'looks-fixed' }, reporter),
+      tool('set_bug_report_status')(db as never, { id: 9, status: 'looks-fixed' }, maintainer),
     ).rejects.toThrow('status must be one of: open, dismissed, closed');
   });
 });
@@ -299,7 +333,7 @@ describe('rerun_cluster_in_ci', () => {
         byUserId: 2,
       },
     });
-    const result = await tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, reporter);
+    const result = await tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, maintainer);
     expect(result).toEqual({
       clusterId: 1,
       provider: 'github',
@@ -312,21 +346,23 @@ describe('rerun_cluster_in_ci', () => {
 
   test('passes on why the re-run is not available', async () => {
     rerun.fn.mockResolvedValue({ ok: false, error: 'unavailable', message: 'CI re-run is off for this project.' });
-    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, reporter)).rejects.toThrow(
+    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, maintainer)).rejects.toThrow(
       'CI re-run is off for this project.',
     );
   });
 
   test('refuses a read-only key and a cluster out of scope', async () => {
-    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, viewer)).rejects.toThrow(WRITE_REFUSED);
-    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 3 }, reporter)).rejects.toThrow(
+    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, viewer)).rejects.toThrow(
+      refused('run:control'),
+    );
+    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 3 }, maintainer)).rejects.toThrow(
       'No access to project 2',
     );
     expect(rerun.fn).not.toHaveBeenCalled();
   });
 
   test('refuses a cluster id that is not a number', async () => {
-    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 'latest' }, reporter)).rejects.toThrow(
+    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 'latest' }, maintainer)).rejects.toThrow(
       'clusterId',
     );
   });
@@ -337,7 +373,7 @@ describe('link_issue', () => {
     const result = await tool('link_issue')(
       db as never,
       { entityType: 'failure_cluster', entityId: 1, url: 'https://acme.atlassian.net/browse/SHOP-12' },
-      reporter,
+      maintainer,
     );
     expect(result).toMatchObject({
       entityType: 'failure_cluster',
@@ -362,7 +398,7 @@ describe('link_issue', () => {
     const result = await tool('link_issue')(
       db as never,
       { entityType: 'bug_report', entityId: 9, url: 'https://github.com/acme/shop/issues/3' },
-      reporter,
+      maintainer,
     );
     expect(result).toMatchObject({ entityType: 'bug_report', entityId: 9 });
     const links = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.bugReportId, 9));
@@ -376,7 +412,7 @@ describe('link_issue', () => {
         { entityType: 'failure_cluster', entityId: 1, url: 'https://acme.atlassian.net/browse/SHOP-12' },
         viewer,
       ),
-    ).rejects.toThrow(WRITE_REFUSED);
+    ).rejects.toThrow(refused('link:write'));
   });
 
   test('refuses a URL that is not http(s) and an unknown entity type', async () => {
@@ -384,11 +420,11 @@ describe('link_issue', () => {
       tool('link_issue')(
         db as never,
         { entityType: 'failure_cluster', entityId: 1, url: 'javascript:alert(1)' },
-        reporter,
+        maintainer,
       ),
     ).rejects.toThrow('Must be an http(s) URL');
     await expect(
-      tool('link_issue')(db as never, { entityType: 'project', entityId: 1, url: 'https://example.com' }, reporter),
+      tool('link_issue')(db as never, { entityType: 'project', entityId: 1, url: 'https://example.com' }, maintainer),
     ).rejects.toThrow('entityType');
     expect(await db.select().from(schema.entityLinks)).toHaveLength(0);
   });

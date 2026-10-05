@@ -51,7 +51,7 @@ import {
 import { CHANGELOG_ENTRY_KINDS, parseChangelog, type ChangelogRelease } from '#shared/changelog';
 import { resolveInstanceStates } from '#shared/handlers/setup-status';
 import { DOCS_BASE_URL } from '#shared/docs';
-import { Role } from '#shared/types';
+import { isAdministrator } from '#shared/permissions';
 import { getDialect, type DbClient } from '../../database';
 import { isAuthEnabled } from '../auth';
 import { dropNulls } from './json';
@@ -147,7 +147,7 @@ function instanceFacts(ctx: McpContext): InstanceFacts {
     surface: process.env.PIWI_DESKTOP_TOKEN ? 'desktop app' : 'server',
     database: getDialect() === 'postgres' ? 'PostgreSQL' : 'SQLite',
     authentication: isAuthEnabled() ? 'on' : 'off',
-    admin: (ctx.user?.role as Role | undefined) === Role.ADMINISTRATOR,
+    admin: isAdministrator(ctx.access),
   };
 }
 

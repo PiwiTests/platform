@@ -4,6 +4,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import type { McpContext } from '../../server/utils/mcp/tools';
 import type { User } from '../../server/database/schema';
+import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -44,11 +45,18 @@ const tool = (name: string) => {
   return found.handler;
 };
 
-const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
-// A reporter's key on project 1, and a read-only user of the same project.
-const reporter: McpContext = { user: asUser(2, 'reporter', 'Robin'), scope: new Set([1]), apiKeyId: 7 };
-const viewer: McpContext = { user: asUser(3, 'user', 'Sam'), scope: new Set([1]) };
-const WRITE_REFUSED = 'This action requires reporter or administrator access';
+const asUser = (id: number, name: string) =>
+  ({ id, role: InstanceRole.MEMBER, name, username: name.toLowerCase() }) as User;
+const onProject1 = (role: ProjectRole) => buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role }]);
+// A Maintainer's key on project 1, and a Viewer of the same project.
+const maintainer: McpContext = {
+  user: asUser(2, 'Robin'),
+  access: onProject1(ProjectRole.MAINTAINER),
+  scope: new Set([1]),
+  apiKeyId: 7,
+};
+const viewer: McpContext = { user: asUser(3, 'Sam'), access: onProject1(ProjectRole.VIEWER), scope: new Set([1]) };
+const refused = (permission: string) => `This action requires the ${permission} permission on project 1`;
 
 const REMOTE = 'https://github.com/acme/shop.git';
 const SOURCE = 'export function total(a: number, b: number) {\n  return a - b;\n}\n';
@@ -93,8 +101,8 @@ beforeEach(async () => {
   scm.files = new Map([['src/cart.ts', SOURCE]]);
   scm.commits = [];
   await db.insert(schema.users).values([
-    { id: 2, username: 'robin', password: '', role: 'reporter', name: 'Robin' },
-    { id: 3, username: 'sam', password: '', role: 'user', name: 'Sam' },
+    { id: 2, username: 'robin', password: '', role: InstanceRole.MEMBER, name: 'Robin' },
+    { id: 3, username: 'sam', password: '', role: InstanceRole.MEMBER, name: 'Sam' },
   ]);
   await db.insert(schema.apiKeys).values({ id: 7, userId: 2, name: 'agent', keyHash: 'h', keyPrefix: 'p' });
   await db.insert(schema.projects).values([
@@ -124,7 +132,7 @@ describe('record_diagnosis', () => {
     const result = (await tool('record_diagnosis')(
       db as never,
       { clusterId: 1, model: 'claude-opus-5-5', diagnosis: DIAGNOSIS },
-      reporter,
+      maintainer,
     )) as Record<string, unknown>;
     expect(result).toMatchObject({ clusterId: 1, category: 'app-bug', confidence: 'high' });
     expect((result.patchValidation as { status: string }).status).toBe('applies');
@@ -148,7 +156,7 @@ describe('record_diagnosis', () => {
     const result = (await tool('record_diagnosis')(
       db as never,
       { clusterId: 1, model: 'claude-opus-5-5', diagnosis: DIAGNOSIS },
-      reporter,
+      maintainer,
     )) as Record<string, unknown>;
     expect(result.replacedPrevious).toBe(true);
     const versions = await db.select().from(schema.failureDiagnosisVersions);
@@ -163,7 +171,7 @@ describe('record_diagnosis', () => {
     const result = (await tool('record_diagnosis')(
       db as never,
       { clusterId: 1, model: 'm', diagnosis: DIAGNOSIS },
-      reporter,
+      maintainer,
     )) as Record<string, unknown>;
     expect((result.patchValidation as { status: string }).status).toBe('stale-file');
   });
@@ -171,7 +179,7 @@ describe('record_diagnosis', () => {
   test('refuses a read-only key', async () => {
     await expect(
       tool('record_diagnosis')(db as never, { clusterId: 1, model: 'm', diagnosis: DIAGNOSIS }, viewer),
-    ).rejects.toThrow(WRITE_REFUSED);
+    ).rejects.toThrow(refused('ai:run'));
   });
 
   test('names the field a diagnosis gets wrong', async () => {
@@ -179,28 +187,28 @@ describe('record_diagnosis', () => {
       tool('record_diagnosis')(
         db as never,
         { clusterId: 1, model: 'm', diagnosis: { ...DIAGNOSIS, severity: 'catastrophic' } },
-        reporter,
+        maintainer,
       ),
     ).rejects.toThrow(/diagnosis\.severity/);
     await expect(
-      tool('record_diagnosis')(db as never, { clusterId: 1, diagnosis: DIAGNOSIS }, reporter),
+      tool('record_diagnosis')(db as never, { clusterId: 1, diagnosis: DIAGNOSIS }, maintainer),
     ).rejects.toThrow(/model/);
   });
 
   test('is refused where agent diagnoses are declined, and not by a declined ai capability', async () => {
     await setInstanceDecisions(db as never, { ai: 'declined' });
     await expect(
-      tool('record_diagnosis')(db as never, { clusterId: 1, model: 'm', diagnosis: DIAGNOSIS }, reporter),
+      tool('record_diagnosis')(db as never, { clusterId: 1, model: 'm', diagnosis: DIAGNOSIS }, maintainer),
     ).resolves.toMatchObject({ clusterId: 1 });
     await setProjectDecisions(db as never, 1, { 'agent-diagnoses': 'declined' });
     await expect(
-      tool('record_diagnosis')(db as never, { clusterId: 1, model: 'm', diagnosis: DIAGNOSIS }, reporter),
+      tool('record_diagnosis')(db as never, { clusterId: 1, model: 'm', diagnosis: DIAGNOSIS }, maintainer),
     ).rejects.toThrow('Agent diagnoses are declined for this project');
   });
 
   test('returns null for a cluster that does not exist', async () => {
     expect(
-      await tool('record_diagnosis')(db as never, { clusterId: 99, model: 'm', diagnosis: DIAGNOSIS }, reporter),
+      await tool('record_diagnosis')(db as never, { clusterId: 99, model: 'm', diagnosis: DIAGNOSIS }, maintainer),
     ).toBeNull();
   });
 });
@@ -210,13 +218,13 @@ describe('report_fix_attempt', () => {
     const first = (await tool('report_fix_attempt')(
       db as never,
       { clusterId: 1, kind: 'patch', commit: 'bbb2222', patch: PATCH },
-      reporter,
+      maintainer,
     )) as Record<string, unknown>;
     expect(first).toMatchObject({ clusterId: 1, outcome: 'applied', recorded: true, commitTrailer: 'Piwi-Cluster: 1' });
     const again = (await tool('report_fix_attempt')(
       db as never,
       { clusterId: 1, kind: 'patch', commit: 'bbb2222', patch: PATCH },
-      reporter,
+      maintainer,
     )) as Record<string, unknown>;
     expect(again.recorded).toBe(false);
 
@@ -238,18 +246,18 @@ describe('report_fix_attempt', () => {
   test('refuses a read-only key', async () => {
     await expect(
       tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', commit: 'bbb2222' }, viewer),
-    ).rejects.toThrow(WRITE_REFUSED);
+    ).rejects.toThrow(refused('run:control'));
   });
 
   test('refuses an attempt with neither a commit nor a branch, and a locator edit without the edit', async () => {
-    await expect(tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch' }, reporter)).rejects.toThrow(
+    await expect(tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch' }, maintainer)).rejects.toThrow(
       /commit/,
     );
     await expect(
-      tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'locator-edit', branch: 'fix' }, reporter),
+      tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'locator-edit', branch: 'fix' }, maintainer),
     ).rejects.toThrow(/edit/);
     await expect(
-      tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'rewrite', branch: 'fix' }, reporter),
+      tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'rewrite', branch: 'fix' }, maintainer),
     ).rejects.toThrow(/kind/);
   });
 
@@ -258,7 +266,7 @@ describe('report_fix_attempt', () => {
       tool('report_fix_attempt')(
         db as never,
         { clusterId: 1, kind: 'fix-plan', branch: 'fix', diagnosisId: 42 },
-        reporter,
+        maintainer,
       ),
     ).rejects.toThrow('diagnosisId is not a diagnosis of this cluster');
   });
@@ -269,14 +277,14 @@ describe('set_run_incident', () => {
     const marked = (await tool('set_run_incident')(
       db as never,
       { runId: 1, incident: true, reason: 'staging was down' },
-      reporter,
+      maintainer,
     )) as Record<string, unknown>;
     expect(marked).toMatchObject({
       runId: 1,
       incident: { rule: 'person', reason: 'staging was down' },
       decision: 'marked',
     });
-    const cleared = (await tool('set_run_incident')(db as never, { runId: 1, incident: false }, reporter)) as Record<
+    const cleared = (await tool('set_run_incident')(db as never, { runId: 1, incident: false }, maintainer)) as Record<
       string,
       unknown
     >;
@@ -284,21 +292,22 @@ describe('set_run_incident', () => {
     expect(cleared.incident).toBeUndefined();
   });
 
-  test('refuses a read-only key and a bad argument', async () => {
-    await expect(tool('set_run_incident')(db as never, { runId: 1, incident: true }, viewer)).rejects.toThrow(
-      WRITE_REFUSED,
-    );
-    await expect(tool('set_run_incident')(db as never, { runId: 1, incident: 'yes' }, reporter)).rejects.toThrow(
+  test('takes the run page permission: a Viewer may flag a run; a bad argument is refused', async () => {
+    await expect(tool('set_run_incident')(db as never, { runId: 1, incident: true }, viewer)).resolves.toMatchObject({
+      runId: 1,
+      decision: 'marked',
+    });
+    await expect(tool('set_run_incident')(db as never, { runId: 1, incident: 'yes' }, maintainer)).rejects.toThrow(
       '`incident` must be true or false',
     );
   });
 
   test('each call lands in the write log with the run, its project and the key', async () => {
     const args = { runId: 1, incident: true, reason: 'staging was down' };
-    await tool('set_run_incident')(db as never, args, reporter);
-    expect(await logMcpToolCall(db as never, reporter, 'set_run_incident', args, 'ok')).toBe(1);
-    expect(await tool('set_run_incident')(db as never, { runId: 99, incident: false }, reporter)).toBeNull();
-    await logMcpToolCall(db as never, reporter, 'set_run_incident', { runId: 99, incident: false }, 'not-found');
+    await tool('set_run_incident')(db as never, args, maintainer);
+    expect(await logMcpToolCall(db as never, maintainer, 'set_run_incident', args, 'ok')).toBe(1);
+    expect(await tool('set_run_incident')(db as never, { runId: 99, incident: false }, maintainer)).toBeNull();
+    await logMcpToolCall(db as never, maintainer, 'set_run_incident', { runId: 99, incident: false }, 'not-found');
 
     const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
     expect(rows.map((r) => [r.tool, r.subjectType, r.subjectId, r.projectId, r.apiKeyId, r.userId, r.result])).toEqual([
@@ -316,7 +325,7 @@ describe('fix attempts in fix verification', () => {
   }
 
   test('an agent reads the fix plan, edits, reports the attempt, and CI passes on the new commit: verified, on the timeline', async () => {
-    const plan = (await tool('get_fix_plan')(db as never, { clusterId: 1 }, reporter)) as {
+    const plan = (await tool('get_fix_plan')(db as never, { clusterId: 1 }, maintainer)) as {
       verify: { commitTrailer: string };
     };
     expect(plan.verify.commitTrailer).toBe('Piwi-Cluster: 1');
@@ -324,7 +333,7 @@ describe('fix attempts in fix verification', () => {
     await tool('report_fix_attempt')(
       db as never,
       { clusterId: 1, kind: 'fix-plan', commit: 'ccc3333', note: 'Add the operands' },
-      reporter,
+      maintainer,
     );
     const fixes = await passAt(2, 'ccc3333');
     expect(fixes.map((f) => f.clusterId)).toEqual([1]);
@@ -346,7 +355,7 @@ describe('fix attempts in fix verification', () => {
   });
 
   test('a Piwi-Cluster trailer ties an attempt reported on a branch to the commit that fixed the cluster', async () => {
-    await tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', branch: 'fix/cart' }, reporter);
+    await tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', branch: 'fix/cart' }, maintainer);
     scm.commits = [{ sha: 'ddd4444', message: 'Fix the cart total\n\nPiwi-Cluster: 1' }];
     await passAt(2, 'ddd4444');
     const [attempt] = await listFixAttempts(db as never, 1);
@@ -355,7 +364,7 @@ describe('fix attempts in fix verification', () => {
   });
 
   test('an attempt nothing ties to the fix stays applied', async () => {
-    await tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', commit: 'eee5555' }, reporter);
+    await tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', commit: 'eee5555' }, maintainer);
     scm.commits = [{ sha: 'fff6666', message: 'Unrelated\n\nPiwi-Cluster: 9' }];
     await passAt(2, 'fff6666');
     const [attempt] = await listFixAttempts(db as never, 1);
@@ -363,7 +372,7 @@ describe('fix attempts in fix verification', () => {
   });
 
   test('a verified attempt regresses when the cluster fails again', async () => {
-    await tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', commit: 'ccc3333' }, reporter);
+    await tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'patch', commit: 'ccc3333' }, maintainer);
     await passAt(2, 'ccc3333');
     await insertRun(3, 'failed', 'ggg7777');
     await db
@@ -379,11 +388,11 @@ describe('fix attempts in fix verification', () => {
 describe('the write log', () => {
   test('logs a write tool with its key, subject and project, and never a read tool', async () => {
     expect(
-      await logMcpToolCall(db as never, reporter, 'set_cluster_status', { clusterId: 1, status: 'resolved' }, 'ok'),
+      await logMcpToolCall(db as never, maintainer, 'set_cluster_status', { clusterId: 1, status: 'resolved' }, 'ok'),
     ).toBe(1);
-    expect(await logMcpToolCall(db as never, reporter, 'get_cluster', { clusterId: 1 }, 'ok')).toBe(0);
-    expect(await logMcpToolCall(db as never, reporter, 'triage_cluster', { clusterIds: [1, 1, 5] }, 'ok')).toBe(2);
-    await logMcpToolCall(db as never, reporter, 'triage_gap', { projectId: 1, gapId: 4 }, 'error', 'gap not found');
+    expect(await logMcpToolCall(db as never, maintainer, 'get_cluster', { clusterId: 1 }, 'ok')).toBe(0);
+    expect(await logMcpToolCall(db as never, maintainer, 'triage_cluster', { clusterIds: [1, 1, 5] }, 'ok')).toBe(2);
+    await logMcpToolCall(db as never, maintainer, 'triage_gap', { projectId: 1, gapId: 4 }, 'error', 'gap not found');
 
     const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
     expect(rows.map((r) => [r.tool, r.subjectType, r.subjectId, r.projectId, r.apiKeyId, r.result])).toEqual([
@@ -400,7 +409,7 @@ describe('the write log', () => {
 
   test('writes nothing when the instance declined it', async () => {
     await setInstanceDecisions(db as never, { 'agent-write-log': 'declined' });
-    expect(await logMcpToolCall(db as never, reporter, 'set_cluster_status', { clusterId: 1 }, 'ok')).toBe(0);
+    expect(await logMcpToolCall(db as never, maintainer, 'set_cluster_status', { clusterId: 1 }, 'ok')).toBe(0);
     expect(await db.select().from(schema.mcpToolCalls)).toHaveLength(0);
   });
 
