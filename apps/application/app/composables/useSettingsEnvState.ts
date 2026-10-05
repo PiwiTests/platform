@@ -19,7 +19,7 @@ interface WastedSettings {
  * AI page is env-managed when its provider is env-pinned (`AiSettings.envManaged`);
  * SMTP is always env-only (read-only display); the Performance page when its
  * wasted-wait patterns or its cost of a CI minute come from env. Pages with no env-overridable fields
- * (account, users, groups, permissions, tags) are never env-managed. Storage backend is env-only by
+ * (account, users, groups, permissions, roles, tags) are never env-managed. Storage backend is env-only by
  * design but no endpoint
  * reports it today, so it is treated as "overridable but not necessarily locked"
  * (the page shows the env-var reference card regardless).
@@ -37,6 +37,7 @@ export function useSettingsEnvState() {
     users: false,
     groups: false,
     permissions: false,
+    roles: false,
     notifications: false,
     tags: false,
     storage: false,

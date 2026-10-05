@@ -788,6 +788,11 @@ export const HELP_TOPICS = {
     text: 'Named sets of users, such as QA or Product owners. A group receives project roles the way a user does, and its members hold them; rights add up, and groups do not nest. A group never makes anyone an Administrator.',
     doc: 'operate/project-access#groups',
   },
+  'settings.roles': {
+    title: 'What each role can do',
+    text: 'The five project roles and what each one allows, read from the same definitions the server enforces. The roles are fixed: to give someone rights, grant them a role on the permission grid or in a project’s Members.',
+    doc: 'operate/project-access#what-each-role-can-do',
+  },
   'settings.permissions': {
     title: 'Permission grid',
     text: 'Every group and user against every project: pick a role in a cell to grant it there, or none to remove it. Each change saves at once. All projects also covers projects created later, and a role held only through a group or All projects shows faint.',

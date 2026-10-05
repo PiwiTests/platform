@@ -123,7 +123,8 @@ actually uses, judged from the data it holds ([Choose what you use](/operate/cap
 
 `/settings`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
 **Users** ([Authentication](/operate/authentication), [API keys](/operate/api-keys)), **Groups**
-([Groups](/operate/project-access#groups)) and **Permissions** ([Permission grid](/operate/project-access#permission-grid)), **Storage**
+([Groups](/operate/project-access#groups)), **Permissions** ([Permission grid](/operate/project-access#permission-grid)),
+**Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
 **Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),

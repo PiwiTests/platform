@@ -25,6 +25,7 @@ export type SettingsPageId =
   | 'users'
   | 'groups'
   | 'permissions'
+  | 'roles'
   | 'notifications'
   | 'tags'
   | 'storage'
@@ -153,6 +154,18 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     authOnly: true,
     introHelp: 'settings.permissions',
     fields: [{ id: 'permissions.grid', label: 'Permission grid', help: 'settings.permissions' }],
+  },
+  {
+    // Read-only, for everyone: what each role allows, so a member can see what a
+    // role they are offered or hold lets them do.
+    id: 'roles',
+    label: 'Roles',
+    icon: 'i-lucide-list-checks',
+    to: '/settings/roles',
+    group: 'instance',
+    authOnly: true,
+    introHelp: 'settings.roles',
+    fields: [{ id: 'roles.matrix', label: 'What each role can do', help: 'settings.roles' }],
   },
   {
     id: 'notifications',

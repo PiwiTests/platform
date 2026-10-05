@@ -27,7 +27,8 @@ apart.
 ## What each role can do
 
 Each row is one permission. The **Permission** column is how the [API docs](https://piwitests.dev/demo/docs) name
-each endpoint's requirement (`x-required-permission`), so a script author can tell which role a call needs.
+each endpoint's requirement (`x-required-permission`), so a script author can tell which role a call needs. In the app,
+**Settings → Roles** shows the same table to every signed-in user.
 
 | What you can do | Permission | Viewer | Contributor | Maintainer | Project admin | Uploader |
 |---|---|:-:|:-:|:-:|:-:|:-:|

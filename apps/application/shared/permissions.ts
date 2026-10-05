@@ -115,6 +115,38 @@ export type Permission = ProjectPermission | InstancePermission;
 export const SIGNED_IN = 'signed-in';
 export type RoutePermission = Permission | typeof SIGNED_IN;
 
+/**
+ * What each permission lets someone do, in plain words: the rows of
+ * Settings → Roles and of the matrix in `apps/docs/operate/project-access.md`
+ * (a unit test keeps the docs table equal to these labels and to `ROLE_PERMISSIONS`).
+ */
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  'project:read': 'Read runs, executions, clusters, analytics',
+  'issue:create': 'File a Jira issue',
+  'link:write': 'Pin, edit and remove links',
+  'bug-report:write': 'Edit a bug report',
+  'report:write': 'Save and schedule reports',
+  'marker:write': 'Add and edit timeline markers',
+  'share:create': 'Create share links, share a dashboard',
+  'triage:write': 'Triage clusters and gaps',
+  'quarantine:write': 'Quarantine and release tests',
+  'ai:run': 'Run AI diagnosis (spends tokens)',
+  'run:control': 'Re-run in CI, bisect, Flake Lab, fix attempts',
+  'test-assets:write': 'Edit selections and test functions',
+  'run:submit': 'Upload runs',
+  'project:manage': 'Edit project settings and Jira binding',
+  'project:members': "Manage the project's members",
+  'run:delete': 'Delete runs, release kept runs',
+  'users:manage': 'Manage users and their roles',
+  'groups:manage': 'Manage groups',
+  'settings:manage': 'Change instance settings (AI, email, analysis)',
+  'connections:manage': 'Manage issue tracker connections',
+  'storage:manage': 'Manage storage, cleanup and imports',
+  'tags:manage': 'Manage tags',
+  'project:create': 'Create projects',
+  'project:delete': 'Delete projects',
+};
+
 export function isProjectPermission(value: unknown): value is ProjectPermission {
   return typeof value === 'string' && (PROJECT_PERMISSIONS as readonly string[]).includes(value);
 }

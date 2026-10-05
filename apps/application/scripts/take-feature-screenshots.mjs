@@ -1855,6 +1855,21 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'settings-roles', width: 1280, height: 1100 },
+    { name: 'settings-roles-mobile', width: 390, height: 2600 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Roles: what each project role can do, read-only, at ${width} px`,
+    route: '/settings/roles',
+    viewport: { width, height },
+    of: '[data-shot="roles-matrix"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="roles-matrix"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'settings-groups', width: 1280, height: 800 },
     { name: 'settings-groups-mobile', width: 390, height: 1000 },
   ].map(({ name, width, height }) => ({
