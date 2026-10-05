@@ -159,29 +159,36 @@ flowchart LR
 
 | Permission | Covers (today's routes) | Viewer | Contributor | Maintainer | Project admin | Uploader |
 | --- | --- | :-: | :-: | :-: | :-: | :-: |
-| `project:read` | every project read (the 164 routes) | ✓ | ✓ | ✓ | ✓ | |
+| `project:read` | every project read (the 164 routes) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `issue:create` | `POST /integrations/issues`, issue draft, Jira projects / issue types / fields / assignable users, Piwi Picker `canCreate` | | ✓ | ✓ | ✓ | |
 | `link:write` | entity links (create, edit, refresh, delete) | | ✓ | ✓ | ✓ | |
 | `bug-report:write` | `PATCH /bug-reports/{id}` | | ✓ | ✓ | ✓ | |
 | `report:write` | report snapshots, report schedules | | ✓ | ✓ | ✓ | |
 | `share:create` | share links, sharing a dashboard with the instance | | | ✓ | ✓ | |
 | `marker:write` | timeline markers | | ✓ | ✓ | ✓ | |
-| `triage` | cluster status, assignee, snooze, base commit, bulk actions, merge suggestions, gap triage, flaky classification | | | ✓ | ✓ | |
+| `triage:write` | cluster status, assignee, snooze, base commit, bulk actions, merge suggestions, gap triage, flaky classification | | | ✓ | ✓ | |
 | `quarantine:write` | quarantine, release, dismiss | | | ✓ | ✓ | |
 | `ai:run` | diagnosis, agent diagnosis, step resolution, test-function extraction (spends AI tokens) | | | ✓ | ✓ | |
 | `run:control` | rerun, bisect, fix attempts, flake lab, probes | | | ✓ | ✓ | |
 | `test-assets:write` | selections, test functions, surface manifest, locator index rebuild | | | ✓ | ✓ | |
-| `run:submit` | run setup, start, upload, submit, trace check, and the reads the reporter does during a run | | | ✓ | ✓ | ✓ |
-| `project:manage` | project settings, capabilities, URL patterns, project ↔ Jira binding, the project's share links, deletion preview | | | | ✓ | |
+| `run:submit` | run setup, start, upload, submit, trace check, surface manifest, probe and flake lab results, AI step resolution during a run | | | ✓ | ✓ | ✓ |
+| `project:manage` | project settings, capabilities, URL patterns, project ↔ Jira binding, the project's share links | | | | ✓ | |
 | `project:members` | read and edit the project's role bindings (users and groups) | | | | ✓ | |
 | `run:delete` | delete a run, release a kept run | | | | ✓ | |
 
-`Maintainer` keeps `run:submit` because developers upload local runs with their own key. Creating a project on first
+`Maintainer` keeps `run:submit` because developers upload local runs with their own key. `Uploader` also reads the
+project, because the reporter reads it during a run (project menu, locator and code indexes, selections, quarantine). Creating a project on first
 submission still requires a binding on **all projects**, as today.
 
 `share:create` stays at `Maintainer`: a share link opens data to people without an account, and a dashboard shared
 with the instance is seen by everyone, so neither belongs to the role whose purpose is filing and following up issues.
 Project deletion stays administrator only.
+
+Instance permissions, held only by an administrator: `users:manage`, `groups:manage`, `settings:manage`,
+`connections:manage`, `storage:manage`, `tags:manage`, `project:create`, `project:delete` (with its deletion preview).
+
+A route that any signed-in user may call (their profile, API keys, dashboards, channels, subscriptions) declares
+`signed-in` instead of a permission. The catalog and the matrix are code: `apps/application/shared/permissions.ts`.
 
 ### 4.4 Groups
 
@@ -230,7 +237,9 @@ flowchart TD
 ```
 
 The early check (H) keeps today's behavior of refusing with 403 before any database work; the project check (J) is
-the real decision.
+the real decision. `project:read` and `signed-in` pass the early check for every signed-in user: which projects a user
+reads is decided by the project scope, so a member without any binding sees an empty dashboard, as today, not
+errors.
 
 ---
 
@@ -335,8 +344,8 @@ flowchart LR
 
 Nobody gains or loses a right during the migration: `Maintainer` is exactly what `reporter` could do, `Viewer`
 exactly what `user` could do. OAuth sign-ups keep starting with no access (`Member`, no binding), as today. The REST
-API keeps accepting `role: 'reporter' | 'user'` on `POST /api/users` for one release, translated to a binding on all
-projects, then the field is removed.
+API keeps accepting `role: 'reporter' | 'user'` on `POST /api/users` for one release, translated to `member`; as
+today, a new account has no access until it is granted some.
 
 ---
 
