@@ -14,7 +14,7 @@ defineRouteMeta({
     description:
       'Returns detailed information about a test run case (one execution in a test run) including test run data, failure cluster context, reports, and attachments.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

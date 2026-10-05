@@ -7,7 +7,7 @@ defineRouteMeta({
     summary: 'Run insights',
     description:
       'Returns comparison insights for a test run: new regressions, recurrences, recovered tests, performance changes, worker imbalance, and new clusters. The automatic baseline is the last passing full run (same environment first, then the same branch, the base branch, any branch); when no earlier full run passed, it is the last failed one, and `baselineMatch.outcome` says so. `earlierRuns` lists the runs before this one that can be passed as `baseline`.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {

@@ -7,8 +7,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save the cost of a CI minute',
     description:
-      'Sets the cost of one CI minute with `{ "cost": { "amount": 0.008, "currency": "USD" } }`, or clears it with `{ "cost": null }`. Refused with HTTP 409 while PIWI_CI_MINUTE_COST pins the value. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Sets the cost of one CI minute with `{ "cost": { "amount": 0.008, "currency": "USD" } }`, or clears it with `{ "cost": null }`. Refused with HTTP 409 while PIWI_CI_MINUTE_COST pins the value. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

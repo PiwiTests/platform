@@ -12,7 +12,7 @@ defineRouteMeta({
     description:
       "For every visible project, each detector's precision from triage verdicts and whether it has muted itself. Drives the admin stats view of the scenario-gap learning loop.",
     parameters: [],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

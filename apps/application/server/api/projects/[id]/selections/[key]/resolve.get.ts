@@ -32,7 +32,7 @@ defineRouteMeta({
         description: 'Emit tests in this rank order (fail-fast): failure ranks put the least-reliable tests first',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

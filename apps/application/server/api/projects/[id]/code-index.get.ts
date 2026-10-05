@@ -19,7 +19,7 @@ defineRouteMeta({
         description: 'The branch to describe; the default branch when absent.',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

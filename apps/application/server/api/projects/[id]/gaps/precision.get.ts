@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'For each detector on this project, the share of triage verdicts that went for it (accepted, covered-by) versus against it (dismissed as wrong), and whether it has muted itself (below 60% with at least 20 verdicts). A muted detector drops out of the pull-request comment first.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

@@ -6,9 +6,9 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'Reject a cluster merge suggestion',
     description:
-      'Marks the suggestion as rejected; both clusters are left untouched. Requires reporter or administrator role.',
+      'Marks the suggestion as rejected; both clusters are left untouched. Requires `triage:write` (Maintainer and above on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 

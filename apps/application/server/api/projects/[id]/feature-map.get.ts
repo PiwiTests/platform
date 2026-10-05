@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'One entry per feature (from the `groups` edges): the routes, pages and controls it groups, the distinct tests reaching them, its open gaps by class and the worst class; plus the links between features that share nodes, weighted by how many they share, and the open gaps no feature groups. The top level of the graph view.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

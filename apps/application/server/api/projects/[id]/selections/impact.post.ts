@@ -12,7 +12,7 @@ defineRouteMeta({
     description:
       'Maps changed files (computed by the client from a git diff) to the tests they affect — directly when a changed file is a test file, and by reach when a test’s captured source frames ran through it. Returns the impacted tests and a `playwright test` command. A changed source file that maps to no test widens the result to the full suite (with a warning) rather than silently skipping it. This is what `piwi run impact --base <ref>` calls; route/page-level mapping is not attempted.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
     requestBody: {
       content: {
         'application/json': {

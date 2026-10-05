@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Verifies the connection by resolving the authenticated account (Jira `whoAmI`) and records the outcome. Soft-fail: a reachable provider that rejects the credentials returns HTTP 200 with `{ ok: false, error }`.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

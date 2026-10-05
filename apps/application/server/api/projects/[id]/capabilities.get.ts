@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       "The resolved state of every optional capability for one project: the project's evidence and decision over the instance's decision. Readable by any signed-in user with access to the project.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

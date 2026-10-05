@@ -3,9 +3,9 @@
  * widget data of a dashboard. Shared by the server routes, the MCP tools and
  * the demo; who is asking and what they may open come in as arguments.
  *
- * Access: any signed-in user keeps private dashboards; sharing needs the
- * reporter or administrator role; a shared dashboard is changed by its owner
- * or an administrator and duplicated by everyone else. With authentication
+ * Access: any signed-in user keeps private dashboards; sharing needs
+ * `share:create` on at least one project; a shared dashboard is changed by its
+ * owner or an administrator and duplicated by everyone else. With authentication
  * off every dashboard is shared. A dashboard grants no access: every widget is
  * computed for the viewer's project access, and the projects of its scope the
  * viewer cannot open are counted, never shown.
@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { analyticsDashboards, projects, reportSchedules, shareLinks, users } from '../../server/database/schema';
 import { deleteAppSetting, getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import type { DrizzleDB } from './db';
-import { Role } from '../types';
+import { holdsAnywhere, isAdministrator, type AccessSummary } from '../permissions';
 import { analyticsScopeToQuery, parseAnalyticsScope, type AnalyticsScope } from '../analytics/scope';
 import { queryHasScope } from '../analytics/scope-state';
 import {
@@ -48,11 +48,23 @@ export class DashboardError extends Error {
   }
 }
 
-/** Who is asking. With authentication off there is no user: `id` is null and every dashboard is shared. */
+/**
+ * Who is asking. With authentication off there is no user: `id` is null and
+ * every dashboard is shared. `isAdmin` is an instance administrator, who edits
+ * every dashboard and sets the instance default; `canShare` whether they hold
+ * `share:create` on at least one project.
+ */
 export interface DashboardActor {
   id: number | null;
-  role: Role | null;
   authEnabled: boolean;
+  isAdmin: boolean;
+  canShare: boolean;
+}
+
+/** The actor for a signed-in user's access; `access` null means authentication is off. */
+export function dashboardActorFor(id: number | null, access: AccessSummary | null): DashboardActor {
+  if (!access) return { id: null, authEnabled: false, isAdmin: true, canShare: true };
+  return { id, authEnabled: true, isAdmin: isAdministrator(access), canShare: holdsAnywhere(access, 'share:create') };
 }
 
 export type DashboardVisibility = 'private' | 'shared';
@@ -69,12 +81,12 @@ const VIEW_TOUCH_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function isAdmin(actor: DashboardActor): boolean {
-  return !actor.authEnabled || actor.role === Role.ADMINISTRATOR;
+  return !actor.authEnabled || actor.isAdmin;
 }
 
-/** Sharing needs the reporter or administrator role; with authentication off everything is shared. */
+/** Sharing needs `share:create` on at least one project; with authentication off everything is shared. */
 function canShareDashboards(actor: DashboardActor): boolean {
-  return !actor.authEnabled || actor.role === Role.ADMINISTRATOR || actor.role === Role.REPORTER;
+  return !actor.authEnabled || actor.isAdmin || actor.canShare;
 }
 
 // ── References ───────────────────────────────────────────────────────────────
@@ -437,11 +449,11 @@ function checkedDefinition(raw: unknown): DashboardDefinition {
   }
 }
 
-/** The visibility a write stores: sharing needs the role, and with authentication off everything is shared. */
+/** The visibility a write stores: sharing needs `share:create`, and with authentication off everything is shared. */
 function storedVisibility(requested: DashboardVisibility, actor: DashboardActor): DashboardVisibility {
   if (!actor.authEnabled) return 'shared';
   if (requested === 'shared' && !canShareDashboards(actor)) {
-    throw new DashboardError(403, 'Sharing a dashboard needs the reporter or administrator role');
+    throw new DashboardError(403, 'Sharing a dashboard needs the Maintainer role on at least one project');
   }
   return requested;
 }

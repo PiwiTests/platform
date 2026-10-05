@@ -13,7 +13,7 @@ defineRouteMeta({
     summary: 'Generate and keep a quality report',
     description:
       'Renders a built-in dashboard over a scope, as `GET /api/reports/preview` does, and stores it as a report snapshot, so it can be reopened unchanged later. The body carries the same keys as the preview query (`dashboard`, `lang`, `period`, `projects`, …). Returns the snapshot id.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'report:write',
   },
 });
 
@@ -26,14 +26,14 @@ export default eventHandler(async (event) => {
     createReportSnapshot(
       db as any,
       {
-        dashboard: await dashboardRoute(() =>
-          reportDashboardFor(db as any, request.dashboard, dashboardActor(event, user as any)),
+        dashboard: await dashboardRoute(async () =>
+          reportDashboardFor(db as any, request.dashboard, await dashboardActor(event, user as any)),
         ),
         scope: request.scope,
         language: request.language,
       },
       {
-        access: await getProjectScope(db, user as any),
+        access: await getProjectScope(db, user as any, 'report:write'),
         timeZone: request.scope.timeZone ?? (await reportScheduleTimeZone(db)),
         baseUrl: reportBaseUrl(),
         piwiVersion: reportPiwiVersion(),

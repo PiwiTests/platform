@@ -19,7 +19,7 @@ defineRouteMeta({
         },
       },
     },
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:control',
   },
 });
 

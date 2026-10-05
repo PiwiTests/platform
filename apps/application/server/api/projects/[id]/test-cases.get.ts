@@ -103,7 +103,7 @@ defineRouteMeta({
         description: 'Sort direction',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

@@ -20,7 +20,7 @@ defineRouteMeta({
         description: 'Include quarantine proposals derived from flaky analysis',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

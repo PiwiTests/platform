@@ -13,7 +13,7 @@ defineRouteMeta({
     summary: 'Check a connection before saving it',
     description:
       'Reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees. Nothing is stored. When `connectionId` names the connection being edited and a credential field is blank, the stored value is used, but only while the site stays the same. Each step carries a plain-language `hint` when it fails.',
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

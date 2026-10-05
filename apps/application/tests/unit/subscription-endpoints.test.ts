@@ -15,8 +15,9 @@ delete process.env.PIWI_DATABASE_URL;
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
-vi.mock('../../server/utils/auth', () => ({
+vi.mock('../../server/utils/auth', async () => ({
   requireAuth: async () => ({ id: 0, role: 'administrator' }),
+  getRequestAccess: async () => (await import('#shared/permissions')).ADMIN_ACCESS,
   isAuthEnabled: () => false,
 }));
 

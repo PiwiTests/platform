@@ -18,7 +18,7 @@ defineRouteMeta({
         description: 'Filter suggestions by status (default "pending").',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

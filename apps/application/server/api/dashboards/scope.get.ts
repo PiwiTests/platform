@@ -19,7 +19,7 @@ defineRouteMeta({
         description: 'Period in compact form (`last-30d`, `this-month`, `2026-08-01..2026-08-31`, …)',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

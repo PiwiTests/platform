@@ -10,7 +10,7 @@ defineRouteMeta({
     summary: 'Update an entity link',
     description: 'Update the URL and/or title of an entity link. Provider is re-detected if the URL changes.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'link:write',
   },
 });
 

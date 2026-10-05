@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Returns the stable test case identity with aggregated run stats, recent executions, linked failure clusters, and entity links.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

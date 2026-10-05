@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Tags'],
     summary: 'List all tags',
     description: 'Returns a list of all tags ordered alphabetically.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

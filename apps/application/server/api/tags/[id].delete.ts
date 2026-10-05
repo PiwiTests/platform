@@ -6,9 +6,9 @@ defineRouteMeta({
   openAPI: {
     tags: ['Tags'],
     summary: 'Delete a tag',
-    description: 'Deletes a tag by ID. Requires administrator role.',
+    description: 'Deletes a tag by ID. Requires `tags:manage` (administrators only).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'tags:manage',
   },
 });
 

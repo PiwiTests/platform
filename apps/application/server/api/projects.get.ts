@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'List all projects with stats',
     description: 'Returns all projects with their latest run, total runs count, total test cases, and tags',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

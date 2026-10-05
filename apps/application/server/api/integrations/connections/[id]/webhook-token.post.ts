@@ -7,9 +7,9 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Generate an inbound-webhook token',
     description:
-      'Generate (or rotate) the per-connection webhook secret and return it once, with the URL to register in Jira. The token is never returned by any read endpoint afterward. Requires administrator role.',
+      'Generate (or rotate) the per-connection webhook secret and return it once, with the URL to register in Jira. The token is never returned by any read endpoint afterward. Requires `connections:manage` (administrators only).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

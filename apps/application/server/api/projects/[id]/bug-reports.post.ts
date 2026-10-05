@@ -5,22 +5,19 @@ import { getDatabase } from '../../../database';
 import { apiError } from '../../../utils/api-error';
 import { isJpeg, isPng, storeBugReport } from '../../../utils/bug-report-store';
 import { streamMultipart } from '../../../utils/multipart-stream';
-import {
-  bugReportIntake,
-  fileBugReportIssue,
-  roleCanCreateIssues,
-  shouldFileOnSend,
-} from '../../../utils/integrations/bug-reports';
+import { getRequestAccess } from '../../../utils/auth';
+import { bugReportIntake, fileBugReportIssue, shouldFileOnSend } from '../../../utils/integrations/bug-reports';
 import { BUG_REPORT_LIMITS } from '#shared/handlers/bug-reports';
+import { can } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Bug reports'],
     summary: 'Send a bug report',
     description:
-      'What Piwi Picker’s **Send to Piwi…** sends: `multipart/form-data` with a `report` part (the bug report as JSON: `{ v: 1, steps, evidence, context }`, 1 MB at most), an optional `language` part (the language it was written in, such as `fr`), up to three PNG `screenshot` parts named as the report’s `evidence.screenshots` name them (`1-marked.png`, 5 MB each), and up to 100 JPEG `stepShot` parts, the screenshot of each step, named as `evidence.stepShots` names them (`002.jpg`, 1 MB each, 32 MB together). A `createIssue` part (`true`) asks for an issue in the project’s tracker, which takes the administrator or reporter role unless the project files every report (then one is created anyway). A JSON body `{ report, language?, createIssue? }` is accepted too, without screenshots. Answers `{ id, url, issue }`, `issue` being the create-issue outcome (`{ status, key?, url?, error? }`) or null.',
+      'What Piwi Picker’s **Send to Piwi…** sends: `multipart/form-data` with a `report` part (the bug report as JSON: `{ v: 1, steps, evidence, context }`, 1 MB at most), an optional `language` part (the language it was written in, such as `fr`), up to three PNG `screenshot` parts named as the report’s `evidence.screenshots` name them (`1-marked.png`, 5 MB each), and up to 100 JPEG `stepShot` parts, the screenshot of each step, named as `evidence.stepShots` names them (`002.jpg`, 1 MB each, 32 MB together). A `createIssue` part (`true`) asks for an issue in the project’s tracker, which takes `issue:create` on the project (Contributor and above) unless the project files every report (then one is created anyway). A JSON body `{ report, language?, createIssue? }` is accepted too, without screenshots. Answers `{ id, url, issue }`, `issue` being the create-issue outcome (`{ status, key?, url?, error? }`) or null.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -114,11 +111,12 @@ export default eventHandler(async (event) => {
   const language = incoming.language && LANGUAGE.test(incoming.language) ? incoming.language : null;
 
   const db = await getDatabase();
-  // A role that may not create issues cannot ask for one; the project filing every report is not asking.
-  if (incoming.createIssue && !roleCanCreateIssues(user.role)) {
-    const intake = await bugReportIntake(db, projectId, user.role);
+  const canCreate = can(await getRequestAccess(event), 'issue:create', projectId);
+  // A sender who may not create issues cannot ask for one; the project filing every report is not asking.
+  if (incoming.createIssue && !canCreate) {
+    const intake = await bugReportIntake(db, projectId, canCreate);
     if (!intake.fileEvery)
-      throw apiError({ statusCode: 403, message: 'Creating an issue takes the administrator or reporter role' });
+      throw apiError({ statusCode: 403, message: 'Creating an issue takes the Contributor role on this project' });
   }
   // The screenshots are sent under their file names, without the archive's folder.
   const screenshots = new Map([...incoming.screenshots].map(([name, bytes]) => [`screenshots/${name}`, bytes]));
@@ -133,7 +131,7 @@ export default eventHandler(async (event) => {
   });
   // The report is stored whatever the tracker answers; the issue follows through the outbox.
   let issue: { status: string; key?: string; url?: string; error?: string } | null = null;
-  if (await shouldFileOnSend(db, projectId, incoming.createIssue, user.role)) {
+  if (await shouldFileOnSend(db, projectId, incoming.createIssue, canCreate)) {
     try {
       const outcome = await fileBugReportIssue(db, { bugReportId: id, projectId, requestedBy: user.id || null });
       if (outcome) issue = { status: outcome.status, key: outcome.key, url: outcome.url, error: outcome.error };

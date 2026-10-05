@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Returns aggregated network request summaries from test cases in a test run, grouped by HTTP method and normalized route, sorted by average duration. Excludes static asset requests.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

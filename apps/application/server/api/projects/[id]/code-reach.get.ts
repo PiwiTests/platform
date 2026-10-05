@@ -27,7 +27,7 @@ defineRouteMeta({
           'The branch to read: its tests’ own reach where they ran on it, the default branch’s for the others. The default branch when absent.',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

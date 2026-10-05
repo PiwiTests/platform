@@ -9,7 +9,7 @@ defineRouteMeta({
     summary: 'Send a test notification to an unsaved channel',
     description:
       'Sends a test notification to a destination before the channel is created (`email`, `slack`, `teams` or `webhook`, with the same `config` the create endpoint takes; a webhook `secret` is plain text here). Nothing is stored except a short-lived note that this destination was reached, so creating the same channel within a few minutes saves it as verified. Soft-fail like the saved-channel test: a rejected delivery returns HTTP 200 with `{ success: false, error, hint? }`.',
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
     responses: {
       '200': {
         description: 'Delivery attempt result. `success` reports the outcome; a failed delivery still returns 200.',

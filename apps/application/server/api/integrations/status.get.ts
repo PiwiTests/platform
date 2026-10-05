@@ -8,7 +8,7 @@ defineRouteMeta({
     summary: 'Which trackers are connected',
     description:
       'Lists the connected trackers a member can file into. Drives whether the create-issue entry points show.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

@@ -13,8 +13,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save wasted-time settings',
     description:
-      'Updates the allowlist of glob patterns used to classify wait steps as wasted time. Send `patterns: null` to reset to the built-in defaults. Wasted time is recomputed at read time, so changes apply to historical runs immediately. Env-managed conflict: when patterns are supplied via PIWI_WASTED_WAIT_PATTERNS the environment is authoritative for the whole setting and any write is refused with HTTP 409. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Updates the allowlist of glob patterns used to classify wait steps as wasted time. Send `patterns: null` to reset to the built-in defaults. Wasted time is recomputed at read time, so changes apply to historical runs immediately. Env-managed conflict: when patterns are supplied via PIWI_WASTED_WAIT_PATTERNS the environment is authoritative for the whole setting and any write is refused with HTTP 409. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

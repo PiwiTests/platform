@@ -11,7 +11,6 @@ defineRouteMeta({
     description:
       'Desktop build only — 404 on the server build. Open without the desktop token; needs the secret the start answered, in `x-pairing-secret` (404 otherwise, as for an unknown pairing). Answers `{ status }`: `waiting`, `denied`, `expired` or `claimed`, and once, after the developer allowed it, `{ status: "allowed", token }` with the app’s access token.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': [],
     security: [],
   },
 });

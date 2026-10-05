@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'The report with its steps document, evidence and context, the test that reproduces it once one is committed, and its reproductions.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

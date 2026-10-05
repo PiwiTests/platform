@@ -7,7 +7,7 @@ defineRouteMeta({
     summary: 'Delete an entity link',
     description: 'Remove an entity link by ID.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'link:write',
   },
 });
 

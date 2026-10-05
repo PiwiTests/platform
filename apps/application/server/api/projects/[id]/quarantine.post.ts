@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'Marks a test as quarantined. It keeps running and keeps reporting — quarantine only removes it from the CI gate’s verdict, so its passing streak can still accumulate and earn it a release. Quarantining an already-quarantined test is a no-op and preserves the original streak.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'quarantine:write',
     requestBody: {
       content: {
         'application/json': {

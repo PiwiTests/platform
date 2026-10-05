@@ -22,7 +22,7 @@ defineRouteMeta({
         description: 'Period in compact form (`last-30d`, `this-month`, …), as the analytics widgets read it',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -36,7 +36,7 @@ export default eventHandler(async (event) => {
       getRouterParam(event, 'id'),
       getRouterParam(event, 'key') ?? '',
       getQuery(event),
-      dashboardActor(event, user as any),
+      await dashboardActor(event, user as any),
       access,
     );
     return cachedDashboardWidget(request, access);

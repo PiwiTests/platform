@@ -12,7 +12,7 @@ defineRouteMeta({
     description:
       'The share links minted for this stored quality report: prefixes and lifecycle only, never the tokens. Readable when the caller can open every project the snapshot covers.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

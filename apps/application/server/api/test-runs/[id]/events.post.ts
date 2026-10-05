@@ -17,7 +17,6 @@ defineRouteMeta({
     description:
       'Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': [],
     requestBody: {
       content: {
         'application/json': {

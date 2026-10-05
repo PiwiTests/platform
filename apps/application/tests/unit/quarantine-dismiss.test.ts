@@ -4,7 +4,8 @@ import { apiError } from '../../server/utils/api-error';
 import { openTempDb, type TempDb } from './temp-db';
 import type { McpContext } from '../../server/utils/mcp/tools';
 import type { User } from '../../server/database/schema';
-import type { Role } from '#shared/types';
+import { InstanceRole, ProjectRole, buildAccessSummary, type RoutePermission } from '#shared/permissions';
+import { recordRouteMeta, type RouteAccessState, type RouteCaller } from './route-access';
 
 /**
  * Dismissing a quarantine proposal or a proposed release: the REST route the
@@ -16,24 +17,19 @@ import type { Role } from '#shared/types';
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 
-const state = vi.hoisted(() => ({
-  db: null as unknown,
-  user: null as unknown,
-  routeRoles: null as Role[] | null,
-  flaky: [] as Array<Record<string, unknown>>,
-}));
+const state = vi.hoisted(
+  () =>
+    ({ db: null, caller: null, routePermission: [], flaky: [] }) as RouteAccessState & {
+      flaky: Array<Record<string, unknown>>;
+    },
+);
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
-// Signed in as `state.user`, held to the roles the route declares, as requireAuth holds a key to them.
-vi.mock('../../server/utils/auth', () => ({
-  requireAuth: async () => {
-    const user = state.user as User;
-    if (state.routeRoles && !state.routeRoles.includes(user.role as Role)) {
-      throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
-    }
-    return user;
-  },
-  isAuthEnabled: () => true,
-}));
+// Signed in as `state.caller`, held to the permission the route declares, as
+// requireAuth and the project access helpers hold a request to it.
+vi.mock('../../server/utils/auth', async () => (await import('./route-access')).authMock(state));
+vi.mock('../../server/utils/project-access', async (importOriginal) =>
+  (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
+);
 // The flaky analysis behind the quarantine candidates.
 vi.mock('#shared/handlers/projects', async (importOriginal) => ({
   ...(await importOriginal<typeof import('#shared/handlers/projects')>()),
@@ -46,9 +42,7 @@ interface FakeEvent {
   path?: string;
 }
 
-vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: { 'x-required-roles'?: Role[] } }) => {
-  state.routeRoles = meta.openAPI?.['x-required-roles'] ?? null;
-});
+vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
@@ -56,20 +50,20 @@ vi.stubGlobal('apiError', apiError);
 
 type Handler<T> = (event: FakeEvent) => Promise<T>;
 
-/** A route's handler, called under the roles its meta declares. */
-async function loadRoute<T>(path: string): Promise<{ handler: Handler<T>; roles: Role[] | null }> {
+/** A route's handler, called under the permission its meta declares. */
+async function loadRoute<T>(path: string): Promise<{ handler: Handler<T>; permission: RoutePermission[] }> {
   const handler = (await import(path)).default as Handler<T>;
-  const roles = state.routeRoles;
+  const permission = state.routePermission;
   return {
-    roles,
+    permission,
     handler: async (event) => {
-      state.routeRoles = roles;
+      state.routePermission = permission;
       return handler(event);
     },
   };
 }
 
-const { handler: dismissRoute, roles: dismissRoles } = await loadRoute<{
+const { handler: dismissRoute, permission: dismissPermission } = await loadRoute<{
   success: boolean;
   proposal: string;
   dismissed: boolean;
@@ -87,6 +81,13 @@ const dismissTool = MCP_TOOLS.find((t) => t.name === 'dismiss_quarantine_proposa
 const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
 const reporter = asUser(2, 'reporter', 'Robin');
 const viewer = asUser(3, 'user', 'Sam');
+// The same people on the routes: Robin a Maintainer and Sam a Viewer of project 1.
+const onProject = (user: User, projectId: number, role: ProjectRole): RouteCaller => ({
+  user,
+  access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId, role }]),
+});
+const robin = onProject(reporter, 1, ProjectRole.MAINTAINER);
+const sam = onProject(viewer, 1, ProjectRole.VIEWER);
 // The same people over MCP: Robin with an API key, both assigned to project 1 only.
 const reporterKey: McpContext = { user: reporter, scope: new Set([1]), apiKeyId: 9 };
 const viewerKey: McpContext = { user: viewer, scope: new Set([1]) };
@@ -126,20 +127,20 @@ const outcomes = async () =>
 beforeEach(async () => {
   ({ db, close } = await openTempDb());
   state.db = db;
-  state.user = reporter;
+  state.caller = robin;
   runSeq = 0;
   await db.insert(schema.users).values([
-    { id: 2, username: 'robin', password: '', role: 'reporter', name: 'Robin' },
-    { id: 3, username: 'sam', password: '', role: 'user', name: 'Sam' },
+    { id: 2, username: 'robin', password: '', role: InstanceRole.MEMBER, name: 'Robin' },
+    { id: 3, username: 'sam', password: '', role: InstanceRole.MEMBER, name: 'Sam' },
   ]);
   await db.insert(schema.apiKeys).values({ id: 9, userId: 2, name: 'agent', keyHash: 'h9', keyPrefix: 'abcd1234' });
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop' },
     { id: 2, name: 'other' },
   ]);
-  await db.insert(schema.projectAssignments).values([
-    { userId: 2, projectId: 1 },
-    { userId: 3, projectId: 1 },
+  await db.insert(schema.roleBindings).values([
+    { userId: 2, projectId: 1, role: ProjectRole.MAINTAINER },
+    { userId: 3, projectId: 1, role: ProjectRole.VIEWER },
   ]);
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'adds an item' },
@@ -212,9 +213,14 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
     expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: false }]);
   });
 
-  test('is limited to reporters and administrators', async () => {
-    expect(dismissRoles).toEqual(['administrator', 'reporter']);
-    state.user = viewer;
+  test('needs quarantine:write on the project', async () => {
+    expect(dismissPermission).toEqual(['quarantine:write']);
+    state.caller = sam;
+    await expect(
+      dismissRoute({ params: { id: '1', testCaseId: '2' }, body: { proposal: 'release' } }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    // A Maintainer of another project only.
+    state.caller = onProject(reporter, 2, ProjectRole.MAINTAINER);
     await expect(
       dismissRoute({ params: { id: '1', testCaseId: '2' }, body: { proposal: 'release' } }),
     ).rejects.toMatchObject({ statusCode: 403 });
@@ -235,7 +241,7 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
     await expect(
       dismissRoute({ params: { id: '1', testCaseId: '4' }, body: { proposal: 'quarantine' } }),
     ).rejects.toMatchObject({ statusCode: 404, message: 'Test case not found in this project' });
-    // Project 2 is not assigned to Robin.
+    // Robin holds no role on project 2.
     await expect(
       dismissRoute({ params: { id: '2', testCaseId: '4' }, body: { proposal: 'quarantine' } }),
     ).rejects.toMatchObject({ statusCode: 403 });

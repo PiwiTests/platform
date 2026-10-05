@@ -4,18 +4,13 @@
  */
 import type { H3Event } from 'h3';
 import type { User } from '../database/schema';
-import { isAuthEnabled } from './auth';
+import { getRequestAccess, isAuthEnabled } from './auth';
 import { apiError } from './api-error';
-import { Role } from '#shared/types';
-import { DashboardError, type DashboardActor } from '#shared/handlers/dashboards';
+import { DashboardError, dashboardActorFor, type DashboardActor } from '#shared/handlers/dashboards';
 
-export function dashboardActor(event: H3Event, user: User): DashboardActor {
-  const authEnabled = isAuthEnabled(event);
-  return {
-    id: authEnabled ? user.id : null,
-    role: authEnabled ? (user.role as Role) : null,
-    authEnabled,
-  };
+export async function dashboardActor(event: H3Event, user: User): Promise<DashboardActor> {
+  if (!isAuthEnabled(event)) return dashboardActorFor(null, null);
+  return dashboardActorFor(user.id, await getRequestAccess(event));
 }
 
 /** Run a dashboard handler, turning its refusals into API errors. */

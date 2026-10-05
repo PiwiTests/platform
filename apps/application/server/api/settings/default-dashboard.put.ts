@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Set the instance default dashboard',
     description:
-      'Sets the dashboard `/analytics` opens for everyone who has not picked their own: `{ "dashboard": "executive" }` (a built-in key) or a shared saved dashboard’s id; `null` or `"overview"` restores Overview. Stored as the `analytics.default_dashboard` app setting. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Sets the dashboard `/analytics` opens for everyone who has not picked their own: `{ "dashboard": "executive" }` (a built-in key) or a shared saved dashboard’s id; `null` or `"overview"` restores Overview. Stored as the `analytics.default_dashboard` app setting. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

@@ -1,4 +1,3 @@
-import { Role } from '#shared/types';
 import {
   FLAKE_EXPERIMENT_SOURCES,
   FlakePlanUnavailable,
@@ -13,7 +12,7 @@ defineRouteMeta({
     summary: 'Flake-lab plan for a test case',
     description:
       'The experiment `piwi flake` runs on one test: the control arm (no condition), then one arm per suspect of the test’s flake profile, most likely first, each condition in the flake plan-file shape (an `alongside` or `after` test named by `{ file, title, suite }`), and `combined`, every arm’s conditions at once. It carries the `flakeErrorSignature` of each of the test’s failures in the profile window, the commit of its latest failure, the Playwright project its failures ran in and the median duration of its passes. With `kind=verify` it reruns the arm of the test’s latest reproduced experiment and its control, for enough runs that a failure at the reproduced rate would have shown with 95% confidence (⌈ln 0.05 / ln(1 − rate)⌉, at least 5; 409 when nothing reproduced it yet). Records an unfinished experiment and returns its id unless `record=false`.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': ['run:submit', 'run:control'],
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'kind', in: 'query', required: false, schema: { type: 'string', enum: ['reproduce', 'verify'] } },
@@ -51,10 +50,7 @@ function text(value: unknown, max: number): string | null {
 
 export default eventHandler(async (event) => {
   const testCaseId = requireRouteId(event, 'id', 'test case ID');
-  const { db } = await requireResolvedProjectAccess(event, testCaseId, resolveCaseProjectId, 'Test case', [
-    Role.ADMINISTRATOR,
-    Role.REPORTER,
-  ]);
+  const { db } = await requireResolvedProjectAccess(event, testCaseId, resolveCaseProjectId, 'Test case');
   const query = getQuery(event);
   const kind = query.kind ?? 'reproduce';
   if (kind !== 'reproduce' && kind !== 'verify') {

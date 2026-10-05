@@ -22,7 +22,7 @@ defineRouteMeta({
         schema: { type: 'string', enum: ['json', 'html', 'pdf', 'md', 'csv', 'xlsx'], default: 'pdf' },
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

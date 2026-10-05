@@ -10,7 +10,7 @@ defineRouteMeta({
     summary: 'Allow or deny a browser-extension connect request',
     description:
       'Body: `{ userCode, allow }`. Allowing lets the extension that started the request receive an API key for the signed-in user, with their role and project access; the key is named after the browser and listed with their other keys. Answers the new `status`. 404 for an unknown code, 409 when the request was already decided, 410 when it expired.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

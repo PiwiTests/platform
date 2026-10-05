@@ -6,8 +6,8 @@ defineRouteMeta({
     tags: ['AI'],
     summary: 'Sign in to the local Claude CLI',
     description:
-      'Runs `claude auth login`, which opens the browser OAuth flow, and streams its progress as Server-Sent Events: `event: log` lines (including the sign-in URL), then a final `event: done` with `{ success }`. Desktop app only. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Runs `claude auth login`, which opens the browser OAuth flow, and streams its progress as Server-Sent Events: `event: log` lines (including the sign-in URL), then a final `event: done` with `{ success }`. Desktop app only. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

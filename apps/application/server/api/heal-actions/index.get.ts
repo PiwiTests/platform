@@ -11,6 +11,7 @@ defineRouteMeta({
     description:
       'The auto-heal pull requests Piwi has opened (or tried to) for a project, newest first: status, target branch, edit count, and the PR link when one was opened. A status is `pending`, `processing` (being opened right now), `opened` (the PR is still open on the SCM), `merged`, `closed`, `failed` or `skipped`. `verifiedOnBranchRunId` is the first run on the heal branch in which every healed test passed.',
     parameters: [{ name: 'projectId', in: 'query', required: true, schema: { type: 'integer' } }],
+    'x-required-permission': 'project:read',
   },
 });
 

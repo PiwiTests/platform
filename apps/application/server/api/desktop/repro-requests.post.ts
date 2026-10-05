@@ -17,7 +17,7 @@ defineRouteMeta({
     summary: 'Ask the desktop app to run a bug report or a failure with Playwright (desktop app)',
     description:
       "Desktop build only — 404 on the server build. Keeps a repro request for ten minutes and shows it in the app window, where the developer picks the linked project and starts or declines it. Piwi Picker's request is a steps document and the run options (headed, trace, Playwright project, repeat); its steps must pass `parseSteps`. An editor's job has `kind` `reproduce` (run the failing tests at `commit` in a throwaway worktree) or `bisect` (find the first bad commit between `good` and `commit`), the failing `tests`, the `browser`, and the `instanceUrl` and `clusterId` the failure came from; or `kind` `flake-lab` with the `plan` the instance's flake-plan endpoint recorded (a reproduce plan: its test, control and arms, every test path relative to the Playwright config and every condition one a plan file accepts), run with `piwi flake --plan <file> --json` at `commit` in a throwaway worktree. The body must be `application/json` (415 otherwise); 400 with the errors when it is invalid. Answers `{ id, status, expiresAt, windowOpen }`; poll `GET /api/desktop/repro-requests/:id` for the verdict.",
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
     requestBody: {
       content: {
         'application/json': {

@@ -5,7 +5,7 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { Role } from '../../shared/types';
+import { ADMIN_ACCESS, InstanceRole, ProjectRole, buildAccessSummary } from '../../shared/permissions';
 
 delete process.env.PIWI_DATABASE_URL;
 const dashboards = await import('../../shared/handlers/dashboards');
@@ -16,10 +16,12 @@ const { sweepOrphans, pruneReportSnapshots } = await import('../../server/utils/
 const DAY_MS = 24 * 60 * 60 * 1000;
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
-const admin = { id: 10, role: Role.ADMINISTRATOR, authEnabled: true };
-const reporter = { id: 11, role: Role.REPORTER, authEnabled: true };
-const user = { id: 12, role: Role.USER, authEnabled: true };
-const noAuth = { id: null, role: null, authEnabled: false };
+const onAllProjects = (role: ProjectRole) => buildAccessSummary(InstanceRole.MEMBER, [{ projectId: null, role }]);
+const admin = dashboards.dashboardActorFor(10, ADMIN_ACCESS);
+// A Maintainer may share a dashboard; a Viewer keeps private ones only.
+const maintainer = dashboards.dashboardActorFor(11, onAllProjects(ProjectRole.MAINTAINER));
+const viewer = dashboards.dashboardActorFor(12, onAllProjects(ProjectRole.VIEWER));
+const noAuth = dashboards.dashboardActorFor(null, null);
 
 const metricWidget = (key: string, options: Record<string, unknown> = {}) => ({
   key,
@@ -41,10 +43,10 @@ beforeAll(async () => {
     { id: 3, name: 'billing' },
   ]);
   await db.insert(schema.users).values([
-    { id: 10, username: 'admin', password: '', role: 'administrator' },
-    { id: 11, username: 'reporter', password: '', role: 'reporter' },
-    { id: 12, username: 'user', password: '', role: 'user' },
-    { id: 13, username: 'leaver', password: '', role: 'user' },
+    { id: 10, username: 'admin', password: '', role: InstanceRole.ADMINISTRATOR },
+    { id: 11, username: 'maintainer', password: '', role: InstanceRole.MEMBER },
+    { id: 12, username: 'viewer', password: '', role: InstanceRole.MEMBER },
+    { id: 13, username: 'leaver', password: '', role: InstanceRole.MEMBER },
   ]);
   const now = Date.now();
   for (const [projectId, passed] of [
@@ -150,21 +152,21 @@ describe('a scope laid over the dashboard scope', () => {
 });
 
 describe('saved dashboards', () => {
-  test('a user keeps a private dashboard nobody else sees', async () => {
-    const mine = await dashboards.createDashboard(db as any, { name: 'Mine', visibility: 'private' }, user);
+  test('a viewer keeps a private dashboard nobody else sees', async () => {
+    const mine = await dashboards.createDashboard(db as any, { name: 'Mine', visibility: 'private' }, viewer);
     expect(mine).toMatchObject({ visibility: 'private', mine: true, canEdit: true });
-    const others = await dashboards.listDashboards(db as any, reporter);
+    const others = await dashboards.listDashboards(db as any, maintainer);
     expect(others.items.map((d) => d.id)).not.toContain(mine.id);
-    await expect(dashboards.getDashboard(db as any, mine.id, reporter, 'all')).rejects.toMatchObject({
+    await expect(dashboards.getDashboard(db as any, mine.id, maintainer, 'all')).rejects.toMatchObject({
       statusCode: 404,
     });
   });
 
-  test('sharing needs the reporter or administrator role', async () => {
+  test('sharing needs share:create on a project', async () => {
     await expect(
-      dashboards.createDashboard(db as any, { name: 'Shared', visibility: 'shared' }, user),
+      dashboards.createDashboard(db as any, { name: 'Shared', visibility: 'shared' }, viewer),
     ).rejects.toMatchObject({ statusCode: 403 });
-    const shared = await dashboards.createDashboard(db as any, { name: 'Team', visibility: 'shared' }, reporter);
+    const shared = await dashboards.createDashboard(db as any, { name: 'Team', visibility: 'shared' }, maintainer);
     expect(shared.visibility).toBe('shared');
   });
 
@@ -174,7 +176,7 @@ describe('saved dashboards', () => {
   });
 
   test('the list starts with the built-ins, Overview first, and leaves out the team dashboard', async () => {
-    const list = await dashboards.listDashboards(db as any, user);
+    const list = await dashboards.listDashboards(db as any, viewer);
     expect(list.items[0]).toMatchObject({ id: 'overview', kind: 'builtin', canEdit: false });
     expect(list.items.map((d) => d.id)).not.toContain('team');
     expect(list.canShare).toBe(false);
@@ -185,15 +187,15 @@ describe('saved dashboards', () => {
       dashboards.saveDashboard(db as any, 'overview', { updatedAt: new Date().toISOString() }, admin, 'all'),
     ).rejects.toMatchObject({ statusCode: 403 });
     await expect(dashboards.deleteDashboard(db as any, 'overview', admin)).rejects.toMatchObject({ statusCode: 403 });
-    const copy = await dashboards.duplicateDashboard(db as any, 'overview', user);
+    const copy = await dashboards.duplicateDashboard(db as any, 'overview', viewer);
     expect(copy).toMatchObject({ name: 'Copy of Overview', visibility: 'private', kind: 'saved' });
     expect(copy.definition.bands).toEqual(defs.OVERVIEW_DASHBOARD.bands);
   });
 
   test('a shared dashboard is edited by its owner or an administrator, and duplicated by everyone else', async () => {
-    const shared = await dashboards.createDashboard(db as any, { name: 'Release', visibility: 'shared' }, reporter);
+    const shared = await dashboards.createDashboard(db as any, { name: 'Release', visibility: 'shared' }, maintainer);
     await expect(
-      dashboards.saveDashboard(db as any, shared.id, { name: 'Mine now', updatedAt: shared.updatedAt! }, user, 'all'),
+      dashboards.saveDashboard(db as any, shared.id, { name: 'Mine now', updatedAt: shared.updatedAt! }, viewer, 'all'),
     ).rejects.toMatchObject({ statusCode: 403 });
     const saved = await dashboards.saveDashboard(
       db as any,
@@ -203,34 +205,34 @@ describe('saved dashboards', () => {
       'all',
     );
     expect(saved.name).toBe('Release train');
-    const copy = await dashboards.duplicateDashboard(db as any, shared.id, user);
+    const copy = await dashboards.duplicateDashboard(db as any, shared.id, viewer);
     expect(copy.ownerId).toBe(12);
   });
 
   test('a concurrent save gets a 409', async () => {
-    const d = await dashboards.createDashboard(db as any, { name: 'Race', visibility: 'private' }, user);
+    const d = await dashboards.createDashboard(db as any, { name: 'Race', visibility: 'private' }, viewer);
     const first = await dashboards.saveDashboard(
       db as any,
       d.id,
       { name: 'First', updatedAt: d.updatedAt! },
-      user,
+      viewer,
       'all',
       Date.now() + 5,
     );
     expect(first.name).toBe('First');
     await expect(
-      dashboards.saveDashboard(db as any, d.id, { name: 'Second', updatedAt: d.updatedAt! }, user, 'all'),
+      dashboards.saveDashboard(db as any, d.id, { name: 'Second', updatedAt: d.updatedAt! }, viewer, 'all'),
     ).rejects.toMatchObject({ statusCode: 409 });
   });
 
   test('a save refuses an invalid definition', async () => {
-    const d = await dashboards.createDashboard(db as any, { name: 'Bad', visibility: 'private' }, user);
+    const d = await dashboards.createDashboard(db as any, { name: 'Bad', visibility: 'private' }, viewer);
     await expect(
       dashboards.saveDashboard(
         db as any,
         d.id,
         { definition: definition([{ key: 'x', type: 'nope', size: 'full' }]), updatedAt: d.updatedAt! },
-        user,
+        viewer,
         'all',
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
@@ -242,9 +244,9 @@ describe('saved dashboards', () => {
       { name: 'Two', visibility: 'shared', definition: definition([metricWidget('pass')], { projectIds: [1, 3] }) },
       admin,
     );
-    const view = await dashboards.getDashboard(db as any, d.id, user, new Set([1]));
+    const view = await dashboards.getDashboard(db as any, d.id, viewer, new Set([1]));
     expect(view.hiddenProjects).toBe(1);
-    const all = await dashboards.getDashboard(db as any, 'overview', user, new Set([1]));
+    const all = await dashboards.getDashboard(db as any, 'overview', viewer, new Set([1]));
     expect(all.hiddenProjects).toBe(2);
   });
 
@@ -257,11 +259,11 @@ describe('saved dashboards', () => {
     const copy = await dashboards.createDashboard(
       db as any,
       { name: 'My copy', visibility: 'private', from: source.id },
-      user,
+      viewer,
       new Set([1]),
     );
     expect(copy.hiddenProjects).toBe(2);
-    const duplicate = await dashboards.duplicateDashboard(db as any, source.id, user, { access: new Set([1]) });
+    const duplicate = await dashboards.duplicateDashboard(db as any, source.id, viewer, { access: new Set([1]) });
     expect(duplicate.hiddenProjects).toBe(2);
   });
 
@@ -276,7 +278,7 @@ describe('saved dashboards', () => {
       admin,
     );
     const everyone = (await dashboards.getDashboardWidgetData(db as any, d.id, 'pass', {}, admin, 'all')) as any;
-    const limited = (await dashboards.getDashboardWidgetData(db as any, d.id, 'pass', {}, user, new Set([1]))) as any;
+    const limited = (await dashboards.getDashboardWidgetData(db as any, d.id, 'pass', {}, viewer, new Set([1]))) as any;
     expect(everyone.value.value).toBe(70);
     expect(limited.value.value).toBe(90);
   });
@@ -346,13 +348,13 @@ describe('saved dashboards', () => {
     const priv = await dashboards.createDashboard(
       db as any,
       { name: 'Private', visibility: 'private' },
-      { id: 13, role: Role.USER, authEnabled: true },
+      dashboards.dashboardActorFor(13, onAllProjects(ProjectRole.VIEWER)),
     );
     await db
       .update(schema.analyticsDashboards)
       .set({ ownerId: null })
       .where(eq(schema.analyticsDashboards.id, +priv.id));
-    const shared = await dashboards.createDashboard(db as any, { name: 'Kept', visibility: 'shared' }, reporter);
+    const shared = await dashboards.createDashboard(db as any, { name: 'Kept', visibility: 'shared' }, maintainer);
     await db
       .update(schema.analyticsDashboards)
       .set({ ownerId: null })
@@ -374,7 +376,7 @@ describe('saved dashboards', () => {
       tokenHash: `hash-${id}`,
       tokenPrefix: 'abcd1234',
     });
-    const d = await dashboards.createDashboard(db as any, { name: 'Linked', visibility: 'shared' }, reporter);
+    const d = await dashboards.createDashboard(db as any, { name: 'Linked', visibility: 'shared' }, maintainer);
     const [old] = await db
       .insert(schema.reportSnapshots)
       .values({

@@ -1,11 +1,11 @@
 import { eq, and, or, isNull } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { subscriptions, notificationChannels } from '../../database/schema';
-import { requireAuth } from '../../utils/auth';
+import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import { subscriptionFiltersSchema } from '#shared/subscription-filters';
-import { Role } from '#shared/types';
+import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -14,7 +14,7 @@ defineRouteMeta({
     summary: 'Update a subscription',
     description:
       'Updates events, filters, mode, muting, or active state. `filters` takes the same keys as when creating a subscription; `null` clears them.',
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });
@@ -43,7 +43,7 @@ export default eventHandler(async (event) => {
   if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body' });
 
   const db = await getDatabase();
-  const isAdmin = user.role === Role.ADMINISTRATOR;
+  const isAdmin = isAdministrator(await getRequestAccess(event));
   const [sub] = await db
     .select()
     .from(subscriptions)

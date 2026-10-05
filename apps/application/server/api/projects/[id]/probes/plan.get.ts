@@ -1,4 +1,3 @@
-import { Role } from '#shared/types';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
 import { buildProbePlanForProject, DEFAULT_PROBE_BUDGET } from '#shared/handlers/probes';
@@ -13,13 +12,13 @@ defineRouteMeta({
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'budget', in: 'query', required: false, schema: { type: 'integer' } },
     ],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': ['run:submit', 'run:control'],
   },
 });
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  await requireProjectAccess(event, projectId);
 
   const rawBudget = getQuery(event).budget;
   const budget = rawBudget != null && Number.isFinite(Number(rawBudget)) ? Number(rawBudget) : DEFAULT_PROBE_BUDGET;

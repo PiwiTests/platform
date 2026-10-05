@@ -4,15 +4,14 @@ import { apiError } from '../../utils/api-error';
 import { requireAuth } from '../../utils/auth';
 import { requireProjectAccess } from '../../utils/project-access';
 import { integrationActions } from '../../database/schema';
-import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'List integration actions',
     description:
-      'The outbox activity — what Piwi wrote to the tracker, with the provider error on failures. Filter by `projectId` (any member of that project) or by `connectionId` (administrators, across projects, for the Settings → Integrations activity list).',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+      'The outbox activity — what Piwi wrote to the tracker, with the provider error on failures. Filter by `projectId` (`project:read` on that project) or by `connectionId` (`connections:manage`, administrators only, across projects, for the Settings → Integrations activity list).',
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -24,8 +23,8 @@ export default eventHandler(async (event) => {
 
   let scopeWhere;
   if (Number.isInteger(connectionId) && connectionId > 0) {
-    // The connection-scoped activity list spans projects, so it is admin-only.
-    await requireAuth(event, [Role.ADMINISTRATOR]);
+    // The connection-scoped activity list spans projects, so it is administrator-only.
+    await requireAuth(event, 'connections:manage');
     scopeWhere = eq(integrationActions.connectionId, connectionId);
   } else if (Number.isInteger(projectId) && projectId > 0) {
     await requireProjectAccess(event, projectId);

@@ -13,7 +13,7 @@ defineRouteMeta({
     description:
       'Records that a change was made to fix this cluster, as the `applied` outcome of a `fix-attempt` hand-back. `kind` is `patch`, `locator-edit` or `fix-plan`; pass the `commit` or the `branch` the change is on, a `patchHash` (or the `patch`, stored as its hash) or the `edit` (filePath, line, from, to; required for a locator edit), and the `diagnosisId` it followed. When the cluster stops failing, fix verification records `verified` on the attempt it can tie to the fix: by commit, by a `Piwi-Cluster: <id>` commit trailer, or by branch; a later failure records `regressed`. Reporting the same change twice records it once. `channel` names the surface reporting it (ui, editor, desktop, cli, ci; default ui).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:control',
     requestBody: {
       content: {
         'application/json': {

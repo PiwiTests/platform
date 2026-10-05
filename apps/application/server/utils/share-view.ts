@@ -13,17 +13,21 @@ import { getDatabase, type DbClient } from '../database';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from './rate-limit';
 import { resolveShareLinkMaxTtlDays, resolveShareToken, shareLinksEnabled, type MintedShareLink } from './share-links';
 import { resolvePublicBaseUrl } from './oauth-helpers';
-import { getProjectScope } from './project-access';
-import { isAuthEnabled } from './auth';
+import { getUserAccessCached, isAuthEnabled } from './auth';
 import { TtlCache } from './ttl-cache';
 import { reportBaseUrl, reportPiwiVersion, reportScheduleTimeZone } from './reports/context';
-import { DashboardError, loadDashboardDefinition, type DashboardActor } from '#shared/handlers/dashboards';
+import {
+  DashboardError,
+  dashboardActorFor,
+  loadDashboardDefinition,
+  type DashboardActor,
+} from '#shared/handlers/dashboards';
 import { loadSnapshotForDelivery } from '#shared/handlers/reports';
 import { dashboardScope } from '#shared/analytics/dashboards';
 import { collectReportBundle } from '#shared/reports/collect';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import type { ReportBundle } from '#shared/reports/types';
-import type { Role } from '#shared/types';
+import { projectScopeFor } from '#shared/permissions';
 
 /** Requests per client address per window — log-noise defense; the 256-bit token is the security boundary. */
 const LOOKUP_LIMIT = 120;
@@ -104,22 +108,20 @@ export function setShareDocumentHeaders(event: H3Event, contentType: string, len
 }
 
 /**
- * The person who minted a link, as the dashboard handlers see them, with their
- * project access now. Null once that person is gone; with authentication off
- * every link reads every project, as every viewer does.
+ * The person who minted a link, as the dashboard handlers see them, with the
+ * projects they may share now (`share:create`). Null once that person is gone;
+ * with authentication off every link reads every project, as every viewer does.
  */
 export async function minterAccess(
   db: DbClient,
   link: Pick<ShareLink, 'createdBy'>,
 ): Promise<{ actor: DashboardActor; access: ProjectAccess } | null> {
-  if (!isAuthEnabled()) return { actor: { id: null, role: null, authEnabled: false }, access: 'all' };
+  if (!isAuthEnabled()) return { actor: dashboardActorFor(null, null), access: 'all' };
   if (link.createdBy == null) return null;
   const [user] = await db.select().from(users).where(eq(users.id, link.createdBy));
   if (!user) return null;
-  return {
-    actor: { id: user.id, role: user.role as Role, authEnabled: true },
-    access: await getProjectScope(db, user),
-  };
+  const access = await getUserAccessCached(db, user);
+  return { actor: dashboardActorFor(user.id, access), access: projectScopeFor(access, 'share:create') };
 }
 
 const liveBundles = new TtlCache<ReportBundle>(LIVE_DASHBOARD_REFRESH_SECONDS * 1000, 200);

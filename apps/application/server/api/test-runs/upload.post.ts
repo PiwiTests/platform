@@ -35,7 +35,7 @@ defineRouteMeta({
     summary: 'Upload test results with reports, traces, and attachments',
     description:
       'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
     requestBody: {
       content: {
         'multipart/form-data': {
@@ -68,7 +68,7 @@ function getReportLabel(type: string, override?: string): string {
 }
 
 export default eventHandler(async (event) => {
-  // Require reporter or administrator role for uploading test results
+  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
   const maxUploadBytes = resolveMaxUploadBytes();
@@ -208,7 +208,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'run:submit');
   const storage = getStorage();
 
   // If attaching to an existing streaming run, look up the run and its project

@@ -14,8 +14,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save timeout-hygiene thresholds',
     description:
-      'Updates the thresholds used to flag oversized per-test timeouts and stale test.slow() marks. Send `thresholds: null` to reset to the built-in defaults. Opportunities are recomputed at read time, so changes apply to historical runs immediately. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Updates the thresholds used to flag oversized per-test timeouts and stale test.slow() marks. Send `thresholds: null` to reset to the built-in defaults. Opportunities are recomputed at read time, so changes apply to historical runs immediately. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

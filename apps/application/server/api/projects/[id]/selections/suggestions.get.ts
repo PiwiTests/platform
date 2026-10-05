@@ -12,7 +12,7 @@ defineRouteMeta({
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'budgetMs', in: 'query', required: false, schema: { type: 'integer' } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

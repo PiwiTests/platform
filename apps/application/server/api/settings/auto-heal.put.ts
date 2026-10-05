@@ -9,8 +9,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save auto-heal settings',
     description:
-      'Configure whether Piwi opens a fix pull request when a locator breaks on the default branch, and on which projects. Off by default, with an explicit per-project allowlist. Send `settings: null` to reset to the built-in defaults. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Configure whether Piwi opens a fix pull request when a locator breaks on the default branch, and on which projects. Off by default, with an explicit per-project allowlist. Send `settings: null` to reset to the built-in defaults. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

@@ -23,7 +23,7 @@ defineRouteMeta({
       { name: 'kind', in: 'query', required: true, schema: { type: 'string', enum: ['aria', 'screen'] } },
       { name: 'phase', in: 'query', required: true, schema: { type: 'string', enum: ['before', 'after'] } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

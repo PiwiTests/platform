@@ -6,17 +6,20 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
+import type { User } from '../../server/database/schema';
+import { ADMIN_ACCESS, InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
+import { recordRouteMeta, type RouteAccessState } from './route-access';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
 delete process.env.PIWI_DATABASE_URL;
 
-const state = vi.hoisted(() => ({ db: null as unknown, user: { id: 0, role: 'administrator', name: 'System' } }));
+const state = vi.hoisted(() => ({ db: null, caller: null, routePermission: [] }) as RouteAccessState);
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
-vi.mock('../../server/utils/auth', () => ({
-  requireAuth: async () => state.user,
-  isAuthEnabled: () => false,
-}));
+vi.mock('../../server/utils/auth', async () => (await import('./route-access')).authMock(state));
+vi.mock('../../server/utils/project-access', async (importOriginal) =>
+  (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
+);
 vi.mock('../../server/utils/ai-diagnosis', () => ({ autoDiagnoseRun: vi.fn(async () => {}) }));
 vi.mock('../../server/utils/scm/pr-feedback', () => ({ postRunPrFeedbackInBackground: vi.fn(async () => {}) }));
 vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackground: vi.fn() }));
@@ -25,7 +28,7 @@ interface RouteEvent {
   params: Record<string, string>;
   body: unknown;
 }
-vi.stubGlobal('defineRouteMeta', () => {});
+vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('getRouterParam', (event: RouteEvent, name: string) => event.params[name]);
 vi.stubGlobal('readBody', async (event: RouteEvent) => event.body);
@@ -83,6 +86,7 @@ beforeEach(async () => {
     migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
   });
   state.db = db;
+  state.caller = { user: { id: 0, role: InstanceRole.ADMINISTRATOR, name: 'System' } as User, access: ADMIN_ACCESS };
   executionId = 1;
   await db.insert(schema.projects).values([
     { id: 1, name: 'checkout', defaultBranch: 'main' },
@@ -187,9 +191,13 @@ describe('the environment.incident event', () => {
 });
 
 describe('a person marks and clears a run', () => {
-  test('through the route, with the run edit roles, and the gate follows', async () => {
+  test('through the route, as a Viewer of the project, and the gate follows', async () => {
     await seedRun(1, 1, T0, 10, 2);
-    state.user = { id: 5, role: 'user', name: 'Ada' };
+    // A Viewer of the project may mark a run.
+    state.caller = {
+      user: { id: 5, role: InstanceRole.MEMBER, name: 'Ada' } as User,
+      access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.VIEWER }]),
+    };
     const marked = await markIncident({
       params: { id: '1' },
       body: { incident: true, reason: 'The SSO sandbox was down' },

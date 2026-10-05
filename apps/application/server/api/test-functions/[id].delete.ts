@@ -1,23 +1,19 @@
 import { requireResolvedProjectAccess, resolveTestFunctionProjectId, requireRouteId } from '../../utils/project-access';
 import { deleteTestFunction } from '#shared/handlers/test-functions';
-import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Functions'],
     summary: 'Delete a test function',
-    description: 'Removes a catalog entry. Requires reporter or administrator role.',
+    description: 'Removes a catalog entry. Requires `test-assets:write` (Maintainer and above on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'test-assets:write',
   },
 });
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test function ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveTestFunctionProjectId, 'Test function', [
-    Role.ADMINISTRATOR,
-    Role.REPORTER,
-  ]);
+  const { db } = await requireResolvedProjectAccess(event, id, resolveTestFunctionProjectId, 'Test function');
 
   try {
     return await deleteTestFunction(db, id);

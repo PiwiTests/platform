@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       "Set or clear the cluster's assignee (a name or email). The assignee overrides the owner derived from the test's annotation and drives the inbox's Mine queue. Send an empty value to unassign.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 

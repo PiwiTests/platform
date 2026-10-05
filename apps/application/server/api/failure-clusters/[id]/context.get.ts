@@ -17,7 +17,7 @@ defineRouteMeta({
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'format', in: 'query', required: false, schema: { type: 'string', enum: ['json', 'prompt'] } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

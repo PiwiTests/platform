@@ -15,7 +15,7 @@ defineRouteMeta({
       { name: 'base', in: 'query', required: false, schema: { type: 'string' } },
       { name: 'head', in: 'query', required: false, schema: { type: 'string' } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

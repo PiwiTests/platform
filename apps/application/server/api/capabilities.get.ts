@@ -8,7 +8,7 @@ defineRouteMeta({
     summary: 'Instance capability states',
     description:
       'The resolved state of every optional capability at instance level: `active` when evidence exists, `declined` when switched off, `available` when configured but unused, `not-applicable` when it cannot apply, `undecided` otherwise. Drives which capabilities the dashboard shows. Readable by any signed-in user.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

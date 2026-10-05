@@ -8,14 +8,14 @@ import type { H3Event } from 'h3';
 import { users, type User } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { getProjectScope } from '../project-access';
-import { isAuthEnabled } from '../auth';
+import { getRequestAccess, isAuthEnabled } from '../auth';
 import { resolveLocaleSettings } from '../locale-settings';
 import { scheduleTimeZone } from '#shared/reports/schedule';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import { ReportScheduleError, type ReportActor } from '#shared/handlers/reports';
 import { ReportRequestError } from '#shared/reports/request';
 import { apiError } from '../api-error';
-import { Role } from '#shared/types';
+import { isAdministrator } from '#shared/permissions';
 import type { GenerateContext } from '#shared/handlers/reports';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../crypto';
 import { mintShareLink, shareLinksEnabled } from '../share-links';
@@ -43,11 +43,11 @@ export function reportPiwiVersion(): string | null {
   return ((useRuntimeConfig().public as { appVersion?: string })?.appVersion as string) || null;
 }
 
-export function reportActor(event: H3Event, user: User): ReportActor {
+export async function reportActor(event: H3Event, user: User): Promise<ReportActor> {
   const authEnabled = isAuthEnabled(event);
   return {
     id: authEnabled ? user.id : null,
-    isAdmin: !authEnabled || (user.role as Role) === Role.ADMINISTRATOR,
+    isAdmin: !authEnabled || isAdministrator(await getRequestAccess(event)),
     authEnabled,
   };
 }

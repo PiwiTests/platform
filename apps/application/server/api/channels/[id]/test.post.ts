@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { notificationChannels, users } from '../../../database/schema';
-import { requireAuth } from '../../../utils/auth';
+import { getRequestAccess, requireAuth } from '../../../utils/auth';
 import { decryptSecret, getEncryptionKey } from '../../../utils/crypto';
 import { deliverChannelTest } from '../../../utils/notifications/channel-test';
 import { channelDeliveryHint, isDeliverableChannelType, type ChannelType } from '#shared/notifications/channel-setup';
-import { Role } from '#shared/types';
+import { isAdministrator } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
@@ -13,7 +13,7 @@ defineRouteMeta({
     summary: 'Send test notification',
     description:
       'Sends a test notification through the specified channel and marks it verified on success. Global channels can only be tested by administrators. Soft-fail: a reachable endpoint that rejects the delivery (bad webhook URL, SMTP failure, non-2xx response) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the delivery attempt failed. HTTP error statuses are reserved for request-level problems (bad id, missing channel, not authorized).',
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     responses: {
       '200': {
@@ -48,7 +48,7 @@ export default eventHandler(async (event) => {
   const [channel] = await db.select().from(notificationChannels).where(eq(notificationChannels.id, id));
   if (!channel) throw apiError({ statusCode: 404, message: 'Channel not found' });
 
-  const isAdmin = user.role === Role.ADMINISTRATOR;
+  const isAdmin = isAdministrator(await getRequestAccess(event));
   // Global channels reach every subscriber, so only admins may fire tests at them.
   const allowed = channel.userId === null ? isAdmin : channel.userId === user.id || isAdmin;
   if (!allowed) {

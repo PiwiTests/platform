@@ -1,11 +1,11 @@
 import { getDatabase } from '../../database';
 import { subscriptions, notificationChannels } from '../../database/schema';
-import { requireAuth, isAuthEnabled } from '../../utils/auth';
+import { getRequestAccess, requireAuth, isAuthEnabled } from '../../utils/auth';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import { subscriptionFiltersSchema } from '#shared/subscription-filters';
-import { Role } from '#shared/types';
+import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 
@@ -15,7 +15,7 @@ defineRouteMeta({
     summary: 'Create a subscription',
     description:
       'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global. Optional `filters` narrow what is delivered: `branches` and `environments` (exact names or `*` patterns such as `release/*`, matched against the run every run-scoped event comes from), `statuses`, `defaultBranchOnly`, `owners`, `flakinessThreshold` and `perfRegressionPct`.',
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -46,7 +46,7 @@ export default eventHandler(async (event) => {
   const [channel] = await db.select().from(notificationChannels).where(eq(notificationChannels.id, channelId));
   if (!channel) throw apiError({ statusCode: 404, message: 'Channel not found' });
 
-  const isAdmin = user.role === Role.ADMINISTRATOR;
+  const isAdmin = isAdministrator(await getRequestAccess(event));
   if (channel.userId !== null && channel.userId !== user.id && !isAdmin) {
     throw apiError({ statusCode: 403, message: "Cannot subscribe to another user's channel" });
   }

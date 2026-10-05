@@ -8,9 +8,9 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Set project capability decisions',
     description:
-      'Declines, enables or clears optional capabilities for one project. The body is `{ decisions }`, a map from capability id to `"declined"`, `"enabled"` (overriding an instance decline for this project) or `null` to clear. Returns the resolved project states after the change. Requires administrator role.',
+      'Declines, enables or clears optional capabilities for one project. The body is `{ decisions }`, a map from capability id to `"declined"`, `"enabled"` (overriding an instance decline for this project) or `null` to clear. Returns the resolved project states after the change. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:manage',
   },
 });
 

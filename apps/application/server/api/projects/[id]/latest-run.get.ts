@@ -14,7 +14,7 @@ defineRouteMeta({
       { name: 'origin', in: 'query', required: false, schema: { type: 'string' }, description: 'A run origin kind' },
       { name: 'ref', in: 'query', required: false, schema: { type: 'string' }, description: 'The origin reference' },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 
