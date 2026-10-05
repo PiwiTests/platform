@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm';
 import { users } from '~~/server/database/schema.sqlite';
 import { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
-import { InstanceRole, LEGACY_ROLE_TO_PROJECT_ROLE, isLegacyRole, roleGrants } from '#shared/permissions';
+import { getUserAccess } from '#shared/handlers/role-bindings';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import {
   createDashboard,
@@ -37,11 +37,10 @@ import {
 export async function demoActor(actingUserId: number | null): Promise<DashboardActor> {
   if (!actingUserId) return dashboardActorFor(null, null);
   const db = await getDemoDb();
-  const [row] = await db.select({ role: users.role }).from(users).where(eq(users.id, actingUserId));
-  const role = row?.role;
-  const isAdmin = role === InstanceRole.ADMINISTRATOR;
-  const canShare = isAdmin || (isLegacyRole(role) && roleGrants(LEGACY_ROLE_TO_PROJECT_ROLE[role], 'share:create'));
-  return { id: actingUserId, authEnabled: true, isAdmin, canShare };
+  const [row] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, actingUserId));
+  // An unknown identity acts as an administrator, like the rest of the demo router.
+  if (!row) return dashboardActorFor(null, null);
+  return dashboardActorFor(actingUserId, await getUserAccess(db, row));
 }
 
 export async function demoDashboard<T>(fn: () => Promise<T>): Promise<T> {

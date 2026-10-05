@@ -220,6 +220,68 @@ export async function setGroupMembers(
   });
 }
 
+/** Throw a 400 `GroupError` naming the ids of `groupIds` that are not groups. */
+export async function assertGroupsExist(db: DrizzleDB, groupIds: readonly number[]): Promise<void> {
+  const wanted = [...new Set(groupIds)];
+  if (wanted.length === 0) return;
+  const known = await db.select({ id: groups.id }).from(groups).where(inArray(groups.id, wanted));
+  const knownIds = new Set(known.map((row) => row.id));
+  const unknown = wanted.filter((id) => !knownIds.has(id));
+  if (unknown.length > 0) throw new GroupError(400, `Group(s) not found: ${unknown.join(', ')}`);
+}
+
+/**
+ * Make `groupIds` the groups a user belongs to: the user joins the missing
+ * ones and leaves the others, and the memberships staying keep when and by
+ * whom they were added. Throws a 400 `GroupError` for an unknown group.
+ */
+export async function setUserGroups(
+  db: DrizzleDB,
+  userId: number,
+  groupIds: readonly number[],
+  addedBy?: number | null,
+): Promise<void> {
+  await assertGroupsExist(db, groupIds);
+  const wanted = new Set(groupIds);
+  await db.transaction(async (tx) => {
+    const current = await tx
+      .select({ groupId: groupMembers.groupId })
+      .from(groupMembers)
+      .where(eq(groupMembers.userId, userId));
+    const currentIds = new Set(current.map((row) => row.groupId));
+    const left = [...currentIds].filter((id) => !wanted.has(id));
+    const joined = [...wanted].filter((id) => !currentIds.has(id));
+    if (left.length > 0) {
+      await tx.delete(groupMembers).where(and(eq(groupMembers.userId, userId), inArray(groupMembers.groupId, left)));
+    }
+    if (joined.length > 0) {
+      await tx
+        .insert(groupMembers)
+        .values(joined.map((groupId) => ({ groupId, userId, addedBy: addedBy ?? null })))
+        .onConflictDoNothing();
+    }
+    const changed = [...left, ...joined];
+    if (changed.length > 0) {
+      await tx.update(groups).set({ updatedAt: new Date() }).where(inArray(groups.id, changed));
+    }
+  });
+}
+
+/** The groups each user belongs to, ascending, keyed by user id. */
+export async function getGroupIdsByUser(db: DrizzleDB): Promise<Map<number, number[]>> {
+  const rows = await db
+    .select({ userId: groupMembers.userId, groupId: groupMembers.groupId })
+    .from(groupMembers)
+    .orderBy(groupMembers.groupId);
+  const byUser = new Map<number, number[]>();
+  for (const row of rows) {
+    const ids = byUser.get(row.userId);
+    if (ids) ids.push(row.groupId);
+    else byUser.set(row.userId, [row.groupId]);
+  }
+  return byUser;
+}
+
 /** The groups a user belongs to, by name. */
 export async function getUserGroups(db: DrizzleDB, userId: number): Promise<{ id: number; name: string }[]> {
   const rows = await db

@@ -2,12 +2,13 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import { ProjectRole } from '#shared/permissions';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules (which import the barrel) are loaded.
 delete process.env.PIWI_DATABASE_URL;
 const { createProject, updateProject } = await import('../../shared/handlers/projects');
-const { setProjectMembers, setUserAssignments } = await import('../../shared/handlers/project-assignments');
+const { replaceProjectBindings, replaceSubjectBindings } = await import('../../shared/handlers/role-bindings');
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -98,8 +99,8 @@ describe('updateProject', () => {
 describe('project access writes', () => {
   beforeEach(async () => {
     await db.insert(schema.users).values([
-      { id: 2, username: 'robin', password: '', role: 'user' },
-      { id: 3, username: 'sam', password: '', role: 'user' },
+      { id: 2, username: 'robin', password: '', role: 'member' },
+      { id: 3, username: 'sam', password: '', role: 'member' },
     ]);
     await db.insert(schema.projects).values([
       { id: 5, name: 'api' },
@@ -107,25 +108,39 @@ describe('project access writes', () => {
     ]);
   });
 
-  async function assignments() {
+  async function bindings() {
     return db
-      .select({ userId: schema.projectAssignments.userId, projectId: schema.projectAssignments.projectId })
-      .from(schema.projectAssignments);
+      .select({
+        userId: schema.roleBindings.userId,
+        projectId: schema.roleBindings.projectId,
+        role: schema.roleBindings.role,
+      })
+      .from(schema.roleBindings);
   }
 
-  test('a repeated user id in the member list grants access once', async () => {
-    await setProjectMembers(db as never, 5, [2, 2, 3]);
-    expect(await assignments()).toEqual(
+  test('a repeated user in the member list is bound once, with its last role', async () => {
+    await replaceProjectBindings(db as never, 5, [
+      { subject: { userId: 2 }, role: ProjectRole.VIEWER },
+      { subject: { userId: 2 }, role: ProjectRole.MAINTAINER },
+      { subject: { userId: 3 }, role: ProjectRole.VIEWER },
+    ]);
+    expect(await bindings()).toEqual(
       expect.arrayContaining([
-        { userId: 2, projectId: 5 },
-        { userId: 3, projectId: 5 },
+        { userId: 2, projectId: 5, role: 'maintainer' },
+        { userId: 3, projectId: 5, role: 'viewer' },
       ]),
     );
-    expect(await assignments()).toHaveLength(2);
+    expect(await bindings()).toHaveLength(2);
   });
 
-  test('a repeated project id in a user assignment grants access once', async () => {
-    await setUserAssignments(db as never, 2, { global: false, projectIds: [6, 6, 5] });
-    expect(await assignments()).toHaveLength(2);
+  test("a repeated project in a user's own roles is bound once", async () => {
+    await replaceSubjectBindings(db as never, { userId: 2 }, [
+      { projectId: 6, role: ProjectRole.VIEWER },
+      { projectId: 6, role: ProjectRole.CONTRIBUTOR },
+      { projectId: 5, role: ProjectRole.VIEWER },
+      { projectId: null, role: ProjectRole.VIEWER },
+    ]);
+    expect(await bindings()).toHaveLength(3);
+    expect(await bindings()).toContainEqual({ userId: 2, projectId: 6, role: 'contributor' });
   });
 });

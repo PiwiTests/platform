@@ -1,88 +1,138 @@
 import { describe, test, expect } from 'vitest';
-import { Role } from '#shared/types';
+import { buildAccessSummary, InstanceRole, PROJECT_ROLES, ProjectRole } from '#shared/permissions';
 import {
-  groupProjectAccessUsers,
+  directProjectMemberEntries,
+  grantableProjectRoles,
+  indexProjectAccessBindings,
   matchesProjectAccessQuery,
   projectAccessCellKey,
   projectAccessCellState,
+  projectAccessRows,
+  requestedInstanceRole,
   sortProjectAccessProjects,
   sortProjectAccessUsers,
-  toProjectAccessUser,
-  withProjectAccess,
+  sortProjectMembers,
+  withRoleBinding,
+  withSubjectBindings,
+  type ProjectAccessGrid,
   type ProjectAccessUser,
+  type ProjectMemberView,
+  type RoleBindingView,
 } from '#shared/project-access';
 
 function user(overrides: Partial<ProjectAccessUser> = {}): ProjectAccessUser {
-  return { id: 1, username: 'sam', name: null, role: Role.USER, global: false, projectIds: [], ...overrides };
+  return { id: 1, username: 'sam', name: null, instanceRole: InstanceRole.MEMBER, groupIds: [], ...overrides };
 }
 
-describe('toProjectAccessUser', () => {
-  test('splits the all-projects grant from the per-project ones', () => {
-    const row = toProjectAccessUser({ id: 3, username: 'sam', name: 'Sam', role: 'user' }, [5, null, 2, 5]);
-    expect(row).toEqual({ id: 3, username: 'sam', name: 'Sam', role: Role.USER, global: true, projectIds: [2, 5] });
-  });
+const group = (id: number, name: string) => ({ id, name, description: null, memberCount: 0 });
+const userSubject = (id: number) => ({ type: 'user' as const, id });
+const groupSubject = (id: number) => ({ type: 'group' as const, id });
+const binding = (subject: RoleBindingView['subject'], projectId: number | null, role: ProjectRole) => ({
+  subject,
+  projectId,
+  role,
+});
 
-  test('a user without assignments has no access', () => {
-    expect(toProjectAccessUser({ id: 3, username: 'sam', name: null, role: 'reporter' }, [])).toMatchObject({
-      global: false,
-      projectIds: [],
+/** Quinn: Project admin of 7 on their own, in QA (Maintainer everywhere) and PO (Contributor on 8). */
+const grid: Pick<ProjectAccessGrid, 'users' | 'groups' | 'bindings'> = {
+  users: [
+    user({ id: 1, username: 'avery', instanceRole: InstanceRole.ADMINISTRATOR }),
+    user({ id: 2, username: 'quinn', groupIds: [10, 11] }),
+    user({ id: 3, username: 'sam' }),
+  ],
+  groups: [group(10, 'QA'), group(11, 'Product owners')],
+  bindings: [
+    binding(userSubject(2), 7, ProjectRole.PROJECT_ADMIN),
+    binding(groupSubject(10), null, ProjectRole.MAINTAINER),
+    binding(groupSubject(11), 8, ProjectRole.CONTRIBUTOR),
+    binding(userSubject(3), null, ProjectRole.VIEWER),
+    binding(userSubject(3), 7, ProjectRole.CONTRIBUTOR),
+  ],
+};
+
+describe('projectAccessCellState', () => {
+  test("a user's own binding is the cell's role; their groups' roles there are inherited", () => {
+    expect(projectAccessCellState(grid, userSubject(2), 7)).toEqual({
+      role: ProjectRole.PROJECT_ADMIN,
+      inherited: [{ role: ProjectRole.MAINTAINER, source: 'group', groupId: 10, groupName: 'QA' }],
+      admin: false,
+    });
+    expect(projectAccessCellState(grid, userSubject(2), 8)).toEqual({
+      role: null,
+      inherited: [
+        { role: ProjectRole.MAINTAINER, source: 'group', groupId: 10, groupName: 'QA' },
+        { role: ProjectRole.CONTRIBUTOR, source: 'group', groupId: 11, groupName: 'Product owners' },
+      ],
+      admin: false,
     });
   });
 
-  test('an administrator always reads as global, whatever rows remain', () => {
-    const row = toProjectAccessUser({ id: 1, username: 'avery', name: null, role: 'administrator' }, [4]);
-    expect(row).toMatchObject({ global: true, projectIds: [] });
+  test("the all-projects cell inherits only the groups' all-projects bindings", () => {
+    expect(projectAccessCellState(grid, userSubject(2), null)).toEqual({
+      role: null,
+      inherited: [{ role: ProjectRole.MAINTAINER, source: 'group', groupId: 10, groupName: 'QA' }],
+      admin: false,
+    });
+  });
+
+  test("a subject's own all-projects binding shows on every project cell", () => {
+    expect(projectAccessCellState(grid, userSubject(3), 7)).toEqual({
+      role: ProjectRole.CONTRIBUTOR,
+      inherited: [{ role: ProjectRole.VIEWER, source: 'all-projects' }],
+      admin: false,
+    });
+    expect(projectAccessCellState(grid, groupSubject(10), 8)).toEqual({
+      role: null,
+      inherited: [{ role: ProjectRole.MAINTAINER, source: 'all-projects' }],
+      admin: false,
+    });
+    expect(projectAccessCellState(grid, groupSubject(10), null).role).toBe(ProjectRole.MAINTAINER);
+  });
+
+  test('an administrator is flagged, with no role of their own', () => {
+    expect(projectAccessCellState(grid, userSubject(1), 7)).toEqual({ role: null, inherited: [], admin: true });
+  });
+
+  test('a prebuilt index reads the same', () => {
+    const index = indexProjectAccessBindings(grid.bindings);
+    expect(projectAccessCellState(grid, userSubject(2), 8, index)).toEqual(
+      projectAccessCellState(grid, userSubject(2), 8),
+    );
   });
 });
 
-describe('projectAccessCellState', () => {
-  test('an administrator is locked open everywhere', () => {
-    const admin = user({ role: Role.ADMINISTRATOR, global: true });
-    expect(projectAccessCellState(admin, null)).toBe('admin');
-    expect(projectAccessCellState(admin, 7)).toBe('admin');
+describe('withRoleBinding', () => {
+  test("sets, replaces and removes one cell, leaving the subject's other bindings", () => {
+    const set = withRoleBinding(grid.bindings, { subject: userSubject(2), projectId: 8, role: ProjectRole.VIEWER });
+    expect(set).toContainEqual(binding(userSubject(2), 8, ProjectRole.VIEWER));
+    expect(set).toContainEqual(binding(userSubject(2), 7, ProjectRole.PROJECT_ADMIN));
+
+    const replaced = withRoleBinding(set, { subject: userSubject(2), projectId: 8, role: ProjectRole.UPLOADER });
+    expect(replaced.filter((b) => b.subject.id === 2 && b.subject.type === 'user')).toHaveLength(2);
+    expect(replaced).toContainEqual(binding(userSubject(2), 8, ProjectRole.UPLOADER));
+
+    const removed = withRoleBinding(replaced, { subject: userSubject(2), projectId: 8, role: null });
+    expect(removed.some((b) => b.subject.type === 'user' && b.subject.id === 2 && b.projectId === 8)).toBe(false);
   });
 
-  test('the all-projects cell reflects the global grant', () => {
-    expect(projectAccessCellState(user({ global: true }), null)).toBe('granted');
-    expect(projectAccessCellState(user(), null)).toBe('none');
+  test('tells a user from a group with the same id, and all projects from a project', () => {
+    const next = withRoleBinding(grid.bindings, { subject: userSubject(10), projectId: null, role: null });
+    expect(next).toEqual(grid.bindings);
+    const allProjects = withRoleBinding(grid.bindings, { subject: userSubject(3), projectId: null, role: null });
+    expect(allProjects).toContainEqual(binding(userSubject(3), 7, ProjectRole.CONTRIBUTOR));
+    expect(allProjects).toHaveLength(grid.bindings.length - 1);
   });
 
-  test('a global grant covers every project cell, granted or not', () => {
-    const global = user({ global: true, projectIds: [7] });
-    expect(projectAccessCellState(global, 7)).toBe('inherited');
-    expect(projectAccessCellState(global, 8)).toBe('inherited');
-  });
-
-  test('without a global grant a project cell is granted or not', () => {
-    const scoped = user({ projectIds: [7] });
-    expect(projectAccessCellState(scoped, 7)).toBe('granted');
-    expect(projectAccessCellState(scoped, 8)).toBe('none');
-  });
-});
-
-describe('withProjectAccess', () => {
-  test('grants and revokes one project, keeping ids sorted and unique', () => {
-    const granted = withProjectAccess(user({ projectIds: [9] }), 3, true);
-    expect(granted.projectIds).toEqual([3, 9]);
-    expect(withProjectAccess(granted, 3, true).projectIds).toEqual([3, 9]);
-    expect(withProjectAccess(granted, 9, false).projectIds).toEqual([3]);
-  });
-
-  test('toggles the global grant without touching the per-project ones', () => {
-    const scoped = user({ projectIds: [3] });
-    const global = withProjectAccess(scoped, null, true);
-    expect(global).toMatchObject({ global: true, projectIds: [3] });
-    expect(withProjectAccess(global, null, false)).toMatchObject({ global: false, projectIds: [3] });
-  });
-
-  test('returns a new row', () => {
-    const row = user();
-    expect(withProjectAccess(row, 1, true)).not.toBe(row);
-    expect(row.projectIds).toEqual([]);
+  test('withSubjectBindings swaps in a subject’s bindings as the server returned them', () => {
+    const next = withSubjectBindings(grid.bindings, userSubject(3), [binding(userSubject(3), 9, ProjectRole.VIEWER)]);
+    expect(next.filter((b) => b.subject.type === 'user' && b.subject.id === 3)).toEqual([
+      binding(userSubject(3), 9, ProjectRole.VIEWER),
+    ]);
+    expect(next).toHaveLength(grid.bindings.length - 1);
   });
 });
 
-describe('sorting and grouping', () => {
+describe('sorting and rows', () => {
   test('users sort by the name shown, case-insensitively, then by id', () => {
     const rows = [
       user({ id: 1, username: 'zed' }),
@@ -102,21 +152,14 @@ describe('sorting and grouping', () => {
     expect(sortProjectAccessProjects(projects).map((p) => p.id)).toEqual([2, 3, 1]);
   });
 
-  test('groups come out administrators, reporters, users, keeping order within a group', () => {
-    const rows = [
-      user({ id: 1, role: Role.USER }),
-      user({ id: 2, role: Role.ADMINISTRATOR }),
-      user({ id: 3, role: Role.USER }),
-      user({ id: 4, role: Role.REPORTER }),
-    ];
-    const groups = groupProjectAccessUsers(rows);
-    expect(groups.map((g) => g.role)).toEqual([Role.ADMINISTRATOR, Role.REPORTER, Role.USER]);
-    expect(groups[2]!.users.map((row) => row.id)).toEqual([1, 3]);
-  });
-
-  test('empty roles are left out', () => {
-    expect(groupProjectAccessUsers([user({ role: Role.REPORTER })]).map((g) => g.role)).toEqual([Role.REPORTER]);
-    expect(groupProjectAccessUsers([])).toEqual([]);
+  test('the rows are the groups by name, then the users by the name shown', () => {
+    expect(projectAccessRows(grid).map((row) => [row.subject.type, row.name])).toEqual([
+      ['group', 'Product owners'],
+      ['group', 'QA'],
+      ['user', 'avery'],
+      ['user', 'quinn'],
+      ['user', 'sam'],
+    ]);
   });
 });
 
@@ -133,7 +176,73 @@ describe('matchesProjectAccessQuery', () => {
   });
 });
 
-test('projectAccessCellKey tells the all-projects cell from a project cell', () => {
-  expect(projectAccessCellKey(4, null)).toBe('4:all');
-  expect(projectAccessCellKey(4, 12)).toBe('4:12');
+test('projectAccessCellKey tells users from groups and the all-projects cell from a project cell', () => {
+  expect(projectAccessCellKey(userSubject(4), null)).toBe('user:4:all');
+  expect(projectAccessCellKey(userSubject(4), 12)).toBe('user:4:12');
+  expect(projectAccessCellKey(groupSubject(4), 12)).toBe('group:4:12');
+});
+
+describe('project members', () => {
+  const member = (overrides: Partial<ProjectMemberView>): ProjectMemberView => ({
+    subject: userSubject(1),
+    username: 'sam',
+    name: 'Sam',
+    role: ProjectRole.VIEWER,
+    source: 'direct',
+    ...overrides,
+  });
+
+  test('groups first, then users, by name; a subject’s own binding before its inherited roles', () => {
+    const rows = [
+      member({ subject: userSubject(2), name: 'Bob', source: 'group', groupName: 'QA' }),
+      member({ subject: userSubject(2), name: 'Bob', source: 'direct' }),
+      member({ subject: userSubject(1), name: 'avery', source: 'administrator' }),
+      member({ subject: groupSubject(5), username: null, name: 'QA', source: 'all-projects' }),
+      member({ subject: userSubject(2), name: 'Bob', source: 'all-projects' }),
+    ];
+    expect(sortProjectMembers(rows).map((r) => `${r.name}/${r.source}`)).toEqual([
+      'QA/all-projects',
+      'avery/administrator',
+      'Bob/direct',
+      'Bob/all-projects',
+      'Bob/group',
+    ]);
+  });
+
+  test('directProjectMemberEntries keeps the bindings on the project only', () => {
+    const rows = [
+      member({ subject: userSubject(2), role: ProjectRole.MAINTAINER, source: 'direct' }),
+      member({ subject: userSubject(2), role: ProjectRole.VIEWER, source: 'all-projects' }),
+      member({ subject: groupSubject(5), role: ProjectRole.CONTRIBUTOR, source: 'direct' }),
+      member({ subject: userSubject(3), source: 'group' }),
+    ];
+    expect(directProjectMemberEntries(rows)).toEqual([
+      { subject: userSubject(2), role: ProjectRole.MAINTAINER },
+      { subject: groupSubject(5), role: ProjectRole.CONTRIBUTOR },
+    ]);
+  });
+});
+
+describe('grantableProjectRoles', () => {
+  test('an administrator grants every role, a Project admin those canGrantRole allows, anyone else none', () => {
+    expect(grantableProjectRoles(buildAccessSummary(InstanceRole.ADMINISTRATOR, []), 7)).toEqual([...PROJECT_ROLES]);
+    const lead = buildAccessSummary(InstanceRole.MEMBER, [
+      { projectId: 7, role: ProjectRole.PROJECT_ADMIN },
+      { projectId: null, role: ProjectRole.MAINTAINER },
+    ]);
+    expect(grantableProjectRoles(lead, 7)).toEqual([...PROJECT_ROLES]);
+    expect(grantableProjectRoles(lead, 8)).toEqual([]);
+  });
+
+  test('a Project admin role held through all projects counts on every project', () => {
+    const access = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: null, role: ProjectRole.PROJECT_ADMIN }]);
+    expect(grantableProjectRoles(access, 42)).toEqual([...PROJECT_ROLES]);
+  });
+});
+
+test('requestedInstanceRole stores the roles of earlier versions as member', () => {
+  expect(requestedInstanceRole('reporter')).toBe(InstanceRole.MEMBER);
+  expect(requestedInstanceRole('user')).toBe(InstanceRole.MEMBER);
+  expect(requestedInstanceRole(InstanceRole.ADMINISTRATOR)).toBe(InstanceRole.ADMINISTRATOR);
+  expect(requestedInstanceRole(InstanceRole.MEMBER)).toBe(InstanceRole.MEMBER);
 });

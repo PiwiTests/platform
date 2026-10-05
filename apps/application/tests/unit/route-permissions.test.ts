@@ -22,6 +22,8 @@ const ROUTE_DIRS = ['server/api', 'server/routes'];
  * Keys are paths relative to the app directory.
  */
 const NO_PROJECT_IN_REQUEST: Record<string, string> = {
+  'server/api/groups/index.get.ts':
+    'Administrators manage groups; a Project admin lists them to add one to their project, which the members route checks per project.',
   'server/api/ai/step-resolution.post.ts':
     'The reporter resolves an AI step from a template and an ARIA snapshot; no project is involved.',
   'server/api/dashboards/[id]/share-links.post.ts':

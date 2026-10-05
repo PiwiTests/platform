@@ -199,6 +199,35 @@ export async function replaceProjectBindings(
   });
 }
 
+/**
+ * Replace every binding of one subject (on all projects and on each project)
+ * with `grants`, in one transaction. A scope listed twice keeps its last role.
+ */
+export async function replaceSubjectBindings(
+  db: DrizzleDB,
+  subject: RoleBindingSubject,
+  grants: readonly RoleBindingGrant[],
+  createdBy?: number | null,
+): Promise<void> {
+  const byScope = new Map<number | null, ProjectRole>();
+  for (const grant of grants) {
+    assertProjectRole(grant.role);
+    byScope.set(grant.projectId, grant.role);
+  }
+  await db.transaction(async (tx) => {
+    await tx.delete(roleBindings).where(subjectMatch(subject));
+    if (byScope.size === 0) return;
+    await tx.insert(roleBindings).values(
+      [...byScope].map(([projectId, role]) => ({
+        ...subjectColumns(subject),
+        projectId,
+        role,
+        createdBy: createdBy ?? null,
+      })),
+    );
+  });
+}
+
 // ── A project's members ───────────────────────────────────────────────────────
 
 /** Where a role held on a project comes from. */

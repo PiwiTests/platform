@@ -18,7 +18,6 @@ import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
-import type { ProjectAccessGrid, ProjectAccessUser } from '#shared/project-access';
 import type { AccessSummary, InstanceRole } from '#shared/permissions';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
@@ -1258,48 +1257,27 @@ export interface CreateApiKeyResponse {
 }
 
 // ============================================================================
-// Project assignment types
+// Access management types (users, groups, the permission grid, project members)
 // ============================================================================
 
-/**
- * User's project assignments (GET /api/users/[id]/projects)
- */
-export interface UserProjectAssignments {
-  global: boolean;
-  projectIds: number[];
-}
-
-/**
- * Project member entry (GET /api/projects/[id]/members)
- */
-export interface ProjectMemberEntry {
-  id: number;
-  username: string;
-  name: string | null;
-  role: string;
-  global: boolean;
-}
-
-/**
- * Project members response
- */
-export interface ProjectMembersResponse {
-  items: ProjectMemberEntry[];
-}
-
-/**
- * Permission grid (GET /api/project-access)
- */
-export interface ProjectAccessResponse extends ProjectAccessGrid {
-  authEnabled: boolean;
-}
-
-/**
- * One grid cell changed (PUT /api/project-access) — the user's updated row
- */
-export interface ProjectAccessUpdateResponse {
-  user: ProjectAccessUser;
-}
+// The request and response shapes live in `#shared/project-access`, shared with
+// the server routes and the demo mirror.
+export type {
+  GroupListItem,
+  GroupsListResponse,
+  GroupView,
+  GroupWriteResponse,
+  ProjectAccessResponse,
+  ProjectAccessUpdateResponse,
+  ProjectMembersResponse,
+  ProjectMembersUpdateResponse,
+  ProjectMemberView,
+  UserListItem,
+  UserProjectRolesResponse,
+  UsersListResponse,
+  UserSummary,
+  UserWriteResponse,
+} from '#shared/project-access';
 
 // ============================================================================
 // Admin types

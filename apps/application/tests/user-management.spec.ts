@@ -182,12 +182,18 @@ test.describe.serial('User Management Page Tests', () => {
 
 // ── Project members API (GET /api/projects/:id/members, PUT /api/projects/:id/members) ──
 //
-// `PUT` is authorization-sensitive (administrator-only) — see
-// `server/utils/project-access.ts` for the scope model. Auth is disabled for the
-// dev/test server these tests run against, so `requireAuth` always returns a
-// synthetic system-admin user and a real 403 can't be observed here; the
-// administrator-only enforcement is covered instead in
-// `tests/reporter-with-auth.spec.ts`, which runs against a real auth-enabled server.
+// `PUT` is authorization-sensitive (`project:members`, Project admin or
+// administrator) — see `server/utils/project-access.ts`. Auth is disabled for
+// the dev/test server these tests run against, so `requireAuth` always returns
+// a synthetic system-admin user and a real 403 can't be observed here; the
+// Project admin grant rules are covered by `tests/unit/project-access-handlers.test.ts`.
+interface MemberRow {
+  subject: { type: 'user' | 'group'; id: number };
+  username: string | null;
+  role: string;
+  source: string;
+}
+
 test.describe.serial('Project Members API Tests', () => {
   let projectId: number;
 
@@ -210,20 +216,26 @@ test.describe.serial('Project Members API Tests', () => {
     projectId = data.projectId;
   });
 
-  test('GET /api/projects/:id/members returns implicit administrators with global access', async ({ request }) => {
+  test('GET /api/projects/:id/members lists the administrators, who need no binding', async ({ request }) => {
     const response = await request.get(`/api/projects/${projectId}/members`);
     expect(response.ok()).toBeTruthy();
-    const body = (await response.json()) as {
-      items: Array<{ id: number; username: string; role: string; global: boolean }>;
-    };
+    const body = (await response.json()) as { members: MemberRow[]; canManage: boolean; grantableRoles: string[] };
 
-    expect(Array.isArray(body.items)).toBe(true);
-    // Every administrator has implicit, global access to every project even
-    // without an explicit `project_assignments` row.
-    for (const user of body.items) {
-      if (user.role === 'administrator') {
-        expect(user.global).toBe(true);
-      }
+    expect(Array.isArray(body.members)).toBe(true);
+    expect(body.canManage).toBe(true);
+    expect(body.grantableRoles).toEqual(['viewer', 'contributor', 'maintainer', 'project_admin', 'uploader']);
+    const { items: users } = (await (await request.get('/api/users')).json()) as {
+      items: { id: number; instanceRole: string }[];
+    };
+    // Every administrator opens every project without a role binding.
+    for (const admin of users.filter((u) => u.instanceRole === 'administrator')) {
+      expect(body.members).toContainEqual(
+        expect.objectContaining({
+          subject: { type: 'user', id: admin.id },
+          source: 'administrator',
+          role: 'project_admin',
+        }),
+      );
     }
   });
 
@@ -237,58 +249,68 @@ test.describe.serial('Project Members API Tests', () => {
     expect(response.status()).toBe(400);
   });
 
-  test('PUT /api/projects/:id/members rejects unknown user ids with 400', async ({ request }) => {
-    const response = await request.put(`/api/projects/${projectId}/members`, {
-      data: { userIds: [999999] },
+  test('PUT /api/projects/:id/members rejects unknown users and groups with 400', async ({ request }) => {
+    const user = await request.put(`/api/projects/${projectId}/members`, {
+      data: { entries: [{ subject: { type: 'user', id: 999999 }, role: 'viewer' }] },
     });
-    expect(response.status()).toBe(400);
-    const body = await response.json();
-    expect(body.message).toContain('User(s) not found');
+    expect(user.status()).toBe(400);
+    expect((await user.json()).message).toContain('User(s) not found');
+
+    const group = await request.put(`/api/projects/${projectId}/members`, {
+      data: { entries: [{ subject: { type: 'group', id: 999999 }, role: 'viewer' }] },
+    });
+    expect(group.status()).toBe(400);
+    expect((await group.json()).message).toContain('Group(s) not found');
   });
 
   test('PUT /api/projects/:id/members rejects a malformed body with 400', async ({ request }) => {
-    const response = await request.put(`/api/projects/${projectId}/members`, {
-      data: {},
+    expect((await request.put(`/api/projects/${projectId}/members`, { data: {} })).status()).toBe(400);
+    expect((await request.put(`/api/projects/${projectId}/members`, { data: { userIds: [] } })).status()).toBe(400);
+    const unknownRole = await request.put(`/api/projects/${projectId}/members`, {
+      data: { entries: [{ subject: { type: 'user', id: 1 }, role: 'owner' }] },
     });
-    expect(response.status()).toBe(400);
+    expect(unknownRole.status()).toBe(400);
   });
 
-  test('PUT /api/projects/:id/members with an empty list clears explicit assignments', async ({ request }) => {
-    // An empty array takes the delete-only code path in `setProjectMembers`.
-    const response = await request.put(`/api/projects/${projectId}/members`, {
-      data: { userIds: [] },
-    });
+  test('PUT /api/projects/:id/members with no entries clears the direct bindings', async ({ request }) => {
+    const response = await request.put(`/api/projects/${projectId}/members`, { data: { entries: [] } });
     expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body).toEqual({ success: true });
+    const body = (await response.json()) as { success: boolean; members: MemberRow[] };
+    expect(body.success).toBe(true);
+    expect(body.members.filter((m) => m.source === 'direct')).toEqual([]);
   });
 
-  test('assignments save with authentication off, from either direction', async ({ request }) => {
+  test('roles save with authentication off, from either direction', async ({ request }) => {
     // The caller is the virtual administrator, which has no users row to record as the grantor.
     const username = 'members-api-user';
     const existing = (await (await request.get('/api/users')).json()) as { items: { id: number; username: string }[] };
     for (const user of existing.items) if (user.username === username) await request.delete(`/api/users/${user.id}`);
     const created = await request.post('/api/users', {
-      data: { username, password: 'memberspassword123', role: 'user' },
+      data: { username, password: 'memberspassword123', role: 'member' },
     });
     expect(created.ok()).toBeTruthy();
     const userId = ((await created.json()) as { user: { id: number } }).user.id;
 
     try {
-      const perProject = await request.put(`/api/projects/${projectId}/members`, { data: { userIds: [userId] } });
+      const perProject = await request.put(`/api/projects/${projectId}/members`, {
+        data: { entries: [{ subject: { type: 'user', id: userId }, role: 'contributor' }] },
+      });
       expect(perProject.ok()).toBeTruthy();
       const members = (await (await request.get(`/api/projects/${projectId}/members`)).json()) as {
-        items: { id: number; global: boolean }[];
+        members: MemberRow[];
       };
-      expect(members.items).toContainEqual(expect.objectContaining({ id: userId, global: false }));
+      expect(members.members).toContainEqual(
+        expect.objectContaining({ subject: { type: 'user', id: userId }, role: 'contributor', source: 'direct' }),
+      );
 
       const perUser = await request.put(`/api/users/${userId}/projects`, {
-        data: { global: false, projectIds: [projectId] },
+        data: { allProjects: 'viewer', projects: [{ projectId, role: 'maintainer' }] },
       });
       expect(perUser.ok()).toBeTruthy();
       expect(await (await request.get(`/api/users/${userId}/projects`)).json()).toEqual({
-        global: false,
-        projectIds: [projectId],
+        allProjects: 'viewer',
+        projects: [{ projectId, role: 'maintainer' }],
+        groups: [],
       });
     } finally {
       await request.delete(`/api/users/${userId}`);
@@ -297,8 +319,102 @@ test.describe.serial('Project Members API Tests', () => {
 
   test('PUT /api/projects/:id/members returns 404 for an unknown project', async ({ request }) => {
     const response = await request.put('/api/projects/999999/members', {
-      data: { userIds: [] },
+      data: { entries: [] },
     });
     expect(response.status()).toBe(404);
+  });
+});
+
+// ── Users and groups API (/api/users, /api/groups) ──────────────────────────────
+test.describe.serial('Users and Groups API Tests', () => {
+  const USERNAME = 'users-api-legacy';
+  const GROUP_NAME = 'users-api-group';
+
+  async function cleanUp(request: import('@playwright/test').APIRequestContext) {
+    const { items } = (await (await request.get('/api/users')).json()) as { items: { id: number; username: string }[] };
+    for (const user of items) if (user.username === USERNAME) await request.delete(`/api/users/${user.id}`);
+    const { groups } = (await (await request.get('/api/groups')).json()) as { groups: { id: number; name: string }[] };
+    for (const group of groups) {
+      if (group.name.startsWith(GROUP_NAME)) await request.delete(`/api/groups/${group.id}`);
+    }
+  }
+
+  test.beforeAll(async ({ request }) => cleanUp(request));
+  test.afterAll(async ({ request }) => cleanUp(request));
+
+  test('a group is created, renamed, given members and deleted', async ({ request }) => {
+    const created = await request.post('/api/groups', { data: { name: GROUP_NAME, description: 'QA' } });
+    expect(created.status()).toBe(201);
+    const group = ((await created.json()) as { group: { id: number; name: string; memberCount: number } }).group;
+    expect(group).toMatchObject({ name: GROUP_NAME, memberCount: 0 });
+
+    const duplicate = await request.post('/api/groups', { data: { name: GROUP_NAME } });
+    expect(duplicate.status()).toBe(409);
+    expect((await request.post('/api/groups', { data: { name: '  ' } })).status()).toBe(400);
+
+    const renamed = await request.patch(`/api/groups/${group.id}`, { data: { name: `${GROUP_NAME}-qa` } });
+    expect(renamed.ok()).toBeTruthy();
+    expect(((await renamed.json()) as { group: { name: string } }).group.name).toBe(`${GROUP_NAME}-qa`);
+
+    const user = await request.post('/api/users', {
+      data: { username: USERNAME, password: 'legacypassword123', role: 'member', groupIds: [group.id] },
+    });
+    expect(user.ok()).toBeTruthy();
+    const userId = ((await user.json()) as { user: { id: number; groupIds: number[] } }).user.id;
+
+    const details = (await (await request.get(`/api/groups/${group.id}`)).json()) as {
+      members: { id: number; username: string }[];
+    };
+    expect(details.members).toEqual([expect.objectContaining({ id: userId, username: USERNAME })]);
+
+    const emptied = await request.put(`/api/groups/${group.id}/members`, { data: { userIds: [] } });
+    expect(((await emptied.json()) as { group: { memberCount: number } }).group.memberCount).toBe(0);
+    expect((await request.put(`/api/groups/${group.id}/members`, { data: { userIds: [999999] } })).status()).toBe(400);
+
+    expect((await request.delete(`/api/groups/${group.id}`)).ok()).toBeTruthy();
+    expect((await request.get(`/api/groups/${group.id}`)).status()).toBe(404);
+    expect((await request.delete(`/api/groups/${group.id}`)).status()).toBe(404);
+    await request.delete(`/api/users/${userId}`);
+  });
+
+  test('POST /api/users still accepts a role of an earlier version, stored as member', async ({ request }) => {
+    const created = await request.post('/api/users', {
+      data: { username: USERNAME, password: 'legacypassword123', role: 'reporter' },
+    });
+    expect(created.ok()).toBeTruthy();
+    const user = ((await created.json()) as { user: { id: number; role: string; instanceRole: string } }).user;
+    expect(user).toMatchObject({ role: 'member', instanceRole: 'member' });
+    // A new member holds no project role until one is granted.
+    expect(await (await request.get(`/api/users/${user.id}/projects`)).json()).toEqual({
+      allProjects: null,
+      projects: [],
+      groups: [],
+    });
+    expect((await request.post('/api/users', { data: { username: 'x-unknown-role', role: 'owner' } })).status()).toBe(
+      400,
+    );
+    await request.delete(`/api/users/${user.id}`);
+  });
+
+  test('PATCH /api/users/:id sets the instance role and the groups', async ({ request }) => {
+    const created = await request.post('/api/users', {
+      data: { username: USERNAME, password: 'legacypassword123', role: 'member' },
+    });
+    const userId = ((await created.json()) as { user: { id: number } }).user.id;
+    const group = await request.post('/api/groups', { data: { name: `${GROUP_NAME}-patch` } });
+    const groupId = ((await group.json()) as { group: { id: number } }).group.id;
+
+    const patched = await request.patch(`/api/users/${userId}`, {
+      data: { role: 'administrator', groupIds: [groupId] },
+    });
+    expect(patched.ok()).toBeTruthy();
+    expect(((await patched.json()) as { user: unknown }).user).toMatchObject({
+      instanceRole: 'administrator',
+      groupIds: [groupId],
+    });
+    expect((await request.patch(`/api/users/${userId}`, { data: { role: 'reporter' } })).status()).toBe(400);
+
+    await request.delete(`/api/users/${userId}`);
+    await request.delete(`/api/groups/${groupId}`);
   });
 });

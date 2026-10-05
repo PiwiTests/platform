@@ -1,42 +1,93 @@
-[
-  {
-    "id": 1,
-    "username": "demo-admin",
-    "name": "Avery (Admin)",
-    "email": "avery@piwi.demo",
-    "role": "administrator",
-    "assignment": { "global": true, "projectIds": [] }
-  },
-  {
-    "id": 2,
-    "username": "ci-reporter",
-    "name": "Robin (CI Reporter)",
-    "email": "robin@piwi.demo",
-    "role": "reporter",
-    "assignment": { "global": true, "projectIds": [] }
-  },
-  {
-    "id": 3,
-    "username": "sam-checkout",
-    "name": "Sam (Checkout team)",
-    "email": "sam@piwi.demo",
-    "role": "user",
-    "assignment": { "global": false, "projectIds": [1] }
-  },
-  {
-    "id": 4,
-    "username": "priya-api",
-    "name": "Priya (API & UI team)",
-    "email": "priya@piwi.demo",
-    "role": "user",
-    "assignment": { "global": false, "projectIds": [2, 3] }
-  },
-  {
-    "id": 5,
-    "username": "noah-newcomer",
-    "name": "Noah (No projects yet)",
-    "email": "noah@piwi.demo",
-    "role": "user",
-    "assignment": { "global": false, "projectIds": [] }
-  }
-]
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "demo-admin",
+      "name": "Avery (Admin)",
+      "email": "avery@piwi.demo",
+      "instanceRole": "administrator",
+      "label": "Administrator",
+      "description": "Everything: every project, users, groups and the instance settings.",
+      "bindings": []
+    },
+    {
+      "id": 6,
+      "username": "quinn-qa-lead",
+      "name": "Quinn (QA lead)",
+      "email": "quinn@piwi.demo",
+      "instanceRole": "member",
+      "label": "QA lead",
+      "description": "Project admin of E2E Checkout (its settings and members, deleting runs); Maintainer elsewhere through the QA group.",
+      "bindings": [{ "projectId": 1, "role": "project_admin" }]
+    },
+    {
+      "id": 7,
+      "username": "jordan-qa",
+      "name": "Jordan (QA engineer)",
+      "email": "jordan@piwi.demo",
+      "instanceRole": "member",
+      "label": "QA engineer",
+      "description": "Maintainer of every project through the QA group: triages, quarantines, runs AI diagnosis, uploads runs.",
+      "bindings": []
+    },
+    {
+      "id": 4,
+      "username": "priya-api",
+      "name": "Priya (Product owner)",
+      "email": "priya@piwi.demo",
+      "instanceRole": "member",
+      "label": "Product owner",
+      "description": "Contributor on API Integration and UI Components through the Product owners group: files issues, pins links, adds markers.",
+      "bindings": []
+    },
+    {
+      "id": 2,
+      "username": "ci-uploader",
+      "name": "CI bot",
+      "email": "ci@piwi.demo",
+      "instanceRole": "member",
+      "label": "CI account",
+      "description": "Uploader on every project: reads them and uploads runs, nothing else.",
+      "bindings": [{ "projectId": null, "role": "uploader" }]
+    },
+    {
+      "id": 3,
+      "username": "sam-checkout",
+      "name": "Sam (Stakeholder)",
+      "email": "sam@piwi.demo",
+      "instanceRole": "member",
+      "label": "Stakeholder",
+      "description": "Viewer of E2E Checkout only: reads it, changes nothing.",
+      "bindings": [{ "projectId": 1, "role": "viewer" }]
+    },
+    {
+      "id": 5,
+      "username": "noah-newcomer",
+      "name": "Noah (No access yet)",
+      "email": "noah@piwi.demo",
+      "instanceRole": "member",
+      "label": "No access yet",
+      "description": "A member nobody has granted a role yet: sees an empty dashboard.",
+      "bindings": []
+    }
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "name": "QA",
+      "description": "The QA team, Maintainer of every project.",
+      "memberIds": [6, 7],
+      "bindings": [{ "projectId": null, "role": "maintainer" }]
+    },
+    {
+      "id": 2,
+      "name": "Product owners",
+      "description": "Files and follows up issues on the API and UI projects.",
+      "memberIds": [4],
+      "bindings": [
+        { "projectId": 2, "role": "contributor" },
+        { "projectId": 3, "role": "contributor" }
+      ]
+    }
+  ]
+}

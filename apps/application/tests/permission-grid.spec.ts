@@ -7,20 +7,33 @@ import { PROJECT } from '#shared/test-project-names';
 // this server, so every request acts as the virtual administrator; the
 // administrator-only enforcement is covered in `tests/reporter-with-auth.spec.ts`.
 
-const MEMBER = { username: 'grid-member', password: 'gridpassword123', role: 'user', name: 'Grid Member' };
+const MEMBER = { username: 'grid-member', password: 'gridpassword123', role: 'member', name: 'Grid Member' };
 const ADMIN = { username: 'grid-admin', password: 'gridpassword123', role: 'administrator', name: 'Grid Admin' };
+const GROUP = { name: 'grid-group', description: 'Created by the permission grid spec' };
 
-interface GridUser {
-  id: number;
-  username: string;
+type Subject = { type: 'user' | 'group'; id: number };
+
+interface GridBinding {
+  subject: Subject;
+  projectId: number | null;
   role: string;
-  global: boolean;
-  projectIds: number[];
+}
+
+interface Grid {
+  users: { id: number; username: string; instanceRole: string; groupIds: number[] }[];
+  groups: { id: number; name: string; memberCount: number }[];
+  projects: { id: number; name: string }[];
+  bindings: GridBinding[];
 }
 
 async function deleteUserNamed(request: APIRequestContext, username: string) {
   const { items } = (await (await request.get('/api/users')).json()) as { items: { id: number; username: string }[] };
   for (const user of items) if (user.username === username) await request.delete(`/api/users/${user.id}`);
+}
+
+async function deleteGroupNamed(request: APIRequestContext, name: string) {
+  const { groups } = (await (await request.get('/api/groups')).json()) as { groups: { id: number; name: string }[] };
+  for (const group of groups) if (group.name === name) await request.delete(`/api/groups/${group.id}`);
 }
 
 async function createUser(request: APIRequestContext, data: typeof MEMBER): Promise<number> {
@@ -29,11 +42,27 @@ async function createUser(request: APIRequestContext, data: typeof MEMBER): Prom
   return ((await res.json()) as { user: { id: number } }).user.id;
 }
 
-async function gridUser(request: APIRequestContext, userId: number): Promise<GridUser> {
+async function grid(request: APIRequestContext): Promise<Grid> {
   const res = await request.get('/api/project-access');
   expect(res.ok()).toBeTruthy();
-  const { users } = (await res.json()) as { users: GridUser[] };
-  return users.find((user) => user.id === userId)!;
+  return (await res.json()) as Grid;
+}
+
+const sameSubject = (a: Subject, b: Subject) => a.type === b.type && a.id === b.id;
+
+async function bindingsOf(request: APIRequestContext, subject: Subject) {
+  return (await grid(request)).bindings
+    .filter((b) => sameSubject(b.subject, subject))
+    .map(({ projectId, role }) => ({ projectId, role }));
+}
+
+/** A user's own bindings as the UI steps below read them: the all-projects one, and the projects bound one by one. */
+async function gridUser(request: APIRequestContext, userId: number) {
+  const bindings = await bindingsOf(request, { type: 'user', id: userId });
+  return {
+    global: bindings.some((b) => b.projectId === null),
+    projectIds: bindings.flatMap((b) => (b.projectId === null ? [] : [b.projectId])).sort((a, b) => a - b),
+  };
 }
 
 async function setAccess(request: APIRequestContext, data: Record<string, unknown>) {
@@ -58,10 +87,12 @@ test.describe.serial('Permission grid', () => {
   let projectId: number;
   let memberId: number;
   let adminId: number;
+  let groupId: number;
 
   test.beforeAll(async ({ request }) => {
     await deleteUserNamed(request, MEMBER.username);
     await deleteUserNamed(request, ADMIN.username);
+    await deleteGroupNamed(request, GROUP.name);
 
     const submit = await request.post('/api/test-runs/submit', {
       data: {
@@ -81,54 +112,94 @@ test.describe.serial('Permission grid', () => {
 
     memberId = await createUser(request, MEMBER);
     adminId = await createUser(request, ADMIN);
+
+    const created = await request.post('/api/groups', { data: GROUP });
+    expect(created.ok()).toBeTruthy();
+    groupId = ((await created.json()) as { group: { id: number } }).group.id;
+    expect((await request.put(`/api/groups/${groupId}/members`, { data: { userIds: [memberId] } })).ok()).toBeTruthy();
   });
 
   test.afterAll(async ({ request }) => {
+    await deleteGroupNamed(request, GROUP.name);
     await deleteUserNamed(request, MEMBER.username);
     await deleteUserNamed(request, ADMIN.username);
   });
 
-  test('GET /api/project-access lists every user and project', async ({ request }) => {
-    const res = await request.get('/api/project-access');
-    expect(res.ok()).toBeTruthy();
-    const body = (await res.json()) as { users: GridUser[]; projects: { id: number; name: string }[] };
+  test('GET /api/project-access lists every user, group, project and binding', async ({ request }) => {
+    const body = await grid(request);
 
     expect(body.projects.some((project) => project.id === projectId)).toBe(true);
-    // A new user starts with no access at all.
-    expect(body.users.find((user) => user.id === memberId)).toMatchObject({ global: false, projectIds: [] });
-    // Administrators open every project, so their row always reads global.
-    expect(body.users.find((user) => user.id === adminId)).toMatchObject({ global: true, projectIds: [] });
+    expect(body.users.find((user) => user.id === memberId)).toMatchObject({
+      instanceRole: 'member',
+      groupIds: [groupId],
+    });
+    expect(body.users.find((user) => user.id === adminId)).toMatchObject({ instanceRole: 'administrator' });
+    expect(body.groups.find((group) => group.id === groupId)).toMatchObject({ name: GROUP.name, memberCount: 1 });
+    // A new member holds no role at all, and an administrator needs none.
+    expect(body.bindings.filter((b) => sameSubject(b.subject, { type: 'user', id: memberId }))).toEqual([]);
+    expect(body.bindings.filter((b) => sameSubject(b.subject, { type: 'user', id: adminId }))).toEqual([]);
   });
 
-  test('PUT grants and revokes one project, idempotently', async ({ request }) => {
+  test('PUT sets, replaces and removes one cell, idempotently', async ({ request }) => {
+    const subject = { type: 'user', id: memberId };
     for (let i = 0; i < 2; i++) {
-      const res = await setAccess(request, { userId: memberId, projectId, granted: true });
+      const res = await setAccess(request, { subject, projectId, role: 'viewer' });
       expect(res.ok()).toBeTruthy();
-      expect(((await res.json()) as { user: GridUser }).user.projectIds).toEqual([projectId]);
+      expect(((await res.json()) as { bindings: GridBinding[] }).bindings).toEqual([
+        { subject, projectId, role: 'viewer' },
+      ]);
     }
 
-    const revoke = await setAccess(request, { userId: memberId, projectId, granted: false });
-    expect(revoke.ok()).toBeTruthy();
-    expect((await gridUser(request, memberId)).projectIds).toEqual([]);
+    const replaced = await setAccess(request, { subject, projectId, role: 'maintainer' });
+    expect(((await replaced.json()) as { bindings: GridBinding[] }).bindings).toEqual([
+      { subject, projectId, role: 'maintainer' },
+    ]);
+
+    const removed = await setAccess(request, { subject, projectId, role: null });
+    expect(removed.ok()).toBeTruthy();
+    expect(await bindingsOf(request, { type: 'user', id: memberId })).toEqual([]);
   });
 
-  test('revoking the all-projects grant keeps the projects granted one by one', async ({ request }) => {
-    await setAccess(request, { userId: memberId, projectId, granted: true });
-    await setAccess(request, { userId: memberId, projectId: null, granted: true });
-    expect(await gridUser(request, memberId)).toMatchObject({ global: true, projectIds: [projectId] });
+  test('removing the all-projects binding keeps the per-project ones', async ({ request }) => {
+    const subject = { type: 'user', id: memberId };
+    await setAccess(request, { subject, projectId, role: 'contributor' });
+    await setAccess(request, { subject, projectId: null, role: 'viewer' });
+    expect(await bindingsOf(request, { type: 'user', id: memberId })).toEqual(
+      expect.arrayContaining([
+        { projectId, role: 'contributor' },
+        { projectId: null, role: 'viewer' },
+      ]),
+    );
 
-    await setAccess(request, { userId: memberId, projectId: null, granted: false });
-    expect(await gridUser(request, memberId)).toMatchObject({ global: false, projectIds: [projectId] });
+    await setAccess(request, { subject, projectId: null, role: null });
+    expect(await bindingsOf(request, { type: 'user', id: memberId })).toEqual([{ projectId, role: 'contributor' }]);
 
-    await setAccess(request, { userId: memberId, projectId, granted: false });
+    await setAccess(request, { subject, projectId, role: null });
+  });
+
+  test('a group holds a role like a user', async ({ request }) => {
+    const subject = { type: 'group', id: groupId };
+    const res = await setAccess(request, { subject, projectId, role: 'maintainer' });
+    expect(res.ok()).toBeTruthy();
+    expect(await bindingsOf(request, { type: 'group', id: groupId })).toEqual([{ projectId, role: 'maintainer' }]);
+
+    await setAccess(request, { subject, projectId, role: null });
+    expect(await bindingsOf(request, { type: 'group', id: groupId })).toEqual([]);
   });
 
   test('PUT rejects a malformed body, unknown ids and administrators', async ({ request }) => {
-    expect((await setAccess(request, { userId: memberId, granted: 'yes' })).status()).toBe(400);
-    expect((await setAccess(request, { userId: 999999, projectId, granted: true })).status()).toBe(404);
-    expect((await setAccess(request, { userId: memberId, projectId: 999999, granted: true })).status()).toBe(404);
+    const member = { type: 'user', id: memberId };
+    expect((await setAccess(request, { subject: member, projectId, role: 'owner' })).status()).toBe(400);
+    expect((await setAccess(request, { userId: memberId, projectId, granted: true })).status()).toBe(400);
+    expect(
+      (await setAccess(request, { subject: { type: 'user', id: 999999 }, projectId, role: 'viewer' })).status(),
+    ).toBe(404);
+    expect(
+      (await setAccess(request, { subject: { type: 'group', id: 999999 }, projectId, role: 'viewer' })).status(),
+    ).toBe(404);
+    expect((await setAccess(request, { subject: member, projectId: 999999, role: 'viewer' })).status()).toBe(404);
 
-    const admin = await setAccess(request, { userId: adminId, projectId, granted: false });
+    const admin = await setAccess(request, { subject: { type: 'user', id: adminId }, projectId, role: null });
     expect(admin.status()).toBe(400);
     expect(((await admin.json()) as { message: string }).message).toBe('Administrators can open every project');
   });

@@ -1,4 +1,4 @@
-import { users, apiKeys, scenarioGaps, testRuns } from '../../server/database/schema';
+import { users, apiKeys, scenarioGaps, testRuns, roleBindings, groupMembers } from '../../server/database/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
@@ -77,6 +77,9 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
   // fails the FK check.
   await db.update(scenarioGaps).set({ triagedBy: null }).where(eq(scenarioGaps.triagedBy, id));
+  // Deleted explicitly rather than through the foreign keys' cascade, which the demo's database does not enforce.
+  await db.delete(roleBindings).where(eq(roleBindings.userId, id));
+  await db.delete(groupMembers).where(eq(groupMembers.userId, id));
   await db.delete(users).where(eq(users.id, id));
   return { success: true };
 }
