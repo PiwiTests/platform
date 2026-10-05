@@ -56,34 +56,36 @@ async function bindingsOf(request: APIRequestContext, subject: Subject) {
     .map(({ projectId, role }) => ({ projectId, role }));
 }
 
-/** A user's own bindings as the UI steps below read them: the all-projects one, and the projects bound one by one. */
-async function gridUser(request: APIRequestContext, userId: number) {
-  const bindings = await bindingsOf(request, { type: 'user', id: userId });
-  return {
-    global: bindings.some((b) => b.projectId === null),
-    projectIds: bindings.flatMap((b) => (b.projectId === null ? [] : [b.projectId])).sort((a, b) => a - b),
-  };
-}
-
 async function setAccess(request: APIRequestContext, data: Record<string, unknown>) {
   return request.put('/api/project-access', { data });
 }
 
-/** Open the page narrowed to the test's own user(s) and project, so the grid stays small. */
+/** Open the page narrowed to the test's own users, group and project, so the grid stays small. */
 async function openGrid(page: Page) {
   await page.goto('/settings/permissions');
   await waitForHydration(page);
-  await page.getByLabel('Filter users').fill('grid-');
+  await page.getByLabel('Filter users and groups').fill('grid-');
   await page.getByLabel('Filter projects').fill(PROJECT.PERMISSION_GRID);
 }
 
-function cell(page: Page, user: string, column: string): Locator {
-  return page.getByRole('checkbox', { name: `${user} — ${column}`, exact: true });
+/** The cell of one group or user (by the name shown) in one column. */
+function cell(page: Page, row: string, column: string): Locator {
+  return page.getByRole('button', { name: `${row} — ${column}`, exact: true });
+}
+
+/** Open a cell's role menu and pick a role ("No role" removes it). */
+async function pickRole(page: Page, target: Locator, role: string) {
+  await target.click();
+  await page.getByRole('menuitemcheckbox', { name: new RegExp(`^${role}`) }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
 }
 
 const background = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).backgroundColor);
 
 test.describe.serial('Permission grid', () => {
+  // A UI test saves several cells in a row, each a request of its own.
+  test.describe.configure({ timeout: 60_000 });
+
   let projectId: number;
   let memberId: number;
   let adminId: number;
@@ -204,59 +206,102 @@ test.describe.serial('Permission grid', () => {
     expect(((await admin.json()) as { message: string }).message).toBe('Administrators can open every project');
   });
 
-  test('a click grants the project and a second click revokes it', async ({ page, request }) => {
+  test('picking a role grants it, another replaces it and No role removes it', async ({ page, request }) => {
     await openGrid(page);
     const box = cell(page, MEMBER.name, PROJECT.PERMISSION_GRID);
+    const member = { type: 'user' as const, id: memberId };
 
-    await expect(box).toHaveAttribute('aria-checked', 'false');
-    await box.click();
-    await expect(box).toHaveAttribute('aria-checked', 'true');
-    await expect.poll(async () => (await gridUser(request, memberId)).projectIds).toEqual([projectId]);
+    await expect(box).toHaveText('—');
+    await pickRole(page, box, 'Viewer');
+    await expect(box).toHaveText('Viewer');
+    await expect(box).toHaveAttribute('data-role', 'viewer');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([{ projectId, role: 'viewer' }]);
 
-    // A cell ignores clicks while its change is saving.
+    // A cell ignores picks while its change is saving, and takes them again once saved.
     await expect(box).toHaveAttribute('aria-disabled', 'false');
-    await box.click();
-    await expect(box).toHaveAttribute('aria-checked', 'false');
-    await expect.poll(async () => (await gridUser(request, memberId)).projectIds).toEqual([]);
+    await pickRole(page, box, 'Maintainer');
+    await expect(box).toHaveText('Maintainer');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([{ projectId, role: 'maintainer' }]);
+
+    await pickRole(page, box, 'No role');
+    await expect(box).toHaveText('—');
+    await expect(box).toHaveAttribute('data-role', '');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([]);
   });
 
-  test('All projects covers every project cell until it is unticked', async ({ page, request }) => {
+  test('a role on All projects shows faint on every project cell, which stays editable', async ({ page, request }) => {
     await openGrid(page);
     const all = cell(page, MEMBER.name, 'All projects');
     const box = cell(page, MEMBER.name, PROJECT.PERMISSION_GRID);
+    const member = { type: 'user' as const, id: memberId };
 
-    await all.click();
-    await expect(all).toHaveAttribute('aria-checked', 'true');
-    await expect.poll(async () => (await gridUser(request, memberId)).global).toBe(true);
-    // Covered by All projects: shown as open, and not toggled on its own.
-    await expect(box).toHaveAttribute('aria-checked', 'true');
-    await expect(box).toHaveAttribute('aria-disabled', 'true');
-    await box.click({ force: true });
-    await expect(box).toHaveAttribute('aria-checked', 'true');
-    expect((await gridUser(request, memberId)).projectIds).toEqual([]);
-
-    await expect(all).toHaveAttribute('aria-disabled', 'false');
-    await all.click();
-    await expect(all).toHaveAttribute('aria-checked', 'false');
-    await expect(box).toHaveAttribute('aria-checked', 'false');
+    await pickRole(page, all, 'Viewer');
+    await expect(all).toHaveAttribute('data-role', 'viewer');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([{ projectId: null, role: 'viewer' }]);
+    // Held through All projects: shown, named in the tooltip, and not a binding of its own.
+    await expect(box).toHaveText('Viewer');
+    await expect(box).toHaveAttribute('data-role', '');
+    await expect(box).toHaveAttribute('title', /Viewer on all projects/);
     await expect(box).toHaveAttribute('aria-disabled', 'false');
-    await expect.poll(async () => (await gridUser(request, memberId)).global).toBe(false);
+
+    await pickRole(page, box, 'Contributor');
+    await expect(box).toHaveAttribute('data-role', 'contributor');
+    await expect
+      .poll(() => bindingsOf(request, member))
+      .toEqual(
+        expect.arrayContaining([
+          { projectId: null, role: 'viewer' },
+          { projectId, role: 'contributor' },
+        ]),
+      );
+
+    // Removing the All projects role leaves the project's own.
+    await pickRole(page, all, 'No role');
+    await expect(all).toHaveText('—');
+    await expect(box).toHaveText('Contributor');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([{ projectId, role: 'contributor' }]);
+
+    await pickRole(page, box, 'No role');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([]);
   });
 
-  test("an administrator's cells are open and locked", async ({ page }) => {
+  test("a group's role shows faint on its members' cells, naming the group", async ({ page, request }) => {
+    await openGrid(page);
+    const groupCell = cell(page, GROUP.name, PROJECT.PERMISSION_GRID);
+    const memberCell = cell(page, MEMBER.name, PROJECT.PERMISSION_GRID);
+    await expect(page.getByRole('rowheader', { name: new RegExp(`^${GROUP.name}`) })).toBeVisible();
+
+    await pickRole(page, groupCell, 'Maintainer');
+    await expect(groupCell).toHaveAttribute('data-role', 'maintainer');
+    await expect
+      .poll(() => bindingsOf(request, { type: 'group', id: groupId }))
+      .toEqual([{ projectId, role: 'maintainer' }]);
+    await expect(memberCell).toHaveText('Maintainer');
+    await expect(memberCell).toHaveAttribute('data-role', '');
+    await expect(memberCell).toHaveAttribute('title', new RegExp(`Maintainer through ${GROUP.name}`));
+
+    await pickRole(page, groupCell, 'No role');
+    await expect(memberCell).toHaveText('—');
+    await expect.poll(() => bindingsOf(request, { type: 'group', id: groupId })).toEqual([]);
+  });
+
+  test("an administrator's cells are locked", async ({ page }) => {
     await openGrid(page);
     for (const column of ['All projects', PROJECT.PERMISSION_GRID]) {
       const box = cell(page, ADMIN.name, column);
-      await expect(box).toHaveAttribute('aria-checked', 'true');
+      await expect(box).toHaveText('Administrator');
       await expect(box).toHaveAttribute('aria-disabled', 'true');
+      // Locked: a click opens no menu.
+      await box.click({ force: true });
+      await expect(page.getByRole('menu')).toHaveCount(0);
     }
   });
 
-  test("hovering a cell highlights its user's row and its project's column", async ({ page }) => {
+  test("hovering a cell highlights its row and its project's column", async ({ page }) => {
     await openGrid(page);
-    const rowHeader = page.locator(`th[data-row="${memberId}"]`);
+    const rowHeader = page.locator(`th[data-row="user:${memberId}"]`);
     const columnHeader = page.locator(`thead th[data-col="${projectId}"]`);
-    const otherRowHeader = page.locator(`th[data-row="${adminId}"]`);
+    const otherRowHeader = page.locator(`th[data-row="user:${adminId}"]`);
     const [rowBefore, columnBefore, otherBefore] = await Promise.all(
       [rowHeader, columnHeader, otherRowHeader].map(background),
     );
@@ -272,34 +317,62 @@ test.describe.serial('Permission grid', () => {
     await expect.poll(() => background(columnHeader)).toBe(columnBefore);
   });
 
-  test('arrow keys move between cells', async ({ page }) => {
+  test('arrow keys move between cells, Space and Enter open the role menu', async ({ page, request }) => {
     await openGrid(page);
     const all = cell(page, MEMBER.name, 'All projects');
     const box = cell(page, MEMBER.name, PROJECT.PERMISSION_GRID);
+    const member = { type: 'user' as const, id: memberId };
 
     await all.focus();
     await page.keyboard.press('ArrowRight');
     await expect(box).toBeFocused();
     await page.keyboard.press('ArrowLeft');
     await expect(all).toBeFocused();
-    // Space toggles the focused cell like a click.
-    await page.keyboard.press('ArrowRight');
+    // Groups sit above the users (Grid Admin, then Grid Member): two rows up reach the group.
+    await page.keyboard.press('ArrowUp');
+    await expect(cell(page, ADMIN.name, 'All projects')).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(cell(page, GROUP.name, 'All projects')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('End');
+    await expect(box).toBeFocused();
+
+    // Space opens the menu; Escape closes it and gives the focus back to the cell.
     await page.keyboard.press('Space');
-    await expect(box).toHaveAttribute('aria-checked', 'true');
-    await expect(box).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(box).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(box).toBeFocused();
+
+    // Enter opens it too, and a role picked from the keyboard saves.
+    await page.keyboard.press('Enter');
+    await page.getByRole('menuitemcheckbox', { name: /^Viewer/ }).press('Enter');
+    await expect(box).toHaveText('Viewer');
+    await expect(box).toBeFocused();
+    await expect.poll(() => bindingsOf(request, member)).toEqual([{ projectId, role: 'viewer' }]);
+
     await page.keyboard.press('Space');
-    await expect(box).toHaveAttribute('aria-checked', 'false');
+    await page.getByRole('menuitemcheckbox', { name: /^No role/ }).press('Enter');
+    await expect(box).toHaveText('—');
+    await expect.poll(() => bindingsOf(request, member)).toEqual([]);
   });
 
   test('the filters narrow the rows and the columns', async ({ page }) => {
     await openGrid(page);
     await expect(page.getByRole('rowheader', { name: /Grid Member/ })).toBeVisible();
+    await expect(page.getByRole('rowheader', { name: new RegExp(`^${GROUP.name}`) })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: PROJECT.PERMISSION_GRID })).toBeVisible();
 
-    await page.getByLabel('Filter users').fill('no-such-user');
-    await expect(page.getByText('No user matches this filter.')).toBeVisible();
+    await page.getByLabel('Filter users and groups').fill('grid-group');
+    await expect(page.getByRole('rowheader', { name: new RegExp(`^${GROUP.name}`) })).toBeVisible();
+    await expect(page.getByRole('rowheader', { name: /Grid Member/ })).toHaveCount(0);
 
-    await page.getByLabel('Filter users').fill('grid-');
+    await page.getByLabel('Filter users and groups').fill('no-such-user');
+    await expect(page.getByText('No user or group matches this filter.')).toBeVisible();
+
+    await page.getByLabel('Filter users and groups').fill('grid-');
     await page.getByLabel('Filter projects').fill('no-such-project');
     await expect(page.getByText('No project matches this filter.')).toBeVisible();
     await expect(page.getByRole('columnheader', { name: PROJECT.PERMISSION_GRID })).toHaveCount(0);

@@ -65,6 +65,24 @@ export const useAuth = () => {
     window.location.reload();
   };
 
+  /**
+   * Demo: take the active persona's access from the demo `/api/auth/me`, which
+   * reads the in-browser database, so a role changed on the permission grid, in
+   * a project's members or in a group shows at once. The seeded access stands in
+   * until it answers, and stays when it fails. Does nothing outside the demo.
+   */
+  const refreshDemoAccess = async () => {
+    if (!config.public.demoMode || !import.meta.client) return;
+    try {
+      const data = await $fetch<AuthState>('/api/auth/me');
+      const user = authState.value.user;
+      if (!data.authenticated || !data.user || !user || data.user.id !== user.id) return;
+      authState.value = { authenticated: true, user: { ...user, role: data.user.role, access: data.user.access } };
+    } catch {
+      // Keep the seeded access.
+    }
+  };
+
   const fetchUser = async (): Promise<AuthState> => {
     if (config.public.demoMode) {
       const state = demoStateFor(readSelectedDemoUserId());
@@ -178,5 +196,6 @@ export const useAuth = () => {
     demoUsers,
     currentDemoUserId,
     setDemoUser,
+    refreshDemoAccess,
   };
 };

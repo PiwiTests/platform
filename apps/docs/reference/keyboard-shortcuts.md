@@ -69,7 +69,7 @@ When you [pick a replacement locator](/features/locator-healing) on a captured p
 ## Permission grid
 
 On the [permission grid](/operate/project-access#permission-grid), the arrow keys move between cells, and `Home` / `End`
-jump to the first / last project of the row.
+jump to the first / last column of the row. `Space` or `Enter` opens the focused cell's role menu, and `Esc` closes it.
 
 ## Related
 

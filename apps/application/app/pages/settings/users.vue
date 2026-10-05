@@ -1,80 +1,105 @@
 <script setup lang="ts">
 import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
-import type { UserDetails, UsersResponse, UserProjectAssignments, ProjectMenuItem } from '~~/types/api';
+import { INSTANCE_ROLE_LABELS, InstanceRole, ProjectRole } from '#shared/permissions';
+import type {
+  GroupsListResponse,
+  UserListItem,
+  UserProjectRolesResponse,
+  UsersListResponse,
+  UserSummary,
+  UserWriteResponse,
+} from '#shared/project-access';
+import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 
-const { data: usersData, refresh } = await useFetch<UsersResponse>('/api/users');
+const { data: usersData, refresh } = await useFetch<UsersListResponse>('/api/users');
+const { data: groupsData, refresh: refreshGroups } = await useFetch<GroupsListResponse>('/api/groups');
 const toast = useToast();
-const { authState } = useAuth();
-const config = useRuntimeConfig();
+const { authState, can, refreshDemoAccess } = useAuth();
 
-const users = computed(() => usersData.value?.items || []);
+/** An administrator gets the full rows; anyone else reaching this page would get summaries. */
+const isListItem = (user: UserListItem | UserSummary): user is UserListItem => 'instanceRole' in user;
+const users = computed(() => (usersData.value?.items ?? []).filter(isListItem));
+const groups = computed(() => groupsData.value?.groups ?? []);
+const groupNames = computed(() => new Map(groups.value.map((group) => [group.id, group.name])));
 const authEnabled = computed(() => usersData.value?.authEnabled || false);
 
-// Check if current user is admin (only matters when auth is enabled)
-const isAdmin = computed(() => {
-  if (!config.public.authEnabled) return true;
-  return authState.value.user?.role === 'administrator';
-});
-
-// Current user id (for showing own API keys)
+// Everyone is an administrator when authentication is off.
+const isAdmin = computed(() => can('users:manage'));
 const currentUserId = computed(() => authState.value.user?.id ?? null);
 
-// Define columns with proper typing.
-//
-// The table uses a fixed layout (see the `table-fixed w-full` UI class below) so
-// it always fits the settings card instead of overflowing into a horizontal
-// scrollbar. The role, created and actions columns get fixed widths sized to
-// their content; the three text columns (username, name, email) share the
-// remaining width and truncate long values.
-const columns: TableColumn<UserDetails>[] = [
-  { accessorKey: 'username', header: createSortHeader<UserDetails>('Username') },
-  { accessorKey: 'name', header: createSortHeader<UserDetails>('Name') },
-  { accessorKey: 'email', header: createSortHeader<UserDetails>('Email') },
-  { accessorKey: 'role', header: createSortHeader<UserDetails>('Role'), meta: { class: { th: 'w-44', td: 'w-44' } } },
+const roleOptions = [InstanceRole.MEMBER, InstanceRole.ADMINISTRATOR].map((role) => ({
+  label: INSTANCE_ROLE_LABELS[role],
+  value: role,
+}));
+
+function displayName(user: Pick<UserListItem, 'name' | 'username'>): string {
+  return user.name || user.username;
+}
+
+function groupsText(user: UserListItem): string {
+  return user.groupIds
+    .map((id) => groupNames.value.get(id))
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** Replace one user's row in the fetched list, so an edit shows before the list reloads. */
+function patchUserRow(userId: number, patch: Partial<UserListItem>) {
+  if (!usersData.value) return;
+  usersData.value = {
+    ...usersData.value,
+    items: users.value.map((user) => (user.id === userId ? { ...user, ...patch } : user)),
+  };
+}
+
+// The table uses a fixed layout from `lg` up (see the `lg:table-fixed` UI class
+// below) so it fits the settings card instead of overflowing into a horizontal
+// scrollbar: the role, groups, created and actions columns get fixed widths and
+// the user and email columns share the rest, truncating long values. Below `md`
+// a card list replaces it.
+const columns: TableColumn<UserListItem>[] = [
+  { accessorKey: 'username', header: createSortHeader<UserListItem>('User') },
+  { accessorKey: 'email', header: createSortHeader<UserListItem>('Email') },
+  {
+    accessorKey: 'instanceRole',
+    header: createSortHeader<UserListItem>('Role'),
+    meta: { class: { th: 'w-36', td: 'w-36' } },
+  },
+  { id: 'groups', header: 'Groups', meta: { class: { th: 'w-40', td: 'w-40' } } },
   {
     accessorKey: 'createdAt',
-    header: createSortHeader<UserDetails>('Created'),
-    meta: { class: { th: 'w-28', td: 'w-28' } },
+    header: createSortHeader<UserListItem>('Created'),
+    meta: { class: { th: 'w-24', td: 'w-24' } },
   },
-  { id: 'actions', header: 'Actions', meta: { class: { th: 'w-40', td: 'w-40' } } },
+  { id: 'actions', header: 'Actions', meta: { class: { th: 'w-36', td: 'w-36' } } },
 ];
 
-// Add user modal
+// ── Add user ────────────────────────────────────────────────────────────────
 const isAddUserModalOpen = ref(false);
 const addUserSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
   password: z
     .union([z.string().min(8, 'Password must be at least 8 characters'), z.literal('').transform(() => undefined)])
     .optional(),
-  role: z.enum(['administrator', 'reporter', 'user']),
+  role: z.enum(InstanceRole),
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
+  groupIds: z.array(z.number()).optional(),
 });
 
 type AddUserSchema = z.output<typeof addUserSchema>;
 
-const newUser = reactive<Partial<AddUserSchema>>({
-  username: '',
-  password: '',
-  role: 'user',
-  name: '',
-  email: '',
-});
+function emptyNewUser(): Partial<AddUserSchema> {
+  return { username: '', password: '', role: InstanceRole.MEMBER, name: '', email: '', groupIds: [] };
+}
 
-const roleOptions = [
-  { label: 'Administrator', value: 'administrator' },
-  { label: 'Reporter', value: 'reporter' },
-  { label: 'User', value: 'user' },
-];
+const newUser = reactive<Partial<AddUserSchema>>(emptyNewUser());
 
 async function handleAddUser() {
   try {
     const body = { ...newUser, password: newUser.password || undefined };
-    await $fetch('/api/users', {
-      method: 'POST',
-      body,
-    });
+    await $fetch<UserWriteResponse>('/api/users', { method: 'POST', body });
 
     toast.add({
       title: 'User created',
@@ -83,25 +108,22 @@ async function handleAddUser() {
     });
 
     isAddUserModalOpen.value = false;
-    newUser.username = '';
-    newUser.password = '';
-    newUser.role = 'user';
-    newUser.name = '';
-    newUser.email = '';
-
-    await refresh();
+    Object.assign(newUser, emptyNewUser());
+    await Promise.all([refresh(), refreshGroups()]);
   } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
       title: 'Failed to create user',
-      description: errorMessage || 'An error occurred',
+      description: errorMessage(error, 'An error occurred'),
       color: 'error',
     });
   }
 }
 
-async function handleDeleteUser(user: UserDetails) {
+// ── Delete user ─────────────────────────────────────────────────────────────
+const isDeleteUserConfirmOpen = ref(false);
+const userToDelete = ref<UserListItem | null>(null);
+
+function handleDeleteUser(user: UserListItem) {
   userToDelete.value = user;
   isDeleteUserConfirmOpen.value = true;
 }
@@ -113,174 +135,169 @@ async function confirmDeleteUser() {
   userToDelete.value = null;
 
   try {
-    await $fetch(`/api/users/${user.id}`, {
+    await $fetch<ApiResponse<typeof import('~~/server/api/users/[id].delete').default>>(`/api/users/${user.id}`, {
       method: 'DELETE',
     });
-
-    toast.add({
-      title: 'User deleted',
-      description: `User ${user.username} has been deleted`,
-      color: 'success',
-    });
-
-    await refresh();
+    toast.add({ title: 'User deleted', description: `User ${user.username} has been deleted`, color: 'success' });
+    await Promise.all([refresh(), refreshGroups()]);
   } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
       title: 'Failed to delete user',
-      description: errorMessage || 'An error occurred',
+      description: errorMessage(error, 'An error occurred'),
       color: 'error',
     });
   }
 }
 
-// Delete user confirmation
-const isDeleteUserConfirmOpen = ref(false);
-const userToDelete = ref<UserDetails | null>(null);
-
-function getRoleBadgeColor(role: string) {
-  switch (role) {
-    case 'administrator':
-      return 'primary';
-    case 'reporter':
-      return 'info';
-    case 'user':
-      return 'neutral';
-    default:
-      return 'neutral';
-  }
-}
-
-// Change an existing user's role. Available to admins for every user, including
-// accounts provisioned through OAuth (which self-register with the `user` role).
-async function handleChangeRole(user: UserDetails, role: string) {
-  if (role === user.role) return;
-
+// ── Instance role and groups, saved at once ─────────────────────────────────
+// Available to administrators for every user, including accounts provisioned
+// through OAuth, which sign up as members with no project role.
+async function handleChangeRole(user: UserListItem, role: InstanceRole) {
+  if (role === user.instanceRole) return;
+  patchUserRow(user.id, { instanceRole: role });
   try {
-    await $fetch(`/api/users/${user.id}`, { method: 'PATCH', body: { role } });
-
+    await $fetch<UserWriteResponse>(`/api/users/${user.id}`, { method: 'PATCH', body: { role } });
     toast.add({
       title: 'Role updated',
-      description: `${user.username} is now ${roleOptions.find((r) => r.value === role)?.label ?? role}`,
+      description: `${user.username} is now ${INSTANCE_ROLE_LABELS[role]}`,
       color: 'success',
     });
-
-    await refresh();
+    void refreshDemoAccess();
   } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
+    // The server keeps the last administrator: its message says so.
     toast.add({
       title: 'Failed to update role',
-      description: errorMessage || 'An error occurred',
+      description: errorMessage(error, 'An error occurred'),
       color: 'error',
     });
-    // Revert the shown selection to the persisted value.
-    await refresh();
   }
+  await refresh();
 }
 
-// ---------------------------------------------------------------------------
-// API key management — the list, create form and revoke flow live in the
-// reusable <ApiKeysManager> (also used by the Account page); this page only
-// owns which user the modal targets.
-// ---------------------------------------------------------------------------
+async function handleChangeGroups(user: UserListItem, groupIds: number[]) {
+  patchUserRow(user.id, { groupIds });
+  try {
+    await $fetch<UserWriteResponse>(`/api/users/${user.id}`, { method: 'PATCH', body: { groupIds } });
+    toast.add({ title: 'Groups updated', description: `Groups of ${user.username} saved`, color: 'success' });
+    void refreshDemoAccess();
+  } catch (error: unknown) {
+    toast.add({
+      title: 'Failed to update groups',
+      description: errorMessage(error, 'An error occurred'),
+      color: 'error',
+    });
+  }
+  await Promise.all([refresh(), refreshGroups()]);
+}
 
-const selectedUserForKeys = ref<UserDetails | null>(null);
+// ── API keys: the list, create form and revoke flow live in <ApiKeysManager> ─
+const selectedUserForKeys = ref<UserListItem | null>(null);
 const isApiKeysModalOpen = ref(false);
 
-function openApiKeysModal(user: UserDetails) {
+function openApiKeysModal(user: UserListItem) {
   selectedUserForKeys.value = user;
   isApiKeysModalOpen.value = true;
 }
 
-function canManageApiKeys(user: UserDetails): boolean {
-  if (!config.public.authEnabled) return true;
+function canManageApiKeys(user: UserListItem): boolean {
   return isAdmin.value || currentUserId.value === user.id;
 }
 
-// Project access modal
-const selectedUserForAccess = ref<UserDetails | null>(null);
-const isProjectAccessModalOpen = ref(false);
-const projectAccessGlobal = ref(false);
-const projectAccessProjects = ref<{ id: number; name: string; label: string }[]>([]);
-const allProjectsList = ref<{ id: number; name: string; label: string }[]>([]);
+// ── Project roles of one user ───────────────────────────────────────────────
+const rolesUser = ref<UserListItem | null>(null);
+const isRolesModalOpen = ref(false);
+const rolesLoading = ref(false);
+const rolesSaving = ref(false);
+const allProjectsChoice = ref<ProjectRoleChoice>(NO_PROJECT_ROLE);
+const projectRoles = ref<{ projectId: number; role: ProjectRole }[]>([]);
+const inheritedGroups = ref<{ id: number; name: string }[]>([]);
+const projectsList = ref<ProjectMenuItem[]>([]);
 
-async function openProjectAccessModal(user: UserDetails) {
-  selectedUserForAccess.value = user;
-  isProjectAccessModalOpen.value = true;
+/** The role a project gets when it is added to the list. */
+const NEW_PROJECT_ROLE = ProjectRole.VIEWER;
+const allProjectsItems = projectRoleSelectItems(undefined, { none: true });
+const roleItems = projectRoleSelectItems();
 
-  // Load all projects for the multi-select
+const projectName = (projectId: number) => {
+  const project = projectsList.value.find((p) => p.id === projectId);
+  return project ? project.label || project.name : `Project #${projectId}`;
+};
+const projectsToAdd = computed(() =>
+  projectsList.value
+    .filter((project) => !projectRoles.value.some((entry) => entry.projectId === project.id))
+    .map((project) => ({ label: project.label || project.name, value: project.id })),
+);
+
+async function openRolesModal(user: UserListItem) {
+  rolesUser.value = user;
+  isRolesModalOpen.value = true;
+  rolesLoading.value = true;
   try {
-    const projects = (await $fetch<{ items: ProjectMenuItem[] }>('/api/projects/menu')).items;
-    allProjectsList.value = projects.map((p) => ({ ...p, label: p.label || p.name }));
-  } catch {
-    allProjectsList.value = [];
-  }
-
-  // Load current assignments
-  try {
-    const assignments = await $fetch<UserProjectAssignments>(`/api/users/${user.id}/projects`);
-    projectAccessGlobal.value = assignments.global;
-    projectAccessProjects.value = allProjectsList.value.filter((p) => assignments.projectIds.includes(p.id));
-  } catch {
-    projectAccessGlobal.value = false;
-    projectAccessProjects.value = [];
+    const [menu, roles] = await Promise.all([
+      $fetch<{ items: ProjectMenuItem[] }>('/api/projects/menu'),
+      $fetch<UserProjectRolesResponse>(`/api/users/${user.id}/projects`),
+    ]);
+    projectsList.value = menu.items;
+    allProjectsChoice.value = roles.allProjects ?? NO_PROJECT_ROLE;
+    projectRoles.value = roles.projects.map((entry) => ({ ...entry }));
+    inheritedGroups.value = roles.groups;
+  } catch (error: unknown) {
+    toast.add({ title: 'Couldn’t load project roles', description: errorMessage(error), color: 'error' });
+    isRolesModalOpen.value = false;
+  } finally {
+    rolesLoading.value = false;
   }
 }
 
-async function handleSaveProjectAccess() {
-  const user = selectedUserForAccess.value;
+function addProjectRole(projectId: unknown) {
+  if (typeof projectId !== 'number') return;
+  projectRoles.value = [...projectRoles.value, { projectId, role: NEW_PROJECT_ROLE }];
+}
+
+function removeProjectRole(projectId: number) {
+  projectRoles.value = projectRoles.value.filter((entry) => entry.projectId !== projectId);
+}
+
+async function handleSaveProjectRoles() {
+  const user = rolesUser.value;
   if (!user) return;
-
+  rolesSaving.value = true;
   try {
-    await $fetch(`/api/users/${user.id}/projects`, {
+    await $fetch<UserProjectRolesResponse>(`/api/users/${user.id}/projects`, {
       method: 'PUT',
-      body: {
-        global: projectAccessGlobal.value,
-        projectIds: projectAccessProjects.value.map((p) => p.id),
-      },
+      body: { allProjects: projectRoleFromChoice(allProjectsChoice.value), projects: projectRoles.value },
     });
-
-    toast.add({
-      title: 'Project access updated',
-      description: `Access for ${user.username} has been updated`,
-      color: 'success',
-    });
-
-    isProjectAccessModalOpen.value = false;
+    toast.add({ title: 'Project roles updated', description: `Roles of ${user.username} saved`, color: 'success' });
+    void refreshDemoAccess();
+    isRolesModalOpen.value = false;
   } catch (error: unknown) {
-    const errorMessage =
-      error && typeof error === 'object' && 'data' in error ? (error.data as { message?: string })?.message : undefined;
     toast.add({
-      title: 'Failed to update project access',
-      description: errorMessage || 'An error occurred',
+      title: 'Failed to update project roles',
+      description: errorMessage(error, 'An error occurred'),
       color: 'error',
     });
+  } finally {
+    rolesSaving.value = false;
   }
 }
 
-function getAssignmentSummary(user: UserDetails): string {
-  if (user.role === 'administrator') return 'All projects';
-  if (projectAccessGlobal.value && selectedUserForAccess.value?.id === user.id) return 'Global';
-  return '';
-}
-
-// Invite user
+// ── Invite ──────────────────────────────────────────────────────────────────
 const invitingUserId = ref<number | null>(null);
 
-async function handleInviteUser(user: UserDetails) {
+async function handleInviteUser(user: UserListItem) {
   if (!user.email) {
     toast.add({ title: 'No email address', description: 'Set an email address for this user first.', color: 'error' });
     return;
   }
   invitingUserId.value = user.id;
   try {
-    await $fetch(`/api/users/${user.id}/invite`, { method: 'POST' });
+    await $fetch<ApiResponse<typeof import('~~/server/api/users/[id]/invite.post').default>>(
+      `/api/users/${user.id}/invite`,
+      { method: 'POST' },
+    );
     toast.add({ title: 'Invite sent', description: `Invitation sent to ${user.email}`, color: 'success' });
   } catch (e) {
-    const msg = e && typeof e === 'object' && 'data' in e ? (e.data as { message?: string })?.message : undefined;
-    toast.add({ title: 'Failed to send invite', description: msg || 'An error occurred', color: 'error' });
+    toast.add({ title: 'Failed to send invite', description: errorMessage(e, 'An error occurred'), color: 'error' });
   } finally {
     invitingUserId.value = null;
   }
@@ -289,7 +306,6 @@ async function handleInviteUser(user: UserDetails) {
 
 <template>
   <div class="space-y-6">
-    <!-- Info message when auth is disabled -->
     <UAlert
       v-if="!authEnabled"
       icon="i-lucide-info"
@@ -299,8 +315,13 @@ async function handleInviteUser(user: UserDetails) {
       description="Authentication is currently disabled. You can manage users here, but they will only be used when authentication is enabled via the PIWI_AUTH_ENABLED environment variable."
     />
 
-    <!-- Users table -->
-    <SectionCard v-if="users.length > 0" title="Users" :count="users.length" help="settings.users">
+    <SectionCard
+      v-if="users.length > 0"
+      title="Users"
+      :count="users.length"
+      help="settings.users"
+      data-shot="users-table"
+    >
       <template #actions>
         <UButton
           v-if="isAdmin"
@@ -311,12 +332,54 @@ async function handleInviteUser(user: UserDetails) {
         />
       </template>
 
-      <!-- From `lg` up, the settings card is capped at `max-w-4xl`, so the table
-           switches to a fixed layout (`lg:table-fixed lg:w-full`) that fits the
-           card instead of forcing a horizontal scrollbar; long text columns
-           truncate. Below `lg` the card is full width, so the table keeps its
-           natural auto layout and the scroller handles narrow screens. -->
-      <TableScroller min-width="36rem" :bleed="false">
+      <!-- Phone: one card per user, the same controls stacked. -->
+      <ul class="space-y-2 md:hidden">
+        <li v-for="user in users" :key="user.id" class="rounded-lg border border-default p-3 space-y-3">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-highlighted break-words">{{ displayName(user) }}</p>
+              <p class="text-xs text-muted break-words">
+                @{{ user.username }}<template v-if="user.email"> · {{ user.email }}</template>
+              </p>
+            </div>
+            <UserRowActions
+              :user="user"
+              :can-manage="isAdmin"
+              :can-manage-keys="canManageApiKeys(user)"
+              :inviting="invitingUserId === user.id"
+              class="shrink-0"
+              @invite="handleInviteUser(user)"
+              @project-roles="openRolesModal(user)"
+              @api-keys="openApiKeysModal(user)"
+              @delete="handleDeleteUser(user)"
+            />
+          </div>
+          <div v-if="isAdmin" class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <USelect
+              :model-value="user.instanceRole"
+              :items="roleOptions"
+              size="sm"
+              class="w-full"
+              :aria-label="`Change role for ${user.username}`"
+              @update:model-value="(value) => handleChangeRole(user, value as InstanceRole)"
+            />
+            <UserGroupsSelect
+              :model-value="user.groupIds"
+              :groups="groups"
+              deferred
+              size="sm"
+              :aria-label="`Groups of ${user.username}`"
+              @update:model-value="(ids) => handleChangeGroups(user, ids)"
+            />
+          </div>
+          <p v-else class="text-xs text-muted">
+            {{ INSTANCE_ROLE_LABELS[user.instanceRole]
+            }}<template v-if="groupsText(user)"> · {{ groupsText(user) }}</template>
+          </p>
+        </li>
+      </ul>
+
+      <div class="hidden md:block">
         <UTable
           :data="users"
           :columns="columns"
@@ -325,13 +388,12 @@ async function handleInviteUser(user: UserDetails) {
           :ui="{ base: 'lg:table-fixed lg:w-full' }"
         >
           <template #username-cell="{ row }">
-            <span class="block truncate" :title="row.original.username">{{ row.original.username }}</span>
-          </template>
-
-          <template #name-cell="{ row }">
-            <span class="block truncate text-muted" :title="row.original.name || undefined">{{
-              row.original.name || '-'
+            <span class="block truncate text-highlighted" :title="displayName(row.original)">{{
+              displayName(row.original)
             }}</span>
+            <span v-if="row.original.name" class="block truncate text-xs text-muted" :title="row.original.username"
+              >@{{ row.original.username }}</span
+            >
           </template>
 
           <template #email-cell="{ row }">
@@ -347,19 +409,32 @@ async function handleInviteUser(user: UserDetails) {
             <span v-else class="text-muted">—</span>
           </template>
 
-          <template #role-cell="{ row }">
+          <template #instanceRole-cell="{ row }">
             <USelect
               v-if="isAdmin"
-              :model-value="row.original.role"
+              :model-value="row.original.instanceRole"
               :items="roleOptions"
               size="sm"
               class="w-full"
               :aria-label="`Change role for ${row.original.username}`"
-              @update:model-value="(value) => handleChangeRole(row.original, value as string)"
+              @update:model-value="(value) => handleChangeRole(row.original, value as InstanceRole)"
             />
-            <UBadge v-else :color="getRoleBadgeColor(row.original.role)" variant="subtle">
-              {{ row.original.role }}
-            </UBadge>
+            <span v-else class="text-sm">{{ INSTANCE_ROLE_LABELS[row.original.instanceRole] }}</span>
+          </template>
+
+          <template #groups-cell="{ row }">
+            <UserGroupsSelect
+              v-if="isAdmin"
+              :model-value="row.original.groupIds"
+              :groups="groups"
+              deferred
+              size="sm"
+              :aria-label="`Groups of ${row.original.username}`"
+              @update:model-value="(ids) => handleChangeGroups(row.original, ids)"
+            />
+            <span v-else class="block truncate text-sm text-muted" :title="groupsText(row.original)">{{
+              groupsText(row.original) || '—'
+            }}</span>
           </template>
 
           <template #createdAt-cell="{ row }">
@@ -370,68 +445,30 @@ async function handleInviteUser(user: UserDetails) {
             <span class="sr-only">Actions</span>
           </template>
           <template #actions-cell="{ row }">
-            <div class="flex items-center gap-1 justify-end">
-              <UButton
-                v-if="isAdmin && row.original.email && !row.original.oauthProvider"
-                icon="i-lucide-send"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                title="Send invite email"
-                aria-label="Send invite email"
-                :loading="invitingUserId === row.original.id"
-                @click="handleInviteUser(row.original)"
-              />
-              <UButton
-                v-if="isAdmin && row.original.role !== 'administrator'"
-                icon="i-lucide-folder-lock"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                title="Project access"
-                aria-label="Project access"
-                @click="openProjectAccessModal(row.original)"
-              />
-              <UButton
-                v-if="canManageApiKeys(row.original)"
-                icon="i-lucide-key"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                title="Manage API keys"
-                aria-label="Manage API keys"
-                @click="openApiKeysModal(row.original)"
-              />
-              <UButton
-                v-if="isAdmin"
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="sm"
-                title="Delete user"
-                aria-label="Delete user"
-                @click="handleDeleteUser(row.original)"
-              />
-            </div>
+            <UserRowActions
+              :user="row.original"
+              :can-manage="isAdmin"
+              :can-manage-keys="canManageApiKeys(row.original)"
+              :inviting="invitingUserId === row.original.id"
+              @invite="handleInviteUser(row.original)"
+              @project-roles="openRolesModal(row.original)"
+              @api-keys="openApiKeysModal(row.original)"
+              @delete="handleDeleteUser(row.original)"
+            />
           </template>
         </UTable>
-      </TableScroller>
+      </div>
     </SectionCard>
 
     <!-- Empty state -->
     <SectionCard v-else title="Users" :count="0" help="settings.users">
-      <div class="text-center py-12">
-        <div class="flex justify-center mb-4">
-          <UIcon name="i-lucide-users" class="text-4xl text-muted" />
-        </div>
-        <h3 class="text-lg font-semibold mb-2">No users yet</h3>
-        <p class="text-muted mb-4">Create your first user to get started with authentication</p>
+      <EmptyState icon="i-lucide-users" text="No users yet. Create the first one to start using authentication.">
         <UButton v-if="isAdmin" label="Add user" icon="i-lucide-user-plus" @click="isAddUserModalOpen = true" />
-      </div>
+      </EmptyState>
     </SectionCard>
   </div>
 
-  <!-- Add User Modal -->
+  <!-- Add user -->
   <ClientOnly>
     <UModal :open="isAddUserModalOpen" title="Add new user" @update:open="isAddUserModalOpen = $event">
       <template #body>
@@ -461,8 +498,22 @@ async function handleInviteUser(user: UserDetails) {
             <UInput v-model="newUser.email" type="email" placeholder="user@example.com (optional)" class="w-full" />
           </UFormField>
 
-          <UFormField label="Role" name="role" required>
+          <UFormField
+            label="Role"
+            name="role"
+            required
+            description="A Member can do only what the project roles of their own and their groups allow."
+          >
             <USelect v-model="newUser.role" :items="roleOptions" class="w-full" />
+          </UFormField>
+
+          <UFormField label="Groups" name="groupIds" description="Optional — the user holds every role of their groups">
+            <UserGroupsSelect
+              :model-value="newUser.groupIds ?? []"
+              :groups="groups"
+              aria-label="Groups"
+              @update:model-value="newUser.groupIds = $event"
+            />
           </UFormField>
         </UForm>
       </template>
@@ -476,7 +527,7 @@ async function handleInviteUser(user: UserDetails) {
     </UModal>
   </ClientOnly>
 
-  <!-- API Keys Modal — delegates to the shared <ApiKeysManager>. -->
+  <!-- API keys, through the shared <ApiKeysManager> -->
   <ClientOnly>
     <UModal
       :open="isApiKeysModalOpen"
@@ -500,7 +551,7 @@ async function handleInviteUser(user: UserDetails) {
     </UModal>
   </ClientOnly>
 
-  <!-- Delete User Confirmation Modal -->
+  <!-- Delete confirmation -->
   <ClientOnly>
     <UModal :open="isDeleteUserConfirmOpen" title="Delete user" @update:open="isDeleteUserConfirmOpen = $event">
       <template #body>
@@ -517,66 +568,98 @@ async function handleInviteUser(user: UserDetails) {
     </UModal>
   </ClientOnly>
 
-  <!-- Project Access Modal -->
+  <!-- Project roles of one user -->
   <ClientOnly>
     <UModal
-      :open="isProjectAccessModalOpen"
-      :title="`Project access – ${selectedUserForAccess?.username}`"
+      :open="isRolesModalOpen"
+      :title="`Project roles – ${rolesUser?.username}`"
       size="xl"
-      @update:open="isProjectAccessModalOpen = $event"
+      @update:open="isRolesModalOpen = $event"
     >
       <template #title>
         <span class="inline-flex items-center gap-1">
-          Project access – {{ selectedUserForAccess?.username }}
-          <HelpHint topic="project.members" />
+          Project roles – {{ rolesUser?.username }}
+          <HelpHint topic="settings.permissions" />
         </span>
       </template>
       <template #body>
-        <div class="space-y-6">
-          <p class="text-sm text-muted">
-            Control which projects this user can access. Users without any project access will see no projects.
-          </p>
+        <LoadingState v-if="rolesLoading" text="Loading project roles…" />
+        <div v-else class="space-y-5" data-shot="user-project-roles">
+          <UFormField
+            label="All projects"
+            description="Held on every project, including ones created later"
+            name="allProjects"
+          >
+            <USelect v-model="allProjectsChoice" :items="allProjectsItems" class="w-full sm:w-56" />
+          </UFormField>
 
-          <!-- Access type radio group -->
-          <URadioGroup
-            :model-value="projectAccessGlobal ? 'global' : 'specific'"
-            :items="[
-              { value: 'global', label: 'Global access', description: 'Access to all projects (current and future)' },
-              { value: 'specific', label: 'Specific projects', description: 'Access only to selected projects' },
-            ]"
-            @update:model-value="projectAccessGlobal = $event === 'global'"
-          />
-
-          <template v-if="!projectAccessGlobal">
-            <UDivider />
-            <UFormField
-              label="Specific projects"
-              :description="`Select from ${allProjectsList.length > 0 ? allProjectsList.length : '0'} available projects`"
-            >
-              <USelectMenu
-                v-model="projectAccessProjects"
-                :items="allProjectsList"
-                by="id"
-                multiple
-                searchable
-                class="w-full"
-                placeholder="Search and select projects…"
+          <div class="space-y-2">
+            <p class="text-sm font-semibold text-highlighted">Projects</p>
+            <p v-if="projectRoles.length === 0" class="text-sm text-muted">No role on a single project.</p>
+            <ul v-else class="divide-y divide-default">
+              <li
+                v-for="entry in projectRoles"
+                :key="entry.projectId"
+                class="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between"
               >
-                <template #default="{ modelValue: selected }">
-                  <span v-if="(selected as any[]).length === 0" class="text-[var(--ui-text-muted)]"
-                    >Select projects…</span
-                  >
-                  <span v-else>{{ (selected as any[]).length }} project(s) selected</span>
-                </template>
-              </USelectMenu>
-            </UFormField>
-          </template>
+                <span class="min-w-0 break-words text-sm text-highlighted">{{ projectName(entry.projectId) }}</span>
+                <div class="flex items-center gap-1">
+                  <USelect
+                    v-model="entry.role"
+                    :items="roleItems"
+                    class="w-full sm:w-44"
+                    :aria-label="`Role on ${projectName(entry.projectId)}`"
+                  />
+                  <UButton
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="ghost"
+                    :title="`Remove the role on ${projectName(entry.projectId)}`"
+                    :aria-label="`Remove the role on ${projectName(entry.projectId)}`"
+                    @click="removeProjectRole(entry.projectId)"
+                  />
+                </div>
+              </li>
+            </ul>
+            <USelectMenu
+              v-if="projectsToAdd.length > 0"
+              :model-value="undefined"
+              :items="projectsToAdd"
+              value-key="value"
+              placeholder="Add a project…"
+              :search-input="{ placeholder: 'Filter projects…' }"
+              class="w-full sm:w-64"
+              aria-label="Add a project"
+              @update:model-value="addProjectRole"
+            />
+          </div>
+
+          <p class="text-xs text-muted">
+            <template v-if="inheritedGroups.length">
+              Also holds the roles of {{ inheritedGroups.map((g) => g.name).join(', ') }}, set on the
+            </template>
+            <template v-else>Roles given to a group apply to its members; set them on the</template>
+            <NuxtLink
+              to="/settings/permissions"
+              class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              >permission grid</NuxtLink
+            >
+            or in a project’s members.
+          </p>
         </div>
       </template>
 
       <template #footer>
-        <UButton color="neutral" variant="ghost" label="Cancel" @click="isProjectAccessModalOpen = false" />
-        <UButton label="Save" icon="i-lucide-check" @click="handleSaveProjectAccess" />
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" label="Cancel" @click="isRolesModalOpen = false" />
+          <UButton
+            label="Save"
+            icon="i-lucide-check"
+            :loading="rolesSaving"
+            :disabled="rolesLoading"
+            @click="handleSaveProjectRoles"
+          />
+        </div>
       </template>
     </UModal>
   </ClientOnly>

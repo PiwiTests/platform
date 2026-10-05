@@ -1,118 +1,301 @@
 <script setup lang="ts">
 /**
- * Project settings → Members (administrators): which reporters and users are
- * assigned this project. Administrators always have access, and a user with
- * global access keeps it until that assignment is removed in Settings → Users.
+ * Project settings → Members (`project:members` holders): every group and user
+ * holding a role on this project, with where it comes from. A role granted on
+ * this project is edited here (changed or removed, and new members added),
+ * within the roles the viewer may grant; a role held on all projects, through
+ * a group or as an administrator is shown read-only with its source. Each
+ * change saves at once.
  */
-import type { ProjectMemberEntry, ProjectMembersResponse, UserDetails, UsersResponse } from '~~/types/api';
+import { PROJECT_ROLE_LABELS, ProjectRole } from '#shared/permissions';
+import {
+  accessSubjectKey,
+  directProjectMemberEntries,
+  projectAccessUserName,
+  sortProjectAccessGroups,
+  sortProjectAccessUsers,
+  type AccessSubject,
+  type GroupListItem,
+  type GroupsListResponse,
+  type ProjectMembersResponse,
+  type ProjectMembersUpdate,
+  type ProjectMembersUpdateResponse,
+  type ProjectMemberView,
+  type UserSummary,
+  type UsersListResponse,
+} from '#shared/project-access';
 
 const props = defineProps<{ projectId: number }>();
 
 const toast = useToast();
-const members = ref<ProjectMemberEntry[]>([]);
-const allUsers = ref<UserDetails[]>([]);
-const selectedMemberIds = ref<number[]>([]);
+const { refreshDemoAccess } = useAuth();
+const response = ref<ProjectMembersResponse | null>(null);
+const loadError = ref<unknown>(null);
 const loading = ref(true);
 const saving = ref(false);
+const users = ref<UserSummary[]>([]);
+const groups = ref<GroupListItem[]>([]);
+/** Read out by screen readers after each saved change. */
+const announcement = ref('');
 
-const mergedMembers = computed(() => {
-  const memberMap = new Map(members.value.map((m) => [m.id, m]));
-  const result: ProjectMemberEntry[] = [];
-  for (const u of allUsers.value) {
-    if (u.role === 'administrator') continue;
-    const m = memberMap.get(u.id);
-    result.push({ id: u.id, username: u.username, name: u.name ?? null, role: u.role, global: m?.global ?? false });
+const members = computed(() => response.value?.members ?? []);
+const canManage = computed(() => response.value?.canManage ?? false);
+const grantableRoles = computed(() => response.value?.grantableRoles ?? []);
+
+/** One subject, with its role on this project (`direct`) and the roles it holds from elsewhere. */
+interface MemberRow {
+  key: string;
+  subject: AccessSubject;
+  name: string;
+  username: string | null;
+  direct: ProjectRole | null;
+  others: ProjectMemberView[];
+  admin: boolean;
+}
+
+const rows = computed<MemberRow[]>(() => {
+  const byKey = new Map<string, MemberRow>();
+  for (const member of members.value) {
+    const key = accessSubjectKey(member.subject);
+    let row = byKey.get(key);
+    if (!row) {
+      row = {
+        key,
+        subject: member.subject,
+        name: member.name,
+        username: member.username,
+        direct: null,
+        others: [],
+        admin: false,
+      };
+      byKey.set(key, row);
+    }
+    if (member.source === 'direct') row.direct = member.role;
+    else row.others.push(member);
+    if (member.source === 'administrator') row.admin = true;
   }
-  for (const m of members.value) if (m.role === 'administrator') result.push(m);
-  return result;
+  return [...byKey.values()];
 });
 
-const assignedIds = (items: ProjectMemberEntry[]) =>
-  items.filter((m) => m.role !== 'administrator' && !m.global).map((m) => m.id);
+const roleItems = computed(() => projectRoleSelectItems(grantableRoles.value));
 
-const membersChanged = computed(
-  () => JSON.stringify(assignedIds(members.value).sort()) !== JSON.stringify([...selectedMemberIds.value].sort()),
-);
+function canEdit(row: MemberRow): boolean {
+  return canManage.value && row.direct !== null && grantableRoles.value.includes(row.direct);
+}
 
+/** The role a read-only row shows: its own, else the strongest one it holds from elsewhere. */
+function shownRoleOf(row: MemberRow): ProjectRole | null {
+  return row.direct ?? strongestProjectRole(row.others.map((other) => other.role));
+}
+
+function shownRole(row: MemberRow): string {
+  if (row.admin) return 'Administrator';
+  const role = shownRoleOf(row);
+  return role ? PROJECT_ROLE_LABELS[role] : '';
+}
+
+/**
+ * Under the name: the username, then where each role held from elsewhere comes
+ * from ("Maintainer through QA"); the role already shown beside the row only
+ * gets its source ("through QA").
+ */
+function rowMeta(row: MemberRow): string {
+  const parts = [row.subject.type === 'group' ? 'Group' : row.username ? `@${row.username}` : ''];
+  if (!row.admin) {
+    const shown = row.direct === null ? shownRoleOf(row) : null;
+    for (const other of row.others) {
+      const source = projectMemberSourceText(other);
+      parts.push(other.role === shown ? source : `${PROJECT_ROLE_LABELS[other.role]} ${source}`);
+    }
+  }
+  return parts.filter(Boolean).join(' · ');
+}
+
+// ── Loading ─────────────────────────────────────────────────────────────────
 async function load() {
   loading.value = true;
+  loadError.value = null;
   try {
-    const [membersData, usersData] = await Promise.all([
-      $fetch<ProjectMembersResponse>(`/api/projects/${props.projectId}/members`),
-      $fetch<UsersResponse>('/api/users'),
-    ]);
-    members.value = membersData.items;
-    allUsers.value = usersData.items;
-    selectedMemberIds.value = assignedIds(membersData.items);
-  } catch {
-    members.value = [];
-    allUsers.value = [];
-    selectedMemberIds.value = [];
+    response.value = await $fetch<ProjectMembersResponse>(`/api/projects/${props.projectId}/members`);
+    if (response.value.canManage) await loadPickers();
+  } catch (err) {
+    loadError.value = err;
   } finally {
     loading.value = false;
   }
 }
 
-function toggleMemberSelection(userId: number) {
-  const idx = selectedMemberIds.value.indexOf(userId);
-  if (idx >= 0) selectedMemberIds.value.splice(idx, 1);
-  else selectedMemberIds.value.push(userId);
+/** The users and groups the add picker offers; a failure leaves it empty rather than failing the list. */
+async function loadPickers() {
+  const [userList, groupList] = await Promise.all([
+    $fetch<UsersListResponse>('/api/users').catch(() => null),
+    $fetch<GroupsListResponse>('/api/groups').catch(() => null),
+  ]);
+  users.value = sortProjectAccessUsers([...(userList?.items ?? [])]);
+  groups.value = sortProjectAccessGroups(groupList?.groups ?? []);
 }
 
-async function save() {
+watch(() => props.projectId, load, { immediate: true });
+
+// ── Saving: every change replaces the direct roles at once ─────────────────
+async function save(entries: ProjectMembersUpdate['entries'], done: string) {
   saving.value = true;
   try {
-    await $fetch(`/api/projects/${props.projectId}/members`, {
+    const result = await $fetch<ProjectMembersUpdateResponse>(`/api/projects/${props.projectId}/members`, {
       method: 'PUT',
-      body: { userIds: selectedMemberIds.value },
+      body: { entries },
     });
-    toast.add({ title: 'Members updated', color: 'success' });
-    const data = await $fetch<ProjectMembersResponse>(`/api/projects/${props.projectId}/members`);
-    members.value = data.items;
-  } catch (error) {
-    toast.add({ title: 'Update failed', description: errorMessage(error), color: 'error' });
+    if (response.value) response.value = { ...response.value, members: result.members };
+    announcement.value = done;
+    void refreshDemoAccess();
+  } catch (err) {
+    toast.add({ title: 'Members not changed', description: errorMessage(err), color: 'error' });
+    await load();
   } finally {
     saving.value = false;
   }
 }
 
-onMounted(load);
+function setRole(row: MemberRow, role: ProjectRole) {
+  if (role === row.direct) return;
+  const entries = directProjectMemberEntries(members.value).map((entry) =>
+    accessSubjectKey(entry.subject) === row.key ? { ...entry, role } : entry,
+  );
+  void save(entries, `${row.name} is now ${PROJECT_ROLE_LABELS[role]} on this project`);
+}
+
+function remove(row: MemberRow) {
+  const entries = directProjectMemberEntries(members.value).filter(
+    (entry) => accessSubjectKey(entry.subject) !== row.key,
+  );
+  void save(entries, `${row.name} no longer has a role of their own on this project`);
+}
+
+// ── Adding a user or a group ────────────────────────────────────────────────
+const addKey = ref<string | undefined>(undefined);
+const addRole = ref<ProjectRole>(ProjectRole.VIEWER);
+watch(grantableRoles, (roles) => {
+  if (roles.length > 0 && !roles.includes(addRole.value)) addRole.value = roles[0]!;
+});
+
+/** Subjects already holding a role here, and administrators, who need none. */
+const unavailable = computed(
+  () => new Set(rows.value.filter((row) => row.direct !== null || row.admin).map((row) => row.key)),
+);
+
+const addItems = computed(() => {
+  const groupItems = groups.value
+    .map((group) => ({ label: group.name, value: `group:${group.id}`, description: 'Group' }))
+    .filter((item) => !unavailable.value.has(item.value));
+  const userItems = users.value
+    .map((user) => ({
+      label: projectAccessUserName(user),
+      value: `user:${user.id}`,
+      description: user.name ? `@${user.username}` : undefined,
+    }))
+    .filter((item) => !unavailable.value.has(item.value));
+  // Groups first, then users, apart.
+  return [groupItems, userItems].filter((items) => items.length > 0);
+});
+
+function subjectOfKey(key: string): AccessSubject | null {
+  const [type, id] = key.split(':');
+  if ((type !== 'user' && type !== 'group') || !id) return null;
+  return { type, id: Number(id) };
+}
+
+function add() {
+  const subject = addKey.value ? subjectOfKey(addKey.value) : null;
+  if (!subject) return;
+  const item = addItems.value.flat().find((i) => i.value === addKey.value);
+  const name = item?.label ?? '';
+  const entries = [...directProjectMemberEntries(members.value), { subject, role: addRole.value }];
+  addKey.value = undefined;
+  void save(entries, `${name} is now ${PROJECT_ROLE_LABELS[addRole.value]} on this project`);
+}
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-users" title="Members" help="project.members" subtitle="Who can see this project">
+  <SectionCard
+    icon="i-lucide-users"
+    title="Members"
+    help="project.members"
+    subtitle="Who holds a role on this project"
+    data-shot="project-members"
+  >
     <LoadingState v-if="loading" text="Loading members…" />
-    <p v-else-if="mergedMembers.length === 0" class="text-sm text-muted">No users to assign yet.</p>
-    <ul v-else class="divide-y divide-default">
-      <li
-        v-for="member in mergedMembers"
-        :key="member.id"
-        class="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
-      >
-        <div class="min-w-0">
-          <div class="text-sm font-semibold text-highlighted truncate">{{ member.name || member.username }}</div>
-          <div class="text-xs text-muted">
-            @{{ member.username }} · {{ member.role }}<template v-if="member.global"> · global access</template>
-          </div>
-        </div>
-        <UCheckbox
-          v-if="member.role !== 'administrator'"
-          :model-value="selectedMemberIds.includes(member.id)"
-          :disabled="member.global"
-          :aria-label="`${member.name || member.username} can see this project`"
-          :title="member.global ? 'Has global access — remove global assignment first' : ''"
-          @change="toggleMemberSelection(member.id)"
-        />
-        <span v-else class="text-xs text-muted">Always</span>
-      </li>
-    </ul>
-
-    <template #footer>
-      <div class="flex justify-end">
-        <UButton icon="i-lucide-check" :loading="saving" :disabled="!membersChanged" @click="save">
-          Save changes
+    <ErrorState v-else-if="loadError" :text="`Couldn't load the members: ${errorMessage(loadError)}`">
+      <template #action>
+        <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="load()">
+          Retry
         </UButton>
+      </template>
+    </ErrorState>
+
+    <div v-else class="space-y-4">
+      <div v-if="canManage" class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <USelectMenu
+          v-model="addKey"
+          :items="addItems"
+          value-key="value"
+          placeholder="Add a user or a group…"
+          :search-input="{ placeholder: 'Filter users and groups…' }"
+          aria-label="User or group to add"
+          class="w-full sm:w-72"
+        />
+        <USelect v-model="addRole" :items="roleItems" aria-label="Role to give" class="w-full sm:w-44" />
+        <UButton label="Add" icon="i-lucide-plus" :disabled="!addKey || saving" @click="add" />
       </div>
-    </template>
+
+      <p v-if="rows.length === 0" class="text-sm text-muted">Nobody holds a role on this project yet.</p>
+      <ul v-else class="divide-y divide-default">
+        <li
+          v-for="row in rows"
+          :key="row.key"
+          class="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+          :data-member="row.key"
+        >
+          <div class="min-w-0">
+            <p class="text-sm text-highlighted break-words">{{ row.name }}</p>
+            <p v-if="rowMeta(row)" class="text-xs text-muted break-words">{{ rowMeta(row) }}</p>
+          </div>
+
+          <div v-if="canEdit(row)" class="flex items-center gap-1 sm:shrink-0">
+            <USelect
+              :model-value="row.direct ?? undefined"
+              :items="roleItems"
+              size="sm"
+              :disabled="saving"
+              :aria-label="`Role of ${row.name} on this project`"
+              class="w-full sm:w-44"
+              @update:model-value="(value) => setRole(row, value as ProjectRole)"
+            />
+            <UButton
+              icon="i-lucide-x"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :disabled="saving"
+              :title="`Remove the role of ${row.name} on this project`"
+              :aria-label="`Remove ${row.name}`"
+              @click="remove(row)"
+            />
+          </div>
+          <span
+            v-else
+            class="text-sm sm:shrink-0"
+            :class="row.direct ? 'text-highlighted' : 'text-muted'"
+            :title="row.admin ? 'Administrators can do everything on every project' : undefined"
+            >{{ shownRole(row) }}</span
+          >
+        </li>
+      </ul>
+
+      <p class="text-xs text-muted">
+        Roles held on all projects or through a group are set in Settings → Permissions and Groups by an administrator.
+      </p>
+    </div>
+
+    <p class="sr-only" aria-live="polite">{{ announcement }}</p>
   </SectionCard>
 </template>

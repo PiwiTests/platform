@@ -1,18 +1,52 @@
+import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 test.describe.serial('User Management Page Tests', () => {
-  // Clean up test users before running tests to ensure idempotency
-  test.beforeAll(async ({ request }) => {
-    const usersResponse = await request.get('/api/users');
-    const usersData = await usersResponse.json();
+  const GROUP_NAME = 'user-page-group';
+  let projectId: number;
+
+  async function cleanUp(request: APIRequestContext) {
+    const usersData = (await (await request.get('/api/users')).json()) as {
+      items?: { id: number; username: string }[];
+    };
     for (const user of usersData.items || []) {
-      if (['testuser', 'deletetest'].includes(user.username)) {
-        await request.delete(`/api/users/${user.id}`);
-      }
+      if (['testuser', 'deletetest'].includes(user.username)) await request.delete(`/api/users/${user.id}`);
     }
+    const { groups } = (await (await request.get('/api/groups')).json()) as { groups: { id: number; name: string }[] };
+    for (const group of groups) if (group.name === GROUP_NAME) await request.delete(`/api/groups/${group.id}`);
+  }
+
+  // Clean up test users and groups before running tests to ensure idempotency
+  test.beforeAll(async ({ request }) => {
+    await cleanUp(request);
+    expect((await request.post('/api/groups', { data: { name: GROUP_NAME } })).ok()).toBeTruthy();
+    const submit = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.USER_PROJECT_ROLES,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 1,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [],
+      },
+    });
+    expect(submit.ok()).toBeTruthy();
+    projectId = ((await submit.json()) as { projectId: number }).projectId;
   });
+
+  test.afterAll(async ({ request }) => cleanUp(request));
+
+  async function userNamed(request: APIRequestContext, username: string) {
+    const { items } = (await (await request.get('/api/users')).json()) as {
+      items: { id: number; username: string; instanceRole: string; groupIds: number[] }[];
+    };
+    return items.find((u) => u.username === username);
+  }
 
   test('should display user management page', async ({ page }) => {
     await page.goto('/settings/users');
@@ -46,6 +80,11 @@ test.describe.serial('User Management Page Tests', () => {
     await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Display name')).toBeVisible();
     await expect(page.getByLabel('Role', { exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'Groups', exact: true })).toBeVisible();
+
+    // The instance roles are Member and Administrator; the roles of earlier versions are gone.
+    await page.getByLabel('Role', { exact: true }).click();
+    await expect(page.getByRole('option')).toHaveText(['Member', 'Administrator']);
   });
 
   test('should close modal when clicking Cancel', async ({ page }) => {
@@ -63,7 +102,7 @@ test.describe.serial('User Management Page Tests', () => {
     await expect(page.getByRole('heading', { name: 'Add new user' })).not.toBeVisible();
   });
 
-  test('should create a new user', async ({ page }) => {
+  test('should create a new user', async ({ page, request }) => {
     await page.goto('/settings/users');
     await waitForHydration(page);
 
@@ -87,42 +126,73 @@ test.describe.serial('User Management Page Tests', () => {
     await expect(page.getByText('User created', { exact: true })).toBeVisible({ timeout: 5000 });
 
     // Check that user appears in the table
-    await expect(page.getByRole('cell', { name: 'testuser' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Test User @testuser' })).toBeVisible();
+    expect(await userNamed(request, 'testuser')).toMatchObject({ instanceRole: 'administrator', groupIds: [] });
   });
 
   test('admin can change an existing user role from the table', async ({ page, request }) => {
     await page.goto('/settings/users');
     await waitForHydration(page);
 
-    // `testuser` was created as an administrator by the previous test; demote it
-    // to `user` through the inline role selector in the table.
-    const roleSelect = page.getByLabel('Change role for testuser');
+    // `testuser` was created as an administrator by the previous test; make it a
+    // member through the inline role selector in the table.
+    const roleSelect = page.getByRole('combobox', { name: 'Change role for testuser' });
     await expect(roleSelect).toBeVisible();
     await roleSelect.click();
-    await page.getByRole('option', { name: 'User', exact: true }).click();
+    await page.getByRole('option', { name: 'Member', exact: true }).click();
 
     await expect(page.getByText('Role updated', { exact: true })).toBeVisible({ timeout: 5000 });
 
     // The change is persisted server-side.
-    const usersResponse = await request.get('/api/users');
-    const usersData = await usersResponse.json();
-    const updated = (usersData.items || []).find((u: { username: string }) => u.username === 'testuser');
-    expect(updated?.role).toBe('user');
+    await expect.poll(async () => (await userNamed(request, 'testuser'))?.instanceRole).toBe('member');
   });
 
-  test('should display user in table after creation', async ({ page }) => {
+  test("the groups column saves a user's groups", async ({ page, request }) => {
     await page.goto('/settings/users');
     await waitForHydration(page);
 
-    // If there are users, the table should be visible
-    const noUsersText = page.getByText('No users yet');
-    const usersTable = page.getByRole('table');
+    const groupsSelect = page.getByRole('button', { name: 'Groups of testuser' });
+    await groupsSelect.click();
+    await page.getByRole('option', { name: GROUP_NAME }).click();
+    // The pick is saved once the menu closes.
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('Groups updated', { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(groupsSelect).toContainText(GROUP_NAME);
 
-    // Either show empty state or table with users
-    const hasUsers = await usersTable.isVisible().catch(() => false);
-    const isEmpty = await noUsersText.isVisible().catch(() => false);
+    const { groups } = (await (await request.get('/api/groups')).json()) as { groups: { id: number; name: string }[] };
+    const groupId = groups.find((g) => g.name === GROUP_NAME)!.id;
+    await expect.poll(async () => (await userNamed(request, 'testuser'))?.groupIds).toEqual([groupId]);
+  });
 
-    expect(hasUsers || isEmpty).toBe(true);
+  test("Project roles edits a member's roles on all projects and on one project", async ({ page, request }) => {
+    await page.goto('/settings/users');
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Project roles of testuser' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: /Project roles – testuser/ })).toBeVisible();
+    // The groups the user belongs to are named, read-only.
+    await expect(dialog.getByText(`Also holds the roles of ${GROUP_NAME}`)).toBeVisible();
+
+    await dialog.getByLabel('All projects').click();
+    await page.getByRole('option', { name: 'Viewer', exact: true }).click();
+
+    await dialog.getByRole('button', { name: 'Add a project' }).click();
+    await page.getByRole('option', { name: PROJECT.USER_PROJECT_ROLES }).click();
+    const projectRole = dialog.getByRole('combobox', { name: `Role on ${PROJECT.USER_PROJECT_ROLES}` });
+    await expect(projectRole).toHaveText('Viewer');
+    await projectRole.click();
+    await page.getByRole('option', { name: 'Maintainer', exact: true }).click();
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Project roles updated', { exact: true })).toBeVisible({ timeout: 5000 });
+
+    const user = await userNamed(request, 'testuser');
+    expect(await (await request.get(`/api/users/${user!.id}/projects`)).json()).toMatchObject({
+      allProjects: 'viewer',
+      projects: [{ projectId, role: 'maintainer' }],
+      groups: [expect.objectContaining({ name: GROUP_NAME })],
+    });
   });
 
   test('should validate form fields', async ({ page }) => {
@@ -141,42 +211,17 @@ test.describe.serial('User Management Page Tests', () => {
     await expect(page.getByRole('heading', { name: 'Add new user' })).toBeVisible();
   });
 
-  test('should show delete confirmation for users', async ({ page }) => {
+  test('deleting a user asks for confirmation first', async ({ page, request }) => {
     await page.goto('/settings/users');
     await waitForHydration(page);
 
-    // First create a user if none exist
-    const noUsersText = await page
-      .getByText('No users yet')
-      .isVisible()
-      .catch(() => false);
+    await page.getByRole('button', { name: 'Delete testuser' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('Are you sure you want to delete user')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Delete user' }).click();
 
-    if (noUsersText) {
-      // Create a test user first
-      await page.getByRole('button', { name: 'Add user' }).first().click();
-      await expect(page.getByRole('heading', { name: 'Add new user' })).toBeVisible({ timeout: 10000 });
-
-      await page.getByLabel('Username', { exact: true }).fill('deletetest');
-      await page.getByLabel('Password', { exact: true }).fill('password123');
-      await page.getByLabel('Role', { exact: true }).click();
-      await page.getByRole('option', { name: 'User' }).click();
-      await page.getByRole('button', { name: 'Create user' }).click();
-      await expect(page.getByText('User created')).toBeVisible({ timeout: 10000 });
-    }
-
-    // Now check if there's a delete button (trash icon)
-    const deleteButtons = page.getByRole('button').filter({ has: page.locator('[class*="lucide-trash"]') });
-    const hasDeleteButton = (await deleteButtons.count()) > 0;
-
-    if (hasDeleteButton) {
-      // Clicking delete should show confirmation dialog
-      // Note: This requires handling the confirm() dialog in the test
-      page.on('dialog', (dialog) => dialog.accept());
-      await deleteButtons.first().click();
-
-      // Check for success message
-      await expect(page.getByText('User deleted')).toBeVisible({ timeout: 5000 });
-    }
+    await expect(page.getByText('User deleted', { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect.poll(async () => await userNamed(request, 'testuser')).toBeUndefined();
   });
 });
 

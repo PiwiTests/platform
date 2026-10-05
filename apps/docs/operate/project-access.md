@@ -83,7 +83,8 @@ cannot change roles on other projects or on All projects.
 Roles are granted from four places, which all edit the same grants:
 
 - **Settings → Permissions**, the [permission grid](#permission-grid): every group and user against every project.
-- **Settings → Users → Project access**, the action next to a user: their role on All projects and on each project.
+- **Settings → Users → Project roles**, the action next to a user: their role on All projects and on each project,
+  with the groups that add to them.
 - A project's **Settings → Members**: the users and groups with a role on that project. Project admins see it for
   their own projects.
 - **Settings → Groups** for who belongs to each group; its roles are set on the grid or in a project's Members.
