@@ -9,6 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // PIWI_DATABASE_URL is set, so clear it before importing the handler.
 delete process.env.PIWI_DATABASE_URL;
 const { getFlakeProfile, mayHaveFlakeSuspects } = await import('../../shared/handlers/flake-profile');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -55,6 +56,11 @@ beforeAll(async () => {
     opts: { fails: boolean; ageDays: number; branch?: string; probe?: boolean; lab?: boolean },
   ) => {
     const start = NOW.getTime() - opts.ageDays * DAY;
+    const metadata = opts.probe
+      ? { piwiProbe: true }
+      : opts.lab
+        ? { piwiFlakeLab: { experimentId: 'exp-1', armId: 'delay-cart' } }
+        : null;
     runs.push({
       id,
       projectId: 1,
@@ -63,11 +69,8 @@ beforeAll(async () => {
       duration: 600_000,
       branch: opts.branch ?? 'main',
       environment: 'staging',
-      metadata: opts.probe
-        ? { piwiProbe: true }
-        : opts.lab
-          ? { piwiFlakeLab: { experimentId: 'exp-1', armId: 'delay-cart' } }
-          : null,
+      metadata,
+      origin: runOrigin(metadata),
     });
     const created = new Date(start);
     if (opts.fails) {

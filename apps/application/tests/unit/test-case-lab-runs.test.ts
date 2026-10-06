@@ -10,6 +10,7 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { getTestCase, getTestCaseStabilityTrend } = await import('../../shared/handlers/test-cases');
 const { getProjectTestCases } = await import('../../shared/handlers/projects');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 const MINUTE = 60_000;
@@ -31,6 +32,7 @@ beforeAll(async () => {
     status: 'passed',
     startTime: at(minutesAgo),
     metadata,
+    origin: runOrigin(metadata),
   });
   await db
     .insert(schema.testRuns)

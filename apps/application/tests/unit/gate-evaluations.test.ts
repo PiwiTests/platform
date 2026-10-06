@@ -54,6 +54,7 @@ const { recordPrFeedbackPost, readPrFeedbackPost } = await import('../../server/
 const { listOutcomes, readOutcomeCounts } = await import('../../server/utils/outcomes');
 const { setAppSetting } = await import('../../server/utils/app-settings');
 const { getSetupStatus, getCapabilityEvidence } = await import('../../shared/handlers/setup-status');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -85,24 +86,24 @@ interface RunSeed {
 async function insertRun(seed: RunSeed = {}): Promise<number> {
   const id = ++runSeq;
   const branch = seed.branch ?? 'feature/x';
+  const metadata = {
+    scm: {
+      commit: `c${id}`,
+      branch,
+      remoteUrl: seed.repositoryUrl ?? REPO,
+      ...(seed.prNumber != null ? { prNumber: seed.prNumber } : {}),
+    },
+    ...(seed.origin ? { piwiOrigin: { kind: seed.origin } } : {}),
+    ...(seed.incident ? { incident: { rule: 'connection-refused', reason: 'staging refused', host: 'staging' } } : {}),
+  };
   await db.insert(schema.testRuns).values({
     id,
     projectId: 1,
     status: seed.failsIn?.length ? 'failed' : 'passed',
     startTime: seed.startTime ?? new Date(T0 + id * HOUR),
     branch,
-    metadata: {
-      scm: {
-        commit: `c${id}`,
-        branch,
-        remoteUrl: seed.repositoryUrl ?? REPO,
-        ...(seed.prNumber != null ? { prNumber: seed.prNumber } : {}),
-      },
-      ...(seed.origin ? { piwiOrigin: { kind: seed.origin } } : {}),
-      ...(seed.incident
-        ? { incident: { rule: 'connection-refused', reason: 'staging refused', host: 'staging' } }
-        : {}),
-    },
+    metadata,
+    origin: runOrigin(metadata),
   });
   for (const clusterId of seed.failsIn ?? []) {
     await db.insert(schema.testRunsCases).values({

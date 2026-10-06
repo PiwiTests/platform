@@ -12,6 +12,7 @@ const { firstRetryPassAfter, getVerifiedFixes, markingExperiments } =
   await import('../../shared/handlers/flake-verified');
 const { getProjectFlakyTests, getProjectFlakyTestsWithVerified } = await import('../../shared/handlers/projects');
 const { addQuarantine, listQuarantine } = await import('../../shared/handlers/quarantine');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 const HOUR_MS = 3_600_000;
 const T0 = Date.UTC(2026, 8, 1);
@@ -98,6 +99,7 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
       duration: 60_000,
       totalTests: 1,
       metadata,
+      origin: runOrigin(metadata),
     });
     const attempt = (status: string, retries: number) => ({
       testRunId: runId,

@@ -3,6 +3,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { parseReproRequest, reproRequestPatchSchema } from '#shared/desktop-repro';
 import { createReproRequest, getReproRequest, updateReproRequest } from '../../server/utils/desktop-repro';
 import { getProjectLatestRun } from '#shared/handlers/test-runs';
+import { runOrigin } from '#shared/run-eligibility';
 import {
   desktopJobVerdict,
   flakeLabJobReport,
@@ -352,36 +353,38 @@ describe('linking a local run by its origin reference', () => {
     expect(parseRunOriginRef(mine)).toBe(mine);
     expect(mine).not.toBe(theirs);
     const at = (s: number) => new Date(Date.UTC(2026, 9, 3, 10, 0, s));
-    await db.insert(schema.testRuns).values([
-      {
-        id: 10,
-        projectId: 1,
-        status: 'passed',
-        startTime: at(1),
-        metadata: { piwiOrigin: { kind: 'desktop', ref: mine } },
-      },
-      {
-        id: 11,
-        projectId: 1,
-        status: 'failed',
-        startTime: at(2),
-        metadata: { piwiOrigin: { kind: 'desktop', ref: theirs } },
-      },
-      {
-        id: 12,
-        projectId: 1,
-        status: 'failed',
-        startTime: at(3),
-        metadata: { piwiOrigin: { kind: 'reproduce', ref: '7' } },
-      },
-      {
-        id: 13,
-        projectId: 1,
-        status: 'failed',
-        startTime: at(4),
-        metadata: { piwiOrigin: { kind: 'bisect', ref: '7' } },
-      },
-    ]);
+    await db.insert(schema.testRuns).values(
+      [
+        {
+          id: 10,
+          projectId: 1,
+          status: 'passed',
+          startTime: at(1),
+          metadata: { piwiOrigin: { kind: 'desktop', ref: mine } },
+        },
+        {
+          id: 11,
+          projectId: 1,
+          status: 'failed',
+          startTime: at(2),
+          metadata: { piwiOrigin: { kind: 'desktop', ref: theirs } },
+        },
+        {
+          id: 12,
+          projectId: 1,
+          status: 'failed',
+          startTime: at(3),
+          metadata: { piwiOrigin: { kind: 'reproduce', ref: '7' } },
+        },
+        {
+          id: 13,
+          projectId: 1,
+          status: 'failed',
+          startTime: at(4),
+          metadata: { piwiOrigin: { kind: 'bisect', ref: '7' } },
+        },
+      ].map((row) => ({ ...row, origin: runOrigin(row.metadata) })),
+    );
     expect(await getProjectLatestRun(db, 1)).toEqual({ id: 13, status: 'failed' });
     expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: mine })).toEqual({ id: 10, status: 'passed' });
     expect(await getProjectLatestRun(db, 1, { kind: 'reproduce', ref: '7' })).toEqual({ id: 12, status: 'failed' });
