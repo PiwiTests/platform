@@ -920,14 +920,18 @@ export interface TopFlakeSuspect {
  * The top suspect of each listed test of a project, for the flaky list, picked
  * by `topFlakeSuspect` from the test's lab `results` (a reproduced suspect
  * first, one that did not reproduce last). Ids of tests outside the project are dropped; at most
- * {@link TOP_SUSPECTS_MAX_TESTS} are read, a few at a time, each in the
- * summary view.
+ * {@link TOP_SUSPECTS_MAX_TESTS} are read in the summary view, by `profiles` when given (the
+ * server keeps them between runs), else by {@link getFlakeProfileSummaries}.
  */
 export async function getTopFlakeSuspects(
   db: DrizzleDB,
   projectId: number,
   testCaseIds: number[],
-  opts: { now?: Date; results?: ReadonlyMap<number, ReadonlyMap<string, FlakeSuspectResult>> } = {},
+  opts: {
+    now?: Date;
+    results?: ReadonlyMap<number, ReadonlyMap<string, FlakeSuspectResult>>;
+    profiles?: (testCaseIds: number[]) => Promise<FlakeProfile[]>;
+  } = {},
 ): Promise<TopFlakeSuspect[]> {
   const wanted = [...new Set(testCaseIds)].slice(0, TOP_SUSPECTS_MAX_TESTS);
   if (wanted.length === 0) return [];
@@ -938,17 +942,28 @@ export async function getTopFlakeSuspects(
   const ownedIds = new Set(owned.map((r) => r.id));
   const ids = wanted.filter((id) => ownedIds.has(id));
 
-  const out: TopFlakeSuspect[] = [];
+  const profiles = await (opts.profiles?.(ids) ?? getFlakeProfileSummaries(db, ids, { now: opts.now }));
+  return profiles.map((p) => ({
+    testCaseId: p.testCaseId,
+    failures: p.failures,
+    passes: p.passes,
+    suspect: topFlakeSuspect(p.suspects, opts.results?.get(p.testCaseId) ?? new Map()),
+  }));
+}
+
+/** Several tests' profiles in the summary view, a few at a time, in the order asked; unknown tests are left out. */
+export async function getFlakeProfileSummaries(
+  db: DrizzleDB,
+  testCaseIds: number[],
+  opts: { now?: Date } = {},
+): Promise<FlakeProfile[]> {
+  const out: FlakeProfile[] = [];
   const BATCH = 5;
-  for (let i = 0; i < ids.length; i += BATCH) {
+  for (let i = 0; i < testCaseIds.length; i += BATCH) {
     const profiles = await Promise.all(
-      ids.slice(i, i + BATCH).map((id) => getFlakeProfile(db, id, { now: opts.now, summary: true })),
+      testCaseIds.slice(i, i + BATCH).map((id) => getFlakeProfile(db, id, { now: opts.now, summary: true })),
     );
-    for (const p of profiles) {
-      if (!p) continue;
-      const suspect = topFlakeSuspect(p.suspects, opts.results?.get(p.testCaseId) ?? new Map());
-      out.push({ testCaseId: p.testCaseId, failures: p.failures, passes: p.passes, suspect });
-    }
+    for (const p of profiles) if (p) out.push(p);
   }
   return out;
 }
