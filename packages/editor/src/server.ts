@@ -126,6 +126,7 @@ import {
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
   STOP_RECORDING_REQUEST,
+  RUN_ENDED_NOTIFICATION,
   RUN_STATUS_NOTIFICATION,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
@@ -918,6 +919,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           live: c.live ? { ...c.live } : null,
           stream: runWatch.isConnected(c) ? 'live' : 'polling',
           ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
+          ...(c.liveTests.size
+            ? { liveTests: [...c.liveTests].map(([testCaseId, status]) => ({ testCaseId, status })) }
+            : {}),
         };
       }),
   });
@@ -983,6 +987,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       pollRuns();
     },
     notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
+    runEnded: (ended) => void connection.sendNotification(RUN_ENDED_NOTIFICATION, ended),
     ownRunPollMs: options.ownRunPollMs,
     commandEndWaitMs: options.commandEndWaitMs,
   });
@@ -1839,7 +1844,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: 'piwi.openInDashboard',
             arguments: [context.client!.testUrl(found.id)],
           },
-          status: failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status),
+          // The run in progress the service follows, while it runs the test and once it ended it.
+          status:
+            context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status)),
           endLine,
           ...(failure ? { failure } : {}),
         });

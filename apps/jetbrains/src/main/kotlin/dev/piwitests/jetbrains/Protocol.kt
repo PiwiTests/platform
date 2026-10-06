@@ -16,8 +16,8 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
- * `skipped` or `unknown`), shown in the gutter with `title` as its tooltip, `endLine` where its call ends, and
- * `failure` where and why it failed.
+ * `skipped`, `running` while the run in progress runs it, or `unknown`), shown in the gutter with `title` as its
+ * tooltip, `endLine` where its call ends, and `failure` where and why it failed.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -134,13 +134,17 @@ data class LiveRun(
     val own: Boolean = false,
 )
 
+/** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */
+data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
+
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
  * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
  * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
- * event stream is connected or `polling`, and `updatedAt` when the latest run was last read (ISO 8601). The fields
- * after `checkedOut` are null from an older service.
+ * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
+ * tests `live` began or ended until the latest run is read once it ended. The fields after `checkedOut` are null from
+ * an older service.
  */
 data class RunStatus(
     val root: String? = null,
@@ -154,9 +158,30 @@ data class RunStatus(
     val live: LiveRun? = null,
     val stream: String? = null,
     val updatedAt: String? = null,
+    val liveTests: List<LiveTest>? = null,
 )
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
+
+/**
+ * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
+ * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
+ * most five) of the tests it failed again and of those that were not failing before, with their counts.
+ */
+data class RunEnded(
+    val root: String? = null,
+    val runId: Int = 0,
+    val url: String? = null,
+    val passed: Int = 0,
+    val failed: Int = 0,
+    val flaky: Int = 0,
+    val skipped: Int = 0,
+    val fixed: Int = 0,
+    val stillFailing: List<String>? = null,
+    val newFailures: List<String>? = null,
+    val stillFailingCount: Int? = null,
+    val newFailureCount: Int? = null,
+)
 
 /**
  * A failure of the latest run where it shows, its line followed through the edits since the run, or, with `state`

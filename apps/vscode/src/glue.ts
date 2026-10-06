@@ -15,6 +15,7 @@ import type {
   RecordingPlacement,
   RecordingUpdate,
   RunStatus,
+  RunEnded,
   RunStatusResult,
   RunTestsArgs,
   StatusResult,
@@ -478,9 +479,58 @@ export function testResultHover(status: TestLineStatus, title: string, edited = 
     flaky: 'flaky',
     passed: 'passing',
     skipped: 'skipped',
+    running: 'running',
     unknown: 'no recent result',
   }[status];
   return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', title].filter(Boolean).join(' · ');
+}
+
+/** When a run the editor started says what it changed: `piwi.runNotifications`. */
+export type RunNotifications = 'always' | 'failures' | 'never';
+
+/** The actions a run's verdict offers. */
+export const VERDICT_ACTIONS = {
+  failures: 'Open the failures',
+  dashboard: 'Open in dashboard',
+  rerun: 'Re-run failing',
+} as const;
+
+/** Titles as a verdict lists them: the first ones, then how many more. */
+function titleList(titles: string[], count: number): string {
+  const more = count - titles.length;
+  return `(${titles.join(', ')}${more > 0 ? ` and ${more} more` : ''})`;
+}
+
+/**
+ * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
+ * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
+ * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet.
+ */
+export function runVerdict(
+  ended: RunEnded,
+  setting: RunNotifications = 'always',
+): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
+  const still = ended.stillFailingCount ?? ended.stillFailing.length;
+  const added = ended.newFailureCount ?? ended.newFailures.length;
+  const parts: string[] = [];
+  if (ended.fixed || still) {
+    const fixed = `${ended.fixed} of ${ended.fixed + still} CI ${ended.fixed + still === 1 ? 'failure' : 'failures'} fixed`;
+    parts.push(still ? `${fixed}, ${still} still failing ${titleList(ended.stillFailing, still)}` : fixed);
+  }
+  if (added) parts.push(`${plural(added, 'new failure')} ${titleList(ended.newFailures, added)}`);
+  if (!parts.length) {
+    const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
+    if (ended.flaky) counts.push(`${ended.flaky} flaky`);
+    if (ended.skipped) counts.push(`${ended.skipped} skipped`);
+    parts.push(counts.join(', '));
+  }
+  const failing = still + added > 0 || ended.failed > 0;
+  if (setting === 'never' || (setting === 'failures' && !failing)) return null;
+  return {
+    severity: failing ? 'warning' : 'information',
+    text: `Piwi: run #${ended.runId} · ${parts.join(' · ')}`,
+    actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard, ...(failing ? [VERDICT_ACTIONS.rerun] : [])],
+  };
 }
 
 /** Where the service found the instance: the settings come last. */

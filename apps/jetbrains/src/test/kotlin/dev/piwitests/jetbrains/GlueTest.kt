@@ -785,4 +785,61 @@ class GlueTest {
         assertEquals("/w", Glue.contextRootOf(status, "file:///w/tests/a.spec.ts"))
         assertEquals("/w", Glue.contextRootOf(status, "file:///elsewhere/a.spec.ts"))
     }
+
+    private val ended = RunEnded(
+        root = "/w", runId = 124, url = "http://piwi/test-runs/124", passed = 1, failed = 2, fixed = 1,
+        stillFailing = listOf("login.spec.ts › logs in", "checkout.spec.ts › pays"), newFailures = emptyList(),
+        stillFailingCount = 2, newFailureCount = 0,
+    )
+
+    @Test
+    fun `a run's verdict counts the CI failures it fixed and names those still failing, with Re-run Failing`() {
+        assertEquals(
+            Glue.RunVerdict(
+                true,
+                "Run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
+                listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"),
+            ),
+            Glue.runVerdict(ended),
+        )
+    }
+
+    @Test
+    fun `a run's verdict names its new failures, and how many more past the first five`() {
+        val titles = (1..5).map { "a.spec.ts › $it" }
+        val verdict = Glue.runVerdict(
+            ended.copy(fixed = 0, stillFailing = emptyList(), stillFailingCount = 0, newFailures = titles, newFailureCount = 7),
+        )
+        assertEquals("Run #124 · 7 new failures (${titles.joinToString(", ")} and 2 more)", verdict?.text)
+    }
+
+    @Test
+    fun `a run that fails nothing is an information, and one that touched no failure gives its counts`() {
+        val passing = ended.copy(failed = 0, stillFailing = emptyList(), stillFailingCount = 0)
+        assertEquals(
+            Glue.RunVerdict(false, "Run #124 · 1 of 1 CI failure fixed", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.runVerdict(passing),
+        )
+        assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
+        // From an older service, without the counts: the titles count.
+        assertEquals(ended.copy(stillFailingCount = null).let { Glue.runVerdict(it)?.text }, Glue.runVerdict(ended)?.text)
+    }
+
+    @Test
+    fun `the setting keeps a run's verdict quiet`() {
+        val passing = ended.copy(failed = 0, stillFailing = emptyList(), stillFailingCount = 0)
+        assertEquals(null, Glue.runVerdict(passing, "failures"))
+        assertEquals(true, Glue.runVerdict(ended, "failures")?.warning)
+        assertEquals(null, Glue.runVerdict(ended, "never"))
+    }
+
+    @Test
+    fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
+        assertEquals("Piwi: running · passed 4/4", Glue.testResultTooltip("running", "passed 4/4"))
+        val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
+        val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1))))
+        val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
+        assertEquals(Glue.runsInFiles(latest), Glue.runsInFiles(moving))
+        assertEquals(false, Glue.runsInFiles(testing) == Glue.runsInFiles(latest))
+    }
 }

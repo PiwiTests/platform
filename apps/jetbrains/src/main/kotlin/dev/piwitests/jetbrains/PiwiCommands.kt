@@ -22,6 +22,7 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.wm.ToolWindowManager
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Path
 
@@ -117,6 +118,30 @@ object PiwiCommands {
                 notify(project, "Copied. Paste it to your agent.")
             }
         }
+    }
+
+    /**
+     * Say what a run started from the IDE changed, as **Settings → Tools → Piwi** allows, with the failures, the run's
+     * page and **Re-run Failing** one click away.
+     */
+    fun runEnded(project: Project, ended: RunEnded) {
+        val setting = project.service<PiwiProjectService>().settings().runNotifications
+        val verdict = Glue.runVerdict(ended, setting) ?: return
+        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(verdict.text, if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+        for (label in verdict.actions) {
+            notification.addAction(
+                NotificationAction.createSimpleExpiring(label) {
+                    when (label) {
+                        Glue.OPEN_FAILURES -> ToolWindowManager.getInstance(project)
+                            .getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+                        Glue.OPEN_IN_DASHBOARD -> ended.url?.let { BrowserUtil.browse(it) }
+                        Glue.RERUN_FAILING -> rerunFailing(project)
+                    }
+                },
+            )
+        }
+        notification.notify(project)
     }
 
     fun runTests(project: Project, args: RunTestsArgs) {

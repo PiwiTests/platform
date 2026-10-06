@@ -4,6 +4,7 @@ import type {
   DesktopResult,
   FailuresResult,
   LiveRun,
+  RunEnded,
   RunStatusResult,
   StatusResult,
 } from '@piwitests/editor/protocol';
@@ -28,6 +29,7 @@ import {
   relativeTime,
   rerunFailingArgs,
   runsInFiles,
+  runVerdict,
   sourceLabel,
   statusBarView,
   testDecorations,
@@ -213,6 +215,11 @@ describe('statusBarView', () => {
     };
     expect(runsInFiles(moving)).toBe(runsInFiles(latest));
     expect(runsInFiles(run({}))).not.toBe(runsInFiles(latest));
+    // A test of the run in progress that begins or ends is drawn at once.
+    const testing = {
+      contexts: [{ ...moving.contexts[0]!, liveTests: [{ testCaseId: 1, status: 'running' as const }] }],
+    };
+    expect(runsInFiles(testing)).not.toBe(runsInFiles(moving));
   });
 
   test('a running run shows its progress', () => {
@@ -390,6 +397,19 @@ describe('the tests of a file', () => {
         failingUntil: null,
         failingLine: null,
         hover: '**Piwi**: passing · passed 4/4',
+        dashboardUrl: null,
+      },
+    ]);
+  });
+
+  test('a test the run in progress runs shows it, without a tint', () => {
+    expect(testDecorations([{ line: 2, title: 'passed 4/4', status: 'running', endLine: 4 }])).toEqual([
+      {
+        status: 'running',
+        line: 2,
+        failingUntil: null,
+        failingLine: null,
+        hover: '**Piwi**: running · passed 4/4',
         dashboardUrl: null,
       },
     ]);
@@ -968,5 +988,63 @@ describe('the failures view', () => {
     expect(failureRunNote({ ...f, source: 'local', state: 'fixed-locally', runId: 124 })).toBe(
       'fixed locally in run #124',
     );
+  });
+});
+
+describe('the verdict of a run started from the editor', () => {
+  const ended: RunEnded = {
+    root: '/w',
+    runId: 124,
+    url: 'http://piwi/test-runs/124',
+    passed: 1,
+    failed: 2,
+    flaky: 0,
+    skipped: 0,
+    fixed: 1,
+    stillFailing: ['login.spec.ts › logs in', 'checkout.spec.ts › pays'],
+    newFailures: [],
+    stillFailingCount: 2,
+    newFailureCount: 0,
+  };
+
+  test('says how many CI failures it fixed and names those still failing, with Re-run failing', () => {
+    expect(runVerdict(ended)).toEqual({
+      severity: 'warning',
+      text: 'Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)',
+      actions: ['Open the failures', 'Open in dashboard', 'Re-run failing'],
+    });
+  });
+
+  test('names its new failures, and how many more past the first five', () => {
+    const titles = ['a.spec.ts › 1', 'a.spec.ts › 2', 'a.spec.ts › 3', 'a.spec.ts › 4', 'a.spec.ts › 5'];
+    const verdict = runVerdict({
+      ...ended,
+      fixed: 0,
+      stillFailing: [],
+      stillFailingCount: 0,
+      newFailures: titles,
+      newFailureCount: 7,
+    });
+    expect(verdict?.text).toBe(`Piwi: run #124 · 7 new failures (${titles.join(', ')} and 2 more)`);
+  });
+
+  test('a run that fixed everything it ran is an information, without Re-run failing', () => {
+    expect(runVerdict({ ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 })).toEqual({
+      severity: 'information',
+      text: 'Piwi: run #124 · 1 of 1 CI failure fixed',
+      actions: ['Open the failures', 'Open in dashboard'],
+    });
+  });
+
+  test('a run that touched no failure gives its counts', () => {
+    const quiet = { ...ended, fixed: 0, stillFailing: [], stillFailingCount: 0, passed: 4, failed: 0, flaky: 1 };
+    expect(runVerdict(quiet)?.text).toBe('Piwi: run #124 · 4 passed, 0 failed, 1 flaky');
+  });
+
+  test('the setting keeps it quiet: always, only when something fails, or never', () => {
+    const passing = { ...ended, failed: 0, stillFailing: [], stillFailingCount: 0 };
+    expect(runVerdict(passing, 'failures')).toBeNull();
+    expect(runVerdict(ended, 'failures')).not.toBeNull();
+    expect(runVerdict(ended, 'never')).toBeNull();
   });
 });

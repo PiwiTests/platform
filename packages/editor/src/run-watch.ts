@@ -5,14 +5,15 @@
  * A test run the editor starts carries a ref (`PIWI_ORIGIN_REF`), which the service looks for on the instance for two
  * minutes, and in every run the stream announces: the context follows that run wherever it runs and keeps it as its own
  * (`ownRuns`), and so a later run with the same ref, a rerun of the command. A command that ended without its run
- * reaching the instance is said in a notice.
+ * reaching the instance is said in a notice. The tests the live run begins and ends are kept until the latest run is
+ * read once it ended (`liveTests`), and when a run of the editor's own ended and was read, its verdict is said.
  */
 import { randomBytes } from 'node:crypto';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import type { PiwiContext } from './context.js';
-import type { RunDetails } from './piwi-client.js';
-import type { LiveRun, Notice } from './protocol.js';
+import type { BranchFailures, RunDetails } from './piwi-client.js';
+import type { LiveRun, LiveTestStatus, Notice, RunEnded } from './protocol.js';
 import {
   EventStream,
   InstanceStream,
@@ -37,6 +38,10 @@ const COMMAND_END_WAIT_MS = 5_000;
 /** How long the counts of a test's end may take to follow it; without them, how often the run's details are read. */
 const COUNTS_WAIT_MS = 1_000;
 const DETAILS_MS = 5_000;
+/** The titles a verdict names, at most, of the tests still failing and of the new failures. */
+const VERDICT_TITLES = 5;
+/** The order in which a test's results on several Playwright projects make its own: the first one present wins. */
+const LIVE_ORDER: LiveTestStatus[] = ['running', 'failed', 'flaky', 'passed', 'skipped'];
 
 /** A ref for a run the editor starts: `ed-` and 8 random hexadecimal characters. */
 export function newRunRef(): string {
@@ -69,6 +74,61 @@ function liveOf(run: RunDetails, own: boolean): LiveRun {
 
 const streamKey = (connection: PiwiConnection) => `${connection.serverUrl}\n${connection.apiKey ?? ''}`;
 
+/** A test's end as the gutter shows it: a pass after a failed attempt is flaky; null for an outcome it does not show. */
+function endedStatus(data: Record<string, unknown>): LiveTestStatus | null {
+  const retries = typeof data.retries === 'number' ? data.retries : 0;
+  switch (data.status) {
+    case 'passed':
+      return retries > 0 ? 'flaky' : 'passed';
+    case 'failed':
+    case 'timedOut':
+    case 'interrupted':
+      return 'failed';
+    case 'skipped':
+      return 'skipped';
+    default:
+      return null;
+  }
+}
+
+/** A test as a verdict names it: its spec's name, then its title. */
+function verdictTitle(f: { file: string; title: string }): string {
+  return `${f.file.slice(f.file.replace(/\\/g, '/').lastIndexOf('/') + 1)} › ${f.title}`;
+}
+
+/**
+ * What a run changed, from the failures the context read before it ended and after: the tests it passed that failed
+ * before (`resolved` by it), the tests it failed again (failing before in another run, or not new on the instance's
+ * word), and the tests it failed that were not failing before.
+ */
+export function runVerdict(
+  before: BranchFailures | null,
+  after: BranchFailures | null,
+  runId: number,
+): Pick<RunEnded, 'fixed' | 'stillFailing' | 'newFailures' | 'stillFailingCount' | 'newFailureCount'> {
+  const failingBefore = new Set((before?.failures ?? []).filter((f) => f.runId !== runId).map((f) => f.testCaseId));
+  const failingAfter = new Set((after?.failures ?? []).map((f) => f.testCaseId));
+  const fixed = new Set(
+    (after?.resolved ?? [])
+      .filter((r) => r.runId === runId && !failingAfter.has(r.testCaseId))
+      .map((r) => r.testCaseId),
+  );
+  const still = new Map<number, string>();
+  const added = new Map<number, string>();
+  for (const f of after?.failures ?? []) {
+    if (f.runId !== runId) continue;
+    const again = failingBefore.has(f.testCaseId) || f.isNew === false;
+    (again ? still : added).set(f.testCaseId, verdictTitle(f));
+  }
+  return {
+    fixed: fixed.size,
+    stillFailing: [...still.values()].slice(0, VERDICT_TITLES),
+    newFailures: [...added.values()].slice(0, VERDICT_TITLES),
+    stillFailingCount: still.size,
+    newFailureCount: added.size,
+  };
+}
+
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms).unref?.();
@@ -81,6 +141,8 @@ export interface RunWatchOptions {
   changed: () => void;
   /** A sentence for the client to show once. */
   notice: (notice: Notice) => void;
+  /** A run the editor started ended, and the context read its latest run again. */
+  runEnded?: (ended: RunEnded) => void;
   /** The streams' timings. */
   stream?: EventStreamOptions;
   /** How often the instance is asked for the run of a command the editor built. */
@@ -127,6 +189,10 @@ export class RunWatch {
   private readonly watches = new Map<string, RefWatch>();
   private readonly followed = new Map<PiwiContext, Followed>();
   private readonly settling = new Map<PiwiContext, { timer: ReturnType<typeof setTimeout>; ended: Set<number> }>();
+  /** The results of the live run's tests, per test and Playwright project, which make `liveTests`. */
+  private readonly attempts = new Map<PiwiContext, Map<number, Map<string, LiveTestStatus>>>();
+  /** The runs of the editor's own whose verdict was said, by instance. */
+  private readonly told = new Set<string>();
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
   private progressAt = 0;
   private disposed = false;
@@ -157,7 +223,10 @@ export class RunWatch {
     }
     // A context that reads another instance or project follows none of the runs of the one before.
     for (const [context, followed] of this.followed) {
-      if (context.live?.runId !== followed.runId) this.unfollow(context);
+      if (context.live?.runId !== followed.runId) {
+        this.unfollow(context);
+        this.clearTests(context);
+      }
     }
   }
 
@@ -274,10 +343,11 @@ export class RunWatch {
     return false;
   }
 
-  /** The context's live run ended: the context follows none. */
+  /** The context's live run ended: the context follows none, and its tests show the latest run's results. */
   end(context: PiwiContext): void {
     context.live = null;
     this.unfollow(context);
+    this.clearTests(context);
   }
 
   dispose(): void {
@@ -354,6 +424,7 @@ export class RunWatch {
 
   private followStream(context: PiwiContext, runId: number): void {
     this.unfollow(context);
+    this.clearTests(context);
     const client = context.client;
     if (!client) return;
     this.followed.set(context, {
@@ -389,6 +460,7 @@ export class RunWatch {
     if (!context.live || context.live.runId !== runId || followed?.runId !== runId) return;
     const status = typeof event.data.status === 'string' ? event.data.status : null;
     const counts = countsOf(event.data);
+    if (event.type === 'test-begin' || event.type === 'test-completed') void this.testEvent(context, runId, event);
     if (counts) {
       if (followed.countsTimer) clearTimeout(followed.countsTimer);
       followed.countsTimer = null;
@@ -403,6 +475,36 @@ export class RunWatch {
       this.settle(context, runId);
     }
     this.progress();
+  }
+
+  /**
+   * A test of the live run began (`running`) or ended (its result), on one Playwright project: the test is named by
+   * its id, or by its title in its spec, found in the catalog. A suite's hooks name no test.
+   */
+  private async testEvent(context: PiwiContext, runId: number, event: RunEvent): Promise<void> {
+    const status = event.type === 'test-begin' ? 'running' : endedStatus(event.data);
+    const { testCaseId, title, filePath, browser } = event.data;
+    if (!status || filePath === 'hooks') return;
+    let id = typeof testCaseId === 'number' ? testCaseId : null;
+    if (id === null && typeof title === 'string' && typeof filePath === 'string') {
+      id = (await context.casesOf(filePath)).find((c) => c.title === title)?.id ?? null;
+    }
+    if (id === null || context.live?.runId !== runId || this.followed.get(context)?.runId !== runId) return;
+    const tests = this.attempts.get(context) ?? this.attempts.set(context, new Map()).get(context)!;
+    const projects = tests.get(id) ?? tests.set(id, new Map()).get(id)!;
+    projects.set(typeof browser === 'string' ? browser : '', status);
+    const states = new Set(projects.values());
+    context.liveTests = new Map(context.liveTests).set(
+      id,
+      LIVE_ORDER.find((s) => states.has(s))!,
+    );
+    this.progress();
+  }
+
+  /** The context's tests show the latest run's results again. */
+  private clearTests(context: PiwiContext): void {
+    this.attempts.delete(context);
+    if (context.liveTests.size) context.liveTests = new Map();
   }
 
   /** The counts after a test's end, from the run's details when no event brings them, at most every 5 s. */
@@ -446,13 +548,40 @@ export class RunWatch {
     if (runId !== undefined) ended.add(runId);
     const timer = setTimeout(async () => {
       this.settling.delete(context);
+      const before = context.failures;
       await context.refreshRun();
       if (this.disposed) return;
       if (context.live && ended.has(context.live.runId)) this.end(context);
       this.options.changed();
+      for (const id of ended) if (context.ownRuns.has(id)) void this.tell(context, id, before);
     }, SETTLE_MS);
     timer.unref?.();
     this.settling.set(context, { timer, ended });
+  }
+
+  /** Say what a run of the editor's own changed, once: its counts, and the failures read before and after it ended. */
+  private async tell(context: PiwiContext, runId: number, before: BranchFailures | null): Promise<void> {
+    const client = context.client;
+    const runEnded = this.options.runEnded;
+    if (!client || !runEnded) return;
+    const key = `${client.connection.serverUrl}\n${runId}`;
+    if (this.told.has(key)) return;
+    this.told.add(key);
+    const run = await client.runDetails(runId).catch(() => null);
+    if (!run || this.disposed || ACTIVE.has(run.status)) {
+      this.told.delete(key);
+      return;
+    }
+    runEnded({
+      root: context.root,
+      runId,
+      url: client.runUrl(runId),
+      passed: run.passedTests,
+      failed: run.failedTests,
+      flaky: run.flakyTests ?? 0,
+      skipped: run.skippedTests,
+      ...runVerdict(before, context.failures, runId),
+    });
   }
 
   private lookLater(w: RefWatch): void {

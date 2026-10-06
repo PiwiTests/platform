@@ -14,8 +14,8 @@ clients stay thin and both editors give the same answers.
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, the `piwi/setCredentials`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
-  `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/statusChanged`, `piwi/notice`, `piwi/desktopJobChanged` and
-  `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
+  `piwi/desktopJobChanged` and `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
@@ -64,7 +64,15 @@ clients stay thin and both editors give the same answers.
   and `updatedAt` in `piwi/runStatus`). A run in progress on the context's branch, or the editor's own wherever it
   runs, is `live` in `piwi/runStatus`, counted through its own stream (`GET /api/test-runs/:id/stream`), with at most
   one notification every 300 ms; it goes back to null in the notification that brings the failures read once it
-  ended. `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+  ended. The tests its stream begins and ends (`test-begin`, named by its title in its spec through the catalog, and
+  `test-completed`, by its id) are `PiwiContext.liveTests` until then: `running`, then their result (a pass after a
+  failed attempt is flaky; a test on several projects shows the first of running, failed, flaky, passed, skipped),
+  which `piwi/fileSummary` gives their line as `status` and `piwi/runStatus` as `liveTests`, so the clients draw the
+  files again. Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what
+  it changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after): its counts, the tests
+  failing before that it passed (`fixed`), failed again (`stillFailing`: failing before in another run, or not new on
+  the instance's word) or failed new (`newFailures`). `piwi/refreshRun` reads the runs alone, not the indexes
+  `piwi/refresh` reads.
 - The editor's own run: `piwi/runArgs` and `piwi/runSelection` give each command a ref (`ed-` and 8 hex characters),
   in its environment as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor` and in `RunCommand.ref`; the Flake Lab lines
   and the fix plan's verification carry `PIWI_ORIGIN=editor` alone. The service looks for the run carrying it

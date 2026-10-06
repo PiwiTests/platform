@@ -429,6 +429,21 @@
           "type": "string",
           "default": "",
           "description": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder."
+        },
+        "piwi.runNotifications": {
+          "type": "string",
+          "enum": [
+            "always",
+            "failures",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Say what every run started from the editor changed, once it ends.",
+            "Only when the run failed a test.",
+            "Never: the status bar, the gutter and the failures view still show it."
+          ],
+          "default": "always",
+          "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
         }
       }
     },

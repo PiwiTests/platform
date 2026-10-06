@@ -153,6 +153,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRecordings>().changed(update)
     }
 
+    /** A run the editor started ended: what it changed, as a balloon. */
+    @JsonNotification("piwi/runEnded")
+    fun runEnded(ended: RunEnded) {
+        PiwiCommands.runEnded(project, ended)
+    }
+
     /** A sentence on a run the editor started, such as one that never reached the instance: a balloon, once. */
     @JsonNotification("piwi/notice")
     fun notice(notice: NoticeParams) {

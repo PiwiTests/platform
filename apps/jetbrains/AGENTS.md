@@ -28,8 +28,9 @@ the service through the platform's LSP API with the project's Node.js interprete
   latest result from `piwi/fileSummary`: a gutter icon, the details as its tooltip, the `PIWI_FAILING_TEST`
   background over a failing test, and `PIWI_FAILING_LINE` on the line it failed at, with why as the tooltip; the test's
   background goes around that line, since two backgrounds on a line have no set order (`PiwiColorSettingsPage.kt`,
-  defaults in `resources/colorSchemes/`). Code Vision skips those lines, and the daemon restarts when the run as the
-  files show it changes (`Glue.runsInFiles`), not when only the run in progress moves.
+  defaults in `resources/colorSchemes/`). A test the run in progress runs has `AllIcons.RunConfigurations.TestState.Run`,
+  then that run's result. Code Vision skips those lines, and the daemon restarts when the run as the files show it
+  changes (`Glue.runsInFiles`, which keeps the run's `liveTests`), not when only the run in progress moves.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus` (with the run in
   progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only) with
   the connection from `piwi/status` and the run (`Glue.runHeader`), and the actions under **Tools → Piwi**.
@@ -55,7 +56,9 @@ the service through the platform's LSP API with the project's Node.js interprete
   if it runs and starts it again with the same environment. For a test run (`RunCommand.ref`), a `ProcessListener`
   sends `piwi/commandEnded` with the exit code when the process ends; a rerun keeps the ref, by which the service
   recognizes it as the editor's own through the instance's event stream. A `piwi/notice` is a balloon
-  (`PiwiCommands.notify`).
+  (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
+  Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as `PiwiSettings.runNotifications`
+  allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in `.idea/piwi.xml`).
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those

@@ -33,6 +33,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `piwi.stopFollowingEditor`, kept as `piwi.followEditor`) reveals the active file's first failure; the welcome
   content follows the `piwi.failuresView` context key. **Re-run the failing tests** (`piwi.rerunFailing`) runs
   `rerunFailingArgs`. The view's `getChildren` is in the API `activate` returns (`failureChildren`).
+- `piwi/runEnded` is a notification (`runVerdict` in `src/glue.ts`): a warning with **Re-run failing** when something
+  fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as
+  the `piwi.runNotifications` setting allows (`always`, `failures`, `never`). A test the run in progress runs has the
+  `running` gutter icon (`media/test-running.svg`), then that run's result; `runsInFiles` keeps the run's `liveTests`,
+  so the files are drawn again as its tests begin and end.
 - The status bar item (`statusBarView` in `src/glue.ts`): a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
   item's icon spinning meanwhile: `refreshingText`), and **Piwi: Connect** while not connected. Its tooltip is a
   trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,

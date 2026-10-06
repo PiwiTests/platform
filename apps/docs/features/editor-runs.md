@@ -43,6 +43,17 @@ config?` VS Code learns that a command ended through shell integration (VS Code 
 a terminal of its own; without it, the runs of a folder share one terminal, the run is still found and followed, and a
 run that never arrived goes unmentioned.
 
+## When your run ends
+
+Once a run you started from the editor ends and the editor has read it, a notification (a balloon in a JetBrains IDE)
+says what it changed: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in,
+checkout.spec.ts › pays)`, then the tests it failed that were not failing before. It offers **Open the failures**,
+**Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
+Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
+
+While the run executes, the gutter follows it: a test shows as running when it begins, then its result as soon as it
+ends, until the run is read and the gutter shows the latest results again.
+
 ## Failures follow your edits
 
 A run reports the line a test failed at in the files it ran. The editor reads those files as the run saw them and

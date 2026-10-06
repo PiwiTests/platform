@@ -4,7 +4,7 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
 
 - **CI failures in the Problems panel.** The failures of the latest run on the checked-out branch, at their failing
   line, with one line on why each failed. Your own runs since are laid over it within a second of their end: a test
-  you fixed and re-ran leaves the panel, and one your run broke joins it.
+  you fixed and re-ran leaves the panel, one your run broke joins it, and a notification says what your run changed.
 - **The failures view.** The Piwi panel's **Failures** view lists them as a tree under the run, grouped by spec,
   failure cluster or owner, with your runs since; each test runs again, opens its trace or its page in one click, and
   **Re-run the failing tests** runs them all.

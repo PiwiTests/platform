@@ -43,8 +43,11 @@ export interface SummaryLine {
   failure?: TestFailure;
 }
 
-/** A test's latest result: `failed` when it failed in the latest run the service reads. */
-export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
+/**
+ * A test's latest result: `failed` when it failed in the latest run the service reads; `running` while the run in
+ * progress the service follows runs it, and that run's result as soon as it ends the test.
+ */
+export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'running' | 'unknown';
 
 /**
  * Where and why a test failed. The lines above `line` (the reason, the screenshot, the trace) are
@@ -298,6 +301,19 @@ export interface RunStatus {
   stream?: 'live' | 'polling';
   /** When the latest run was last read (ISO 8601); absent before the first read. */
   updatedAt?: string;
+  /**
+   * The tests `live` began or ended, as its stream says, until the latest run is read once it ended; absent while it
+   * has none, and from an older service.
+   */
+  liveTests?: LiveTest[];
+}
+
+/** A test of the run in progress: `running` once it began, then its result. */
+export type LiveTestStatus = 'running' | 'passed' | 'failed' | 'flaky' | 'skipped';
+
+export interface LiveTest {
+  testCaseId: number;
+  status: LiveTestStatus;
 }
 
 /** A run in progress, as its events count it. */
@@ -348,6 +364,30 @@ export interface CommandEndedParams {
 }
 
 export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
+
+/**
+ * `piwi/runEnded` (notification, server to client): a run the editor started ended, and the latest run was read again
+ * with it. `fixed` counts the tests failing before it that it passed; `stillFailing` names the tests failing before it
+ * that it failed again, `newFailures` those it failed that were not failing before, each as `login.spec.ts › logs in`,
+ * at most five, with their counts in `stillFailingCount` and `newFailureCount`.
+ */
+export interface RunEnded {
+  root: string;
+  runId: number;
+  /** The run's page in the dashboard. */
+  url: string;
+  passed: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  fixed: number;
+  stillFailing: string[];
+  newFailures: string[];
+  stillFailingCount: number;
+  newFailureCount: number;
+}
+
+export const RUN_ENDED_NOTIFICATION = 'piwi/runEnded';
 
 /** `piwi/notice` (notification, server to client): a sentence for the client to show once, about the context at `root`. */
 export interface Notice {

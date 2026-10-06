@@ -453,6 +453,7 @@ object Glue {
             "flaky" -> "flaky"
             "passed" -> "passing"
             "skipped" -> "skipped"
+            "running" -> "running"
             else -> "no recent result"
         }
         return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
@@ -468,6 +469,55 @@ object Glue {
         val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escape(it)}</pre>" } ?: ""
         val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
         return "<html><b>$title</b><br>${escape(why)}$details</html>"
+    }
+
+    /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
+    val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
+
+    const val OPEN_FAILURES = "Open the Failures"
+    const val OPEN_IN_DASHBOARD = "Open in Dashboard"
+    const val RERUN_FAILING = "Re-run Failing"
+
+    /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
+    data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
+
+    private fun titleList(titles: List<String>, count: Int): String {
+        val more = count - titles.size
+        return "(${titles.joinToString(", ")}${if (more > 0) " and $more more" else ""})"
+    }
+
+    /**
+     * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
+     * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
+     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet.
+     */
+    fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
+        val stillTitles = ended.stillFailing.orEmpty()
+        val newTitles = ended.newFailures.orEmpty()
+        val still = ended.stillFailingCount ?: stillTitles.size
+        val added = ended.newFailureCount ?: newTitles.size
+        val parts = mutableListOf<String>()
+        if (ended.fixed > 0 || still > 0) {
+            val total = ended.fixed + still
+            val fixed = "${ended.fixed} of $total CI ${if (total == 1) "failure" else "failures"} fixed"
+            parts += if (still > 0) "$fixed, $still still failing ${titleList(stillTitles, still)}" else fixed
+        }
+        if (added > 0) parts += "${plural(added, "new failure")} ${titleList(newTitles, added)}"
+        if (parts.isEmpty()) {
+            parts += listOfNotNull(
+                "${ended.passed} passed",
+                "${ended.failed} failed",
+                if (ended.flaky > 0) "${ended.flaky} flaky" else null,
+                if (ended.skipped > 0) "${ended.skipped} skipped" else null,
+            ).joinToString(", ")
+        }
+        val failing = still + added > 0 || ended.failed > 0
+        if (setting == "never" || (setting == "failures" && !failing)) return null
+        return RunVerdict(
+            failing,
+            "Run #${ended.runId} · ${parts.joinToString(" · ")}",
+            listOfNotNull(OPEN_FAILURES, OPEN_IN_DASHBOARD, if (failing) RERUN_FAILING else null),
+        )
     }
 
     /** Where the service found the instance, in the words of the settings page. */

@@ -27,7 +27,7 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
-import type { ConnectionSource, EditorCredentials, LiveRun } from './protocol.js';
+import type { ConnectionSource, EditorCredentials, LiveRun, LiveTestStatus } from './protocol.js';
 import {
   committedText,
   committedTextAt,
@@ -260,6 +260,11 @@ export class PiwiContext {
   runReadAt: number | null = null;
   /** The run in progress the context follows: the editor's own, else one on its branch; null while none runs. */
   live: LiveRun | null = null;
+  /**
+   * The tests of `live` that began or ended, by test case id, until the latest run is read once it ended: what the
+   * gutter shows over the latest run's results meanwhile.
+   */
+  liveTests = new Map<number, LiveTestStatus>();
   /** The runs the editor started on this instance (`piwi/runArgs`, `piwi/runSelection`), for the service's life. */
   readonly ownRuns = new Set<number>();
   /**
@@ -405,6 +410,7 @@ export class PiwiContext {
     this.failures = null;
     this.runReadAt = null;
     this.live = null;
+    this.liveTests = new Map();
     this.ownRuns.clear();
     this.failureAnchors.clear();
     this.commitTexts.clear();

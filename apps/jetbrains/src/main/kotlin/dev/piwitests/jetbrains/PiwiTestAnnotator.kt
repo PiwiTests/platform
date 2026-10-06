@@ -20,7 +20,8 @@ import javax.swing.Icon
  * Each test's latest result on the test itself (`piwi/fileSummary`): an icon in the gutter, its
  * details as the tooltip and a click opening it in the dashboard, a background over a failing
  * test, and a stronger one on the line it failed at, with why as the tooltip, and whether that
- * line changed since the run. The summary is fetched outside the read action.
+ * line changed since the run. While a run the service follows runs a test, the icon says so, then gives that run's
+ * result. The summary is fetched outside the read action.
  */
 class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>() {
     class Target(val project: Project, val uri: String)
@@ -85,6 +86,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
             "flaky" -> AllIcons.General.Warning
             "passed" -> AllIcons.RunConfigurations.TestPassed
             "skipped" -> AllIcons.RunConfigurations.TestIgnored
+            "running" -> AllIcons.RunConfigurations.TestState.Run
             else -> AllIcons.RunConfigurations.TestNotRan
         }
 

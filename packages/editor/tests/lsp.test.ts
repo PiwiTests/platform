@@ -30,6 +30,7 @@ import type {
   RecordingUpdate,
   RenderStepsResult,
   RunCommand,
+  RunEnded,
   RunStatusResult,
   ScreenshotResult,
   StatusResult,
@@ -1497,6 +1498,7 @@ describe('runs as they happen', () => {
   let stopRuns: () => void;
   const statuses: RunStatusResult[] = [];
   const notices: Notice[] = [];
+  const verdicts: RunEnded[] = [];
   const published = new Map<string, Array<{ message: string; code?: string }>>();
 
   beforeAll(async () => {
@@ -1521,6 +1523,9 @@ describe('runs as they happen', () => {
     });
     runsClient.onNotification('piwi/notice', (n: Notice) => {
       notices.push(n);
+    });
+    runsClient.onNotification('piwi/runEnded', (v: RunEnded) => {
+      verdicts.push(v);
     });
     runsClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
       published.set(p.uri, p.diagnostics);
@@ -1738,6 +1743,144 @@ describe('runs as they happen', () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect([refLookups.get(reached.ref!), refLookups.get(lost.ref!)]).toEqual(asked);
     expect(asked[1]).toBeGreaterThan(0);
+  });
+
+  /** A test of `pays`'s spec failing in run `runId`, laid over run #41. */
+  const paysFailure = (executionId: number, testCaseId: number, title: string, runId: number, isNew: boolean) => ({
+    executionId,
+    testCaseId,
+    clusterId: null,
+    title,
+    file: 'tests/checkout.spec.ts',
+    line: 3,
+    status: 'failed',
+    headline: 'Failed',
+    location: null,
+    message: null,
+    frames: [],
+    traces: [],
+    screenshot: null,
+    source: runId === 41 ? 'baseline' : 'overlay',
+    runId,
+    browserName: 'chromium',
+    isNew,
+  });
+
+  test('the tests of the editor’s own run show as running, then with their result, until the run is read', async () => {
+    const command = await runTests();
+    const startTime = '2026-09-27T14:00:00.000Z';
+    runDetails.set(60, editorRun(60, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 60, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 60));
+    await waitFor(() => (runStreams.get(60)?.size ? true : undefined));
+    const testLine = async () => {
+      const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+        uri: uri('tests/checkout.spec.ts'),
+      })) as FileSummary;
+      return summary.lines.find((l) => l.status !== undefined);
+    };
+
+    // A test begins, named by its title in its spec.
+    const before = statuses.length;
+    pushRunEvent(60, 'test-begin', { title: 'pays', filePath: 'tests/checkout.spec.ts', browser: 'chromium' });
+    const began = await waitFor(
+      () => statuses.slice(before).find((s) => s.contexts[0]?.liveTests?.length)?.contexts[0],
+    );
+    expect(began.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
+    expect(await testLine()).toMatchObject({ line: 2, status: 'running' });
+
+    // It passes on its second attempt: flaky.
+    pushRunEvent(60, 'test-completed', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+      retries: 1,
+      browser: 'chromium',
+    });
+    await waitFor(() =>
+      statuses[statuses.length - 1]?.contexts[0]?.liveTests?.[0]?.status === 'flaky' ? true : undefined,
+    );
+    expect(await testLine()).toMatchObject({ status: 'flaky' });
+
+    // The run ends and is read: the test shows the latest run's result again.
+    runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 2 });
+    const seen = statuses.length;
+    pushRunEvent(60, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
+    expect(ended.contexts[0]!.liveTests).toBeUndefined();
+    expect((await testLine())?.status).not.toBe('flaky');
+  });
+
+  test('a run started here says what it changed once it ended and was read', async () => {
+    // Before it: run #41 fails `removes a row` and `pays`.
+    runsLaidOver = {
+      run: { ...MAIN_RUN, origin: 'ci' },
+      overlays: [],
+      failures: [ROW_FAILURE, paysFailure(960, 1, 'pays', 41, false)],
+      resolved: [],
+    };
+    await runsClient.sendRequest('piwi/refreshRun');
+    const command = await runTests();
+    const startTime = '2026-09-27T15:00:00.000Z';
+    runDetails.set(61, editorRun(61, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 61, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 61));
+
+    // It passes `removes a row`, fails `pays` again, and fails `pays by card`, which passed in run #41.
+    runDetails.set(61, { ...runDetails.get(61), status: 'failed', passedTests: 1, failedTests: 2 });
+    runsLaidOver = {
+      run: { ...MAIN_RUN, origin: 'ci' },
+      overlays: [
+        {
+          id: 61,
+          status: 'failed',
+          origin: 'editor',
+          isFullRun: false,
+          startTime,
+          commit: null,
+          totalTests: 3,
+          passedTests: 1,
+          failedTests: 2,
+          flakyTests: 0,
+          skippedTests: 0,
+        },
+      ],
+      failures: [paysFailure(1061, 1, 'pays', 61, false), paysFailure(1062, 2, 'pays by card', 61, true)],
+      resolved: [
+        {
+          testCaseId: 3,
+          title: 'removes a row',
+          file: 'tests/rows.spec.ts',
+          line: 4,
+          browserName: 'chromium',
+          runId: 61,
+          executionId: 1063,
+          baselineExecutionId: 900,
+        },
+      ],
+    };
+    pushInstanceEvent({ type: 'run-finished', runId: 61, projectId: 7, status: 'failed' });
+    const verdict = await waitFor(() => verdicts.find((v) => v.runId === 61));
+    expect(verdict).toEqual({
+      root: dir,
+      runId: 61,
+      url: `${url}/test-runs/61`,
+      passed: 1,
+      failed: 2,
+      flaky: 0,
+      skipped: 0,
+      fixed: 1,
+      stillFailing: ['checkout.spec.ts › pays'],
+      newFailures: ['checkout.spec.ts › pays by card'],
+      stillFailingCount: 1,
+      newFailureCount: 1,
+    });
+    // Said once, whatever else reads the run again.
+    await runsClient.sendRequest('piwi/refreshRun');
+    pushInstanceEvent({ type: 'run-finished', runId: 61, projectId: 7, status: 'failed' });
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(verdicts.filter((v) => v.runId === 61)).toHaveLength(1);
   });
 
   test('piwi/refreshRun reads the latest run again and answers the status', async () => {

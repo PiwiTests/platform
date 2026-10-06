@@ -24,6 +24,7 @@ import {
   FAILURES_NOTIFICATION,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
+  RUN_ENDED_NOTIFICATION,
   SHARE_DESKTOP_JOB_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
@@ -36,6 +37,7 @@ import {
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RenderStepsParams,
+  type RunEnded,
   type ShareDesktopJobResult,
 } from '@piwitests/editor/protocol';
 import {
@@ -99,6 +101,9 @@ import {
   refreshingText,
   rerunFailingArgs,
   runsInFiles,
+  runVerdict,
+  VERDICT_ACTIONS,
+  type RunNotifications,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
   statusBarView,
@@ -214,7 +219,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // Each test's latest result on the test: a gutter icon with a hover, and a background while it fails, stronger on
   // the line it failed at (the service's hover there says why).
   const gutterIcons = new Map(
-    (['failed', 'flaky', 'passed', 'skipped'] as const).map((status) => [
+    (['failed', 'flaky', 'passed', 'skipped', 'running'] as const).map((status) => [
       status,
       vscode.window.createTextEditorDecorationType({
         gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
@@ -683,6 +688,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lc.onNotification(FAILURES_NOTIFICATION, () => {
       lensesChanged.fire();
       failuresView.refresh();
+    }),
+    // A run started here ended and was read: what it changed, as `piwi.runNotifications` allows.
+    lc.onNotification(RUN_ENDED_NOTIFICATION, async (ended: RunEnded) => {
+      const setting = vscode.workspace.getConfiguration('piwi').get<RunNotifications>('runNotifications');
+      const verdict = runVerdict(ended, setting);
+      if (!verdict) return;
+      const picked = await (verdict.severity === 'warning'
+        ? vscode.window.showWarningMessage(verdict.text, ...verdict.actions)
+        : vscode.window.showInformationMessage(verdict.text, ...verdict.actions));
+      if (picked === VERDICT_ACTIONS.failures) await vscode.commands.executeCommand('piwi.failures.focus');
+      else if (picked === VERDICT_ACTIONS.dashboard) await vscode.env.openExternal(vscode.Uri.parse(ended.url));
+      else if (picked === VERDICT_ACTIONS.rerun) await vscode.commands.executeCommand('piwi.rerunFailing');
     }),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
       const text = `Piwi: ${notice.message}`;

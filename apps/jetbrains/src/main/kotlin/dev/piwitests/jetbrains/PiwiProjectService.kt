@@ -32,13 +32,14 @@ import java.util.concurrent.TimeoutException
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name
- * none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in
+ * none, and when a run started from the IDE says what it changed (`always`, `failures`,
+ * `never`): **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in
  * the password safe, per instance.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiSettings", storages = [Storage("piwi.xml")])
 class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
-    data class State(var serverUrl: String = "", var project: String = "")
+    data class State(var serverUrl: String = "", var project: String = "", var runNotifications: String = "always")
 
     private var state = State()
 
