@@ -9,7 +9,7 @@ import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import { HttpError } from '../src/internal/transport/http-client.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
-import type { CompleteStreamEvent } from '../src/types/wire.js';
+import type { CompleteStreamEvent, StepBeginStreamEvent, StepEndStreamEvent } from '../src/types/wire.js';
 
 const projectName = 'piwi-stream-test-' + process.pid;
 const projectHash = hashForProject(projectName);
@@ -57,6 +57,22 @@ function completeEvent(title: string): CompleteStreamEvent {
     shardIndex: null,
     startedAt: null,
   };
+}
+
+function stepBeginEvent(title: string): StepBeginStreamEvent {
+  return {
+    type: 'step-begin',
+    title,
+    location: 'test.spec.ts:2:3',
+    stepCategory: 'pw:api',
+    parentTitle: 'the test',
+    workerIndex: 0,
+    startedAt: null,
+  };
+}
+
+function stepEndEvent(title: string): StepEndStreamEvent {
+  return { ...stepBeginEvent(title), type: 'step-end', status: 'passed', duration: 1 };
 }
 
 describe('StreamManager batching & drain', () => {
@@ -383,6 +399,96 @@ describe('StreamManager idle heartbeat', () => {
     const afterDrain = calls.length;
     await wait(70);
     expect(calls.length, 'no heartbeats fire after drain').toBe(afterDrain);
+  });
+});
+
+describe('StreamManager live steps', () => {
+  beforeEach(cleanup);
+  afterEach(cleanup);
+
+  // An open stream whose requests are recorded and answered by `answer`.
+  function makeEnabledManager(answer: (url: string) => unknown) {
+    const requests: Array<{ url: string; body: any }> = [];
+    const http = {
+      async postJSON(url: string, body: any) {
+        requests.push({ url, body });
+        return answer(url);
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+    return { sm, requests };
+  }
+
+  // The events that reached `/events`, in order, as `type title`.
+  const sent = (requests: Array<{ url: string; body: any }>) =>
+    requests
+      .filter((r) => r.url.endsWith('/events'))
+      .flatMap((r) => r.body.testCases.map((e: { type: string; title: string }) => `${e.type} ${e.title}`));
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('drops step events while the dashboard says nobody watches the run', async () => {
+    const { sm, requests } = makeEnabledManager(() => ({ success: true, watched: false }));
+    sm.queueEvent(stepEndEvent('before the answer'));
+    sm.queueEvent(completeEvent('a'));
+    await sm.flush();
+    sm.queueEvent(stepBeginEvent('unwatched'));
+    sm.queueEvent(stepEndEvent('unwatched'));
+    sm.queueEvent(completeEvent('b'));
+    await sm.drain();
+    expect(sent(requests)).toEqual(['step-end before the answer', 'complete a', 'complete b']);
+  });
+
+  it('sends step events again once the dashboard says someone watches', async () => {
+    const answers = [{ watched: false }, { watched: true }];
+    const { sm, requests } = makeEnabledManager(() => answers.shift() ?? { watched: true });
+    sm.queueEvent(completeEvent('a'));
+    await sm.flush();
+    sm.queueEvent(stepEndEvent('unwatched'));
+    sm.queueEvent(completeEvent('b'));
+    await sm.flush();
+    sm.queueEvent(stepEndEvent('watched'));
+    await sm.drain();
+    expect(sent(requests)).toEqual(['complete a', 'complete b', 'step-end watched']);
+  });
+
+  it('keeps sending step events to a dashboard that does not say', async () => {
+    const { sm, requests } = makeEnabledManager(() => ({ success: true }));
+    sm.queueEvent(completeEvent('a'));
+    await sm.flush();
+    sm.queueEvent(stepEndEvent('s'));
+    await sm.drain();
+    expect(sent(requests)).toEqual(['complete a', 'step-end s']);
+  });
+
+  it('heartbeats sooner while nobody watches, and a heartbeat answer turns the steps back on', async () => {
+    const { sm, requests } = makeEnabledManager((url) => ({ success: true, watched: url.endsWith('/heartbeat') }));
+    sm.queueEvent(completeEvent('a'));
+    await sm.flush();
+    // Only the unwatched interval is short enough for a heartbeat to fire here.
+    (sm as any).heartbeatInterval = 60_000;
+    (sm as any).unwatchedHeartbeatInterval = 20;
+    (sm as any).lastActivityAt = Date.now() - 1000;
+    (sm as any).scheduleHeartbeat();
+    for (let i = 0; i < 100 && (sm as any).watched !== true; i++) await wait(10);
+    expect(requests.some((r) => r.url.endsWith('/heartbeat'))).toBe(true);
+
+    sm.queueEvent(stepEndEvent('watched'));
+    await sm.drain();
+    expect(sent(requests)).toEqual(['complete a', 'step-end watched']);
   });
 });
 

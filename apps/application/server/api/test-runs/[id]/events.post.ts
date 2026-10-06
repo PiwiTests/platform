@@ -15,7 +15,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      'Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape.',
+      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -116,6 +116,7 @@ export default eventHandler(async (event) => {
     return {
       success: true,
       processed: beginEvents.length + stepRunEvents.length,
+      watched: runEventBus.isWatched(id),
     };
   }
 
@@ -230,5 +231,6 @@ export default eventHandler(async (event) => {
   return {
     success: true,
     processed: insertedRunCases.length + beginEvents.length,
+    watched: runEventBus.isWatched(id),
   };
 });

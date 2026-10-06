@@ -177,6 +177,50 @@ describe('PiwiDashboardReporter live step streaming', () => {
     expect(titles('step-end')).toEqual(['Expect "poll toBe"', 'Expect "toPass"']);
   });
 
+  it('stops streaming steps once the dashboard says nobody watches the run', async () => {
+    const eventsBodies: EventsBody[] = [];
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        eventsBodies.push(JSON.parse(req.body));
+        jsonRes(res, 200, { success: true, processed: 1, watched: false });
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 30,
+      streamingBatchSize: 1,
+    });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    const result = fakeResult({ workerIndex: 0 });
+    reporter.onBegin(fakeConfig(), suite);
+
+    // Until the dashboard answers, steps stream as before.
+    reporter.onStepBegin(test, result, makeStep('pw:api', 'before the answer'));
+    await waitFor(() => (reporter as any).streamManager?.watched === false);
+
+    reporter.onStepBegin(test, result, makeStep('pw:api', 'unwatched'));
+    reporter.onStepEnd(test, result, makeStep('pw:api', 'unwatched'));
+    reporter.onTestBegin(test, result);
+    await waitFor(() => streamed(eventsBodies).some((e) => e.type === 'begin'));
+
+    expect(streamed(eventsBodies).map((e) => `${e.type} ${e.title}`)).toEqual([
+      'step-begin before the answer',
+      'begin the test',
+    ]);
+  });
+
   it('suite-level hooks keep parentTitle null and land in setupSteps', async () => {
     let finishBody = null as { setupSteps?: unknown[] } | null;
     server = await startServer((req, res) => {
