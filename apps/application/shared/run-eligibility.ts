@@ -387,3 +387,13 @@ export function notLabRun(metadata: SQLWrapper): SQL {
 export function notLabExecution(testRunId: SQLWrapper): SQL {
   return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${notLabRun(testRuns.metadata)})`;
 }
+
+/**
+ * `notLabExecution` for a query over one project's executions: the project's
+ * runs that are not lab runs are listed once for the query, and each execution
+ * is matched against that list, so the metadata of a run is read once rather
+ * than once per execution.
+ */
+export function notLabExecutionInProject(projectId: number, testRunId: SQLWrapper): SQL {
+  return sql`${testRunId} IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${testRuns.projectId} = ${projectId} AND ${notLabRun(testRuns.metadata)})`;
+}
