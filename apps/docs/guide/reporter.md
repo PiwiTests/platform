@@ -127,6 +127,10 @@ each running test is on. When a test's final attempt fails, the reporter prints 
 at the end it prints `View run: <url>` (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci)).
 A server that does not support streaming gets the batch upload instead.
 
+The steps stream only while someone has the run, or one of its tests, open on the dashboard: the dashboard tells the
+reporter in its answers, and the steps show within a few seconds of opening the page. Every result carries its test's
+steps either way, so a run nobody watches keeps all of them.
+
 ### Disabling streaming
 
 To send all results at the end of the run:
