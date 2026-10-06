@@ -317,6 +317,10 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale
   (`toLocaleString()`, `viewerLocale()`): the server formats it in its own.
+- **Data several components of one page read under one key** (capability states, the project list) passes
+  `dedupe: 'defer'` and `getCachedData: reuseWithinRender` (`app/utils/shared-fetch.ts`). Without them each caller
+  fetches again during the server render: the default `dedupe: 'cancel'` restarts a pending request, and nothing is
+  reused from the render once it resolved.
 - **A `useFetch({ server: false })` loading state reads `status`, not `pending`**: the server renders it `idle`, and
   the client starts the fetch before it hydrates, so gate the spinner on
   `status.value === 'idle' || status.value === 'pending'` (see `pages/projects/[id]/locators.vue`) — gating on

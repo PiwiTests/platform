@@ -62,6 +62,8 @@ const { data: projects, refresh: refreshProjects } = await useFetch('/api/projec
   lazy: true,
   default: () => [] as ProjectWithStats[],
   transform: (r: { items: ProjectWithStats[] }) => r.items,
+  dedupe: 'defer',
+  getCachedData: reuseWithinRender,
 });
 
 useRunStream(refreshProjects);

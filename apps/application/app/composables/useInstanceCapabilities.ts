@@ -28,7 +28,7 @@ export async function useInstanceCapabilities() {
       requestFetch<CapabilityStates>('/api/capabilities')
         .then((r) => r.items)
         .catch(() => []),
-    { default: () => [] },
+    { default: () => [], dedupe: 'defer', getCachedData: reuseWithinRender },
   );
 
   const stateMap = computed(() => {

@@ -18,6 +18,8 @@ const {
   lazy: true,
   default: () => [] as ProjectWithStats[],
   transform: (r: { items: ProjectWithStats[] }) => r.items,
+  dedupe: 'defer',
+  getCachedData: reuseWithinRender,
 });
 const { data: tagsData, refresh: refreshTags } = useFetch<TagsResponse>('/api/tags', { lazy: true });
 const toast = useToast();
