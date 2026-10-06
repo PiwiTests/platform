@@ -70,6 +70,39 @@ test.describe.serial('Branch failures', () => {
     const none = await (
       await request.get(`/api/projects/${projectId}/branch-failures`, { params: { branch: 'nope' } })
     ).json();
-    expect(none).toEqual({ run: null, failures: [] });
+    expect(none).toEqual({ run: null, overlays: [], failures: [], resolved: [] });
+  });
+
+  test('lays a test re-run from the editor over the run: the failure it passed is resolved', async ({ request }) => {
+    const editor = await request.post('/api/test-runs/submit', {
+      data: {
+        ...run(10, 'feature/pay', [{ title: 'pays', status: 'passed' }]),
+        isFullRun: false,
+        metadata: { scm: { branch: 'feature/pay' }, piwiOrigin: { kind: 'editor' } },
+      },
+    });
+    expect(editor.ok()).toBeTruthy();
+    const editorRunId = (await editor.json()).runId;
+
+    const body = await (
+      await request.get(`/api/projects/${projectId}/branch-failures`, {
+        params: { branch: 'feature/pay', overlays: '1' },
+      })
+    ).json();
+    expect(body.run).toMatchObject({ branch: 'feature/pay', status: 'failed', failedTests: 1 });
+    expect(body.overlays).toEqual([
+      expect.objectContaining({ id: editorRunId, origin: 'editor', isFullRun: false, passedTests: 1 }),
+    ]);
+    expect(body.failures).toEqual([]);
+    expect(body.resolved).toEqual([
+      expect.objectContaining({ title: 'pays', file: 'tests/checkout.spec.ts', line: 10, runId: editorRunId }),
+    ]);
+
+    const alone = await (
+      await request.get(`/api/projects/${projectId}/branch-failures`, { params: { branch: 'feature/pay' } })
+    ).json();
+    expect(alone.failures).toEqual([expect.objectContaining({ title: 'pays', source: 'baseline' })]);
+    expect(alone.overlays).toEqual([]);
+    expect(alone.resolved).toEqual([]);
   });
 });

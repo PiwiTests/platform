@@ -2075,7 +2075,8 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const branch = q?.get('branch')?.trim() ?? '';
       if (branch.length > 255) throw demoHttpError(400, 'branch is at most 255 characters');
-      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null);
+      const overlays = q?.get('overlays') === '1' || q?.get('overlays') === 'true';
+      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null, { overlays });
     },
   },
   {

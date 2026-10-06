@@ -21,7 +21,10 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
   (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
 );
 vi.mock('../../server/utils/ai-diagnosis', () => ({ autoDiagnoseRun: vi.fn(async () => {}) }));
-vi.mock('../../server/utils/scm/pr-feedback', () => ({ postRunPrFeedbackInBackground: vi.fn(async () => {}) }));
+vi.mock('../../server/utils/scm/pr-feedback', () => ({
+  analyzeFinishedRunInBackground: vi.fn(() => ({ fixed: Promise.resolve([]), coverage: Promise.resolve(null) })),
+  postRunPrFeedbackInBackground: vi.fn(async () => {}),
+}));
 vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackground: vi.fn() }));
 
 interface RouteEvent {

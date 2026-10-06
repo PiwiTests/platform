@@ -149,8 +149,8 @@ describe('settleStaleFinalizingRuns', () => {
       { type: 'run-finished', runId: 7, projectId: 2, status: 'interrupted' },
     ]);
     expect(runFinalizeSideEffects.mock.calls.map(([, id, run]) => [id, run])).toEqual([
-      [6, { projectId: 2, metadata: { ci: { provider: 'github' } } }],
-      [7, { projectId: 2, metadata: {} }],
+      [6, { projectId: 2, metadata: { ci: { provider: 'github' } }, isFullRun: 1, status: 'passed' }],
+      [7, { projectId: 2, metadata: {}, isFullRun: 1, status: 'interrupted' }],
     ]);
   });
 

@@ -72,8 +72,11 @@ What each origin feeds:
   stay out of baselines, fix verification, flaky scores, selections, change coverage, the stored locators and test
   metadata, auto-heal and the bug-report lifecycle.
 - **`piwi bug` runs** do not move the bug report they were written for.
-- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, except in an editor's CI failures:
-  those come from the newest complete CI run on the branch, and a local run stands in only while the branch has none.
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with two exceptions. An editor's CI
+  failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
+  none. An `editor` run, or a `local` or `desktop` run of part of the suite, fires no run, new-cluster, flakiness or
+  performance [notification](/features/notifications#events), posts no
+  [pull-request comment or commit status](/features/pr-feedback), and starts no automatic AI diagnosis or auto-heal.
 - **Partial runs** (a `--grep`, a file filter, a selection) never count for change coverage, which asks whether a
   file was reached in the recent runs.
 

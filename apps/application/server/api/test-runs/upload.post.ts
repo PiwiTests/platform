@@ -328,8 +328,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Create or retrieve the test run
-  let testRun: { id: number; projectId: number };
+  // Create or retrieve the test run; a created one carries its isFullRun and status for the finalize side effects.
+  let testRun: { id: number; projectId: number; isFullRun?: number; status?: string };
   const incomingResources = sanitizeResourceReport(testRunData.resourceReport);
 
   if (attachingToExistingRun && existingTestRunId) {
@@ -379,6 +379,8 @@ export default eventHandler(async (event) => {
     testRun = {
       id: resultTestRun.id,
       projectId: resultTestRun.projectId,
+      isFullRun: resultTestRun.isFullRun,
+      status: resultTestRun.status,
     };
     if (incomingResources) await saveResourceReportPart(db, resultTestRun.id, incomingResources);
     await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
@@ -636,7 +638,12 @@ export default eventHandler(async (event) => {
   // For new (non-streaming) runs, fire the finalize side effects after cases are
   // persisted — probe-aware, so a probe-stamped upload stays silent.
   if (!attachingToExistingRun) {
-    await runFinalizeSideEffects(db, testRun.id, { projectId: project.id, metadata: testRunData?.metadata });
+    await runFinalizeSideEffects(db, testRun.id, {
+      projectId: project.id,
+      metadata: testRunData?.metadata,
+      isFullRun: testRun.isFullRun,
+      status: testRun.status,
+    });
   }
 
   return {

@@ -20,7 +20,7 @@ import { resolveRunBranch } from '../run-branch';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
 import { looksFixedTests } from '#shared/status-classify';
-import { isLabRun } from '#shared/handlers/probes';
+import { isEligibleRun } from '#shared/run-eligibility';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
 import type { LooksFixedTest } from '#shared/notification-events';
@@ -172,12 +172,14 @@ async function loadRunPayload(db: DbClient, runId: number) {
 
 /**
  * Emit `run.interrupted` for a run the stale-run sweep reaped: its reporter
- * stopped sending before the end. Lab runs stay silent, as at finalize.
+ * stopped sending before the end. A run the `notifications` use leaves out
+ * stays silent, as at finalize: a lab run, a run from an editor, a run of part
+ * of the suite from a developer's machine or the desktop app.
  */
 export async function emitRunInterrupted(db: DbClient, runId: number): Promise<void> {
   try {
     const loaded = await loadRunPayload(db, runId);
-    if (!loaded || isLabRun(loaded.runRow.metadata)) return;
+    if (!loaded || !isEligibleRun(loaded.runRow, 'notifications')) return;
     await emitNotification(db, 'run.interrupted', loaded.runPayload);
   } catch (e) {
     console.error('[notifications] emitRunInterrupted failed', e);

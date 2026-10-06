@@ -34,11 +34,12 @@ const EXCLUDED: Record<RunUse, string[]> = {
   flakiness: ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'selection-catalog': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'branch-failures': ['flake-lab', 'probe', 'bisect', 'reproduce'],
+  'editor-overlay': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'change-coverage': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'shared-state': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
-  notifications: ['flake-lab', 'probe'],
+  notifications: ['flake-lab', 'probe', 'editor'],
   'run-health': ['flake-lab', 'probe'],
 };
 
@@ -50,12 +51,16 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'flakiness',
   'selection-catalog',
   'branch-failures',
+  'editor-overlay',
   'auto-heal',
   'notifications',
 ];
 
 /** The uses that read complete runs only. */
 const COMPLETE_ONLY: RunUse[] = ['run-baseline', 'branch-failures', 'change-coverage'];
+
+/** The uses that read the runs of some origins only when complete, and those origins. */
+const COMPLETE_ONLY_FOR: Partial<Record<RunUse, string[]>> = { notifications: ['local', 'desktop'] };
 
 const USES = Object.keys(RUN_USES) as RunUse[];
 
@@ -107,12 +112,59 @@ describe('the run eligibility table', () => {
     }
   });
 
-  test('local runs count wherever CI runs do', () => {
+  test.each(USES)('%s and partial runs of each origin it reads', (use) => {
+    for (const kind of RUN_ORIGIN_KINDS) {
+      const metadata = { piwiOrigin: { kind } };
+      if (!isEligibleRun({ metadata }, use)) continue;
+      const partial = isEligibleRun({ metadata, isFullRun: 0, status: 'failed' }, use);
+      expect(partial, kind).toBe(!COMPLETE_ONLY.includes(use) && !COMPLETE_ONLY_FOR[use]?.includes(kind));
+    }
+  });
+
+  test('a complete local run counts wherever a CI run does, but an editor run never notifies', () => {
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
-        expect(isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use)).toBe(true);
+        const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);
+        expect(eligible, `${use} ${kind}`).toBe(use !== 'notifications' || kind !== 'editor');
       }
     }
+  });
+});
+
+describe('a developer’s runs and notifications', () => {
+  const full = { isFullRun: 1, status: 'passed' };
+  const partial = { isFullRun: 0, status: 'failed' };
+
+  test('an editor run never feeds them', () => {
+    const metadata = { piwiOrigin: { kind: 'editor' } };
+    expect(isEligibleRun({ metadata, ...full }, 'notifications')).toBe(false);
+    expect(isEligibleRun({ metadata, ...partial }, 'notifications')).toBe(false);
+  });
+
+  test.each(['local', 'desktop'])('a %s run feeds them only when it ran the whole suite and finished', (kind) => {
+    const metadata = { piwiOrigin: { kind } };
+    expect(isEligibleRun({ metadata, ...full }, 'notifications')).toBe(true);
+    expect(isEligibleRun({ metadata, ...partial }, 'notifications')).toBe(false);
+    expect(isEligibleRun({ metadata, isFullRun: 1, status: 'finalizing' }, 'notifications')).toBe(false);
+  });
+
+  test('a run with no origin stamp reads as local', () => {
+    expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...partial }, 'notifications')).toBe(false);
+    expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...full }, 'notifications')).toBe(true);
+  });
+
+  test('a partial CI run still feeds them', () => {
+    for (const kind of ['ci', 'ci-rerun']) {
+      expect(isEligibleRun({ metadata: { piwiOrigin: { kind } }, ...partial }, 'notifications'), kind).toBe(true);
+    }
+  });
+
+  test('the editor overlays partial and full runs of every origin but lab and investigation runs', () => {
+    for (const kind of ['ci', 'local', 'desktop', 'editor', 'preflight']) {
+      const metadata = { piwiOrigin: { kind } };
+      expect(isEligibleRun({ metadata, ...partial }, 'editor-overlay'), kind).toBe(true);
+    }
+    expect(isEligibleRun({ metadata: { piwiOrigin: { kind: 'flake-lab' } }, ...full }, 'editor-overlay')).toBe(false);
   });
 });
 
@@ -167,6 +219,7 @@ describe('the SQL form of the rule', () => {
     { isFullRun: 1, status: 'passed' },
     { isFullRun: 0, status: 'failed' },
     { isFullRun: 1, status: 'running' },
+    { isFullRun: 0, status: 'running' },
   ];
 
   async function seed(spelling: (value: unknown) => string) {

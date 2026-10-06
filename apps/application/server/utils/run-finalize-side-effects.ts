@@ -4,7 +4,7 @@ import type { DbClient } from '../database';
 import { computeRegressionSignals } from './compute-regression-signals';
 import { autoDiagnoseRun } from './ai-diagnosis';
 import { emitIncidentNotification, emitRunNotifications } from './notifications/run-notifications';
-import { postRunPrFeedbackInBackground } from './scm/pr-feedback';
+import { analyzeFinishedRunInBackground, postRunPrFeedbackInBackground } from './scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { classifyRunFlakyTests } from '#shared/handlers/flaky-classify';
@@ -20,8 +20,10 @@ import { inferRunOutcomes } from './outcome-inference';
  * The finalize side effects for a finished run: the environment-incident
  * check, the daily rollup of its cell, regression signals, the CI re-run
  * dispatch it answers, auto markers, flaky root causes, the history of its
- * resource findings, AI diagnosis, notifications, pull-request feedback,
- * auto-heal and the hand-back outcomes the run shows.
+ * resource findings, its analysis (the scenario gaps, change coverage, fix
+ * verification and the hand-back outcomes it shows) and its outbound effects
+ * (AI diagnosis, notifications, the pull-request comment and commit status,
+ * auto-heal).
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -30,11 +32,18 @@ import { inferRunOutcomes } from './outcome-inference';
  * so it never counts as a real run), exactly as imports are silent. The
  * incident check runs first and is awaited: a run it flags as an environment
  * incident gets its rollup, its CI re-run match, its auto markers and its
- * resource findings, and in place of regression signals, AI diagnosis, the run
- * and cluster notifications, pull-request feedback and auto-heal it sends one
- * `environment.incident` event. Flaky root causes skip runs the `flakiness`
- * use leaves out, and fix verification, auto-heal and the bug-report lifecycle
- * apply their own uses.
+ * resource findings, and in place of regression signals, the analysis, AI
+ * diagnosis, the run and cluster notifications, pull-request feedback and
+ * auto-heal it sends one `environment.incident` event. Flaky root causes skip
+ * runs the `flakiness` use leaves out, and fix verification, auto-heal and the
+ * bug-report lifecycle apply their own uses.
+ *
+ * Every other run gets its analysis, each step under its own use, and its
+ * outcomes once its change coverage is stored. Only the outbound effects
+ * follow the `notifications` use, which reads `run`'s origin, final `status`
+ * and `isFullRun`: never for a run from an editor, and for a run from a
+ * developer's machine or the desktop app only when it ran the whole suite. A
+ * run the use leaves out sends no incident event either.
  *
  * The returned promise settles once the run's rollup cell is recomputed, so a
  * caller that awaits it answers only when the analytics already count the run
@@ -47,7 +56,7 @@ import { inferRunOutcomes } from './outcome-inference';
 export async function runFinalizeSideEffects(
   db: DbClient,
   id: number,
-  run: { projectId: number; metadata?: unknown },
+  run: { projectId: number; metadata?: unknown; isFullRun?: number | boolean | null; status?: string | null },
 ): Promise<void> {
   if (!isEligibleRun(run, 'run-health')) return;
   const health = await recordRunHealth(db, id).catch((e) => {
@@ -82,20 +91,23 @@ export async function runFinalizeSideEffects(
   applyBugReportLifecycle(db, id)
     .then((moved) => followBugReportTickets(db, id, moved))
     .catch((e) => console.error('[bug-reports] applyBugReportLifecycle failed', e));
-  if (!isEligibleRun(current, 'notifications')) {
-    if (health?.flagged) {
+  if (incident) {
+    // The incident event takes the place of the verdicts of a run that sends them.
+    if (health?.flagged && isEligibleRun(run, 'notifications')) {
       emitIncidentNotification(db, id).catch((e) =>
         console.error('[notifications] emitIncidentNotification failed', e),
       );
     }
     return rollup;
   }
+  const analysis = analyzeFinishedRunInBackground(db, id);
+  void analysis.coverage.then(() =>
+    inferRunOutcomes(db, id).catch((e) => console.error('[outcomes] inferRunOutcomes failed', e)),
+  );
+  if (!isEligibleRun(current, 'notifications')) return rollup;
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
   // Healing's diff-rename step reads the locator breaks change coverage stores.
-  void postRunPrFeedbackInBackground(db, id).then(() => {
-    maybeEnqueueHealActionInBackground(db, id);
-    return inferRunOutcomes(db, id).catch((e) => console.error('[outcomes] inferRunOutcomes failed', e));
-  });
+  void postRunPrFeedbackInBackground(db, id, analysis).then(() => maybeEnqueueHealActionInBackground(db, id));
   return rollup;
 }

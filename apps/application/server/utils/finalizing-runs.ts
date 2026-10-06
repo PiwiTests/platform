@@ -51,12 +51,17 @@ export async function settleFinalizingRun(
     .update(testRuns)
     .set({ status, metadata, origin: runOrigin(metadata), updatedAt: new Date() })
     .where(and(eq(testRuns.id, run.id), eq(testRuns.status, 'finalizing')))
-    .returning({ id: testRuns.id });
+    .returning({ id: testRuns.id, isFullRun: testRuns.isFullRun });
   if (settled.length === 0) return null;
 
   runEventBus.publish(run.id, { type: 'run-finished', data: { status } });
   runEventBus.publishGlobal({ type: 'run-finished', runId: run.id, projectId: run.projectId, status });
-  await runFinalizeSideEffects(db, run.id, { projectId: run.projectId, metadata });
+  await runFinalizeSideEffects(db, run.id, {
+    projectId: run.projectId,
+    metadata,
+    isFullRun: settled[0]!.isFullRun,
+    status,
+  });
   runEventBus.cleanup(run.id);
   return status;
 }
