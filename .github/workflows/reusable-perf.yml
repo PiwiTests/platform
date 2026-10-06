@@ -1,0 +1,135 @@
+name: Performance
+
+# Measures the dashboard's heaviest pages (the projects list, every tab of a project, the test-run page) on the pull
+# request's build and on its base commit's, against the same dataset in PostgreSQL, and posts the comparison as one
+# comment on the pull request, updated on every push: render and load times, the SQL each request runs, and every
+# regression past its threshold. The suite is apps/application/scripts/perf. A regression is reported, not enforced:
+# the job fails only when the suite itself cannot run.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    name: Performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      # Posts and updates the comparison comment.
+      pull-requests: write
+
+    steps:
+      # The merge commit and its first parent: the base the pull request is measured against.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      # pg_stat_statements counts every statement of either build, including a base that predates the suite's tracing.
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine \
+            -c shared_preload_libraries=pg_stat_statements \
+            -c pg_stat_statements.track_utility=off \
+            -c pg_stat_statements.max=20000 \
+            -c shared_buffers=512MB
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
+
+      - name: Download build output
+        uses: actions/download-artifact@v8
+        with:
+          name: build-output
+
+      - name: Read the base and head commits
+        id: base
+        run: |
+          echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short HEAD^1)" >> "$GITHUB_OUTPUT"
+          echo "head_short=$(git rev-parse --short HEAD^2)" >> "$GITHUB_OUTPUT"
+
+      # A base commit is built once; every pull request on it reuses the build.
+      - name: Restore the base build
+        id: base-build
+        uses: actions/cache/restore@v6
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+
+      - name: Check out the base
+        if: steps.base-build.outputs.cache-hit != 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          path: base
+
+      - name: Install the base
+        if: steps.base-build.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-workspace
+        with:
+          directory: base
+
+      - name: Build the base
+        if: steps.base-build.outputs.cache-hit != 'true'
+        working-directory: base/apps/application
+        run: npm run app:build
+
+      - name: Save the base build
+        if: steps.base-build.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: base/apps/application/.output
+          key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+
+      - name: Wait for PostgreSQL
+        run: timeout 60 bash -c 'until docker exec postgres psql -h 127.0.0.1 -U postgres -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done'
+
+      - name: Measure the base and the pull request
+        working-directory: apps/application
+        env:
+          BASE_LABEL: ${{ github.base_ref }} ${{ steps.base.outputs.short }}
+          HEAD_LABEL: '#${{ github.event.pull_request.number }} ${{ steps.base.outputs.head_short }}'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node scripts/perf/run.mjs \
+            --target base=../../base/apps/application/.output \
+            --target head=.output \
+            --label "base=${BASE_LABEL}" \
+            --label "head=${HEAD_LABEL}" \
+            --database postgres \
+            --pg-url postgresql://postgres:postgres@127.0.0.1:5432/postgres \
+            --out ../../perf/results.json
+          node scripts/perf/report.mjs --results ../../perf/results.json --out ../../perf/report.md --run-url "${RUN_URL}"
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-results
+          path: perf
+          retention-days: 14
+
+      - name: Write the job summary
+        run: cat perf/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      # A pull request from a fork gets a read-only token: the report stays in the job summary and the artifact.
+      - name: Comment on the pull request
+        continue-on-error: true
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- piwi-perf-report -->';
+            const body = fs.readFileSync('perf/report.md', 'utf8');
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number, per_page: 100 });
+            const mine = comments.find((c) => c.user?.type === 'Bot' && c.body?.startsWith(marker));
+            if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ ...context.repo, issue_number, body });

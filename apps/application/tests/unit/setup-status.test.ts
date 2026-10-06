@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // import time when PIWI_DATABASE_URL is set, so clear it before the handler
 // modules (which import the barrel) are loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { getSetupStatus } = await import('../../shared/handlers/setup-status');
+const { getSetupStatus, getCapabilityEvidence } = await import('../../shared/handlers/setup-status');
 const { SETUP_CAPABILITIES } = await import('../../app/utils/setup-capabilities');
 const { getAppSetting, setAppSetting } = await import('../../server/utils/app-settings');
 
@@ -270,5 +270,60 @@ describe('settings-backed capabilities', () => {
       updatedAt: new Date(),
     });
     expect((await activeIds(db)).has('integrations')).toBe(true);
+  });
+});
+
+describe('cached capability evidence', () => {
+  /** Run `read` with the clock moved `ms` ahead. */
+  async function later<T>(ms: number, read: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + ms);
+    try {
+      return await read();
+    } finally {
+      clock.mockRestore();
+    }
+  }
+
+  test('a capability without evidence shows its first row at once', async () => {
+    expect((await getCapabilityEvidence(db)).tags).toBe(false);
+    await db.insert(schema.tags).values({ text: 'smoke' });
+    expect((await getCapabilityEvidence(db)).tags).toBe(true);
+  });
+
+  test('found evidence stands for a minute, unless the read is fresh', async () => {
+    await db.insert(schema.tags).values({ text: 'smoke' });
+    expect((await getCapabilityEvidence(db)).tags).toBe(true);
+    await db.delete(schema.tags);
+    expect((await getCapabilityEvidence(db)).tags).toBe(true);
+    expect((await later(59_000, () => getCapabilityEvidence(db))).tags).toBe(true);
+    expect((await later(61_000, () => getCapabilityEvidence(db))).tags).toBe(false);
+
+    await db.insert(schema.tags).values({ text: 'smoke' });
+    expect((await getCapabilityEvidence(db)).tags).toBe(true);
+    await db.delete(schema.tags);
+    expect((await getCapabilityEvidence(db, undefined, { fresh: true })).tags).toBe(false);
+  });
+
+  test('keeps the instance and each project apart', async () => {
+    await db.insert(schema.projects).values([
+      { id: 1, name: 'with-runs' },
+      { id: 2, name: 'without-runs' },
+    ]);
+    await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 });
+
+    expect((await getCapabilityEvidence(db, 1)).reporter).toBe(true);
+    expect((await getCapabilityEvidence(db, 2)).reporter).toBe(false);
+    expect((await getCapabilityEvidence(db)).reporter).toBe(true);
+  });
+
+  test('the Setup page reads the live state', async () => {
+    await db.insert(schema.tags).values({ text: 'smoke' });
+    expect(await activeIds(db)).toContain('tags');
+    await db.delete(schema.tags);
+    expect((await getCapabilityEvidence(db)).tags).toBe(true);
+    expect(await activeIds(db)).not.toContain('tags');
   });
 });

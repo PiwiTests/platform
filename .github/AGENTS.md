@@ -13,6 +13,7 @@ these follow, with its measurements and the phases still open, is
 | `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand   | the VS Code extension's integration suite                                                |
 | `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand   | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on main)  |
 | `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand   | the desktop shell's Rust tests and E2E smoke test, on macOS, from `ci.yml`'s build       |
+| `workflows/reusable-perf.yml`              | called by `ci.yml`              | the performance suite on the pull request's build and its base commit's, as a PR comment |
 | `workflows/pr-lint.yml`                    | pull requests                   | `commitlint`, `title` (the PR title) and `actionlint`                                    |
 | `workflows/docs.yml`                       | pushes to `main`                | builds and deploys the docs and the demo                                                 |
 | `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges                                               |
@@ -35,7 +36,8 @@ matrices: a pull request runs the dashboard E2E suite on two backends (`local + 
 and the package smoke test on Linux (on Windows and macOS too when it changes the packages or their dependencies);
 `main` runs the four backends and the three systems. The JetBrains Plugin Verifier runs on two IDEs for a pull request
 and on four on `main`, where the plugin job also writes the Gradle cache. The extension, VS Code and desktop suites run
-on pull requests only. The release PR runs the `Versions` job alone.
+on pull requests only, and so does the performance comparison, which builds the base commit once (cached by its sha)
+and reports a regression in its comment without failing. The release PR runs the `Versions` job alone.
 
 ## Conventions
 

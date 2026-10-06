@@ -39,7 +39,7 @@ import {
   mcpToolCalls,
   prFeedbackPosts,
 } from '../../server/database/schema';
-import { and, eq, gt, isNotNull, or } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
@@ -113,6 +113,18 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
   return rows.length > 0;
 }
 
+// The conditions of the partial indexes `idx_trc_passed_aria`, `idx_trc_passed_retry` and
+// `idx_nr_server_traces` (server/database/schema.*.ts), spelled the same way.
+const PASSED_WITH_ARIA = sql`${testRunsCases.status} = 'passed' and (${testRunsCases.ariaSnapshotPayloadId} is not null or ${testRunsCases.ariaSnapshot} is not null)`;
+const PASSED_ON_RETRY = sql`${testRunsCases.status} = 'passed' and ${testRunsCases.retries} > 0`;
+const SERVER_TRACE = sql`${networkRequests.serverTraces} is not null`;
+
+/** How long found evidence stands before a read probes for it again. */
+const EVIDENCE_TTL_MS = 60_000;
+
+/** When each detection's evidence was last found, per database and per scope (a project id, or the instance). */
+const evidenceFoundAt = new WeakMap<object, Map<number | 'instance', Map<SetupCapabilityId, number>>>();
+
 /**
  * Evidence per detection id. With no `projectId` the probes are instance-wide;
  * with one, the project-level detections (fixtures, backend logs, locator
@@ -120,149 +132,128 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
  * and clustering rows) are scoped through the project's runs and cases. The
  * instance-shaped detections (AI, notifications, tags, quality reports) stay instance-wide
  * because they carry no project dimension.
+ *
+ * Every page reads capability states as it renders, so evidence once found is
+ * kept for a minute per database and scope, and only the detections still
+ * without evidence are probed again: a capability's first row shows at once,
+ * its last row's removal within a minute. `fresh` probes them all (the Setup
+ * page reports what is live).
  */
-export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): Promise<CapabilityEvidence> {
+export async function getCapabilityEvidence(
+  db: DrizzleDB,
+  projectId?: number,
+  options: { fresh?: boolean } = {},
+): Promise<CapabilityEvidence> {
+  const scope = typeof projectId === 'number' ? projectId : 'instance';
+  const scopes = evidenceFoundAt.get(db) ?? new Map<number | 'instance', Map<SetupCapabilityId, number>>();
+  evidenceFoundAt.set(db, scopes);
+  const foundAt = scopes.get(scope) ?? new Map<SetupCapabilityId, number>();
+  scopes.set(scope, foundAt);
+
+  const probes = evidenceProbes(db, projectId);
+  const ids = Object.keys(probes) as SetupCapabilityId[];
+  const now = Date.now();
+  const answers = await Promise.all(
+    ids.map(async (id) => {
+      const at = foundAt.get(id);
+      if (!options.fresh && at !== undefined && now - at < EVIDENCE_TTL_MS) return true;
+      const found = await probes[id]();
+      if (found) foundAt.set(id, now);
+      else foundAt.delete(id);
+      return found;
+    }),
+  );
+  return Object.fromEntries(ids.map((id, i) => [id, answers[i]])) as CapabilityEvidence;
+}
+
+/**
+ * One probe per detection id, answering whether its evidence exists. The
+ * probes that look for rare rows in the largest tables (green samples, retry
+ * passes, server traces) match a partial index each; their conditions are
+ * written as literals, which is what lets a cached PostgreSQL plan use the
+ * index.
+ */
+function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabilityId, () => Promise<boolean>> {
   const scoped = typeof projectId === 'number';
   const pid = projectId as number;
 
-  const [
-    hasRuns,
-    hasNetwork,
-    hasLocators,
-    hasServerTraces,
-    hasClusters,
-    hasAiSetting,
-    hasChannels,
-    hasScm,
-    hasTags,
-    hasMarkers,
-    hasQuarantine,
-    hasGreenSamples,
-    hasPrFeedback,
-    hasAutoHeal,
-    hasIntegrations,
-    hasGraphNodes,
-    hasServerProbes,
-    hasReportSchedules,
-    hasReportSnapshots,
-    hasBugReports,
-    hasRetryPass,
-    hasResourceReport,
-    hasAgentDiagnosis,
-    hasAgentWriteLog,
-  ] = await Promise.all([
-    exists(
-      db,
-      scoped
-        ? db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, pid)).limit(1)
-        : db.select({ id: testRuns.id }).from(testRuns).limit(1),
-    ),
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: networkRequests.id })
-            .from(networkRequests)
-            .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
-            .where(eq(testRuns.projectId, pid))
-            .limit(1)
-        : db.select({ id: networkRequests.id }).from(networkRequests).limit(1),
-    ),
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: locatorSnapshots.id })
-            .from(locatorSnapshots)
-            .innerJoin(testCases, eq(locatorSnapshots.testCaseId, testCases.id))
-            .where(eq(testCases.projectId, pid))
-            .limit(1)
-        : db.select({ id: locatorSnapshots.id }).from(locatorSnapshots).limit(1),
-    ),
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: networkRequests.id })
-            .from(networkRequests)
-            .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
-            .where(and(eq(testRuns.projectId, pid), isNotNull(networkRequests.serverTraces)))
-            .limit(1)
-        : db
-            .select({ id: networkRequests.id })
-            .from(networkRequests)
-            .where(isNotNull(networkRequests.serverTraces))
-            .limit(1),
-    ),
-    exists(
-      db,
-      scoped
-        ? db.select({ id: failureClusters.id }).from(failureClusters).where(eq(failureClusters.projectId, pid)).limit(1)
-        : db.select({ id: failureClusters.id }).from(failureClusters).limit(1),
-    ),
-    exists(db, db.select({ key: appSettings.key }).from(appSettings).where(eq(appSettings.key, 'ai')).limit(1)),
-    exists(db, db.select({ id: notificationChannels.id }).from(notificationChannels).limit(1)),
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: projects.id })
-            .from(projects)
-            .where(and(eq(projects.id, pid), isNotNull(projects.scmToken)))
-            .limit(1)
-        : db.select({ id: projects.id }).from(projects).where(isNotNull(projects.scmToken)).limit(1),
-    ),
-    exists(db, db.select({ id: tags.id }).from(tags).limit(1)),
-    exists(
-      db,
-      scoped
-        ? db.select({ id: markers.id }).from(markers).where(eq(markers.projectId, pid)).limit(1)
-        : db.select({ id: markers.id }).from(markers).limit(1),
-    ),
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: quarantinedTests.id })
-            .from(quarantinedTests)
-            .where(eq(quarantinedTests.projectId, pid))
-            .limit(1)
-        : db.select({ id: quarantinedTests.id }).from(quarantinedTests).limit(1),
-    ),
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: testRunsCases.id })
-            .from(testRunsCases)
-            .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-            .where(
-              and(
-                eq(testRuns.projectId, pid),
-                eq(testRunsCases.status, 'passed'),
-                or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
-              ),
-            )
-            .limit(1)
-        : db
-            .select({ id: testRunsCases.id })
-            .from(testRunsCases)
-            .where(
-              and(
-                eq(testRunsCases.status, 'passed'),
-                or(isNotNull(testRunsCases.ariaSnapshotPayloadId), isNotNull(testRunsCases.ariaSnapshot)),
-              ),
-            )
-            .limit(1),
-    ),
+  return {
+    reporter: () =>
+      exists(
+        db,
+        scoped
+          ? db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, pid)).limit(1)
+          : db.select({ id: testRuns.id }).from(testRuns).limit(1),
+      ),
+    fixtures: () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: networkRequests.id })
+              .from(networkRequests)
+              .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
+              .where(eq(testRuns.projectId, pid))
+              .limit(1)
+          : db.select({ id: networkRequests.id }).from(networkRequests).limit(1),
+      ),
+    'locator-healing': () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: locatorSnapshots.id })
+              .from(locatorSnapshots)
+              .innerJoin(testCases, eq(locatorSnapshots.testCaseId, testCases.id))
+              .where(eq(testCases.projectId, pid))
+              .limit(1)
+          : db.select({ id: locatorSnapshots.id }).from(locatorSnapshots).limit(1),
+      ),
+    'backend-logs': () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: networkRequests.id })
+              .from(networkRequests)
+              .innerJoin(testRuns, eq(networkRequests.testRunId, testRuns.id))
+              .where(and(eq(testRuns.projectId, pid), SERVER_TRACE))
+              .limit(1)
+          : db.select({ id: networkRequests.id }).from(networkRequests).where(SERVER_TRACE).limit(1),
+      ),
+    clustering: () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: failureClusters.id })
+              .from(failureClusters)
+              .where(eq(failureClusters.projectId, pid))
+              .limit(1)
+          : db.select({ id: failureClusters.id }).from(failureClusters).limit(1),
+      ),
+    // AI also counts as active when pinned by environment — an env-configured
+    // instance has no `ai` row in app_settings but is very much switched on.
+    ai: async () =>
+      Boolean(typeof process !== 'undefined' && (process.env?.PIWI_AI_API_KEY || process.env?.PIWI_AI_MODEL)) ||
+      exists(db, db.select({ key: appSettings.key }).from(appSettings).where(eq(appSettings.key, 'ai')).limit(1)),
+    // MCP has no evidence probe — it is always available, so the resolver marks
+    // it configured rather than active.
+    mcp: async () => false,
+    notifications: () => exists(db, db.select({ id: notificationChannels.id }).from(notificationChannels).limit(1)),
+    // Quality reports are active once a report schedule or snapshot exists; a
+    // schedule spans projects, so this stays instance-wide.
+    'quality-reports': async () =>
+      (await exists(db, db.select({ id: reportSchedules.id }).from(reportSchedules).limit(1))) ||
+      exists(db, db.select({ id: reportSnapshots.id }).from(reportSnapshots).limit(1)),
     // Pull-request feedback is active while its setting is enabled (the flag
     // the full getter resolves, read here directly so this handler stays free
     // of the SCM providers it pulls in) and once something was posted for a run
     // (of the project, when one is scoped). Auto-heal reads active from its
     // setting and issue integrations from a single connection row; neither has
     // a project dimension, so they stay instance-wide.
-    Promise.all([
-      getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY).then((s) => s?.enabled === true),
+    'pr-feedback': async () =>
+      (await getAppSetting<{ enabled?: boolean }>(db, PR_FEEDBACK_KEY))?.enabled === true &&
       exists(
         db,
         scoped
@@ -273,120 +264,124 @@ export async function getCapabilityEvidence(db: DrizzleDB, projectId?: number): 
               .limit(1)
           : db.select({ id: prFeedbackPosts.id }).from(prFeedbackPosts).limit(1),
       ),
-    ]).then(([enabled, posted]) => enabled && posted),
-    getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY).then((s) => s?.enabled === true),
-    exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
+    'auto-heal': async () => (await getAppSetting<{ enabled?: boolean }>(db, AUTO_HEAL_KEY))?.enabled === true,
+    integrations: () => exists(db, db.select({ id: integrationConnections.id }).from(integrationConnections).limit(1)),
+    scm: () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: projects.id })
+              .from(projects)
+              .where(and(eq(projects.id, pid), isNotNull(projects.scmToken)))
+              .limit(1)
+          : db.select({ id: projects.id }).from(projects).where(isNotNull(projects.scmToken)).limit(1),
+      ),
+    tags: () => exists(db, db.select({ id: tags.id }).from(tags).limit(1)),
+    markers: () =>
+      exists(
+        db,
+        scoped
+          ? db.select({ id: markers.id }).from(markers).where(eq(markers.projectId, pid)).limit(1)
+          : db.select({ id: markers.id }).from(markers).limit(1),
+      ),
+    quarantine: () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: quarantinedTests.id })
+              .from(quarantinedTests)
+              .where(eq(quarantinedTests.projectId, pid))
+              .limit(1)
+          : db.select({ id: quarantinedTests.id }).from(quarantinedTests).limit(1),
+      ),
+    'green-samples': () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: testRunsCases.id })
+              .from(testRunsCases)
+              .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+              .where(and(eq(testRuns.projectId, pid), PASSED_WITH_ARIA))
+              .limit(1)
+          : db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_WITH_ARIA).limit(1),
+      ),
     // The Test Map is active once the graph has any node for the project (a
     // route or page discovered from a run), or, instance-wide, any node at all.
-    exists(
-      db,
-      scoped
-        ? db.select({ id: graphNodes.id }).from(graphNodes).where(eq(graphNodes.projectId, pid)).limit(1)
-        : db.select({ id: graphNodes.id }).from(graphNodes).limit(1),
-    ),
+    'test-map': () =>
+      exists(
+        db,
+        scoped
+          ? db.select({ id: graphNodes.id }).from(graphNodes).where(eq(graphNodes.projectId, pid)).limit(1)
+          : db.select({ id: graphNodes.id }).from(graphNodes).limit(1),
+      ),
     // Server probes are active once a server-level probe has run for the project.
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: probes.id })
-            .from(probes)
-            .where(and(eq(probes.projectId, pid), eq(probes.level, 'server')))
-            .limit(1)
-        : db.select({ id: probes.id }).from(probes).where(eq(probes.level, 'server')).limit(1),
-    ),
-    // Quality reports are active once a report schedule or snapshot exists; a
-    // schedule spans projects, so this stays instance-wide.
-    exists(db, db.select({ id: reportSchedules.id }).from(reportSchedules).limit(1)),
-    exists(db, db.select({ id: reportSnapshots.id }).from(reportSnapshots).limit(1)),
+    'server-probes': () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: probes.id })
+              .from(probes)
+              .where(and(eq(probes.projectId, pid), eq(probes.level, 'server')))
+              .limit(1)
+          : db.select({ id: probes.id }).from(probes).where(eq(probes.level, 'server')).limit(1),
+      ),
     // Bug reports are active once Piwi Picker has sent one.
-    exists(
-      db,
-      scoped
-        ? db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, pid)).limit(1)
-        : db.select({ id: bugReports.id }).from(bugReports).limit(1),
-    ),
+    'bug-reports': () =>
+      exists(
+        db,
+        scoped
+          ? db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, pid)).limit(1)
+          : db.select({ id: bugReports.id }).from(bugReports).limit(1),
+      ),
     // Flake suspects read from history: active once a test has passed on a retry.
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: testRunsCases.id })
-            .from(testRunsCases)
-            .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-            .where(and(eq(testRuns.projectId, pid), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
-            .limit(1)
-        : db
-            .select({ id: testRunsCases.id })
-            .from(testRunsCases)
-            .where(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
-            .limit(1),
-    ),
+    'flake-lab': () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: testRunsCases.id })
+              .from(testRunsCases)
+              .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+              .where(and(eq(testRuns.projectId, pid), PASSED_ON_RETRY))
+              .limit(1)
+          : db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_ON_RETRY).limit(1),
+      ),
     // Resources: active once a reporter sent a run's resource report.
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: testRunResourceReports.id })
-            .from(testRunResourceReports)
-            .innerJoin(testRuns, eq(testRunResourceReports.runId, testRuns.id))
-            .where(eq(testRuns.projectId, pid))
-            .limit(1)
-        : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
-    ),
+    resources: () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: testRunResourceReports.id })
+              .from(testRunResourceReports)
+              .innerJoin(testRuns, eq(testRunResourceReports.runId, testRuns.id))
+              .where(eq(testRuns.projectId, pid))
+              .limit(1)
+          : db.select({ id: testRunResourceReports.id }).from(testRunResourceReports).limit(1),
+      ),
     // Agent diagnoses: active once an agent recorded a diagnosis.
-    exists(
-      db,
-      scoped
-        ? db
-            .select({ id: failureDiagnoses.id })
-            .from(failureDiagnoses)
-            .innerJoin(failureClusters, eq(failureDiagnoses.clusterId, failureClusters.id))
-            .where(and(eq(failureClusters.projectId, pid), eq(failureDiagnoses.provider, 'agent')))
-            .limit(1)
-        : db
-            .select({ id: failureDiagnoses.id })
-            .from(failureDiagnoses)
-            .where(eq(failureDiagnoses.provider, 'agent'))
-            .limit(1),
-    ),
+    'agent-diagnoses': () =>
+      exists(
+        db,
+        scoped
+          ? db
+              .select({ id: failureDiagnoses.id })
+              .from(failureDiagnoses)
+              .innerJoin(failureClusters, eq(failureDiagnoses.clusterId, failureClusters.id))
+              .where(and(eq(failureClusters.projectId, pid), eq(failureDiagnoses.provider, 'agent')))
+              .limit(1)
+          : db
+              .select({ id: failureDiagnoses.id })
+              .from(failureDiagnoses)
+              .where(eq(failureDiagnoses.provider, 'agent'))
+              .limit(1),
+      ),
     // The agents' write log: active once a write tool was called over MCP. It spans projects.
-    exists(db, db.select({ id: mcpToolCalls.id }).from(mcpToolCalls).limit(1)),
-  ]);
-
-  // AI also counts as active when pinned by environment — an env-configured
-  // instance has no `ai` row in app_settings but is very much switched on.
-  const aiFromEnv = Boolean(
-    typeof process !== 'undefined' && (process.env?.PIWI_AI_API_KEY || process.env?.PIWI_AI_MODEL),
-  );
-
-  return {
-    reporter: hasRuns,
-    fixtures: hasNetwork,
-    'locator-healing': hasLocators,
-    'backend-logs': hasServerTraces,
-    clustering: hasClusters,
-    ai: hasAiSetting || aiFromEnv,
-    // MCP has no evidence probe — it is always available, so the resolver marks
-    // it configured rather than active.
-    mcp: false,
-    notifications: hasChannels,
-    'quality-reports': hasReportSchedules || hasReportSnapshots,
-    'pr-feedback': hasPrFeedback,
-    'auto-heal': hasAutoHeal,
-    integrations: hasIntegrations,
-    scm: hasScm,
-    tags: hasTags,
-    markers: hasMarkers,
-    quarantine: hasQuarantine,
-    'green-samples': hasGreenSamples,
-    'test-map': hasGraphNodes,
-    'server-probes': hasServerProbes,
-    'bug-reports': hasBugReports,
-    'flake-lab': hasRetryPass,
-    resources: hasResourceReport,
-    'agent-diagnoses': hasAgentDiagnosis,
-    'agent-write-log': hasAgentWriteLog,
+    'agent-write-log': () => exists(db, db.select({ id: mcpToolCalls.id }).from(mcpToolCalls).limit(1)),
   };
 }
 
@@ -471,7 +466,7 @@ export async function resolveInstanceStates(db: DrizzleDB): Promise<Record<Capab
  * version, so a capability added after the instance started is flagged once.
  */
 export async function getSetupStatus(db: DrizzleDB, appVersion?: string): Promise<SetupStatus> {
-  const evidence = await getCapabilityEvidence(db);
+  const evidence = await getCapabilityEvidence(db, undefined, { fresh: true });
   const decisions = await getInstanceDecisions(db);
   const states = resolveCapabilities(buildInstanceFacts(evidence, decisions));
 

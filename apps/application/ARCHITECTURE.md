@@ -13,7 +13,7 @@ app/          Vue 4 SPA/SSR front end — pages, components, composables, utils,
 server/       Nitro back end — api/, routes/, utils/, database/, middleware/, tasks/
 shared/       Types, constants, pure helpers shared by app + server + demo (`#shared/...`)
 app/demo/     In-browser mirror of the server for the demo SPA
-scripts/      Seed generation, demo media capture, DB query helper
+scripts/      Seed generation, demo media capture, DB query helper, the performance suite (`scripts/perf/`)
 tests/        Playwright specs (`*.spec.ts`) + Vitest unit tests (`tests/unit/*.test.ts`)
 types/        Front-end API response types (`api.ts`)
 ```
@@ -141,6 +141,7 @@ Key server utilities (`server/utils/`):
 | `retention.ts`                                                | Nightly pruning of runs, notification history, diagnosis versions and orphan payloads                                                                                                                                                                                                                                                                                                      |
 | `compute-regression-signals.ts`                               | `isNewRegression` / `isNewFlaky` signals                                                                                                                                                                                                                                                                                                                                                   |
 | `server/tasks/notifications/sweep.ts`                         | Nitro scheduled task — sweeps the outbox every minute                                                                                                                                                                                                                                                                                                                                      |
+| `otel.ts`, `server/plugins/opentelemetry.ts`                  | OpenTelemetry tracing, on when an OTLP endpoint is set: a span per request (and per request the server makes to itself during SSR), a span per SQL statement through `@kubiks/otel-drizzle`, `Server-Timing: traceparent` on responses                                                                                                                                                     |
 
 Import orchestration is shared, not mirrored: `shared/handlers/import-runs.ts` owns everything after parsing, with
 the server and demo supplying an `ImportPort` for the parts that genuinely differ.

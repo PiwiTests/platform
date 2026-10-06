@@ -164,6 +164,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
       { text: 'Storage & retention', link: '/operate/storage' },
       { text: 'Backup & restore', link: '/operate/backup-restore' },
       { text: 'Metrics and rollup export', link: '/operate/metrics' },
+      { text: 'Tracing with OpenTelemetry', link: '/operate/tracing' },
     ],
   },
   {

@@ -57,6 +57,7 @@ export {
   isLabRun,
   isProbeRun,
   notLabExecution,
+  notLabExecutionInProject,
   notLabRun,
 } from '../run-eligibility';
 

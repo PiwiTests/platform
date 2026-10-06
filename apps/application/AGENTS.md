@@ -61,6 +61,11 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   (rows from another branch, a migration dated before the latest applied one, a file changed after it ran) is
   repaired in one transaction and checked against the latest `meta/NNNN_snapshot.json`. The snapshot is the reference,
   so a fresh database must match it — a unit test checks this for SQLite.
+- **A partial index serves a query only when the query repeats its condition with literals** —
+  ``sql`${testRunsCases.status} = 'passed'` ``, not `eq(testRunsCases.status, 'passed')`. A bound parameter cannot be
+  matched to the index's constant by PostgreSQL's cached generic plans or by SQLite's planner, and the query falls
+  back to reading every row. The capability probes (`shared/handlers/setup-status.ts`) and the `fixme` count
+  (`fixmeSkipPredicate`) rely on this.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).
@@ -312,6 +317,13 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale
   (`toLocaleString()`, `viewerLocale()`): the server formats it in its own.
+- **Data several components of one page read under one key** (capability states, the project list) passes
+  `dedupe: 'defer'` and `getCachedData: reuseWithinRender` (`app/utils/shared-fetch.ts`). Without them each caller
+  fetches again during the server render: the default `dedupe: 'cancel'` restarts a pending request, and nothing is
+  reused from the render once it resolved.
+- **What the first screen does not need loads in the browser** (`server: false`, `lazy: true`): a counter, a menu's
+  contents, a card further down. What it shows, or what would make it jump (capability states hiding a tab), stays in
+  the server render.
 - **A `useFetch({ server: false })` loading state reads `status`, not `pending`**: the server renders it `idle`, and
   the client starts the fetch before it hydrates, so gate the spinner on
   `status.value === 'idle' || status.value === 'pending'` (see `pages/projects/[id]/locators.vue`) — gating on
@@ -696,6 +708,26 @@ the docs pages and `CHANGELOG.md` bundled as Nitro server assets (`nitro.serverA
 Dockerfile copies both in) and from the registries the docs site renders — never from prose written for the tool,
 so they cannot say anything the docs do not. How this instance is configured (storage, retention, capability
 states) is deployment shape, shown to administrators only, like the Setup page.
+
+## Performance
+
+A change to what a page loads or renders is measured with the performance suite (`scripts/perf/`, `npm run app:perf`):
+it runs two production builds against a large dataset (1,500 runs, about 475,000 executions) and compares the server
+render, the full load in Chromium, the API calls and the SQL each request runs, for the projects list, every project
+tab and the test-run page. CI runs it on every pull request against the base commit and posts the comparison as a
+comment. Locally:
+
+```bash
+npm run app:build                                     # the build to measure, in .output
+node scripts/perf/run.mjs --target base=<a build of main>/.output --target head=.output --scale medium
+node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:postgres@localhost:5432/postgres …
+```
+
+PostgreSQL must load `pg_stat_statements` (`scripts/perf/lib/pg.mjs` has the `docker run` line); with it every
+request's statements are counted on any build. The suite also runs each build with OpenTelemetry on
+(`server/plugins/opentelemetry.ts`, `server/utils/otel.ts`) to list the SQL of each request and of the requests the
+server makes to itself while rendering a page; set `OTEL_EXPORTER_OTLP_ENDPOINT` to see the same traces in a
+collector of your own (`apps/docs/operate/tracing.md`).
 
 ## Running the app locally to verify a change
 
