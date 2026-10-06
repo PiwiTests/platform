@@ -5,7 +5,7 @@
  * syntax highlighting.
  *
  * The browser-context modules (`probe`, `overlay-element`, `overlay-anchors`,
- * `overlay-confirm`) each export self-contained functions with no module-scope
+ * `overlay-confirm`, `overlay-pause`) each export self-contained functions with no module-scope
  * references — every host re-serializes them via `Function.prototype.toString()`
  * (`page.evaluate` for the reporter, `String()` into a `<script>` tag for the
  * snapshot picker), so a closure over anything outside the function body would
@@ -17,6 +17,7 @@ export * from './probe.js';
 export * from './overlay-element.js';
 export * from './overlay-anchors.js';
 export * from './overlay-confirm.js';
+export * from './overlay-pause.js';
 export * from './anchor-alternatives.js';
 export * from './syntax-highlight.js';
 export * from './dom-role.js';

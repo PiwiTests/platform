@@ -91,6 +91,23 @@ export const PIWI_ENV_KEYS = {
 } as const;
 
 /**
+ * Set by an editor on the test run it starts, beside the two failure-time aids
+ * (`inspectOnFailure`, `pickLocatorOnFailure`) the workers read. Not options:
+ * the breakpoints change with every run, so the editor writes them and the
+ * capture fixtures read them directly. Headed local runs only, never under CI:
+ *  - `pauseAt` lists the lines to pause at before a locator action or
+ *    assertion, comma-separated `file:line` relative to the working directory
+ *    (forward slashes) or absolute: `tests/login.spec.ts:42,tests/pages/checkout.page.ts:9`;
+ *  - `editorSend` is the editor's Send to editor pairing address
+ *    (`<url>#<token>`), which a locator picked while paused is posted to with
+ *    the line it was picked at.
+ */
+export const PIWI_LOCAL_DEBUG_ENV = {
+  pauseAt: 'PIWI_PAUSE_AT',
+  editorSend: 'PIWI_EDITOR_SEND',
+} as const;
+
+/**
  * Relocates the file `resolveOptions` reads the desktop app's connection details
  * from. Not part of `PIWI_ENV_KEYS` because it maps to no option — it only moves
  * the lookup off `defaultDesktopConfigPath()`.

@@ -32,7 +32,7 @@ export interface InspectionGate {
 }
 
 /** True when this raw `CI` env value counts as "running under CI". */
-function isCi(ci: string | undefined): boolean {
+export function isCi(ci: string | undefined): boolean {
   return ci !== undefined && ci !== '' && ci !== 'false';
 }
 

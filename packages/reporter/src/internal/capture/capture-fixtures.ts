@@ -37,6 +37,7 @@ import {
   CAPTURED_ATTRIBUTES,
   TAG_TO_ROLE,
   INPUT_TYPE_TO_ROLE,
+  renderFailing,
   type LocatorSnapshot,
   type FailedLocatorInfo,
 } from './locator-healing.js';
@@ -76,7 +77,25 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
-import { applyPickToSnapshots, deriveFailedLocator, runLocatorPicker, type UserPickResult } from './pick-on-failure.js';
+import {
+  applyPickToSnapshots,
+  deriveFailedLocator,
+  runLocatorPicker,
+  type PickedLocator,
+  type UserPickResult,
+} from './pick-on-failure.js';
+import {
+  assertionLabel,
+  currentPauseSet,
+  logPauseSkipOnce,
+  pauseGateFromTestInfo,
+  pauseHere,
+  pauseSkipReason,
+  pickPayload,
+  postPickToEditor,
+  type PauseSet,
+} from './pause-at.js';
+import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import { isDueForAriaSample } from '../support/aria-sampling.js';
 import { boxCaptureFrames, internalCall } from './quiet-capture.js';
 import { codeReachRoots, pageMapFetcher, resolveCodeReach, startCodeReach, stopCodeReach } from './code-reach.js';
@@ -256,6 +275,9 @@ interface CaptureSink {
   pickOffered: boolean;
   // A replacement locator the human confirmed in the failure-time picker.
   userPick: UserPickResult | null;
+  // The editor's breakpoints (`PIWI_PAUSE_AT`) for this attempt; null when it has none or the gate refuses. `next`
+  // pauses the next action whatever its line (Step), `finished` pauses no more (Finish).
+  pause: { set: PauseSet; next: boolean; finished: boolean } | null;
   // The page each locator call ran on, keyed by call site and chain.
   locatorPages: LocatorPageLog;
   // JavaScript coverage of the test's first page, when code reach is on, and
@@ -285,6 +307,7 @@ function createSink(): CaptureSink {
     flake: null,
     pickOffered: false,
     userPick: null,
+    pause: null,
     locatorPages: new LocatorPageLog(),
     codeReach: null,
   };
@@ -1078,6 +1101,71 @@ function recordLocatorPage(
   }
 }
 
+/** Whether the action at a call site pauses: a breakpoint's line, or any action after Step, until Finish. */
+function pausesAt(pause: NonNullable<CaptureSink['pause']>, callerLocation: string | null): boolean {
+  return !pause.finished && (pause.next || pause.set.matches(callerLocation));
+}
+
+/** A locator as source: Playwright's own rendering of it, else its last locating call. */
+function locatorSource(target: Locator, method: string, args: unknown[]): string {
+  try {
+    const text = String(target);
+    if (text && !text.startsWith('[object')) return text;
+  } catch {
+    // Fall back to the locating call.
+  }
+  return renderFailing({ method, args });
+}
+
+/**
+ * Pause before an action or assertion at one of the editor's breakpoints, through `pauseHere`, as an internal call so
+ * the pause is no step of the test. A locator picked meanwhile is folded into the snapshots at the call site (which
+ * the action then leaves as it is), printed, and posted to the editor. Never throws.
+ */
+async function pauseBefore(
+  sink: CaptureSink,
+  page: Page,
+  target: Locator,
+  callerLocation: string | null,
+  action: string,
+  origin: { method: string; args: unknown[] },
+): Promise<void> {
+  const pause = sink.pause;
+  const testInfo = sink.testInfo;
+  if (!pause || !testInfo || !callerLocation) return;
+  pause.next = false;
+  try {
+    const locator = locatorSource(target, origin.method, origin.args);
+    const onPick = async (picked: PickedLocator) => {
+      const pick: UserPickResult = {
+        failing: { method: origin.method, args: origin.args, rendered: locator, location: callerLocation },
+        ...picked,
+      };
+      applyPickToSnapshots(sink.capturedLocators, pick);
+      sink.probedLocations.add(callerLocation);
+      const place = callerLocation.slice(0, callerLocation.lastIndexOf(':'));
+      console.log(`[piwi] Locator picked at ${place}: ${picked.picked.locator}`);
+      await postPickToEditor(
+        process.env[PIWI_LOCAL_DEBUG_ENV.editorSend],
+        pickPayload(picked.picked.locator, callerLocation),
+      );
+    };
+    const choice = await internalCall(page, () =>
+      pauseHere(
+        page,
+        testInfo,
+        { location: callerLocation, action, locator, target },
+        { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
+        onPick,
+      ),
+    );
+    if (choice === 'step') pause.next = true;
+    else if (choice === 'finish') pause.finished = true;
+  } catch {
+    // A pause never fails the test: it runs on.
+  }
+}
+
 function wrapLocator(page: Page, locator: Locator, originMethod: string, originArgs: unknown[]): Locator {
   return new Proxy(locator, {
     get(target, prop) {
@@ -1103,6 +1191,12 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           const callerLocation = sink ? captureCallerLocation() : null;
           // Every assertion records the page it ran on, negations included.
           if (sink) recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
+          if (sink?.pause && pausesAt(sink.pause, callerLocation)) {
+            await pauseBefore(sink, page, target, callerLocation, assertionLabel(expression, isNot), {
+              method: originMethod,
+              args: originArgs,
+            });
+          }
           // Only positive presence-proving assertions participate — negations,
           // absence/count/page-level assertions, and any unknown future
           // expression pass through untouched.
@@ -1169,6 +1263,9 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           args: originArgs,
           raw: `${originMethod}(${JSON.stringify(originArgs)})`,
         };
+        if (sink.pause && pausesAt(sink.pause, callerLocation)) {
+          await pauseBefore(sink, page, target, callerLocation, String(prop), used);
+        }
 
         // One probe per call site (see `probedLocations`). Push a placeholder
         // immediately on the first visit — DOM capture runs async below.
@@ -1907,6 +2004,12 @@ export const piwiFixtures: Fixtures<
       if (conflict) throw new Error(conflict);
       const sink = createSink();
       sink.testInfo = testInfo;
+      const pauseSet = currentPauseSet();
+      if (pauseSet.size) {
+        const reason = pauseSkipReason(pauseGateFromTestInfo(testInfo));
+        if (reason) logPauseSkipOnce(reason);
+        else sink.pause = { set: pauseSet, next: false, finished: false };
+      }
       if (isFlakeMode()) {
         const plan = loadFlakePlan();
         const role = flakeRoleForTest(plan, {
