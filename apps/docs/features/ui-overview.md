@@ -45,7 +45,7 @@ note counts the runs it hides. The **More** menu holds Edit, [Test functions](./
 [Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
-  50 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
+  25 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
   number, page by page (the header box selects the page's runs), and [delete them](/operate/storage#storage-management).
 - **Tests**: every test case with its pass rate and last run, in file order, with the
   [test search](/reference/test-search) (title, describe block, file, tag, lock, owner, priority, feature) and a status

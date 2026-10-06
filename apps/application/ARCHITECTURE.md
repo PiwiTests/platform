@@ -201,7 +201,8 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `DurationValue` (tight `210ms` via
   the pure `splitDuration`), `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`, `LocatorCode` (a locator
   expression syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`), `ErrorText` (error text with
-  its ANSI colors rendered — a one-line `line` preview for lists and cells, or the full `block`).
+  its ANSI colors rendered — a one-line `line` preview for lists and cells, or the full `block`), `DeferredTooltip`
+  (a `UTooltip` built on the pointer's first entry, for a tooltip repeated on every row of a list).
 - **Test lists** — `TestRow` + `TestRowGroup` (one test or group header, read the same in every list),
   `TestSearchInput` (the search box of the run and project Tests tabs: qualifiers, completion of the term under the
   caret, Ctrl+F through `useFindShortcut`) and `SearchHighlight` (marks what a search matched). The language lives in

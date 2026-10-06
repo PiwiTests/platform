@@ -44,7 +44,7 @@ const accessibleLabel = computed(() => {
 </script>
 
 <template>
-  <UTooltip :ui="{ content: 'overflow-visible !p-0' }">
+  <DeferredTooltip :ui="{ content: 'overflow-visible !p-0' }">
     <!-- 2px gaps let the track show between segments, so adjacent fills stay
          separable for colorblind readers (green|red is near-identical under
          deuteranopia). -->
@@ -77,5 +77,5 @@ const accessibleLabel = computed(() => {
         </div>
       </div>
     </template>
-  </UTooltip>
+  </DeferredTooltip>
 </template>

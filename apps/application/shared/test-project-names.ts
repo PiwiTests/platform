@@ -163,6 +163,7 @@ export const PROJECT = {
   RUN_SUMMARY_TEST: 'run-summary-test',
   RUN_TIMELINE_HOOKS: 'run-timeline-hooks-test',
   RUN_TIMELINE_RESOURCES: 'run-timeline-resources-test',
+  RUNS_LIST: 'runs-list-test',
   SCENARIO_GAPS: 'scenario-gaps-e2e-test',
   SCENARIO_GAPS_DECLINE: 'scenario-gaps-decline-test',
   SHARDING_TEST: 'sharding-test',

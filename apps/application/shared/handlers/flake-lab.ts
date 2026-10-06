@@ -952,11 +952,15 @@ export async function resolveTestCaseByLocation(
   return candidates[0] ?? null;
 }
 
-/** The flaky list's read: each listed test's top suspect, and its latest lab result. */
+/**
+ * The flaky list's read: each listed test's top suspect, and its latest lab
+ * result. `profiles` reads the tests' summary profiles (see `getTopFlakeSuspects`).
+ */
 export async function getFlakyListSuspects(
   db: DrizzleDB,
   projectId: number,
   testCaseIds: number[],
+  opts: { profiles?: (testCaseIds: number[]) => Promise<FlakeProfile[]> } = {},
 ): Promise<Array<TopFlakeSuspect & { lab: FlakeLabSummary | null }>> {
   const summaries = await getFlakeLabSummaries(db, testCaseIds.slice(0, TOP_SUSPECTS_MAX_TESTS));
   const lab = new Map(summaries.map((l) => [l.testCaseId, l]));
@@ -964,7 +968,7 @@ export async function getFlakyListSuspects(
   const results = new Map<number, Map<string, FlakeSuspectResult>>();
   for (const summary of summaries)
     results.set(summary.testCaseId, await getFlakeSuspectResults(db, summary.testCaseId));
-  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { results });
+  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { results, profiles: opts.profiles });
   return items.map((item) => ({ ...item, lab: lab.get(item.testCaseId) ?? null }));
 }
 

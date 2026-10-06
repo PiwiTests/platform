@@ -43,7 +43,7 @@ import {
 import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecutionInProject, notLabRun } from './probes';
 import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { projectRunScopeConditions, scopedExecutionInProject } from './project-run-scope';
+import { projectRunScopeConditions, scopedExecutionInProject, scopedExecutionInProjectJoin } from './project-run-scope';
 import { parseProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
@@ -995,7 +995,16 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       column,
     })
     .from(testCases)
-    .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), realExecution))
+    .leftJoin(
+      testRunsCases,
+      and(
+        eq(testCases.id, testRunsCases.testCaseId),
+        scopedExecutionInProjectJoin(projectId, testRunsCases.testRunId, scopeConditions ?? []),
+        // PostgreSQL does not carry the page's ids across the join: named on the executions too,
+        // they are read through the test case index instead of a scan of every execution.
+        pageIds ? inArray(testRunsCases.testCaseId, pageIds) : undefined,
+      ),
+    )
     .where(pageIds ? inArray(testCases.id, pageIds) : where)
     .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title)
     .orderBy(...orderBy)

@@ -40,3 +40,18 @@ export function scopedExecutionInProject(projectId: number, testRunId: SQLWrappe
   const where = and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin), ...conditions)!;
   return sql`${testRunId} IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${where})`;
 }
+
+/**
+ * `scopedExecutionInProject` for a join that reads every execution of some of
+ * the project's test cases; with no `conditions`, `notLabExecutionInProject`.
+ * The project's runs it leaves out (lab runs, and runs whose conditions are
+ * false or null) are listed once, and an execution is kept unless its run is
+ * on that list, so no run is looked up per execution. Every execution of a
+ * project's test case is of one of the project's runs, so both keep the same
+ * executions. A lookup that stops at a test's first executions (`EXISTS`,
+ * `LIMIT`) plans better with the `IN` form.
+ */
+export function scopedExecutionInProjectJoin(projectId: number, testRunId: SQLWrapper, conditions: SQL[] = []): SQL {
+  const kept = and(notLabRun(testRuns.origin), ...conditions)!;
+  return sql`${testRunId} NOT IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${testRuns.projectId} = ${projectId} AND (${kept}) IS NOT TRUE)`;
+}
