@@ -44,10 +44,10 @@ const tooltipText = computed(() => {
 </script>
 
 <template>
-  <UTooltip v-if="name" :text="tooltipText" :popper="{ placement: 'top' }">
+  <DeferredTooltip v-if="name" :text="tooltipText" :popper="{ placement: 'top' }">
     <span class="shrink-0 cursor-help inline-flex" role="img" :aria-label="name">
       <UIcon :name="icon" :class="iconSizeClass" :style="{ color: hexColor }" />
     </span>
-  </UTooltip>
+  </DeferredTooltip>
   <span v-else class="text-xs text-gray-400 dark:text-gray-500 italic">—</span>
 </template>

@@ -1020,13 +1020,13 @@ const moreMenuItems = computed(() => {
                     >
                       Run #{{ row.original.id }}
                     </a>
-                    <UTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
+                    <DeferredTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
                       <UIcon
                         name="i-lucide-lock"
                         class="size-3.5 shrink-0 text-muted"
                         :aria-label="`Run #${row.original.id} is kept forever`"
                       />
-                    </UTooltip>
+                    </DeferredTooltip>
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
@@ -1043,13 +1043,13 @@ const moreMenuItems = computed(() => {
                   <span class="inline-flex items-center gap-1">Scope <HelpHint topic="run.partial" /></span>
                 </template>
                 <template #isFullRun-cell="{ row }">
-                  <UTooltip :text="scopeTooltip(row.original)">
+                  <DeferredTooltip :text="scopeTooltip(row.original)">
                     <UIcon
                       :name="row.original.isFullRun === false ? 'i-lucide-list-filter' : 'i-lucide-list-checks'"
                       class="size-4 shrink-0 cursor-help"
                       :class="row.original.isFullRun === false ? 'text-amber-500' : 'text-green-500'"
                     />
-                  </UTooltip>
+                  </DeferredTooltip>
                 </template>
                 <template #browsers-header>
                   <span class="sr-only">Browsers</span>
@@ -1109,71 +1109,25 @@ const moreMenuItems = computed(() => {
                 </template>
                 <template #actions-cell="{ row }">
                   <div class="flex justify-end">
-                    <UDropdownMenu :items="runMenuItems(row.original)" :content="{ align: 'end' }">
-                      <UButton
-                        size="xs"
-                        color="neutral"
-                        variant="ghost"
-                        icon="i-lucide-ellipsis-vertical"
-                        :aria-label="`Run #${row.original.id} actions`"
-                        @click.stop
-                      />
-                    </UDropdownMenu>
+                    <RunActionsMenu
+                      :label="`Run #${row.original.id} actions`"
+                      :items="() => runMenuItems(row.original)"
+                    />
                   </div>
                 </template>
               </UTable>
             </div>
 
-            <!-- Below md: one card per run -->
-            <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in pagedRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
-                <div class="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    :checked="isRunSelected(run.id)"
-                    class="cursor-pointer size-4 mt-1 accent-primary shrink-0"
-                    :aria-label="`Select run #${run.id}`"
-                    @click.stop="toggleRunSelection(run.id)"
-                  />
-                  <NuxtLink :to="`/test-runs/${run.id}`" class="flex-1 min-w-0 space-y-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <RunStatusBadge :status="run.status" />
-                      <span class="font-medium text-primary">Run #{{ run.id }}</span>
-                      <UIcon
-                        v-if="run.keptAt"
-                        name="i-lucide-lock"
-                        class="size-3.5 shrink-0 text-muted"
-                        :aria-label="`Run #${run.id} is kept forever`"
-                      />
-                      <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
-                    </div>
-                    <TestStatusBar
-                      :passed="run.passedTests"
-                      :failed="run.failedTests"
-                      :skipped="run.skippedTests"
-                      :fixme="run.fixmeTests ?? 0"
-                      :flaky="run.flakyTests"
-                      :did-not-run="run.didNotRunTests ?? 0"
-                      :total="run.totalTests"
-                    />
-                    <div class="flex items-center justify-between text-xs text-muted">
-                      <ClientDate :date="run.startTime" />
-                      <DurationValue :ms="run.duration" />
-                    </div>
-                  </NuxtLink>
-                  <UDropdownMenu :items="runMenuItems(run)" :content="{ align: 'end' }">
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-ellipsis-vertical"
-                      :aria-label="`Run #${run.id} actions`"
-                      @click.stop.prevent
-                    />
-                  </UDropdownMenu>
-                </div>
-              </div>
-            </div>
+            <!-- Below md: one card per run, hydrated only where it shows. No `>` in this
+                 tag: Nuxt's lazy-hydration transform reads it with a parser that stops there. -->
+            <LazyProjectRunCards
+              v-if="tableRuns.length"
+              hydrate-on-visible
+              :runs="pagedRuns"
+              :selected-run-ids="selectedRunIds"
+              :menu-items="runMenuItems"
+              @toggle="toggleRunSelection"
+            />
 
             <div v-if="tableRuns.length > RUNS_PAGE_SIZE" class="flex justify-center mt-3">
               <UPagination
