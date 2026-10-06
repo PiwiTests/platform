@@ -70,7 +70,7 @@ import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
-import { getBranchFailures } from '~~/server/utils/branch-failures';
+import { BranchFailuresRunError, getBranchFailures, parseBranchFailuresQuery } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import {
   backfillLocatorUsages,
@@ -2073,10 +2073,14 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/branch-failures$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const branch = q?.get('branch')?.trim() ?? '';
-      if (branch.length > 255) throw demoHttpError(400, 'branch is at most 255 characters');
-      const overlays = q?.get('overlays') === '1' || q?.get('overlays') === 'true';
-      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null, { overlays });
+      const query = parseBranchFailuresQuery(Object.fromEntries(q ?? []));
+      if (!query.ok) throw demoHttpError(400, query.message);
+      try {
+        return await getBranchFailures(await getDemoDb(), +m[1]!, query.branch, query.options);
+      } catch (error) {
+        if (error instanceof BranchFailuresRunError) throw demoHttpError(error.statusCode, error.message);
+        throw error;
+      }
     },
   },
   {

@@ -57,6 +57,9 @@ export const INVESTIGATION_RUN_ORIGINS = ['bisect', 'reproduce'] as const satisf
 /** The origins of CI runs, which the editor shows as the branch's CI failures. */
 export const CI_RUN_ORIGINS = ['ci', 'ci-rerun'] as const satisfies readonly RunOriginKind[];
 
+/** The origins of a developer's own runs: their machine, the desktop app, an editor. */
+export const LOCAL_RUN_ORIGINS = ['local', 'desktop', 'editor'] as const satisfies readonly RunOriginKind[];
+
 const LAB_AND_INVESTIGATION: readonly RunOriginKind[] = [...LAB_RUN_ORIGINS, ...INVESTIGATION_RUN_ORIGINS];
 
 /** What a use reads runs for. */

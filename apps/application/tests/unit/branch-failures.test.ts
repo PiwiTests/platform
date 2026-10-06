@@ -8,7 +8,8 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { errorFrames, errorMessage, getBranchFailures } = await import('../../server/utils/branch-failures');
+const { BranchFailuresRunError, errorFrames, errorMessage, getBranchFailures, parseBranchFailuresQuery } =
+  await import('../../server/utils/branch-failures');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -176,6 +177,8 @@ describe('getBranchFailures with the runs laid over the latest complete run', ()
       run(24, 30, 'editor', { status: 'running' }),
       run(25, 25, 'editor', { branch: 'main' }),
       run(26, 15, 'editor', { metadata: origin('editor', 'e4f5a6b') }),
+      // A full run on a developer's machine, older than the CI run.
+      run(27, -20, 'local', { isFullRun: 1, totalTests: 7 }),
     ]);
     await db.insert(schema.failureClusters).values([
       {
@@ -211,6 +214,10 @@ describe('getBranchFailures with the runs laid over the latest complete run', ()
       execution(260, 26, 101, 'passed', { line: 9 }),
       execution(261, 26, 103, 'failed', { error: 'Error: cart badge says 0\n    at /w/tests/cart.spec.ts:12:7' }),
       execution(262, 26, 106, 'skipped'),
+      execution(270, 27, 101, 'failed'),
+      execution(271, 27, 102, 'passed'),
+      execution(272, 27, 104, 'failed'),
+      execution(251, 25, 102, 'failed'),
     ]);
     await db.insert(schema.files).values([{ testRunsCaseId: 261, type: 'trace', path: 'traces/261.zip' }]);
   });
@@ -326,6 +333,83 @@ describe('getBranchFailures with the runs laid over the latest complete run', ()
       [204, 'baseline', 20, false, null],
     ]);
     expect(result.failures[0]).toMatchObject({ owner: '@team-cart', duration: 4120, browserName: 'chromium' });
+  });
+});
+
+describe('getBranchFailures with a chosen baseline', () => {
+  test('a run chosen by its id is the baseline, with the runs of its branch started after it laid over it', async () => {
+    const result = await getBranchFailures(db as never, 2, 'main', { overlays: true, run: 21 });
+    expect(result.run).toMatchObject({ id: 21, branch: 'feature/fix', origin: 'editor' });
+    expect(result.overlays.map((o) => o.id)).toEqual([26]);
+    expect(result.resolved.map((r) => [r.testCaseId, r.runId, r.baselineExecutionId])).toEqual([[101, 26, 210]]);
+    expect(result.failures.map((f) => [f.executionId, f.source, f.isNew])).toEqual([
+      [261, 'overlay', true],
+      [211, 'baseline', false],
+    ]);
+  });
+
+  test('a run of another project is refused, and a missing run is not found', async () => {
+    const other = getBranchFailures(db as never, 2, null, { run: 1 });
+    await expect(other).rejects.toBeInstanceOf(BranchFailuresRunError);
+    await expect(other).rejects.toMatchObject({ statusCode: 400 });
+    await expect(getBranchFailures(db as never, 2, null, { run: 999 })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  test("a developer's own runs: the newest complete local run, with only local runs laid over it", async () => {
+    const result = await getBranchFailures(db as never, 2, 'feature/fix', { overlays: true, origin: 'local' });
+    expect(result.run).toMatchObject({ id: 27, origin: 'local' });
+    expect(result.overlays.map((o) => o.id)).toEqual([26, 21, 23]);
+    expect(result.resolved.map((r) => [r.testCaseId, r.runId]).sort()).toEqual([
+      [101, 26],
+      [104, 21],
+    ]);
+    expect(result.failures.map((f) => [f.executionId, f.source, f.isNew])).toEqual([
+      [261, 'overlay', true],
+      [211, 'overlay', true],
+    ]);
+  });
+
+  test("without a complete local run, a developer's runs of the branch are the overlays alone", async () => {
+    const result = await getBranchFailures(db as never, 2, 'main', { overlays: true, origin: 'local' });
+    expect(result.run).toBeNull();
+    expect(result.overlays.map((o) => o.id)).toEqual([25]);
+    expect(result.failures.map((f) => [f.executionId, f.runId, f.source, f.isNew])).toEqual([
+      [251, 25, 'overlay', true],
+    ]);
+    expect(result.resolved).toEqual([]);
+    expect(await getBranchFailures(db as never, 2, 'main', { origin: 'local' })).toEqual({
+      run: null,
+      overlays: [],
+      failures: [],
+      resolved: [],
+    });
+  });
+});
+
+describe('parseBranchFailuresQuery', () => {
+  test('reads the branch, the overlays, a run and the local origin', () => {
+    expect(parseBranchFailuresQuery({ branch: ' main ', overlays: '1' })).toEqual({
+      ok: true,
+      branch: 'main',
+      options: { overlays: true },
+    });
+    expect(parseBranchFailuresQuery({ run: '118', overlays: 'true' })).toEqual({
+      ok: true,
+      branch: null,
+      options: { overlays: true, run: 118 },
+    });
+    expect(parseBranchFailuresQuery({ origin: 'local' })).toEqual({
+      ok: true,
+      branch: null,
+      options: { overlays: false, origin: 'local' },
+    });
+  });
+
+  test('refuses a run that is not an id, another origin, and a run with an origin', () => {
+    for (const query of [{ run: 'abc' }, { run: '0' }, { origin: 'ci' }, { run: '3', origin: 'local' }]) {
+      expect(parseBranchFailuresQuery(query)).toMatchObject({ ok: false });
+    }
+    expect(parseBranchFailuresQuery({ branch: 'x'.repeat(256) })).toMatchObject({ ok: false });
   });
 });
 

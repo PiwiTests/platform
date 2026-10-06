@@ -3,7 +3,8 @@
  * failing lines: what an editor shows in its Problems panel and status bar.
  * With overlays, the finished runs of that branch started after it (a test
  * re-run from the editor, a run on a developer's machine) are laid over it,
- * per test and Playwright project: the newest result wins.
+ * per test and Playwright project: the newest result wins. The editor may
+ * choose another baseline: a run by its id, or a developer's own runs only.
  */
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, type SQL } from 'drizzle-orm';
 import { extractStackFrames, stripAnsi, withoutStackFrames } from '@piwitests/core/error-parse';
@@ -13,7 +14,14 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { isScreenshotFileRow } from '#shared/file-classify';
 import { extractErrorLocation } from './locator-healing';
 import { lastAttempts } from '#shared/status-classify';
-import { CI_RUN_ORIGINS, UNFINISHED_RUN_STATUSES, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
+import {
+  CI_RUN_ORIGINS,
+  LOCAL_RUN_ORIGINS,
+  UNFINISHED_RUN_STATUSES,
+  eligibleRunSql,
+  runOriginIn,
+  type RunOriginKind,
+} from '#shared/run-eligibility';
 import type { RunMetadata } from './run-json-types';
 
 /** Failed executions listed per run, and failures listed as resolved. */
@@ -125,12 +133,61 @@ export interface BranchResolved {
 }
 
 export interface BranchFailures {
+  /** The baseline; null when none is found, and with `origin: 'local'` the overlays alone are read. */
   run: BranchRun | null;
   /** The runs laid over `run`, newest first; empty without overlays. */
   overlays: BranchOverlay[];
   failures: BranchFailure[];
   /** The failures of `run` a run laid over it passed; empty without overlays. */
   resolved: BranchResolved[];
+}
+
+/** Which run is the baseline, and which runs are laid over it. */
+export interface BranchFailuresOptions {
+  /** Lay the finished runs of the baseline's branch started after it over it. */
+  overlays?: boolean;
+  /** This run is the baseline, whatever its branch, origin or completeness; the branch asked for is not read. */
+  run?: number;
+  /**
+   * `local`: a developer's own runs only (`LOCAL_RUN_ORIGINS`). The baseline is the branch's newest complete local
+   * run, and only local runs are laid over it; without one, the finished local runs of the branch are the overlays
+   * alone.
+   */
+  origin?: 'local';
+}
+
+/** A chosen baseline run the project does not hold: missing (404) or another project's (400). */
+export class BranchFailuresRunError extends Error {
+  constructor(
+    readonly statusCode: 400 | 404,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'BranchFailuresRunError';
+  }
+}
+
+/** The query of `GET /api/projects/:id/branch-failures`, read the same way by the server and the demo. */
+export function parseBranchFailuresQuery(
+  query: Record<string, unknown>,
+): { ok: true; branch: string | null; options: BranchFailuresOptions } | { ok: false; message: string } {
+  const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  const branch = text(query.branch);
+  if (branch.length > 255) return { ok: false, message: 'branch is at most 255 characters' };
+  const flag = text(query.overlays);
+  const options: BranchFailuresOptions = { overlays: flag === '1' || flag === 'true' };
+  const run = text(query.run);
+  if (run) {
+    if (!/^\d{1,15}$/.test(run) || Number(run) < 1) return { ok: false, message: 'run is a test run ID' };
+    options.run = Number(run);
+  }
+  const origin = text(query.origin);
+  if (origin) {
+    if (origin !== 'local') return { ok: false, message: 'origin is local or omitted' };
+    if (options.run !== undefined) return { ok: false, message: 'run and origin cannot be combined' };
+    options.origin = 'local';
+  }
+  return { ok: true, branch: branch || null, options };
 }
 
 /** An error as an editor quotes it: without ANSI codes and stack frames, at most {@link MESSAGE_MAX_LINES} lines. */
@@ -228,12 +285,19 @@ interface Listed {
  * listed as new. A pass on another project resolves nothing; it is noted on the
  * failure. Of the overlays, only the attempts of the tests that failed in the
  * complete run or in an overlay are read: no other test can change the answer.
+ *
+ * With `run`, that run of the project is the baseline instead, and the runs of
+ * its branch started after it are laid over it; a run of another project or
+ * none throws {@link BranchFailuresRunError}. With `origin: 'local'`, only a
+ * developer's own runs are read: the newest complete one on `branch` is the
+ * baseline, and without one the finished local runs of the branch are laid over
+ * no baseline, each failure new.
  */
 export async function getBranchFailures(
   db: DrizzleDB,
   projectId: number,
   branch: string | null,
-  options: { overlays?: boolean } = {},
+  options: BranchFailuresOptions = {},
 ): Promise<BranchFailures> {
   const runColumns = {
     id: testRuns.id,
@@ -248,7 +312,7 @@ export async function getBranchFailures(
     flakyTests: testRuns.flakyTests,
     skippedTests: testRuns.skippedTests,
   };
-  const newest = (ciOnly: boolean) =>
+  const newest = (origins: readonly RunOriginKind[] | null) =>
     db
       .select(runColumns)
       .from(testRuns)
@@ -257,15 +321,40 @@ export async function getBranchFailures(
           eq(testRuns.projectId, projectId),
           branch ? eq(testRuns.branch, branch) : undefined,
           eligibleRunSql('branch-failures'),
-          ciOnly ? runOriginIn(testRuns.origin, CI_RUN_ORIGINS) : undefined,
+          origins ? runOriginIn(testRuns.origin, origins) : undefined,
         ),
       )
       .orderBy(desc(testRuns.startTime), desc(testRuns.id))
       .limit(1);
-  const ciRuns = await newest(true);
-  const [run] = ciRuns.length ? ciRuns : await newest(false);
-  if (!run) return { run: null, overlays: [], failures: [], resolved: [] };
+  const local = options.origin === 'local';
+  let run: Awaited<ReturnType<typeof newest>>[number] | undefined;
+  if (options.run !== undefined) {
+    const [found] = await db
+      .select({ ...runColumns, projectId: testRuns.projectId })
+      .from(testRuns)
+      .where(eq(testRuns.id, options.run))
+      .limit(1);
+    if (!found) throw new BranchFailuresRunError(404, `Test run ${options.run} not found`);
+    if (found.projectId !== projectId) {
+      throw new BranchFailuresRunError(400, `Test run ${options.run} belongs to another project`);
+    }
+    const { projectId: _project, ...row } = found;
+    run = row;
+  } else if (local) {
+    [run] = await newest(LOCAL_RUN_ORIGINS);
+  } else {
+    const ciRuns = await newest(CI_RUN_ORIGINS);
+    [run] = ciRuns.length ? ciRuns : await newest(null);
+  }
+  if (!run && !(local && options.overlays)) return { run: null, overlays: [], failures: [], resolved: [] };
 
+  const overlayBranch = run
+    ? run.branch
+      ? eq(testRuns.branch, run.branch)
+      : isNull(testRuns.branch)
+    : branch
+      ? eq(testRuns.branch, branch)
+      : undefined;
   const overlayRuns = options.overlays
     ? await db
         .select({ ...runColumns, isFullRun: testRuns.isFullRun })
@@ -273,13 +362,16 @@ export async function getBranchFailures(
         .where(
           and(
             eq(testRuns.projectId, projectId),
-            run.branch ? eq(testRuns.branch, run.branch) : isNull(testRuns.branch),
-            or(
-              gt(testRuns.startTime, run.startTime),
-              and(eq(testRuns.startTime, run.startTime), gt(testRuns.id, run.id)),
-            ),
+            overlayBranch,
+            run
+              ? or(
+                  gt(testRuns.startTime, run.startTime),
+                  and(eq(testRuns.startTime, run.startTime), gt(testRuns.id, run.id)),
+                )
+              : undefined,
             notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES]),
             eligibleRunSql('editor-overlay'),
+            local ? runOriginIn(testRuns.origin, LOCAL_RUN_ORIGINS) : undefined,
           ),
         )
         .orderBy(desc(testRuns.startTime), desc(testRuns.id))
@@ -313,18 +405,20 @@ export async function getBranchFailures(
       .orderBy(asc(testCases.filePath), asc(testRunsCases.line), asc(testRunsCases.id));
 
   // Every attempt of each test that failed at least once, so a pass on a retry drops the test.
-  const attempts = await executions(
-    and(
-      eq(testRunsCases.testRunId, run.id),
-      inArray(
-        testRunsCases.testCaseId,
-        db
-          .select({ id: testRunsCases.testCaseId })
-          .from(testRunsCases)
-          .where(and(eq(testRunsCases.testRunId, run.id), inArray(testRunsCases.status, FAIL_STATUSES))),
-      ),
-    ),
-  );
+  const attempts = run
+    ? await executions(
+        and(
+          eq(testRunsCases.testRunId, run.id),
+          inArray(
+            testRunsCases.testCaseId,
+            db
+              .select({ id: testRunsCases.testCaseId })
+              .from(testRunsCases)
+              .where(and(eq(testRunsCases.testRunId, run.id), inArray(testRunsCases.status, FAIL_STATUSES))),
+          ),
+        ),
+      )
+    : [];
   const baseline = lastAttempts(attempts.map((a) => ({ ...a, id: a.executionId }))).filter((r) =>
     FAIL_STATUSES.includes(r.status),
   );
@@ -457,19 +551,21 @@ export async function getBranchFailures(
   }
 
   return {
-    run: {
-      id: run.id,
-      status: run.status,
-      branch: run.branch ?? null,
-      startTime: iso(run.startTime),
-      origin: run.origin,
-      commit: commitOf(run.metadata),
-      totalTests: run.totalTests,
-      passedTests: run.passedTests,
-      failedTests: run.failedTests,
-      flakyTests: run.flakyTests,
-      skippedTests: run.skippedTests,
-    },
+    run: run
+      ? {
+          id: run.id,
+          status: run.status,
+          branch: run.branch ?? null,
+          startTime: iso(run.startTime),
+          origin: run.origin,
+          commit: commitOf(run.metadata),
+          totalTests: run.totalTests,
+          passedTests: run.passedTests,
+          failedTests: run.failedTests,
+          flakyTests: run.flakyTests,
+          skippedTests: run.skippedTests,
+        }
+      : null,
     overlays: overlayRuns.map((o) => ({
       id: o.id,
       status: o.status,
