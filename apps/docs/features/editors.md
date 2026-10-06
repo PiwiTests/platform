@@ -28,12 +28,9 @@ your files locally.
 
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
 default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
-is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. The run is read every
-minute.
-
-**Your local runs.** A later finished run on the branch, from the editor, `piwi run`, `npx playwright test` or the
-desktop app, overlays the CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens
-saying *fixed locally in run #124*; a test failing in it is an error labeled *local run #124*.
+is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. Your local runs
+since are laid over it, and the editor reads it again as soon as a run ends: [Runs from the editor](./editor-runs)
+covers running tests, the status bar, and what a run changes.
 
 On a failure, the quick fixes are:
 
@@ -52,12 +49,6 @@ On a failure, the quick fixes are:
 
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
 cluster or test. Without one, **File an issue** opens the cluster in the dashboard.
-
-## The status bar
-
-The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
-local runs fixed (`2 failing · 1 fixed locally`). Click it to open the run. When the extension is not connected, the
-item says why and runs **Piwi: Connect**.
 
 ## The tests behind each line
 
@@ -135,8 +126,8 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
   failures, then those your local runs fixed, since the IDE highlights open files only. Double-click
   one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link.
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
-- **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this
-  file** is also in the editor's context menu.
+- **The status bar** shows the latest run, or the [run in progress](./editor-runs#the-status-bar); the actions are under
+  **Tools → Piwi**, and **Run the tests that reach this file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
   Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
   environment.

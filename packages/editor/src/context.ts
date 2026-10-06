@@ -27,7 +27,7 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
-import type { ConnectionSource, EditorCredentials } from './protocol.js';
+import type { ConnectionSource, EditorCredentials, LiveRun } from './protocol.js';
 import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
 
 /** Selections resolved at each refresh, at most. */
@@ -240,6 +240,12 @@ export class PiwiContext {
   flakeLab = new Map<number, FlakeLabEntry>();
   /** The latest run on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
+  /** When `failures` was last read (ms since the epoch); null before the first answer. */
+  runReadAt: number | null = null;
+  /** The run in progress the context follows: the editor's own, else one on its branch; null while none runs. */
+  live: LiveRun | null = null;
+  /** The runs the editor started on this instance (`piwi/runArgs`, `piwi/runSelection`), for the service's life. */
+  readonly ownRuns = new Set<number>();
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
   private words: { at: number; value: { tags: string[]; features: string[] } } | null = null;
   private readonly issues = new Map<number, Promise<EntityLink[]>>();
@@ -358,7 +364,10 @@ export class PiwiContext {
     }
   }
 
-  /** Drop everything read from the instance: the project, its indexes, the latest run and the per-file answers. */
+  /**
+   * Drop everything read from the instance: the project, its indexes, the latest run, the runs followed and the
+   * per-file answers.
+   */
   private forget(): void {
     this.project = null;
     this.branch = null;
@@ -371,6 +380,9 @@ export class PiwiContext {
     this.flaky = new Map();
     this.flakeLab = new Map();
     this.failures = null;
+    this.runReadAt = null;
+    this.live = null;
+    this.ownRuns.clear();
     this.runBranch = null;
     this.checkedOutBranch = null;
     this.functions = null;
@@ -420,6 +432,7 @@ export class PiwiContext {
       this.runBranch = branch;
       this.checkedOutBranch = checkedOut;
       this.failures = next;
+      this.runReadAt = Date.now();
       return changed;
     } catch {
       return false;

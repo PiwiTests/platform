@@ -78,9 +78,14 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             componentStyle = UIUtil.ComponentStyle.SMALL
             foreground = UIUtil.getContextHelpForeground()
         }
+        // The list is filled again only when the failures changed: a run in progress keeps the selection.
+        var listed: List<WorkspaceFailure>? = null
         val render: () -> Unit = {
-            model.clear()
-            service.failures.forEach { model.addElement(it) }
+            if (service.failures != listed) {
+                listed = service.failures
+                model.clear()
+                service.failures.forEach { model.addElement(it) }
+            }
             val failing = service.failures.count { !Glue.isFixedLocally(it) }
             toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
             connection.text = Glue.connectionSummary(service.status, service.local().desktop)

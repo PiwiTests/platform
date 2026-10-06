@@ -22,6 +22,7 @@ import type {
   FailuresResult,
   FileSummary,
   McpServersResult,
+  Notice,
   PageCandidatesResult,
   RecordResult,
   RecordingUpdate,
@@ -137,6 +138,43 @@ const ROW_FAILURE = {
 /** What the instance answers with the runs laid over run #41, once a test sets it; with none laid over it otherwise. */
 let laidOver: unknown = null;
 
+/**
+ * The API key of the service the tests of runs as they happen start: the stub streams the instance's events to that
+ * key only, and is an instance without the route for every other.
+ */
+const RUNS_KEY = 'pd_runs';
+/** The instance's event streams open with that key, which a test pushes events into. */
+const instanceStreams = new Set<http.ServerResponse>();
+/** One run's event streams, by run. */
+const runStreams = new Map<number, Set<http.ServerResponse>>();
+/** Runs as `GET /api/test-runs/:id` answers them. */
+const runDetails = new Map<number, Record<string, unknown>>();
+/** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
+const refRuns = new Map<string, { id: number; status: string }>();
+/** The `latest-run` lookups of each ref. */
+const refLookups = new Map<string, number>();
+/** What the instance answers that service with the runs laid over run #41, once a test sets it. */
+let runsLaidOver: unknown = null;
+/** The `branch-failures` reads of that service. */
+let runsReads = 0;
+
+function openEvents(res: http.ServerResponse): void {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+  res.write(': connected\n\n');
+}
+
+const sendEvent = (res: http.ServerResponse, data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+/** An event on the instance's stream. */
+function pushInstanceEvent(event: { type: string; runId: number; projectId: number; status?: string }): void {
+  for (const res of instanceStreams) sendEvent(res, event);
+}
+
+/** An event on one run's stream. */
+function pushRunEvent(runId: number, type: string, data: Record<string, unknown>): void {
+  for (const res of runStreams.get(runId) ?? []) sendEvent(res, { type, data, seq: 1, timestamp: Date.now() });
+}
+
 let dir = '';
 let server: http.Server;
 let url = '';
@@ -171,6 +209,39 @@ beforeAll(async () => {
   server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const u = req.url ?? '';
+    const runsKey = req.headers['x-api-key'] === RUNS_KEY;
+    if (u === '/api/stream' && runsKey) {
+      openEvents(res);
+      instanceStreams.add(res);
+      res.on('close', () => instanceStreams.delete(res));
+      return;
+    }
+    const runStream = /^\/api\/test-runs\/(\d+)\/stream$/.exec(u);
+    const streamed = runStream ? runDetails.get(Number(runStream[1])) : undefined;
+    if (runStream && streamed) {
+      const id = Number(runStream[1]);
+      openEvents(res);
+      const { status, totalTests, passedTests, failedTests, skippedTests } = streamed;
+      sendEvent(res, {
+        type: 'init',
+        data: { id, status, totalTests, passedTests, failedTests, skippedTests },
+        seq: 0,
+      });
+      const open = runStreams.get(id) ?? new Set();
+      runStreams.set(id, open.add(res));
+      res.on('close', () => open.delete(res));
+      return;
+    }
+    const details = /^\/api\/test-runs\/(\d+)$/.exec(u);
+    if (details && runDetails.has(Number(details[1])))
+      return res.end(JSON.stringify(runDetails.get(Number(details[1]))));
+    if (u.startsWith('/api/projects/7/latest-run?')) {
+      const query = new URL(u, url).searchParams;
+      const ref = query.get('ref') ?? '';
+      refLookups.set(ref, (refLookups.get(ref) ?? 0) + 1);
+      const found = query.get('origin') === 'editor' ? refRuns.get(ref) : undefined;
+      return res.end(JSON.stringify(found ?? null));
+    }
     if (u === '/api/projects/menu') return res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
     if (u.startsWith('/api/projects/7/locator-index')) return res.end(JSON.stringify(INDEX));
     if (u.startsWith('/api/projects/7/code-index')) {
@@ -240,13 +311,15 @@ beforeAll(async () => {
     if (u.startsWith('/api/projects/7/branch-failures?')) {
       const query = new URL(u, url).searchParams;
       const laid = query.get('overlays') === '1';
+      if (runsKey) runsReads++;
       if (query.get('branch') !== 'main') {
         return res.end(
           JSON.stringify(laid ? { run: null, overlays: [], failures: [], resolved: [] } : { run: null, failures: [] }),
         );
       }
       const latest = { run: MAIN_RUN, failures: [ROW_FAILURE] };
-      return res.end(JSON.stringify(laid ? (laidOver ?? { ...latest, overlays: [], resolved: [] }) : latest));
+      const over = runsKey ? runsLaidOver : laidOver;
+      return res.end(JSON.stringify(laid ? (over ?? { ...latest, overlays: [], resolved: [] }) : latest));
     }
     if (u === '/api/failure-clusters/77/fix-plan') {
       return res.end(
@@ -492,6 +565,7 @@ afterAll(async () => {
   clearInterval(pollStatus);
   stop?.();
   client?.dispose();
+  server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -678,6 +752,10 @@ describe('the Piwi language server', () => {
         failingTests: 1,
         resolved: 0,
         overlays: 0,
+        live: null,
+        // This instance has no event stream: the run is read every minute.
+        stream: 'polling',
+        updatedAt: expect.any(String),
       },
     ]);
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
@@ -827,14 +905,17 @@ describe('the Piwi language server', () => {
       { key: 'smoke', name: 'Smoke', count: 1, includesFile: true },
       { key: 'failed', name: 'failed', count: 1, includesFile: false },
     ]);
-    expect(await client.sendRequest('piwi/runSelection', { uri: uri('tests/checkout.spec.ts'), key: 'smoke' })).toEqual(
-      {
-        cwd: dir,
-        command: 'npx playwright test tests/checkout.spec.ts:3',
-        args: [],
-        env: { PIWI_ORIGIN: 'editor' },
-      },
-    );
+    const selection = (await client.sendRequest('piwi/runSelection', {
+      uri: uri('tests/checkout.spec.ts'),
+      key: 'smoke',
+    })) as RunCommand;
+    expect(selection).toEqual({
+      cwd: dir,
+      command: 'npx playwright test tests/checkout.spec.ts:3',
+      args: [],
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+    });
   });
 
   test('summarizes a page object, a spec and an application file', async () => {
@@ -976,7 +1057,8 @@ describe('the Piwi language server', () => {
       cwd: dir,
       args: ['tests/checkout.spec.ts:3'],
       command: 'npx playwright test tests/checkout.spec.ts:3',
-      env: { PIWI_ORIGIN: 'editor' },
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
   });
 });
@@ -1112,6 +1194,246 @@ describe('local runs over the latest CI run', () => {
         ?.find((d) => d.code === 'ci-failure' && d.message.includes('run #41')),
     );
     expect(restored.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, run #41)");
+  });
+});
+
+describe('runs as they happen', () => {
+  let runsClient: MessageConnection;
+  let stopRuns: () => void;
+  const statuses: RunStatusResult[] = [];
+  const notices: Notice[] = [];
+  const published = new Map<string, Array<{ message: string; code?: string }>>();
+
+  beforeAll(async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopRuns = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: RUNS_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      // Not within a test: what the service reads again, it reads on an event.
+      runPollMs: 60 * 60_000,
+      ownRunPollMs: 50,
+      commandEndWaitMs: 300,
+    });
+    runsClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    runsClient.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
+      statuses.push(p);
+    });
+    runsClient.onNotification('piwi/notice', (n: Notice) => {
+      notices.push(n);
+    });
+    runsClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    runsClient.listen();
+    await runsClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+    });
+    await runsClient.sendNotification('initialized', {});
+    await waitFor(async () => {
+      const s = (await runsClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+      return s.contexts[0]?.run && s.contexts[0].stream === 'live' ? s : undefined;
+    });
+  });
+
+  afterAll(() => {
+    stopRuns?.();
+    runsClient?.dispose();
+    runsLaidOver = null;
+  });
+
+  test('a run that ends is read within a second, without waiting for the next read', async () => {
+    const before = runsReads;
+    pushInstanceEvent({ type: 'run-finished', runId: 50, projectId: 8, status: 'passed' });
+    const at = Date.now();
+    pushInstanceEvent({ type: 'run-finished', runId: 51, projectId: 7, status: 'passed' });
+    await waitFor(() => (runsReads > before ? true : undefined), 1_000);
+    expect(Date.now() - at).toBeLessThan(1_000);
+    expect(statuses[statuses.length - 1]?.contexts[0]).toMatchObject({ stream: 'live', live: null });
+  });
+
+  /** A run of a command built here with `ref`, as `GET /api/test-runs/:id` answers it: on another branch than main. */
+  const editorRun = (id: number, ref: string | undefined, status: string, startTime: string) => ({
+    id,
+    status,
+    branch: 'feature/other',
+    startTime,
+    metadata: { piwiOrigin: { kind: 'editor', ref } },
+    totalTests: 2,
+    passedTests: status === 'running' ? 0 : 1,
+    failedTests: status === 'failed' ? 1 : 0,
+    skippedTests: 0,
+    didNotRunTests: 0,
+  });
+
+  /** What the instance answers once run `id` is laid over run #41, `pays` failing in it. */
+  const laidOverBy = (id: number, startTime: string) => ({
+    run: { ...MAIN_RUN, origin: 'ci' },
+    overlays: [
+      {
+        id,
+        status: 'failed',
+        origin: 'editor',
+        isFullRun: false,
+        startTime,
+        commit: null,
+        totalTests: 2,
+        passedTests: 1,
+        failedTests: 1,
+        flakyTests: 0,
+        skippedTests: 0,
+      },
+    ],
+    failures: [
+      ROW_FAILURE,
+      {
+        executionId: 900 + id,
+        testCaseId: 1,
+        clusterId: null,
+        title: 'pays',
+        file: 'tests/checkout.spec.ts',
+        line: 3,
+        status: 'failed',
+        headline: "getByRole('button', { name: 'Pay now' }) was not visible",
+        location: '/home/dev/shop/tests/pages/checkout.page.ts:4:21',
+        message: null,
+        frames: ['/home/dev/shop/tests/pages/checkout.page.ts:4:21'],
+        traces: [],
+        screenshot: null,
+        source: 'overlay',
+        runId: id,
+        browserName: 'chromium',
+      },
+    ],
+    resolved: [],
+  });
+
+  /** The run ends, `pays` failing in it: the failure on the page object names it. */
+  async function endRun(id: number, startTime: string) {
+    runDetails.set(id, { ...runDetails.get(id), status: 'failed', passedTests: 1, failedTests: 1 });
+    runsLaidOver = laidOverBy(id, startTime);
+    const seen = statuses.length;
+    pushRunEvent(id, 'run-finished', { status: 'failed', totalTests: 2, passedTests: 1, failedTests: 1 });
+    pushInstanceEvent({ type: 'run-finished', runId: id, projectId: 7, status: 'failed' });
+    const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
+    const onPage = await waitFor(() =>
+      published.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.message.includes(`your run #${id}`)),
+    );
+    return { ended, message: onPage.message };
+  }
+
+  const runTests = async () =>
+    (await runsClient.sendRequest('piwi/runArgs', { uri: uri('tests/checkout.spec.ts'), testIds: [1] })) as RunCommand;
+
+  test('the run of a test started here is followed live as its own, and its failures read your run', async () => {
+    const command = await runTests();
+    expect(command.ref).toMatch(/^ed-[0-9a-f]{8}$/);
+    expect(command.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref });
+
+    // It runs on another branch than the one read: the editor's own run is followed wherever it runs.
+    const startTime = '2026-09-27T11:00:00.000Z';
+    runDetails.set(42, editorRun(42, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 42, status: 'running' });
+    const started = await waitFor(() => statuses.find((s) => s.contexts[0]?.live)?.contexts[0]?.live ?? undefined);
+    expect(started).toEqual({
+      runId: 42,
+      status: 'running',
+      done: 0,
+      total: 2,
+      failed: 0,
+      startedAt: startTime,
+      own: true,
+    });
+
+    // A test's end, then the counts of its batch.
+    await waitFor(() => (runStreams.get(42)?.size ? true : undefined));
+    pushRunEvent(42, 'test-completed', { title: 'pays', status: 'failed', testCaseId: 1 });
+    pushRunEvent(42, 'run-progress', { totalTests: 2, passedTests: 0, failedTests: 1, skippedTests: 0 });
+    const progress = await waitFor(
+      () => statuses.find((s) => s.contexts[0]?.live?.done === 1)?.contexts[0]?.live ?? undefined,
+    );
+    expect(progress).toMatchObject({ runId: 42, done: 1, total: 2, failed: 1, own: true });
+
+    // It ends: the instance lays it over run #41.
+    const { ended, message } = await endRun(42, startTime);
+    // The live run leaves in the notification that brings the failures read once it ended.
+    expect(ended.contexts[0]).toMatchObject({ live: null, overlays: 1, failingTests: 2 });
+    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #42)");
+    const listed = (await runsClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(listed.items.find((i) => i.runId === 42)).toMatchObject({ source: 'own', state: 'failing' });
+  });
+
+  test('a rerun of a command started here, with the same ref, is its own once the stream announces it', async () => {
+    const command = await runTests();
+    const ref = command.ref!;
+    const noticed = notices.length;
+    // The command's run, found on the instance.
+    runDetails.set(45, editorRun(45, ref, 'passed', '2026-09-27T12:30:00.000Z'));
+    refRuns.set(ref, { id: 45, status: 'passed' });
+    let reads = runsReads;
+    await waitFor(() => (runsReads > reads ? true : undefined));
+
+    /** A run of the same command, with the same ref, that the stream announces: the editor's own. */
+    const rerun = async (id: number, startTime: string) => {
+      runDetails.set(id, editorRun(id, ref, 'running', startTime));
+      const seen = statuses.length;
+      pushInstanceEvent({ type: 'run-started', runId: id, projectId: 7 });
+      const live = await waitFor(
+        () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === id)?.contexts[0]?.live ?? undefined,
+      );
+      expect(live).toMatchObject({ runId: id, status: 'running', own: true });
+      const { message } = await endRun(id, startTime);
+      expect(message).toBe(`getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #${id})`);
+    };
+    // Before the command's end is heard of, as in a terminal reused without shell integration.
+    await rerun(46, '2026-09-27T12:40:00.000Z');
+    // After it, as the Run tool window's Rerun does.
+    reads = runsReads;
+    await runsClient.sendNotification('piwi/commandEnded', { ref, exitCode: 1 });
+    await waitFor(() => (runsReads > reads ? true : undefined));
+    await rerun(47, '2026-09-27T12:50:00.000Z');
+    expect(notices.length).toBe(noticed);
+  });
+
+  test('a command whose run never reached the instance is said once it ends, and is looked for no more', async () => {
+    const reached = await runTests();
+    const lost = await runTests();
+    runDetails.set(43, editorRun(43, reached.ref, 'passed', '2026-09-27T12:00:00.000Z'));
+    refRuns.set(reached.ref!, { id: 43, status: 'passed' });
+    await runsClient.sendNotification('piwi/commandEnded', { ref: reached.ref, exitCode: 0 });
+    await runsClient.sendNotification('piwi/commandEnded', { ref: lost.ref, exitCode: 1 });
+    await waitFor(() => notices[0]);
+    expect(notices).toEqual([
+      {
+        root: dir,
+        severity: 'warning',
+        message: `The run ended (exit code 1) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
+      },
+    ]);
+    // Once the wait is over, the instance is not asked for either command's run again.
+    const asked = [refLookups.get(reached.ref!), refLookups.get(lost.ref!)];
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect([refLookups.get(reached.ref!), refLookups.get(lost.ref!)]).toEqual(asked);
+    expect(asked[1]).toBeGreaterThan(0);
+  });
+
+  test('piwi/refreshRun reads the latest run again and answers the status', async () => {
+    const before = (await runsClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const reads = runsReads;
+    const after = (await runsClient.sendRequest('piwi/refreshRun')) as RunStatusResult;
+    expect(runsReads).toBeGreaterThan(reads);
+    expect(after.contexts[0]).toMatchObject({ run: { id: 41 }, stream: 'live', live: null });
+    expect(Date.parse(after.contexts[0]!.updatedAt!)).toBeGreaterThan(Date.parse(before.contexts[0]!.updatedAt!));
+    expect(await runsClient.sendRequest('piwi/runStatus')).toEqual(after);
   });
 });
 

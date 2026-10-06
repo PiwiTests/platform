@@ -107,9 +107,22 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
+    /** A run in progress in the status bar: `Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+    private fun liveText(live: LiveRun): String {
+        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
+        return "Piwi: ${live.done}/${live.total}$failing" + if (live.own) " · your run" else ""
+    }
+
+    /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+    private fun liveLine(live: LiveRun): String {
+        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
+        return "\n${if (live.own) "Your run" else "Run"} #${live.runId} is running: ${live.done}/${live.total}$failing"
+    }
+
     /**
      * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
-     * fail, or what keeps the service from reading it. A null status means the service has not started: it starts
+     * fail, or what keeps the service from reading it. While a run is in progress, the editor's own or one on the
+     * branch, the text counts it, and the tooltip has both. A null status means the service has not started: it starts
      * with the first file of the project opened.
      */
     fun statusView(status: StatusResult?, runs: RunStatusResult?, desktopChosen: Boolean = false): StatusView {
@@ -122,17 +135,25 @@ object Glue {
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
-        val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet$from", null, StatusAction.NONE)
+        val live = run?.live
+        val progress = live?.let { liveLine(it) } ?: ""
+        val r = run?.run ?: return StatusView(
+            live?.let { liveText(it) } ?: "Piwi: no run",
+            "No run of $where yet$progress$from",
+            null,
+            StatusAction.NONE,
+        )
         // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
         val failing = run.failingTests ?: r.failedTests
         val fixed = run.resolved ?: 0
         val overlays = run.overlays ?: 0
         val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
-            "${r.flakyTests} flaky, ${r.skippedTests} skipped$local$from"
+            "${r.flakyTests} flaky, ${r.skippedTests} skipped$local$progress$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
         val open = StatusAction.OPEN
         return when {
+            live != null -> StatusView(liveText(live), tooltip, r.url, open)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
@@ -155,15 +176,27 @@ object Glue {
 
     /**
      * What a `piwi/failures` item says about its run, beside its title: `fixed locally in run #124` for a failure a
-     * later run passed (`fixed in run #124` when that run is a CI run), `local run #124` for a failure of a run that
-     * did not run in CI; null otherwise, and from an older service.
+     * later run passed (`fixed in run #124` when that run is a CI run, `fixed locally in your run #124` when the editor
+     * started it), `your run #124` for a failure of a run the editor started, `local run #124` for a failure of another
+     * run that did not run in CI; null otherwise, and from an older service.
      */
     fun failureRunNote(failure: WorkspaceFailure): String? = when {
-        isFixedLocally(failure) ->
-            if (failure.source == "ci") "fixed in run #${failure.runId}" else "fixed locally in run #${failure.runId}"
+        isFixedLocally(failure) -> when (failure.source) {
+            "ci" -> "fixed in run #${failure.runId}"
+            "own" -> "fixed locally in your run #${failure.runId}"
+            else -> "fixed locally in run #${failure.runId}"
+        }
+        failure.source == "own" -> "your run #${failure.runId}"
         failure.source == "local" -> "local run #${failure.runId}"
         else -> null
     }
+
+    /**
+     * The runs as the files show them: without the run in progress, the stream and the time of the last read, which
+     * move while the latest run and its failures stay. The files are drawn again when it changes.
+     */
+    fun runsInFiles(runs: RunStatusResult?): RunStatusResult? =
+        runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
 
     /** When the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {

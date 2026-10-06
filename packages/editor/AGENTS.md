@@ -11,21 +11,23 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/desktopJob`,
-  `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, the
-  `piwi/setCredentials` notification and the `piwi/runStatusChanged`, `piwi/statusChanged`, `piwi/desktopJobChanged`
-  and `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
-  Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open
-  files only (the JetBrains IDEs).
-- The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); while that branch
-  has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in `piwi/runStatus`).
+  `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
+  `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
+  `piwi/pageCandidates`, the `piwi/setCredentials` and `piwi/commandEnded` notifications, and the
+  `piwi/runStatusChanged`, `piwi/statusChanged`, `piwi/notice`, `piwi/desktopJobChanged` and `piwi/recordingChanged`
+  notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code Vision), `piwi/runStatus` in
+  its status bar, and `piwi/failures` in a list where its LSP client highlights open files only (the JetBrains IDEs).
+- The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
+  branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
+  `piwi/runStatus`).
   Its failures are published as `ci-failure` diagnostics in every file they point to, merged with the analysis of
   open documents. The instance lays over that run the runs of its branch finished since, whole or partial (a test
   re-run from the editor, `piwi run`, the desktop app: `branch-failures?overlays=1`), per test and Playwright project,
   the newest result winning: a failure may be listed from a later run (`source: 'overlay'`, labeled `local run #N`
-  when it did not run in CI), and a failure a later run passed moves to `resolved`, which publishes no diagnostic: its
-  test's line says `fixed locally in run #N` with `status: 'passed'`, `piwi/failures` lists it as `fixed-locally`, and
-  `piwi/runStatus` counts it in `resolved` beside `failingTests` and `overlays`, which the status bars show.
+  when it did not run in CI, `your run #N` when the editor started it), and a failure a later run passed moves to
+  `resolved`, which publishes no diagnostic: its test's line says `fixed locally in run #N` with `status: 'passed'`,
+  `piwi/failures` lists it as `fixed-locally`, and `piwi/runStatus` counts it in `resolved` beside `failingTests` and
+  `overlays`, which the status bars show.
   On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
@@ -35,11 +37,31 @@ clients stay thin and both editors give the same answers.
   flaky rate and top suspect, then `piwi flake` commands run through `piwi.runCommand`, with `--server-url` only when
   the command, run from the config's folder, would find another instance (`withServerUrl`), and, while the desktop app
   runs beside a team instance, the reproduction as a desktop job (`piwi.desktopJob`, kind `flake-lab`).
+- Runs are pushed, and the poll is the fallback (`src/run-stream.ts`, `src/run-watch.ts`). One server-sent events
+  stream per instance and key (`GET /api/stream`, `InstanceStream`), shared by the contexts that read it, says when a
+  run of their project starts or ends; it is opened again after 1 s, doubling to a minute, every five minutes after a
+  404 (an instance without the route), not after a 401 or 403 until the credentials change. Half a second after a run
+  ends (runs that end together are read once), the context reads its latest run again; while its stream is connected,
+  the poll reads it every five minutes, otherwise every minute, every 15 seconds while a run is in progress (`stream`
+  and `updatedAt` in `piwi/runStatus`). A run in progress on the context's branch, or the editor's own wherever it
+  runs, is `live` in `piwi/runStatus`, counted through its own stream (`GET /api/test-runs/:id/stream`), with at most
+  one notification every 300 ms; it goes back to null in the notification that brings the failures read once it
+  ended. `piwi/refreshRun` reads the runs alone, not the indexes `piwi/refresh` reads.
+- The editor's own run: `piwi/runArgs` and `piwi/runSelection` give each command a ref (`ed-` and 8 hex characters),
+  in its environment as `PIWI_ORIGIN_REF` beside `PIWI_ORIGIN=editor` and in `RunCommand.ref`; the Flake Lab lines
+  and the fix plan's verification carry `PIWI_ORIGIN=editor` alone. The service looks for the run carrying it
+  (`latest-run?origin=editor&ref=`, every 2 s for two minutes, or a `run-started` whose metadata names it) and keeps
+  it in `PiwiContext.ownRuns` for its lifetime: its failures read `your run #N` and are `source: 'own'` in
+  `piwi/failures`. A client says when the command ended (`piwi/commandEnded`, with its exit code): the service reads
+  the run once more and, when no run carries the ref 5 s later, sends `piwi/notice`; the instance is not asked for the
+  ref again. A later run carrying it, a rerun of the command (the Run tool window's Rerun, a VS Code terminal reused
+  without shell integration), is the editor's own once the instance's stream announces it, whatever was found before;
+  the service keeps the refs of the 50 latest commands.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.
 - `src/context.ts` is one Playwright config of the workspace: its connection, project, branch and cached indexes.
-- `src/piwi-client.ts` is the only file that talks to an instance.
+- `src/piwi-client.ts` is the only file that talks to an instance; it opens the event streams `src/run-stream.ts` reads.
 - `src/desktop-jobs.ts` passes a failure of the team instance to the desktop app as a job (`@piwitests/core/desktop-job`,
   with the token of the app's discovery file), polls its verdict and shares a bisect's first bad commit on the instance
   with the editor's key. A `flake-lab` job carries the test's reproduce plan, read from the instance with recording on
@@ -94,7 +116,8 @@ needs the extension's sources, and a change to the recorder there changes what t
   commands (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`) are named in `SummaryLine.command`. A change to `protocol.ts`
   lands with both clients in the same change, and a renamed request or command is a breaking change.
 - **Nothing blocks typing.** The project's indexes, failures, function catalog and vocabulary are fetched on the
-  refresh timer, on `piwi/refresh` and after `piwi/setCredentials`, and requests answer from them. What belongs to one
+  refresh timer, on `piwi/refresh` and after `piwi/setCredentials` (the failures also when a run ends, on the poll and
+  on `piwi/refreshRun`), and requests answer from them. What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
   fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it.
 - **The connection order is fixed** (`resolveContextConnection`): the desktop app while it runs when the editor

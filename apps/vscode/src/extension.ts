@@ -16,13 +16,17 @@ import {
   type ServerOptions,
 } from 'vscode-languageclient/node';
 import {
+  COMMAND_ENDED_NOTIFICATION,
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
+  NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   SHARE_DESKTOP_JOB_REQUEST,
+  type CommandEndedParams,
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
+  type Notice,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RenderStepsParams,
@@ -85,6 +89,7 @@ import {
   importInsertion,
   indentBlock,
   mcpConfiguration,
+  runsInFiles,
   sourceLabel,
   statusBarView,
 } from './glue';
@@ -116,6 +121,18 @@ interface McpApi {
   ): vscode.Disposable;
 }
 type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers?: Record<string, string>) => unknown;
+
+/** A command's start and end in a terminal, from shell integration (VS Code 1.93 and later), read at runtime. */
+interface ShellExecutionEvent {
+  terminal: vscode.Terminal;
+  execution?: { commandLine?: { value?: string } };
+  /** Set on the end; undefined when the shell does not report it. */
+  exitCode?: number;
+}
+interface ShellIntegrationApi {
+  onDidStartTerminalShellExecution?: vscode.Event<ShellExecutionEvent>;
+  onDidEndTerminalShellExecution?: vscode.Event<ShellExecutionEvent>;
+}
 
 let client: LanguageClient | null = null;
 let sendListener: SendListener | null = null;
@@ -239,10 +256,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let lastServers = '';
   context.subscriptions.push(lensesChanged, mcpChanged, statusItem);
 
-  const updateStatus = async (runs?: RunStatusResult) => {
-    const status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
-    const runStatus = runs ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
-    const view = statusBarView(status, runStatus, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
+  /** The service's last answers the status bar item renders. */
+  let status: StatusResult | null = null;
+  let runs: RunStatusResult | null = null;
+  let runsShown = '';
+  const render = () => {
+    const view = statusBarView(status, runs, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
     statusItem.text = view.text;
     statusItem.tooltip = view.tooltip;
     statusUrl = view.url;
@@ -250,8 +269,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       view.action === 'open' ? 'piwi.openRun' : view.action === 'connect' ? 'piwi.connect' : undefined;
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
+  };
+
+  /**
+   * Render the runs a `piwi/runStatusChanged` brought; without them, read the connection and the runs again. The
+   * CodeLens and the gutter are drawn again after a full read, and when the runs as the files show them changed: a
+   * run in progress moves the status bar item alone.
+   */
+  const updateStatus = async (next?: RunStatusResult) => {
+    const full = !next || !status;
+    if (full) status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
+    runs = next ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
+    render();
+    const shown = runsInFiles(runs);
+    if (full || shown !== runsShown) lensesChanged.fire();
+    runsShown = shown;
+    if (!full) return;
     void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
-    lensesChanged.fire();
     if (status) void offerDesktop(context, lc, status);
     const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
     const serialized = JSON.stringify(servers?.servers ?? []);
@@ -262,21 +296,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
   };
 
-  // The terminal of each directory and environment tests run in, reused while it is open.
+  // The terminal of each directory and environment commands run in, reused while it is open. A test run carries the
+  // ref of its own run in its environment. With shell integration, it opens a terminal of its own, which replaces the
+  // previous run's in that directory once that run's command ended. Without it, the test runs of a directory share one
+  // terminal, whose environment keeps the first run's ref: the service recognizes the later runs as the editor's own by
+  // it, through the instance's event stream.
   const terminals = new Map<string, vscode.Terminal>();
-  const runInTerminal = (cwd: string, command: string, env?: Record<string, string>) => {
-    const key = `${cwd}\0${JSON.stringify(env ?? {})}`;
-    let terminal = terminals.get(key);
-    if (!terminal || terminal.exitStatus) {
-      terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
-      terminals.set(key, terminal);
+  const runTerminals = new Map<string, vscode.Terminal>();
+  /** The command of a test run sent to a terminal, until shell integration sees it end: `piwi/commandEnded` names it. */
+  const running = new Map<vscode.Terminal, { ref: string; command: string }>();
+  /** The terminals whose last command ended. */
+  const idle = new WeakSet<vscode.Terminal>();
+  const shell = vscode.window as unknown as ShellIntegrationApi;
+  const shellIntegration = !!shell.onDidStartTerminalShellExecution && !!shell.onDidEndTerminalShellExecution;
+  const runInTerminal = (cwd: string, command: string, env?: Record<string, string>, ref?: string) => {
+    let terminal: vscode.Terminal | undefined;
+    if (ref) {
+      const previous = runTerminals.get(cwd);
+      if (!shellIntegration && previous && !previous.exitStatus) {
+        terminal = previous;
+      } else {
+        if (previous && idle.has(previous)) previous.dispose();
+        terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
+        runTerminals.set(cwd, terminal);
+        if (shellIntegration) running.set(terminal, { ref, command });
+      }
+    } else {
+      const key = `${cwd}\0${JSON.stringify(env ?? {})}`;
+      terminal = terminals.get(key);
+      if (!terminal || terminal.exitStatus) {
+        terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
+        terminals.set(key, terminal);
+      }
     }
     terminal.show();
     terminal.sendText(command);
   };
+  if (shell.onDidStartTerminalShellExecution && shell.onDidEndTerminalShellExecution) {
+    context.subscriptions.push(
+      shell.onDidStartTerminalShellExecution((e) => idle.delete(e.terminal)),
+      shell.onDidEndTerminalShellExecution((e) => {
+        idle.add(e.terminal);
+        const sent = running.get(e.terminal);
+        const line = e.execution?.commandLine?.value;
+        if (!sent || (line && !line.includes(sent.command))) return;
+        running.delete(e.terminal);
+        void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, {
+          ref: sent.ref,
+          exitCode: e.exitCode ?? null,
+        } satisfies CommandEndedParams);
+      }),
+    );
+  }
   context.subscriptions.push(
     vscode.window.onDidCloseTerminal((t) => {
       for (const [key, terminal] of terminals) if (terminal === t) terminals.delete(key);
+      for (const [cwd, terminal] of runTerminals) if (terminal === t) runTerminals.delete(cwd);
+      running.delete(t);
     }),
   );
 
@@ -286,7 +362,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return;
     }
-    runInTerminal(command.cwd, command.command, command.env);
+    runInTerminal(command.cwd, command.command, command.env, command.ref);
   };
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
@@ -363,7 +439,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       );
       if (!picked) return;
       const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, { uri, key: picked.key });
-      if (command) runInTerminal(command.cwd, command.command, command.env);
+      if (command) runInTerminal(command.cwd, command.command, command.env, command.ref);
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
@@ -483,8 +559,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
 
   context.subscriptions.push(
-    lc.onNotification(RUN_STATUS_NOTIFICATION, (runs: RunStatusResult) => void updateStatus(runs)),
+    lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
+    lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
+      const text = `Piwi: ${notice.message}`;
+      void (notice.severity === 'warning'
+        ? vscode.window.showWarningMessage(text)
+        : vscode.window.showInformationMessage(text));
+    }),
   );
   context.subscriptions.push(...registerDesktopJobs(lc));
   recording = registerRecording(context, lc);

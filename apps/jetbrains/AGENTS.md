@@ -28,12 +28,20 @@ the service through the platform's LSP API with the project's Node.js interprete
   latest result from `piwi/fileSummary`: a gutter icon, the details as its tooltip, the `PIWI_FAILING_TEST`
   background over a failing test, and `PIWI_FAILING_LINE` on the line it failed at, with why as the tooltip; the test's
   background goes around that line, since two backgrounds on a line have no set order (`PiwiColorSettingsPage.kt`,
-  defaults in `resources/colorSchemes/`). Code Vision skips those lines, and the daemon restarts when the run changes.
-- The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
-  window from `piwi/failures` (the LSP client highlights open files only; a failure of a local run names its run, and
-  the failures a later run passed follow, marked fixed: `Glue.failureRunNote`) with the connection from `piwi/status`,
-  and the actions under **Tools → Piwi**. The service starts with the first supported file opened (2024.1 has no way to
-  start it without one): until then the status is null, and the status bar and tool window say so.
+  defaults in `resources/colorSchemes/`). Code Vision skips those lines, and the daemon restarts when the run as the
+  files show it changes (`Glue.runsInFiles`), not when only the run in progress moves.
+- The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus` (with the run in
+  progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only; a
+  failure of a local run names its run, `your run #N` for the editor's own, and the failures a later run passed
+  follow, marked fixed: `Glue.failureRunNote`; the list is filled again only when the failures changed) with the
+  connection from `piwi/status`, and the actions under **Tools → Piwi**. The service starts with the first supported
+  file opened (2024.1 has no way to start it without one): until then the status is null, and the status bar and tool
+  window say so.
+- `PiwiCommands.run` runs a command in the Run tool window, whose **Rerun** (`RunContentExecutor.withRerun`) stops it
+  if it runs and starts it again with the same environment. For a test run (`RunCommand.ref`), a `ProcessListener`
+  sends `piwi/commandEnded` with the exit code when the process ends; a rerun keeps the ref, by which the service
+  recognizes it as the editor's own through the instance's event stream. A `piwi/notice` is a balloon
+  (`PiwiCommands.notify`).
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those

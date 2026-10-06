@@ -61,9 +61,10 @@ and `local` otherwise. A launcher names itself through two environment variables
 | `PIWI_ORIGIN_REF` | Optional: what the run was launched for, such as a dispatch, a cluster or a bug report id (letters, digits and `._:/#@-`, up to 200 characters) |
 
 Piwi's own launchers set them: the desktop app (`desktop`, and `reproduce` or `bisect` with the cluster id), the
-editors (`editor`), `piwi preflight --run` (`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab
-and probes. A [re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as
-`ci-rerun` once Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
+editors (`editor`, with a ref of their own on each test run, which they find the run by), `piwi preflight --run`
+(`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab and probes. A
+[re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as `ci-rerun` once
+Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
 
 What each origin feeds:
 

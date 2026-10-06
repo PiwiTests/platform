@@ -93,13 +93,54 @@ class GlueTest {
     fun `a failure of a local run, and a failure fixed since, name their run`() {
         val failing = WorkspaceFailure(title = "pays", runId = 124, source = "local", state = "failing")
         assertEquals("local run #124", Glue.failureRunNote(failing))
+        assertEquals("your run #124", Glue.failureRunNote(failing.copy(source = "own")))
         assertEquals(null, Glue.failureRunNote(failing.copy(source = "ci")))
         assertEquals(null, Glue.failureRunNote(WorkspaceFailure(title = "pays", runId = 41)))
         val fixed = failing.copy(state = "fixed-locally", headline = null)
         assertEquals("fixed locally in run #124", Glue.failureRunNote(fixed))
+        assertEquals("fixed locally in your run #124", Glue.failureRunNote(fixed.copy(source = "own")))
         assertEquals("fixed in run #124", Glue.failureRunNote(fixed.copy(source = "ci")))
         assertEquals(true, Glue.isFixedLocally(fixed))
         assertEquals(false, Glue.isFixedLocally(failing))
+    }
+
+    @Test
+    fun `a run in progress, the editor's own or one on the branch, in the text and beside the latest run`() {
+        val failed = passed.copy(status = "failed", passedTests = 115, failedTests = 3, flakyTests = 0)
+        val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 1, own = true)
+        fun live(run: RunInfo?, live: LiveRun?) =
+            RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = run, failingTests = 3, live = live)))
+        val own = Glue.statusView(connected, live(failed, inProgress))
+        assertEquals("Piwi: 4/9 · 1 failing · your run", own.text)
+        assertEquals(
+            "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
+                "Your run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env",
+            own.tooltip,
+        )
+        val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
+        assertEquals("Piwi: 4/9", other.text)
+        assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4/9\n"))
+        // Once it ended, the latest run again.
+        assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
+        // On a branch without a run yet.
+        val first = Glue.statusView(connected, live(null, inProgress.copy(done = 0, failed = 0)))
+        assertEquals("Piwi: 0/9 · your run", first.text)
+        assertEquals(
+            "No run of Acme on feature/pay yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env",
+            first.tooltip,
+        )
+    }
+
+    @Test
+    fun `the files are drawn again when the latest run changes, not while a run in progress moves`() {
+        val latest = runs(passed.copy(status = "failed", failedTests = 1))
+        val moving = RunStatusResult(
+            latest.contexts!!.map {
+                it.copy(live = LiveRun(runId = 124, status = "running", own = true), stream = "live", updatedAt = "2026-09-27T11:00:00.000Z")
+            },
+        )
+        assertEquals(Glue.runsInFiles(latest), Glue.runsInFiles(moving))
+        assertEquals(false, Glue.runsInFiles(runs(passed)) == Glue.runsInFiles(latest))
     }
 
     @Test

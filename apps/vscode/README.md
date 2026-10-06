@@ -3,8 +3,8 @@
 Your Playwright suite's history where you change the code, from a [Piwi](https://piwitests.dev) instance.
 
 - **CI failures in the Problems panel.** The failures of the latest run on the checked-out branch, at their failing
-  line, with one line on why each failed. Your own runs since are laid over it: a test you fixed and re-ran leaves the
-  panel, and one your run broke joins it.
+  line, with one line on why each failed. Your own runs since are laid over it within a second of their end: a test
+  you fixed and re-ran leaves the panel, and one your run broke joins it.
 - **Heal in place.** On a failing locator, the replacement Piwi recommends is a quick fix: the same edit an auto-heal
   pull request makes. **Open the trace** downloads it and opens Playwright's trace viewer; the failure screenshot is in
   the hover.
@@ -17,8 +17,8 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
 - **Record a test.** **Piwi: Record here** opens a browser through your project's own Playwright and writes what you
   do there at the cursor, as you do it: steps inside a test, or a new test between tests. **Piwi: Record a new test
   file** records a whole spec. It needs no instance.
-- **The status bar.** The latest run on the branch, live while it runs, with what your local runs fixed since
-  (`2 failing · 1 fixed locally`).
+- **The status bar.** The latest run on the branch, with what your local runs fixed since (`2 failing · 1 fixed
+  locally`), and the run you started from the editor, live while it runs.
 - **Piwi's MCP server for the agent**, with the connection the extension already has.
 
 ## Connect

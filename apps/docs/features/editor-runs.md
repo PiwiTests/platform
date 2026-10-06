@@ -1,0 +1,58 @@
+---
+title: Runs from the editor
+description: "Run Playwright tests from VS Code or a JetBrains IDE and follow the run in the status bar: the editor reads its results within a second of its end, lays them over the latest CI run's failures, and says when a run never reached the instance."
+lang: en-US
+---
+
+# Runs from the editor
+
+The [editor extensions](./editors) run your tests where you edit them, then show what the run changed: its progress
+in the status bar while it executes, and its results over the latest CI run's failures within a second of its end.
+
+## Run tests
+
+- The lines above a locator line, an application file or a page file (CodeLens in VS Code, Code Vision in a JetBrains
+  IDE) run the tests they name when clicked.
+- **Piwi: Run the tests that reach this file** runs every test that reaches the active file through
+  [code reach](/features/code-reach); it is also in the editor's context menu.
+- **Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
+
+The command is the one `piwi run` would build, run from the Playwright config's folder: in a terminal in VS Code, in
+the Run tool window in a JetBrains IDE, whose **Rerun** starts it again. It sets `PIWI_ORIGIN=editor` and a
+`PIWI_ORIGIN_REF` of its own ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run on
+the instance.
+
+## Your local runs
+
+A later finished run on the branch, from the editor, `piwi run`, `npx playwright test` or the desktop app, overlays the
+latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying *fixed
+locally in run #124*; a test failing in it is an error labeled *local run #124*, or *your run #124* when this editor
+started it.
+
+## After a run
+
+The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
+branch's latest run and its failures again. While the stream is connected, it also reads them every five minutes, which
+catches a run reported to another server of an instance scaled out without sticky sessions; when the stream is
+unavailable, such as behind a proxy that buffers it, every minute.
+
+A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
+read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says
+so: `The run ended (exit code 1) but did not reach https://piwi.example.com: is the Piwi reporter in the Playwright
+config?` VS Code learns that a command ended through shell integration (VS Code 1.93 and later), and gives each run
+a terminal of its own; without it, the runs of a folder share one terminal, the run is still found and followed, and a
+run that never arrived goes unmentioned.
+
+## The status bar
+
+The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
+local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or another run of the branch,
+is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends;
+the tooltip shows both. Click it to open the run. When the extension is not connected, the item says why and runs
+**Piwi: Connect**.
+
+## Related
+
+- [Editor extensions](./editors): the failures, lenses and quick fixes the editor shows from your suite.
+- [Editor connection](./editor-connection): the instance the editor reads, and its key.
+- [Test selection](/features/test-selection): the saved selections **Run selection…** runs.

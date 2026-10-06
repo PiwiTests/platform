@@ -53,12 +53,23 @@ data class RunTestsArgs(val uri: String, val testIds: List<Int>)
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
 
+/**
+ * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
+ * `piwi/commandEnded` names once the command ends; null from an older service.
+ */
 data class RunCommand(
     val cwd: String? = null,
     val command: String? = null,
     val args: List<String>? = null,
     val env: Map<String, String>? = null,
+    val ref: String? = null,
 )
+
+/** `piwi/commandEnded`: the command of a `RunCommand` with `ref` ended, with its exit code. */
+data class CommandEndedParams(val ref: String, val exitCode: Int? = null)
+
+/** `piwi/notice`: a sentence to show once about the context at `root`; `severity` is `information` or `warning`. */
+data class NoticeParams(val root: String? = null, val severity: String? = null, val message: String? = null)
 
 data class TraceParams(val uri: String, val executionId: Int)
 
@@ -100,10 +111,26 @@ data class RunInfo(
 )
 
 /**
+ * A run in progress: `status` is `running`, `initializing` or `finalizing`, `done` the tests that ended out of
+ * `total`, `startedAt` ISO 8601, and `own` whether the editor started it.
+ */
+data class LiveRun(
+    val runId: Int = 0,
+    val status: String? = null,
+    val done: Int = 0,
+    val total: Int = 0,
+    val failed: Int = 0,
+    val startedAt: String? = null,
+    val own: Boolean = false,
+)
+
+/**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
  * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
- * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs; the last
- * three are null from an older service.
+ * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs. `live` is
+ * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
+ * event stream is connected or `polling`, and `updatedAt` when the latest run was last read (ISO 8601). The fields
+ * after `checkedOut` are null from an older service.
  */
 data class RunStatus(
     val root: String? = null,
@@ -114,14 +141,18 @@ data class RunStatus(
     val failingTests: Int? = null,
     val resolved: Int? = null,
     val overlays: Int? = null,
+    val live: LiveRun? = null,
+    val stream: String? = null,
+    val updatedAt: String? = null,
 )
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
 /**
  * A failure of the latest run where it shows, or, with `state` `fixed-locally`, a failure a later run passed, at its
- * test's line (`executionId` and `runId` are then the passing ones). `source` is `ci` or `local`, `state` `failing` or
- * `fixed-locally`, `browserName` the Playwright project; the three are null from an older service.
+ * test's line (`executionId` and `runId` are then the passing ones). `source` is `ci`, `own` (a run the editor started)
+ * or `local`, `state` `failing` or `fixed-locally`, `browserName` the Playwright project; the three are null from an
+ * older service.
  */
 data class WorkspaceFailure(
     val uri: String? = null,
@@ -348,6 +379,9 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/refresh")
     fun refresh(): CompletableFuture<Any?>
 
+    @JsonRequest("piwi/refreshRun")
+    fun refreshRun(): CompletableFuture<RunStatusResult?>
+
     @JsonRequest("piwi/desktopJob")
     fun desktopJob(params: DesktopJobParams): CompletableFuture<DesktopJobResult?>
 
@@ -368,4 +402,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)
+
+    @JsonNotification("piwi/commandEnded")
+    fun commandEnded(params: CommandEndedParams)
 }

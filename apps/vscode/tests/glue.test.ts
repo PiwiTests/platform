@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import type { DesktopJobUpdate, DesktopResult, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
+import type {
+  DesktopJobUpdate,
+  DesktopResult,
+  LiveRun,
+  RunStatusResult,
+  StatusResult,
+} from '@piwitests/editor/protocol';
 import {
   configTestDir,
   connectChoices,
@@ -14,6 +20,7 @@ import {
   recordedBlockText,
   recordingSummary,
   recordingView,
+  runsInFiles,
   sourceLabel,
   statusBarView,
   testDecorations,
@@ -114,6 +121,58 @@ describe('statusBarView', () => {
     expect(statusBarView(connected, local({ failingTests: 3, resolved: 0, overlays: 0 })).tooltip).not.toContain(
       'local run',
     );
+  });
+
+  test('a run in progress, the editor’s own or one on the branch, in the item and beside the latest run', () => {
+    const inProgress: LiveRun = {
+      runId: 124,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T11:00:00.000Z',
+      own: true,
+    };
+    const live = (over: Partial<LiveRun> | null): RunStatusResult => {
+      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115, flakyTests: 0 });
+      return { contexts: [{ ...runs.contexts[0]!, failingTests: 3, live: over && { ...inProgress, ...over } }] };
+    };
+    expect(statusBarView(connected, live({}))).toMatchObject({
+      text: '$(sync~spin) Piwi: 4/9 · 1 failing · your run',
+      tooltip:
+        'Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\nYour run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env',
+      error: false,
+    });
+    expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
+      text: '$(sync~spin) Piwi: 4/9',
+      tooltip: expect.stringContaining('\nRun #124 is running: 4/9\n'),
+    });
+    // Once it ended, the latest run again.
+    expect(statusBarView(connected, live(null)).text).toBe('$(error) Piwi: 3 failing');
+    // On a branch without a run yet.
+    const first: RunStatusResult = {
+      contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0, live: { ...inProgress, done: 0, failed: 0 } }],
+    };
+    expect(statusBarView(connected, first)).toMatchObject({
+      text: '$(sync~spin) Piwi: 0/9 · your run',
+      tooltip: 'No run of Acme on wip yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env',
+    });
+  });
+
+  test('the files are drawn again when the latest run changes, not while a run in progress moves', () => {
+    const latest = run({ status: 'failed', failedTests: 1 });
+    const moving: RunStatusResult = {
+      contexts: [
+        {
+          ...latest.contexts[0]!,
+          live: { runId: 124, status: 'running', done: 1, total: 9, failed: 0, startedAt: '', own: true },
+          stream: 'live',
+          updatedAt: '2026-09-27T11:00:00.000Z',
+        },
+      ],
+    };
+    expect(runsInFiles(moving)).toBe(runsInFiles(latest));
+    expect(runsInFiles(run({}))).not.toBe(runsInFiles(latest));
   });
 
   test('a running run shows its progress', () => {

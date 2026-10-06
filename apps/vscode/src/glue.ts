@@ -9,6 +9,7 @@ import type {
   ConnectionSource,
   DesktopJobUpdate,
   DesktopResult,
+  LiveRun,
   McpServerDefinition,
   RecordingPlacement,
   RecordingUpdate,
@@ -49,9 +50,22 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
   return desktopChosen ? '\nThe Piwi desktop app, chosen with Piwi: Connect, is not running.' : '';
 }
 
+/** A run in progress in the status bar: `$(sync~spin) Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+function liveText(live: LiveRun): string {
+  const failing = live.failed ? ` · ${live.failed} failing` : '';
+  return `$(sync~spin) Piwi: ${live.done}/${live.total}${failing}${live.own ? ' · your run' : ''}`;
+}
+
+/** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+function liveLine(live: LiveRun): string {
+  const failing = live.failed ? ` · ${live.failed} failing` : '';
+  return `\n${live.own ? 'Your run' : 'Run'} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+}
+
 /**
  * The status bar item: the latest run on the checked-out branch, with what the runs laid over it fixed or still fail,
- * or what keeps the service from reading it.
+ * or what keeps the service from reading it. While a run is in progress, the editor's own or one on the branch, the
+ * item counts it, and the tooltip has both.
  */
 export function statusBarView(
   status: StatusResult | null,
@@ -79,10 +93,12 @@ export function statusBarView(
     run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
   const where = `${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`;
   const from = (connected.serverUrl ? `\n${connected.serverUrl}, from ${sourceLabel(connected.source)}` : '') + hint;
+  const live = run?.live ?? null;
+  const progress = live ? liveLine(live) : '';
   if (!run?.run) {
     return {
-      text: '$(beaker) Piwi: no run',
-      tooltip: `No run of ${where} yet${from}`,
+      text: live ? liveText(live) : '$(beaker) Piwi: no run',
+      tooltip: `No run of ${where} yet${progress}${from}`,
       action: 'none',
       url: null,
       error: false,
@@ -95,12 +111,12 @@ export function statusBarView(
   const local = run.overlays
     ? `\n${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally`
     : '';
-  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${local}${from}`;
-  if (ACTIVE.has(r.status)) {
+  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${local}${progress}${from}`;
+  if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
     return {
-      text: `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
+      text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
       tooltip,
       action: 'open',
       url: r.url,
@@ -130,6 +146,16 @@ export function statusBarView(
     url: r.url,
     error: false,
   };
+}
+
+/**
+ * The runs as the files show them, in one string: without the run in progress, the stream and the time of the last
+ * read, which move while the latest run and its failures stay. The files are drawn again when it changes.
+ */
+export function runsInFiles(runs: RunStatusResult | null): string {
+  return JSON.stringify(
+    runs?.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })) ?? null,
+  );
 }
 
 /** A test's latest result, drawn on the test: a gutter icon, a hover, and a background while it fails. */

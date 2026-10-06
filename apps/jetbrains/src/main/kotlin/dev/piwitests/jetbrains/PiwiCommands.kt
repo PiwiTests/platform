@@ -6,6 +6,8 @@ import com.intellij.execution.ExecutionException
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.KillableColoredProcessHandler
+import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -101,7 +103,7 @@ object PiwiCommands {
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
-                run(project, command.cwd, command.command!!, command.env)
+                run(project, command.cwd, command.command!!, command.env, command.ref)
             }
         }
     }
@@ -134,9 +136,10 @@ object PiwiCommands {
 
     /**
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
-     * the event thread.
+     * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
+     * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included.
      */
-    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null) {
+    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
@@ -151,9 +154,29 @@ object PiwiCommands {
                 notify(project, "Could not run ${parts[0]}: ${e.message}", NotificationType.ERROR)
                 return@executeOnPooledThread
             }
+            if (ref != null) {
+                handler.addProcessListener(object : ProcessListener {
+                    override fun processTerminated(event: ProcessEvent) {
+                        val ended = CommandEndedParams(ref, event.exitCode)
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            if (!project.isDisposed) project.service<PiwiProjectService>().server()?.commandEnded(ended)
+                        }
+                    }
+                })
+            }
             ApplicationManager.getApplication().invokeLater {
-                if (project.isDisposed) handler.destroyProcess()
-                else RunContentExecutor(project, handler).withTitle("Piwi").withActivateToolWindow(true).run()
+                if (project.isDisposed) {
+                    handler.destroyProcess()
+                } else {
+                    RunContentExecutor(project, handler)
+                        .withTitle("Piwi")
+                        .withActivateToolWindow(true)
+                        .withRerun {
+                            handler.destroyProcess()
+                            run(project, cwd, command, env, ref)
+                        }
+                        .run()
+                }
             }
         }
     }

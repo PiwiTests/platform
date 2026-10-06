@@ -4,6 +4,7 @@ import com.intellij.execution.ExecutionException
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.javascript.nodejs.interpreter.NodeJsInterpreterManager
 import com.intellij.javascript.nodejs.interpreter.local.NodeJsLocalInterpreter
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -144,5 +145,13 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/recordingChanged")
     fun recordingChanged(update: RecordingUpdate) {
         project.service<PiwiRecordings>().changed(update)
+    }
+
+    /** A sentence on a run the editor started, such as one that never reached the instance: a balloon, once. */
+    @JsonNotification("piwi/notice")
+    fun notice(notice: NoticeParams) {
+        val message = notice.message ?: return
+        val type = if (notice.severity == "warning") NotificationType.WARNING else NotificationType.INFORMATION
+        PiwiCommands.notify(project, message, type)
     }
 }

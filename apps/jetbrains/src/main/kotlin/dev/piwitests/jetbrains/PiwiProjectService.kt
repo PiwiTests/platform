@@ -280,8 +280,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
             failures = server?.failures()?.orNull()?.items.orEmpty()
             ApplicationManager.getApplication().invokeLater({
                 listeners.forEach { it() }
-                // Another run: the gutter, the backgrounds and Code Vision of the open files show it.
-                if (runs != before) DaemonCodeAnalyzer.getInstance(project).restart()
+                // Another run: the gutter, the backgrounds and Code Vision of the open files show it. A run in progress
+                // moves the status bar alone.
+                if (Glue.runsInFiles(runs) != Glue.runsInFiles(before)) DaemonCodeAnalyzer.getInstance(project).restart()
             }, project.disposed)
             offerDesktop(status)
         }

@@ -15,11 +15,20 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
   failing test and `piwi.failingLineBackground` on the line it failed at: `testDecorations` in `src/glue.ts`) and
   `piwi/runStatus` in the status bar (the tests still failing and those fixed locally since the latest run, from
-  `failingTests` and `resolved`), implements the commands the service names (`piwi.openInDashboard`,
-  `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick fix or a flaky test's
+  `failingTests` and `resolved`, and the run in progress, `live`; a notification that moves only the run in progress
+  leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands the service names
+  (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick fix or a flaky test's
   lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
+- Commands run in a terminal (`runInTerminal`), reused per folder and environment. A test run carries its own ref
+  (`RunCommand.ref`, also in its environment). Where shell integration reports commands
+  (`window.onDidStartTerminalShellExecution` and `onDidEndTerminalShellExecution`, VS Code 1.93 and later, read at
+  runtime like the MCP API), a test run opens a terminal of its own, which replaces the previous run's terminal of that
+  folder once its command ended, and the end of its command sends `piwi/commandEnded` with the exit code. Without it,
+  the test runs of a folder share one terminal, whose environment keeps the first run's ref, by which the service
+  recognizes the later runs as the editor's own through the instance's event stream, and nothing is sent. A
+  `piwi/notice` is shown once, as a warning or an information message.
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
   copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`) before it is inserted.

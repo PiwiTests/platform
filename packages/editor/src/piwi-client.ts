@@ -140,6 +140,23 @@ export interface BranchFailures {
 export type BranchFailure = BranchFailures['failures'][number];
 export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
 
+/** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
+export interface RunDetails {
+  id: number;
+  /** `running`, `initializing`, `finalizing`, or the final status. */
+  status: string;
+  branch: string | null;
+  startTime: string;
+  /** Holds what launched it, under `piwiOrigin`. */
+  metadata?: Record<string, unknown> | null;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  didNotRunTests?: number;
+  flakyTests?: number;
+}
+
 /** A flaky test as the flaky list ranks it (`GET /api/projects/:id/flaky-tests`). */
 export interface FlakyTest {
   testCaseId: number;
@@ -324,6 +341,38 @@ export class PiwiClient {
   branchFailures(projectId: number, branch: string | null): Promise<BranchFailures> {
     const query = new URLSearchParams(branch ? { branch, overlays: '1' } : { overlays: '1' });
     return this.get(`/api/projects/${projectId}/branch-failures?${query}`);
+  }
+
+  /** A run's details, with what launched it in its metadata. */
+  runDetails(runId: number): Promise<RunDetails> {
+    return this.get(`/api/test-runs/${runId}`);
+  }
+
+  /** The newest run of the project whose launcher stamped this origin and ref (`PIWI_ORIGIN_REF`); null when none. */
+  latestRunByRef(projectId: number, origin: string, ref: string): Promise<{ id: number; status: string } | null> {
+    const query = new URLSearchParams({ origin, ref });
+    return this.get(`/api/projects/${projectId}/latest-run?${query}`);
+  }
+
+  /** The instance's run events (`GET /api/stream`): a response whose body is a server-sent events stream. */
+  events(signal: AbortSignal): Promise<Response> {
+    return this.stream('/api/stream', signal);
+  }
+
+  /** One run's events (`GET /api/test-runs/:id/stream`), until it ends. */
+  runEvents(runId: number, signal: AbortSignal): Promise<Response> {
+    return this.stream(`/api/test-runs/${runId}/stream`, signal);
+  }
+
+  /** A server-sent events stream, open until it ends or `signal` aborts. */
+  private stream(path: string, signal: AbortSignal): Promise<Response> {
+    return fetch(`${this.connection.serverUrl}${path}`, {
+      headers: {
+        Accept: 'text/event-stream',
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      signal,
+    });
   }
 
   locatorHealing(executionId: number): Promise<LocatorHealingResult> {

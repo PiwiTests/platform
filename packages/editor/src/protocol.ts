@@ -117,6 +117,11 @@ export interface RunCommand {
   args: string[];
   /** Environment variables to set on the command's process. */
   env?: Record<string, string>;
+  /**
+   * The ref the run carries (`PIWI_ORIGIN_REF` in `env`), by which the service finds and follows it: the client
+   * names it in `piwi/commandEnded` once the command ends. Absent from an older service.
+   */
+  ref?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -185,6 +190,12 @@ export const DESKTOP_REQUEST = 'piwi/desktop';
 
 /** `piwi/refresh`: fetch every index again now. */
 export const REFRESH_REQUEST = 'piwi/refresh';
+
+/**
+ * `piwi/refreshRun`: read each context's latest run, its failures and the run in progress again now, not the indexes
+ * `piwi/refresh` fetches; answers `RunStatusResult`.
+ */
+export const REFRESH_RUN_REQUEST = 'piwi/refreshRun';
 
 /**
  * `piwi/setCredentials` (notification): the connection the editor's own
@@ -269,6 +280,34 @@ export interface RunStatus {
   resolved?: number;
   /** The runs of the branch since `run` that the service lays over it. */
   overlays?: number;
+  /**
+   * The run in progress the context follows: the editor's own (`own`), wherever it runs, else one on `branch` or the
+   * checked-out branch. Null while none runs; it goes back to null in the notification that carries the failures read
+   * once it ended.
+   */
+  live?: LiveRun | null;
+  /**
+   * `live` while the instance's event stream is connected: the service learns that a run ended within a second, and
+   * reads the latest run every five minutes besides; `polling` otherwise, every minute.
+   */
+  stream?: 'live' | 'polling';
+  /** When the latest run was last read (ISO 8601); absent before the first read. */
+  updatedAt?: string;
+}
+
+/** A run in progress, as its events count it. */
+export interface LiveRun {
+  runId: number;
+  /** `running`, `initializing` or `finalizing`. */
+  status: string;
+  /** The tests that ended (passed, failed, flaky, skipped or not run) out of `total`. */
+  done: number;
+  total: number;
+  failed: number;
+  /** ISO 8601. */
+  startedAt: string;
+  /** Whether the editor started it: a command of `piwi/runArgs` or `piwi/runSelection`. */
+  own: boolean;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
@@ -280,6 +319,27 @@ export const RUN_STATUS_REQUEST = 'piwi/runStatus';
 
 /** `piwi/runStatusChanged` (notification, server to client): a context's latest run changed; carries `RunStatusResult`. */
 export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
+
+/**
+ * `piwi/commandEnded` (notification, client to server): the command of a `RunCommand` with a `ref` ended, with its exit
+ * code when the client knows it. The service reads the run once more, and says in `piwi/notice` when no run carries
+ * the ref.
+ */
+export interface CommandEndedParams {
+  ref: string;
+  exitCode: number | null;
+}
+
+export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
+
+/** `piwi/notice` (notification, server to client): a sentence for the client to show once, about the context at `root`. */
+export interface Notice {
+  root: string;
+  severity: 'information' | 'warning';
+  message: string;
+}
+
+export const NOTICE_NOTIFICATION = 'piwi/notice';
 
 /** An MCP server the editor's agent can register: Piwi's, with the connection the service already has. */
 export interface McpServerDefinition {
@@ -345,8 +405,11 @@ export interface WorkspaceFailure {
   /** The execution's page in the dashboard. */
   url: string;
   hasTrace: boolean;
-  /** `ci` when `runId` is a CI run, `local` when it ran on a developer's machine, in the desktop app or an editor. */
-  source?: 'ci' | 'local';
+  /**
+   * `ci` when `runId` is a CI run, `own` when this editor started it, `local` when it ran elsewhere on a developer's
+   * machine, in the desktop app or an editor.
+   */
+  source?: 'ci' | 'local' | 'own';
   /** `failing`, or `fixed-locally` when a run laid over the latest complete run passed the test since. */
   state?: 'failing' | 'fixed-locally';
   /** The Playwright project; null when unknown. */

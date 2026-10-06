@@ -11,7 +11,7 @@
  * - the failures of the latest run on the checked-out branch, as errors at
  *   their failing lines in every file (the Problems panel), with the healing's
  *   edit as a quick fix and the trace, the screenshot and the execution page
- *   one action away;
+ *   one action away, read again as soon as a run ends (`run-watch.ts`);
  * - custom requests (`protocol.ts`) for the summary lines each editor draws
  *   natively above a file, a test and a locator line, the run status, a trace
  *   to open, and the MCP server to register.
@@ -84,6 +84,7 @@ import {
   type FlakeLabEntry,
 } from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { RunWatch, newRunRef } from './run-watch.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import {
@@ -104,14 +105,17 @@ import {
   type ShareDesktopJobResult,
 } from './protocol.js';
 import {
+  COMMAND_ENDED_NOTIFICATION,
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
+  NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   RECORD_REQUEST,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   REFRESH_REQUEST,
+  REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
   STOP_RECORDING_REQUEST,
   RUN_STATUS_NOTIFICATION,
@@ -126,6 +130,7 @@ import {
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  type CommandEndedParams,
   type DesktopResult,
   type EditorCredentials,
   type EditorTest,
@@ -141,6 +146,7 @@ import {
   type RenderStepsParams,
   type RenderStepsResult,
   type RunCommand,
+  type RunStatus,
   type RunStatusResult,
   type RunSelectionParams,
   type ScreenshotParams,
@@ -173,6 +179,8 @@ const REFRESH_MS = 5 * 60_000;
 /** How often the latest run is read again while it runs, and otherwise. */
 const RUN_POLL_ACTIVE_MS = 15_000;
 const RUN_POLL_MS = 60_000;
+/** While the instance's event stream is connected, the latest run is read this many times less often. */
+const STREAM_POLL_FACTOR = 5;
 /** How often the desktop app's discovery file is checked. */
 const DESKTOP_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
@@ -191,8 +199,15 @@ export interface ServerOptions {
   env?: Record<string, string | undefined>;
   refreshMs?: number;
   debounceMs?: number;
-  /** How often the latest run is read while none runs; a quarter of it while one runs. */
+  /**
+   * How often the latest run is read while none runs; a quarter of it while one runs, and five times it while the
+   * instance's event stream is connected.
+   */
   runPollMs?: number;
+  /** How often the instance is asked for the run of a command the service built; every 2 s by default. */
+  ownRunPollMs?: number;
+  /** How long after a command ends its run may take to reach the instance before a notice says it did not; 5 s. */
+  commandEndWaitMs?: number;
   /** How often the desktop app's discovery file is checked for its start, stop and folder links. */
   desktopWatchMs?: number;
   /**
@@ -268,16 +283,35 @@ function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
   return f.source === 'overlay' && !isCiRun(context, f.runId);
 }
 
-/** The run a failure is listed from: `run #120`, or `local run #124` for a later run that did not run in CI. */
-function runLabel(context: PiwiContext, f: BranchFailure): string {
-  const runId = f.runId ?? context.failures?.run?.id ?? '';
-  return isLocalFailure(context, f) ? `local run #${runId}` : `run #${runId}`;
+/** Whether the editor started the run: a command of `piwi/runArgs` or `piwi/runSelection`. */
+function isOwnRun(context: PiwiContext, runId: number | undefined): boolean {
+  return runId !== undefined && context.ownRuns.has(runId);
 }
 
-/** What the lens of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in run #120)`. */
+/**
+ * The run a failure is listed from: `run #120`, `your run #124` for a run the editor started, or `local run #124` for
+ * another later run that did not run in CI.
+ */
+function runLabel(context: PiwiContext, f: BranchFailure): string {
+  const runId = f.runId ?? context.failures?.run?.id;
+  if (isOwnRun(context, runId)) return `your run #${runId}`;
+  return isLocalFailure(context, f) ? `local run #${runId ?? ''}` : `run #${runId ?? ''}`;
+}
+
+/**
+ * What the lens of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in run #120)`,
+ * `fixed locally in your run #124 (…)` when the editor started that run.
+ */
 function fixedLabel(context: PiwiContext, r: BranchResolved): string {
   const where = isCiRun(context, r.runId) ? 'fixed' : 'fixed locally';
-  return `${where} in run #${r.runId} (failing in run #${context.failures?.run?.id ?? ''})`;
+  const run = `${isOwnRun(context, r.runId) ? 'your ' : ''}run #${r.runId}`;
+  return `${where} in ${run} (failing in run #${context.failures?.run?.id ?? ''})`;
+}
+
+/** What a `piwi/failures` item says launched its run. */
+function failureSource(context: PiwiContext, runId: number | undefined): 'ci' | 'local' | 'own' {
+  if (isOwnRun(context, runId)) return 'own';
+  return isCiRun(context, runId) ? 'ci' : 'local';
 }
 
 /** A catalog status as a test line shows it. */
@@ -308,8 +342,13 @@ function testCounts(tests: Array<{ status: string | null }>): string {
   return [failing ? `${failing} failing` : null, flaky ? `${flaky} flaky` : null].filter(Boolean).join(' · ');
 }
 
-/** The environment of a test run the editor starts: the reporter records the run as started from an editor. */
-export const EDITOR_RUN_ENV: Readonly<Record<string, string>> = { PIWI_ORIGIN: 'editor' };
+/**
+ * The environment of a test run the editor starts: the reporter records the run as started from an editor, with the
+ * ref the service finds it by when there is one.
+ */
+export function editorRunEnv(ref?: string): Record<string, string> {
+  return ref ? { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: ref } : { PIWI_ORIGIN: 'editor' };
+}
 
 /**
  * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
@@ -350,7 +389,7 @@ export function flakeLabLines(
             {
               cwd: context.root,
               command: withServerUrl(a.command, serverUrl, context.root, env),
-              env: { ...EDITOR_RUN_ENV },
+              env: editorRunEnv(),
             } satisfies RunCommandArgs,
           ],
         },
@@ -514,7 +553,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const runStatus = (): RunStatusResult => ({
     contexts: contexts
       .filter((c) => c.client && c.project)
-      .map((c) => {
+      .map((c): RunStatus => {
         const run = c.failures?.run ?? null;
         const failing = new Set((c.failures?.failures ?? []).map((f) => f.testCaseId));
         const fixed = new Set((c.failures?.resolved ?? []).map((r) => r.testCaseId).filter((id) => !failing.has(id)));
@@ -539,6 +578,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           failingTests: failing.size,
           resolved: fixed.size,
           overlays: c.failures?.overlays?.length ?? 0,
+          live: c.live ? { ...c.live } : null,
+          stream: runWatch.isConnected(c) ? 'live' : 'polling',
+          ...(c.runReadAt !== null ? { updatedAt: new Date(c.runReadAt).toISOString() } : {}),
         };
       }),
   });
@@ -554,21 +596,59 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
   };
 
-  /** Read the latest runs again, sooner while one runs. */
+  /**
+   * How often a context's latest run is read: every `runPollMs`, a quarter of it while a run is in progress, five times
+   * it while the instance's event stream is connected, which says when a run ends.
+   */
+  const pollEvery = (c: PiwiContext): number => {
+    const base = options.runPollMs ?? RUN_POLL_MS;
+    if (runWatch.isConnected(c)) return base * STREAM_POLL_FACTOR;
+    const active = !!c.live || ACTIVE_RUN.has(c.failures?.run?.status ?? '');
+    return active ? Math.min(base, RUN_POLL_ACTIVE_MS, Math.max(1, Math.floor(base / 4))) : base;
+  };
+
+  /** When each context was last polled, read or not. */
+  const polledAt = new Map<PiwiContext, number>();
+  const dueAt = (c: PiwiContext): number => {
+    if (!polledAt.has(c)) polledAt.set(c, Date.now());
+    return Math.max(polledAt.get(c)!, c.runReadAt ?? 0) + pollEvery(c);
+  };
+
+  /** Read each context's latest run again when its turn comes, and its live run with it. */
   const pollRuns = () => {
     if (stopped) return;
-    const base = options.runPollMs ?? RUN_POLL_MS;
-    const active = contexts.some((c) => ACTIVE_RUN.has(c.failures?.run?.status ?? ''));
+    if (runTimer) clearTimeout(runTimer);
+    const now = Date.now();
+    const next = contexts.length ? Math.min(...contexts.map(dueAt)) : now + (options.runPollMs ?? RUN_POLL_MS);
     runTimer = setTimeout(
       async () => {
-        const changed = await Promise.all(contexts.map((c) => c.refreshRun()));
-        if (changed.some(Boolean)) runChanged();
-        pollRuns();
+        runTimer = null;
+        const due = contexts.filter((c) => dueAt(c) <= Date.now());
+        for (const c of due) polledAt.set(c, Date.now());
+        await Promise.all(
+          due.map(async (c) => {
+            const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
+            if (ended) runWatch.end(c);
+          }),
+        );
+        if (due.length) runChanged();
+        if (!runTimer) pollRuns();
       },
-      active ? Math.min(base, RUN_POLL_ACTIVE_MS, Math.max(1, Math.floor(base / 4))) : base,
+      Math.max(0, next - now),
     );
     runTimer.unref?.();
   };
+
+  const runWatch = new RunWatch({
+    contexts: () => contexts,
+    changed: () => {
+      runChanged();
+      pollRuns();
+    },
+    notice: (notice) => void connection.sendNotification(NOTICE_NOTIFICATION, notice),
+    ownRunPollMs: options.ownRunPollMs,
+    commandEndWaitMs: options.commandEndWaitMs,
+  });
 
   /**
    * A fix plan as one workspace edit: its validated patch applied to each file it
@@ -849,6 +929,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let lastStatus = '';
   async function refreshAll(): Promise<void> {
     await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
+    runWatch.sync();
     runChanged();
     const next = currentStatus();
     const serialized = JSON.stringify(next);
@@ -1063,7 +1144,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
                 {
                   cwd: owner.root,
                   command: fixPlan.verify.command,
-                  env: { ...EDITOR_RUN_ENV },
+                  env: editorRunEnv(),
                 } satisfies RunCommandArgs,
               ],
             },
@@ -1503,11 +1584,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     if (!context?.client || !context.project || !params.testIds.length) return null;
     const { args, command } = await context.client.runArgs(context.project.id, params.testIds);
+    const ref = newRunRef();
+    runWatch.watch(context, ref);
     return {
       cwd: context.root,
       args,
       command: command || `npx playwright test ${args.join(' ')}`,
-      env: { ...EDITOR_RUN_ENV },
+      env: editorRunEnv(ref),
+      ref,
     };
   });
 
@@ -1548,7 +1632,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = (file ? contextFor(file) : null) ?? contexts.find((c) => c.selections.length) ?? null;
     const selection = context?.selections.find((s) => s.key === params.key);
     if (!context || !selection?.command) return null;
-    return { cwd: context.root, command: selection.command, args: [], env: { ...EDITOR_RUN_ENV } };
+    const ref = newRunRef();
+    runWatch.watch(context, ref);
+    return { cwd: context.root, command: selection.command, args: [], env: editorRunEnv(ref), ref };
   });
 
   connection.onRequest(
@@ -1570,7 +1656,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               runId: f.runId ?? context.failures!.run!.id,
               url: client.executionUrl(f.executionId),
               hasTrace: f.traces.length > 0,
-              source: isCiRun(context, f.runId) ? 'ci' : 'local',
+              source: failureSource(context, f.runId ?? context.failures?.run?.id),
               state: 'failing',
               browserName: f.browserName ?? null,
             },
@@ -1590,7 +1676,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               runId: r.runId,
               url: client.executionUrl(r.executionId),
               hasTrace: false,
-              source: isCiRun(context, r.runId) ? 'ci' : 'local',
+              source: failureSource(context, r.runId),
               state: 'fixed-locally',
               browserName: r.browserName,
             },
@@ -1724,6 +1810,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return null;
   });
 
+  connection.onRequest(REFRESH_RUN_REQUEST, async (): Promise<RunStatusResult> => {
+    await Promise.all(
+      contexts.map(async (c) => {
+        const [, ended] = await Promise.all([c.refreshRun(), runWatch.readLive(c)]);
+        if (ended) runWatch.end(c);
+      }),
+    );
+    runChanged();
+    return runStatus();
+  });
+
+  connection.onNotification(COMMAND_ENDED_NOTIFICATION, (params: CommandEndedParams) => {
+    if (typeof params?.ref === 'string') void runWatch.commandEnded(params.ref, params.exitCode ?? null);
+  });
+
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
     const found = params.executionId ? failureOf({ root: params.root, executionId: params.executionId }) : null;
     if (params.kind === 'flake-lab') {
@@ -1752,7 +1853,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
-    void refreshAll();
+    // The streams the instance refused are opened again with these credentials.
+    void refreshAll().then(() => runWatch.retryRefused());
   });
 
   connection.onShutdown(() => recordings.dispose());
@@ -1761,6 +1863,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.listen();
   return () => {
     stopped = true;
+    runWatch.dispose();
     recordings.dispose();
     desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
