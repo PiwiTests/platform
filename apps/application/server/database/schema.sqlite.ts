@@ -564,6 +564,19 @@ export const testRunsCases = sqliteTable(
     codeReachPayloadIdx: index('idx_trc_code_reach_payload')
       .on(table.codeReachPayloadId)
       .where(sql`code_reach_payload_id IS NOT NULL`),
+    // Partial indexes over the few rows the capability probes and the run list
+    // look for, so finding one, or proving there is none, never reads every
+    // execution. A query uses one only when it repeats the condition with
+    // literals (shared/handlers/setup-status.ts, shared/utils/skip-kind.ts).
+    passedAriaIdx: index('idx_trc_passed_aria')
+      .on(table.testRunId)
+      .where(sql`status = 'passed' AND (aria_snapshot_payload_id IS NOT NULL OR aria_snapshot IS NOT NULL)`),
+    passedRetryIdx: index('idx_trc_passed_retry')
+      .on(table.testRunId)
+      .where(sql`status = 'passed' AND retries > 0`),
+    skippedIdx: index('idx_trc_skipped')
+      .on(table.testRunId)
+      .where(sql`status = 'skipped'`),
   }),
 );
 
@@ -735,6 +748,10 @@ export const networkRequests = sqliteTable(
     runIdx: index('idx_nr_run').on(t.testRunId),
     caseStatusIdx: index('idx_nr_case').on(t.testRunsCaseId, t.status),
     normalizedUrlIdx: index('idx_nr_normalized_url').on(t.normalizedUrl),
+    // Server traces arrive only from instrumented backends; the capability probe looks for one.
+    serverTracesIdx: index('idx_nr_server_traces')
+      .on(t.testRunId)
+      .where(sql`server_traces IS NOT NULL`),
   }),
 );
 

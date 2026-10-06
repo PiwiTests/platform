@@ -61,6 +61,11 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   (rows from another branch, a migration dated before the latest applied one, a file changed after it ran) is
   repaired in one transaction and checked against the latest `meta/NNNN_snapshot.json`. The snapshot is the reference,
   so a fresh database must match it — a unit test checks this for SQLite.
+- **A partial index serves a query only when the query repeats its condition with literals** —
+  ``sql`${testRunsCases.status} = 'passed'` ``, not `eq(testRunsCases.status, 'passed')`. A bound parameter cannot be
+  matched to the index's constant by PostgreSQL's cached generic plans or by SQLite's planner, and the query falls
+  back to reading every row. The capability probes (`shared/handlers/setup-status.ts`) and the `fixme` count
+  (`fixmeSkipPredicate`) rely on this.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).
