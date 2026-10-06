@@ -8,9 +8,13 @@ editor's own run into the thing the editor is built around: it reports back at o
 CI baseline, its failures follow the edits, its breakpoints pause the browser with Piwi's picker open, and the status
 bar and the failures view are rebuilt around that loop.
 
-**Status.** Proposed 2026-10-06. Nothing is built. The parts are ordered for delivery in [Delivery](#delivery): each
-pull request ships on its own and the first one fixes the wrong answer the editor gives most often (a failure the
-developer already fixed).
+**Status.** Proposed 2026-10-06. Being built on `claude/adoring-curie-oiaifu`, every step in one pull request, in the
+order of [Delivery](#delivery): step 1 (Parts 2a, 2b and 2d) is built. Where the build differs from this text, the
+[docs](../apps/docs/features/editors.md) and the code are right: a failure listed from a later run reads
+`local run #124` (`your run` waits for step 2), a test fixed since reads `fixed locally in run #124 (failing in run
+#120)`, and in the finalize path only the outbound effects of a run (notifications, the pull-request comment and
+status, auto-heal, AI diagnosis, the incident and interrupted events) follow D11; fix verification, change coverage,
+the scenario gaps and the hand-back outcomes run for every run as before, each under its own use.
 
 **Summary.** Six observations from using the extensions, and what each becomes:
 
