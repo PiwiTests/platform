@@ -7,6 +7,7 @@ import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-r
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { configureSqliteConnections } from './sqlite-connections';
+import { isOtelTracingEnabled, traceSqlStatements } from '../utils/otel';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -92,6 +93,7 @@ async function openDatabase(): Promise<DB> {
 
       const client = postgres(databaseUrl);
       const pgDb = drizzle(client);
+      if (isOtelTracingEnabled()) traceSqlStatements('postgres', pgDb, client);
       // Cast to the canonical SQLite DB type so callers retain typed query results
       db = pgDb as unknown as DB;
 
@@ -143,6 +145,7 @@ async function openDatabase(): Promise<DB> {
       await client.execute('PRAGMA journal_mode=WAL');
       await configureSqliteConnections(client);
       db = sqliteDrizzle(client, { schema: sqliteSchema });
+      if (isOtelTracingEnabled()) traceSqlStatements('sqlite', db, client);
 
       migrationPromise = (async () => {
         try {
