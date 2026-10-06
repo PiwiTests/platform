@@ -725,6 +725,25 @@ export async function getFlakeProfile(
 
   if (ids.length > 0) {
     const other = aliasedTable(testRunsCases, 'other');
+    // The outer columns are spelled out: a single-table select renders an
+    // interpolated column without its table, which inside the subquery would
+    // name `prev`'s own column.
+    const before = db
+      .select({
+        attemptId: testRunsCases.id,
+        executionId: sql<number | null>`(
+          SELECT prev.id FROM test_runs_cases prev
+          WHERE prev.test_run_id = test_runs_cases.test_run_id
+            AND prev.worker_index = test_runs_cases.worker_index
+            AND COALESCE(prev.shard_index, -1) = COALESCE(test_runs_cases.shard_index, -1)
+            AND prev.started_at < test_runs_cases.started_at
+          ORDER BY prev.started_at DESC, prev.id DESC
+          LIMIT 1
+        )`.as('before_execution_id'),
+      })
+      .from(testRunsCases)
+      .where(and(inArray(testRunsCases.id, ids), isNotNull(testRunsCases.startedAt)))
+      .as('before');
     const [requestRows, overlapRows, beforeRows] = await Promise.all([
       db
         .select({
@@ -762,25 +781,12 @@ export async function getFlakeProfile(
             sql`${other.startedAt} + ${other.duration} > ${testRunsCases.startedAt}`,
           ),
         ),
-      // The execution that started last before the attempt on its shard and worker.
+      // The execution that started last before the attempt on its shard and
+      // worker, looked up attempt by attempt among the executions of its run.
       db
-        .select({ attemptId: testRunsCases.id, executionId: other.id, testCaseId: other.testCaseId })
-        .from(testRunsCases)
-        .innerJoin(
-          other,
-          and(
-            eq(other.testRunId, testRunsCases.testRunId),
-            eq(other.workerIndex, testRunsCases.workerIndex),
-            sql`COALESCE(${other.shardIndex}, -1) = COALESCE(${testRunsCases.shardIndex}, -1)`,
-          ),
-        )
-        .where(
-          and(
-            inArray(testRunsCases.id, ids),
-            isNotNull(testRunsCases.startedAt),
-            sql`${other.startedAt} = (SELECT MAX(prev.started_at) FROM test_runs_cases prev WHERE prev.test_run_id = ${testRunsCases.testRunId} AND prev.worker_index = ${testRunsCases.workerIndex} AND COALESCE(prev.shard_index, -1) = COALESCE(${testRunsCases.shardIndex}, -1) AND prev.started_at < ${testRunsCases.startedAt})`,
-          ),
-        ),
+        .select({ attemptId: before.attemptId, executionId: other.id, testCaseId: other.testCaseId })
+        .from(before)
+        .innerJoin(other, eq(other.id, before.executionId)),
     ]);
     for (const r of requestRows) attempts.get(r.executionId)?.requests.push(r);
     for (const o of overlapRows) {

@@ -194,6 +194,31 @@ beforeAll(async () => {
   addRun(15, { fails: true, ageDays: 40 });
   addRun(16, { fails: true, ageDays: 1, lab: true });
 
+  // A run started with run 1, whose execution on a worker and shard of the same
+  // numbers starts between case 3 and the flaky attempt: it ran in another run,
+  // so it is never the attempt's predecessor.
+  const concurrentStart = NOW.getTime() - DAY;
+  runs.push({
+    id: 17,
+    projectId: 1,
+    status: 'passed',
+    startTime: new Date(concurrentStart),
+    duration: 600_000,
+    branch: 'main',
+    environment: 'staging',
+    metadata: null,
+  });
+  exec({
+    testRunId: 17,
+    testCaseId: FAR,
+    status: 'passed',
+    startedAt: concurrentStart + 4_500,
+    duration: 300,
+    workerIndex: 0,
+    shardIndex: 1,
+    createdAt: new Date(concurrentStart),
+  });
+
   await db.insert(schema.testRuns).values(runs);
   await db.insert(schema.testRunsCases).values(executions);
   await db.insert(schema.networkRequests).values(requests);
