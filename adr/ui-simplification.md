@@ -1,4 +1,7 @@
-# Simpler screens around tests — a UI plan
+﻿# Simpler screens around tests — a UI plan
+
+- Status: accepted
+- Date: 2026-09-04
 
 **Status:** shipped — PRs #442–#456 merged on 2026-09-04, the sweep (#459) open for review; delivery record at the end of §11 · **Scope:** every dashboard screen a developer meets between "the run is red" and "the fix is verified" — the execution page, the failure cluster page, the run page, the project page, the test history page, home and the lists that connect them · **Date:** 2026-09-03 · **Builds on:** [`failure-experience-audit.md`](failure-experience-audit.md)
 

@@ -1,4 +1,7 @@
-# Scenario gaps — the Test Map
+﻿# Scenario gaps — the Test Map
+
+- Status: accepted
+- Date: 2026-09-24
 
 A design record for **scenario gaps**: the dashboard proposing tests that do not exist yet, from one graph of what
 the application exposes, what the suite touches, what the suite would actually notice, and what is worth caring
@@ -715,7 +718,7 @@ app, never on a production origin, and is off unless configured.
 - **Baselines on partial runs.** *Changed, unreached* reads "no test *in this run*" and adds the project-wide count.
 - **The 1.0 freeze.** The manifest JSON, the usage payload, the probe plan, the probe header and the
   `piwi-page-inventory` attachment are external contracts; land or defer them in
-  [`1.0-stabilization.md`](1.0-stabilization.md).
+  [`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 - **Demo mode.** Detectors are pure and live in `shared/handlers/`; the seed gains a declared manifest, a PR-stamped
   run and a few probe outcomes so the Gaps tab and the PR section render.
 

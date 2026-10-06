@@ -1,4 +1,7 @@
-# Flake Lab
+﻿# Flake Lab
+
+- Status: accepted
+- Date: 2026-09-28
 
 A plan to make a flaky test fail on demand. Piwi explains a flaky test today by reading its evidence: the Attempts tab
 lists what differed between a failing and a passing attempt, and a classifier names one of five causes. Flake Lab adds
@@ -24,7 +27,7 @@ off the ranking until the next retry-pass, and the quarantine release proposal. 
   could be dropped. It now keeps every request with status ≥ 400, status ≤ 0 or a `failure`.
 - The wire had no network-request type (`networkRequests` was `unknown` on both sides). `WireNetworkRequest` in
   `@piwitests/core/wire` now names every field, `failure` included; the 1.0 entry is D24 in
-  [`1.0-stabilization.md`](1.0-stabilization.md).
+  [`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 - A failed request's `duration` runs to the moment the failure was seen, since it has no response end.
 - The classifier's browser distribution became `{ passed, failed }` per project. Environment now needs one browser
   with at least 3 failures and another with at least 3 passes and none. Its input is the test's last 100 attempts
@@ -161,7 +164,7 @@ What changed while building PR 6:
 
 The suspects are computed from data Piwi already stores. The lab adds a CLI command, a reporter mode like probe mode,
 two tables, a desktop command and MCP tools. New wire fields, the plan file format, the command and the endpoints
-freeze at 1.0 (D24 in [`1.0-stabilization.md`](1.0-stabilization.md)).
+freeze at 1.0 (D24 in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md)).
 
 **Summary.** A flaky test costs the most when nobody can make it fail: the fix is a guess, and "it passed ten times in a
 row" proves nothing about a failure that happens one time in twenty. Piwi keeps what a lab needs. Every attempt is its

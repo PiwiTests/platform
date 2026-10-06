@@ -1,4 +1,7 @@
-# Piwi Picker in five languages
+﻿# Piwi Picker in five languages
+
+- Status: accepted
+- Date: 2026-09-27
 
 A plan to translate the browser extension, Piwi Picker, into French, German, Spanish and Brazilian Portuguese, with
 English as the source. The extension has become a tool for testers as well as developers: the bug report asks what
@@ -13,7 +16,7 @@ English are worded by code. PR 4: German, Spanish and Brazilian Portuguese, cata
 drafts. French is to be reviewed by the team before release, the three others by native readers. The decisions each PR
 changed are under "Decisions made while building" below. Nothing here changes a wire format, the steps format or
 generated code, so no entry
-in [`1.0-stabilization.md`](1.0-stabilization.md) is needed.
+in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md) is needed.
 
 **Summary.** Every text the extension shows moves into one catalog per language, the `messages.json` files the browser
 already reads for the manifest, behind a typed `t()` helper whose keys come from the English catalog, so a missing or

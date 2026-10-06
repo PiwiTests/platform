@@ -1,4 +1,7 @@
-# Documentation revamp
+﻿# Documentation revamp
+
+- Status: accepted
+- Date: 2026-09-24
 
 **Status: built.** Every pull request of the migration plan is built: PR 1 (#648), PR 2 (#650), PR 3 as #652 and
 #653, PR 4 (#649) and PR 5. The optional PR 6 is not started. The rules below are in the drift test and in `apps/docs/AGENTS.md`.

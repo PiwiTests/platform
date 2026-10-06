@@ -1,4 +1,7 @@
-# Documentation restructure
+﻿# Documentation restructure
+
+- Status: accepted
+- Date: 2026-09-24
 
 An audit of the documentation site (`apps/docs/`), the root `README.md`, `DOCKER_HUB.md` and the package READMEs,
 with a proposed layout and a migration plan. State audited: `main` at v0.26.1, on 2026-09-05. Every page was read in

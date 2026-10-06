@@ -1,4 +1,7 @@
-# The suite in the editor
+﻿# The suite in the editor
+
+- Status: accepted
+- Date: 2026-09-28
 
 A plan to bring what Piwi knows about a suite to the place a developer changes code: the terminal before a push, the
 pull request, VS Code, and the JetBrains IDEs (WebStorm, Rider, IntelliJ IDEA). **Track A** predicts, from a diff,
@@ -13,7 +16,7 @@ built, and so are the priority 2 items. What changed while building is under [As
 payload column on `test_runs_cases` and one table. Tracks C–E add a workspace package, a VS Code extension and a
 JetBrains plugin, and a commitlint scope (`ide`); a catalog of what the editors can do after their first release
 follows the tracks. New wire fields, endpoints, a CLI command and a published extension
-API freeze at 1.0 (D25 in [`1.0-stabilization.md`](1.0-stabilization.md)).
+API freeze at 1.0 (D25 in [`1.0-stabilization.md`](../proposals/1.0-stabilization.md)).
 
 **Summary.** Tested elements answers "which tests reach this element?" on the live page. This plan answers the same
 question where the change is made, before anything runs. Renaming a button breaks every test that finds it by its name,
@@ -416,7 +419,7 @@ These arrive with their own features and cost the editors little once those exis
 | **Uncovered changes** | A gutter mark on changed lines of files no test reaches, before the pull request says so | code reach (Track B) |
 | **Bug reports** | The project's open reports; **Add as test** renders a report's committed spec into the bugs folder; **Run with Playwright** in the desktop app; above a test with `piwi:bug 37`, the report's status, its ticket, and "looks fixed" | [`bug-report-to-failing-test.md`](bug-report-to-failing-test.md) |
 | **Flake Lab** | On the flaky lens: the top suspect, **Reproduce** (`piwi flake`) and **Verify fix** | [`flake-lab.md`](flake-lab.md) |
-| **API shapes** | On a handler or a `fetch('/api/cart')` call: the response shape the tests observed, its history, **Copy as TypeScript type**; a warning when an edit removes a field tests saw | [`api-contract-drift.md`](api-contract-drift.md) |
+| **API shapes** | On a handler or a `fetch('/api/cart')` call: the response shape the tests observed, its history, **Copy as TypeScript type**; a warning when an edit removes a field tests saw | [`api-contract-drift.md`](../proposals/api-contract-drift.md) |
 
 ## Delivery
 
