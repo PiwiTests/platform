@@ -9,8 +9,7 @@
  * Markdown (rendered by `renderHelpMarkdown`): wrap identifiers, commands and
  * patterns in `code`. When a hint can't stay short, lead with one sentence and
  * break the rest into a `- **Label** — …` list, one line per array entry
- * joined with `\n`; a ```mermaid block draws a small diagram where a flow
- * reads better than prose. The `doc` field
+ * joined with `\n`. The `doc` field
  * is a docs page + optional `#anchor` passed through `docsUrl()`; omit it when
  * no docs section exists yet (text-only hint). The optional `recipe` links the
  * recipe that answers the question the block raises, labeled with that
@@ -502,14 +501,7 @@ export const HELP_TOPICS = {
   'run.changes': {
     title: 'Changes',
     text: [
-      'What differs between this run and one baseline. By default that is the last passing run in the same environment, looked for on each branch in turn:',
-      '',
-      '```mermaid',
-      'flowchart LR',
-      '  A[Same branch] --> B[Branch it forked from] --> C[Any branch]',
-      '```',
-      '',
-      'The branch it forked from is the pull request’s target, else the project’s default branch. When no earlier full run passed, it is the last failed run, found the same way; the line under the selector says which rung applied.',
+      'What differs between this run and one baseline. By default that is the last passing run in the same environment — on the same branch, then the branch it forked from (the pull request’s target, else the project’s default branch), then any branch. When no earlier full run passed, it is the last failed run, found the same way; the line under the selector says which rung applied.',
       '',
       'Pick a base branch to take the baseline from that branch only, or pick one earlier run: each shows its branch, environment and outcome. The tests that started or stopped failing, the ones that got slower or faster, the commits landed since the baseline, and the environment fields that moved are all read against that one baseline.',
     ].join('\n'),
