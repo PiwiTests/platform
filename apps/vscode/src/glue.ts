@@ -139,6 +139,7 @@ export function statusBarView(
     run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
   const where = md(`${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`);
   const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
+  const reporter = run?.reporterVersion ? md(`reporter ${run.reporterVersion}`) : null;
   const live = run?.live ?? null;
   const progress = live ? liveLine(live) : null;
   const updated = updatedLine(run, now);
@@ -146,7 +147,7 @@ export function statusBarView(
   if (!run?.run) {
     return {
       text: live ? liveText(live) : '$(beaker) Piwi: no run',
-      tooltip: lines(`No run of ${where} yet`, progress, updated, from, hint, `${dashboard} · ${connect}`),
+      tooltip: lines(`No run of ${where} yet`, progress, updated, from, reporter, hint, `${dashboard} · ${connect}`),
       action: 'refresh',
       url: null,
       error: false,
@@ -162,6 +163,7 @@ export function statusBarView(
     progress,
     updated,
     from,
+    reporter,
     hint,
     `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${connect}`,
   );
@@ -179,6 +181,20 @@ export function statusBarView(
   if (r.status !== 'passed' && r.status !== 'failed') return { ...view, text: `$(warning) Piwi: ${r.status}` };
   if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };
   return { ...view, text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}` };
+}
+
+/**
+ * What the notification says once a locator picked while a run was paused at a breakpoint reached the editor: it
+ * replaced the locator of its line, or it went to the cursor because the line holds none, or because the file is not
+ * in the workspace.
+ */
+export function pickNotice(at: { file: string; line: number }, outcome: 'replaced' | 'no-locator' | 'no-file'): string {
+  const name = at.file.slice(at.file.lastIndexOf('/') + 1);
+  if (outcome === 'replaced') return `Piwi: the picked locator replaced the one at line ${at.line} of ${name}.`;
+  if (outcome === 'no-locator') {
+    return `Piwi: the picked locator was inserted at the cursor: line ${at.line} of ${name} holds no locator anymore.`;
+  }
+  return `Piwi: the picked locator was inserted at the cursor: ${at.file} is not in this workspace.`;
 }
 
 /**

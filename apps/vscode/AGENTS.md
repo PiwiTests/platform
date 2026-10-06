@@ -42,7 +42,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   item's icon spinning meanwhile: `refreshingText`), and **Piwi: Connect** while not connected. Its tooltip is a
   trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,
   the run in progress, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every 30 s),
-  then links to `piwi.openRun`, `piwi.openInDashboard` and `piwi.connect`; **Piwi: Open the latest run**
+  the reporter version the project installs (`reporter 0.47.0`), then links to `piwi.openRun`,
+  `piwi.openInDashboard` and `piwi.connect`; **Piwi: Open the latest run**
   (`piwi.openRun`) is in the palette too.
 - Commands run in a terminal (`runInTerminal`), reused per folder and environment. A test run carries its own ref
   (`RunCommand.ref`, also in its environment). Where shell integration reports commands
@@ -52,11 +53,23 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   and in a shell without integration (the folder's run terminal has no `shellIntegration`), the test runs of a folder
   share one terminal, whose environment keeps the first run's ref, by which the service recognizes the later runs as
   the editor's own through the instance's event stream, and no end is sent. Every test run's command sends
-  `piwi/commandStarted`, with the terminal's ref as `terminalRef` when it is not the command's own. A `piwi/notice` is
-  shown once, as a warning or an information message.
+  `piwi/commandStarted`, with the terminal's ref as `terminalRef` when it is not the command's own; a run terminal is
+  reused only for the same environment but the ref (`terminalEnvKey` in `src/breakpoints.ts`), so a run with other
+  breakpoints gets a terminal of its own. A `piwi/notice` is shown once, as a warning or an information message.
+- Every test run (`runTests`: the lenses, **Run this test**, **Run the tests that reach this file**, **Re-run the
+  failing tests**; and **Run selection…**) passes the editor's breakpoints to the service (`breakpoints`), as the
+  `piwi.breakpoints` setting allows (default on): the enabled `vscode.SourceBreakpoint`s in script files under a
+  Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). When the answer carries `PIWI_PAUSE_AT`,
+  `startRun` starts the send listener if it is not running, minting its token as **Pair with Piwi Picker** does,
+  without copying anything, and adds the pairing address as `PIWI_EDITOR_SEND`; `RunCommand.notice` (a reporter too
+  old for breakpoints) is a warning, once per notice. The API `activate` returns gives the latest run's command
+  (`lastRun`).
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
   copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`) before it is inserted.
+  A locator with `at`, picked while a run was paused at a breakpoint, asks `piwi/applyPick` and applies its edit as a
+  workspace edit on that line; when the line holds no locator, it is inserted at the cursor, and the notification
+  says why (`pickNotice` in `src/glue.ts`).
 - `src/recording.ts` records a test from the editor. **Piwi: Record here** asks `piwi/pageCandidates` for the caret
   (inside a test's body it records `steps`, elsewhere a new `test`); **Piwi: Record a new test file** creates a spec
   first, next to the active test file or in the config's `testDir` (`file`). The start page and the page expression
@@ -105,5 +118,5 @@ npm run vscode:package            # dist/piwi.vsix
 
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
-API `activate` returns (`pageCandidates`, the service's answer for a position, and `failureChildren`, the failures
-view's nodes).
+API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
+nodes, and `lastRun`, the command a breakpoint's run was given).

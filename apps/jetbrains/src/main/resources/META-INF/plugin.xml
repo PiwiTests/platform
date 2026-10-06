@@ -10,7 +10,8 @@
           failing lines, with the recommended locator heal as a quick fix, the trace and the screenshot one action
           away;</li>
       <li>the Piwi tool window: the latest run's failures as a tree, grouped by file, cluster or owner, with the runs
-          you made since, and each test re-run, its trace and screenshot one right-click away;</li>
+          you made since, and each test re-run, its trace and screenshot one right-click away; a run started from
+          Piwi pauses at your breakpoints in the browser, where a locator you pick replaces the one on that line;</li>
       <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
           line and each application file;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>

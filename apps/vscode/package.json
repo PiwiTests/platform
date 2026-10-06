@@ -430,6 +430,11 @@
           "default": "",
           "description": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder."
         },
+        "piwi.breakpoints": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker. A run with a breakpoint in a test or page object file runs headed and pauses before the locator action or assertion on that line, with Piwi's pause bar: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later."
+        },
         "piwi.runNotifications": {
           "type": "string",
           "enum": [

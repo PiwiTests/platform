@@ -109,11 +109,22 @@ export interface TestsForFile {
 
 export const TESTS_FOR_FILE_REQUEST = 'piwi/testsForFile';
 
+/** A line breakpoint of the editor: the file and its 0-based line. */
+export interface EditorBreakpoint {
+  uri: string;
+  line: number;
+}
+
 /** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
 export interface RunTestsArgs {
   /** Any file of the workspace the tests belong to, to pick the Playwright config. */
   uri: string;
   testIds: number[];
+  /**
+   * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
+   * locator action or assertion on their line, headed, with Piwi's pause bar (`PIWI_PAUSE_AT` in `RunCommand.env`).
+   */
+  breakpoints?: EditorBreakpoint[];
 }
 
 export interface RunCommand {
@@ -130,6 +141,11 @@ export interface RunCommand {
    * names it in `piwi/commandEnded` once the command ends. Absent from an older service.
    */
   ref?: string;
+  /**
+   * A sentence for the client to show once as a warning while the command runs anyway: breakpoints were passed to a
+   * project whose `@piwitests/reporter` does not pause at them. Absent otherwise.
+   */
+  notice?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -306,6 +322,11 @@ export interface RunStatus {
    * has none, and from an older service.
    */
   liveTests?: LiveTest[];
+  /**
+   * The version of `@piwitests/reporter` the project installs, read from `node_modules` at each refresh; null when
+   * none is found. Absent from an older service.
+   */
+  reporterVersion?: string | null;
 }
 
 /** A test of the run in progress: `running` once it began, then its result. */
@@ -439,6 +460,8 @@ export interface RunSelectionParams {
   /** Any file of the workspace, to pick the Playwright config. */
   uri: string;
   key: string;
+  /** The editor's enabled line breakpoints, as in `RunTestsArgs`. */
+  breakpoints?: EditorBreakpoint[];
 }
 
 export const RUN_SELECTION_REQUEST = 'piwi/runSelection';
@@ -813,3 +836,29 @@ export interface ShareDesktopJobResult {
 }
 
 export const SHARE_DESKTOP_JOB_REQUEST = 'piwi/shareDesktopJob';
+
+/**
+ * `piwi/applyPick`: the edit that puts a locator picked while a run was paused at a breakpoint in place of the locator
+ * chain its line holds now. The file is `uri`, else `file`, a path relative to a Playwright config's folder as the run
+ * reported it (`@piwitests/core/editor-send`'s `at`), looked for under each config's folder; `line` is 0-based.
+ */
+export interface ApplyPickParams {
+  uri?: string;
+  file?: string;
+  line: number;
+  locator: string;
+}
+
+/**
+ * The file found (null when none is) and the edit on its line, as the file stands, open or saved: null when the line
+ * holds no locator, which the client then inserts at the cursor.
+ */
+export interface ApplyPickResult {
+  uri: string | null;
+  edit: {
+    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+    newText: string;
+  } | null;
+}
+
+export const APPLY_PICK_REQUEST = 'piwi/applyPick';

@@ -175,10 +175,9 @@ class RunSelectionAction : AnAction() {
                     .setTitle("Run which selection?")
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            val command = server?.runSelection(RunSelectionParams(uri, picked.key))?.orNull()
-                            if (command?.cwd != null && command.command != null) {
-                                PiwiCommands.run(project, command.cwd, command.command, command.env, command.ref)
-                            }
+                            val breakpoints = project.service<PiwiProjectService>().breakpoints().ifEmpty { null }
+                            val command = server?.runSelection(RunSelectionParams(uri, picked.key, breakpoints))?.orNull()
+                            if (command != null) PiwiCommands.startRun(project, command)
                         }
                     }
                     .createPopup()

@@ -40,6 +40,16 @@ describe('the send listener', () => {
     expect(received).toEqual([{ kind: 'locator', text: "page.getByRole('button', { name: 'Pay' })" }]);
   });
 
+  test('hands over the line a locator picked at a breakpoint belongs to', async () => {
+    const at = { file: 'tests/login.spec.ts', line: 42 };
+    expect((await send({ kind: 'locator', text: "getByRole('button')", at })).status).toBe(200);
+    expect(received[received.length - 1]).toEqual({ kind: 'locator', text: "getByRole('button')", at });
+    expect(
+      (await send({ kind: 'locator', text: "getByRole('button')", at: { file: '../x.ts', line: 1 } })).status,
+    ).toBe(400);
+    received.pop();
+  });
+
   test('refuses a wrong token, a bad body and another path', async () => {
     expect((await send({ kind: 'locator', text: 'x' }, 'wrong-token-wrong-token')).status).toBe(401);
     expect((await send('{')).status).toBe(400);

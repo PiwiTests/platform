@@ -135,7 +135,7 @@ top of the page offers **Resume**, **Step** (pause at the next action), **Pick a
 **Finish** (no more pauses in this test); <kbd>Esc</kbd> resumes. A pick is recorded and printed like the failure-time
 one, and posted to `PIWI_EDITOR_SEND`, an editor's pairing address, with its line. Headed and never under CI, like the
 options above; every attempt pauses. The editor extensions set both from your
-[breakpoints](./editor-runs).
+[breakpoints](./editor-breakpoints).
 
 ## Limits
 

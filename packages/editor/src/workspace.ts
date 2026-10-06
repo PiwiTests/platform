@@ -95,6 +95,28 @@ export async function committedTextAt(repoRoot: string, commit: string, relative
   return git(repoRoot, ['show', `${commit}:${relativePath.split(path.sep).join('/')}`]);
 }
 
+/**
+ * The version of `@piwitests/reporter` a Playwright config's folder installs: its `node_modules`, else that of a
+ * folder above it, up to the repository root, as Node resolves it. Null when none is found or its `package.json` has
+ * no version.
+ */
+export function reporterVersion(dir: string, repoRoot: string): string | null {
+  let current = path.resolve(dir);
+  const stop = path.resolve(repoRoot);
+  for (;;) {
+    try {
+      const manifest = path.join(current, 'node_modules', '@piwitests', 'reporter', 'package.json');
+      const version = (JSON.parse(fs.readFileSync(manifest, 'utf-8')) as { version?: unknown }).version;
+      if (typeof version === 'string' && version) return version;
+    } catch {
+      // Not installed here: look above.
+    }
+    const parent = path.dirname(current);
+    if (current === stop || parent === current || relativeTo(stop, current) === null) return null;
+    current = parent;
+  }
+}
+
 /** A path relative to `root`, with forward slashes; null when it is outside. */
 export function relativeTo(root: string, file: string): string | null {
   const rel = path.relative(root, file);

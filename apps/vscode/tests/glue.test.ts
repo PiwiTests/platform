@@ -9,6 +9,7 @@ import type {
   StatusResult,
 } from '@piwitests/editor/protocol';
 import {
+  pickNotice,
   configTestDir,
   connectChoices,
   desktopJobNotice,
@@ -108,6 +109,15 @@ describe('statusBarView', () => {
       url: 'http://piwi/test-runs/41',
       error: false,
     });
+  });
+
+  test('the tooltip names the reporter the project installs', () => {
+    const withReporter: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: '0.47.0' }] };
+    expect(statusBarView(connected, withReporter).tooltip).toBe(
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\nreporter 0.47.0\n\n${LINKS}`,
+    );
+    const unknown: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: null }] };
+    expect(statusBarView(connected, unknown).tooltip).not.toContain('reporter');
   });
 
   test('the tooltip says when the run was read, and whether the next one is pushed or polled', () => {
@@ -1046,5 +1056,19 @@ describe('the verdict of a run started from the editor', () => {
     expect(runVerdict(passing, 'failures')).toBeNull();
     expect(runVerdict(ended, 'failures')).not.toBeNull();
     expect(runVerdict(ended, 'never')).toBeNull();
+  });
+});
+
+describe('a locator picked at a breakpoint', () => {
+  const at = { file: 'tests/login.spec.ts', line: 42 };
+
+  test('says where it went', () => {
+    expect(pickNotice(at, 'replaced')).toBe('Piwi: the picked locator replaced the one at line 42 of login.spec.ts.');
+    expect(pickNotice(at, 'no-locator')).toBe(
+      'Piwi: the picked locator was inserted at the cursor: line 42 of login.spec.ts holds no locator anymore.',
+    );
+    expect(pickNotice(at, 'no-file')).toBe(
+      'Piwi: the picked locator was inserted at the cursor: tests/login.spec.ts is not in this workspace.',
+    );
   });
 });

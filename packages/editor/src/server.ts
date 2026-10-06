@@ -50,6 +50,7 @@ import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import {
   applyPatchFile,
   breakMessage,
+  breakpointsNotice,
   breaksByAnchor,
   breaksOfChange,
   callEndLine,
@@ -57,11 +58,14 @@ import {
   flakeLabLens,
   functionSnippet,
   functionSuggestions,
+  headedCommand,
   locatorRange,
   locatorSuggestions,
   locatorsInFile,
   pageSummary,
   parsePatch,
+  pauseAtValue,
+  pickEditOnLine,
   placeLine,
   reachFrom,
   replaceLocatorOnLine,
@@ -111,6 +115,7 @@ import {
 } from './protocol.js';
 import {
   AGENT_CONTEXT_REQUEST,
+  APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
   FAILURES_NOTIFICATION,
@@ -141,9 +146,12 @@ import {
   TESTS_FOR_FILE_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
+  type ApplyPickParams,
+  type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
   type DesktopResult,
+  type EditorBreakpoint,
   type EditorCredentials,
   type EditorTest,
   type FailuresResult,
@@ -922,6 +930,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           ...(c.liveTests.size
             ? { liveTests: [...c.liveTests].map(([testCaseId, status]) => ({ testCaseId, status })) }
             : {}),
+          reporterVersion: c.reporterVersion,
         };
       }),
   });
@@ -1960,6 +1969,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { basis: reached.length ? 'reach' : 'none', tests: reached.map((t) => toEditorTest(context, t)) };
   });
 
+  /**
+   * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
+   * folder, `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   */
+  const withBreakpoints = (
+    context: PiwiContext,
+    command: RunCommand,
+    breakpoints: EditorBreakpoint[] | undefined,
+  ): RunCommand => {
+    const files = (Array.isArray(breakpoints) ? breakpoints : []).flatMap((b) => {
+      const file = typeof b?.uri === 'string' ? uriToPath(b.uri) : null;
+      return file && typeof b.line === 'number' ? [{ file, line: b.line }] : [];
+    });
+    const pauseAt = pauseAtValue(context.root, files);
+    if (!pauseAt) return command;
+    const notice = breakpointsNotice(context.reporterVersion);
+    return {
+      ...command,
+      ...headedCommand(command.command, command.args),
+      env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
+      ...(notice ? { notice } : {}),
+    };
+  };
+
   connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = file ? contextFor(file) : null;
@@ -1967,13 +2000,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const { args, command } = await context.client.runArgs(context.project.id, params.testIds);
     const ref = newRunRef();
     runWatch.watch(context, ref);
-    return {
+    const run: RunCommand = {
       cwd: context.root,
       args,
       command: command || `npx playwright test ${args.join(' ')}`,
       env: editorRunEnv(ref),
       ref,
     };
+    return withBreakpoints(context, run, params.breakpoints);
   });
 
   connection.onRequest(STATUS_REQUEST, (): StatusResult => currentStatus());
@@ -2015,7 +2049,29 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!context || !selection?.command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
-    return { cwd: context.root, command: selection.command, args: [], env: editorRunEnv(ref), ref };
+    const run: RunCommand = { cwd: context.root, command: selection.command, args: [], env: editorRunEnv(ref), ref };
+    return withBreakpoints(context, run, params.breakpoints);
+  });
+
+  connection.onRequest(APPLY_PICK_REQUEST, (params: ApplyPickParams): ApplyPickResult => {
+    const reported = typeof params.file === 'string' ? params.file.replace(/\\/g, '/') : null;
+    const inside = !!reported && !path.isAbsolute(reported) && !reported.split('/').includes('..');
+    const file = params.uri
+      ? uriToPath(params.uri)
+      : inside
+        ? (contexts.map((c) => path.join(c.root, reported!)).find((f) => fs.existsSync(f)) ?? null)
+        : null;
+    if (!file) return { uri: null, edit: null };
+    const uri = openDocument(file)?.uri ?? pathToFileURL(file).href;
+    const lineText = readText(file)?.split(/\r?\n/)[params.line];
+    const edit = lineText === undefined || !params.locator ? null : pickEditOnLine(lineText, params.locator);
+    return {
+      uri,
+      edit: edit && {
+        range: { start: { line: params.line, character: edit.start }, end: { line: params.line, character: edit.end } },
+        newText: edit.newText,
+      },
+    };
   });
 
   connection.onRequest(FAILURES_REQUEST, (): FailuresResult => failuresResult(placer()));

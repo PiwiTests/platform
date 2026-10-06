@@ -20,7 +20,8 @@ in the status bar while it executes, and its results over the latest CI run's fa
 The command is the one `piwi run` would build, run from the Playwright config's folder: in a terminal in VS Code, in
 the Run tool window in a JetBrains IDE, whose **Rerun** starts it again. It sets `PIWI_ORIGIN=editor` and a
 `PIWI_ORIGIN_REF` of its own ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run on
-the instance.
+the instance. The editor's breakpoints pause it in the browser, with Piwi's picker one click away:
+[Breakpoints in the browser](./editor-breakpoints).
 
 ## Your local runs
 

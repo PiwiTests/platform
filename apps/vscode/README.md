@@ -7,7 +7,8 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
   you fixed and re-ran leaves the panel, one your run broke joins it, and a notification says what your run changed.
 - **The failures view.** The Piwi panel's **Failures** view lists them as a tree under the run, grouped by spec,
   failure cluster or owner, with your runs since; each test runs again, opens its trace or its page in one click, and
-  **Re-run the failing tests** runs them all.
+  **Re-run the failing tests** runs them all. A run started there pauses at your breakpoints in the browser, where a
+  locator you pick replaces the one on that line.
 - **Heal in place.** On a failing locator, the replacement Piwi recommends is a quick fix: the same edit an auto-heal
   pull request makes. **Open the trace** downloads it and opens Playwright's trace viewer; the failure screenshot is in
   the hover.

@@ -53,13 +53,22 @@ data class EditorTest(
 
 data class TestsForFile(val tests: List<EditorTest>? = null, val basis: String? = null)
 
-data class RunTestsArgs(val uri: String, val testIds: List<Int>)
+/** A line breakpoint of the IDE: the file's URI and its 0-based line. */
+data class EditorBreakpoint(val uri: String, val line: Int)
+
+/**
+ * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a locator
+ * action or assertion on their line, headed, with Piwi's pause bar, when their file is under the Playwright config's
+ * folder.
+ */
+data class RunTestsArgs(val uri: String, val testIds: List<Int>, val breakpoints: List<EditorBreakpoint>? = null)
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
 
 /**
  * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
- * `piwi/commandEnded` names once the command ends; null from an older service.
+ * `piwi/commandEnded` names once the command ends; null from an older service. `notice` is a sentence to show once
+ * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them.
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -67,6 +76,7 @@ data class RunCommand(
     val args: List<String>? = null,
     val env: Map<String, String>? = null,
     val ref: String? = null,
+    val notice: String? = null,
 )
 
 /**
@@ -143,7 +153,8 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
  * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
- * tests `live` began or ended until the latest run is read once it ended. The fields after `checkedOut` are null from
+ * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
+ * `@piwitests/reporter` the project installs (null when none is found). The fields after `checkedOut` are null from
  * an older service.
  */
 data class RunStatus(
@@ -159,6 +170,7 @@ data class RunStatus(
     val stream: String? = null,
     val updatedAt: String? = null,
     val liveTests: List<LiveTest>? = null,
+    val reporterVersion: String? = null,
 )
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
@@ -376,7 +388,24 @@ data class SelectionItem(val key: String = "", val name: String? = null, val cou
 
 data class SelectionsResult(val items: List<SelectionItem>? = null)
 
-data class RunSelectionParams(val uri: String, val key: String)
+/** `piwi/runSelection`: a saved selection to run, with the IDE's breakpoints as in `RunTestsArgs`. */
+data class RunSelectionParams(val uri: String, val key: String, val breakpoints: List<EditorBreakpoint>? = null)
+
+/**
+ * `piwi/applyPick`: the edit that puts a locator picked while a run was paused at a breakpoint in place of the locator
+ * chain its line holds. The file is `uri`, else `file`, a path relative to a Playwright config's folder as the run
+ * reported it; `line` is 0-based.
+ */
+data class ApplyPickParams(val uri: String? = null, val file: String? = null, val line: Int, val locator: String)
+
+data class PickPosition(val line: Int = 0, val character: Int = 0)
+
+data class PickRange(val start: PickPosition? = null, val end: PickPosition? = null)
+
+data class PickEdit(val range: PickRange? = null, val newText: String? = null)
+
+/** The file found (null when none is) and the edit on its line; `edit` is null when the line holds no locator. */
+data class ApplyPickResult(val uri: String? = null, val edit: PickEdit? = null)
 
 data class ProjectRef(val id: Int = 0, val name: String = "")
 
@@ -494,6 +523,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pageCandidates")
     fun pageCandidates(params: PageCandidatesParams): CompletableFuture<PageCandidatesResult?>
+
+    @JsonRequest("piwi/applyPick")
+    fun applyPick(params: ApplyPickParams): CompletableFuture<ApplyPickResult?>
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)

@@ -212,6 +212,38 @@ const tests = {
     await vscode.commands.executeCommand('piwi.runTest', { uri: pageObject.toString(), testIds: [3] });
   },
 
+  async 'a breakpoint pauses the run it starts, and a pick there replaces the locator of its line'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+    vscode.debug.addBreakpoints([breakpoint]);
+    try {
+      await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1] });
+      const run = api.lastRun();
+      assert.equal(run.env.PIWI_PAUSE_AT, 'tests/checkout.spec.ts:3');
+      assert.equal(run.command, 'echo tests/checkout.spec.ts:3 --headed');
+      assert.match(run.env.PIWI_EDITOR_SEND, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send#[\w-]{16,}$/);
+
+      const [url, token] = run.env.PIWI_EDITOR_SEND.split('#');
+      const picked = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'locator',
+          text: "getByTestId('cart-row')",
+          at: { file: 'tests/pages/checkout.page.ts', line: 5 },
+        }),
+      });
+      assert.equal(picked.status, 200, await picked.clone().text());
+      const document = await vscode.workspace.openTextDocument(pageObject);
+      assert.equal(document.lineAt(4).text, "  row = () => this.page.getByTestId('cart-row');");
+    } finally {
+      vscode.debug.removeBreakpoints([breakpoint]);
+      await vscode.window.showTextDocument(pageObject);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [

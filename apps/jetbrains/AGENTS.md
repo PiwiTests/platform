@@ -50,7 +50,7 @@ the service through the platform's LSP API with the project's Node.js interprete
 - The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
   (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), and Connect while not
   connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and
-  when the run was read (`Glue.relativeTime`). **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
+  when the run was read (`Glue.relativeTime`), and the reporter version the project installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
   **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
 - `PiwiCommands.run` runs a command in the Run tool window, whose **Rerun** (`RunContentExecutor.withRerun`) stops it
   if it runs and starts it again with the same environment. For a test run (`RunCommand.ref`), a `ProcessListener`
@@ -59,6 +59,14 @@ the service through the platform's LSP API with the project's Node.js interprete
   (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
   Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as `PiwiSettings.runNotifications`
   allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in `.idea/piwi.xml`).
+- Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Tests That Reach
+  This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
+  (`PiwiProjectService.breakpoints`: `XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints`, the
+  enabled `XLineBreakpoint`s in local files, in a read action, then `Glue.runBreakpoints`: script files under a
+  Playwright config's folder), unless the checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`,
+  on this machine only) turns them off. `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`, the pairing address
+  `PiwiSendHandler` serves with its token from `PasswordSafe` (created if missing), when the command carries
+  `PIWI_PAUSE_AT`, and shows `RunCommand.notice` (a reporter too old for breakpoints) once as a warning balloon.
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those
@@ -92,7 +100,9 @@ the service through the platform's LSP API with the project's Node.js interprete
   caret moving between writes.
 - `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the
   token from `PasswordSafe`; **Pair with Piwi Picker** copies the pairing address. It mirrors
-  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). A recorded flow goes through
+  `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`). A locator with `at`, picked while a
+  run was paused at a breakpoint, asks `piwi/applyPick` and replaces the range it answers in a write command; when the
+  line holds no locator, it is inserted at the caret, and the balloon says why (`Glue.pickNotice`). A recorded flow goes through
   `piwi/renderSteps` with the caret, for its page expression, and its import lines apart, added like a recording's.
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
@@ -117,7 +127,7 @@ the service through the platform's LSP API with the project's Node.js interprete
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
-  (`PiwiLocalSettings`, with the failures' grouping), on this machine only; choosing the app never touches the
+  (`PiwiLocalSettings`, with the failures' grouping and the breakpoints setting), on this machine only; choosing the app never touches the
   instance, its project or its key.
 
 ## Rules

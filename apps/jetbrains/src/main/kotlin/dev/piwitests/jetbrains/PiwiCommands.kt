@@ -23,8 +23,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
+import org.jetbrains.ide.BuiltInServerManager
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The client commands the editor service names in summary lines and code
@@ -144,15 +146,43 @@ object PiwiCommands {
         notification.notify(project)
     }
 
+    /** Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. */
     fun runTests(project: Project, args: RunTestsArgs) {
         background(project, "Piwi: resolving the tests") {
-            val command = project.service<PiwiProjectService>().server()?.runArgs(args)?.orNull()
+            val service = project.service<PiwiProjectService>()
+            val breakpoints = service.breakpoints()
+            val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints)
+            val command = service.server()?.runArgs(withBreakpoints)?.orNull()
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
-                run(project, command.cwd, command.command!!, command.env, command.ref)
+                startRun(project, command)
             }
         }
+    }
+
+    /** The notices of `RunCommand.notice` already shown: each is shown once. */
+    private val noticesShown: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Run a test command of the service: its notice shown once, and, with breakpoints (`PIWI_PAUSE_AT`), the Send to
+     * editor pairing a locator picked while paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
+     */
+    fun startRun(project: Project, command: RunCommand) {
+        val cwd = command.cwd ?: return
+        val line = command.command?.takeIf { it.isNotBlank() } ?: return
+        command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
+        val base = command.env
+        val address = if (base != null && base.containsKey("PIWI_PAUSE_AT")) {
+            runCatching {
+                val port = BuiltInServerManager.getInstance().waitForStart().port
+                "http://127.0.0.1:$port${PiwiSendHandler.PATH}#${PiwiSendToken.ensure()}"
+            }.getOrNull()
+        } else {
+            null
+        }
+        val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
+        run(project, cwd, line, env, command.ref)
     }
 
     fun openTrace(project: Project, params: TraceParams) {

@@ -17,6 +17,7 @@ import {
 } from 'vscode-languageclient/node';
 import {
   AGENT_CONTEXT_REQUEST,
+  APPLY_PICK_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
   DESKTOP_JOB_NOTIFICATION,
@@ -28,6 +29,8 @@ import {
   SHARE_DESKTOP_JOB_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
+  type ApplyPickParams,
+  type ApplyPickResult,
   type CommandEndedParams,
   type CommandStartedParams,
   type DesktopJobParams,
@@ -106,9 +109,11 @@ import {
   type RunNotifications,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
+  pickNotice,
   statusBarView,
   type FailureNode,
 } from './glue';
+import { runBreakpoints, terminalEnvKey } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
@@ -163,6 +168,8 @@ export interface PiwiApi {
   pageCandidates(params: PageCandidatesParams): Promise<PageCandidatesResult>;
   /** The failures view's nodes under `node`, or its roots, once the failures are read again. */
   failureChildren(node?: FailureNode): Promise<FailureNode[]>;
+  /** The command of the latest test run started from the editor, as sent to its terminal; null before the first. */
+  lastRun(): RunCommand | null;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -344,6 +351,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const runTerminals = new Map<string, vscode.Terminal>();
   /** The ref of each run terminal's environment: the ref of the first command sent to it. */
   const terminalRefs = new Map<vscode.Terminal, string>();
+  /** The rest of each run terminal's environment (`terminalEnvKey`): a run with other breakpoints needs another. */
+  const terminalEnvs = new Map<vscode.Terminal, string>();
   /** The command of a test run sent to a terminal, until shell integration sees it end: `piwi/commandEnded` names it. */
   const running = new Map<vscode.Terminal, { ref: string; command: string }>();
   /** The terminals whose last command ended. */
@@ -358,13 +367,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (ref) {
       // By the next run, the previous run's terminal has activated shell integration, or never will.
       const previous = runTerminals.get(cwd);
-      if (previous && !previous.exitStatus && (!shellIntegration || !integrated(previous))) {
+      const envKey = terminalEnvKey(env);
+      if (
+        previous &&
+        !previous.exitStatus &&
+        (!shellIntegration || !integrated(previous)) &&
+        terminalEnvs.get(previous) === envKey
+      ) {
         terminal = previous;
       } else {
         if (previous && idle.has(previous)) previous.dispose();
         terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
         runTerminals.set(cwd, terminal);
         terminalRefs.set(terminal, ref);
+        terminalEnvs.set(terminal, envKey);
         if (shellIntegration) running.set(terminal, { ref, command });
       }
     } else {
@@ -406,17 +422,74 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       for (const [key, terminal] of terminals) if (terminal === t) terminals.delete(key);
       for (const [cwd, terminal] of runTerminals) if (terminal === t) runTerminals.delete(cwd);
       terminalRefs.delete(t);
+      terminalEnvs.delete(t);
       running.delete(t);
     }),
   );
 
+  // Send to editor: the token lives in the secret store, the port in global state, so a pairing survives restarts.
+  let sendToken = (await context.secrets.get(SEND_TOKEN)) ?? '';
+  const listen = async (port: number) => {
+    sendListener = await startSendListener({
+      port,
+      token: () => sendToken,
+      onPayload: (payload) => insertFromPicker(lc, payload),
+    });
+    return sendListener;
+  };
+  const pairedPort = context.globalState.get<number>(SEND_PORT);
+  // Another window may hold the port: that window keeps the pairing.
+  if (pairedPort && sendToken) await listen(pairedPort).catch(() => null);
+  /** The pairing address, the listener started and the token minted first when they are not. */
+  const pairing = async (): Promise<string> => {
+    if (!sendToken) {
+      sendToken = randomBytes(24).toString('base64url');
+      await context.secrets.store(SEND_TOKEN, sendToken);
+    }
+    const listener = sendListener ?? (await listen(pairedPort ?? 0).catch(() => listen(0)));
+    await context.globalState.update(SEND_PORT, listener.port);
+    return formatPairing({ url: listener.url, token: sendToken });
+  };
+
+  /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
+  const breakpointsForRun = () =>
+    vscode.workspace.getConfiguration('piwi').get<boolean>('breakpoints', true)
+      ? runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? [])
+      : [];
+
+  /** The notices of `RunCommand.notice` already shown: each is shown once. */
+  const noticesShown = new Set<string>();
+  let lastRun: RunCommand | null = null;
+
+  /**
+   * Run a test command: its notice shown once, and, with breakpoints (`PIWI_PAUSE_AT`), the Send to editor pairing
+   * the picker posts a pick to (`PIWI_EDITOR_SEND`).
+   */
+  const startRun = async (command: RunCommand) => {
+    if (command.notice && !noticesShown.has(command.notice)) {
+      noticesShown.add(command.notice);
+      void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
+    }
+    let env = command.env;
+    if (env?.PIWI_PAUSE_AT) {
+      const address = await pairing().catch(() => null);
+      if (address) env = { ...env, PIWI_EDITOR_SEND: address };
+    }
+    lastRun = { ...command, env };
+    runInTerminal(command.cwd, command.command, env, command.ref);
+  };
+
   const runTests = async (args: RunTestsArgs) => {
-    const command = await lc.sendRequest<RunCommand | null>(RUN_ARGS_REQUEST, args);
+    const breakpoints = breakpointsForRun();
+    const command = await lc.sendRequest<RunCommand | null>(
+      RUN_ARGS_REQUEST,
+      breakpoints.length ? { ...args, breakpoints } : args,
+    );
     if (!command) {
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return;
     }
-    runInTerminal(command.cwd, command.command, command.env, command.ref);
+    await startRun(command);
   };
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
@@ -559,8 +632,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         { placeHolder: 'Run which selection?' },
       );
       if (!picked) return;
-      const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, { uri, key: picked.key });
-      if (command) runInTerminal(command.cwd, command.command, command.env, command.ref);
+      const breakpoints = breakpointsForRun();
+      const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, {
+        uri,
+        key: picked.key,
+        ...(breakpoints.length ? { breakpoints } : {}),
+      });
+      if (command) await startRun(command);
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
@@ -652,28 +730,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     );
   }
 
-  // Send to editor: the token lives in the secret store, the port in global state, so a pairing survives restarts.
-  let sendToken = (await context.secrets.get(SEND_TOKEN)) ?? '';
-  const listen = async (port: number) => {
-    sendListener = await startSendListener({
-      port,
-      token: () => sendToken,
-      onPayload: (payload) => insertFromPicker(lc, payload),
-    });
-    return sendListener;
-  };
-  const pairedPort = context.globalState.get<number>(SEND_PORT);
-  // Another window may hold the port: that window keeps the pairing.
-  if (pairedPort && sendToken) await listen(pairedPort).catch(() => null);
   context.subscriptions.push(
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
-      if (!sendToken) {
-        sendToken = randomBytes(24).toString('base64url');
-        await context.secrets.store(SEND_TOKEN, sendToken);
-      }
-      const listener = sendListener ?? (await listen(pairedPort ?? 0).catch(() => listen(0)));
-      await context.globalState.update(SEND_PORT, listener.port);
-      await vscode.env.clipboard.writeText(formatPairing({ url: listener.url, token: sendToken }));
+      await vscode.env.clipboard.writeText(await pairing());
       void vscode.window.showInformationMessage(
         "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
       );
@@ -721,6 +780,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (!node) await failuresView.read();
       return failuresView.getChildren(node);
     },
+    lastRun: () => lastRun,
   };
 }
 
@@ -761,6 +821,28 @@ function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
  * imports, in the same edit.
  */
 async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
+  let notice: string | null = null;
+  if (payload.kind === 'locator' && payload.at) {
+    const at = payload.at;
+    const answer = await lc
+      .sendRequest<ApplyPickResult>(APPLY_PICK_REQUEST, {
+        file: at.file,
+        line: at.line - 1,
+        locator: payload.text,
+      } satisfies ApplyPickParams)
+      .catch(() => null);
+    if (answer?.uri && answer.edit) {
+      const uri = vscode.Uri.parse(answer.uri);
+      const { start, end } = answer.edit.range;
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(uri, new vscode.Range(start.line, start.character, end.line, end.character), answer.edit.newText);
+      if (await vscode.workspace.applyEdit(edit)) {
+        void vscode.window.showInformationMessage(pickNotice(at, 'replaced'));
+        return { inserted: true, file: uri.scheme === 'file' ? uri.fsPath : null };
+      }
+    }
+    notice = pickNotice(at, answer?.uri ? 'no-locator' : 'no-file');
+  }
   const active = vscode.window.activeTextEditor;
   let text: string;
   let imports: string[] = [];
@@ -801,9 +883,10 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
   });
   if (inserted) {
     void vscode.window.showInformationMessage(
-      payload.kind === 'locator'
-        ? 'Piwi: inserted the locator from Piwi Picker.'
-        : 'Piwi: inserted the recorded steps from Piwi Picker.',
+      notice ??
+        (payload.kind === 'locator'
+          ? 'Piwi: inserted the locator from Piwi Picker.'
+          : 'Piwi: inserted the recorded steps from Piwi Picker.'),
     );
   }
   return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };

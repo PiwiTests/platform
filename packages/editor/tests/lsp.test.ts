@@ -21,6 +21,7 @@ import { startServer } from '../src/server';
 import { committedTextAt } from '../src/workspace';
 import type {
   AgentContextResult,
+  ApplyPickResult,
   FailuresResult,
   FileSummary,
   McpServersResult,
@@ -782,6 +783,8 @@ describe('the Piwi language server', () => {
         // This instance has no event stream: the run is read every minute.
         stream: 'polling',
         updatedAt: expect.any(String),
+        // The fixture installs no reporter.
+        reporterVersion: null,
       },
     ]);
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
@@ -1134,6 +1137,102 @@ describe('the Piwi language server', () => {
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
+  });
+});
+
+describe('breakpoints', () => {
+  const breakpoints = () => [
+    { uri: uri('tests/checkout.spec.ts'), line: 2 },
+    { uri: uri('tests/pages/checkout.page.ts'), line: 3 },
+    { uri: pathToFileURL(path.join(os.tmpdir(), 'elsewhere.spec.ts')).href, line: 0 },
+  ];
+  const reporterManifest = 'node_modules/@piwitests/reporter/package.json';
+
+  afterAll(async () => {
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    await client.sendRequest('piwi/refresh');
+  });
+
+  test('pause a run at their lines, headed, and say when the reporter is too old for them', async () => {
+    write(reporterManifest, JSON.stringify({ name: '@piwitests/reporter', version: '0.46.0' }));
+    await client.sendRequest('piwi/refresh');
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      breakpoints: breakpoints(),
+    })) as RunCommand;
+    expect(command).toEqual({
+      cwd: dir,
+      args: ['tests/checkout.spec.ts:3', '--headed'],
+      command: 'npx playwright test tests/checkout.spec.ts:3 --headed',
+      env: {
+        PIWI_ORIGIN: 'editor',
+        PIWI_ORIGIN_REF: command.ref,
+        PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3,tests/pages/checkout.page.ts:4',
+      },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      notice: 'Breakpoints need @piwitests/reporter 0.48.0 or later; this project has 0.46.0.',
+    });
+    const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
+    expect(status.contexts[0]!.reporterVersion).toBe('0.46.0');
+
+    const selection = (await client.sendRequest('piwi/runSelection', {
+      uri: uri('tests/checkout.spec.ts'),
+      key: 'smoke',
+      breakpoints: breakpoints(),
+    })) as RunCommand;
+    expect(selection.command).toBe('npx playwright test tests/checkout.spec.ts:3 --headed');
+    expect(selection.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3,tests/pages/checkout.page.ts:4');
+  });
+
+  test('need nothing more of a reporter that pauses, and change nothing without one in the folder', async () => {
+    write(reporterManifest, JSON.stringify({ name: '@piwitests/reporter', version: '0.48.0' }));
+    await client.sendRequest('piwi/refresh');
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      breakpoints: breakpoints(),
+    })) as RunCommand;
+    expect(command.notice).toBeUndefined();
+    expect(command.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3,tests/pages/checkout.page.ts:4');
+
+    const outside = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      breakpoints: breakpoints().slice(2),
+    })) as RunCommand;
+    expect(outside.command).toBe('npx playwright test tests/checkout.spec.ts:3');
+    expect(outside.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: outside.ref });
+  });
+
+  test('a pick replaces the locator its line holds, or says the line holds none', async () => {
+    const replaced = (await client.sendRequest('piwi/applyPick', {
+      file: 'tests/pages/checkout.page.ts',
+      line: 4,
+      locator: "getByRole('row', { name: /Mug/ })",
+    })) as ApplyPickResult;
+    expect(replaced).toEqual({
+      uri: uri('tests/pages/checkout.page.ts'),
+      edit: {
+        range: { start: { line: 4, character: 24 }, end: { line: 4, character: 51 } },
+        newText: "getByRole('row', { name: /Mug/ })",
+      },
+    });
+    expect(PAGE_OBJECT.split('\n')[4]!.slice(24, 51)).toBe("locator('.cart-row').nth(2)");
+
+    const none = (await client.sendRequest('piwi/applyPick', {
+      uri: uri('tests/rows.spec.ts'),
+      line: 6,
+      locator: "getByRole('row', { name: /Mug/ })",
+    })) as ApplyPickResult;
+    expect(none).toEqual({ uri: uri('tests/rows.spec.ts'), edit: null });
+
+    for (const file of ['../outside.ts', 'tests/missing.spec.ts']) {
+      expect(await client.sendRequest('piwi/applyPick', { file, line: 0, locator: 'getByText("x")' })).toEqual({
+        uri: null,
+        edit: null,
+      });
+    }
   });
 });
 

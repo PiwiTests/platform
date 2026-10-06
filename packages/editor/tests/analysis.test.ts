@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'vitest';
 import { diffLines } from '@piwitests/core/line-diff';
-import { callEndLine, flakeLabLens, placeLine } from '../src/analysis';
+import * as path from 'node:path';
+import {
+  breakpointsNotice,
+  callEndLine,
+  flakeLabLens,
+  headedCommand,
+  locatorChainOnLine,
+  pauseAtValue,
+  pickEditOnLine,
+  placeLine,
+} from '../src/analysis';
 import type { FlakeLabEntry } from '../src/piwi-client';
 
 describe('placeLine', () => {
@@ -178,5 +188,78 @@ describe('flakeLabLens', () => {
     });
     expect(lens?.title).toBe('flaky');
     expect(lens?.actions.map((a) => a.kind)).toEqual(['reproduce']);
+  });
+});
+
+describe('a pick at a breakpoint', () => {
+  test('replaces the chain the line holds, keeping the page and the action', () => {
+    const line = "  await page.locator('.cart-row').nth(2).click();";
+    expect(locatorChainOnLine(line)).toEqual({
+      start: 13,
+      end: 40,
+      locator: "locator('.cart-row').nth(2)",
+    });
+    expect(pickEditOnLine(line, "getByRole('row', { name: 'Mug' })")).toEqual({
+      start: 13,
+      end: 40,
+      newText: "getByRole('row', { name: 'Mug' })",
+    });
+    const assertion = '  await expect(this.page.getByText("Pay now")).toBeVisible();';
+    const edit = pickEditOnLine(assertion, "getByTestId('pay')")!;
+    expect(assertion.slice(0, edit.start) + edit.newText + assertion.slice(edit.end)).toBe(
+      "  await expect(this.page.getByTestId('pay')).toBeVisible();",
+    );
+  });
+
+  test('finds nothing on a line without a locator', () => {
+    expect(pickEditOnLine('  await checkout.row().click();', "getByTestId('row')")).toBeNull();
+    expect(pickEditOnLine('  const myLocator = makeLocator(1);', "getByTestId('row')")).toBeNull();
+  });
+});
+
+describe('the breakpoints of a run', () => {
+  const root = path.resolve('/work/shop');
+
+  test('are the lines under the config folder, relative to it and 1-based', () => {
+    expect(
+      pauseAtValue(root, [
+        { file: path.join(root, 'tests', 'login.spec.ts'), line: 41 },
+        { file: path.join(root, 'tests', 'pages', 'checkout.page.ts'), line: 8 },
+        { file: path.join(root, 'tests', 'login.spec.ts'), line: 41 },
+        { file: path.resolve('/work/other/a.spec.ts'), line: 1 },
+        { file: path.join(root, 'tests', 'b.spec.ts'), line: -1 },
+      ]),
+    ).toBe('tests/login.spec.ts:42,tests/pages/checkout.page.ts:9');
+    expect(pauseAtValue(root, [{ file: path.resolve('/elsewhere/a.ts'), line: 0 }])).toBeNull();
+    expect(pauseAtValue(root, [])).toBeNull();
+  });
+
+  test('run headed once', () => {
+    expect(headedCommand('npx playwright test "a.spec.ts:3"', ['a.spec.ts:3'])).toEqual({
+      command: 'npx playwright test "a.spec.ts:3" --headed',
+      args: ['a.spec.ts:3', '--headed'],
+    });
+    for (const flag of ['--headed', '--ui', '--debug']) {
+      expect(headedCommand(`npx playwright test ${flag} a.spec.ts`, [])).toEqual({
+        command: `npx playwright test ${flag} a.spec.ts`,
+        args: [],
+      });
+    }
+    expect(headedCommand('npx playwright test --grep "--headed-mode"', [])).toEqual({
+      command: 'npx playwright test --grep "--headed-mode" --headed',
+      args: ['--headed'],
+    });
+  });
+
+  test('need a reporter that pauses at them', () => {
+    expect(breakpointsNotice('0.46.0')).toBe(
+      'Breakpoints need @piwitests/reporter 0.48.0 or later; this project has 0.46.0.',
+    );
+    expect(breakpointsNotice('0.47.9')).toMatch(/this project has 0\.47\.9\.$/);
+    expect(breakpointsNotice('0.48.0')).toBeNull();
+    expect(breakpointsNotice('0.48.0-beta.1')).toBeNull();
+    expect(breakpointsNotice('1.0.0')).toBeNull();
+    expect(breakpointsNotice(null)).toBeNull();
+    expect(breakpointsNotice('workspace:*')).toBeNull();
   });
 });

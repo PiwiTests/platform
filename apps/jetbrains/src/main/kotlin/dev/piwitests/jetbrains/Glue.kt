@@ -169,7 +169,8 @@ object Glue {
             ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
-        val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
+        val reporter = run?.reporterVersion?.let { "\nreporter $it" } ?: ""
+        val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + reporter + hint
         val live = run?.live
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
         val r = run?.run ?: return StatusView(
@@ -700,15 +701,38 @@ object Glue {
         return out
     }
 
-    /** What Piwi Picker sends: a locator line, or a steps document for the editor service to render. */
+    /**
+     * What Piwi Picker sends: a locator line, or a steps document for the editor service to render. A locator picked
+     * while a run was paused at a breakpoint names its place (`at`): a file relative to the run, and its 1-based line.
+     */
     sealed class SendPayload {
-        data class Locator(val text: String) : SendPayload()
+        data class Locator(val text: String, val at: SendPlace? = null) : SendPayload()
         data class Steps(val steps: com.google.gson.JsonObject) : SendPayload()
         data class Refused(val error: String) : SendPayload()
     }
 
+    data class SendPlace(val file: String, val line: Int)
+
     const val MAX_SEND_TEXT = 4000
     const val MAX_SEND_BYTES = 2_000_000
+
+    /** Whether `file` is a relative path that stays inside the directory it is relative to. */
+    private fun isInsidePath(file: String): Boolean {
+        if (file.isEmpty() || file.length > 1000 || file.contains('\u0000')) return false
+        if (file.startsWith("/") || file.startsWith("\\") || Regex("^[A-Za-z]:").containsMatchIn(file)) return false
+        return file.split('/', '\\').none { it == ".." }
+    }
+
+    /** The place of a picked locator, as `parseSendPayload` in `@piwitests/core/editor-send` validates it. */
+    private fun parseSendPlace(at: com.google.gson.JsonElement?): Any? {
+        if (at == null || at.isJsonNull) return null
+        val obj = at.takeIf { it.isJsonObject }?.asJsonObject
+        val file = obj?.get("file")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        if (file == null || !isInsidePath(file)) return SendPayload.Refused("at.file must be a path relative to the run, without ..")
+        val line = obj.get("line")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
+        if (line == null || line < 1 || line != Math.floor(line)) return SendPayload.Refused("at.line must be a positive integer")
+        return SendPlace(file, line.toInt())
+    }
 
     /** Validate a request body, as `parseSendPayload` in `@piwitests/core/editor-send` does. */
     fun parseSendPayload(body: String): SendPayload {
@@ -726,12 +750,48 @@ object Glue {
                 when {
                     text.isNullOrBlank() -> SendPayload.Refused("text must be a non-empty string")
                     text.length > MAX_SEND_TEXT -> SendPayload.Refused("text is at most $MAX_SEND_TEXT characters")
-                    else -> SendPayload.Locator(text)
+                    else -> when (val at = parseSendPlace(obj.get("at"))) {
+                        is SendPayload.Refused -> at
+                        is SendPlace -> SendPayload.Locator(text, at)
+                        else -> SendPayload.Locator(text)
+                    }
                 }
             }
             "steps" -> obj.get("steps")?.takeIf { it.isJsonObject }?.let { SendPayload.Steps(it.asJsonObject) }
                 ?: SendPayload.Refused("steps must be a steps document")
             else -> SendPayload.Refused("kind must be 'locator' or 'steps'")
+        }
+    }
+
+    /** Where a locator picked at a breakpoint went: on its line, or to the caret because the line or the file has none. */
+    enum class PickOutcome { REPLACED, NO_LOCATOR, NO_FILE }
+
+    /** What the notification says once a locator picked while a run was paused at a breakpoint reached the IDE. */
+    fun pickNotice(at: SendPlace, outcome: PickOutcome): String {
+        val name = at.file.substringAfterLast('/')
+        return when (outcome) {
+            PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
+            PickOutcome.NO_LOCATOR -> "The picked locator was inserted at the caret: line ${at.line} of $name holds no locator anymore."
+            PickOutcome.NO_FILE -> "The picked locator was inserted at the caret: ${at.file} is not in this project."
+        }
+    }
+
+    /** A line breakpoint of the IDE: its file's path on disk and its 0-based line. */
+    data class BreakpointAt(val path: String, val line: Int)
+
+    private val SCRIPT_FILE = Regex("\\.[cm]?[jt]sx?$", RegexOption.IGNORE_CASE)
+
+    /**
+     * The breakpoints a run started from Piwi pauses at: those in JavaScript or TypeScript files under one of `roots`
+     * (the Playwright configs' folders), as the service takes them.
+     */
+    fun runBreakpoints(breakpoints: List<BreakpointAt>, roots: List<String>): List<EditorBreakpoint> {
+        val rootPaths = roots.mapNotNull { runCatching { Path.of(it).toAbsolutePath().normalize() }.getOrNull() }
+        return breakpoints.mapNotNull { b ->
+            val file = runCatching { Path.of(b.path).toAbsolutePath().normalize() }.getOrNull() ?: return@mapNotNull null
+            val under = rootPaths.any { root -> file != root && file.startsWith(root) }
+            if (b.line < 0 || !SCRIPT_FILE.containsMatchIn(file.fileName?.toString() ?: "") || !under) null
+            else EditorBreakpoint(file.toUri().toString(), b.line)
         }
     }
 

@@ -244,6 +244,76 @@ class GlueTest {
     }
 
     @Test
+    fun `a locator picked at a breakpoint names its place, inside the run`() {
+        val at = Glue.SendPlace("tests/login.spec.ts", 42)
+        assertEquals(
+            Glue.SendPayload.Locator("getByRole('button')", at),
+            Glue.parseSendPayload("""{"kind":"locator","text":"getByRole('button')","at":{"file":"tests/login.spec.ts","line":42}}"""),
+        )
+        assertEquals(
+            Glue.SendPayload.Locator("getByRole('button')"),
+            Glue.parseSendPayload("""{"kind":"locator","text":"getByRole('button')","at":null}"""),
+        )
+        val refusedFile = Glue.SendPayload.Refused("at.file must be a path relative to the run, without ..")
+        val refusedLine = Glue.SendPayload.Refused("at.line must be a positive integer")
+        fun send(at: String) = Glue.parseSendPayload("""{"kind":"locator","text":"getByText('x')","at":$at}""")
+        assertEquals(refusedFile, send("""{"file":"../secrets.ts","line":1}"""))
+        assertEquals(refusedFile, send("""{"file":"/etc/passwd","line":1}"""))
+        assertEquals(refusedFile, send("""{"file":"C:\\\\work\\\\a.ts","line":1}"""))
+        assertEquals(refusedFile, send("\"tests/a.ts:1\""))
+        assertEquals(refusedLine, send("""{"file":"tests/a.ts","line":0}"""))
+        assertEquals(refusedLine, send("""{"file":"tests/a.ts","line":1.5}"""))
+        assertEquals(refusedLine, send("""{"file":"tests/a.ts","line":"3"}"""))
+    }
+
+    @Test
+    fun `a picked locator says where it went`() {
+        val at = Glue.SendPlace("tests/login.spec.ts", 42)
+        assertEquals("The picked locator replaced the one at line 42 of login.spec.ts.", Glue.pickNotice(at, Glue.PickOutcome.REPLACED))
+        assertEquals(
+            "The picked locator was inserted at the caret: line 42 of login.spec.ts holds no locator anymore.",
+            Glue.pickNotice(at, Glue.PickOutcome.NO_LOCATOR),
+        )
+        assertEquals(
+            "The picked locator was inserted at the caret: tests/login.spec.ts is not in this project.",
+            Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
+        )
+    }
+
+    @Test
+    fun `the breakpoints a run pauses at are those in script files under a Playwright config`() {
+        val root = Files.createTempDirectory("piwi-breakpoints").toRealPath()
+        val spec = root.resolve("tests/login.spec.ts")
+        val page = root.resolve("tests/pages/checkout.page.mjs")
+        val found = Glue.runBreakpoints(
+            listOf(
+                Glue.BreakpointAt(spec.toString(), 41),
+                Glue.BreakpointAt(page.toString(), 8),
+                Glue.BreakpointAt(root.resolve("README.md").toString(), 3),
+                Glue.BreakpointAt(root.resolveSibling("other").resolve("a.spec.ts").toString(), 1),
+                Glue.BreakpointAt(spec.toString(), -1),
+            ),
+            listOf(root.toString()),
+        )
+        assertEquals(listOf(EditorBreakpoint(spec.toUri().toString(), 41), EditorBreakpoint(page.toUri().toString(), 8)), found)
+        assertEquals(emptyList<EditorBreakpoint>(), Glue.runBreakpoints(listOf(Glue.BreakpointAt(spec.toString(), 1)), emptyList()))
+    }
+
+    @Test
+    fun `the tooltip names the reporter the project installs`() {
+        val withReporter = RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, reporterVersion = "0.47.0")))
+        assertEquals(
+            listOf(
+                "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped",
+                "http://piwi, from the workspace .env",
+                "reporter 0.47.0",
+            ),
+            Glue.statusView(connected, withReporter).tooltip.lines(),
+        )
+        assertEquals(false, Glue.statusView(connected, runs(passed)).tooltip.contains("reporter"))
+    }
+
+    @Test
     fun `a send payload is a locator line or a steps document`() {
         assertEquals(Glue.SendPayload.Locator("page.getByRole('button')"), Glue.parseSendPayload("""{"kind":"locator","text":"page.getByRole('button')"}"""))
         assertEquals(true, Glue.parseSendPayload("""{"kind":"steps","steps":{"v":1}}""") is Glue.SendPayload.Steps)

@@ -128,7 +128,7 @@ values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLoca
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
 [let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs);
 a third, `PIWI_PAUSE_AT`, is set by an editor on a run it starts, to
-[pause at its breakpoints](/features/editor-runs).
+[pause at its breakpoints](/features/editor-breakpoints).
 Set all but `collectPerformanceMetrics` through [`wrapConfig`](./reporter#installing-via-wrapconfig) or their `PIWI_*`
 variable: the test workers never see a plain reporter entry's options.
 

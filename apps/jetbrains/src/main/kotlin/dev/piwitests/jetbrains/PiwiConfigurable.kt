@@ -20,7 +20,8 @@ import javax.swing.JList
 /**
  * **Settings → Tools → Piwi**: the desktop app and whether this machine reads it first, the
  * instance and project saved for this project, whether a key is saved for that instance, when
- * a run started from the IDE says what it changed, and the connection the service actually uses.
+ * a run started from the IDE says what it changed, whether the runs it starts pause at the IDE's
+ * breakpoints, and the connection the service actually uses.
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi") {
     private val service get() = project.service<PiwiProjectService>()
@@ -87,6 +88,14 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
                         .bindItem({ settings.runNotifications }, { settings.runNotifications = it ?: "always" })
                         .comment("A balloon says what the run changed: the failures it fixed, those still failing, its new ones")
+                }
+                row {
+                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker")
+                        .bindSelected({ local.breakpoints }, { local.breakpoints = it })
+                        .comment(
+                            "A run with a breakpoint in a test or page object runs headed and pauses before the action on " +
+                                "that line. Needs @piwitests/reporter 0.48.0 or later. Kept for you only, in .idea/workspace.xml",
+                        )
                 }
             }
             group("In use") {

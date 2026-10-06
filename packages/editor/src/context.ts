@@ -33,6 +33,7 @@ import {
   committedTextAt,
   currentBranch,
   headCommit,
+  reporterVersion,
   repositoryRoot,
   translationValues,
 } from './workspace.js';
@@ -236,6 +237,8 @@ export class PiwiContext {
   codeIndex: CodeIndex | null = null;
   /** Why the context has no data, in one sentence; null when it has. */
   problem: string | null = null;
+  /** The version of `@piwitests/reporter` the project installs, read at each refresh; null when none is found. */
+  reporterVersion: string | null = null;
   /**
    * The branch whose latest run is read: the checked-out one, else, while it has no run, the
    * project's default branch, else null for the newest run of any branch.
@@ -300,6 +303,7 @@ export class PiwiContext {
    */
   async refresh(env: Record<string, string | undefined>, editor: EditorCredentials): Promise<void> {
     this.repoRoot = await repositoryRoot(this.root);
+    this.reporterVersion = reporterVersion(this.root, this.repoRoot);
     const head = await headCommit(this.repoRoot);
     if (head !== this.head) {
       this.head = head;

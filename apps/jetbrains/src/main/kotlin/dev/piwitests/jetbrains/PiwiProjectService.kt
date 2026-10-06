@@ -20,9 +20,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.xdebugger.XDebuggerManager
+import com.intellij.xdebugger.breakpoints.XLineBreakpoint
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -54,8 +57,9 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * What this machine keeps for the project, in `.idea/workspace.xml`, never in a file the
  * team shares: the desktop app chosen with Connect, its project, and whether it was offered;
  * a recording's choices: the Playwright project, the start page, and the last page
- * expression typed that was not among those offered; and how the failures tool window groups
- * the failures (`file`, `cluster`, `owner` or `flat`).
+ * expression typed that was not among those offered; how the failures tool window groups
+ * the failures (`file`, `cluster`, `owner` or `flat`); and whether the runs Piwi starts pause
+ * at the IDE's breakpoints.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -68,6 +72,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordStartUrl: String = "",
         var recordPage: String = "",
         var failuresGrouping: String = "file",
+        var breakpoints: Boolean = true,
     )
 
     private var state = State()
@@ -169,6 +174,27 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun settings(): PiwiSettings.State = project.getService(PiwiSettings::class.java).state
 
     fun local(): PiwiLocalSettings.State = project.getService(PiwiLocalSettings::class.java).state
+
+    /**
+     * The IDE's enabled line breakpoints in JavaScript or TypeScript files under a Playwright config's folder, which a
+     * run started from Piwi pauses at; none when **Settings → Tools → Piwi** turns them off. Reads the breakpoints in a
+     * read action: call it off the event thread.
+     */
+    fun breakpoints(): List<EditorBreakpoint> {
+        if (!local().breakpoints) return emptyList()
+        val roots = status?.contexts.orEmpty().mapNotNull { it.root }
+        if (roots.isEmpty()) return emptyList()
+        val found = ApplicationManager.getApplication().runReadAction(
+            Computable {
+                XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints.mapNotNull { breakpoint ->
+                    val line = breakpoint as? XLineBreakpoint<*> ?: return@mapNotNull null
+                    val url = line.fileUrl
+                    if (!line.isEnabled || !url.startsWith("file://")) null else Glue.BreakpointAt(VfsUtilCore.urlToPath(url), line.line)
+                }
+            },
+        )
+        return Glue.runBreakpoints(found, roots)
+    }
 
     /**
      * The connection saved in the IDE: this project's instance and project, that instance's key,
