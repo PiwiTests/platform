@@ -189,6 +189,9 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `#folded` peek slot), `FoldableSummary`, `DetailPageLayout` (summary + tabs + panels with correct flex height at `lg`+,
   single-document scroll below).
 - **States** — `EmptyState`, `LoadingState`, `ErrorState` (with an `action` slot).
+- **Filters** — `FiltersBlock` (the bordered _Filters_ block every page's filters sit in, folding to a summary on a
+  phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
+  `HiddenRunsNote` (what the filters hide, with the action that shows it).
 - **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
   `FilterToolbar`, `ChartCard` (header + `legend`), the SVG chart primitives `ChartFrame` (self-measuring plot area,
   y-axis) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,

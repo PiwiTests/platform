@@ -2449,12 +2449,12 @@ const SCENES = [
     outputWidth: 1152,
     split: true,
     async run({ page, shoot, settle }) {
-      // The seeded data has partial runs, which the default filter hides behind
-      // a full-width notice. Show them so the hero leads with the dashboard's
-      // own numbers; the choice rides in a cookie, so the split's reloads keep it.
-      const showThem = page.getByRole('button', { name: 'Show them' });
-      if (await showThem.count()) {
-        await showThem.first().click();
+      // The seeded data has partial runs, which the default filter hides. Include
+      // them so the hero leads with the dashboard's own numbers; the choice rides
+      // in a cookie, so the split's reloads keep it.
+      const includePartial = page.getByRole('button', { name: 'Include partial runs' });
+      if (await includePartial.count()) {
+        await includePartial.first().click();
         await settle();
       }
       await shoot();

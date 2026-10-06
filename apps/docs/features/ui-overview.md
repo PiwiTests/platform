@@ -13,7 +13,7 @@ and a **Learn more** link into these docs, and every source path [opens in your 
 
 ## Home
 
-`/`: a health check across all projects. A **stat strip** whose every number but the average pass rate is a link, the **failure inbox** of open clusters, triaged from the row or the keyboard
+`/`: a health check across all projects. A **Filters** block (environment, full runs only), a **stat strip** whose every number but the average pass rate is a link, the **failure inbox** of open clusters, triaged from the row or the keyboard
 ([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)), a **Project health** table with run-history
 bars and a tendency badge, and recent activity.
 
